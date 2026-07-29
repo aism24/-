@@ -1,5 +1,5 @@
-// デプロイ済みGAS WebアプリのURL（/exec で終わるURL）に置き換えてください
-const GAS_API_URL = "https://script.google.com/macros/s/XXXXXXXXXXXXXXXXXXXXXXXX/exec";
+// デプロイ済みGAS WebアプリのURL（/exec で終わるURL）
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwMhD_aTkETK4JLBdKj1mtgwKNe790nkdVQWP5laLno4XQN8Ud6Bt69qpELaRgbcSsC/exec";
 
 // GAS APIへのGETリクエスト共通処理
 async function apiGet(action, params) {
