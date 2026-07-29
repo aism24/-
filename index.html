@@ -1,223 +1,255 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
-<title>45秒タイマー</title>
-
-<!-- iOS PWA -->
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-
-<style>
-:root {
-  --vh: 1vh;
-}
-
-body {
-  margin: 0;
-  overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-  height: calc(var(--vh) * 100);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: white;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-/* 背景 */
-#bgText {
-  position: fixed;
-  font-size: 12vw;
-  opacity: 0.07;
-  pointer-events: none;
-  white-space: nowrap;
-  font-weight: bold;
-  background: linear-gradient(45deg, #ff6ec4, #7873f5);
-  -webkit-background-clip: text;
-  color: transparent;
-  z-index: 0;
-}
-
-/* UI */
-#container {
-  text-align: center;
-  z-index: 10;
-  transition: opacity 0.3s;
-}
-
-#message {
-  font-size: 4vw;
-  margin-bottom: 2vh;
-}
-
-#timer {
-  font-size: 18vw;
-  font-weight: bold;
-}
-
-button {
-  font-size: 6vw;
-  margin: 1vh;
-  padding: 2vh 4vw;
-  border-radius: 10px;
-  border: none;
-}
-
-button:active {
-  transform: scale(0.95);
-}
-
-/* 特別 */
-#special {
-  position: fixed;
-  font-size: 10vw;
-  opacity: 0;
-  transition: opacity 0.3s;
-  z-index: 20;
-  text-align: center;
-}
-
-/* 横画面 */
-@media (orientation: landscape) {
-  #message { font-size: 2.5vw; }
-  #timer { font-size: 12vw; }
-  button { font-size: 3vw; }
-}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>試合記録</title>
+  <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
-
-<div id="bgText">ホットハート</div>
-
-<div id="container">
-  <div id="message">モップ担当の仲間に声掛けしてからスタート！！</div>
-  <div id="timer">45.00</div>
-  <div>
-    <button id="start">スタート</button>
-    <button id="reset">リセット</button>
+<div id="home-screen">
+  <div class="home-title">🏀 試合記録</div>
+  <div class="home-subtitle">メニューを選んでごしない</div>
+  <button class="home-btn home-btn-record" onclick="showScreen('record')">📝 スコアを記録</button>
+  <button class="home-btn home-btn-list" onclick="showScreen('gender-select')">📊 結果一覧</button>
+  <hr class="home-divider">
+  <button class="home-btn home-btn-hot" onclick="showScreen('hot')">🔥 Hotタイマー起動</button>
+</div>
+<div id="gender-select-screen">
+  <div class="gender-select-title">どっち見るだぁ？</div>
+  <button class="gender-btn gender-btn-male" onclick="showResults('男')">🔵 男子</button>
+  <button class="gender-btn gender-btn-female" onclick="showResults('女')">🌸 女子</button>
+  <button style="background:none;border:none;color:#90caf9;font-size:30px;cursor:pointer;margin-top:10px;" onclick="showScreen('home')">← トップに戻る</button>
+</div>
+<div id="result-screen">
+  <div class="result-sticky">
+    <header id="result-header">
+      <div class="result-header-inner">
+        <div class="result-header-left">
+          <button class="header-back-btn" onclick="showScreen('gender-select')">← 戻る</button>
+        </div>
+        <div class="result-header-spacer"></div>
+        <div class="result-header-center">
+          <div class="header-title" id="result-header-title">結果一覧</div>
+        </div>
+        <div class="result-header-right">
+          <button class="header-back-btn">← 戻る</button>
+        </div>
+      </div>
+    </header>
+    <div class="summary-card" id="summary-card">
+      <div class="summary-wld">
+        <div class="summary-wld-item wld-win">
+          <div class="summary-wld-num num-win" id="sum-win">0</div>
+          <div class="summary-wld-label lbl-win">勝</div>
+        </div>
+        <div class="summary-wld-item wld-draw">
+          <div class="summary-wld-num num-draw" id="sum-draw">0</div>
+          <div class="summary-wld-label lbl-draw">分</div>
+        </div>
+        <div class="summary-wld-item wld-lose">
+          <div class="summary-wld-num num-lose" id="sum-lose">0</div>
+          <div class="summary-wld-label lbl-lose">負</div>
+        </div>
+      </div>
+      <div class="summary-score" id="sum-score">得点合計 - vs - 失点合計</div>
+    </div>
+  </div>
+  <div class="result-list" id="result-list">
+    <div class="result-loading">読み込み中だで...</div>
   </div>
 </div>
-
-<div id="special">永遠の２４歳でいたい</div>
-
-<script>
-// iOS vh対策
-function setVH() {
-  document.documentElement.style.setProperty('--vh', window.innerHeight * 0.01 + 'px');
-}
-window.addEventListener('resize', setVH);
-setVH();
-
-let duration = 45000;
-let remaining = duration;
-let running = false;
-let ended = false;
-let startTime = 0;
-
-const timerEl = document.getElementById("timer");
-const msgEl = document.getElementById("message");
-const specialEl = document.getElementById("special");
-const container = document.getElementById("container");
-const startBtn = document.getElementById("start");
-const resetBtn = document.getElementById("reset");
-
-// スタート
-startBtn.onclick = () => {
-  if (running || ended) return;
-  running = true;
-  startTime = Date.now();
-};
-
-// リセット
-resetBtn.onclick = () => {
-  running = false;
-  ended = false;
-  remaining = duration;
-  updateDisplay();
-  document.body.style.background = "white";
-  msgEl.innerText = "モップ担当の仲間に声掛けしてからスタート！！";
-};
-
-// 更新
-function update() {
-  if (running) {
-    let elapsed = Date.now() - startTime;
-    remaining = duration - elapsed;
-
-    if (remaining <= 0) {
-      remaining = 0;
-      running = false;
-      ended = true;
-    }
-  }
-
-  // 特別モード
-  let isSpecial = (remaining <= 24990 && remaining >= 24000);
-
-  container.style.opacity = isSpecial ? 0 : 1;
-  specialEl.style.opacity = isSpecial ? 1 : 0;
-
-  startBtn.disabled = isSpecial;
-  resetBtn.disabled = isSpecial;
-
-  updateDisplay();
-  requestAnimationFrame(update);
-}
-
-// 表示
-function updateDisplay() {
-  let t = remaining;
-
-  let sec = Math.floor(t / 1000);
-  let ms = Math.floor((t % 1000) / 10);
-
-  timerEl.innerText =
-    sec.toString().padStart(2, "0") + "." +
-    ms.toString().padStart(2, "0");
-
-  if (t <= 0) {
-    document.body.style.background = "red";
-    msgEl.innerText = "ブザーを鳴らして、『タイムアウト終了です』";
-  } else if (t <= 10000) {
-    document.body.style.background = "yellow";
-    msgEl.innerText = "ブザーを鳴らして、『タイムアウト終了１０秒前です』";
-  } else if (t <= 35000) {
-    document.body.style.background = "white";
-    msgEl.innerText = "審判、ベンチの動きをチェック！！";
-  } else {
-    document.body.style.background = "white";
-    msgEl.innerText = "ペイントエリアだけモップしているかチェック！！";
-  }
-}
-
-// 背景アニメ
-const bg = document.getElementById("bgText");
-let x = 100, y = 100;
-let vx = 2.2, vy = 1.6;
-let scaleT = 0;
-
-function animateBg() {
-  x += vx;
-  y += vy;
-
-  if (x < 0 || x > window.innerWidth - 200) vx *= -1;
-  if (y < 0 || y > window.innerHeight - 100) vy *= -1;
-
-  scaleT += 0.02;
-  let scale = 1 + Math.sin(scaleT) * 0.25;
-
-  bg.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
-
-  requestAnimationFrame(animateBg);
-}
-
-update();
-animateBg();
-</script>
-
+<div id="record-header-wrap" style="display:none;">
+  <div class="top-fixed">
+    <header id="record-header">
+      <button class="header-back-btn" onclick="resetAll()">戻る</button>
+      <div class="header-title">🏀 試合記録</div>
+      <button class="header-save-btn" id="save-btn" onclick="onSave()">保存</button>
+    </header>
+    <div class="scoreboard" id="scoreboard">
+      <div class="sb-block">
+        <div class="sb-label">得点</div>
+        <div class="sb-num" id="sb-score">0</div>
+      </div>
+      <div class="sb-colon">:</div>
+      <div class="sb-block">
+        <div class="sb-label">失点</div>
+        <div class="sb-num" id="sb-concede">0</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="input-screen" style="display:none;">
+  <div class="section" id="sec-top">
+    <div class="top-row">
+      <div class="top-row-half">
+        <div class="field-label" id="lbl-gender">男 / 女</div>
+        <div class="radio-group" id="radio-group">
+          <label id="label-male" class="selected" onclick="selectGender('男')">
+            <input type="radio" name="gender" value="男" checked><span>男</span>
+          </label>
+          <label id="label-female" onclick="selectGender('女')">
+            <input type="radio" name="gender" value="女"><span>女</span>
+          </label>
+        </div>
+      </div>
+      <div class="top-row-half">
+        <div class="field-label" id="lbl-date">日付</div>
+        <div class="date-display-wrap">
+          <div class="date-display-label" id="date-label">読込中...</div>
+          <input type="date" class="date-input-hidden" id="date-input" onchange="onDateChange()">
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="section" id="sec-opponent">
+    <div class="field-wrap">
+      <div class="field-label" id="lbl-opponent">対戦相手</div>
+      <select id="opponent-select" onchange="onSelectChange()">
+        <option value="__new__">＋ 新規入力</option>
+        <option value="" disabled>──────────</option>
+      </select>
+      <div class="new-input-wrap" id="new-input-wrap">
+        <input type="text" id="new-opponent" placeholder="対戦相手名を入力してごしない">
+      </div>
+    </div>
+  </div>
+  <div class="section" id="sec-score">
+    <div class="score-row" id="score-row-score">
+      <div class="score-row-label">得点</div>
+      <div class="digit-group">
+        <div class="digit-unit">
+          <div class="digit-pos-label" id="lbl-sh">百の位</div>
+          <div class="digit-btns">
+            <button class="pm-btn" id="btn-sh-p" onclick="changeDigit('score','h',1)">＋</button>
+            <div class="digit-val zero" id="score-h"> </div>
+            <div class="pm-btn-spacer"></div>
+          </div>
+        </div>
+        <div class="digit-unit">
+          <div class="digit-pos-label" id="lbl-st">十の位</div>
+          <div class="digit-btns">
+            <button class="pm-btn" id="btn-st-p" onclick="changeDigit('score','t',1)">＋</button>
+            <div class="digit-val" id="score-t">0</div>
+            <button class="pm-btn" id="btn-st-m" onclick="changeDigit('score','t',-1)">－</button>
+          </div>
+        </div>
+        <div class="digit-unit">
+          <div class="digit-pos-label" id="lbl-su">一の位</div>
+          <div class="digit-btns">
+            <button class="pm-btn" id="btn-su-p" onclick="changeDigit('score','u',1)">＋</button>
+            <div class="digit-val" id="score-u">0</div>
+            <button class="pm-btn" id="btn-su-m" onclick="changeDigit('score','u',-1)">－</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="score-row" id="score-row-concede">
+      <div class="score-row-label">失点</div>
+      <div class="digit-group">
+        <div class="digit-unit">
+          <div class="digit-pos-label" id="lbl-ch">百の位</div>
+          <div class="digit-btns">
+            <button class="pm-btn" id="btn-ch-p" onclick="changeDigit('concede','h',1)">＋</button>
+            <div class="digit-val zero" id="concede-h"> </div>
+            <div class="pm-btn-spacer"></div>
+          </div>
+        </div>
+        <div class="digit-unit">
+          <div class="digit-pos-label" id="lbl-ct">十の位</div>
+          <div class="digit-btns">
+            <button class="pm-btn" id="btn-ct-p" onclick="changeDigit('concede','t',1)">＋</button>
+            <div class="digit-val" id="concede-t">0</div>
+            <button class="pm-btn" id="btn-ct-m" onclick="changeDigit('concede','t',-1)">－</button>
+          </div>
+        </div>
+        <div class="digit-unit">
+          <div class="digit-pos-label" id="lbl-cu">一の位</div>
+          <div class="digit-btns">
+            <button class="pm-btn" id="btn-cu-p" onclick="changeDigit('concede','u',1)">＋</button>
+            <div class="digit-val" id="concede-u">0</div>
+            <button class="pm-btn" id="btn-cu-m" onclick="changeDigit('concede','u',-1)">－</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="section" id="sec-photo">
+    <div class="field-label" id="lbl-photo">写真（必須）</div>
+    <div class="photo-btns">
+      <button class="photo-btn photo-btn-camera" id="btn-camera" onclick="document.getElementById('file-camera').click()">📷 写真を撮る</button>
+      <button class="photo-btn photo-btn-gallery" id="btn-gallery" onclick="document.getElementById('file-gallery').click()">🖼 ファイルから選択</button>
+    </div>
+    <input type="file" id="file-camera" accept="image/*" capture="environment" style="display:none" onchange="onPhotoSelected(event)">
+    <input type="file" id="file-gallery" accept="image/*" style="display:none" onchange="onPhotoSelected(event)">
+    <div class="thumb-wrap" id="thumb-wrap">
+      <img id="thumb-img" src="" alt="preview">
+    </div>
+  </div>
+</div>
+<div id="complete-screen">
+  <div class="complete-card">
+    <div class="complete-icon">🏆</div>
+    <div class="complete-title">保存できたみたいだで！</div>
+    <div class="complete-row"><span class="complete-label">男/女</span><span class="complete-val" id="res-gender"></span></div>
+    <div class="complete-row"><span class="complete-label">日付</span><span class="complete-val" id="res-date"></span></div>
+    <div class="complete-row"><span class="complete-label">対戦相手</span><span class="complete-val" id="res-opponent"></span></div>
+    <div class="complete-row"><span class="complete-label">得点</span><span class="complete-val" id="res-score"></span></div>
+    <div class="complete-row"><span class="complete-label">失点</span><span class="complete-val" id="res-concede"></span></div>
+    <div class="complete-row"><span class="complete-label">得失点差</span><span class="complete-val" id="res-diff"></span></div>
+    <div class="complete-row"><span class="complete-label">勝敗</span><span class="complete-val" id="res-result"></span></div>
+    <button class="reset-btn" onclick="resetAll()">🔄 初期画面に戻る</button>
+  </div>
+</div>
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-title">⚠️ 同じファイル名があります</div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-btns">
+      <button class="modal-btn yes" onclick="modalYes()">YES</button>
+      <button class="modal-btn no"  onclick="modalNo()">NO</button>
+    </div>
+  </div>
+</div>
+<div class="saving-overlay" id="saving-overlay">
+  <div class="saving-popup">
+    <div class="saving-icon" id="saving-icon">⏳</div>
+    <div class="saving-message" id="saving-message">保存中だで...</div>
+    <div class="saving-sub" id="saving-sub">しばらく待っとってごしない</div>
+    <div class="progress-bar-wrap" id="progress-bar-wrap">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <div class="saving-error-msg" id="saving-error-msg"></div>
+    <button class="saving-close-btn" id="saving-close-btn" onclick="closeSavingPopup()">閉じる</button>
+  </div>
+</div>
+<div id="hot-screen">
+  <div style="position:sticky;top:0;z-index:50;width:100%;">
+    <header class="hot">
+      <button class="header-back-btn" onclick="leaveHot()">← 戻る</button>
+      <div class="header-title">🔥 ホットタイマー</div>
+      <div style="width:120px;"></div>
+    </header>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;position:relative;">
+    <img id="hot-bg-photo" src="" alt="">
+    <div class="hotheart" id="hotheart">
+      <div class="hotheart-inner">ホットハート</div>
+    </div>
+    <div id="hot-main-display">
+      <div id="hot-top-message">モップ担当に声をかけて</div>
+      <div id="hot-timer-display">45.00</div>
+      <div id="hot-age-text">ホンマに２４歳！！！</div>
+      <div id="hot-start-text">スタートを押してね</div>
+      <div id="hot-warning-text">ブザー鳴らして「10秒前です！」</div>
+      <div id="hot-ending-text">ブザー鳴らして「タイムアウト終了です！」</div>
+    </div>
+    <div class="hot-controls">
+      <button class="hot-btn" id="hot-start-stop-btn" onclick="hotToggleTimer()">スタート</button>
+      <button class="hot-btn" id="hot-reset-btn" onclick="hotResetTimer()">リセット</button>
+    </div>
+  </div>
+</div>
+<script src="app.js"></script>
 </body>
 </html>
