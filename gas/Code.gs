@@ -1,29 +1,15 @@
 /**
- * GitHub Pages（フロントエンド）から呼び出すGAS APIバックエンド。
+ * 「試合記録」アプリのGAS APIバックエンド。
  * このファイルの内容をまるごとGASプロジェクトの Code.gs に貼り付けて使用してください。
  *
- * データストアとして、このスクリプトに紐づく（またはIDで指定した）
- * スプレッドシートの「Data」シートを使用します。
+ * フロントエンド（index.html/app.js）はGitHub Pagesで配信し、
+ * このスクリプトはJSON専用APIとしてdoGet/doPostのみを提供します。
  */
 
-// 特定のスプレッドシートを使う場合はIDを設定してください。
-// 空のままにすると、コンテナバインド（スクリプトエディタをスプレッドシートから開いた場合）の
-// アクティブなスプレッドシートを使用します。
-const SPREADSHEET_ID = "";
-const SHEET_NAME = "Data";
-
-function getSheet_() {
-  const ss = SPREADSHEET_ID
-    ? SpreadsheetApp.openById(SPREADSHEET_ID)
-    : SpreadsheetApp.getActiveSpreadsheet();
-
-  let sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
-    sheet.appendRow(["id", "name", "message", "createdAt"]);
-  }
-  return sheet;
-}
+const SPREADSHEET_ID = "1_TLsBoEotkp768S7xIzcrKpRJkqW1EnXUn6oM4NFpp4";
+const DRIVE_FOLDER_ID = "1fTcV4B9C_rpq4LAHPwF4vOBPGr7UgSPg";
+const SHEET_NAME = "記録";
+const BG_SHEET_NAME = "背景写真";
 
 function jsonResponse_(payload) {
   return ContentService
@@ -31,54 +17,35 @@ function jsonResponse_(payload) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-function listItems_() {
-  const sheet = getSheet_();
-  const values = sheet.getDataRange().getValues();
-  const rows = values.slice(1); // ヘッダー行を除く
-
-  const data = rows
-    .filter((row) => row[0])
-    .map((row) => ({
-      id: row[0],
-      name: row[1],
-      message: row[2],
-      createdAt: row[3],
-    }))
-    .reverse(); // 新しい投稿を先頭に
-
-  return data;
+function ok_(data) {
+  return jsonResponse_({ status: "success", data: data });
 }
 
-function addItem_(name, message) {
-  const sheet = getSheet_();
-  const id = Utilities.getUuid();
-  const createdAt = new Date().toISOString();
-  sheet.appendRow([id, name, message, createdAt]);
-  return { id, name, message, createdAt };
+function errRes_(message) {
+  return jsonResponse_({ status: "error", message: message });
 }
 
 /**
  * GET リクエスト用
- * 例: {WebアプリURL}?action=list
+ * 例: {WebアプリURL}?action=getResults&gender=男
  */
 function doGet(e) {
   try {
-    const action = (e.parameter && e.parameter.action) || "list";
-
-    if (action === "list") {
-      return jsonResponse_({ status: "success", data: listItems_() });
-    }
-
-    return jsonResponse_({ status: "error", message: `不明なaction: ${action}` });
+    const action = e.parameter.action;
+    if (action === "imageIds") return ok_(getImageIds());
+    if (action === "getOpponentList") return ok_(getOpponentList());
+    if (action === "getResults") return ok_(getResults(e.parameter.gender));
+    if (action === "checkImageDuplicate") return ok_(checkImageDuplicate(e.parameter.fileName));
+    return errRes_("不明なaction: " + action);
   } catch (err) {
-    return jsonResponse_({ status: "error", message: err.message });
+    return errRes_(err.message);
   }
 }
 
 /**
  * POST リクエスト用
  * リクエストボディ(JSON文字列)の例:
- * { "action": "add", "name": "山田太郎", "message": "こんにちは" }
+ * { "action": "addOpponent", "name": "〇〇高校" }
  *
  * フロントエンド側は Content-Type: text/plain で送信してください。
  * application/json を指定するとブラウザがCORSプリフライト(OPTIONS)を送信しますが、
@@ -88,21 +55,131 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     const action = body.action;
-
-    if (action === "add") {
-      const name = String(body.name || "").trim();
-      const message = String(body.message || "").trim();
-
-      if (!name || !message) {
-        return jsonResponse_({ status: "error", message: "name と message は必須です" });
-      }
-
-      const item = addItem_(name, message);
-      return jsonResponse_({ status: "success", data: item });
-    }
-
-    return jsonResponse_({ status: "error", message: `不明なaction: ${action}` });
+    if (action === "addOpponent") return ok_(addOpponent(body.name));
+    if (action === "uploadImageAndSave") return ok_(uploadImageAndSave(body));
+    return errRes_("不明なaction: " + action);
   } catch (err) {
-    return jsonResponse_({ status: "error", message: err.message });
+    return errRes_(err.message);
   }
+}
+
+function getImageIds() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const bgSheet = ss.getSheetByName(BG_SHEET_NAME);
+  if (!bgSheet) return [];
+  const lastRow = bgSheet.getLastRow();
+  if (lastRow === 0) return [];
+  const values = bgSheet.getRange(1, 1, lastRow, 1).getValues();
+  return values.map(row => row[0]).filter(id => id !== "");
+}
+
+function getOpponentList() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const mRange = sheet.getRange(2, 13, Math.min(lastRow, 100) - 1, 2);
+  const values = mRange.getValues();
+  const list = values
+    .filter(row => row[0] !== "")
+    .map(row => ({ name: row[0], count: Number(row[1]) || 0 }));
+  list.sort((a, b) => b.count - a.count);
+  return list.map(item => item.name);
+}
+
+function addOpponent(name) {
+  const trimmed = String(name || "").trim();
+  if (!trimmed) throw new Error("対戦相手名が空です");
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  const mValues = sheet.getRange(2, 13, 99, 1).getValues();
+  const existing = mValues.map(r => r[0].toString().trim());
+  if (existing.includes(trimmed)) return { added: false };
+  const emptyIdx = existing.findIndex(v => v === "");
+  if (emptyIdx === -1) throw new Error("リストが満杯だぞな");
+  sheet.getRange(emptyIdx + 2, 13).setValue(trimmed);
+  return { added: true };
+}
+
+function checkImageDuplicate(fileName) {
+  const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  return folder.getFilesByName(fileName).hasNext();
+}
+
+function uploadImageAndSave(payload) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  const decoded = Utilities.base64Decode(payload.base64);
+  const mimeType = (payload.mimeType === "image/heic" || payload.mimeType === "image/heif")
+    ? "image/jpeg" : payload.mimeType;
+  const blob = Utilities.newBlob(decoded, mimeType, payload.fileName);
+  const file = folder.createFile(blob.setName(payload.fileName));
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const photoUrl = "https://drive.google.com/file/d/" + file.getId() + "/view";
+
+  const aValues = sheet.getRange(2, 1, sheet.getMaxRows() - 1, 1).getValues();
+  let lastDataRow = 0;
+  for (let i = 0; i < aValues.length; i++) {
+    if (aValues[i][0] !== "" && aValues[i][0] !== null) {
+      lastDataRow = i + 1;
+    }
+  }
+  const newId = lastDataRow + 1;
+  const writeRow = lastDataRow + 2;
+
+  const score = parseInt(payload.score);
+  const concede = parseInt(payload.concede);
+  const diff = score - concede;
+  let result = "引き分け";
+  if (score > concede) result = "勝ち";
+  else if (score < concede) result = "負け";
+
+  sheet.getRange(writeRow, 1, 1, 9).setValues([[
+    newId, payload.gender, payload.date, payload.opponent,
+    score, concede, diff, result, photoUrl
+  ]]);
+
+  return { success: true };
+}
+
+function getResults(gender) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const range = sheet.getRange(2, 1, lastRow - 1, 9);
+  const values = range.getValues();
+  const filtered = values
+    .filter(row => row[0] !== "" && row[1] === gender)
+    .map(row => {
+      let dateStr = "-";
+      const rawDate = row[2];
+      if (rawDate instanceof Date && !isNaN(rawDate)) {
+        dateStr = (rawDate.getMonth() + 1) + "月" + rawDate.getDate() + "日";
+      } else if (typeof rawDate === "string" && rawDate.trim() !== "") {
+        const d = new Date(rawDate);
+        if (!isNaN(d)) {
+          dateStr = (d.getMonth() + 1) + "月" + d.getDate() + "日";
+        } else {
+          dateStr = rawDate;
+        }
+      } else if (typeof rawDate === "number") {
+        const d = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
+        dateStr = (d.getMonth() + 1) + "月" + d.getDate() + "日";
+      }
+      return {
+        id: row[0],
+        gender: row[1],
+        date: dateStr,
+        opponent: row[3],
+        score: row[4],
+        concede: row[5],
+        diff: row[6],
+        result: row[7],
+        photoUrl: row[8]
+      };
+    });
+  filtered.reverse();
+  return filtered;
 }
