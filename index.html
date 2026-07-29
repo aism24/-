@@ -2,222 +2,55 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
-<title>45秒タイマー</title>
-
-<!-- iOS PWA -->
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-
-<style>
-:root {
-  --vh: 1vh;
-}
-
-body {
-  margin: 0;
-  overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-  height: calc(var(--vh) * 100);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: white;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-/* 背景 */
-#bgText {
-  position: fixed;
-  font-size: 12vw;
-  opacity: 0.07;
-  pointer-events: none;
-  white-space: nowrap;
-  font-weight: bold;
-  background: linear-gradient(45deg, #ff6ec4, #7873f5);
-  -webkit-background-clip: text;
-  color: transparent;
-  z-index: 0;
-}
-
-/* UI */
-#container {
-  text-align: center;
-  z-index: 10;
-  transition: opacity 0.3s;
-}
-
-#message {
-  font-size: 4vw;
-  margin-bottom: 2vh;
-}
-
-#timer {
-  font-size: 18vw;
-  font-weight: bold;
-}
-
-button {
-  font-size: 6vw;
-  margin: 1vh;
-  padding: 2vh 4vw;
-  border-radius: 10px;
-  border: none;
-}
-
-button:active {
-  transform: scale(0.95);
-}
-
-/* 特別 */
-#special {
-  position: fixed;
-  font-size: 10vw;
-  opacity: 0;
-  transition: opacity 0.3s;
-  z-index: 20;
-  text-align: center;
-}
-
-/* 横画面 */
-@media (orientation: landscape) {
-  #message { font-size: 2.5vw; }
-  #timer { font-size: 12vw; }
-  button { font-size: 3vw; }
-}
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAS API サンプルフロントエンド</title>
+<link rel="stylesheet" href="style.css">
 </head>
-
 <body>
 
-<div id="bgText">ホットハート</div>
+<div class="app">
+  <header class="app__header">
+    <h1>メッセージボード</h1>
+    <p>GitHub Pages（フロントエンド）&harr; GAS API（バックエンド）連携サンプル</p>
+  </header>
 
-<div id="container">
-  <div id="message">モップ担当の仲間に声掛けしてからスタート！！</div>
-  <div id="timer">45.00</div>
-  <div>
-    <button id="start">スタート</button>
-    <button id="reset">リセット</button>
+  <div id="errorBanner" class="error-banner" role="alert">
+    <span id="errorMessage"></span>
+    <button type="button" id="errorClose" aria-label="閉じる">&times;</button>
   </div>
+
+  <section class="card">
+    <h2>投稿する</h2>
+    <form id="postForm" novalidate>
+      <div class="form-field">
+        <label for="name">お名前</label>
+        <input type="text" id="name" name="name" maxlength="40" required>
+      </div>
+      <div class="form-field">
+        <label for="message">メッセージ</label>
+        <textarea id="message" name="message" rows="3" maxlength="500" required></textarea>
+      </div>
+      <button type="submit" class="btn" id="submitBtn">
+        <span id="submitSpinner" class="spinner" style="display:none;"></span>
+        <span id="submitLabel">送信する</span>
+      </button>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="status-row">
+      <h2 style="margin:0;flex:1;">投稿一覧</h2>
+      <button type="button" class="btn btn--ghost" id="reloadBtn">再読み込み</button>
+    </div>
+    <div id="loading" class="status-row" style="display:none;">
+      <span class="spinner spinner--muted"></span>
+      <span>読み込み中...</span>
+    </div>
+    <ul id="list" class="list"></ul>
+    <div id="emptyState" class="empty-state" style="display:none;">まだ投稿がありません。</div>
+  </section>
 </div>
 
-<div id="special">永遠の２４歳でいたい</div>
-
-<script>
-// iOS vh対策
-function setVH() {
-  document.documentElement.style.setProperty('--vh', window.innerHeight * 0.01 + 'px');
-}
-window.addEventListener('resize', setVH);
-setVH();
-
-let duration = 45000;
-let remaining = duration;
-let running = false;
-let ended = false;
-let startTime = 0;
-
-const timerEl = document.getElementById("timer");
-const msgEl = document.getElementById("message");
-const specialEl = document.getElementById("special");
-const container = document.getElementById("container");
-const startBtn = document.getElementById("start");
-const resetBtn = document.getElementById("reset");
-
-// スタート
-startBtn.onclick = () => {
-  if (running || ended) return;
-  running = true;
-  startTime = Date.now();
-};
-
-// リセット
-resetBtn.onclick = () => {
-  running = false;
-  ended = false;
-  remaining = duration;
-  updateDisplay();
-  document.body.style.background = "white";
-  msgEl.innerText = "モップ担当の仲間に声掛けしてからスタート！！";
-};
-
-// 更新
-function update() {
-  if (running) {
-    let elapsed = Date.now() - startTime;
-    remaining = duration - elapsed;
-
-    if (remaining <= 0) {
-      remaining = 0;
-      running = false;
-      ended = true;
-    }
-  }
-
-  // 特別モード
-  let isSpecial = (remaining <= 24990 && remaining >= 24000);
-
-  container.style.opacity = isSpecial ? 0 : 1;
-  specialEl.style.opacity = isSpecial ? 1 : 0;
-
-  startBtn.disabled = isSpecial;
-  resetBtn.disabled = isSpecial;
-
-  updateDisplay();
-  requestAnimationFrame(update);
-}
-
-// 表示
-function updateDisplay() {
-  let t = remaining;
-
-  let sec = Math.floor(t / 1000);
-  let ms = Math.floor((t % 1000) / 10);
-
-  timerEl.innerText =
-    sec.toString().padStart(2, "0") + "." +
-    ms.toString().padStart(2, "0");
-
-  if (t <= 0) {
-    document.body.style.background = "red";
-    msgEl.innerText = "ブザーを鳴らして、『タイムアウト終了です』";
-  } else if (t <= 10000) {
-    document.body.style.background = "yellow";
-    msgEl.innerText = "ブザーを鳴らして、『タイムアウト終了１０秒前です』";
-  } else if (t <= 35000) {
-    document.body.style.background = "white";
-    msgEl.innerText = "審判、ベンチの動きをチェック！！";
-  } else {
-    document.body.style.background = "white";
-    msgEl.innerText = "ペイントエリアだけモップしているかチェック！！";
-  }
-}
-
-// 背景アニメ
-const bg = document.getElementById("bgText");
-let x = 100, y = 100;
-let vx = 2.2, vy = 1.6;
-let scaleT = 0;
-
-function animateBg() {
-  x += vx;
-  y += vy;
-
-  if (x < 0 || x > window.innerWidth - 200) vx *= -1;
-  if (y < 0 || y > window.innerHeight - 100) vy *= -1;
-
-  scaleT += 0.02;
-  let scale = 1 + Math.sin(scaleT) * 0.25;
-
-  bg.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
-
-  requestAnimationFrame(animateBg);
-}
-
-update();
-animateBg();
-</script>
-
+<script src="app.js"></script>
 </body>
 </html>
