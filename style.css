@@ -305,78 +305,86 @@
     .result-photo-btn:active { opacity: 0.8; }
 
 
-  /* ===== レスポンシブ対応（全て固定px値） ===== */
+  /* ===== レスポンシブ対応 =====
+     固定pxではなくclamp()で画面幅に連続的に追従させる。
+     携帯(〜599px)は大きめタップ領域を維持しつつ狭い幅(320〜375px)でも
+     画面からはみ出さないよう下限を設定。600px以上はタブレット/PC向けに
+     段階的にコンパクト化する。幅1025px以上はさらにbody自体を640px幅に
+     収めて中央配置する（PC横幅いっぱいに間延びさせない）。 */
 
 
-  /* 携帯縦（〜599px）: 元のサイズを明示固定 */
+  /* 携帯縦（〜599px）: 320〜599pxの範囲でclampして狭い機種でも収まるようにする */
   @media (max-width: 599px) {
-    body { font-size: 16px; }
-    #header { height: 100px; padding: 0 20px; }
-    .header-title { font-size: 20px; }
-    .header-back-btn { padding: 10px 18px; font-size: 22px; border-radius: 10px; }
-    .header-save-btn { padding: 12px 22px; font-size: 24px; border-radius: 12px; }
-    .header-spacer { width: 44px; }
-    .home-title { font-size: 52px; }
-    .home-subtitle { font-size: 30px; }
-    .home-btn { font-size: 42px; padding: 40px 20px; }
-    .gender-select-title { font-size: 44px; }
-    .gender-btn { font-size: 48px; padding: 44px 20px; }
-    .field-label { font-size: 36px; }
-    .select-btn { font-size: 34px; padding: 20px 10px; }
-    .date-display { font-size: 30px; padding: 20px 14px; }
-    .opponent-input { font-size: 34px; padding: 22px 14px; }
+    body { font-size: 15px; }
+    header { height: clamp(64px, 16vw, 96px); padding: 0 clamp(12px, 4vw, 20px); }
+    .header-title { font-size: clamp(20px, 6vw, 32px); }
+    .header-back-btn { padding: clamp(8px, 2.5vw, 14px) clamp(14px, 4vw, 24px); font-size: clamp(16px, 4.5vw, 26px); border-radius: 10px; }
+    .header-save-btn { padding: clamp(10px, 3vw, 16px) clamp(18px, 5vw, 28px); font-size: clamp(16px, 5vw, 28px); border-radius: 12px; }
+    .header-spacer { width: clamp(40px, 12vw, 90px); }
+    .scoreboard { padding: clamp(12px, 4vw, 20px) clamp(10px, 3vw, 20px); }
+    .sb-label { font-size: clamp(16px, 4.5vw, 26px); }
+    .sb-num { font-size: clamp(44px, 14vw, 80px); min-width: 60px; }
+    .sb-colon { font-size: clamp(36px, 12vw, 70px); padding: 0 10px; padding-top: 20px; }
+    .home-title { font-size: clamp(30px, 9vw, 44px); }
+    .home-subtitle { font-size: clamp(16px, 4.5vw, 24px); }
+    .home-btn { font-size: clamp(22px, 6.5vw, 34px); padding: clamp(20px, 6vw, 32px) clamp(14px, 4vw, 20px); }
+    .gender-select-title { font-size: clamp(22px, 6.5vw, 34px); }
+    .gender-btn { font-size: clamp(24px, 7vw, 36px); padding: clamp(22px, 6.5vw, 34px) clamp(14px, 4vw, 20px); }
+    .field-label { font-size: clamp(18px, 5vw, 28px); }
+    select { font-size: clamp(16px, 4.5vw, 26px); padding: clamp(12px, 4vw, 18px) clamp(38px, 10vw, 46px) clamp(12px, 4vw, 18px) clamp(12px, 4vw, 16px); }
+    .date-display-label { font-size: clamp(16px, 4.5vw, 24px); padding: clamp(12px, 4vw, 16px) clamp(10px, 3vw, 14px); }
+    .new-input-wrap input { font-size: clamp(16px, 4.5vw, 26px); padding: clamp(12px, 4vw, 18px) clamp(10px, 3vw, 16px); }
     .score-row { flex-direction: column; align-items: stretch; gap: 8px; }
-    .score-row-label { font-size: 26px; width: auto; }
+    .score-row-label { font-size: clamp(18px, 5vw, 24px); width: auto; }
     .digit-group { gap: 4px; }
     .digit-btns { gap: 2px; }
-    .pm-btn { width: clamp(28px, 9vw, 40px); height: clamp(28px, 9vw, 40px); font-size: clamp(18px, 5vw, 26px); border-radius: 8px; }
-    .pm-btn-spacer { width: clamp(28px, 9vw, 40px); height: clamp(28px, 9vw, 40px); }
-    .digit-val { font-size: clamp(22px, 6vw, 32px); min-width: 24px; }
-    .digit-pos-label { font-size: 13px; }
-    .photo-btn { font-size: 36px; padding: 28px; }
-    .thumb-wrap { height: 260px; }
-    .saving-message { font-size: 36px; }
-    .saving-sub { font-size: 26px; }
-    .saving-icon { font-size: 64px; }
-    .complete-title { font-size: 48px; }
-    .complete-icon { font-size: 96px; }
-    .complete-row { font-size: 36px; padding: 22px 0; }
-    .reset-btn { font-size: 40px; padding: 28px; }
-    .modal-title { font-size: 36px; }
-    .modal-body { font-size: 32px; }
-    .modal-btn { font-size: 36px; padding: 26px; }
-    .result-header-inner { height: 100px; }
-    .result-header-center .header-title { font-size: 40px; }
-    .summary-wld-num.num-win  { font-size: 128px; }
-    .summary-wld-num.num-lose { font-size: 128px; }
-    .summary-wld-num.num-draw { font-size: 48px; }
-    .summary-wld-label.lbl-win  { font-size: 52px; }
-    .summary-wld-label.lbl-lose { font-size: 52px; }
-    .summary-score { font-size: 34px; }
-    .result-row { padding: 20px 18px; }
-    .result-date { font-size: 28px; width: 120px; }
-    .result-opponent { font-size: 30px; }
-    .result-score { font-size: 30px; }
-    .result-badge { font-size: 26px; padding: 6px 14px; }
-    .result-loading { font-size: 34px; }
-    .result-photo-btn { font-size: 26px; padding: 8px 16px; }
-    .sb-label { font-size: 36px; }
-    .sb-time-block { font-size: 100px; }
-    .sb-colon { font-size: 90px; }
-    #hot-timer-display { font-size: clamp(2.8rem, 15vw, 5rem); letter-spacing: 4px; }
-    #hot-start-text { font-size: 2.6rem; }
-    #hot-age-text { font-size: 2.6rem; }
-    #hot-top-message { font-size: 2rem; }
-    #hot-warning-text { font-size: 1.4rem; }
-    #hot-ending-text { font-size: 2.2rem; }
-    .hot-btn { font-size: 1.7rem; padding: 18px 45px; }
+    .pm-btn { width: clamp(32px, 10vw, 48px); height: clamp(32px, 10vw, 48px); font-size: clamp(20px, 5.5vw, 28px); border-radius: 8px; }
+    .pm-btn-spacer { width: clamp(32px, 10vw, 48px); height: clamp(32px, 10vw, 48px); }
+    .digit-val { font-size: clamp(24px, 7vw, 36px); min-width: 26px; }
+    .digit-pos-label { font-size: clamp(11px, 3vw, 15px); }
+    .photo-btn { font-size: clamp(18px, 5vw, 26px); padding: clamp(16px, 4.5vw, 24px); }
+    .thumb-wrap { height: clamp(140px, 40vw, 220px); }
+    .saving-message { font-size: clamp(18px, 5vw, 26px); }
+    .saving-sub { font-size: clamp(14px, 4vw, 20px); }
+    .saving-icon { font-size: clamp(36px, 10vw, 52px); }
+    .complete-title { font-size: clamp(24px, 7vw, 34px); }
+    .complete-icon { font-size: clamp(48px, 14vw, 72px); }
+    .complete-row { font-size: clamp(18px, 5vw, 26px); padding: clamp(14px, 4vw, 20px) 0; }
+    .reset-btn { font-size: clamp(20px, 5.5vw, 28px); padding: clamp(18px, 5vw, 24px); }
+    .modal-title { font-size: clamp(20px, 5.5vw, 28px); }
+    .modal-body { font-size: clamp(18px, 5vw, 24px); }
+    .modal-btn { font-size: clamp(18px, 5vw, 26px); padding: clamp(16px, 4.5vw, 22px); }
+    .result-header-inner { height: clamp(64px, 16vw, 96px); }
+    .result-header-spacer { width: clamp(16px, 5vw, 50px); }
+    .result-header-center .header-title { font-size: clamp(20px, 5.5vw, 28px); }
+    .summary-wld-num.num-win  { font-size: clamp(60px, 18vw, 100px); }
+    .summary-wld-num.num-lose { font-size: clamp(60px, 18vw, 100px); }
+    .summary-wld-num.num-draw { font-size: clamp(26px, 8vw, 40px); }
+    .summary-wld-label.lbl-win  { font-size: clamp(26px, 7vw, 38px); }
+    .summary-wld-label.lbl-lose { font-size: clamp(26px, 7vw, 38px); }
+    .summary-wld-label.lbl-draw { font-size: clamp(12px, 3.5vw, 17px); }
+    .summary-score { font-size: clamp(16px, 4.5vw, 24px); }
+    .result-row { padding: clamp(12px, 4vw, 18px); }
+    .result-date { font-size: clamp(14px, 4vw, 20px); width: auto; flex-shrink: 0; }
+    .result-opponent { font-size: clamp(15px, 4.5vw, 22px); }
+    .result-score { font-size: clamp(15px, 4.5vw, 22px); }
+    .result-badge { font-size: clamp(13px, 3.5vw, 18px); padding: 5px 10px; }
+    .result-loading { font-size: clamp(18px, 5vw, 26px); }
+    .result-photo-btn { font-size: clamp(13px, 3.5vw, 18px); padding: 6px 12px; }
+    #hot-timer-display { font-size: clamp(3rem, 20vw, 5.5rem); letter-spacing: 4px; }
+    #hot-start-text { font-size: clamp(1.4rem, 6vw, 2.2rem); }
+    #hot-age-text { font-size: clamp(1.4rem, 6vw, 2.2rem); }
+    #hot-top-message { font-size: clamp(1.1rem, 4.5vw, 1.6rem); }
+    #hot-warning-text { font-size: clamp(0.9rem, 3.5vw, 1.2rem); }
+    #hot-ending-text { font-size: clamp(1.2rem, 5vw, 1.8rem); }
+    .hot-btn { font-size: clamp(1rem, 3.5vw, 1.4rem); padding: clamp(12px, 4vw, 18px) clamp(24px, 7vw, 40px); min-width: clamp(120px, 32vw, 170px); }
   }
 
 
   /* 携帯横・小タブレット（600px〜1024px）: しっかり縮小 */
   @media (min-width: 600px) and (max-width: 1024px) {
     body { font-size: 13px; }
-    #header { height: 58px; padding: 0 16px; }
+    header { height: 58px; padding: 0 16px; }
     .header-title { font-size: 24px; }
     .home-title { font-size: 26px; letter-spacing: 2px; }
     .home-subtitle { font-size: 16px; }
@@ -384,9 +392,9 @@
     .gender-select-title { font-size: 22px; }
     .gender-btn { font-size: 24px; padding: 22px 16px; border-radius: 14px; }
     .field-label { font-size: 17px; margin-bottom: 6px; }
-    .select-btn { font-size: 18px; padding: 10px 6px; border-radius: 10px; }
-    .date-display { font-size: 16px; padding: 10px 8px; border-radius: 10px; }
-    .opponent-input { font-size: 18px; padding: 12px 8px; border-radius: 10px; }
+    select { font-size: 18px; padding: 10px 40px 10px 6px; border-radius: 10px; }
+    .date-display-label { font-size: 16px; padding: 10px 8px; border-radius: 10px; }
+    .new-input-wrap input { font-size: 18px; padding: 12px 8px; border-radius: 10px; }
     .score-row-label { font-size: 20px; width: 60px; }
     .pm-btn { width: 52px; height: 52px; font-size: 28px; border-radius: 10px; }
     .pm-btn-spacer { width: 52px; height: 52px; }
@@ -421,7 +429,7 @@
     .result-loading { font-size: 18px; }
     .result-photo-btn { font-size: 15px; padding: 5px 10px; border-radius: 7px; }
     .sb-label { font-size: 20px; }
-    .sb-time-block { font-size: 58px; min-width: 50px; }
+    .sb-num { font-size: 58px; min-width: 50px; }
     .sb-colon { font-size: 52px; padding: 0 8px; padding-top: 14px; }
     #hot-timer-display { font-size: 7rem; }
     #hot-start-text { font-size: 2.4rem; }
@@ -434,7 +442,7 @@
   /* iPad・PC（1025px〜）: 幅640px固定・中央配置 */
   @media (min-width: 1025px) {
     body { max-width: 640px; margin: 0 auto; font-size: 13px; }
-    #header { height: 56px; padding: 0 16px; }
+    header { height: 56px; padding: 0 16px; }
     .header-title { font-size: 22px; }
     .home-title { font-size: 24px; letter-spacing: 2px; }
     .home-subtitle { font-size: 15px; }
@@ -442,9 +450,9 @@
     .gender-select-title { font-size: 20px; }
     .gender-btn { font-size: 22px; padding: 20px 16px; border-radius: 12px; }
     .field-label { font-size: 16px; margin-bottom: 6px; }
-    .select-btn { font-size: 16px; padding: 9px 6px; border-radius: 10px; }
-    .date-display { font-size: 15px; padding: 9px 8px; }
-    .opponent-input { font-size: 16px; padding: 10px 8px; }
+    select { font-size: 16px; padding: 9px 36px 9px 6px; }
+    .date-display-label { font-size: 15px; padding: 9px 8px; }
+    .new-input-wrap input { font-size: 16px; padding: 10px 8px; }
     .score-row-label { font-size: 18px; width: 55px; }
     .pm-btn { width: 46px; height: 46px; font-size: 24px; border-radius: 9px; }
     .pm-btn-spacer { width: 46px; height: 46px; }
@@ -479,7 +487,7 @@
     .result-loading { font-size: 16px; }
     .result-photo-btn { font-size: 13px; padding: 4px 9px; border-radius: 6px; }
     .sb-label { font-size: 18px; }
-    .sb-time-block { font-size: 52px; min-width: 44px; }
+    .sb-num { font-size: 52px; min-width: 44px; }
     .sb-colon { font-size: 46px; padding: 0 6px; padding-top: 12px; }
     #hot-timer-display { font-size: 6rem; }
     #hot-start-text { font-size: 2.2rem; }
