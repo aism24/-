@@ -26,7 +26,7 @@
 
 <!-- 共通ヘッダー -->
 <div id="app-header" class="app-header" style="display:none;">
-  <button class="header-back-btn" onclick="goBack()">← 戻る</button>
+  <button class="header-back-btn" id="header-back-btn" onclick="goBack()">← 戻る</button>
   <div class="header-title" id="app-header-title">タイトル</div>
   <div class="header-spacer"></div>
 </div>
@@ -180,6 +180,9 @@
       <div class="pass-top-item pass-top-item-btn">
         <button class="timer-btn timer-start" id="timer-btn" onclick="onTimerButton()">▶ スタート</button>
       </div>
+      <div class="pass-top-item pass-top-item-btn">
+        <button class="pass-submit-btn" id="pi-submit-btn" onclick="submitPass()" disabled>✅ このパスを記録(ストップ後に押せます)</button>
+      </div>
     </div>
 
     <div class="field-row-group">
@@ -198,7 +201,6 @@
     </div>
     <div class="field-label small">備考</div>
     <input type="text" id="pi-note" placeholder="任意">
-    <button class="save-btn full-btn" id="pi-submit-btn" onclick="submitPass()" disabled>✅ このパスを記録(ストップ後に押せます)</button>
   </div>
 
   <div class="section" id="pass-list-section">
@@ -214,14 +216,14 @@
   </div>
 
   <div class="section" id="layer-diagram-section">
-    <div class="field-label small">積層図 <span class="req">必須</span></div>
+    <div class="field-label small">積層図</div>
     <button class="photo-btn full-btn" onclick="document.getElementById('rec-photo-layer').click()">⚡ 積層図を撮る</button>
     <input type="file" id="rec-photo-layer" accept="image/*" capture="environment" style="display:none" onchange="onPhotoSelected(event,'layerDiagram')">
     <div id="rec-photo-status" class="photo-status"></div>
   </div>
 
   <div class="section" id="complete-section">
-    <button class="finish-btn full-btn" id="complete-btn" onclick="onCompleteJoint()" disabled>🏁 溶接完了・スプレッドシートへ記録する(積層図撮影後に押せます)</button>
+    <button class="finish-btn full-btn" id="complete-btn" onclick="onCompleteJoint()">🏁 溶接完了・スプレッドシートへ記録する</button>
   </div>
 
   <div class="section" id="pdf-section" style="display:none;">
@@ -254,7 +256,7 @@
   <div id="master-manage-body"><div class="loading-text">読み込み中...</div></div>
 </div>
 
-<!-- 履歴詳細(閲覧のみ) -->
+<!-- 履歴詳細(閲覧・編集) -->
 <div id="joint-view-screen" class="screen" style="display:none;">
   <div class="joint-summary" id="view-joint-summary"></div>
   <div class="section">
@@ -262,14 +264,23 @@
     <div class="pass-table-wrap">
       <table class="pass-table" id="view-pass-table">
         <thead><tr>
-          <th>#</th><th>層</th><th>電流</th><th>電圧</th><th>アーク</th><th>温度</th><th>判定</th>
+          <th>#</th><th>層</th><th>電流</th><th>電圧</th><th>アーク</th><th>入熱</th><th>温度</th><th>判定</th>
         </tr></thead>
         <tbody id="view-pass-table-body"></tbody>
       </table>
     </div>
   </div>
+  <div class="section" id="view-layer-diagram-section">
+    <div class="field-label small">積層図</div>
+    <button class="photo-btn full-btn" onclick="document.getElementById('view-photo-layer').click()">⚡ 積層図を撮る(後から追加・差し替え)</button>
+    <input type="file" id="view-photo-layer" accept="image/*" capture="environment" style="display:none" onchange="onViewLayerPhotoSelected(event)">
+    <div id="view-layer-photo-status" class="photo-status"></div>
+  </div>
   <div class="section">
     <div class="result-banner" id="view-result-banner"></div>
+    <div id="view-resave-wrap" style="display:none;">
+      <button class="save-btn full-btn" onclick="submitViewJointUpdate()">🔄 再保存する</button>
+    </div>
     <button class="pdf-btn full-btn" onclick="onGeneratePdfFromView()">📄 PDFを出力する</button>
     <div id="view-pdf-link-wrap" style="display:none;">
       <div class="pdf-link-btn">✅ PDFをダウンロードしました(端末のダウンロードフォルダを確認してください)</div>

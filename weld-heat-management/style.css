@@ -105,6 +105,10 @@ select {
 .timer-btn.timer-running { background: linear-gradient(135deg, #c62828, #8e0000); color: #fff; animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
 
+/* スタート/ストップの隣に置く「このパスを記録」ボタン(pass-top-row内) */
+.pass-submit-btn { width: 100%; padding: 16px; border: none; border-radius: 14px; font-size: 18px; font-weight: bold; cursor: pointer; background: linear-gradient(135deg, #ff9800, #e65100); color: #fff; }
+.pass-submit-btn:active { opacity: 0.85; }
+
 /* 複数項目の横並びグループ(継手情報入力画面) */
 .field-row-group { display: flex; flex-wrap: wrap; gap: 0 16px; }
 .field-col { flex: 1 1 200px; min-width: 150px; }

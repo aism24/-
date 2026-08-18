@@ -93,11 +93,16 @@ let navStack = [];
 
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(el => { el.style.display = 'none'; });
-  document.getElementById(id).style.display = 'block';
+  // インラインstyleを空にしてCSS側の指定に委ねる(display:blockで固定すると、
+  // #home-screenのCSS指定(display:flexによる中央揃え)を永続的に上書きしてしまうため)
+  document.getElementById(id).style.display = '';
 }
 function renderEntry(entry) {
   document.getElementById('app-header').style.display = 'flex';
   document.getElementById('app-header-title').textContent = entry.title;
+  // パス記録画面は、誤タップで記録中の内容が見えなくなる事故を防ぐため「← 戻る」を出さない
+  // (ホームへは完了後の「🏠 ホームに戻る」ボタンから戻る)
+  document.getElementById('header-back-btn').style.visibility = entry.noBack ? 'hidden' : 'visible';
   showScreen(entry.screenId);
   entry.load();
 }
@@ -239,7 +244,7 @@ function resumeDraft() {
   state.header = draft.header;
   state.passes = draft.passes || [];
   state.nextLayer = draft.nextLayer || 1;
-  goTo({ screenId: 'joint-record-screen', title: 'パス記録(再開)', load: () => renderRecordScreen() });
+  goTo({ screenId: 'joint-record-screen', title: 'パス記録(再開)', load: () => renderRecordScreen(), noBack: true });
 }
 
 // ---------- アプリ状態 ----------
@@ -287,6 +292,11 @@ const LAST_ROW_DEFAULT_STEPPERS = [
   { id: 'jn-開先角度', key: '開先角度' },
 ];
 
+// 1パス目(自分の継手にまだパス履歴がない時点)の電流・電圧のデフォルト表示に使う、
+// スプレッドシート最終行(前回の継手の最後のパス)の値。initJointNewFormで取得し、
+// submitNewJointでheaderに積んでrenderRecordScreen側から参照する。
+let lastRowPassDefaults = null;
+
 async function initJointNewForm() {
   document.getElementById('jn-検査日').value = new Date().toISOString().slice(0, 10);
   MASTER_FIELDS.forEach(f => {
@@ -305,6 +315,7 @@ async function initJointNewForm() {
   updateRequiredState();
 
   let lastHeader = null;
+  lastRowPassDefaults = null;
   try { lastHeader = await apiGet('getLastJointHeader'); } catch (e) { lastHeader = null; }
   if (lastHeader) {
     LAST_ROW_DEFAULT_FIELDS.forEach(f => {
@@ -318,6 +329,7 @@ async function initJointNewForm() {
         document.getElementById(f.id).textContent = formatStepperValue(stepperValues[f.id]);
       }
     });
+    lastRowPassDefaults = { current: lastHeader["電流"], voltage: lastHeader["電圧"] };
     updateRequiredState();
   }
 }
@@ -355,7 +367,6 @@ function onPhotoSelected(event, kind) {
         saveDraft();
         hideOverlay();
         document.getElementById('rec-photo-status').textContent = '✅ 積層図 添付済み';
-        updateFinishButtonState();
       }
     }).catch(showError);
   };
@@ -412,6 +423,9 @@ function submitNewJoint() {
     heatInputLimit: document.getElementById('jn-入熱上限').value,
     tempMin: document.getElementById('jn-温度下限').value,
     tempMax: document.getElementById('jn-温度上限').value,
+    // 1パス目(自分の継手にまだパス履歴がない時点)の電流・電圧のデフォルト表示用
+    lastCurrent: lastRowPassDefaults ? lastRowPassDefaults.current : '',
+    lastVoltage: lastRowPassDefaults ? lastRowPassDefaults.voltage : '',
   };
 
   persistNewMasterValues();
@@ -419,13 +433,13 @@ function submitNewJoint() {
   state.passes = [];
   state.nextLayer = 1;
   saveDraft();
-  goTo({ screenId: 'joint-record-screen', title: 'パス記録', load: () => renderRecordScreen() });
+  goTo({ screenId: 'joint-record-screen', title: 'パス記録', load: () => renderRecordScreen(), noBack: true });
 }
 
 // ---------- パス記録画面 ----------
 
-function computeMetrics(current, voltage, arcSeconds, passTemp) {
-  const h = state.header;
+// 履歴詳細画面の編集(computeMetricsForにheaderを直接渡す)でも使う共通ロジック
+function computeMetricsFor(h, current, voltage, arcSeconds, passTemp) {
   const weldLength = Number(h["溶接長"]) || 0;
   current = Number(current) || 0; voltage = Number(voltage) || 0; arcSeconds = Number(arcSeconds) || 0;
   let heatInput = '';
@@ -440,6 +454,10 @@ function computeMetrics(current, voltage, arcSeconds, passTemp) {
   return { heatInput: heatInput, judgement: ok ? 'OK' : 'NG', reasons: reasons };
 }
 
+function computeMetrics(current, voltage, arcSeconds, passTemp) {
+  return computeMetricsFor(state.header, current, voltage, arcSeconds, passTemp);
+}
+
 function renderRecordScreen() {
   const h = state.header;
   document.getElementById('joint-summary').innerHTML = `
@@ -447,21 +465,9 @@ function renderRecordScreen() {
   `;
   document.getElementById('layer-value').textContent = state.nextLayer;
   document.getElementById('rec-photo-status').textContent = h["積層図"] ? '✅ 積層図 添付済み' : '';
-  updateFinishButtonState();
   resetTimerUi();
   renderPassTable();
   prefillPassInputsFromLastPass();
-}
-
-// 積層図(全パス完了後に撮影する、鋼材に描かれた図の写真)が撮影済みでないと
-// 完了ボタンを押せないようにする
-function updateFinishButtonState() {
-  const btn = document.getElementById('complete-btn');
-  const hasLayerDiagram = !!(state.header && state.header["積層図"]);
-  btn.disabled = !hasLayerDiagram;
-  btn.textContent = hasLayerDiagram
-    ? '🏁 溶接完了・スプレッドシートへ記録する'
-    : '🏁 溶接完了・スプレッドシートへ記録する(積層図撮影後に押せます)';
 }
 
 // 層数は「前回記録した層と同じ」か「その1つ上」までしか進められない(飛び番禁止)
@@ -476,14 +482,25 @@ function changeLayer(delta) {
   document.getElementById('layer-value').textContent = state.nextLayer;
 }
 
-// 2パス目以降は、直前に記録したパスの値をデフォルトとして表示する(電流・電圧はほぼ同じ値が続くため)
+// 2パス目以降は、直前に記録したパスの値をデフォルトとして表示する(電流・電圧はほぼ同じ値が続くため)。
+// 1パス目(自分の継手にまだパス履歴がない時点)は、電流・電圧だけスプレッドシート最終行
+// (前回の継手の最後のパス)の値をデフォルト表示する。
 function prefillPassInputsFromLastPass() {
   const last = state.passes[state.passes.length - 1];
-  if (!last) return;
-  document.getElementById('pi-current').value = last.current;
-  document.getElementById('pi-voltage').value = last.voltage;
-  document.getElementById('pi-temp').value = last.passTemp;
-  document.getElementById('pi-note').value = last.note || '';
+  if (last) {
+    document.getElementById('pi-current').value = last.current;
+    document.getElementById('pi-voltage').value = last.voltage;
+    document.getElementById('pi-temp').value = last.passTemp;
+    document.getElementById('pi-note').value = last.note || '';
+    return;
+  }
+  const h = state.header;
+  const lastCurrent = h && h.lastCurrent;
+  const lastVoltage = h && h.lastVoltage;
+  document.getElementById('pi-current').value = (lastCurrent !== undefined && lastCurrent !== null && lastCurrent !== '') ? lastCurrent : '';
+  document.getElementById('pi-voltage').value = (lastVoltage !== undefined && lastVoltage !== null && lastVoltage !== '') ? lastVoltage : '';
+  document.getElementById('pi-temp').value = '';
+  document.getElementById('pi-note').value = '';
 }
 
 function resetTimerUi() {
@@ -614,7 +631,6 @@ function renderPassTable() {
 
 function onCompleteJoint() {
   if (!state.passes.length) { showOverlay('⚠️', 'パスが1件も記録されていません', true); return; }
-  if (!state.header["積層図"]) { showOverlay('⚠️', '積層図を撮影してください', true); return; }
   if (!confirm('この継手の溶接記録を確定し、スプレッドシートへ記録します。よろしいですか？')) return;
   showOverlay('⏳', 'スプレッドシートへ記録しています...');
   apiPost('saveJointRecord', { header: state.header, passes: state.passes }).then(result => {
@@ -704,24 +720,93 @@ function viewJoint(index) {
 function renderJointView(joint) {
   const h = joint.header;
   document.getElementById('view-joint-summary').innerHTML = `
-    <div><b>${escapeHtml(h["工事名"])}</b> ／ ${escapeHtml(h["部材"])} ／ 製品名: <b>${escapeHtml(h["製品名"])}</b></div>
-    <div>材質: ${escapeHtml(h["材質"] || '-')}　溶接方法: ${escapeHtml(h["溶接方法"] || '-')}　溶接長: ${escapeHtml(h["溶接長"])}cm</div>
     <div>溶接者: ${escapeHtml(h["溶接者"] || '-')}　検査員: ${escapeHtml(h["検査員（入力者）"] || '-')}　検査日: ${escapeHtml(h["検査日"])}</div>
-    <div>管理基準: 入熱≦${escapeHtml(h.heatInputLimit || '-')}kJ/cm　パス間温度 ${escapeHtml(h.tempMin || '-')}〜${escapeHtml(h.tempMax || '-')}℃</div>
   `;
+  state.viewingJoint = joint;
+  state.viewingPasses = joint.records.map(r => ({
+    id: r.ID, layer: r.層数, current: r.電流, voltage: r.電圧, arcSeconds: r.アークタイム,
+    passTemp: r.パス間温度, note: r.備考, heatInput: r.heatInput, judgement: r.判定,
+  }));
+  renderViewPassTable();
+  refreshViewResultBanner();
+  document.getElementById('view-resave-wrap').style.display = 'none';
+  document.getElementById('view-layer-photo-status').textContent = h["積層図"] ? '✅ 積層図 添付済み' : '';
+  document.getElementById('view-pdf-link-wrap').style.display = 'none';
+}
+
+function renderViewPassTable() {
   const tbody = document.getElementById('view-pass-table-body');
-  tbody.innerHTML = joint.records.map((r, i) => `
-    <tr class="${r.判定 === 'NG' ? 'ng-row' : ''}">
-      <td>${i + 1}</td><td>${r.層数}</td><td>${r.電流}</td><td>${r.電圧}</td>
-      <td>${r.アークタイム}秒</td><td>${r.パス間温度}</td>
-      <td class="${r.判定 === 'NG' ? 'judge-ng' : 'judge-ok'}">${r.判定}</td>
+  const passes = state.viewingPasses;
+  if (!passes.length) { tbody.innerHTML = '<tr><td colspan="8" class="loading-text">パスが記録されていません</td></tr>'; return; }
+  tbody.innerHTML = passes.map((p, i) => `
+    <tr class="${p.judgement === 'NG' ? 'ng-row' : ''}">
+      <td>${i + 1}</td>
+      <td><input type="number" class="cell-input" value="${p.layer}" onchange="updateViewPassField(${i},'layer',this.value)"></td>
+      <td><input type="number" class="cell-input" value="${p.current}" onchange="updateViewPassField(${i},'current',this.value)"></td>
+      <td><input type="number" class="cell-input" value="${p.voltage}" onchange="updateViewPassField(${i},'voltage',this.value)"></td>
+      <td><input type="number" class="cell-input" value="${p.arcSeconds}" onchange="updateViewPassField(${i},'arcSeconds',this.value)">秒</td>
+      <td>${p.heatInput === '' ? '-' : p.heatInput}</td>
+      <td><input type="number" class="cell-input" value="${p.passTemp}" onchange="updateViewPassField(${i},'passTemp',this.value)"></td>
+      <td class="${p.judgement === 'NG' ? 'judge-ng' : 'judge-ok'}">${p.judgement}</td>
     </tr>`).join('');
+}
+
+// 履歴詳細画面での編集(層・電流・電圧・アークタイム・パス間温度)。入熱・判定は編集不可の
+// 自動計算値なので、ここで再計算してテーブルに反映する
+function updateViewPassField(index, field, rawValue) {
+  const p = state.viewingPasses[index];
+  if (field === 'layer') p.layer = Math.max(1, Number(rawValue) || p.layer);
+  else if (field === 'current') p.current = Number(rawValue) || 0;
+  else if (field === 'voltage') p.voltage = Number(rawValue) || 0;
+  else if (field === 'arcSeconds') p.arcSeconds = Math.max(0, Number(rawValue) || 0);
+  else if (field === 'passTemp') p.passTemp = Number(rawValue);
+
+  const metrics = computeMetricsFor(state.viewingJoint.header, p.current, p.voltage, p.arcSeconds, p.passTemp);
+  p.heatInput = metrics.heatInput;
+  p.judgement = metrics.judgement;
+  document.getElementById('view-resave-wrap').style.display = 'block';
+  renderViewPassTable();
+}
+
+function refreshViewResultBanner() {
   const banner = document.getElementById('view-result-banner');
-  const isNg = joint.overallResult === 'NG';
+  const isNg = state.viewingPasses.some(p => p.judgement === 'NG');
   banner.textContent = '総合判定: ' + (isNg ? '❌ NG(要是正)' : '✅ OK');
   banner.className = 'result-banner ' + (isNg ? 'ng' : 'ok');
-  document.getElementById('view-pdf-link-wrap').style.display = 'none';
-  state.viewingJoint = joint;
+}
+
+function submitViewJointUpdate() {
+  const joint = state.viewingJoint;
+  const ids = state.viewingPasses.map(p => p.id);
+  showOverlay('⏳', '修正内容をスプレッドシートへ再保存しています...');
+  apiPost('updateJointRecord', { header: joint.header, ids: ids, passes: state.viewingPasses }).then(() => {
+    hideOverlay();
+    document.getElementById('view-resave-wrap').style.display = 'none';
+    refreshViewResultBanner();
+  }).catch(showError);
+}
+
+// 履歴詳細画面から、保存済みの継手に積層図を後付けで追加・差し替えする
+// (作図・撮影が完了操作より後になった場合を想定)
+function onViewLayerPhotoSelected(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const base64 = reader.result.split(',')[1];
+    showOverlay('⏳', '積層図をアップロード中...');
+    apiPost('uploadPhoto', {
+      kind: 'layerDiagram', base64: base64, mimeType: file.type, fileName: 'layer_' + Date.now() + '.jpg',
+    }).then(result => {
+      const ids = state.viewingPasses.map(p => p.id);
+      return apiPost('updateJointLayerDiagram', { ids: ids, url: result.url }).then(() => {
+        state.viewingJoint.header["積層図"] = result.url;
+        hideOverlay();
+        document.getElementById('view-layer-photo-status').textContent = '✅ 積層図 添付済み';
+      });
+    }).catch(showError);
+  };
+  reader.readAsDataURL(file);
 }
 
 function onGeneratePdfFromView() {
@@ -729,7 +814,7 @@ function onGeneratePdfFromView() {
   showOverlay('⏳', 'PDFを作成しています...(数秒かかります)');
   const payload = {
     header: joint.header,
-    passes: joint.records.map(r => ({ layer: r.層数, current: r.電流, voltage: r.電圧, arcSeconds: r.アークタイム, passTemp: r.パス間温度, note: r.備考 })),
+    passes: state.viewingPasses.map(p => ({ layer: p.layer, current: p.current, voltage: p.voltage, arcSeconds: p.arcSeconds, passTemp: p.passTemp, note: p.note })),
   };
   apiPost('generatePdf', payload).then(result => {
     hideOverlay();
