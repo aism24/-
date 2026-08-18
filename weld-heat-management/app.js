@@ -1,6 +1,6 @@
 // デプロイ済みGAS WebアプリのURL（/exec で終わるURL）
 // GASプロジェクトを新規デプロイした後、ここを実際のURLに書き換えてください。
-const GAS_API_URL = "★ここにデプロイ後のGAS WebアプリURLを設定してください★";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzykwqGknEiLfAta1wPoVXHPpNSsS2-w85tuXQdf0wnvz40APguGxU-dSzIgQZqHEZd8g/exec";
 
 const DRAFT_KEY = "weldHeatDraft_v1";
 
