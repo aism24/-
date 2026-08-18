@@ -45,6 +45,7 @@ body {
 .home-btn-sub { background: #23262f; color: #ddd; border: 2px solid #444; }
 .home-btn-resume { background: linear-gradient(135deg, #1565c0, #0d47a1); color: #fff; }
 .home-btn:active { opacity: 0.8; }
+.home-master-hint { font-size: 14px; color: #666; text-align: center; }
 
 /* 共通ヘッダー(会社ロゴ+社名の固定ヘッダーの直下に張り付く) */
 .app-header {
@@ -231,12 +232,12 @@ button:disabled {
 /* パステーブル */
 .pass-table-wrap { overflow-x: auto; }
 .pass-table { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 560px; }
-.pass-table th, .pass-table td { border: 1px solid #333a4a; padding: 8px 6px; text-align: center; }
+.pass-table th, .pass-table td { border: 1px solid #333a4a; padding: 5px 6px; text-align: center; }
 .pass-table th { background: #262b38; color: #ffb74d; }
 .pass-table td.judge-ok { color: #66bb6a; font-weight: bold; }
 .pass-table td.judge-ng { color: #ef5350; font-weight: bold; }
 .cell-input {
-  width: 64px; padding: 6px 4px; margin-bottom: 0;
+  width: 64px; padding: 4px 4px; margin-bottom: 0;
   border: 2px solid #3a4256; border-radius: 8px;
   font-size: 15px; background: #10131a; color: #fff; text-align: center;
 }
