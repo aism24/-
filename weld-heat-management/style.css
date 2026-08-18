@@ -93,6 +93,39 @@ select {
 .timer-btn.timer-running { background: linear-gradient(135deg, #c62828, #8e0000); color: #fff; animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
 
+/* 必須項目アラート(継手情報入力画面) */
+.required-alert {
+  background: #fdd835; color: #c62828; font-weight: bold; font-size: 18px;
+  text-align: center; padding: 14px; margin: 14px; border-radius: 12px;
+  animation: required-blink 1.8s ease-in-out infinite;
+}
+@keyframes required-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* グレーアウト(非活性)ボタン */
+button:disabled {
+  background: #3a3f4a !important; color: #777 !important;
+  cursor: not-allowed; opacity: 1;
+}
+
+/* 製品名欄の隣の画像ボタン */
+.input-with-btn { display: flex; gap: 8px; align-items: flex-start; }
+.input-with-btn input { flex: 1; }
+.inline-photo-btn {
+  background: #263238; color: #ffb74d; border: 2px solid #3a4256; border-radius: 12px;
+  padding: 0 14px; font-size: 15px; font-weight: bold; cursor: pointer; white-space: nowrap;
+  height: 56px;
+}
+.inline-photo-btn:active { background: #35414d; }
+
+/* ルートギャップ・開先角度のステッパー(0.5単位) */
+.stepper { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 12px; }
+.stepper-btn {
+  width: 44px; height: 44px; border-radius: 50%; border: none;
+  background: #263238; color: #ffb74d; font-size: 24px; font-weight: bold; cursor: pointer;
+}
+.stepper-btn:active { background: #35414d; }
+.stepper-value { font-size: 26px; font-weight: bold; min-width: 50px; text-align: center; }
+
 /* 写真 */
 .photo-btns { display: flex; gap: 12px; }
 .photo-btn {

@@ -104,6 +104,59 @@ async function loadMasterLists() {
   MASTER_FIELDS.forEach(f => populateMasterSelect(f));
 }
 
+// ---------- 必須項目バリデーション(継手情報入力画面) ----------
+// 必須: 工事名・部材・製品名・サイズ(幅)・板厚・材質・溶接方法・溶接長・気温・計測・
+//       ルートギャップ・開先角度・溶接者・検査員(入力者)。すべて埋まるまでアラート表示+送信ボタン非活性。
+const REQUIRED_PLAIN_FIELDS = ['jn-製品名', 'jn-幅', 'jn-板厚', 'jn-溶接長', 'jn-気温', 'jn-計測'];
+
+function isRequiredFormValid() {
+  const plainOk = REQUIRED_PLAIN_FIELDS.every(id => document.getElementById(id).value.toString().trim() !== '');
+  const masterOk = MASTER_FIELDS.every(f => getMasterFieldValue(f).trim() !== '');
+  return plainOk && masterOk;
+}
+
+function updateRequiredState() {
+  const valid = isRequiredFormValid();
+  document.getElementById('required-alert').style.display = valid ? 'none' : 'block';
+  document.getElementById('jn-submit-btn').disabled = !valid;
+}
+
+function setupRequiredValidation() {
+  REQUIRED_PLAIN_FIELDS.forEach(id => {
+    document.getElementById(id).addEventListener('input', updateRequiredState);
+  });
+  MASTER_FIELDS.forEach(f => {
+    document.getElementById(f.selectId).addEventListener('change', updateRequiredState);
+    document.getElementById(f.newId).addEventListener('input', updateRequiredState);
+  });
+}
+
+// ---------- ルートギャップ・開先角度(0.5単位の+/-ステッパー、デフォルト値あり) ----------
+const STEPPER_FIELDS = {
+  'jn-ルートギャップ': { default: 7, step: 0.5, min: 0 },
+  'jn-開先角度': { default: 35, step: 0.5, min: 0 },
+};
+let stepperValues = {};
+
+function formatStepperValue(v) { return (Math.round(v * 10) / 10).toString(); }
+
+function resetSteppers() {
+  Object.keys(STEPPER_FIELDS).forEach(id => {
+    stepperValues[id] = STEPPER_FIELDS[id].default;
+    document.getElementById(id).textContent = formatStepperValue(stepperValues[id]);
+  });
+}
+
+function changeStepper(id, delta) {
+  const cfg = STEPPER_FIELDS[id];
+  let v = Math.round(((stepperValues[id] || 0) + delta) * 10) / 10;
+  if (cfg.min != null) v = Math.max(cfg.min, v);
+  stepperValues[id] = v;
+  document.getElementById(id).textContent = formatStepperValue(v);
+}
+
+function getStepperValue(id) { return stepperValues[id]; }
+
 function populateMasterSelect(f) {
   const select = document.getElementById(f.selectId);
   const list = masterLists[f.masterKey] || [];
@@ -169,6 +222,7 @@ let pendingImageUrl = '', pendingLayerImageUrl = '';
 document.addEventListener('DOMContentLoaded', () => {
   loadMasterLists();
   checkDraftButton();
+  setupRequiredValidation();
 });
 
 // ---------- 新規継手ヘッダー入力 ----------
@@ -189,10 +243,12 @@ function initJointNewForm() {
     document.getElementById(f.newId).style.display = 'none';
     document.getElementById(f.newId).value = '';
   });
-  ['jn-製品名', 'jn-幅', 'jn-板厚', 'jn-部材サイズ', 'jn-溶接長', 'jn-梁成', 'jn-ウエブ厚', 'jn-気温',
-    'jn-計測', 'jn-ルートギャップ', 'jn-開先角度', 'jn-入熱上限', 'jn-温度下限', 'jn-温度上限'].forEach(id => { document.getElementById(id).value = ''; });
+  ['jn-製品名', 'jn-幅', 'jn-板厚', 'jn-部材サイズ', 'jn-溶接長', 'jn-気温',
+    'jn-計測', 'jn-入熱上限', 'jn-温度下限', 'jn-温度上限'].forEach(id => { document.getElementById(id).value = ''; });
+  resetSteppers();
   pendingImageUrl = ''; pendingLayerImageUrl = '';
   document.getElementById('jn-photo-status').textContent = '';
+  updateRequiredState();
 }
 
 function onPhotoSelected(event, kind) {
@@ -214,6 +270,7 @@ function onPhotoSelected(event, kind) {
         hideOverlay();
         if (result.recognizedText) {
           document.getElementById('jn-製品名').value = result.recognizedText;
+          updateRequiredState();
         } else {
           showOverlay('⚠️', '製品名の自動読み取りに失敗しました。手入力してください', true);
         }
@@ -231,28 +288,48 @@ function onPhotoSelected(event, kind) {
 function submitNewJoint() {
   const productName = document.getElementById('jn-製品名').value.trim();
   const weldLength = document.getElementById('jn-溶接長').value;
+  const width = document.getElementById('jn-幅').value;
+  const thickness = document.getElementById('jn-板厚').value;
+  const airTemp = document.getElementById('jn-気温').value;
+  const measure = document.getElementById('jn-計測').value.trim();
+  const construction = getMasterFieldValue(MASTER_FIELDS[0]);
+  const member = getMasterFieldValue(MASTER_FIELDS[1]);
+  const material = getMasterFieldValue(MASTER_FIELDS[2]);
+  const weldMethod = getMasterFieldValue(MASTER_FIELDS[3]);
+  const welder = getMasterFieldValue(MASTER_FIELDS[4]);
+  const inspector = getMasterFieldValue(MASTER_FIELDS[5]);
+
+  // 記録開始ボタンは必須項目が揃うまで非活性だが、念のため送信時にも同じ催促ポップアップで再チェックする
+  if (!construction) { showOverlay('⚠️', '工事名を入力してください', true); return; }
+  if (!member) { showOverlay('⚠️', '部材を入力してください', true); return; }
   if (!productName) { showOverlay('⚠️', '製品名を入力してください', true); return; }
+  if (width === '') { showOverlay('⚠️', 'サイズ(幅)を入力してください', true); return; }
+  if (thickness === '') { showOverlay('⚠️', '板厚を入力してください', true); return; }
+  if (!material) { showOverlay('⚠️', '材質を入力してください', true); return; }
+  if (!weldMethod) { showOverlay('⚠️', '溶接方法を入力してください', true); return; }
   if (!weldLength) { showOverlay('⚠️', '溶接長を入力してください(入熱の自動計算に必要です)', true); return; }
+  if (airTemp === '') { showOverlay('⚠️', '気温を入力してください', true); return; }
+  if (!measure) { showOverlay('⚠️', '計測を入力してください', true); return; }
+  if (!welder) { showOverlay('⚠️', '溶接者を入力してください', true); return; }
+  if (!inspector) { showOverlay('⚠️', '検査員を入力してください', true); return; }
 
   const header = {
-    "工事名": getMasterFieldValue(MASTER_FIELDS[0]),
+    "工事名": construction,
     "検査日": document.getElementById('jn-検査日').value,
-    "部材": getMasterFieldValue(MASTER_FIELDS[1]),
-    "サイズ(幅)": document.getElementById('jn-幅').value,
-    "板厚": document.getElementById('jn-板厚').value,
+    "部材": member,
+    "サイズ(幅)": width,
+    "板厚": thickness,
     "部材サイズ": document.getElementById('jn-部材サイズ').value.trim(),
-    "溶接者": getMasterFieldValue(MASTER_FIELDS[4]),
-    "検査員（入力者）": getMasterFieldValue(MASTER_FIELDS[5]),
+    "溶接者": welder,
+    "検査員（入力者）": inspector,
     "溶接長": weldLength,
-    "計測": document.getElementById('jn-計測').value.trim(),
+    "計測": measure,
     "製品名": productName,
-    "材質": getMasterFieldValue(MASTER_FIELDS[2]),
-    "溶接方法": getMasterFieldValue(MASTER_FIELDS[3]),
-    "梁成": document.getElementById('jn-梁成').value,
-    "ウエブ厚": document.getElementById('jn-ウエブ厚').value,
-    "気温": document.getElementById('jn-気温').value,
-    "ルートギャップ": document.getElementById('jn-ルートギャップ').value,
-    "開先角度": document.getElementById('jn-開先角度').value,
+    "材質": material,
+    "溶接方法": weldMethod,
+    "気温": airTemp,
+    "ルートギャップ": getStepperValue('jn-ルートギャップ'),
+    "開先角度": getStepperValue('jn-開先角度'),
     "image": pendingImageUrl,
     "積層図": pendingLayerImageUrl,
     heatInputLimit: document.getElementById('jn-入熱上限').value,

@@ -11,7 +11,7 @@
  *   シート「入熱パス間記録」(1行=1パス、継手のヘッダー情報は全パス行に重複して保持):
  *     ID, 工事名, 検査日, 部材, サイズ(幅), 板厚, 部材サイズ, 溶接者, 検査員（入力者）,
  *     層数, パス数, 溶接長, 電流, 電圧, スタート, エンド, アークタイム, パス間温度,
- *     インターバル, 備考, 計測, 製品名, 材質, 溶接方法, 梁成, ウエブ厚, 気温, 順序,
+ *     インターバル, 備考, 計測, 製品名, 材質, 溶接方法, 気温, 順序,
  *     ルートギャップ, 開先角度, image, 積層図,
  *     入熱上限(kJ/cm), パス間温度下限(℃), パス間温度上限(℃), 判定
  *
@@ -285,8 +285,6 @@ function saveJointRecord(body) {
       setIf("製品名", header["製品名"] || "");
       setIf("材質", header["材質"] || "");
       setIf("溶接方法", header["溶接方法"] || "");
-      setIf("梁成", header["梁成"] || "");
-      setIf("ウエブ厚", header["ウエブ厚"] || "");
       setIf("気温", header["気温"] || "");
       setIf("ルートギャップ", header["ルートギャップ"] || "");
       setIf("開先角度", header["開先角度"] || "");
@@ -395,7 +393,7 @@ function groupIntoJoints_(records) {
       "部材サイズ": getField_(first, "部材サイズ"), "溶接者": getField_(first, "溶接者"),
       "検査員（入力者）": getField_(first, "検査員（入力者）"), "溶接長": getField_(first, "溶接長"),
       "計測": getField_(first, "計測"), "製品名": getField_(first, "製品名"), "材質": getField_(first, "材質"),
-      "溶接方法": getField_(first, "溶接方法"), "梁成": getField_(first, "梁成"), "ウエブ厚": getField_(first, "ウエブ厚"),
+      "溶接方法": getField_(first, "溶接方法"),
       "気温": getField_(first, "気温"), "ルートギャップ": getField_(first, "ルートギャップ"), "開先角度": getField_(first, "開先角度"),
       "image": getField_(first, "image"), "積層図": getField_(first, "積層図"),
       heatInputLimit: getField_(first, "入熱上限(kJ/cm)"), tempMin: getField_(first, "パス間温度下限(℃)"), tempMax: getField_(first, "パス間温度上限(℃)"),
