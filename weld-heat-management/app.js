@@ -117,6 +117,22 @@ function goHome() {
   checkDraftButton();
 }
 
+// ホーム画面で会社ロゴを2秒以内に5回タップすると初期値設定へ移動する隠しコマンド
+// (誰でも押せる設定ボタンを画面に出さないための代替導線)
+let logoTapCount = 0;
+let logoTapResetTimer = null;
+function onLogoTap() {
+  if (document.getElementById('home-screen').style.display === 'none') return;
+  logoTapCount++;
+  clearTimeout(logoTapResetTimer);
+  logoTapResetTimer = setTimeout(() => { logoTapCount = 0; }, 2000);
+  if (logoTapCount >= 5) {
+    logoTapCount = 0;
+    clearTimeout(logoTapResetTimer);
+    goMasterManage();
+  }
+}
+
 // ---------- マスタ選択肢(工事名・部材・材質・溶接方法・溶接者・検査員) ----------
 
 const MASTER_FIELDS = [
@@ -292,7 +308,7 @@ const LAST_ROW_DEFAULT_STEPPERS = [
   { id: 'jn-開先角度', key: '開先角度' },
 ];
 
-// 1パス目(自分の継手にまだパス履歴がない時点)の電流・電圧のデフォルト表示に使う、
+// 1パス目(自分の継手にまだパス履歴がない時点)の電流・電圧・パス間温度のデフォルト表示に使う、
 // スプレッドシート最終行(前回の継手の最後のパス)の値。initJointNewFormで取得し、
 // submitNewJointでheaderに積んでrenderRecordScreen側から参照する。
 let lastRowPassDefaults = null;
@@ -329,7 +345,7 @@ async function initJointNewForm() {
         document.getElementById(f.id).textContent = formatStepperValue(stepperValues[f.id]);
       }
     });
-    lastRowPassDefaults = { current: lastHeader["電流"], voltage: lastHeader["電圧"] };
+    lastRowPassDefaults = { current: lastHeader["電流"], voltage: lastHeader["電圧"], passTemp: lastHeader["パス間温度"] };
     updateRequiredState();
   }
 }
@@ -423,9 +439,10 @@ function submitNewJoint() {
     heatInputLimit: document.getElementById('jn-入熱上限').value,
     tempMin: document.getElementById('jn-温度下限').value,
     tempMax: document.getElementById('jn-温度上限').value,
-    // 1パス目(自分の継手にまだパス履歴がない時点)の電流・電圧のデフォルト表示用
+    // 1パス目(自分の継手にまだパス履歴がない時点)の電流・電圧・パス間温度のデフォルト表示用
     lastCurrent: lastRowPassDefaults ? lastRowPassDefaults.current : '',
     lastVoltage: lastRowPassDefaults ? lastRowPassDefaults.voltage : '',
+    lastPassTemp: lastRowPassDefaults ? lastRowPassDefaults.passTemp : '',
   };
 
   persistNewMasterValues();
@@ -482,8 +499,8 @@ function changeLayer(delta) {
   document.getElementById('layer-value').textContent = state.nextLayer;
 }
 
-// 2パス目以降は、直前に記録したパスの値をデフォルトとして表示する(電流・電圧はほぼ同じ値が続くため)。
-// 1パス目(自分の継手にまだパス履歴がない時点)は、電流・電圧だけスプレッドシート最終行
+// 2パス目以降は、直前に記録したパスの値をデフォルトとして表示する(電流・電圧・パス間温度はほぼ同じ値が続くため)。
+// 1パス目(自分の継手にまだパス履歴がない時点)は、電流・電圧・パス間温度をスプレッドシート最終行
 // (前回の継手の最後のパス)の値をデフォルト表示する。
 function prefillPassInputsFromLastPass() {
   const last = state.passes[state.passes.length - 1];
@@ -497,9 +514,10 @@ function prefillPassInputsFromLastPass() {
   const h = state.header;
   const lastCurrent = h && h.lastCurrent;
   const lastVoltage = h && h.lastVoltage;
+  const lastPassTemp = h && h.lastPassTemp;
   document.getElementById('pi-current').value = (lastCurrent !== undefined && lastCurrent !== null && lastCurrent !== '') ? lastCurrent : '';
   document.getElementById('pi-voltage').value = (lastVoltage !== undefined && lastVoltage !== null && lastVoltage !== '') ? lastVoltage : '';
-  document.getElementById('pi-temp').value = '';
+  document.getElementById('pi-temp').value = (lastPassTemp !== undefined && lastPassTemp !== null && lastPassTemp !== '') ? lastPassTemp : '';
   document.getElementById('pi-note').value = '';
 }
 
@@ -552,6 +570,12 @@ function submitPass() {
   const note = document.getElementById('pi-note').value.trim();
   if (current === '' || voltage === '') { showOverlay('⚠️', '電流・電圧を入力してください', true); return; }
   if (passTemp === '') { showOverlay('⚠️', 'パス間温度を入力してください', true); return; }
+
+  // 層を進める「＋」の押し忘れで前回と同じ層のまま記録してしまう事故を防ぐための確認
+  const lastPass = state.passes[state.passes.length - 1];
+  if (lastPass && lastPass.layer === state.nextLayer) {
+    if (!confirm(`同じ層数(${state.nextLayer})で良いですか?`)) return;
+  }
 
   const arcSeconds = Math.max(0, Math.round((timerEnd - timerStart) / 1000));
   const metrics = computeMetrics(current, voltage, arcSeconds, passTemp);
@@ -621,7 +645,7 @@ function renderPassTable() {
       <td><input type="number" class="cell-input" value="${p.layer}" onchange="updatePassField(${i},'layer',this.value)"></td>
       <td><input type="number" class="cell-input" value="${p.current}" onchange="updatePassField(${i},'current',this.value)"></td>
       <td><input type="number" class="cell-input" value="${p.voltage}" onchange="updatePassField(${i},'voltage',this.value)"></td>
-      <td><input type="number" class="cell-input" value="${p.arcSeconds}" onchange="updatePassField(${i},'arcSeconds',this.value)">秒</td>
+      <td><input type="number" class="cell-input" value="${p.arcSeconds}" onchange="updatePassField(${i},'arcSeconds',this.value)"></td>
       <td>${p.heatInput === '' ? '-' : p.heatInput}</td>
       <td><input type="number" class="cell-input" value="${p.passTemp}" onchange="updatePassField(${i},'passTemp',this.value)"></td>
       <td class="${p.judgement === 'NG' ? 'judge-ng' : 'judge-ok'}">${p.judgement}</td>
@@ -639,7 +663,6 @@ function onCompleteJoint() {
     state.savedIds = result.ids;
     recordCompleted = true;
     document.getElementById('pass-input-section').style.display = 'none';
-    document.getElementById('complete-section').style.display = 'none';
     document.getElementById('pdf-section').style.display = 'block';
     document.getElementById('pdf-link-wrap').style.display = 'none';
     document.getElementById('resave-wrap').style.display = 'none';
@@ -744,7 +767,7 @@ function renderViewPassTable() {
       <td><input type="number" class="cell-input" value="${p.layer}" onchange="updateViewPassField(${i},'layer',this.value)"></td>
       <td><input type="number" class="cell-input" value="${p.current}" onchange="updateViewPassField(${i},'current',this.value)"></td>
       <td><input type="number" class="cell-input" value="${p.voltage}" onchange="updateViewPassField(${i},'voltage',this.value)"></td>
-      <td><input type="number" class="cell-input" value="${p.arcSeconds}" onchange="updateViewPassField(${i},'arcSeconds',this.value)">秒</td>
+      <td><input type="number" class="cell-input" value="${p.arcSeconds}" onchange="updateViewPassField(${i},'arcSeconds',this.value)"></td>
       <td>${p.heatInput === '' ? '-' : p.heatInput}</td>
       <td><input type="number" class="cell-input" value="${p.passTemp}" onchange="updateViewPassField(${i},'passTemp',this.value)"></td>
       <td class="${p.judgement === 'NG' ? 'judge-ng' : 'judge-ok'}">${p.judgement}</td>

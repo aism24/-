@@ -469,7 +469,7 @@ function updateJointLayerDiagram(ids, url) {
 
 // 新規記録画面のデフォルト値用に、スプレッドシート最終行(前回の継手・前回の最後のパス)の値を返す。
 // 「製品名」はOCRで都度読み取る製品固有のタグ情報のため、対象に含めない。
-// 「電流」「電圧」は1パス目(まだ自分の継手のパス履歴がない時点)のデフォルト表示に使う。
+// 「電流」「電圧」「パス間温度」は1パス目(まだ自分の継手のパス履歴がない時点)のデフォルト表示に使う。
 function getLastJointHeader() {
   const sh = sheet_(RECORD_SHEET);
   const map = headerMap_(sh);
@@ -496,6 +496,7 @@ function getLastJointHeader() {
     "開先角度": getField_(record, "開先角度"),
     "電流": getField_(record, "電流"),
     "電圧": getField_(record, "電圧"),
+    "パス間温度": getField_(record, "パス間温度"),
   };
 }
 
