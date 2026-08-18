@@ -30,6 +30,7 @@ body {
 }
 .home-btn-main { background: linear-gradient(135deg, #ff9800, #e65100); color: #fff; box-shadow: 0 4px 16px rgba(255,152,0,0.4); }
 .home-btn-sub { background: #23262f; color: #ddd; border: 2px solid #444; }
+.home-btn-resume { background: linear-gradient(135deg, #1565c0, #0d47a1); color: #fff; }
 .home-btn:active { opacity: 0.8; }
 
 /* 共通ヘッダー */
@@ -72,6 +73,40 @@ select {
   background-repeat: no-repeat; background-position: right 16px center;
 }
 .big-input { font-size: 34px; text-align: center; padding: 20px; }
+.new-input { border-color: #ff9800 !important; background: #241a0a !important; }
+
+/* 層番号カウンター */
+.layer-row { margin-bottom: 18px; }
+.layer-control { display: flex; align-items: center; justify-content: center; gap: 20px; }
+.layer-btn {
+  width: 56px; height: 56px; border-radius: 50%; border: none;
+  background: #263238; color: #ffb74d; font-size: 30px; font-weight: bold; cursor: pointer;
+}
+.layer-btn:active { background: #35414d; }
+.layer-value { font-size: 34px; font-weight: bold; min-width: 50px; text-align: center; }
+
+/* タイマー */
+.timer-box { text-align: center; margin-bottom: 18px; }
+.timer-display { font-size: 52px; font-weight: bold; font-variant-numeric: tabular-nums; color: #fff; margin-bottom: 10px; }
+.timer-btn { width: 100%; padding: 22px; border: none; border-radius: 14px; font-size: 26px; font-weight: bold; cursor: pointer; }
+.timer-btn.timer-start { background: linear-gradient(135deg, #2e7d32, #1b5e20); color: #fff; }
+.timer-btn.timer-running { background: linear-gradient(135deg, #c62828, #8e0000); color: #fff; animation: pulse 1.2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+/* 写真 */
+.photo-btns { display: flex; gap: 12px; }
+.photo-btn {
+  flex: 1; background: #263238; color: #ffb74d; border: 2px solid #3a4256; border-radius: 12px;
+  padding: 16px 10px; font-size: 18px; font-weight: bold; cursor: pointer;
+}
+.photo-btn:active { background: #35414d; }
+.photo-status { margin-top: 10px; font-size: 15px; color: #90a4ae; white-space: pre-wrap; }
+
+/* パステーブルの削除ボタン */
+.pass-del-btn {
+  background: #c62828; color: #fff; border: none; border-radius: 8px;
+  padding: 4px 10px; font-size: 13px; cursor: pointer;
+}
 
 .form-grid { display: grid; grid-template-columns: 1fr; gap: 0 12px; }
 .form-grid.two-col { grid-template-columns: 1fr 1fr; }
