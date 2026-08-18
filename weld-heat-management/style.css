@@ -162,7 +162,6 @@ button:disabled {
 .save-btn:active { opacity: 0.85; }
 .finish-btn { background: linear-gradient(135deg, #1565c0, #0d47a1); color: #fff; border: none; border-radius: 14px; padding: 22px; font-size: 24px; font-weight: bold; cursor: pointer; }
 .finish-btn:active { opacity: 0.85; }
-.complete-warning { color: #ef5350; font-weight: bold; font-size: 15px; text-align: center; margin-bottom: 12px; }
 .pdf-btn { background: linear-gradient(135deg, #2e7d32, #1b5e20); color: #fff; border: none; border-radius: 14px; padding: 22px; font-size: 24px; font-weight: bold; cursor: pointer; }
 .pdf-btn:active { opacity: 0.85; }
 
@@ -184,6 +183,16 @@ button:disabled {
 .badge-progress { background: #ff9800; color: #1a1a1a; }
 .badge-done-ok { background: #2e7d32; color: #fff; }
 .badge-done-ng { background: #c62828; color: #fff; }
+
+/* マスタ管理画面 */
+.master-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 0; border-bottom: 1px solid #333a4a; flex-wrap: wrap;
+}
+.master-item:last-of-type { border-bottom: none; }
+.master-item-value { font-size: 18px; color: #fff; }
+.master-item-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.master-item-actions .small-btn, .master-item-actions .pass-del-btn { padding: 8px 14px; font-size: 14px; }
 
 /* 継手サマリ(記録画面上部) */
 .joint-summary {

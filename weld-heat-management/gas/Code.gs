@@ -65,6 +65,8 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
     const action = body.action;
     if (action === "addMasterValue") return ok_(addMasterValue(body.column, body.value));
+    if (action === "deleteMasterValue") return ok_(deleteMasterValue(body.column, body.value));
+    if (action === "setDefaultMasterValue") return ok_(setDefaultMasterValue(body.column, body.value));
     if (action === "saveJointRecord") return ok_(saveJointRecord(body));
     if (action === "updateJointRecord") return ok_(updateJointRecord(body));
     if (action === "uploadPhoto") return ok_(uploadPhoto(body));
@@ -213,6 +215,51 @@ function addMasterValue(column, value) {
     const writeRow = emptyIdx !== -1 ? emptyIdx + 2 : lastRow + 1;
     sh.getRange(writeRow, col).setValue(v);
     return { added: true };
+  });
+}
+
+// マスタ選択肢から1件削除する(該当行を除去し、下の値を詰める)
+function deleteMasterValue(column, value) {
+  const v = String(value || "").trim();
+  if (!column || !v) throw new Error("列名と値を指定してください");
+  if (MASTER_COLUMNS.indexOf(column) === -1) throw new Error("許可されていない列名です: " + column);
+  return withLock_(() => {
+    const sh = sheet_(MASTER_SHEET);
+    const map = headerMap_(sh);
+    const col = findCol_(map, column);
+    if (!col) throw new Error("「情報」シートに列が見つかりません: " + column);
+    const lastRow = sh.getLastRow();
+    if (lastRow < 2) return { deleted: false };
+    const values = sh.getRange(2, col, lastRow - 1, 1).getValues().map(r => String(r[0] || "").trim());
+    const idx = values.indexOf(v);
+    if (idx === -1) return { deleted: false };
+    values.splice(idx, 1);
+    values.push("");
+    sh.getRange(2, col, values.length, 1).setValues(values.map(x => [x]));
+    return { deleted: true };
+  });
+}
+
+// マスタ選択肢のうち1件を「デフォルト」(情報シートの2行目)に設定する。
+// 新規継手記録画面では、この2行目の値が自動的に初期選択される。
+function setDefaultMasterValue(column, value) {
+  const v = String(value || "").trim();
+  if (!column || !v) throw new Error("列名と値を指定してください");
+  if (MASTER_COLUMNS.indexOf(column) === -1) throw new Error("許可されていない列名です: " + column);
+  return withLock_(() => {
+    const sh = sheet_(MASTER_SHEET);
+    const map = headerMap_(sh);
+    const col = findCol_(map, column);
+    if (!col) throw new Error("「情報」シートに列が見つかりません: " + column);
+    const lastRow = sh.getLastRow();
+    if (lastRow < 2) throw new Error("値が見つかりません: " + v);
+    const values = sh.getRange(2, col, lastRow - 1, 1).getValues().map(r => String(r[0] || "").trim());
+    const idx = values.indexOf(v);
+    if (idx === -1) throw new Error("値が見つかりません: " + v);
+    values.splice(idx, 1);
+    values.unshift(v);
+    sh.getRange(2, col, values.length, 1).setValues(values.map(x => [x]));
+    return { ok: true };
   });
 }
 
