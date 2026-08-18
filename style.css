@@ -36,9 +36,9 @@
       background: rgba(255,255,255,0.15);
       color: white;
       border: 2px solid rgba(255,255,255,0.4);
-      border-radius: 12px;
-      padding: 14px 28px;
-      font-size: 34px;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 24px;
       font-weight: bold;
       cursor: pointer;
     }
@@ -200,12 +200,12 @@
       position: absolute; inset: 0; overflow: hidden; z-index: -1;
     }
     .home-bg-slideshow::after {
-      content: ""; position: absolute; inset: 0; background: rgba(10,10,26,0.45);
+      content: ""; position: absolute; inset: 0; background: rgba(10,10,26,0.35);
     }
     .home-bg-img {
       position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
-      filter: blur(28px) brightness(0.6) saturate(1.1);
-      transform: scale(1.2);
+      filter: blur(14px) brightness(0.85) saturate(1.2);
+      transform: scale(1.1);
       opacity: 0; transition: opacity 1.5s ease;
     }
     .home-bg-img.visible { opacity: 1; }
@@ -332,7 +332,7 @@
     body { font-size: 15px; }
     header { height: clamp(64px, 16vw, 96px); padding: 0 clamp(12px, 4vw, 20px); }
     .header-title { font-size: clamp(20px, 6vw, 32px); }
-    .header-back-btn { padding: clamp(8px, 2.5vw, 14px) clamp(14px, 4vw, 24px); font-size: clamp(16px, 4.5vw, 26px); border-radius: 10px; }
+    .header-back-btn { padding: clamp(6px, 1.75vw, 10px) clamp(10px, 2.8vw, 17px); font-size: clamp(11px, 3.15vw, 18px); border-radius: 7px; }
     .header-save-btn { padding: clamp(10px, 3vw, 16px) clamp(18px, 5vw, 28px); font-size: clamp(16px, 5vw, 28px); border-radius: 12px; }
     .header-spacer { width: clamp(40px, 12vw, 90px); }
     .scoreboard { padding: clamp(12px, 4vw, 20px) clamp(10px, 3vw, 20px); }
@@ -518,7 +518,7 @@
     header { height: 56px; padding: 0 14px; }
     .header-title { font-size: 22px; letter-spacing: 1px; }
     .header-save-btn { padding: 10px 20px; font-size: 20px; border-radius: 10px; }
-    .header-back-btn { padding: 8px 16px; font-size: 18px; border-radius: 8px; }
+    .header-back-btn { padding: 6px 11px; font-size: 13px; border-radius: 6px; }
     .header-spacer { width: 40px; }
     .scoreboard { padding: 8px 14px; }
     .sb-label { font-size: 16px; margin-bottom: 2px; }
