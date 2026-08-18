@@ -71,6 +71,7 @@ function doPost(e) {
     if (action === "saveJointRecord") return ok_(saveJointRecord(body));
     if (action === "updateJointRecord") return ok_(updateJointRecord(body));
     if (action === "uploadPhoto") return ok_(uploadPhoto(body));
+    if (action === "updateJointLayerDiagram") return ok_(updateJointLayerDiagram(body.ids, body.url));
     if (action === "generatePdf") return ok_(generatePdf(body));
     return errRes_("不明なaction: " + action);
   } catch (err) {
@@ -443,8 +444,32 @@ function updateJointRecord(body) {
   });
 }
 
-// 新規記録画面のデフォルト値用に、スプレッドシート最終行(前回の継手)のヘッダー値を返す。
+// 履歴詳細(閲覧)画面から、保存済みの継手に積層図を後付けで追加・差し替えできるようにする。
+// 積層図は継手のヘッダー情報として全パス行に重複して保持しているため、該当する全行を更新する。
+function updateJointLayerDiagram(ids, url) {
+  if (!ids || !ids.length) throw new Error("idsを指定してください");
+  return withLock_(() => {
+    const sh = sheet_(RECORD_SHEET);
+    const map = headerMap_(sh);
+    const idCol = requireCol_(map, "ID");
+    const col = requireCol_(map, "積層図");
+    const lastRow = sh.getLastRow();
+    if (lastRow < 2) throw new Error("更新対象の行が見つかりません");
+    const idValues = sh.getRange(2, idCol, lastRow - 1, 1).getValues().map(r => Number(r[0]));
+    let updated = 0;
+    ids.forEach(id => {
+      const rowIndex = idValues.indexOf(Number(id));
+      if (rowIndex === -1) return;
+      sh.getRange(rowIndex + 2, col).setValue(url);
+      updated += 1;
+    });
+    return { updated: updated };
+  });
+}
+
+// 新規記録画面のデフォルト値用に、スプレッドシート最終行(前回の継手・前回の最後のパス)の値を返す。
 // 「製品名」はOCRで都度読み取る製品固有のタグ情報のため、対象に含めない。
+// 「電流」「電圧」は1パス目(まだ自分の継手のパス履歴がない時点)のデフォルト表示に使う。
 function getLastJointHeader() {
   const sh = sheet_(RECORD_SHEET);
   const map = headerMap_(sh);
@@ -469,6 +494,8 @@ function getLastJointHeader() {
     "パス間温度上限(℃)": getField_(record, "パス間温度上限(℃)"),
     "ルートギャップ": getField_(record, "ルートギャップ"),
     "開先角度": getField_(record, "開先角度"),
+    "電流": getField_(record, "電流"),
+    "電圧": getField_(record, "電圧"),
   };
 }
 
@@ -541,6 +568,7 @@ function groupIntoJoints_(records) {
         const arcSec = Number(getField_(r, "アークタイム")) || 0;
         const metrics = computePassMetrics_(getField_(r, "電流"), getField_(r, "電圧"), arcSec, getField_(r, "パス間温度"), header);
         return {
+          ID: getField_(r, "ID"),
           層数: getField_(r, "層数"), 順序: getField_(r, "順序"),
           電流: getField_(r, "電流"), 電圧: getField_(r, "電圧"),
           スタート: asDateStr(getField_(r, "スタート")), エンド: asDateStr(getField_(r, "エンド")),
