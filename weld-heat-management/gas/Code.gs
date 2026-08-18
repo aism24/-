@@ -54,6 +54,7 @@ function doGet(e) {
     const action = e.parameter.action;
     if (action === "listMasterLists") return ok_(listMasterLists());
     if (action === "searchJoints") return ok_(searchJoints(e.parameter.keyword || "", Number(e.parameter.limit) || 200));
+    if (action === "getLastJointHeader") return ok_(getLastJointHeader());
     return errRes_("不明なaction: " + action);
   } catch (err) {
     return errRes_(err.message);
@@ -440,6 +441,35 @@ function updateJointRecord(body) {
 
     return { updatedRows: ids.length };
   });
+}
+
+// 新規記録画面のデフォルト値用に、スプレッドシート最終行(前回の継手)のヘッダー値を返す。
+// 「製品名」はOCRで都度読み取る製品固有のタグ情報のため、対象に含めない。
+function getLastJointHeader() {
+  const sh = sheet_(RECORD_SHEET);
+  const map = headerMap_(sh);
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return null;
+  const lastCol = sh.getLastColumn();
+  const row = sh.getRange(lastRow, 1, 1, lastCol).getValues()[0];
+  const record = {};
+  Object.keys(map).forEach(name => {
+    if (name === "__raw__") return;
+    record[name] = row[map[name] - 1];
+  });
+  return {
+    "サイズ(幅)": getField_(record, "サイズ(幅)"),
+    "板厚": getField_(record, "板厚"),
+    "部材サイズ": getField_(record, "部材サイズ"),
+    "溶接長": getField_(record, "溶接長"),
+    "気温": getField_(record, "気温"),
+    "計測": getField_(record, "計測"),
+    "入熱上限(kJ/cm)": getField_(record, "入熱上限(kJ/cm)"),
+    "パス間温度下限(℃)": getField_(record, "パス間温度下限(℃)"),
+    "パス間温度上限(℃)": getField_(record, "パス間温度上限(℃)"),
+    "ルートギャップ": getField_(record, "ルートギャップ"),
+    "開先角度": getField_(record, "開先角度"),
+  };
 }
 
 // ---------- 履歴・検索(継手単位にグルーピングして返す) ----------

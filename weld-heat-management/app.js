@@ -102,16 +102,9 @@ function renderEntry(entry) {
   entry.load();
 }
 function goTo(entry) { navStack.push(entry); renderEntry(entry); }
-function goBack() {
-  navStack.pop();
-  if (navStack.length === 0) {
-    document.getElementById('app-header').style.display = 'none';
-    showScreen('home-screen');
-    checkDraftButton();
-  } else {
-    renderEntry(navStack[navStack.length - 1]);
-  }
-}
+// 「← 戻る」は常にホームへ戻る(画面ごとの再描画ロジックを経由するとレイアウトが崩れるため、
+// 一段階ずつ戻る挙動はやめてgoHome()と同じ動作に統一する)
+function goBack() { goHome(); }
 function goHome() {
   navStack = [];
   document.getElementById('app-header').style.display = 'none';
@@ -254,7 +247,7 @@ function resumeDraft() {
 const state = { header: null, passes: [], nextLayer: 1, savedIds: null };
 let timerState = 'idle'; // idle | running | stopped
 let timerStart = null, timerEnd = null, timerInterval = null;
-let pendingImageUrl = '', pendingLayerImageUrl = '';
+let pendingImageUrl = '';
 let recordCompleted = false; // 溶接完了・スプレッドシート保存済みか(完了後の編集で再保存ボタンを出すため)
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -275,7 +268,26 @@ function goJointNew() {
   goTo({ screenId: 'joint-new-screen', title: '記録', load: initJointNewForm });
 }
 
-function initJointNewForm() {
+// 「製品名」以外(サイズ・板厚・部材サイズ・溶接長・気温・計測・入熱上限・パス間温度下限/上限)は、
+// スプレッドシートの最終行(前回の継手)の値をデフォルト表示する。製品名はOCRで都度読み取る
+// 製品固有のタグ情報なので前回値を引き継がない。
+const LAST_ROW_DEFAULT_FIELDS = [
+  { id: 'jn-幅', key: 'サイズ(幅)' },
+  { id: 'jn-板厚', key: '板厚' },
+  { id: 'jn-部材サイズ', key: '部材サイズ' },
+  { id: 'jn-溶接長', key: '溶接長' },
+  { id: 'jn-気温', key: '気温' },
+  { id: 'jn-計測', key: '計測' },
+  { id: 'jn-入熱上限', key: '入熱上限(kJ/cm)' },
+  { id: 'jn-温度下限', key: 'パス間温度下限(℃)' },
+  { id: 'jn-温度上限', key: 'パス間温度上限(℃)' },
+];
+const LAST_ROW_DEFAULT_STEPPERS = [
+  { id: 'jn-ルートギャップ', key: 'ルートギャップ' },
+  { id: 'jn-開先角度', key: '開先角度' },
+];
+
+async function initJointNewForm() {
   document.getElementById('jn-検査日').value = new Date().toISOString().slice(0, 10);
   MASTER_FIELDS.forEach(f => {
     const list = masterLists[f.masterKey] || [];
@@ -283,14 +295,31 @@ function initJointNewForm() {
     document.getElementById(f.newId).style.display = 'none';
     document.getElementById(f.newId).value = '';
   });
-  ['jn-製品名', 'jn-幅', 'jn-板厚', 'jn-部材サイズ', 'jn-溶接長', 'jn-気温',
-    'jn-計測', 'jn-入熱上限', 'jn-温度下限', 'jn-温度上限'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('jn-製品名').value = '';
+  LAST_ROW_DEFAULT_FIELDS.forEach(f => { document.getElementById(f.id).value = ''; });
   resetSteppers();
-  pendingImageUrl = ''; pendingLayerImageUrl = '';
+  pendingImageUrl = '';
   recordCompleted = false;
   state.savedIds = null;
   document.getElementById('jn-photo-status').textContent = '';
   updateRequiredState();
+
+  let lastHeader = null;
+  try { lastHeader = await apiGet('getLastJointHeader'); } catch (e) { lastHeader = null; }
+  if (lastHeader) {
+    LAST_ROW_DEFAULT_FIELDS.forEach(f => {
+      const v = lastHeader[f.key];
+      if (v !== undefined && v !== null && v !== '') document.getElementById(f.id).value = v;
+    });
+    LAST_ROW_DEFAULT_STEPPERS.forEach(f => {
+      const v = lastHeader[f.key];
+      if (v !== undefined && v !== null && v !== '') {
+        stepperValues[f.id] = Number(v);
+        document.getElementById(f.id).textContent = formatStepperValue(stepperValues[f.id]);
+      }
+    });
+    updateRequiredState();
+  }
 }
 
 function onPhotoSelected(event, kind) {
@@ -319,14 +348,14 @@ function onPhotoSelected(event, kind) {
           } else {
             showOverlay('⚠️', '製品名の自動読み取りに失敗しました。手入力してください', true);
           }
-          document.getElementById('jn-photo-status').textContent =
-            (pendingImageUrl ? '✅ 製品名タグ写真 添付済み\n' : '') + (pendingLayerImageUrl ? '✅ 積層図 添付済み' : '');
+          document.getElementById('jn-photo-status').textContent = pendingImageUrl ? '✅ 製品名タグ写真 添付済み' : '';
         }, 300);
       } else {
-        pendingLayerImageUrl = result.url;
+        state.header["積層図"] = result.url;
+        saveDraft();
         hideOverlay();
-        document.getElementById('jn-photo-status').textContent =
-          (pendingImageUrl ? '✅ 製品名タグ写真 添付済み\n' : '') + (pendingLayerImageUrl ? '✅ 積層図 添付済み' : '');
+        document.getElementById('rec-photo-status').textContent = '✅ 積層図 添付済み';
+        updateFinishButtonState();
       }
     }).catch(showError);
   };
@@ -379,7 +408,7 @@ function submitNewJoint() {
     "ルートギャップ": getStepperValue('jn-ルートギャップ'),
     "開先角度": getStepperValue('jn-開先角度'),
     "image": pendingImageUrl,
-    "積層図": pendingLayerImageUrl,
+    "積層図": '', // パス記録画面の完了ボタン付近で撮影してから設定する
     heatInputLimit: document.getElementById('jn-入熱上限').value,
     tempMin: document.getElementById('jn-温度下限').value,
     tempMax: document.getElementById('jn-温度上限').value,
@@ -391,8 +420,6 @@ function submitNewJoint() {
   state.nextLayer = 1;
   saveDraft();
   goTo({ screenId: 'joint-record-screen', title: 'パス記録', load: () => renderRecordScreen() });
-  // joint-new-screen を履歴から外す(戻るで新規フォームに戻らないように)
-  navStack.splice(navStack.length - 2, 1);
 }
 
 // ---------- パス記録画面 ----------
@@ -419,9 +446,22 @@ function renderRecordScreen() {
     <div>溶接者: ${escapeHtml(h["溶接者"] || '-')}　検査員: ${escapeHtml(h["検査員（入力者）"] || '-')}</div>
   `;
   document.getElementById('layer-value').textContent = state.nextLayer;
+  document.getElementById('rec-photo-status').textContent = h["積層図"] ? '✅ 積層図 添付済み' : '';
+  updateFinishButtonState();
   resetTimerUi();
   renderPassTable();
   prefillPassInputsFromLastPass();
+}
+
+// 積層図(全パス完了後に撮影する、鋼材に描かれた図の写真)が撮影済みでないと
+// 完了ボタンを押せないようにする
+function updateFinishButtonState() {
+  const btn = document.getElementById('complete-btn');
+  const hasLayerDiagram = !!(state.header && state.header["積層図"]);
+  btn.disabled = !hasLayerDiagram;
+  btn.textContent = hasLayerDiagram
+    ? '🏁 溶接完了・スプレッドシートへ記録する'
+    : '🏁 溶接完了・スプレッドシートへ記録する(積層図撮影後に押せます)';
 }
 
 // 層数は「前回記録した層と同じ」か「その1つ上」までしか進められない(飛び番禁止)
@@ -574,6 +614,7 @@ function renderPassTable() {
 
 function onCompleteJoint() {
   if (!state.passes.length) { showOverlay('⚠️', 'パスが1件も記録されていません', true); return; }
+  if (!state.header["積層図"]) { showOverlay('⚠️', '積層図を撮影してください', true); return; }
   if (!confirm('この継手の溶接記録を確定し、スプレッドシートへ記録します。よろしいですか？')) return;
   showOverlay('⏳', 'スプレッドシートへ記録しています...');
   apiPost('saveJointRecord', { header: state.header, passes: state.passes }).then(result => {
@@ -697,12 +738,16 @@ function onGeneratePdfFromView() {
   }).catch(showError);
 }
 
-// ---------- マスタ管理(「情報」シートA:F列の追加・削除・デフォルト設定) ----------
-// 各列の1件目(情報シートの2行目)が「デフォルト」として扱われ、新規記録作成時に自動選択される
+// ---------- 初期値設定(旧マスタ管理。「情報」シートA:F列の追加・削除・デフォルト設定) ----------
+// 各列の1件目(情報シートの2行目)が「デフォルト」として扱われ、新規記録作成時に自動選択される。
+// 6項目はアコーディオン形式(見出しは常に全部表示、クリックした項目だけ中身を展開。1度に1項目のみ開く)。
+
+let openMasterKey = null;
 
 function goMasterManage() {
   navStack = [];
-  goTo({ screenId: 'master-manage-screen', title: 'マスタ管理', load: renderMasterManage });
+  openMasterKey = null;
+  goTo({ screenId: 'master-manage-screen', title: '初期値設定', load: renderMasterManage });
 }
 
 async function renderMasterManage() {
@@ -713,10 +758,15 @@ async function renderMasterManage() {
   } catch (err) {
     masterLists = {};
   }
-  body.innerHTML = MASTER_FIELDS.map(f => renderMasterSectionHtml(f)).join('');
+  renderMasterBody();
+}
+
+function renderMasterBody() {
+  document.getElementById('master-manage-body').innerHTML = MASTER_FIELDS.map(f => renderMasterSectionHtml(f)).join('');
 }
 
 function renderMasterSectionHtml(f) {
+  const isOpen = openMasterKey === f.masterKey;
   const list = masterLists[f.masterKey] || [];
   const rows = list.length ? list.map((v, i) => `
     <div class="master-item">
@@ -727,12 +777,17 @@ function renderMasterSectionHtml(f) {
       </div>
     </div>`).join('') : '<div class="loading-text">まだ値がありません</div>';
   return `
-    <div class="section">
-      <div class="field-label">${escapeHtml(f.key)}</div>
-      ${rows}
-      <div class="new-row" style="margin-top:12px;">
-        <input type="text" class="master-new-input" placeholder="新しい値を追加">
-        <button class="small-btn" data-action="add" data-col="${escapeHtml(f.masterKey)}">＋追加</button>
+    <div class="accordion-item">
+      <button class="accordion-header" data-action="toggle" data-col="${escapeHtml(f.masterKey)}">
+        <span>${escapeHtml(f.key)}</span>
+        <span class="accordion-caret">${isOpen ? '▲' : '▼'}</span>
+      </button>
+      <div class="accordion-body" style="display:${isOpen ? 'block' : 'none'};">
+        ${rows}
+        <div class="new-row" style="margin-top:12px;">
+          <input type="text" class="master-new-input" placeholder="新しい値を追加">
+          <button class="small-btn" data-action="add" data-col="${escapeHtml(f.masterKey)}">＋追加</button>
+        </div>
       </div>
     </div>`;
 }
@@ -742,8 +797,11 @@ function onMasterManageClick(event) {
   if (!btn) return;
   const action = btn.dataset.action;
   const col = btn.dataset.col;
-  if (action === 'add') {
-    const input = btn.closest('.new-row').querySelector('.master-new-input');
+  if (action === 'toggle') {
+    openMasterKey = (openMasterKey === col) ? null : col;
+    renderMasterBody();
+  } else if (action === 'add') {
+    const input = btn.closest('.accordion-body').querySelector('.master-new-input');
     addMasterValueUi(col, input.value);
   } else if (action === 'delete') {
     deleteMasterValueUi(col, btn.dataset.val);

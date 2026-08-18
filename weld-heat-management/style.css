@@ -4,9 +4,22 @@ body {
   background: #14161c;
   color: #f0f0f0;
   min-height: 100vh;
+  padding-top: 44px;
   padding-bottom: 60px;
 }
 .screen { min-height: 100vh; }
+
+/* 会社ロゴ+社名(全画面共通の固定ヘッダー) */
+.brand-header {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 60;
+  height: 44px;
+  background: #fff;
+  border-bottom: 2px solid #ff9800;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 0 12px;
+}
+.brand-logo { height: 30px; width: auto; }
+.brand-name { font-size: 15px; font-weight: bold; color: #1a1a1a; white-space: nowrap; }
 
 /* ホーム画面 */
 #home-screen {
@@ -33,9 +46,9 @@ body {
 .home-btn-resume { background: linear-gradient(135deg, #1565c0, #0d47a1); color: #fff; }
 .home-btn:active { opacity: 0.8; }
 
-/* 共通ヘッダー */
+/* 共通ヘッダー(会社ロゴ+社名の固定ヘッダーの直下に張り付く) */
 .app-header {
-  position: sticky; top: 0; z-index: 40;
+  position: sticky; top: 44px; z-index: 40;
   background: linear-gradient(135deg, #2a1a0a, #3a2410);
   border-bottom: 3px solid #ff9800;
   padding: 0 16px; height: 74px;
@@ -184,7 +197,17 @@ button:disabled {
 .badge-done-ok { background: #2e7d32; color: #fff; }
 .badge-done-ng { background: #c62828; color: #fff; }
 
-/* マスタ管理画面 */
+/* 初期値設定画面(旧マスタ管理画面。アコーディオン形式) */
+.accordion-item { background: #1d2029; margin: 14px; border-radius: 16px; border: 1px solid #333a4a; overflow: hidden; }
+.accordion-header {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  background: none; border: none; color: #ffb74d; font-size: 20px; font-weight: bold;
+  padding: 18px; cursor: pointer; text-align: left;
+}
+.accordion-header:active { background: rgba(255,255,255,0.05); }
+.accordion-caret { color: #90a4ae; font-size: 16px; }
+.accordion-body { padding: 0 18px 18px; }
+
 .master-item {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 12px 0; border-bottom: 1px solid #333a4a; flex-wrap: wrap;
