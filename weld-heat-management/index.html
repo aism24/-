@@ -159,38 +159,44 @@
   <div class="joint-summary" id="joint-summary"></div>
 
   <div class="section" id="pass-input-section">
-    <div class="layer-row">
-      <div class="field-label small">層番号</div>
-      <div class="layer-control">
-        <button class="layer-btn" onclick="changeLayer(-1)">−</button>
-        <div class="layer-value" id="layer-value">1</div>
-        <button class="layer-btn" onclick="changeLayer(1)">＋</button>
+    <div class="pass-top-row">
+      <div class="pass-top-item">
+        <div class="field-label small">層数</div>
+        <div class="layer-control">
+          <button class="layer-btn" onclick="changeLayer(-1)">−</button>
+          <div class="layer-value" id="layer-value">1</div>
+          <button class="layer-btn" onclick="changeLayer(1)">＋</button>
+        </div>
+      </div>
+      <div class="pass-top-item">
+        <div class="field-label small">経過時間</div>
+        <div class="timer-display" id="timer-display">00:00</div>
+      </div>
+      <div class="pass-top-item pass-top-item-btn">
+        <button class="timer-btn timer-start" id="timer-btn" onclick="onTimerButton()">▶ スタート</button>
       </div>
     </div>
 
-    <div class="timer-box">
-      <div class="timer-display" id="timer-display">00:00</div>
-      <button class="timer-btn timer-start" id="timer-btn" onclick="onTimerButton()">▶ スタート</button>
-    </div>
-
-    <div class="form-grid two-col">
-      <div>
+    <div class="field-row-group">
+      <div class="field-col">
         <div class="field-label small">電流 (A)</div>
         <input type="number" inputmode="decimal" id="pi-current" placeholder="A">
       </div>
-      <div>
+      <div class="field-col">
         <div class="field-label small">電圧 (V)</div>
         <input type="number" inputmode="decimal" id="pi-voltage" placeholder="V">
       </div>
+      <div class="field-col">
+        <div class="field-label small">パス間温度 (℃) <span class="req">必須</span></div>
+        <input type="number" inputmode="decimal" id="pi-temp" placeholder="測定温度">
+      </div>
     </div>
-    <div class="field-label small" style="margin-top:16px;">パス間温度 (℃) <span class="req">必須</span></div>
-    <input type="number" inputmode="decimal" id="pi-temp" placeholder="測定温度" class="big-input">
-    <div class="field-label small" style="margin-top:16px;">備考</div>
+    <div class="field-label small">備考</div>
     <input type="text" id="pi-note" placeholder="任意">
     <button class="save-btn full-btn" id="pi-submit-btn" onclick="submitPass()" disabled>✅ このパスを記録(ストップ後に押せます)</button>
   </div>
 
-  <div class="section">
+  <div class="section" id="pass-list-section">
     <div class="field-label">記録済みパス一覧</div>
     <div class="pass-table-wrap">
       <table class="pass-table" id="pass-table">
@@ -203,6 +209,7 @@
   </div>
 
   <div class="section" id="complete-section">
+    <div class="complete-warning">※今回の記録が保存されたら記録済みパス一覧が削除されます</div>
     <button class="finish-btn full-btn" onclick="onCompleteJoint()">🏁 溶接完了・スプレッドシートへ記録する</button>
   </div>
 
