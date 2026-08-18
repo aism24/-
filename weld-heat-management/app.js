@@ -261,6 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadMasterLists();
   checkDraftButton();
   setupRequiredValidation();
+  document.getElementById('master-manage-body').addEventListener('click', onMasterManageClick);
 });
 
 // ---------- 新規継手ヘッダー入力 ----------
@@ -277,7 +278,8 @@ function goJointNew() {
 function initJointNewForm() {
   document.getElementById('jn-検査日').value = new Date().toISOString().slice(0, 10);
   MASTER_FIELDS.forEach(f => {
-    document.getElementById(f.selectId).value = '';
+    const list = masterLists[f.masterKey] || [];
+    document.getElementById(f.selectId).value = list.length ? list[0] : ''; // 情報シート2行目=デフォルト
     document.getElementById(f.newId).style.display = 'none';
     document.getElementById(f.newId).value = '';
   });
@@ -692,5 +694,87 @@ function onGeneratePdfFromView() {
     hideOverlay();
     downloadPdfBase64_(result.pdfBase64, result.fileName);
     document.getElementById('view-pdf-link-wrap').style.display = 'block';
+  }).catch(showError);
+}
+
+// ---------- マスタ管理(「情報」シートA:F列の追加・削除・デフォルト設定) ----------
+// 各列の1件目(情報シートの2行目)が「デフォルト」として扱われ、新規記録作成時に自動選択される
+
+function goMasterManage() {
+  navStack = [];
+  goTo({ screenId: 'master-manage-screen', title: 'マスタ管理', load: renderMasterManage });
+}
+
+async function renderMasterManage() {
+  const body = document.getElementById('master-manage-body');
+  body.innerHTML = '<div class="loading-text">読み込み中...</div>';
+  try {
+    masterLists = await apiGet('listMasterLists');
+  } catch (err) {
+    masterLists = {};
+  }
+  body.innerHTML = MASTER_FIELDS.map(f => renderMasterSectionHtml(f)).join('');
+}
+
+function renderMasterSectionHtml(f) {
+  const list = masterLists[f.masterKey] || [];
+  const rows = list.length ? list.map((v, i) => `
+    <div class="master-item">
+      <div class="master-item-value">${escapeHtml(v)}${i === 0 ? ' <span class="badge badge-done-ok">デフォルト</span>' : ''}</div>
+      <div class="master-item-actions">
+        ${i === 0 ? '' : `<button class="small-btn" data-action="default" data-col="${escapeHtml(f.masterKey)}" data-val="${escapeHtml(v)}">デフォルトにする</button>`}
+        <button class="pass-del-btn" data-action="delete" data-col="${escapeHtml(f.masterKey)}" data-val="${escapeHtml(v)}">削除</button>
+      </div>
+    </div>`).join('') : '<div class="loading-text">まだ値がありません</div>';
+  return `
+    <div class="section">
+      <div class="field-label">${escapeHtml(f.key)}</div>
+      ${rows}
+      <div class="new-row" style="margin-top:12px;">
+        <input type="text" class="master-new-input" placeholder="新しい値を追加">
+        <button class="small-btn" data-action="add" data-col="${escapeHtml(f.masterKey)}">＋追加</button>
+      </div>
+    </div>`;
+}
+
+function onMasterManageClick(event) {
+  const btn = event.target.closest('button[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const col = btn.dataset.col;
+  if (action === 'add') {
+    const input = btn.closest('.new-row').querySelector('.master-new-input');
+    addMasterValueUi(col, input.value);
+  } else if (action === 'delete') {
+    deleteMasterValueUi(col, btn.dataset.val);
+  } else if (action === 'default') {
+    setMasterDefaultUi(col, btn.dataset.val);
+  }
+}
+
+function addMasterValueUi(column, value) {
+  const v = String(value || '').trim();
+  if (!v) return;
+  showOverlay('⏳', '追加しています...');
+  apiPost('addMasterValue', { column: column, value: v }).then(() => {
+    hideOverlay();
+    renderMasterManage();
+  }).catch(showError);
+}
+
+function deleteMasterValueUi(column, value) {
+  if (!confirm(`「${value}」を削除しますか?`)) return;
+  showOverlay('⏳', '削除しています...');
+  apiPost('deleteMasterValue', { column: column, value: value }).then(() => {
+    hideOverlay();
+    renderMasterManage();
+  }).catch(showError);
+}
+
+function setMasterDefaultUi(column, value) {
+  showOverlay('⏳', 'デフォルトに設定しています...');
+  apiPost('setDefaultMasterValue', { column: column, value: value }).then(() => {
+    hideOverlay();
+    renderMasterManage();
   }).catch(showError);
 }

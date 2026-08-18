@@ -15,6 +15,7 @@
   <button class="home-btn home-btn-resume" id="resume-btn" style="display:none;" onclick="resumeDraft()">▶ 前回の途中から再開する</button>
   <button class="home-btn home-btn-main" onclick="goJointNew()">＋ 新しい管理記録を開始</button>
   <button class="home-btn home-btn-sub" onclick="goHistory()">📜 履歴を検索する</button>
+  <button class="home-btn home-btn-sub" onclick="goMasterManage()">⚙️ マスタ管理</button>
 </div>
 
 <!-- 共通ヘッダー -->
@@ -209,7 +210,6 @@
   </div>
 
   <div class="section" id="complete-section">
-    <div class="complete-warning">※今回の記録が保存されたら記録済みパス一覧が削除されます</div>
     <button class="finish-btn full-btn" onclick="onCompleteJoint()">🏁 溶接完了・スプレッドシートへ記録する</button>
   </div>
 
@@ -236,6 +236,11 @@
     </div>
   </div>
   <div class="list" id="history-list"><div class="loading-text">読み込み中...</div></div>
+</div>
+
+<!-- マスタ管理画面 -->
+<div id="master-manage-screen" class="screen" style="display:none;">
+  <div id="master-manage-body"><div class="loading-text">読み込み中...</div></div>
 </div>
 
 <!-- 履歴詳細(閲覧のみ) -->
