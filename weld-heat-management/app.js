@@ -233,7 +233,7 @@ function goJointNew() {
     if (!confirm('前回入力途中の記録が残っています。破棄して新しい継手の記録を始めますか?')) return;
     clearDraft();
   }
-  goTo({ screenId: 'joint-new-screen', title: '継手情報の入力', load: initJointNewForm });
+  goTo({ screenId: 'joint-new-screen', title: '記録', load: initJointNewForm });
 }
 
 function initJointNewForm() {
