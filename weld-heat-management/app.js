@@ -201,14 +201,29 @@ function onPhotoSelected(event, kind) {
   const reader = new FileReader();
   reader.onload = () => {
     const base64 = reader.result.split(',')[1];
-    showOverlay('⏳', (kind === 'image' ? '写真' : '積層図') + 'をアップロード中...');
-    apiPost('uploadImage', { base64: base64, mimeType: file.type, fileName: (kind === 'image' ? 'photo_' : 'layer_') + Date.now() + '.jpg' })
-      .then(result => {
-        if (kind === 'image') pendingImageUrl = result.url; else pendingLayerImageUrl = result.url;
+    const label = kind === 'productName' ? '製品名タグ' : '積層図';
+    showOverlay('⏳', label + 'をアップロード中...' + (kind === 'productName' ? '(自動読み取り中)' : ''));
+    apiPost('uploadPhoto', {
+      kind: kind,
+      base64: base64,
+      mimeType: file.type,
+      fileName: (kind === 'productName' ? 'product_' : 'layer_') + Date.now() + '.jpg',
+    }).then(result => {
+      if (kind === 'productName') {
+        pendingImageUrl = result.url;
         hideOverlay();
-        document.getElementById('jn-photo-status').textContent =
-          (pendingImageUrl ? '✅ 写真 添付済み\n' : '') + (pendingLayerImageUrl ? '✅ 積層図 添付済み' : '');
-      }).catch(showError);
+        if (result.recognizedText) {
+          document.getElementById('jn-製品名').value = result.recognizedText;
+        } else {
+          showOverlay('⚠️', '製品名の自動読み取りに失敗しました。手入力してください', true);
+        }
+      } else {
+        pendingLayerImageUrl = result.url;
+        hideOverlay();
+      }
+      document.getElementById('jn-photo-status').textContent =
+        (pendingImageUrl ? '✅ 製品名タグ写真 添付済み\n' : '') + (pendingLayerImageUrl ? '✅ 積層図 添付済み' : '');
+    }).catch(showError);
   };
   reader.readAsDataURL(file);
 }
@@ -398,13 +413,28 @@ function onCompleteJoint() {
   }).catch(showError);
 }
 
+function downloadPdfBase64_(base64, fileName) {
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 function onGeneratePdf() {
   showOverlay('⏳', 'PDFを作成しています...(数秒かかります)');
   const payload = { header: state.header, passes: state.passes.map(p => ({ layer: p.layer, current: p.current, voltage: p.voltage, arcSeconds: p.arcSeconds, passTemp: p.passTemp, note: p.note })) };
   apiPost('generatePdf', payload).then(result => {
     hideOverlay();
+    downloadPdfBase64_(result.pdfBase64, result.fileName);
     document.getElementById('pdf-link-wrap').style.display = 'block';
-    document.getElementById('pdf-link').href = result.pdfUrl;
   }).catch(showError);
 }
 
@@ -485,7 +515,7 @@ function onGeneratePdfFromView() {
   };
   apiPost('generatePdf', payload).then(result => {
     hideOverlay();
+    downloadPdfBase64_(result.pdfBase64, result.fileName);
     document.getElementById('view-pdf-link-wrap').style.display = 'block';
-    document.getElementById('view-pdf-link').href = result.pdfUrl;
   }).catch(showError);
 }

@@ -1,6 +1,9 @@
 /**
  * 「入熱・パス間温度管理」アプリのGAS APIバックエンド。
- * このファイルの内容をまるごとGASプロジェクトの Code.gs に貼り付けて使用してください。
+ *
+ * このスクリプトはスプレッドシートの「拡張機能→Apps Script」から作成する
+ * コンテナバインド型スクリプトとして使う前提です。SpreadsheetApp.getActiveSpreadsheet()で
+ * 自分自身のスプレッドシートを参照するため、SPREADSHEET_IDの設定は不要です。
  *
  * データはユーザーが用意した以下2枚のシートを使います(列の並び順は問いません。
  * 列名でマッチングするため、列名だけ一致していれば動作します)。
@@ -12,19 +15,31 @@
  *     ルートギャップ, 開先角度, image, 積層図,
  *     入熱上限(kJ/cm), パス間温度下限(℃), パス間温度上限(℃), 判定
  *
- *   シート「情報」(マスタ選択肢。列ごとに独立したリスト):
- *     工事名, 溶接者, 検査員, 部材, 材質, 溶接方法
+ *   シート「情報」:
+ *     A〜F列: マスタ選択肢(工事名, 溶接者, 検査員, 部材, 材質, 溶接方法。列ごとに独立したリスト)
+ *     I〜J列: 設定値(キー・値のペア。1行に1項目ずつ、以下のキー名で用意してください)
+ *       データソーススプシID … 表示確認用(コードからは参照しません)
+ *       製品名フォルダ       … 製品名タグ写真の保存先DriveフォルダID
+ *       積層図               … 積層図写真の保存先DriveフォルダID
+ *       Geminiモデル名       … 製品名OCRに使うGeminiモデル名(例: gemini-3.5-flash-lite)
+ *       タイムゾーン         … 日時表示に使うタイムゾーン(例: Asia/Tokyo)
+ *       APIKEY               … Gemini APIキー。サーバー側(このスクリプト内)でのみ使用し、
+ *                                クライアント(app.js)には絶対に返さないこと。
  *
  * 継手(一連の溶接)のグループ化は、「順序」列が1に戻った行を新しい継手の開始とみなす
  * ルールで行います(saveJointRecordは1継手分のパスを必ずまとめて書き込むため、
  * 同じ継手のパスは常にシート上で連続した行になります)。
  */
 
-const SPREADSHEET_ID = "★ここにスプレッドシートIDを設定してください★";
-const DRIVE_FOLDER_ID = "★ここにPDF・写真保存先DriveフォルダIDを設定してください★";
-
 const RECORD_SHEET = "入熱パス間記録";
 const MASTER_SHEET = "情報";
+const CONFIG_COL_KEY = 9;    // 「情報」シート I列
+const CONFIG_COL_VALUE = 10; // 「情報」シート J列
+
+// マスタ選択肢として公開してよい列名のホワイトリスト。
+// 「情報」シートのI:J列(設定値・APIKEYを含む)を誤って外部に公開しないよう、
+// listMasterLists/addMasterValueはこのリストにある列名しか扱わない。
+const MASTER_COLUMNS = ["工事名", "溶接者", "検査員", "部材", "材質", "溶接方法"];
 
 function jsonResponse_(payload) {
   return ContentService
@@ -51,7 +66,7 @@ function doPost(e) {
     const action = body.action;
     if (action === "addMasterValue") return ok_(addMasterValue(body.column, body.value));
     if (action === "saveJointRecord") return ok_(saveJointRecord(body));
-    if (action === "uploadImage") return ok_(uploadImage(body));
+    if (action === "uploadPhoto") return ok_(uploadPhoto(body));
     if (action === "generatePdf") return ok_(generatePdf(body));
     return errRes_("不明なaction: " + action);
   } catch (err) {
@@ -61,7 +76,7 @@ function doPost(e) {
 
 // ---------- 共通ヘルパー ----------
 
-function ss_() { return SpreadsheetApp.openById(SPREADSHEET_ID); }
+function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
 
 function sheet_(name) {
   const sh = ss_().getSheetByName(name);
@@ -106,7 +121,8 @@ function optionalCol_(map, name) { return findCol_(map, name); }
 
 function fmtDateTime_(d) {
   if (!(d instanceof Date) || isNaN(d)) return "";
-  return Utilities.formatDate(d, Session.getScriptTimeZone() || "Asia/Tokyo", "yyyy/MM/dd HH:mm:ss");
+  const tz = getConfig_()["タイムゾーン"] || Session.getScriptTimeZone() || "Asia/Tokyo";
+  return Utilities.formatDate(d, tz, "yyyy/MM/dd HH:mm:ss");
 }
 
 function withLock_(fn) {
@@ -119,17 +135,62 @@ function withLock_(fn) {
   }
 }
 
-// ---------- マスタ選択肢(「情報」シート) ----------
+// ---------- 設定値(「情報」シートI:J列) ----------
+
+function getConfig_() {
+  const sh = sheet_(MASTER_SHEET);
+  const lastRow = sh.getLastRow();
+  const cfg = {};
+  if (lastRow < 1) return cfg;
+  const values = sh.getRange(1, CONFIG_COL_KEY, lastRow, 2).getValues();
+  values.forEach(row => {
+    const key = String(row[0] || "").trim();
+    if (!key) return;
+    const val = row[1];
+    cfg[key] = (typeof val === "string") ? val.trim() : val;
+  });
+  return cfg;
+}
+
+function requireConfig_(key) {
+  const v = getConfig_()[key];
+  if (!v) throw new Error("「情報」シートのI:J列に設定が見つかりません: " + key);
+  return v;
+}
+
+function productNameFolder_() { return DriveApp.getFolderById(requireConfig_("製品名フォルダ")); }
+function layerDiagramFolder_() { return DriveApp.getFolderById(requireConfig_("積層図")); }
+
+// PDF変換用の一時Docの保存先(「画像フォルダ」= 製品名フォルダ・積層図フォルダの親)。
+// 情報シートに親フォルダIDを別途持たせず、製品名フォルダから実行時にたどる。
+// (親が取得できない場合は製品名フォルダ自体にフォールバックする)
+function parentImageFolder_() {
+  const folder = productNameFolder_();
+  const parents = folder.getParents();
+  return parents.hasNext() ? parents.next() : folder;
+}
+
+function moveFileTo_(file, targetFolder) {
+  const parents = file.getParents();
+  while (parents.hasNext()) {
+    const p = parents.next();
+    if (p.getId() !== targetFolder.getId()) p.removeFile(file);
+  }
+  targetFolder.addFile(file);
+}
+
+// ---------- マスタ選択肢(「情報」シートA:F列) ----------
+// MASTER_COLUMNSのホワイトリストにある列だけを扱う(I:J列の設定値・APIKEYを絶対に公開しないため)
 
 function listMasterLists() {
   const sh = sheet_(MASTER_SHEET);
   const map = headerMap_(sh);
   const lastRow = sh.getLastRow();
   const result = {};
-  Object.keys(map).forEach(colName => {
-    if (colName === "__raw__") return;
-    if (lastRow < 2) { result[colName] = []; return; }
-    const values = sh.getRange(2, map[colName], lastRow - 1, 1).getValues();
+  MASTER_COLUMNS.forEach(colName => {
+    const col = map[colName];
+    if (!col || lastRow < 2) { result[colName] = []; return; }
+    const values = sh.getRange(2, col, lastRow - 1, 1).getValues();
     result[colName] = values.map(r => String(r[0] || "").trim()).filter(v => v !== "");
   });
   return result;
@@ -138,6 +199,7 @@ function listMasterLists() {
 function addMasterValue(column, value) {
   const v = String(value || "").trim();
   if (!column || !v) throw new Error("列名と値を指定してください");
+  if (MASTER_COLUMNS.indexOf(column) === -1) throw new Error("許可されていない列名です: " + column);
   return withLock_(() => {
     const sh = sheet_(MASTER_SHEET);
     const map = headerMap_(sh);
@@ -375,25 +437,76 @@ function searchJoints(keyword, limit) {
   return joints.slice(0, limit);
 }
 
-// ---------- 画像アップロード(写真・積層図) ----------
+// ---------- 画像アップロード(製品名タグ写真・積層図) ----------
 
-function uploadImage(payload) {
-  const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+function uploadPhoto(payload) {
+  const kind = payload.kind; // "productName" | "layerDiagram"
+  if (kind !== "productName" && kind !== "layerDiagram") throw new Error("不明な写真種別です: " + kind);
+
+  const folder = kind === "productName" ? productNameFolder_() : layerDiagramFolder_();
   const decoded = Utilities.base64Decode(payload.base64);
   const mimeType = (payload.mimeType === "image/heic" || payload.mimeType === "image/heif") ? "image/jpeg" : payload.mimeType;
   const blob = Utilities.newBlob(decoded, mimeType, payload.fileName);
   const file = folder.createFile(blob);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  return { url: "https://drive.google.com/file/d/" + file.getId() + "/view" };
+  const result = { url: "https://drive.google.com/file/d/" + file.getId() + "/view" };
+
+  if (kind === "productName") {
+    result.recognizedText = ocrProductNameWithRetry_(payload.base64, mimeType);
+  }
+  return result;
 }
 
-// ---------- PDF出力 ----------
+// ---------- 製品名タグ写真のOCR(Gemini API) ----------
+
+function callGeminiOcr_(base64, mimeType) {
+  const apiKey = requireConfig_("APIKEY");
+  const model = requireConfig_("Geminiモデル名");
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + encodeURIComponent(model) +
+    ":generateContent?key=" + encodeURIComponent(apiKey);
+  const payload = {
+    contents: [{
+      parts: [
+        { text: "この画像は鉄骨部材に記された製品名・符号のタグです。書かれている製品名(英数字・記号の刻印。例: G1-3)だけを1行のプレーンテキストで返してください。説明や前置きは一切不要です。読み取れない場合は空文字を返してください。" },
+        { inline_data: { mime_type: mimeType, data: base64 } },
+      ],
+    }],
+    generationConfig: { temperature: 0, maxOutputTokens: 64 },
+  };
+  const res = UrlFetchApp.fetch(url, {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+  });
+  const code = res.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error("Gemini APIエラー(HTTP " + code + "): " + res.getContentText());
+  const json = JSON.parse(res.getContentText());
+  const text = json.candidates && json.candidates[0] && json.candidates[0].content &&
+    json.candidates[0].content.parts && json.candidates[0].content.parts[0] &&
+    json.candidates[0].content.parts[0].text;
+  return String(text || "").trim();
+}
+
+// 1回失敗したらもう1回だけ自動リトライし、それでも失敗したら空文字を返して手入力にフォールバックする
+function ocrProductNameWithRetry_(base64, mimeType) {
+  try {
+    return callGeminiOcr_(base64, mimeType);
+  } catch (e1) {
+    try {
+      return callGeminiOcr_(base64, mimeType);
+    } catch (e2) {
+      return "";
+    }
+  }
+}
+
+// ---------- PDF出力(ブラウザへ直接ダウンロード) ----------
 
 function generatePdf(body) {
   const header = body.header || {};
   const passes = body.passes || [];
 
-  const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
   const docName = "入熱パス間温度管理記録_" + (header["工事名"] || "") + "_" + (header["製品名"] || "");
   const doc = DocumentApp.create(docName);
   const b = doc.getBody();
@@ -447,9 +560,10 @@ function generatePdf(body) {
   doc.saveAndClose();
   const docFile = DriveApp.getFileById(doc.getId());
   const pdfBlob = docFile.getAs("application/pdf").setName(docName + ".pdf");
-  const pdfFile = folder.createFile(pdfBlob);
-  pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  docFile.setTrashed(true);
 
-  return { pdfUrl: "https://drive.google.com/file/d/" + pdfFile.getId() + "/view" };
+  // 一時Docは削除せず「画像フォルダ」(製品名フォルダ・積層図フォルダの親)に移動して残す
+  moveFileTo_(docFile, parentImageFolder_());
+
+  // PDFはDriveに保存せず、base64でそのままブラウザに返して端末へ直接ダウンロードさせる
+  return { pdfBase64: Utilities.base64Encode(pdfBlob.getBytes()), fileName: docName + ".pdf" };
 }

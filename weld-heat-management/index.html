@@ -144,11 +144,11 @@
   <div class="section">
     <div class="field-label">写真(任意)</div>
     <div class="photo-btns">
-      <button class="photo-btn" onclick="document.getElementById('jn-photo-image').click()">📷 写真を撮る</button>
+      <button class="photo-btn" onclick="document.getElementById('jn-photo-image').click()">📷 製品名タグを撮る(自動読み取り)</button>
       <button class="photo-btn" onclick="document.getElementById('jn-photo-layer').click()">📐 積層図を撮る</button>
     </div>
-    <input type="file" id="jn-photo-image" accept="image/*" capture="environment" style="display:none" onchange="onPhotoSelected(event,'image')">
-    <input type="file" id="jn-photo-layer" accept="image/*" capture="environment" style="display:none" onchange="onPhotoSelected(event,'積層図')">
+    <input type="file" id="jn-photo-image" accept="image/*" capture="environment" style="display:none" onchange="onPhotoSelected(event,'productName')">
+    <input type="file" id="jn-photo-layer" accept="image/*" capture="environment" style="display:none" onchange="onPhotoSelected(event,'layerDiagram')">
     <div id="jn-photo-status" class="photo-status"></div>
   </div>
 
@@ -213,7 +213,7 @@
     <div class="result-banner" id="result-banner"></div>
     <button class="pdf-btn full-btn" onclick="onGeneratePdf()">📄 PDFを出力する</button>
     <div id="pdf-link-wrap" style="display:none;">
-      <a id="pdf-link" href="#" target="_blank" class="pdf-link-btn">📄 PDFを開く</a>
+      <div class="pdf-link-btn">✅ PDFをダウンロードしました(端末のダウンロードフォルダを確認してください)</div>
     </div>
     <button class="small-btn full-btn" onclick="goHome()" style="margin-top:14px;">🏠 ホームに戻る</button>
   </div>
@@ -248,7 +248,7 @@
     <div class="result-banner" id="view-result-banner"></div>
     <button class="pdf-btn full-btn" onclick="onGeneratePdfFromView()">📄 PDFを出力する</button>
     <div id="view-pdf-link-wrap" style="display:none;">
-      <a id="view-pdf-link" href="#" target="_blank" class="pdf-link-btn">📄 PDFを開く</a>
+      <div class="pdf-link-btn">✅ PDFをダウンロードしました(端末のダウンロードフォルダを確認してください)</div>
     </div>
   </div>
 </div>
