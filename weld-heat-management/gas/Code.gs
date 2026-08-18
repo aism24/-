@@ -17,6 +17,7 @@
  *
  *   シート「情報」:
  *     A〜F列: マスタ選択肢(工事名, 溶接者, 検査員, 部材, 材質, 溶接方法。列ごとに独立したリスト)
+ *            検査員列は「登録済み検査員の名簿」を兼ねる(検査員別シートを作る際の基準にもなる)。
  *     I〜J列: 設定値(キー・値のペア。1行に1項目ずつ、以下のキー名で用意してください)
  *       データソーススプシID … 表示確認用(コードからは参照しません)
  *       製品名フォルダ       … 製品名タグ写真の保存先DriveフォルダID
@@ -25,6 +26,12 @@
  *       タイムゾーン         … 日時表示に使うタイムゾーン(例: Asia/Tokyo)
  *       APIKEY               … Gemini APIキー。サーバー側(このスクリプト内)でのみ使用し、
  *                                クライアント(app.js)には絶対に返さないこと。
+ *
+ *   検査員別シート(シート名=検査員名。resolveInspectorが自動作成):
+ *     初めてその検査員が選ばれた時点で、「情報」シートのA:F列の現在の内容を丸ごと複製して作る。
+ *     以後、工事名・部材・材質・溶接方法・溶接者の追加/削除/デフォルト設定はこの専用シートの中だけで
+ *     完結し、情報シートや他の検査員には影響しない(「情報」シートは新規作成時のテンプレートと
+ *     検査員名簿としてのみ使われる)。I:J列(設定値・APIKEY)は複製後にクリアする。
  *
  * 継手(一連の溶接)のグループ化は、「順序」列が1に戻った行を新しい継手の開始とみなす
  * ルールで行います(saveJointRecordは1継手分のパスを必ずまとめて書き込むため、
@@ -65,9 +72,10 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     const action = body.action;
-    if (action === "addMasterValue") return ok_(addMasterValue(body.column, body.value));
-    if (action === "deleteMasterValue") return ok_(deleteMasterValue(body.column, body.value));
-    if (action === "setDefaultMasterValue") return ok_(setDefaultMasterValue(body.column, body.value));
+    if (action === "addMasterValue") return ok_(addMasterValue(body.column, body.value, body.sheetName));
+    if (action === "deleteMasterValue") return ok_(deleteMasterValue(body.column, body.value, body.sheetName));
+    if (action === "setDefaultMasterValue") return ok_(setDefaultMasterValue(body.column, body.value, body.sheetName));
+    if (action === "resolveInspector") return ok_(resolveInspector(body.name));
     if (action === "saveJointRecord") return ok_(saveJointRecord(body));
     if (action === "updateJointRecord") return ok_(updateJointRecord(body));
     if (action === "uploadPhoto") return ok_(uploadPhoto(body));
@@ -201,35 +209,42 @@ function listMasterLists() {
   return result;
 }
 
-function addMasterValue(column, value) {
+// column="検査員"は名簿そのものなので、指定シートに関わらず常に「情報」シートを対象にする
+// (検査員別シートにも同名の列がコピーされているが、そちらは使わない未使用列のため)
+function targetSheetName_(column, sheetName) {
+  return (column === "検査員") ? MASTER_SHEET : (sheetName || MASTER_SHEET);
+}
+
+function addMasterValueCore_(sh, column, v) {
+  const map = headerMap_(sh);
+  const col = findCol_(map, column);
+  if (!col) throw new Error("シートに列が見つかりません: " + column + " (" + sh.getName() + ")");
+  const lastRow = Math.max(sh.getLastRow(), 1);
+  const existing = lastRow >= 2 ? sh.getRange(2, col, lastRow - 1, 1).getValues().map(r => String(r[0] || "").trim()) : [];
+  if (existing.indexOf(v) !== -1) return { added: false };
+  const emptyIdx = existing.findIndex(x => x === "");
+  const writeRow = emptyIdx !== -1 ? emptyIdx + 2 : lastRow + 1;
+  sh.getRange(writeRow, col).setValue(v);
+  return { added: true };
+}
+
+function addMasterValue(column, value, sheetName) {
   const v = String(value || "").trim();
   if (!column || !v) throw new Error("列名と値を指定してください");
   if (MASTER_COLUMNS.indexOf(column) === -1) throw new Error("許可されていない列名です: " + column);
-  return withLock_(() => {
-    const sh = sheet_(MASTER_SHEET);
-    const map = headerMap_(sh);
-    const col = findCol_(map, column);
-    if (!col) throw new Error("「情報」シートに列が見つかりません: " + column);
-    const lastRow = Math.max(sh.getLastRow(), 1);
-    const existing = lastRow >= 2 ? sh.getRange(2, col, lastRow - 1, 1).getValues().map(r => String(r[0] || "").trim()) : [];
-    if (existing.indexOf(v) !== -1) return { added: false };
-    const emptyIdx = existing.findIndex(x => x === "");
-    const writeRow = emptyIdx !== -1 ? emptyIdx + 2 : lastRow + 1;
-    sh.getRange(writeRow, col).setValue(v);
-    return { added: true };
-  });
+  return withLock_(() => addMasterValueCore_(sheet_(targetSheetName_(column, sheetName)), column, v));
 }
 
 // マスタ選択肢から1件削除する(該当行を除去し、下の値を詰める)
-function deleteMasterValue(column, value) {
+function deleteMasterValue(column, value, sheetName) {
   const v = String(value || "").trim();
   if (!column || !v) throw new Error("列名と値を指定してください");
   if (MASTER_COLUMNS.indexOf(column) === -1) throw new Error("許可されていない列名です: " + column);
   return withLock_(() => {
-    const sh = sheet_(MASTER_SHEET);
+    const sh = sheet_(targetSheetName_(column, sheetName));
     const map = headerMap_(sh);
     const col = findCol_(map, column);
-    if (!col) throw new Error("「情報」シートに列が見つかりません: " + column);
+    if (!col) throw new Error("シートに列が見つかりません: " + column + " (" + sh.getName() + ")");
     const lastRow = sh.getLastRow();
     if (lastRow < 2) return { deleted: false };
     const values = sh.getRange(2, col, lastRow - 1, 1).getValues().map(r => String(r[0] || "").trim());
@@ -242,17 +257,17 @@ function deleteMasterValue(column, value) {
   });
 }
 
-// マスタ選択肢のうち1件を「デフォルト」(情報シートの2行目)に設定する。
+// マスタ選択肢のうち1件を「デフォルト」(シートの2行目)に設定する。
 // 新規継手記録画面では、この2行目の値が自動的に初期選択される。
-function setDefaultMasterValue(column, value) {
+function setDefaultMasterValue(column, value, sheetName) {
   const v = String(value || "").trim();
   if (!column || !v) throw new Error("列名と値を指定してください");
   if (MASTER_COLUMNS.indexOf(column) === -1) throw new Error("許可されていない列名です: " + column);
   return withLock_(() => {
-    const sh = sheet_(MASTER_SHEET);
+    const sh = sheet_(targetSheetName_(column, sheetName));
     const map = headerMap_(sh);
     const col = findCol_(map, column);
-    if (!col) throw new Error("「情報」シートに列が見つかりません: " + column);
+    if (!col) throw new Error("シートに列が見つかりません: " + column + " (" + sh.getName() + ")");
     const lastRow = sh.getLastRow();
     if (lastRow < 2) throw new Error("値が見つかりません: " + v);
     const values = sh.getRange(2, col, lastRow - 1, 1).getValues().map(r => String(r[0] || "").trim());
@@ -262,6 +277,38 @@ function setDefaultMasterValue(column, value) {
     values.unshift(v);
     sh.getRange(2, col, values.length, 1).setValues(values.map(x => [x]));
     return { ok: true };
+  });
+}
+
+// ---------- 検査員別デフォルト(検査員ごとの専用シート) ----------
+// 検査員が初めて選ばれた時点で、「情報」シートのA:F列の現在の内容を丸ごと複製した専用シート
+// (シート名=検査員名)を作る。以後、工事名・部材・材質・溶接方法・溶接者はこの専用シートの中だけで
+// 追加/削除/デフォルト設定が完結する(情報シートは名簿とテンプレートとしてのみ機能する)。
+const INSPECTOR_MASTER_COLUMNS = ["工事名", "部材", "材質", "溶接方法", "溶接者"];
+
+function resolveInspector(name) {
+  const v = String(name || "").trim();
+  if (!v) throw new Error("検査員名を指定してください");
+  return withLock_(() => {
+    const ss = ss_();
+    let sh = ss.getSheetByName(v);
+    if (!sh) {
+      const info = sheet_(MASTER_SHEET);
+      sh = info.copyTo(ss);
+      sh.setName(v);
+      sh.getRange(1, CONFIG_COL_KEY, sh.getMaxRows(), 2).clearContent(); // 設定値・APIKEYは検査員シートに不要
+      addMasterValueCore_(info, "検査員", v); // 既に名簿にいる場合は何もしない(addMasterValueCore_が重複を無視)
+    }
+    const map = headerMap_(sh);
+    const lastRow = sh.getLastRow();
+    const lists = {};
+    INSPECTOR_MASTER_COLUMNS.forEach(colName => {
+      const col = map[colName];
+      if (!col || lastRow < 2) { lists[colName] = []; return; }
+      const values = sh.getRange(2, col, lastRow - 1, 1).getValues();
+      lists[colName] = values.map(r => String(r[0] || "").trim()).filter(x => x !== "");
+    });
+    return { sheetName: v, lists: lists };
   });
 }
 

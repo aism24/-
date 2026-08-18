@@ -117,42 +117,112 @@ function goHome() {
   checkDraftButton();
 }
 
-// ホーム画面で会社ロゴを2秒以内に5回タップすると初期値設定へ移動する隠しコマンド
-// (誰でも押せる設定ボタンを画面に出さないための代替導線)
-let logoTapCount = 0;
-let logoTapResetTimer = null;
-function onLogoTap() {
-  if (document.getElementById('home-screen').style.display === 'none') return;
-  logoTapCount++;
-  clearTimeout(logoTapResetTimer);
-  logoTapResetTimer = setTimeout(() => { logoTapCount = 0; }, 2000);
-  if (logoTapCount >= 5) {
-    logoTapCount = 0;
-    clearTimeout(logoTapResetTimer);
-    goMasterManage();
-  }
-}
-
-// ---------- マスタ選択肢(工事名・部材・材質・溶接方法・溶接者・検査員) ----------
+// ---------- マスタ選択肢(検査員・工事名・部材・材質・溶接方法・溶接者) ----------
+// 検査員は他5項目のゲート役(検査員を確定するまで他5項目は無効化)であり、他5項目の候補
+// リスト+デフォルトは検査員ごとの専用シートから読み込む(loadInspectorDefaults/resolveInspector参照)。
 
 const MASTER_FIELDS = [
+  { key: '検査員（入力者）', masterKey: '検査員', selectId: 'jn-検査員', newId: 'jn-検査員-new' },
   { key: '工事名', masterKey: '工事名', selectId: 'jn-工事名', newId: 'jn-工事名-new' },
   { key: '部材', masterKey: '部材', selectId: 'jn-部材', newId: 'jn-部材-new' },
   { key: '材質', masterKey: '材質', selectId: 'jn-材質', newId: 'jn-材質-new' },
   { key: '溶接方法', masterKey: '溶接方法', selectId: 'jn-溶接方法', newId: 'jn-溶接方法-new' },
   { key: '溶接者', masterKey: '溶接者', selectId: 'jn-溶接者', newId: 'jn-溶接者-new' },
-  { key: '検査員（入力者）', masterKey: '検査員', selectId: 'jn-検査員', newId: 'jn-検査員-new' },
 ];
+const INSPECTOR_GATED_FIELDS = MASTER_FIELDS.filter(f => f.masterKey !== '検査員');
 
-let masterLists = {};
+function masterFieldByKey_(masterKey) { return MASTER_FIELDS.find(f => f.masterKey === masterKey); }
 
-async function loadMasterLists() {
+let masterLists = {}; // 検査員確定後、その検査員の工事名・部材・材質・溶接方法・溶接者リスト
+let inspectorRoster = []; // 「情報」シートの検査員名簿(検査員選択プルダウンの選択肢)
+let currentInspectorName = ''; // 継手記録画面で確定済みの検査員名(未確定なら'')
+
+async function loadInspectorRoster() {
   try {
-    masterLists = await apiGet('listMasterLists');
+    const data = await apiGet('listMasterLists');
+    inspectorRoster = data['検査員'] || [];
   } catch (err) {
-    masterLists = {};
+    inspectorRoster = [];
   }
-  MASTER_FIELDS.forEach(f => populateMasterSelect(f));
+  populateInspectorSelect();
+}
+
+function populateInspectorSelect() {
+  const select = document.getElementById('jn-検査員');
+  select.innerHTML = '<option value="">(選択してください)</option>' +
+    inspectorRoster.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('') +
+    '<option value="__new__">＋ 新規入力</option>';
+}
+
+// 検査員確定後、その検査員の専用シートから読み込んだ候補リストで他5項目を有効化する
+function applyInspectorMasterLists(lists) {
+  INSPECTOR_GATED_FIELDS.forEach(f => {
+    masterLists[f.masterKey] = lists[f.masterKey] || [];
+    populateMasterSelect(f);
+    const select = document.getElementById(f.selectId);
+    select.disabled = false;
+    select.value = masterLists[f.masterKey].length ? masterLists[f.masterKey][0] : ''; // シートの2行目=デフォルト
+    document.getElementById(f.newId).style.display = 'none';
+    document.getElementById(f.newId).value = '';
+  });
+  updateRequiredState();
+}
+
+// 検査員が未確定/変更された時、他5項目を無効化してリセットする
+function disableInspectorGatedFields() {
+  INSPECTOR_GATED_FIELDS.forEach(f => {
+    masterLists[f.masterKey] = [];
+    document.getElementById(f.selectId).innerHTML = '<option value="">(検査員を選んでください)</option>';
+    document.getElementById(f.selectId).disabled = true;
+    document.getElementById(f.newId).style.display = 'none';
+    document.getElementById(f.newId).value = '';
+  });
+  currentInspectorName = '';
+  updateRequiredState();
+}
+
+// 検査員名を確定し(既存選択/新規入力どちらも)、その検査員の専用シートを解決してから他5項目を読み込む
+function loadInspectorDefaults(name, isNewEntry) {
+  showOverlay('⏳', '検査員のデフォルトを読み込んでいます...');
+  apiPost('resolveInspector', { name: name }).then(result => {
+    hideOverlay();
+    currentInspectorName = name;
+    if (isNewEntry) {
+      if (inspectorRoster.indexOf(name) === -1) inspectorRoster.push(name);
+      populateInspectorSelect();
+      document.getElementById('jn-検査員').value = name;
+      document.getElementById('jn-検査員-new').style.display = 'none';
+      document.getElementById('jn-検査員-new').value = '';
+      document.getElementById('jn-検査員-confirm-btn').style.display = 'none';
+    }
+    applyInspectorMasterLists(result.lists);
+  }).catch(err => { hideOverlay(); showError(err); disableInspectorGatedFields(); });
+}
+
+function onInspectorSelectChange() {
+  const value = document.getElementById('jn-検査員').value;
+  const confirmBtn = document.getElementById('jn-検査員-confirm-btn');
+  const newInput = document.getElementById('jn-検査員-new');
+  if (value === '__new__') {
+    newInput.style.display = 'block';
+    newInput.value = '';
+    confirmBtn.style.display = 'inline-block';
+    disableInspectorGatedFields();
+  } else {
+    newInput.style.display = 'none';
+    confirmBtn.style.display = 'none';
+    if (value) { loadInspectorDefaults(value, false); } else { disableInspectorGatedFields(); }
+  }
+}
+
+function confirmRecordInspector() {
+  const name = document.getElementById('jn-検査員-new').value.trim();
+  if (!name) { showOverlay('⚠️', '検査員名を入力してください', true); return; }
+  loadInspectorDefaults(name, true);
+}
+
+function setupInspectorGating() {
+  document.getElementById('jn-検査員').addEventListener('change', onInspectorSelectChange);
 }
 
 // ---------- 必須項目バリデーション(継手情報入力画面) ----------
@@ -225,11 +295,13 @@ function getMasterFieldValue(f) {
   return select.value;
 }
 
+// 検査員自身の新規登録はresolveInspector経由で既に完了しているため、ここでは他5項目のみを扱う。
+// 追加先は選択中の検査員の専用シート(currentInspectorName)。
 async function persistNewMasterValues() {
-  const calls = MASTER_FIELDS.filter(f => document.getElementById(f.selectId).value === '__new__')
+  const calls = INSPECTOR_GATED_FIELDS.filter(f => document.getElementById(f.selectId).value === '__new__')
     .map(f => {
       const v = document.getElementById(f.newId).value.trim();
-      return v ? apiPost('addMasterValue', { column: f.masterKey, value: v }).catch(() => {}) : Promise.resolve();
+      return v ? apiPost('addMasterValue', { column: f.masterKey, value: v, sheetName: currentInspectorName }).catch(() => {}) : Promise.resolve();
     });
   await Promise.all(calls);
 }
@@ -272,9 +344,10 @@ let pendingImageUrl = '';
 let recordCompleted = false; // 溶接完了・スプレッドシート保存済みか(完了後の編集で再保存ボタンを出すため)
 
 document.addEventListener('DOMContentLoaded', () => {
-  loadMasterLists();
+  loadInspectorRoster();
   checkDraftButton();
   setupRequiredValidation();
+  setupInspectorGating();
   document.getElementById('master-manage-body').addEventListener('click', onMasterManageClick);
 });
 
@@ -315,12 +388,13 @@ let lastRowPassDefaults = null;
 
 async function initJointNewForm() {
   document.getElementById('jn-検査日').value = new Date().toISOString().slice(0, 10);
-  MASTER_FIELDS.forEach(f => {
-    const list = masterLists[f.masterKey] || [];
-    document.getElementById(f.selectId).value = list.length ? list[0] : ''; // 情報シート2行目=デフォルト
-    document.getElementById(f.newId).style.display = 'none';
-    document.getElementById(f.newId).value = '';
-  });
+  disableInspectorGatedFields();
+  document.getElementById('jn-検査員-new').style.display = 'none';
+  document.getElementById('jn-検査員-new').value = '';
+  document.getElementById('jn-検査員-confirm-btn').style.display = 'none';
+  const defaultInspector = inspectorRoster.length ? inspectorRoster[0] : ''; // 名簿の2行目=デフォルト検査員
+  document.getElementById('jn-検査員').value = defaultInspector;
+  if (defaultInspector) loadInspectorDefaults(defaultInspector, false);
   document.getElementById('jn-製品名').value = '';
   LAST_ROW_DEFAULT_FIELDS.forEach(f => { document.getElementById(f.id).value = ''; });
   resetSteppers();
@@ -396,12 +470,12 @@ function submitNewJoint() {
   const thickness = document.getElementById('jn-板厚').value;
   const airTemp = document.getElementById('jn-気温').value;
   const measure = document.getElementById('jn-計測').value.trim();
-  const construction = getMasterFieldValue(MASTER_FIELDS[0]);
-  const member = getMasterFieldValue(MASTER_FIELDS[1]);
-  const material = getMasterFieldValue(MASTER_FIELDS[2]);
-  const weldMethod = getMasterFieldValue(MASTER_FIELDS[3]);
-  const welder = getMasterFieldValue(MASTER_FIELDS[4]);
-  const inspector = getMasterFieldValue(MASTER_FIELDS[5]);
+  const construction = getMasterFieldValue(masterFieldByKey_('工事名'));
+  const member = getMasterFieldValue(masterFieldByKey_('部材'));
+  const material = getMasterFieldValue(masterFieldByKey_('材質'));
+  const weldMethod = getMasterFieldValue(masterFieldByKey_('溶接方法'));
+  const welder = getMasterFieldValue(masterFieldByKey_('溶接者'));
+  const inspector = getMasterFieldValue(masterFieldByKey_('検査員'));
 
   // 記録開始ボタンは必須項目が揃うまで非活性だが、念のため送信時にも同じ催促ポップアップで再チェックする
   if (!construction) { showOverlay('⚠️', '工事名を入力してください', true); return; }
@@ -846,31 +920,74 @@ function onGeneratePdfFromView() {
   }).catch(showError);
 }
 
-// ---------- 初期値設定(旧マスタ管理。「情報」シートA:F列の追加・削除・デフォルト設定) ----------
-// 各列の1件目(情報シートの2行目)が「デフォルト」として扱われ、新規記録作成時に自動選択される。
-// 6項目はアコーディオン形式(見出しは常に全部表示、クリックした項目だけ中身を展開。1度に1項目のみ開く)。
+// ---------- 【検査員別】初期値設定(検査員ごとの専用シートの追加・削除・デフォルト設定) ----------
+// 画面を開くとまず検査員を選択(既存選択/新規入力)し、以後はその検査員の専用シートに対して
+// 工事名・部材・材質・溶接方法・溶接者を編集する。各列の1件目(シートの2行目)が「デフォルト」
+// として扱われ、継手記録画面でその検査員を選んだ時に自動選択される。
+// 5項目はアコーディオン形式(見出しは常に全部表示、クリックした項目だけ中身を展開。1度に1項目のみ開く)。
 
 let openMasterKey = null;
+let settingsInspectorName = null;
 
 function goMasterManage() {
   navStack = [];
   openMasterKey = null;
-  goTo({ screenId: 'master-manage-screen', title: '初期値設定', load: renderMasterManage });
+  settingsInspectorName = null;
+  goTo({ screenId: 'master-manage-screen', title: '【検査員別】初期値設定', load: renderMasterManage });
 }
 
 async function renderMasterManage() {
   const body = document.getElementById('master-manage-body');
+  if (!settingsInspectorName) {
+    renderInspectorPicker();
+    return;
+  }
   body.innerHTML = '<div class="loading-text">読み込み中...</div>';
   try {
-    masterLists = await apiGet('listMasterLists');
+    const result = await apiPost('resolveInspector', { name: settingsInspectorName });
+    masterLists = result.lists;
   } catch (err) {
     masterLists = {};
   }
   renderMasterBody();
 }
 
+function renderInspectorPicker() {
+  const options = inspectorRoster.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+  document.getElementById('master-manage-body').innerHTML = `
+    <div class="section">
+      <div class="field-label small">検査員を選択してください(未登録の場合は新規入力できます)</div>
+      <select id="ms-inspector-select">
+        <option value="">(選択してください)</option>
+        ${options}
+        <option value="__new__">＋ 新規入力</option>
+      </select>
+      <input type="text" id="ms-inspector-new" class="new-input" style="display:none;" placeholder="新しい検査員名を入力">
+      <button class="small-btn" id="ms-inspector-confirm-btn" style="display:none;margin-top:8px;" onclick="confirmSettingsInspector()">この検査員で開く</button>
+    </div>`;
+  document.getElementById('ms-inspector-select').onchange = (e) => {
+    const v = e.target.value;
+    document.getElementById('ms-inspector-new').style.display = v === '__new__' ? 'block' : 'none';
+    document.getElementById('ms-inspector-confirm-btn').style.display = v === '__new__' ? 'block' : 'none';
+    if (v && v !== '__new__') { settingsInspectorName = v; renderMasterManage(); }
+  };
+}
+
+function confirmSettingsInspector() {
+  const name = document.getElementById('ms-inspector-new').value.trim();
+  if (!name) { showOverlay('⚠️', '検査員名を入力してください', true); return; }
+  settingsInspectorName = name;
+  renderMasterManage();
+}
+
 function renderMasterBody() {
-  document.getElementById('master-manage-body').innerHTML = MASTER_FIELDS.map(f => renderMasterSectionHtml(f)).join('');
+  const header = `
+    <div class="section" style="padding-bottom:0;">
+      <div class="field-label small">検査員: <b>${escapeHtml(settingsInspectorName)}</b>
+        <button class="small-btn" data-action="switch-inspector" style="margin-left:8px;">検査員を変更</button>
+      </div>
+    </div>`;
+  document.getElementById('master-manage-body').innerHTML = header + INSPECTOR_GATED_FIELDS.map(f => renderMasterSectionHtml(f)).join('');
 }
 
 function renderMasterSectionHtml(f) {
@@ -905,7 +1022,10 @@ function onMasterManageClick(event) {
   if (!btn) return;
   const action = btn.dataset.action;
   const col = btn.dataset.col;
-  if (action === 'toggle') {
+  if (action === 'switch-inspector') {
+    settingsInspectorName = null;
+    renderMasterManage();
+  } else if (action === 'toggle') {
     openMasterKey = (openMasterKey === col) ? null : col;
     renderMasterBody();
   } else if (action === 'add') {
@@ -922,7 +1042,7 @@ function addMasterValueUi(column, value) {
   const v = String(value || '').trim();
   if (!v) return;
   showOverlay('⏳', '追加しています...');
-  apiPost('addMasterValue', { column: column, value: v }).then(() => {
+  apiPost('addMasterValue', { column: column, value: v, sheetName: settingsInspectorName }).then(() => {
     hideOverlay();
     renderMasterManage();
   }).catch(showError);
@@ -931,7 +1051,7 @@ function addMasterValueUi(column, value) {
 function deleteMasterValueUi(column, value) {
   if (!confirm(`「${value}」を削除しますか?`)) return;
   showOverlay('⏳', '削除しています...');
-  apiPost('deleteMasterValue', { column: column, value: value }).then(() => {
+  apiPost('deleteMasterValue', { column: column, value: value, sheetName: settingsInspectorName }).then(() => {
     hideOverlay();
     renderMasterManage();
   }).catch(showError);
@@ -939,7 +1059,7 @@ function deleteMasterValueUi(column, value) {
 
 function setMasterDefaultUi(column, value) {
   showOverlay('⏳', 'デフォルトに設定しています...');
-  apiPost('setDefaultMasterValue', { column: column, value: value }).then(() => {
+  apiPost('setDefaultMasterValue', { column: column, value: value, sheetName: settingsInspectorName }).then(() => {
     hideOverlay();
     renderMasterManage();
   }).catch(showError);
