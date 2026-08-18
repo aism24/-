@@ -251,10 +251,11 @@ function resumeDraft() {
 
 // ---------- アプリ状態 ----------
 
-const state = { header: null, passes: [], nextLayer: 1 };
+const state = { header: null, passes: [], nextLayer: 1, savedIds: null };
 let timerState = 'idle'; // idle | running | stopped
 let timerStart = null, timerEnd = null, timerInterval = null;
 let pendingImageUrl = '', pendingLayerImageUrl = '';
+let recordCompleted = false; // 溶接完了・スプレッドシート保存済みか(完了後の編集で再保存ボタンを出すため)
 
 document.addEventListener('DOMContentLoaded', () => {
   loadMasterLists();
@@ -284,6 +285,8 @@ function initJointNewForm() {
     'jn-計測', 'jn-入熱上限', 'jn-温度下限', 'jn-温度上限'].forEach(id => { document.getElementById(id).value = ''; });
   resetSteppers();
   pendingImageUrl = ''; pendingLayerImageUrl = '';
+  recordCompleted = false;
+  state.savedIds = null;
   document.getElementById('jn-photo-status').textContent = '';
   updateRequiredState();
 }
@@ -534,8 +537,20 @@ function updatePassField(index, field, rawValue) {
   const metrics = computeMetrics(p.current, p.voltage, p.arcSeconds, p.passTemp);
   p.heatInput = metrics.heatInput;
   p.judgement = metrics.judgement;
-  saveDraft();
+  if (recordCompleted) {
+    document.getElementById('resave-wrap').style.display = 'block';
+  } else {
+    saveDraft();
+  }
   renderPassTable();
+}
+
+function submitJointUpdate() {
+  showOverlay('⏳', '修正内容をスプレッドシートへ再保存しています...');
+  apiPost('updateJointRecord', { header: state.header, ids: state.savedIds, passes: state.passes }).then(() => {
+    hideOverlay();
+    document.getElementById('resave-wrap').style.display = 'none';
+  }).catch(showError);
 }
 
 function renderPassTable() {
@@ -551,7 +566,7 @@ function renderPassTable() {
       <td>${p.heatInput === '' ? '-' : p.heatInput}</td>
       <td><input type="number" class="cell-input" value="${p.passTemp}" onchange="updatePassField(${i},'passTemp',this.value)"></td>
       <td class="${p.judgement === 'NG' ? 'judge-ng' : 'judge-ok'}">${p.judgement}</td>
-      <td><button class="pass-del-btn" onclick="deletePass(${i})">削除</button></td>
+      <td>${recordCompleted ? '' : `<button class="pass-del-btn" onclick="deletePass(${i})">削除</button>`}</td>
     </tr>`).join('');
 }
 
@@ -562,15 +577,14 @@ function onCompleteJoint() {
   apiPost('saveJointRecord', { header: state.header, passes: state.passes }).then(result => {
     clearDraft();
     hideOverlay();
+    state.savedIds = result.ids;
+    recordCompleted = true;
     document.getElementById('pass-input-section').style.display = 'none';
-    document.getElementById('pass-list-section').style.display = 'none';
     document.getElementById('complete-section').style.display = 'none';
     document.getElementById('pdf-section').style.display = 'block';
     document.getElementById('pdf-link-wrap').style.display = 'none';
-    const banner = document.getElementById('result-banner');
-    const isNg = result.overallResult === 'NG';
-    banner.textContent = '総合判定: ' + (isNg ? '❌ NG(要是正)' : '✅ OK') + `(記録行数: ${result.savedRows})`;
-    banner.className = 'result-banner ' + (isNg ? 'ng' : 'ok');
+    document.getElementById('resave-wrap').style.display = 'none';
+    renderPassTable();
   }).catch(showError);
 }
 

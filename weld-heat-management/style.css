@@ -166,6 +166,10 @@ button:disabled {
 .pdf-btn { background: linear-gradient(135deg, #2e7d32, #1b5e20); color: #fff; border: none; border-radius: 14px; padding: 22px; font-size: 24px; font-weight: bold; cursor: pointer; }
 .pdf-btn:active { opacity: 0.85; }
 
+/* ボタンを左右に並べる1行レイアウト(パス記録完了後) */
+.button-row { display: flex; gap: 12px; }
+.button-row button { flex: 1; width: auto; margin-top: 0; white-space: normal; }
+
 /* リスト表示(工事・部材・継手・履歴) */
 .list { margin: 14px; display: flex; flex-direction: column; gap: 12px; }
 .loading-text { color: #888; text-align: center; padding: 40px 0; font-size: 18px; }

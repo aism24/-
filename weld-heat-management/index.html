@@ -214,12 +214,16 @@
   </div>
 
   <div class="section" id="pdf-section" style="display:none;">
-    <div class="result-banner" id="result-banner"></div>
-    <button class="pdf-btn full-btn" onclick="onGeneratePdf()">📄 PDFを出力する</button>
+    <div id="resave-wrap" style="display:none;">
+      <button class="save-btn full-btn" id="resave-btn" onclick="submitJointUpdate()">🔄 再保存する</button>
+    </div>
+    <div class="button-row">
+      <button class="pdf-btn" onclick="onGeneratePdf()">📄 PDFを出力する</button>
+      <button class="small-btn" onclick="goHome()">🏠 ホームに戻る</button>
+    </div>
     <div id="pdf-link-wrap" style="display:none;">
       <div class="pdf-link-btn">✅ PDFをダウンロードしました(端末のダウンロードフォルダを確認してください)</div>
     </div>
-    <button class="small-btn full-btn" onclick="goHome()" style="margin-top:14px;">🏠 ホームに戻る</button>
   </div>
 </div>
 
