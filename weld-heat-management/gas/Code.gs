@@ -446,7 +446,13 @@ function uploadPhoto(payload) {
   const mimeType = (payload.mimeType === "image/heic" || payload.mimeType === "image/heif") ? "image/jpeg" : payload.mimeType;
   const blob = Utilities.newBlob(decoded, mimeType, payload.fileName);
   const file = folder.createFile(blob);
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  // 組織のDrive共有ポリシーで「リンクを知っている全員」が禁止されている場合でも、
+  // 写真の保存・OCR自体は失敗させない(共有設定はベストエフォート)
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (e) {
+    // 共有設定のみ失敗。ファイル自体は保存済みなので処理は継続する
+  }
   const result = { url: "https://drive.google.com/file/d/" + file.getId() + "/view" };
 
   if (kind === "productName") {
