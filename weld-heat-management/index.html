@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>入熱・パス間温度管理</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ホーム画面 -->
+<div id="home-screen" class="screen">
+  <div class="home-title">🔥 入熱・パス間温度管理</div>
+  <div class="home-subtitle">継手を選んで記録を始めてください</div>
+  <button class="home-btn home-btn-resume" id="resume-btn" style="display:none;" onclick="resumeDraft()">▶ 前回の途中から再開する</button>
+  <button class="home-btn home-btn-main" onclick="goJointNew()">＋ 新しい継手の記録を開始</button>
+  <button class="home-btn home-btn-sub" onclick="goHistory()">📜 履歴を検索する</button>
+</div>
+
+<!-- 共通ヘッダー -->
+<div id="app-header" class="app-header" style="display:none;">
+  <button class="header-back-btn" onclick="goBack()">← 戻る</button>
+  <div class="header-title" id="app-header-title">タイトル</div>
+  <div class="header-spacer"></div>
+</div>
+
+<!-- 新規継手ヘッダー入力 -->
+<div id="joint-new-screen" class="screen" style="display:none;">
+  <div class="section">
+    <div class="field-label">基本情報</div>
+    <div class="field-label small">工事名</div>
+    <select id="jn-工事名"></select>
+    <input type="text" id="jn-工事名-new" class="new-input" style="display:none;" placeholder="新しい工事名を入力">
+
+    <div class="field-label small">検査日</div>
+    <input type="date" id="jn-検査日">
+
+    <div class="form-grid two-col">
+      <div>
+        <div class="field-label small">部材(大別区分)</div>
+        <select id="jn-部材"></select>
+        <input type="text" id="jn-部材-new" class="new-input" style="display:none;" placeholder="例: 大梁">
+      </div>
+      <div>
+        <div class="field-label small">製品名(符号)</div>
+        <input type="text" id="jn-製品名" placeholder="例: G1-3">
+      </div>
+    </div>
+    <div class="form-grid two-col">
+      <div>
+        <div class="field-label small">サイズ(幅・mm)</div>
+        <input type="number" id="jn-幅">
+      </div>
+      <div>
+        <div class="field-label small">板厚(mm)</div>
+        <input type="number" id="jn-板厚">
+      </div>
+    </div>
+    <div class="field-label small">部材サイズ(断面表記)</div>
+    <input type="text" id="jn-部材サイズ" placeholder="例: H-400x200x8x13">
+
+    <div class="form-grid two-col">
+      <div>
+        <div class="field-label small">材質</div>
+        <select id="jn-材質"></select>
+        <input type="text" id="jn-材質-new" class="new-input" style="display:none;" placeholder="例: SN490B">
+      </div>
+      <div>
+        <div class="field-label small">溶接方法</div>
+        <select id="jn-溶接方法"></select>
+        <input type="text" id="jn-溶接方法-new" class="new-input" style="display:none;" placeholder="例: CO2半自動">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="field-label">溶接条件</div>
+    <div class="field-label small">溶接長(cm) <span class="req">必須</span></div>
+    <input type="number" id="jn-溶接長" placeholder="入熱自動計算に使用">
+    <div class="form-grid two-col">
+      <div>
+        <div class="field-label small">梁成(mm・任意)</div>
+        <input type="number" id="jn-梁成">
+      </div>
+      <div>
+        <div class="field-label small">ウエブ厚(mm・任意)</div>
+        <input type="number" id="jn-ウエブ厚">
+      </div>
+    </div>
+    <div class="form-grid two-col">
+      <div>
+        <div class="field-label small">気温(℃・任意)</div>
+        <input type="number" id="jn-気温">
+      </div>
+      <div>
+        <div class="field-label small">計測(任意)</div>
+        <input type="text" id="jn-計測" placeholder="例: 接触式温度計">
+      </div>
+    </div>
+    <div class="form-grid two-col">
+      <div>
+        <div class="field-label small">ルートギャップ(mm・任意)</div>
+        <input type="number" id="jn-ルートギャップ">
+      </div>
+      <div>
+        <div class="field-label small">開先角度(°・任意)</div>
+        <input type="number" id="jn-開先角度">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="field-label">担当者</div>
+    <div class="form-grid two-col">
+      <div>
+        <div class="field-label small">溶接者</div>
+        <select id="jn-溶接者"></select>
+        <input type="text" id="jn-溶接者-new" class="new-input" style="display:none;" placeholder="新しい氏名を入力">
+      </div>
+      <div>
+        <div class="field-label small">検査員(入力者)</div>
+        <select id="jn-検査員"></select>
+        <input type="text" id="jn-検査員-new" class="new-input" style="display:none;" placeholder="新しい氏名を入力">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="field-label">管理基準値(任意・入力すると自動判定します)</div>
+    <div class="field-label small">入熱上限(kJ/cm)</div>
+    <input type="number" id="jn-入熱上限">
+    <div class="form-grid two-col">
+      <div>
+        <div class="field-label small">パス間温度下限(℃)</div>
+        <input type="number" id="jn-温度下限">
+      </div>
+      <div>
+        <div class="field-label small">パス間温度上限(℃)</div>
+        <input type="number" id="jn-温度上限">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="field-label">写真(任意)</div>
+    <div class="photo-btns">
+      <button class="photo-btn" onclick="document.getElementById('jn-photo-image').click()">📷 製品名タグを撮る(自動読み取り)</button>
+      <button class="photo-btn" onclick="document.getElementById('jn-photo-layer').click()">📐 積層図を撮る</button>
+    </div>
+    <input type="file" id="jn-photo-image" accept="image/*" capture="environment" style="display:none" onchange="onPhotoSelected(event,'productName')">
+    <input type="file" id="jn-photo-layer" accept="image/*" capture="environment" style="display:none" onchange="onPhotoSelected(event,'layerDiagram')">
+    <div id="jn-photo-status" class="photo-status"></div>
+  </div>
+
+  <div class="section">
+    <button class="save-btn full-btn" onclick="submitNewJoint()">記録を開始する</button>
+  </div>
+</div>
+
+<!-- パス記録画面 -->
+<div id="joint-record-screen" class="screen" style="display:none;">
+  <div class="joint-summary" id="joint-summary"></div>
+
+  <div class="section" id="pass-input-section">
+    <div class="layer-row">
+      <div class="field-label small">層番号</div>
+      <div class="layer-control">
+        <button class="layer-btn" onclick="changeLayer(-1)">−</button>
+        <div class="layer-value" id="layer-value">1</div>
+        <button class="layer-btn" onclick="changeLayer(1)">＋</button>
+      </div>
+    </div>
+
+    <div class="timer-box">
+      <div class="timer-display" id="timer-display">00:00</div>
+      <button class="timer-btn timer-start" id="timer-btn" onclick="onTimerButton()">▶ スタート</button>
+    </div>
+
+    <div class="form-grid two-col">
+      <div>
+        <div class="field-label small">電流 (A)</div>
+        <input type="number" inputmode="decimal" id="pi-current" placeholder="A">
+      </div>
+      <div>
+        <div class="field-label small">電圧 (V)</div>
+        <input type="number" inputmode="decimal" id="pi-voltage" placeholder="V">
+      </div>
+    </div>
+    <div class="field-label small" style="margin-top:16px;">パス間温度 (℃) <span class="req">必須</span></div>
+    <input type="number" inputmode="decimal" id="pi-temp" placeholder="測定温度" class="big-input">
+    <div class="field-label small" style="margin-top:16px;">備考</div>
+    <input type="text" id="pi-note" placeholder="任意">
+    <button class="save-btn full-btn" id="pi-submit-btn" onclick="submitPass()" disabled>✅ このパスを記録(ストップ後に押せます)</button>
+  </div>
+
+  <div class="section">
+    <div class="field-label">記録済みパス一覧</div>
+    <div class="pass-table-wrap">
+      <table class="pass-table" id="pass-table">
+        <thead><tr>
+          <th>#</th><th>層</th><th>電流</th><th>電圧</th><th>アーク</th><th>入熱</th><th>温度</th><th>判定</th><th></th>
+        </tr></thead>
+        <tbody id="pass-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section" id="complete-section">
+    <button class="finish-btn full-btn" onclick="onCompleteJoint()">🏁 溶接完了・スプレッドシートへ記録する</button>
+  </div>
+
+  <div class="section" id="pdf-section" style="display:none;">
+    <div class="result-banner" id="result-banner"></div>
+    <button class="pdf-btn full-btn" onclick="onGeneratePdf()">📄 PDFを出力する</button>
+    <div id="pdf-link-wrap" style="display:none;">
+      <div class="pdf-link-btn">✅ PDFをダウンロードしました(端末のダウンロードフォルダを確認してください)</div>
+    </div>
+    <button class="small-btn full-btn" onclick="goHome()" style="margin-top:14px;">🏠 ホームに戻る</button>
+  </div>
+</div>
+
+<!-- 履歴検索画面 -->
+<div id="history-screen" class="screen" style="display:none;">
+  <div class="section">
+    <div class="new-row">
+      <input type="text" id="history-keyword" placeholder="工事名・部材・製品名・氏名で検索">
+      <button class="small-btn" onclick="submitHistorySearch()">検索</button>
+    </div>
+  </div>
+  <div class="list" id="history-list"><div class="loading-text">読み込み中...</div></div>
+</div>
+
+<!-- 履歴詳細(閲覧のみ) -->
+<div id="joint-view-screen" class="screen" style="display:none;">
+  <div class="joint-summary" id="view-joint-summary"></div>
+  <div class="section">
+    <div class="field-label">パス記録</div>
+    <div class="pass-table-wrap">
+      <table class="pass-table" id="view-pass-table">
+        <thead><tr>
+          <th>#</th><th>層</th><th>電流</th><th>電圧</th><th>アーク</th><th>温度</th><th>判定</th>
+        </tr></thead>
+        <tbody id="view-pass-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="section">
+    <div class="result-banner" id="view-result-banner"></div>
+    <button class="pdf-btn full-btn" onclick="onGeneratePdfFromView()">📄 PDFを出力する</button>
+    <div id="view-pdf-link-wrap" style="display:none;">
+      <div class="pdf-link-btn">✅ PDFをダウンロードしました(端末のダウンロードフォルダを確認してください)</div>
+    </div>
+  </div>
+</div>
+
+<!-- ローディング/メッセージ用オーバーレイ -->
+<div class="overlay" id="overlay" style="display:none;">
+  <div class="overlay-box">
+    <div class="overlay-icon" id="overlay-icon">⏳</div>
+    <div class="overlay-message" id="overlay-message">処理中...</div>
+    <button class="overlay-close-btn" id="overlay-close-btn" style="display:none;" onclick="hideOverlay()">閉じる</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
