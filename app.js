@@ -113,8 +113,38 @@ function applyGenderTheme(isFemale) {
     if (el.classList.contains('zero')) el.classList.toggle('female', f);
   });
 }
+const homeBgImages = ['images/home-bg/team-photo-1.jpg', 'images/home-bg/team-photo-2.jpg'];
+let homeBgActiveLayer = 0;
+let homeBgCurrentIndex = -1;
+let homeBgInterval = null;
+function homeBgSwitch() {
+  const layers = [document.getElementById('home-bg-img-a'), document.getElementById('home-bg-img-b')];
+  const nextLayer = layers[1 - homeBgActiveLayer];
+  const currentLayer = layers[homeBgActiveLayer];
+  let nextIndex = homeBgCurrentIndex;
+  if (homeBgImages.length > 1) {
+    while (nextIndex === homeBgCurrentIndex) nextIndex = Math.floor(Math.random() * homeBgImages.length);
+  } else {
+    nextIndex = 0;
+  }
+  homeBgCurrentIndex = nextIndex;
+  nextLayer.src = homeBgImages[nextIndex];
+  nextLayer.classList.add('visible');
+  currentLayer.classList.remove('visible');
+  homeBgActiveLayer = 1 - homeBgActiveLayer;
+}
+function homeBgStartSlideshow() {
+  if (homeBgImages.length === 0 || homeBgInterval) return;
+  homeBgSwitch();
+  homeBgInterval = setInterval(homeBgSwitch, 3000);
+}
+function homeBgStopSlideshow() {
+  clearInterval(homeBgInterval);
+  homeBgInterval = null;
+}
 function showScreen(screen) {
   document.getElementById('home-screen').style.display = 'none';
+  homeBgStopSlideshow();
   document.getElementById('gender-select-screen').style.display = 'none';
   document.getElementById('result-screen').style.display = 'none';
   document.getElementById('record-header-wrap').style.display = 'none';
@@ -123,6 +153,7 @@ function showScreen(screen) {
   document.getElementById('hot-screen').style.display = 'none';
   if (screen === 'home') {
     document.getElementById('home-screen').style.display = 'flex';
+    homeBgStartSlideshow();
   } else if (screen === 'gender-select') {
     document.getElementById('gender-select-screen').style.display = 'flex';
   } else if (screen === 'result') {
