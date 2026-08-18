@@ -75,20 +75,19 @@ select {
 .big-input { font-size: 34px; text-align: center; padding: 20px; }
 .new-input { border-color: #ff9800 !important; background: #241a0a !important; }
 
-/* 層番号カウンター */
-.layer-row { margin-bottom: 18px; }
-.layer-control { display: flex; align-items: center; justify-content: center; gap: 20px; }
+/* 層数・経過時間・スタート/ストップを1行にまとめる(パス記録画面) */
+.pass-top-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.pass-top-item { text-align: center; }
+.pass-top-item-btn { flex: 1 1 160px; }
+.layer-control { display: flex; align-items: center; justify-content: center; gap: 12px; }
 .layer-btn {
-  width: 56px; height: 56px; border-radius: 50%; border: none;
-  background: #263238; color: #ffb74d; font-size: 30px; font-weight: bold; cursor: pointer;
+  width: 48px; height: 48px; border-radius: 50%; border: none;
+  background: #263238; color: #ffb74d; font-size: 26px; font-weight: bold; cursor: pointer;
 }
 .layer-btn:active { background: #35414d; }
-.layer-value { font-size: 34px; font-weight: bold; min-width: 50px; text-align: center; }
-
-/* タイマー */
-.timer-box { text-align: center; margin-bottom: 18px; }
-.timer-display { font-size: 52px; font-weight: bold; font-variant-numeric: tabular-nums; color: #fff; margin-bottom: 10px; }
-.timer-btn { width: 100%; padding: 22px; border: none; border-radius: 14px; font-size: 26px; font-weight: bold; cursor: pointer; }
+.layer-value { font-size: 30px; font-weight: bold; min-width: 44px; text-align: center; }
+.timer-display { font-size: 36px; font-weight: bold; font-variant-numeric: tabular-nums; color: #fff; }
+.timer-btn { width: 100%; padding: 16px; border: none; border-radius: 14px; font-size: 20px; font-weight: bold; cursor: pointer; }
 .timer-btn.timer-start { background: linear-gradient(135deg, #2e7d32, #1b5e20); color: #fff; }
 .timer-btn.timer-running { background: linear-gradient(135deg, #c62828, #8e0000); color: #fff; animation: pulse 1.2s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
@@ -195,6 +194,12 @@ button:disabled {
 .pass-table th { background: #262b38; color: #ffb74d; }
 .pass-table td.judge-ok { color: #66bb6a; font-weight: bold; }
 .pass-table td.judge-ng { color: #ef5350; font-weight: bold; }
+.cell-input {
+  width: 64px; padding: 6px 4px; margin-bottom: 0;
+  border: 2px solid #3a4256; border-radius: 8px;
+  font-size: 15px; background: #10131a; color: #fff; text-align: center;
+}
+.cell-input:focus { outline: none; border-color: #ff9800; }
 .pass-table tr.ng-row { background: rgba(198,40,40,0.15); }
 
 .result-banner { text-align: center; font-size: 26px; font-weight: bold; padding: 14px; border-radius: 12px; margin-bottom: 14px; }

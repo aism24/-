@@ -411,19 +411,34 @@ function computeMetrics(current, voltage, arcSeconds, passTemp) {
 function renderRecordScreen() {
   const h = state.header;
   document.getElementById('joint-summary').innerHTML = `
-    <div><b>${escapeHtml(h["工事名"])}</b> ／ ${escapeHtml(h["部材"])} ／ 製品名: <b>${escapeHtml(h["製品名"])}</b></div>
-    <div>材質: ${escapeHtml(h["材質"] || '-')}　溶接方法: ${escapeHtml(h["溶接方法"] || '-')}　溶接長: ${escapeHtml(h["溶接長"])}cm</div>
     <div>溶接者: ${escapeHtml(h["溶接者"] || '-')}　検査員: ${escapeHtml(h["検査員（入力者）"] || '-')}</div>
-    <div>管理基準: 入熱≦${escapeHtml(h.heatInputLimit || '-')}kJ/cm　パス間温度 ${escapeHtml(h.tempMin || '-')}〜${escapeHtml(h.tempMax || '-')}℃</div>
   `;
   document.getElementById('layer-value').textContent = state.nextLayer;
   resetTimerUi();
   renderPassTable();
+  prefillPassInputsFromLastPass();
+}
+
+// 層数は「前回記録した層と同じ」か「その1つ上」までしか進められない(飛び番禁止)
+function maxRecordedLayer() {
+  if (!state.passes.length) return 0;
+  return Math.max(...state.passes.map(p => Number(p.layer) || 0));
 }
 
 function changeLayer(delta) {
-  state.nextLayer = Math.max(1, state.nextLayer + delta);
+  const cap = maxRecordedLayer() + 1;
+  state.nextLayer = Math.max(1, Math.min(cap, state.nextLayer + delta));
   document.getElementById('layer-value').textContent = state.nextLayer;
+}
+
+// 2パス目以降は、直前に記録したパスの値をデフォルトとして表示する(電流・電圧はほぼ同じ値が続くため)
+function prefillPassInputsFromLastPass() {
+  const last = state.passes[state.passes.length - 1];
+  if (!last) return;
+  document.getElementById('pi-current').value = last.current;
+  document.getElementById('pi-voltage').value = last.voltage;
+  document.getElementById('pi-temp').value = last.passTemp;
+  document.getElementById('pi-note').value = last.note || '';
 }
 
 function resetTimerUi() {
@@ -487,7 +502,7 @@ function submitPass() {
   saveDraft();
   renderPassTable();
 
-  ['pi-current', 'pi-voltage', 'pi-temp', 'pi-note'].forEach(id => { document.getElementById(id).value = ''; });
+  prefillPassInputsFromLastPass();
   resetTimerUi();
 
   if (metrics.judgement === 'NG') {
@@ -502,14 +517,39 @@ function deletePass(index) {
   renderPassTable();
 }
 
+// 記録済みパスの値(#以外)を編集した際に呼ばれる。入熱・判定は編集不可の自動計算値なので、
+// ここで再計算してテーブルに反映する(手入力の判定上書きは許可しない)
+function updatePassField(index, field, rawValue) {
+  const p = state.passes[index];
+  if (field === 'layer') p.layer = Math.max(1, Number(rawValue) || p.layer);
+  else if (field === 'current') p.current = Number(rawValue) || 0;
+  else if (field === 'voltage') p.voltage = Number(rawValue) || 0;
+  else if (field === 'arcSeconds') {
+    const arcSeconds = Math.max(0, Number(rawValue) || 0);
+    p.arcSeconds = arcSeconds;
+    // start/endもアークタイムに合わせて補正する(GAS側はstart/endから再計算するため)
+    if (p.start) p.end = new Date(new Date(p.start).getTime() + arcSeconds * 1000).toISOString();
+  } else if (field === 'passTemp') p.passTemp = Number(rawValue);
+
+  const metrics = computeMetrics(p.current, p.voltage, p.arcSeconds, p.passTemp);
+  p.heatInput = metrics.heatInput;
+  p.judgement = metrics.judgement;
+  saveDraft();
+  renderPassTable();
+}
+
 function renderPassTable() {
   const tbody = document.getElementById('pass-table-body');
   if (!state.passes.length) { tbody.innerHTML = '<tr><td colspan="9" class="loading-text">まだパスが記録されていません</td></tr>'; return; }
   tbody.innerHTML = state.passes.map((p, i) => `
     <tr class="${p.judgement === 'NG' ? 'ng-row' : ''}">
-      <td>${i + 1}</td><td>${p.layer}</td><td>${p.current}</td><td>${p.voltage}</td>
-      <td>${p.arcSeconds}秒</td><td>${p.heatInput === '' ? '-' : p.heatInput}</td>
-      <td>${p.passTemp}</td>
+      <td>${i + 1}</td>
+      <td><input type="number" class="cell-input" value="${p.layer}" onchange="updatePassField(${i},'layer',this.value)"></td>
+      <td><input type="number" class="cell-input" value="${p.current}" onchange="updatePassField(${i},'current',this.value)"></td>
+      <td><input type="number" class="cell-input" value="${p.voltage}" onchange="updatePassField(${i},'voltage',this.value)"></td>
+      <td><input type="number" class="cell-input" value="${p.arcSeconds}" onchange="updatePassField(${i},'arcSeconds',this.value)">秒</td>
+      <td>${p.heatInput === '' ? '-' : p.heatInput}</td>
+      <td><input type="number" class="cell-input" value="${p.passTemp}" onchange="updatePassField(${i},'passTemp',this.value)"></td>
       <td class="${p.judgement === 'NG' ? 'judge-ng' : 'judge-ok'}">${p.judgement}</td>
       <td><button class="pass-del-btn" onclick="deletePass(${i})">削除</button></td>
     </tr>`).join('');
