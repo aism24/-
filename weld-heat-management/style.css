@@ -162,6 +162,7 @@ button:disabled {
 .save-btn:active { opacity: 0.85; }
 .finish-btn { background: linear-gradient(135deg, #1565c0, #0d47a1); color: #fff; border: none; border-radius: 14px; padding: 22px; font-size: 24px; font-weight: bold; cursor: pointer; }
 .finish-btn:active { opacity: 0.85; }
+.complete-warning { color: #ef5350; font-weight: bold; font-size: 15px; text-align: center; margin-bottom: 12px; }
 .pdf-btn { background: linear-gradient(135deg, #2e7d32, #1b5e20); color: #fff; border: none; border-radius: 14px; padding: 22px; font-size: 24px; font-weight: bold; cursor: pointer; }
 .pdf-btn:active { opacity: 0.85; }
 

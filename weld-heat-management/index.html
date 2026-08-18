@@ -196,7 +196,7 @@
     <button class="save-btn full-btn" id="pi-submit-btn" onclick="submitPass()" disabled>✅ このパスを記録(ストップ後に押せます)</button>
   </div>
 
-  <div class="section">
+  <div class="section" id="pass-list-section">
     <div class="field-label">記録済みパス一覧</div>
     <div class="pass-table-wrap">
       <table class="pass-table" id="pass-table">
@@ -209,6 +209,7 @@
   </div>
 
   <div class="section" id="complete-section">
+    <div class="complete-warning">※今回の記録が保存されたら記録済みパス一覧が削除されます</div>
     <button class="finish-btn full-btn" onclick="onCompleteJoint()">🏁 溶接完了・スプレッドシートへ記録する</button>
   </div>
 

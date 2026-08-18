@@ -563,6 +563,7 @@ function onCompleteJoint() {
     clearDraft();
     hideOverlay();
     document.getElementById('pass-input-section').style.display = 'none';
+    document.getElementById('pass-list-section').style.display = 'none';
     document.getElementById('complete-section').style.display = 'none';
     document.getElementById('pdf-section').style.display = 'block';
     document.getElementById('pdf-link-wrap').style.display = 'none';
