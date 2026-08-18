@@ -66,6 +66,7 @@ function doPost(e) {
     const action = body.action;
     if (action === "addMasterValue") return ok_(addMasterValue(body.column, body.value));
     if (action === "saveJointRecord") return ok_(saveJointRecord(body));
+    if (action === "updateJointRecord") return ok_(updateJointRecord(body));
     if (action === "uploadPhoto") return ok_(uploadPhoto(body));
     if (action === "generatePdf") return ok_(generatePdf(body));
     return errRes_("不明なaction: " + action);
@@ -262,6 +263,7 @@ function saveJointRecord(body) {
 
     const lastCol = sh.getLastColumn();
     const rows = [];
+    const ids = [];
     let prevEnd = null;
 
     passes.forEach((p, i) => {
@@ -320,6 +322,7 @@ function saveJointRecord(body) {
       setIf("判定", metrics.judgement);
 
       row[idCol - 1] = nextIdNum;
+      ids.push(nextIdNum);
       nextIdNum += 1;
       prevEnd = end;
       rows.push(row);
@@ -333,7 +336,62 @@ function saveJointRecord(body) {
       ? (rows.some(r => r[judgeCol - 1] === "NG") ? "NG" : "OK")
       : "";
 
-    return { savedRows: rows.length, overallResult: overallResult };
+    return { savedRows: rows.length, overallResult: overallResult, ids: ids };
+  });
+}
+
+// 保存済みの継手のパスを、行を追加せずに既存行を上書きして修正する(完了後の編集用)
+function updateJointRecord(body) {
+  const header = body.header || {};
+  const ids = body.ids || [];
+  const passes = body.passes || [];
+  if (!ids.length || ids.length !== passes.length) throw new Error("ids/passesの件数が一致しません");
+
+  return withLock_(() => {
+    const sh = sheet_(RECORD_SHEET);
+    const map = headerMap_(sh);
+    const idCol = requireCol_(map, "ID");
+    const lastRow = sh.getLastRow();
+    if (lastRow < 2) throw new Error("更新対象の行が見つかりません");
+    const idValues = sh.getRange(2, idCol, lastRow - 1, 1).getValues().map(r => Number(r[0]));
+
+    let prevEnd = null;
+    ids.forEach((id, i) => {
+      const rowIndex = idValues.indexOf(Number(id));
+      if (rowIndex === -1) throw new Error("該当する行が見つかりません(ID: " + id + ")");
+      const sheetRow = rowIndex + 2;
+      const p = passes[i];
+
+      const start = p.start ? new Date(p.start) : null;
+      const end = p.end ? new Date(p.end) : null;
+      const arcSec = (start && end) ? Math.max(0, Math.round((end - start) / 1000)) : 0;
+      const intervalSec = (prevEnd && start) ? Math.max(0, Math.round((start - prevEnd) / 1000)) : "";
+      const current = Number(p.current) || 0;
+      const voltage = Number(p.voltage) || 0;
+      const metrics = computePassMetrics_(current, voltage, arcSec, p.passTemp, {
+        weldLength: header["溶接長"], tempMin: header["tempMin"], tempMax: header["tempMax"], heatInputLimit: header["heatInputLimit"],
+      });
+      const note = metrics.reasons.length ? (metrics.reasons.join("・") + (p.note ? " / " + p.note : "")) : (p.note || "");
+
+      const setCell = (name, value) => {
+        const col = optionalCol_(map, name);
+        if (col) sh.getRange(sheetRow, col).setValue(value);
+      };
+      setCell("層数", p.layer || "");
+      setCell("電流", current);
+      setCell("電圧", voltage);
+      setCell("スタート", start || "");
+      setCell("エンド", end || "");
+      setCell("アークタイム", arcSec);
+      setCell("パス間温度", Number(p.passTemp));
+      setCell("インターバル", intervalSec);
+      setCell("備考", note);
+      setCell("判定", metrics.judgement);
+
+      prevEnd = end;
+    });
+
+    return { updatedRows: ids.length };
   });
 }
 
