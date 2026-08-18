@@ -31,34 +31,46 @@
   <div class="section">
     <div class="field-label">基本情報</div>
 
-    <div class="form-grid two-col">
-      <div>
-        <div class="field-label small">溶接者 <span class="req">必須</span></div>
+    <div class="field-row">
+      <div class="field-row-label">溶接者 <span class="req">必須</span></div>
+      <div class="field-row-input">
         <select id="jn-溶接者"></select>
         <input type="text" id="jn-溶接者-new" class="new-input" style="display:none;" placeholder="新しい氏名を入力">
       </div>
-      <div>
-        <div class="field-label small">検査員(入力者) <span class="req">必須</span></div>
+    </div>
+    <div class="field-row">
+      <div class="field-row-label">検査員(入力者) <span class="req">必須</span></div>
+      <div class="field-row-input">
         <select id="jn-検査員"></select>
         <input type="text" id="jn-検査員-new" class="new-input" style="display:none;" placeholder="新しい氏名を入力">
       </div>
     </div>
 
-    <div class="field-label small">工事名 <span class="req">必須</span></div>
-    <select id="jn-工事名"></select>
-    <input type="text" id="jn-工事名-new" class="new-input" style="display:none;" placeholder="新しい工事名を入力">
+    <div class="field-row">
+      <div class="field-row-label">工事名 <span class="req">必須</span></div>
+      <div class="field-row-input">
+        <select id="jn-工事名"></select>
+        <input type="text" id="jn-工事名-new" class="new-input" style="display:none;" placeholder="新しい工事名を入力">
+      </div>
+    </div>
 
-    <div class="field-label small">検査日</div>
-    <input type="date" id="jn-検査日">
+    <div class="field-row">
+      <div class="field-row-label">検査日</div>
+      <div class="field-row-input">
+        <input type="date" id="jn-検査日">
+      </div>
+    </div>
 
-    <div class="form-grid two-col">
-      <div>
-        <div class="field-label small">部材(大別区分) <span class="req">必須</span></div>
+    <div class="field-row">
+      <div class="field-row-label">部材(大別区分) <span class="req">必須</span></div>
+      <div class="field-row-input">
         <select id="jn-部材"></select>
         <input type="text" id="jn-部材-new" class="new-input" style="display:none;" placeholder="例: 大梁">
       </div>
-      <div>
-        <div class="field-label small">製品名(符号) <span class="req">必須</span></div>
+    </div>
+    <div class="field-row">
+      <div class="field-row-label">製品名(符号) <span class="req">必須</span></div>
+      <div class="field-row-input">
         <div class="input-with-btn">
           <input type="text" id="jn-製品名" placeholder="例: G1-3">
           <button type="button" class="inline-photo-btn" onclick="document.getElementById('jn-photo-image').click()">📷 画像</button>
@@ -66,27 +78,35 @@
         <input type="file" id="jn-photo-image" accept="image/*" capture="environment" style="display:none" onchange="onPhotoSelected(event,'productName')">
       </div>
     </div>
-    <div class="form-grid two-col">
-      <div>
-        <div class="field-label small">サイズ(幅・mm) <span class="req">必須</span></div>
+    <div class="field-row">
+      <div class="field-row-label">サイズ(幅・mm) <span class="req">必須</span></div>
+      <div class="field-row-input">
         <input type="number" id="jn-幅">
       </div>
-      <div>
-        <div class="field-label small">板厚(mm) <span class="req">必須</span></div>
+    </div>
+    <div class="field-row">
+      <div class="field-row-label">板厚(mm) <span class="req">必須</span></div>
+      <div class="field-row-input">
         <input type="number" id="jn-板厚">
       </div>
     </div>
-    <div class="field-label small">部材サイズ(断面表記)</div>
-    <input type="text" id="jn-部材サイズ" placeholder="例: H-400x200x8x13">
+    <div class="field-row">
+      <div class="field-row-label">部材サイズ(断面表記)</div>
+      <div class="field-row-input">
+        <input type="text" id="jn-部材サイズ" placeholder="例: H-400x200x8x13">
+      </div>
+    </div>
 
-    <div class="form-grid two-col">
-      <div>
-        <div class="field-label small">材質 <span class="req">必須</span></div>
+    <div class="field-row">
+      <div class="field-row-label">材質 <span class="req">必須</span></div>
+      <div class="field-row-input">
         <select id="jn-材質"></select>
         <input type="text" id="jn-材質-new" class="new-input" style="display:none;" placeholder="例: SN490B">
       </div>
-      <div>
-        <div class="field-label small">溶接方法 <span class="req">必須</span></div>
+    </div>
+    <div class="field-row">
+      <div class="field-row-label">溶接方法 <span class="req">必須</span></div>
+      <div class="field-row-input">
         <select id="jn-溶接方法"></select>
         <input type="text" id="jn-溶接方法-new" class="new-input" style="display:none;" placeholder="例: CO2半自動">
       </div>
@@ -95,23 +115,37 @@
 
   <div class="section">
     <div class="field-label">溶接条件</div>
-    <div class="field-label small">溶接長(cm) <span class="req">必須</span></div>
-    <input type="number" id="jn-溶接長" placeholder="入熱自動計算に使用">
-    <div class="field-label small">気温(℃) <span class="req">必須</span></div>
-    <input type="number" id="jn-気温">
-    <div class="field-label small">計測 <span class="req">必須</span></div>
-    <input type="text" id="jn-計測" placeholder="例: 接触式温度計">
-    <div class="form-grid two-col">
-      <div>
-        <div class="field-label small">ルートギャップ(mm)</div>
+    <div class="field-row">
+      <div class="field-row-label">溶接長(cm) <span class="req">必須</span></div>
+      <div class="field-row-input">
+        <input type="number" id="jn-溶接長" placeholder="入熱自動計算に使用">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field-row-label">気温(℃) <span class="req">必須</span></div>
+      <div class="field-row-input">
+        <input type="number" id="jn-気温">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field-row-label">計測 <span class="req">必須</span></div>
+      <div class="field-row-input">
+        <input type="text" id="jn-計測" placeholder="例: 接触式温度計">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field-row-label">ルートギャップ(mm)</div>
+      <div class="field-row-input">
         <div class="stepper">
           <button type="button" class="stepper-btn" onclick="changeStepper('jn-ルートギャップ',-0.5)">−</button>
           <div class="stepper-value" id="jn-ルートギャップ">7</div>
           <button type="button" class="stepper-btn" onclick="changeStepper('jn-ルートギャップ',0.5)">＋</button>
         </div>
       </div>
-      <div>
-        <div class="field-label small">開先角度(°)</div>
+    </div>
+    <div class="field-row">
+      <div class="field-row-label">開先角度(°)</div>
+      <div class="field-row-input">
         <div class="stepper">
           <button type="button" class="stepper-btn" onclick="changeStepper('jn-開先角度',-0.5)">−</button>
           <div class="stepper-value" id="jn-開先角度">35</div>
@@ -123,15 +157,21 @@
 
   <div class="section">
     <div class="field-label">管理基準値(任意・入力すると自動判定します)</div>
-    <div class="field-label small">入熱上限(kJ/cm)</div>
-    <input type="number" id="jn-入熱上限">
-    <div class="form-grid two-col">
-      <div>
-        <div class="field-label small">パス間温度下限(℃)</div>
+    <div class="field-row">
+      <div class="field-row-label">入熱上限(kJ/cm)</div>
+      <div class="field-row-input">
+        <input type="number" id="jn-入熱上限">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field-row-label">パス間温度下限(℃)</div>
+      <div class="field-row-input">
         <input type="number" id="jn-温度下限">
       </div>
-      <div>
-        <div class="field-label small">パス間温度上限(℃)</div>
+    </div>
+    <div class="field-row">
+      <div class="field-row-label">パス間温度上限(℃)</div>
+      <div class="field-row-input">
         <input type="number" id="jn-温度上限">
       </div>
     </div>
