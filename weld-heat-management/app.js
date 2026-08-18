@@ -46,9 +46,46 @@ function showOverlay(icon, message, closable) {
   document.getElementById('overlay-icon').textContent = icon;
   document.getElementById('overlay-message').textContent = message;
   document.getElementById('overlay-close-btn').style.display = closable ? 'inline-block' : 'none';
+  resetProgressBar();
 }
-function hideOverlay() { document.getElementById('overlay').style.display = 'none'; }
+function hideOverlay() { document.getElementById('overlay').style.display = 'none'; resetProgressBar(); }
 function showError(err) { showOverlay('❌', (err && err.message) || String(err), true); }
+
+// ---------- 疑似プログレスバー(製品名OCR読み取り中に使用) ----------
+// 5秒かけて95%まで進め、そこで止める。実際の処理が完了した時点でfinishProgressBar()を
+// 呼び、即座に100%にしてから閉じる(5秒より早く終わればその時点で100%)。
+let progressBarInterval = null;
+
+function resetProgressBar() {
+  clearInterval(progressBarInterval);
+  progressBarInterval = null;
+  document.getElementById('progress-bar-wrap').style.display = 'none';
+  document.getElementById('progress-bar-fill').style.width = '0%';
+  document.getElementById('progress-bar-pct').textContent = '0%';
+}
+
+function startProgressBar() {
+  resetProgressBar();
+  document.getElementById('progress-bar-wrap').style.display = 'block';
+  const fill = document.getElementById('progress-bar-fill');
+  const pct = document.getElementById('progress-bar-pct');
+  const durationMs = 5000;
+  const cap = 95;
+  const startTime = new Date().getTime();
+  progressBarInterval = setInterval(() => {
+    const elapsed = new Date().getTime() - startTime;
+    const value = Math.min(cap, Math.round((elapsed / durationMs) * cap));
+    fill.style.width = value + '%';
+    pct.textContent = value + '%';
+    if (elapsed >= durationMs) clearInterval(progressBarInterval);
+  }, 100);
+}
+
+function finishProgressBar() {
+  clearInterval(progressBarInterval);
+  document.getElementById('progress-bar-fill').style.width = '100%';
+  document.getElementById('progress-bar-pct').textContent = '100%';
+}
 
 // ---------- 画面遷移 ----------
 
@@ -259,6 +296,7 @@ function onPhotoSelected(event, kind) {
     const base64 = reader.result.split(',')[1];
     const label = kind === 'productName' ? '製品名タグ' : '積層図';
     showOverlay('⏳', label + 'をアップロード中...' + (kind === 'productName' ? '(自動読み取り中)' : ''));
+    if (kind === 'productName') startProgressBar();
     apiPost('uploadPhoto', {
       kind: kind,
       base64: base64,
@@ -267,19 +305,24 @@ function onPhotoSelected(event, kind) {
     }).then(result => {
       if (kind === 'productName') {
         pendingImageUrl = result.url;
-        hideOverlay();
-        if (result.recognizedText) {
-          document.getElementById('jn-製品名').value = result.recognizedText;
-          updateRequiredState();
-        } else {
-          showOverlay('⚠️', '製品名の自動読み取りに失敗しました。手入力してください', true);
-        }
+        finishProgressBar();
+        setTimeout(() => {
+          hideOverlay();
+          if (result.recognizedText) {
+            document.getElementById('jn-製品名').value = result.recognizedText;
+            updateRequiredState();
+          } else {
+            showOverlay('⚠️', '製品名の自動読み取りに失敗しました。手入力してください', true);
+          }
+          document.getElementById('jn-photo-status').textContent =
+            (pendingImageUrl ? '✅ 製品名タグ写真 添付済み\n' : '') + (pendingLayerImageUrl ? '✅ 積層図 添付済み' : '');
+        }, 300);
       } else {
         pendingLayerImageUrl = result.url;
         hideOverlay();
+        document.getElementById('jn-photo-status').textContent =
+          (pendingImageUrl ? '✅ 製品名タグ写真 添付済み\n' : '') + (pendingLayerImageUrl ? '✅ 積層図 添付済み' : '');
       }
-      document.getElementById('jn-photo-status').textContent =
-        (pendingImageUrl ? '✅ 製品名タグ写真 添付済み\n' : '') + (pendingLayerImageUrl ? '✅ 積層図 添付済み' : '');
     }).catch(showError);
   };
   reader.readAsDataURL(file);
