@@ -401,8 +401,19 @@ document.addEventListener('DOMContentLoaded', () => {
   setupRequiredValidation();
   setupInspectorGating();
   document.getElementById('master-manage-body').addEventListener('click', onMasterManageClick);
-  startHomeBgSlideshow();
 });
+
+// ---------- 溶接モード選択(アプリ起動時) ----------
+
+function selectWeldMode(mode) {
+  if (mode === 'robot') {
+    navStack = [];
+    document.getElementById('app-header').style.display = 'none';
+    showScreen('robot-home-screen');
+  } else {
+    goHome();
+  }
+}
 
 // ---------- 新規継手ヘッダー入力 ----------
 
@@ -1115,5 +1126,302 @@ function setMasterDefaultUi(column, value) {
   apiPost('setDefaultMasterValue', { column: column, value: value, sheetName: settingsInspectorName }).then(() => {
     hideOverlay();
     renderMasterManage();
+  }).catch(showError);
+}
+
+// ---------- ロボット溶接(β) ----------
+// 半自動溶接(CO2半自動)とは入熱の計算式が別物(電流×電圧×60÷溶接速度÷1000。溶接速度は
+// 「速度測定長さ」÷アークタイム(秒)×6)なため、専用の画面・状態・保存先シートを持つ。
+// 現段階では簡易版として、履歴検索・PDF出力・製品名OCR・検査員別デフォルトには対応していない
+// (半自動溶接側の既存機能には一切手を加えていない)。
+
+function goRobotJointNew() {
+  goTo({ screenId: 'robot-joint-new-screen', title: 'ロボット溶接 記録', load: initRobotJointNewForm });
+}
+
+let robotMasterLists = {};
+
+async function initRobotJointNewForm() {
+  document.getElementById('rjn-検査日').value = new Date().toISOString().slice(0, 10);
+  ['rjn-製品名', 'rjn-コラム径', 'rjn-板厚', 'rjn-半径標準値', 'rjn-計画層数',
+    'rjn-入熱上限', 'rjn-温度下限', 'rjn-温度上限', 'rjn-気温',
+    'rjn-溶接管理者', 'rjn-オペレータ', 'rjn-記録者', 'rjn-溶接部位',
+    'rjn-継手形状姿勢', 'rjn-溶接材料', 'rjn-銘柄径', 'rjn-使用温度計', 'rjn-天候',
+  ].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('rjn-溶接区分').value = '全周溶接';
+  onRobotWeldKindChange();
+
+  const inspectorSelect = document.getElementById('rjn-検査員');
+  inspectorSelect.innerHTML = inspectorRoster.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+
+  try {
+    robotMasterLists = await apiGet('listMasterLists');
+  } catch (e) {
+    robotMasterLists = {};
+  }
+  const fillSelect = (id, list) => {
+    document.getElementById(id).innerHTML =
+      '<option value="">(選択してください)</option>' + list.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+  };
+  fillSelect('rjn-工事名', robotMasterLists['工事名'] || []);
+  fillSelect('rjn-部材', robotMasterLists['部材'] || []);
+  fillSelect('rjn-材質', robotMasterLists['材質'] || []);
+  fillSelect('rjn-溶接方法', (robotMasterLists['溶接方法'] || []).filter(v => v.indexOf('ロボット') !== -1));
+}
+
+// 全周溶接の時だけ「半径標準値」「計画層数」を使う(一辺溶接では不要なので隠す)
+function onRobotWeldKindChange() {
+  const isFull = document.getElementById('rjn-溶接区分').value === '全周溶接';
+  document.getElementById('rjn-半径標準値-wrap').style.display = isFull ? '' : 'none';
+  document.getElementById('rjn-計画層数-wrap').style.display = isFull ? '' : 'none';
+}
+
+// 板厚・半径標準値から外周R半径・内周R半径を、そこからさらに外周・内周の全周長(mm)を求める
+// (角形鋼管の4辺の直線部+4隅の円弧部)。全周溶接の各層の溶接長は、内周(1層目)→外周(最終層)へ
+// 層数に応じて線形補間する。一辺溶接は corner を除いた1辺分の直線長を固定で使う。
+function robotGeometry(columnDia, thickness, radiusStd) {
+  const outerR = thickness * radiusStd;
+  const innerR = outerR - thickness;
+  const straightOuter = (columnDia - 2 * outerR) * 4;
+  const straightInner = (columnDia - 2 * thickness - 2 * innerR) * 4;
+  const outerCirc = straightOuter + 2 * Math.PI * outerR;
+  const innerCirc = straightInner + 2 * Math.PI * innerR;
+  return { outerR: outerR, innerR: innerR, outerCirc: outerCirc, innerCirc: innerCirc };
+}
+
+function robotMeasureLength(header, layer) {
+  const columnDia = Number(header["コラム径"]) || 0;
+  const thickness = Number(header["板厚"]) || 0;
+  if (header["溶接区分"] === '全周溶接') {
+    const radiusStd = Number(header["半径標準値"]) || 0;
+    const geo = robotGeometry(columnDia, thickness, radiusStd);
+    const planLayers = Number(header["計画層数"]) || 1;
+    if (planLayers <= 1) return geo.innerCirc;
+    const l = Math.max(1, Number(layer) || 1);
+    return geo.innerCirc + (l - 1) * (geo.outerCirc - geo.innerCirc) / (planLayers - 1);
+  }
+  // 一辺溶接: 半径標準値が未入力でも、内周R半径=0とみなしてコラム径をそのまま使う
+  const radiusStd = Number(header["半径標準値"]) || 0;
+  const geo = robotGeometry(columnDia, thickness, radiusStd || 0);
+  return columnDia - 2 * geo.innerR;
+}
+
+function computeRobotMetrics(header, current, voltage, arcSeconds, passTemp, layer) {
+  current = Number(current) || 0; voltage = Number(voltage) || 0; arcSeconds = Number(arcSeconds) || 0;
+  const measureLength = robotMeasureLength(header, layer);
+  let weldSpeed = '', heatInput = '';
+  if (measureLength > 0 && arcSeconds > 0) {
+    weldSpeed = measureLength / arcSeconds * 6;
+    if (weldSpeed > 0 && current && voltage) {
+      heatInput = Math.round((current * voltage * 60 / weldSpeed / 1000) * 100) / 100;
+      weldSpeed = Math.round(weldSpeed * 100) / 100;
+    } else {
+      weldSpeed = Math.round(weldSpeed * 100) / 100;
+    }
+  }
+  const reasons = [];
+  let ok = true;
+  const tempMin = header["パス間温度下限(℃)"], tempMax = header["パス間温度上限(℃)"], heatLimit = header["入熱上限(kJ/cm)"];
+  if (tempMin !== '' && tempMin != null && Number(passTemp) < Number(tempMin)) { ok = false; reasons.push('温度不足'); }
+  if (tempMax !== '' && tempMax != null && Number(passTemp) > Number(tempMax)) { ok = false; reasons.push('温度超過'); }
+  if (heatInput !== '' && heatLimit !== '' && heatLimit != null && heatInput > Number(heatLimit)) { ok = false; reasons.push('入熱超過'); }
+  return { weldSpeed: weldSpeed, heatInput: heatInput, judgement: ok ? 'OK' : 'NG', reasons: reasons };
+}
+
+function submitRobotNewJoint() {
+  const inspector = document.getElementById('rjn-検査員').value;
+  const construction = document.getElementById('rjn-工事名').value;
+  const member = document.getElementById('rjn-部材').value;
+  const productName = document.getElementById('rjn-製品名').value.trim();
+  const material = document.getElementById('rjn-材質').value;
+  const weldMethod = document.getElementById('rjn-溶接方法').value;
+  const weldKind = document.getElementById('rjn-溶接区分').value;
+  const columnDia = document.getElementById('rjn-コラム径').value;
+  const thickness = document.getElementById('rjn-板厚').value;
+  const radiusStd = document.getElementById('rjn-半径標準値').value;
+  const planLayers = document.getElementById('rjn-計画層数').value;
+
+  if (!inspector) { showOverlay('⚠️', '検査員を選んでください', true); return; }
+  if (!construction) { showOverlay('⚠️', '工事名を選んでください', true); return; }
+  if (!member) { showOverlay('⚠️', '部材を選んでください', true); return; }
+  if (!productName) { showOverlay('⚠️', '製品名を入力してください', true); return; }
+  if (!material) { showOverlay('⚠️', '材質を選んでください', true); return; }
+  if (!weldMethod) { showOverlay('⚠️', '溶接方法を選んでください', true); return; }
+  if (columnDia === '') { showOverlay('⚠️', 'コラム径を入力してください', true); return; }
+  if (thickness === '') { showOverlay('⚠️', '板厚を入力してください', true); return; }
+  if (weldKind === '全周溶接' && (radiusStd === '' || planLayers === '')) {
+    showOverlay('⚠️', '全周溶接の場合、半径標準値と計画層数を入力してください', true); return;
+  }
+
+  const geo = robotGeometry(Number(columnDia), Number(thickness), Number(radiusStd) || 0);
+  const header = {
+    "工事名": construction,
+    "検査日": document.getElementById('rjn-検査日').value,
+    "部材": member,
+    "製品名": productName,
+    "材質": material,
+    "溶接方法": weldMethod,
+    "溶接区分": weldKind,
+    "検査員（入力者）": inspector,
+    "溶接管理者(確認者)": document.getElementById('rjn-溶接管理者').value.trim(),
+    "オペレータ": document.getElementById('rjn-オペレータ').value.trim(),
+    "記録者": document.getElementById('rjn-記録者').value.trim(),
+    "溶接部位": document.getElementById('rjn-溶接部位').value.trim(),
+    "継手形状・姿勢": document.getElementById('rjn-継手形状姿勢').value.trim(),
+    "溶接材料": document.getElementById('rjn-溶接材料').value.trim(),
+    "銘柄・径": document.getElementById('rjn-銘柄径').value.trim(),
+    "使用温度計": document.getElementById('rjn-使用温度計').value.trim(),
+    "天候": document.getElementById('rjn-天候').value.trim(),
+    "気温": document.getElementById('rjn-気温').value,
+    "コラム径": columnDia,
+    "板厚": thickness,
+    "半径標準値": radiusStd,
+    "計画層数": planLayers,
+    "内周R半径": Math.round(geo.innerR * 100) / 100,
+    "速度測定長さ": weldKind === '一辺溶接' ? Math.round((Number(columnDia) - 2 * geo.innerR) * 100) / 100 : '',
+    "入熱上限(kJ/cm)": document.getElementById('rjn-入熱上限').value,
+    "パス間温度下限(℃)": document.getElementById('rjn-温度下限').value,
+    "パス間温度上限(℃)": document.getElementById('rjn-温度上限').value,
+  };
+
+  robotState.header = header;
+  robotState.passes = [];
+  robotState.nextLayer = 1;
+  goTo({ screenId: 'robot-joint-record-screen', title: 'ロボット溶接 パス記録', load: renderRobotRecordScreen, noBack: true });
+}
+
+// ---------- ロボット溶接: パス記録画面 ----------
+
+const robotState = { header: null, passes: [], nextLayer: 1 };
+let robotTimerState = 'idle';
+let robotTimerStart = null, robotTimerEnd = null, robotTimerInterval = null;
+
+function renderRobotRecordScreen() {
+  const h = robotState.header;
+  document.getElementById('robot-joint-summary').innerHTML = `
+    <div>工事名: ${escapeHtml(h["工事名"] || '-')}　製品名: ${escapeHtml(h["製品名"] || '-')}　溶接区分: ${escapeHtml(h["溶接区分"] || '-')}</div>
+  `;
+  document.getElementById('robot-layer-value').textContent = robotState.nextLayer;
+  document.getElementById('robot-pass-input-section').style.display = 'block';
+  document.getElementById('robot-done-section').style.display = 'none';
+  resetRobotTimerUi();
+  renderRobotPassTable();
+  document.getElementById('rpi-current').value = '';
+  document.getElementById('rpi-voltage').value = '';
+  document.getElementById('rpi-temp').value = '';
+  document.getElementById('rpi-note').value = '';
+}
+
+function robotMaxRecordedLayer() {
+  if (!robotState.passes.length) return 0;
+  return Math.max(...robotState.passes.map(p => Number(p.layer) || 0));
+}
+
+function changeRobotLayer(delta) {
+  const cap = robotMaxRecordedLayer() + 1;
+  robotState.nextLayer = Math.max(1, Math.min(cap, robotState.nextLayer + delta));
+  document.getElementById('robot-layer-value').textContent = robotState.nextLayer;
+}
+
+function resetRobotTimerUi() {
+  robotTimerState = 'idle'; robotTimerStart = null; robotTimerEnd = null;
+  clearInterval(robotTimerInterval);
+  document.getElementById('robot-timer-display').textContent = '00:00';
+  const btn = document.getElementById('robot-timer-btn');
+  btn.textContent = '▶ スタート';
+  btn.classList.remove('timer-running'); btn.classList.add('timer-start');
+  document.getElementById('rpi-submit-btn').disabled = true;
+  document.getElementById('rpi-submit-btn').textContent = '✅ このパスを記録(ストップ後に押せます)';
+}
+
+function onRobotTimerButton() {
+  if (robotTimerState === 'idle') {
+    robotTimerState = 'running';
+    robotTimerStart = new Date();
+    const btn = document.getElementById('robot-timer-btn');
+    btn.textContent = '■ ストップ';
+    btn.classList.remove('timer-start'); btn.classList.add('timer-running');
+    robotTimerInterval = setInterval(() => {
+      document.getElementById('robot-timer-display').textContent = formatElapsed(new Date() - robotTimerStart);
+    }, 200);
+  } else if (robotTimerState === 'running') {
+    robotTimerState = 'stopped';
+    robotTimerEnd = new Date();
+    clearInterval(robotTimerInterval);
+    document.getElementById('robot-timer-display').textContent = formatElapsed(robotTimerEnd - robotTimerStart);
+    const btn = document.getElementById('robot-timer-btn');
+    btn.textContent = '✅ ストップ済み';
+    btn.classList.remove('timer-running');
+    document.getElementById('rpi-submit-btn').disabled = false;
+    document.getElementById('rpi-submit-btn').textContent = '✅ このパスを記録';
+  }
+}
+
+function submitRobotPass() {
+  if (robotTimerState !== 'stopped') { showOverlay('⚠️', 'スタート→ストップの後に記録してください', true); return; }
+  const current = document.getElementById('rpi-current').value;
+  const voltage = document.getElementById('rpi-voltage').value;
+  const passTemp = document.getElementById('rpi-temp').value;
+  const note = document.getElementById('rpi-note').value.trim();
+  if (passTemp === '') { showOverlay('⚠️', 'パス間温度を入力してください', true); return; }
+
+  const lastPass = robotState.passes[robotState.passes.length - 1];
+  if (lastPass && lastPass.layer === robotState.nextLayer) {
+    if (!confirm(`同じ層数(${robotState.nextLayer})で良いですか?`)) return;
+  }
+
+  const arcSeconds = Math.max(0, Math.round((robotTimerEnd - robotTimerStart) / 1000));
+  const metrics = computeRobotMetrics(robotState.header, current, voltage, arcSeconds, passTemp, robotState.nextLayer);
+
+  robotState.passes.push({
+    layer: robotState.nextLayer, current: Number(current) || 0, voltage: Number(voltage) || 0,
+    start: robotTimerStart.toISOString(), end: robotTimerEnd.toISOString(), arcSeconds: arcSeconds,
+    passTemp: Number(passTemp), note: note, weldSpeed: metrics.weldSpeed, heatInput: metrics.heatInput, judgement: metrics.judgement,
+  });
+  renderRobotPassTable();
+
+  document.getElementById('rpi-current').value = '';
+  document.getElementById('rpi-voltage').value = '';
+  document.getElementById('rpi-temp').value = '';
+  document.getElementById('rpi-note').value = '';
+  resetRobotTimerUi();
+
+  if (metrics.judgement === 'NG') {
+    showOverlay('⚠️', 'このパスは管理基準を外れています\n' + metrics.reasons.join('・'), true);
+  }
+}
+
+function deleteRobotPass(index) {
+  if (!confirm('このパスの記録を削除しますか?')) return;
+  robotState.passes.splice(index, 1);
+  renderRobotPassTable();
+}
+
+function renderRobotPassTable() {
+  const tbody = document.getElementById('robot-pass-table-body');
+  if (!robotState.passes.length) { tbody.innerHTML = '<tr><td colspan="10" class="loading-text">まだパスが記録されていません</td></tr>'; return; }
+  tbody.innerHTML = robotState.passes.map((p, i) => `
+    <tr class="${p.judgement === 'NG' ? 'ng-row' : ''}">
+      <td>${i + 1}</td>
+      <td>${p.layer}</td>
+      <td>${p.current}</td>
+      <td>${p.voltage}</td>
+      <td>${p.arcSeconds}</td>
+      <td>${p.weldSpeed === '' ? '-' : p.weldSpeed}</td>
+      <td>${p.heatInput === '' ? '-' : p.heatInput}</td>
+      <td>${p.passTemp}</td>
+      <td class="${p.judgement === 'NG' ? 'judge-ng' : 'judge-ok'}">${p.judgement}</td>
+      <td><button class="pass-del-btn" onclick="deleteRobotPass(${i})">削除</button></td>
+    </tr>`).join('');
+}
+
+function onCompleteRobotJoint() {
+  if (!robotState.passes.length) { showOverlay('⚠️', 'パスが1件も記録されていません', true); return; }
+  if (!confirm('この継手の溶接記録を確定し、スプレッドシートへ記録します。よろしいですか？')) return;
+  showOverlay('⏳', 'スプレッドシートへ記録しています...');
+  apiPost('saveRobotJointRecord', { header: robotState.header, passes: robotState.passes }).then(() => {
+    hideOverlay();
+    document.getElementById('robot-pass-input-section').style.display = 'none';
+    document.getElementById('robot-done-section').style.display = 'block';
   }).catch(showError);
 }
