@@ -7,11 +7,13 @@
 ## 構成
 
 ```
-index.html   … フロントエンドのHTML（画面構造のみ）
-style.css    … スタイル（レスポンシブ対応）
-app.js       … 画面ロジック + GAS APIとの通信処理（fetchでGET/POST）
-gas/Code.gs  … GAS側に貼り付けるバックエンドコード（JSON専用API）
+hot-heart/index.html   … フロントエンドのHTML（画面構造のみ）
+hot-heart/style.css    … スタイル（レスポンシブ対応）
+hot-heart/app.js       … 画面ロジック + GAS APIとの通信処理（fetchでGET/POST）
+hot-heart/gas/Code.gs  … GAS側に貼り付けるバックエンドコード（JSON専用API）
 ```
+
+リポジトリ直下の `index.html` は、旧URL（`https://<ユーザー名>.github.io/<リポジトリ名>/`）に来たアクセスを `hot-heart/` へ自動転送するためのリダイレクト専用ページです。
 
 **「写真をイラスト」機能は今回の分離作業で削除しました。** 画面・CSS・JSとも該当コードは含まれていません。
 
@@ -33,7 +35,7 @@ gas/Code.gs  … GAS側に貼り付けるバックエンドコード（JSON専�
 **重要: 既存の本番デプロイ（現在チームが使っているURL）は変更しないでください。** 新しいコードは**新規デプロイ**として発行し、十分に動作確認してから、必要に応じて案内を切り替えます。
 
 1. 既存のGASプロジェクト（このアプリのApps Scriptエディタ）を開きます。
-2. `gas/Code.gs` の内容を、既存の `Code.gs` の中身と**まるごと置き換えます**（コピー＆ペースト）。
+2. `hot-heart/gas/Code.gs` の内容を、既存の `Code.gs` の中身と**まるごと置き換えます**（コピー＆ペースト）。
    - 既存の `index.html`（HTMLファイル）はもう使わないので、そのまま残しても削除しても構いません（`doGet`から参照しなくなります）。
 3. 保存後、右上の **「デプロイ」→「新しいデプロイ」** を選択します（既存デプロイの「編集」ではなく、必ず「新しいデプロイ」を選んでください。これにより既存の本番URLはそのまま残ります）。
 4. 歯車アイコンから種類を **「ウェブアプリ」** に設定し、以下を指定します。
@@ -55,7 +57,7 @@ gas/Code.gs  … GAS側に貼り付けるバックエンドコード（JSON専�
 
 ## 2. フロントエンド（GitHub Pages）のセットアップ
 
-1. `app.js` の先頭にある `GAS_API_URL` を、手順1で取得した**新しい**ウェブアプリのURLに書き換えます（このステップはClaudeが担当します）。
+1. `hot-heart/app.js` の先頭にある `GAS_API_URL` を、手順1で取得した**新しい**ウェブアプリのURLに書き換えます（このステップはClaudeが担当します）。
 
    ```js
    const GAS_API_URL = "https://script.google.com/macros/s/xxxxx/exec";
@@ -66,7 +68,7 @@ gas/Code.gs  … GAS側に貼り付けるバックエンドコード（JSON専�
 4. **Source** で以下を設定します。
    - `Deploy from a branch`
    - ブランチ: `main`、フォルダ: `/ (root)`
-5. 保存すると数分後に `https://<ユーザー名>.github.io/<リポジトリ名>/` で公開されます。
+5. 保存すると数分後に `https://<ユーザー名>.github.io/<リポジトリ名>/hot-heart/` で公開されます（リポジトリ直下は `hot-heart/` への自動転送のみ）。
 
 ---
 
