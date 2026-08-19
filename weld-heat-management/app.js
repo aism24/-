@@ -1197,8 +1197,8 @@ async function initRobotJointNewForm() {
   fillSelect('rjn-部材', robotMasterLists['部材'] || []);
   fillSelect('rjn-材質', robotMasterLists['材質'] || []);
   fillSelect('rjn-溶接方法', (robotMasterLists['溶接方法'] || []).filter(v => v.indexOf('ロボット') !== -1));
-  fillSelect('rjn-オペレータ', robotMasterLists['オペレータ'] || []);
-  fillSelect('rjn-記録者', robotMasterLists['記録者'] || []);
+  fillSelect('rjn-オペレータ', robotMasterLists['溶接者'] || []);
+  fillSelect('rjn-記録者', robotMasterLists['検査員'] || []);
 }
 
 // 全周溶接の時だけ「半径標準値」「計画層数」を使う(一辺溶接では不要なので隠す)
