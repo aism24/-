@@ -160,13 +160,19 @@ function renderEntry(entry) {
 }
 function goTo(entry) { navStack.push(entry); renderEntry(entry); }
 // 「← 戻る」は常にホームへ戻る(画面ごとの再描画ロジックを経由するとレイアウトが崩れるため、
-// 一段階ずつ戻る挙動はやめてgoHome()と同じ動作に統一する)
-function goBack() { goHome(); }
+// 一段階ずつ戻る挙動はやめてgoHome()と同じ動作に統一する)。ロボット溶接の画面から戻る場合は
+// 半自動溶接のホームではなくロボット溶接ホームへ戻す(currentWeldModeで判定)。
+function goBack() { if (currentWeldMode === 'robot') { goRobotHome(); } else { goHome(); } }
 function goHome() {
   navStack = [];
   document.getElementById('app-header').style.display = 'none';
   showScreen('home-screen');
   checkDraftButton();
+}
+function goRobotHome() {
+  navStack = [];
+  document.getElementById('app-header').style.display = 'none';
+  showScreen('robot-home-screen');
 }
 
 // ---------- マスタ選択肢(検査員・工事名・部材・材質・溶接方法・溶接者) ----------
@@ -434,11 +440,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ---------- 溶接モード選択(アプリ起動時) ----------
 
+let currentWeldMode = 'semi';
+
 function selectWeldMode(mode) {
+  currentWeldMode = mode;
   if (mode === 'robot') {
-    navStack = [];
-    document.getElementById('app-header').style.display = 'none';
-    showScreen('robot-home-screen');
+    goRobotHome();
   } else {
     goHome();
   }
@@ -1170,11 +1177,32 @@ function goRobotJointNew() {
 
 let robotMasterLists = {};
 
+// コラム径・板厚・半径標準値・計画層数・入熱条件・パス間温度下限・気温・天候は固定のデフォルト値/
+// 選択済みボタンを持つため対象外。それ以外(工事名・部材・材質・溶接方法・溶接区分・検査員・
+// 溶接管理者・オペレータ・記録者・溶接部位・継手形状姿勢・溶接材料・銘柄径・使用温度計)は、
+// 「入熱パス間記録(ロボット溶接)」シート最終行(前回の継手)の値をデフォルト表示する。
+const ROBOT_LAST_ROW_TEXT_FIELDS = [
+  { id: 'rjn-溶接管理者', key: '溶接管理者(確認者)' },
+  { id: 'rjn-溶接部位', key: '溶接部位' },
+  { id: 'rjn-継手形状姿勢', key: '継手形状・姿勢' },
+  { id: 'rjn-溶接材料', key: '溶接材料' },
+  { id: 'rjn-銘柄径', key: '銘柄・径' },
+  { id: 'rjn-使用温度計', key: '使用温度計' },
+];
+const ROBOT_LAST_ROW_SELECT_FIELDS = [
+  { id: 'rjn-検査員', key: '検査員（入力者）' },
+  { id: 'rjn-工事名', key: '工事名' },
+  { id: 'rjn-部材', key: '部材' },
+  { id: 'rjn-材質', key: '材質' },
+  { id: 'rjn-溶接方法', key: '溶接方法' },
+  { id: 'rjn-オペレータ', key: 'オペレータ' },
+  { id: 'rjn-記録者', key: '記録者' },
+];
+
 async function initRobotJointNewForm() {
   document.getElementById('rjn-検査日').value = new Date().toISOString().slice(0, 10);
-  ['rjn-製品名', 'rjn-溶接管理者', 'rjn-溶接部位',
-    'rjn-継手形状姿勢', 'rjn-溶接材料', 'rjn-銘柄径', 'rjn-使用温度計',
-  ].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('rjn-製品名').value = '';
+  ROBOT_LAST_ROW_TEXT_FIELDS.forEach(f => { document.getElementById(f.id).value = ''; });
   document.getElementById('rjn-溶接区分').value = '全周溶接';
   onRobotWeldKindChange();
   resetSteppers();
@@ -1199,6 +1227,24 @@ async function initRobotJointNewForm() {
   fillSelect('rjn-溶接方法', (robotMasterLists['溶接方法'] || []).filter(v => v.indexOf('ロボット') !== -1));
   fillSelect('rjn-オペレータ', robotMasterLists['溶接者'] || []);
   fillSelect('rjn-記録者', robotMasterLists['検査員'] || []);
+
+  let lastHeader = null;
+  try { lastHeader = await apiGet('getLastRobotJointHeader'); } catch (e) { lastHeader = null; }
+  if (lastHeader) {
+    ROBOT_LAST_ROW_TEXT_FIELDS.forEach(f => {
+      const v = lastHeader[f.key];
+      if (v !== undefined && v !== null && v !== '') document.getElementById(f.id).value = v;
+    });
+    ROBOT_LAST_ROW_SELECT_FIELDS.forEach(f => {
+      const v = lastHeader[f.key];
+      if (v !== undefined && v !== null && v !== '') document.getElementById(f.id).value = v;
+    });
+    const lastWeldKind = lastHeader['溶接区分'];
+    if (lastWeldKind === '全周溶接' || lastWeldKind === '一辺溶接') {
+      document.getElementById('rjn-溶接区分').value = lastWeldKind;
+      onRobotWeldKindChange();
+    }
+  }
 }
 
 // 全周溶接の時だけ「半径標準値」「計画層数」を使う(一辺溶接では不要なので隠す)
@@ -1451,4 +1497,74 @@ function onCompleteRobotJoint() {
     document.getElementById('robot-pass-input-section').style.display = 'none';
     document.getElementById('robot-done-section').style.display = 'block';
   }).catch(showError);
+}
+
+// ---------- ロボット溶接: 履歴検索(閲覧専用。編集・PDF出力・積層図追加は未対応) ----------
+
+let robotHistoryCache = [];
+
+function goRobotHistory() {
+  navStack = [];
+  goTo({ screenId: 'robot-history-screen', title: 'ロボット溶接 履歴検索', load: loadRobotHistoryDefault });
+}
+
+function loadRobotHistoryDefault() {
+  document.getElementById('robot-history-keyword').value = '';
+  const listEl = document.getElementById('robot-history-list');
+  listEl.innerHTML = '<div class="loading-text">読み込み中...</div>';
+  apiGet('searchRobotJoints', { limit: 50 }).then(rows => { robotHistoryCache = rows; renderRobotHistoryList(rows); }).catch(showError);
+}
+
+function submitRobotHistorySearch() {
+  const kw = document.getElementById('robot-history-keyword').value.trim();
+  const listEl = document.getElementById('robot-history-list');
+  listEl.innerHTML = '<div class="loading-text">検索中...</div>';
+  apiGet('searchRobotJoints', { keyword: kw, limit: 200 }).then(rows => { robotHistoryCache = rows; renderRobotHistoryList(rows); }).catch(showError);
+}
+
+function renderRobotHistoryList(rows) {
+  const listEl = document.getElementById('robot-history-list');
+  if (!rows.length) { listEl.innerHTML = '<div class="loading-text">該当する記録がありません</div>'; return; }
+  listEl.innerHTML = rows.map((r, i) => `
+    <div class="list-item" onclick="viewRobotJoint(${i})">
+      <div class="list-item-title">${escapeHtml(r.製品名)} ${jointBadgeHtml(r.overallResult)}</div>
+      <div class="list-item-sub">${escapeHtml(r.工事名)} ／ ${escapeHtml(r.部材)} ／ ${escapeHtml(r.溶接区分 || '-')}</div>
+      <div class="list-item-sub">オペレータ: ${escapeHtml(r.オペレータ || '-')}　記録者: ${escapeHtml(r.記録者 || '-')}　パス数: ${r.passCount}</div>
+    </div>`).join('');
+}
+
+function viewRobotJoint(index) {
+  const joint = robotHistoryCache[index];
+  goTo({ screenId: 'robot-joint-view-screen', title: joint.製品名 || '継手詳細', load: () => renderRobotJointView(joint) });
+}
+
+function renderRobotJointView(joint) {
+  const h = joint.header;
+  document.getElementById('robot-view-joint-summary').innerHTML = `
+    <div>工事名: ${escapeHtml(h["工事名"] || '-')}　部材: ${escapeHtml(h["部材"] || '-')}　溶接区分: ${escapeHtml(h["溶接区分"] || '-')}</div>
+    <div>検査員: ${escapeHtml(h["検査員（入力者）"] || '-')}　オペレータ: ${escapeHtml(h["オペレータ"] || '-')}　記録者: ${escapeHtml(h["記録者"] || '-')}　検査日: ${escapeHtml(h["検査日"] || '-')}</div>
+    <div>溶接部位: ${escapeHtml(h["溶接部位"] || '-')}　継手形状・姿勢: ${escapeHtml(h["継手形状・姿勢"] || '-')}</div>
+  `;
+  const tbody = document.getElementById('robot-view-pass-table-body');
+  if (!joint.records.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="loading-text">パスが記録されていません</td></tr>';
+  } else {
+    tbody.innerHTML = joint.records.map((r, i) => `
+      <tr class="${r.判定 === 'NG' ? 'ng-row' : ''}">
+        <td>${i + 1}</td>
+        <td>${escapeHtml(r.層数)}</td>
+        <td>${escapeHtml(r.電流)}</td>
+        <td>${escapeHtml(r.電圧)}</td>
+        <td>${escapeHtml(r.アークタイム)}</td>
+        <td>${r.溶接速度 === '' || r.溶接速度 == null ? '-' : escapeHtml(r.溶接速度)}</td>
+        <td>${r.入熱 === '' || r.入熱 == null ? '-' : escapeHtml(r.入熱)}</td>
+        <td>${escapeHtml(r.パス間温度)}</td>
+        <td class="${r.判定 === 'NG' ? 'judge-ng' : 'judge-ok'}">${escapeHtml(r.判定)}</td>
+        <td>${escapeHtml(r.備考 || '')}</td>
+      </tr>`).join('');
+  }
+  const banner = document.getElementById('robot-view-result-banner');
+  const isNg = joint.overallResult === 'NG';
+  banner.className = 'result-banner ' + (isNg ? 'ng' : 'ok');
+  banner.textContent = '総合判定: ' + (isNg ? '❌ NG(要是正)' : '✅ OK');
 }

@@ -122,7 +122,9 @@ function doGet(e) {
     const action = e.parameter.action;
     if (action === "listMasterLists") return ok_(listMasterLists());
     if (action === "searchJoints") return ok_(searchJoints(e.parameter.keyword || "", Number(e.parameter.limit) || 200));
+    if (action === "searchRobotJoints") return ok_(searchRobotJoints(e.parameter.keyword || "", Number(e.parameter.limit) || 200));
     if (action === "getLastJointHeader") return ok_(getLastJointHeader());
+    if (action === "getLastRobotJointHeader") return ok_(getLastRobotJointHeader());
     return errRes_("不明なaction: " + action);
   } catch (err) {
     return errRes_(err.message);
@@ -609,6 +611,39 @@ function getLastJointHeader() {
   };
 }
 
+// ロボット溶接の新規記録画面のデフォルト値用に、「入熱パス間記録(ロボット溶接)」シート最終行
+// (前回の継手)の値を返す。コラム径・板厚・半径標準値・計画層数・入熱条件・パス間温度下限・気温・
+// 天候は固定のデフォルト値/選択済みボタンを持つためここには含めない(製品名・検査日も対象外)。
+function getLastRobotJointHeader() {
+  const sh = sheet_(ROBOT_RECORD_SHEET);
+  const map = headerMap_(sh);
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return null;
+  const lastCol = sh.getLastColumn();
+  const row = sh.getRange(lastRow, 1, 1, lastCol).getValues()[0];
+  const record = {};
+  Object.keys(map).forEach(name => {
+    if (name === "__raw__") return;
+    record[name] = row[map[name] - 1];
+  });
+  return {
+    "工事名": getField_(record, "工事名"),
+    "部材": getField_(record, "部材"),
+    "材質": getField_(record, "材質"),
+    "溶接方法": getField_(record, "溶接方法"),
+    "溶接区分": getField_(record, "溶接区分"),
+    "検査員（入力者）": getField_(record, "検査員（入力者）"),
+    "溶接管理者(確認者)": getField_(record, "溶接管理者(確認者)"),
+    "オペレータ": getField_(record, "オペレータ"),
+    "記録者": getField_(record, "記録者"),
+    "溶接部位": getField_(record, "溶接部位"),
+    "継手形状・姿勢": getField_(record, "継手形状・姿勢"),
+    "溶接材料": getField_(record, "溶接材料"),
+    "銘柄・径": getField_(record, "銘柄・径"),
+    "使用温度計": getField_(record, "使用温度計"),
+  };
+}
+
 // ---------- ロボット溶接の記録(パスをまとめて一括保存) ----------
 // 半自動溶接(saveJointRecord/computePassMetrics_)とは入熱の計算式が別物のため、専用の
 // 計算ロジック・保存先シート(ROBOT_RECORD_SHEET)を持つ。現段階では履歴検索・PDF出力は未対応。
@@ -822,6 +857,89 @@ function searchJoints(keyword, limit) {
       String(j.製品名).toLowerCase().indexOf(kw) !== -1 ||
       String(j.部材).toLowerCase().indexOf(kw) !== -1 ||
       String(j.溶接者).toLowerCase().indexOf(kw) !== -1 ||
+      String(j.検査員).toLowerCase().indexOf(kw) !== -1
+    );
+  }
+  joints.reverse();
+  return joints.slice(0, limit);
+}
+
+// ---------- ロボット溶接: 履歴・検索(継手単位にグルーピングして返す・閲覧専用) ----------
+// 半自動溶接側と違い、パスの電流・電圧・アークタイムを編集して再計算する機能は無いため、
+// 溶接速度・入熱・判定は保存時にsaveRobotJointRecordが計算した値をそのまま返す(再計算しない)。
+
+function readAllRobotRecords_() {
+  const sh = sheet_(ROBOT_RECORD_SHEET);
+  const map = headerMap_(sh);
+  const lastRow = sh.getLastRow();
+  const lastCol = sh.getLastColumn();
+  if (lastRow < 2) return [];
+  const values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  const idCol = requireCol_(map, "ID");
+  return values
+    .filter(row => row[idCol - 1] !== "" && row[idCol - 1] !== null)
+    .map(row => {
+      const obj = {};
+      Object.keys(map).forEach(name => {
+        if (name === "__raw__") return;
+        obj[name] = row[map[name] - 1];
+      });
+      return obj;
+    });
+}
+
+// 「順序」が1に戻った行を新しい継手の開始とみなしてグルーピングする
+function groupIntoRobotJoints_(records) {
+  const joints = [];
+  let current = null;
+  records.forEach(r => {
+    const order = Number(getField_(r, "順序")) || 0;
+    if (!current || order === 1) {
+      current = { records: [] };
+      joints.push(current);
+    }
+    current.records.push(r);
+  });
+  return joints.map(j => {
+    const first = j.records[0];
+    const overallResult = j.records.some(r => getField_(r, "判定") === "NG") ? "NG" : "OK";
+    const asDateStr = v => v instanceof Date ? fmtDateTime_(v) : v;
+    const header = {};
+    ROBOT_RECORD_HEADERS.forEach(name => {
+      if (name === "ID" || name === "image" || name === "積層図") return;
+      header[name] = getField_(first, name);
+    });
+    header["検査日"] = header["検査日"] instanceof Date ? asDateStr(header["検査日"]).slice(0, 10) : header["検査日"];
+    return {
+      工事名: header["工事名"], 検査日: header["検査日"], 部材: header["部材"], 製品名: header["製品名"],
+      材質: header["材質"], 溶接方法: header["溶接方法"], 溶接区分: header["溶接区分"],
+      オペレータ: header["オペレータ"], 記録者: header["記録者"], 検査員: header["検査員（入力者）"],
+      passCount: j.records.length, overallResult: overallResult, header: header,
+      records: j.records.map(r => ({
+        ID: getField_(r, "ID"),
+        層数: getField_(r, "層数"), 順序: getField_(r, "順序"),
+        電流: getField_(r, "電流"), 電圧: getField_(r, "電圧"),
+        スタート: asDateStr(getField_(r, "スタート")), エンド: asDateStr(getField_(r, "エンド")),
+        アークタイム: getField_(r, "アークタイム"), 溶接速度: getField_(r, "溶接速度(cm/分)"),
+        入熱: getField_(r, "入熱"), パス間温度: getField_(r, "パス間温度"),
+        インターバル: getField_(r, "インターバル"), 備考: getField_(r, "備考"),
+        判定: getField_(r, "判定"),
+      })),
+    };
+  });
+}
+
+function searchRobotJoints(keyword, limit) {
+  const records = readAllRobotRecords_();
+  let joints = groupIntoRobotJoints_(records);
+  const kw = String(keyword || "").trim().toLowerCase();
+  if (kw) {
+    joints = joints.filter(j =>
+      String(j.工事名).toLowerCase().indexOf(kw) !== -1 ||
+      String(j.製品名).toLowerCase().indexOf(kw) !== -1 ||
+      String(j.部材).toLowerCase().indexOf(kw) !== -1 ||
+      String(j.オペレータ).toLowerCase().indexOf(kw) !== -1 ||
+      String(j.記録者).toLowerCase().indexOf(kw) !== -1 ||
       String(j.検査員).toLowerCase().indexOf(kw) !== -1
     );
   }
