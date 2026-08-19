@@ -37,15 +37,15 @@
  * ルールで行います(saveJointRecordは1継手分のパスを必ずまとめて書き込むため、
  * 同じ継手のパスは常にシート上で連続した行になります)。
  *
- * ---- ロボット溶接用シート(準備中) ----
+ * ---- ロボット溶接用シート ----
  *
- * 半自動溶接(上記「入熱パス間記録」)とはパスの計算式が別物(電流×電圧×60÷溶接速度÷1000)
- * のため、専用シート「入熱パス間記録(ロボット溶接)」を分けて用意する。列構成は
- * setupRobotWeldSheet()参照。まだAPI(doGet/doPost)からは未接続で、シートの雛形作成のみの段階。
+ * 半自動溶接(上記「入熱パス間記録」)とはパスの計算式が別物(電流×電圧×60÷溶接速度÷1000。
+ * 溶接速度=速度測定長さ÷アークタイム(秒)×6)のため、専用シート「入熱パス間記録(ロボット溶接)」
+ * に保存する(saveRobotJointRecord)。まだ未対応の機能: 履歴検索・PDF出力・製品名OCR・
+ * 検査員別デフォルト。列構成はROBOT_RECORD_HEADERS/setupRobotWeldSheet()参照。
  *
- * 作成手順: Apps Scriptエディタでこのファイルを保存後、エディタ上部の関数選択で
- * 「setupRobotWeldSheet」を選び、▶実行ボタンを押す(1回だけでよい。再実行しても
- * 既にシートがあれば何もしない)。
+ * シートがまだ無い場合の作成手順: Apps Scriptエディタでこのファイルを保存後、エディタ上部の
+ * 関数選択で「setupRobotWeldSheet」を選び、▶実行ボタンを押す(1回だけでよい)。
  */
 
 const RECORD_SHEET = "入熱パス間記録";
@@ -135,6 +135,7 @@ function doPost(e) {
     if (action === "setDefaultMasterValue") return ok_(setDefaultMasterValue(body.column, body.value, body.sheetName));
     if (action === "resolveInspector") return ok_(resolveInspector(body.name));
     if (action === "saveJointRecord") return ok_(saveJointRecord(body));
+    if (action === "saveRobotJointRecord") return ok_(saveRobotJointRecord(body));
     if (action === "updateJointRecord") return ok_(updateJointRecord(body));
     if (action === "uploadPhoto") return ok_(uploadPhoto(body));
     if (action === "updateJointLayerDiagram") return ok_(updateJointLayerDiagram(body.ids, body.url));
@@ -603,6 +604,127 @@ function getLastJointHeader() {
     "電圧": getField_(record, "電圧"),
     "パス間温度": getField_(record, "パス間温度"),
   };
+}
+
+// ---------- ロボット溶接の記録(パスをまとめて一括保存) ----------
+// 半自動溶接(saveJointRecord/computePassMetrics_)とは入熱の計算式が別物のため、専用の
+// 計算ロジック・保存先シート(ROBOT_RECORD_SHEET)を持つ。現段階では履歴検索・PDF出力は未対応。
+
+// 板厚・半径標準値から外周R半径・内周R半径を、そこから外周・内周の全周長(mm)を求める
+// (角形鋼管の4辺の直線部+4隅の円弧部)。
+function robotGeometry_(columnDia, thickness, radiusStd) {
+  const outerR = thickness * radiusStd;
+  const innerR = outerR - thickness;
+  const straightOuter = (columnDia - 2 * outerR) * 4;
+  const straightInner = (columnDia - 2 * thickness - 2 * innerR) * 4;
+  const outerCirc = straightOuter + 2 * Math.PI * outerR;
+  const innerCirc = straightInner + 2 * Math.PI * innerR;
+  return { outerR: outerR, innerR: innerR, outerCirc: outerCirc, innerCirc: innerCirc };
+}
+
+// 全周溶接: 各層の溶接長は内周(1層目)→外周(計画層数の層)へ線形補間する。
+// 一辺溶接: 隅Rを除いた1辺分の直線長(コラム径−内周R半径×2)を固定で使う。
+function robotMeasureLength_(header, layer) {
+  const columnDia = Number(header["コラム径"]) || 0;
+  const thickness = Number(header["板厚"]) || 0;
+  const radiusStd = Number(header["半径標準値"]) || 0;
+  const geo = robotGeometry_(columnDia, thickness, radiusStd);
+  if (header["溶接区分"] === "全周溶接") {
+    const planLayers = Number(header["計画層数"]) || 1;
+    if (planLayers <= 1) return geo.innerCirc;
+    const l = Math.max(1, Number(layer) || 1);
+    return geo.innerCirc + (l - 1) * (geo.outerCirc - geo.innerCirc) / (planLayers - 1);
+  }
+  return columnDia - 2 * geo.innerR;
+}
+
+// 電流・電圧・アークタイム(秒)・速度測定長さ(層に応じて変わる)から溶接速度・入熱量を算出し、合否判定する
+function computeRobotPassMetrics_(current, voltage, arcSeconds, passTemp, header, layer) {
+  current = Number(current) || 0;
+  voltage = Number(voltage) || 0;
+  arcSeconds = Number(arcSeconds) || 0;
+  const measureLength = robotMeasureLength_(header, layer);
+  let weldSpeed = "", heatInput = "";
+  if (measureLength > 0 && arcSeconds > 0) {
+    weldSpeed = measureLength / arcSeconds * 6;
+    if (weldSpeed > 0 && current && voltage) {
+      heatInput = Math.round((current * voltage * 60 / weldSpeed / 1000) * 100) / 100;
+    }
+    weldSpeed = Math.round(weldSpeed * 100) / 100;
+  }
+  const judged = judgePass_(passTemp, heatInput, {
+    tempMin: header["パス間温度下限(℃)"], tempMax: header["パス間温度上限(℃)"], heatInputLimit: header["入熱上限(kJ/cm)"],
+  });
+  return { weldSpeed: weldSpeed, heatInput: heatInput, judgement: judged.judgement, reasons: judged.reasons };
+}
+
+function saveRobotJointRecord(body) {
+  const header = body.header || {};
+  const passes = body.passes || [];
+  if (!passes.length) throw new Error("パスが1件も入力されていません");
+
+  return withLock_(() => {
+    const sh = sheet_(ROBOT_RECORD_SHEET);
+    const map = headerMap_(sh);
+    const idCol = requireCol_(map, "ID");
+    let nextIdNum = nextId_(sh, idCol);
+
+    const lastCol = sh.getLastColumn();
+    const rows = [];
+    const ids = [];
+    let prevEnd = null;
+
+    passes.forEach((p, i) => {
+      const row = new Array(lastCol).fill("");
+      const setIf = (name, value) => {
+        const col = optionalCol_(map, name);
+        if (col) row[col - 1] = value;
+      };
+
+      // ヘッダー情報(全パス共通。キー名はROBOT_RECORD_HEADERSの列名と一致させてクライアントから送る)
+      Object.keys(header).forEach(k => setIf(k, header[k]));
+
+      const start = p.start ? new Date(p.start) : null;
+      const end = p.end ? new Date(p.end) : null;
+      const arcSec = (start && end) ? Math.max(0, Math.round((end - start) / 1000)) : 0;
+      const intervalSec = (prevEnd && start) ? Math.max(0, Math.round((start - prevEnd) / 1000)) : "";
+      const current = Number(p.current) || 0;
+      const voltage = Number(p.voltage) || 0;
+      const metrics = computeRobotPassMetrics_(current, voltage, arcSec, p.passTemp, header, p.layer);
+      const note = metrics.reasons.length ? (metrics.reasons.join("・") + (p.note ? " / " + p.note : "")) : (p.note || "");
+
+      setIf("層数", p.layer || "");
+      setIf("パス数", i + 1);
+      setIf("順序", i + 1);
+      setIf("電流", current);
+      setIf("電圧", voltage);
+      setIf("スタート", start || "");
+      setIf("エンド", end || "");
+      setIf("アークタイム", arcSec);
+      setIf("溶接速度(cm/分)", metrics.weldSpeed);
+      setIf("入熱", metrics.heatInput);
+      setIf("パス間温度", Number(p.passTemp));
+      setIf("インターバル", intervalSec);
+      setIf("備考", note);
+      setIf("判定", metrics.judgement);
+
+      row[idCol - 1] = nextIdNum;
+      ids.push(nextIdNum);
+      nextIdNum += 1;
+      prevEnd = end;
+      rows.push(row);
+    });
+
+    const startRow = sh.getLastRow() + 1;
+    sh.getRange(startRow, 1, rows.length, lastCol).setValues(rows);
+
+    const judgeCol = optionalCol_(map, "判定");
+    const overallResult = judgeCol
+      ? (rows.some(r => r[judgeCol - 1] === "NG") ? "NG" : "OK")
+      : "";
+
+    return { savedRows: rows.length, overallResult: overallResult, ids: ids };
+  });
 }
 
 // ---------- 履歴・検索(継手単位にグルーピングして返す) ----------
