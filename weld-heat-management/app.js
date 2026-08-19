@@ -96,6 +96,56 @@ function showScreen(id) {
   // インラインstyleを空にしてCSS側の指定に委ねる(display:blockで固定すると、
   // #home-screenのCSS指定(display:flexによる中央揃え)を永続的に上書きしてしまうため)
   document.getElementById(id).style.display = '';
+  if (id === 'home-screen') { startHomeBgSlideshow(); } else { stopHomeBgSlideshow(); }
+}
+
+// ---------- ホーム画面 背景スライドショー ----------
+// masamiz.com/iron/(製作工程・品質管理体制ページ)に掲載されている鉄構事業部の
+// 作業風景写真を、3秒おきにランダムな順(直前と同じ写真は連続させない)でクロスフェード切り替え表示する。
+const HOME_BG_IMAGES = [
+  'https://www.masamiz.com/image/flow/image01.png',
+  'https://www.masamiz.com/image/flow/image02.png',
+  'https://www.masamiz.com/image/flow/image04.png',
+  'https://www.masamiz.com/image/flow/image05.png',
+  'https://www.masamiz.com/image/flow/image06_02.png',
+  'https://www.masamiz.com/image/flow/image07.png',
+  'https://www.masamiz.com/image/flow/image09.png',
+  'https://www.masamiz.com/image/flow/image10.png',
+  'https://www.masamiz.com/image/flow/image11.png',
+  'https://www.masamiz.com/image/quality/image01.jpg',
+];
+const HOME_BG_INTERVAL_MS = 3000;
+
+let homeBgTimer = null;
+let homeBgActiveLayer = 'a';
+let homeBgLastIndex = -1;
+
+function pickRandomHomeBgIndex() {
+  if (HOME_BG_IMAGES.length <= 1) return 0;
+  let idx;
+  do { idx = Math.floor(Math.random() * HOME_BG_IMAGES.length); } while (idx === homeBgLastIndex);
+  homeBgLastIndex = idx;
+  return idx;
+}
+
+function showNextHomeBgImage() {
+  const nextLayer = document.getElementById(homeBgActiveLayer === 'a' ? 'home-bg-b' : 'home-bg-a');
+  const currentLayer = document.getElementById(homeBgActiveLayer === 'a' ? 'home-bg-a' : 'home-bg-b');
+  if (!nextLayer || !currentLayer) return;
+  nextLayer.style.backgroundImage = `url("${HOME_BG_IMAGES[pickRandomHomeBgIndex()]}")`;
+  nextLayer.classList.add('active');
+  currentLayer.classList.remove('active');
+  homeBgActiveLayer = homeBgActiveLayer === 'a' ? 'b' : 'a';
+}
+
+function startHomeBgSlideshow() {
+  if (homeBgTimer) return;
+  showNextHomeBgImage();
+  homeBgTimer = setInterval(showNextHomeBgImage, HOME_BG_INTERVAL_MS);
+}
+function stopHomeBgSlideshow() {
+  clearInterval(homeBgTimer);
+  homeBgTimer = null;
 }
 function renderEntry(entry) {
   document.getElementById('app-header').style.display = 'flex';
@@ -349,6 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupRequiredValidation();
   setupInspectorGating();
   document.getElementById('master-manage-body').addEventListener('click', onMasterManageClick);
+  startHomeBgSlideshow();
 });
 
 // ---------- 新規継手ヘッダー入力 ----------
