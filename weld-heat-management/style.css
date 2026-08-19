@@ -32,7 +32,6 @@ body {
   background: radial-gradient(circle at 50% 20%, #3a2410 0%, #14161c 65%);
 }
 .home-title { font-size: 40px; font-weight: bold; color: #ff9800; text-align: center; margin-bottom: 10px; }
-.home-subtitle { font-size: 20px; color: #bbb; margin-bottom: 40px; }
 .home-btn {
   width: 100%; max-width: 480px;
   padding: 26px 20px;
