@@ -23,6 +23,8 @@ body {
 
 /* ホーム画面 */
 #home-screen {
+  position: relative;
+  overflow: hidden;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -30,6 +32,26 @@ body {
   justify-content: center;
   padding: 24px;
   background: radial-gradient(circle at 50% 20%, #3a2410 0%, #14161c 65%);
+}
+/* ホーム画面背景スライドショー(鉄構事業部の作業風景写真を3秒おきにランダム切り替え) */
+.home-bg-layer {
+  position: absolute; inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 1s ease-in-out;
+  z-index: 0;
+}
+.home-bg-layer.active { opacity: 1; }
+.home-bg-overlay {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 1;
+  pointer-events: none;
+}
+.home-title, #home-screen .home-btn {
+  position: relative;
+  z-index: 2;
 }
 .home-title { font-size: 40px; font-weight: bold; color: #ff9800; text-align: center; margin-bottom: 10px; }
 .home-btn {
