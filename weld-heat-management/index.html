@@ -97,41 +97,64 @@
     <div class="field-hint-small">寸法(全周溶接・一辺溶接どちらも入力してください。半径標準値・計画層数は全周溶接のみ使用します)</div>
     <div class="field-row-group">
       <div class="field-col">
-        <div class="field-label small">コラム径(mm) <span class="req">必須</span></div>
-        <input type="number" id="rjn-コラム径" placeholder="例: 650">
+        <div class="field-label small">コラム径(mm)</div>
+        <div class="stepper">
+          <button type="button" class="stepper-btn" onclick="changeStepper('rjn-コラム径',-50)">−</button>
+          <div class="stepper-value" id="rjn-コラム径">700</div>
+          <button type="button" class="stepper-btn" onclick="changeStepper('rjn-コラム径',50)">＋</button>
+        </div>
       </div>
       <div class="field-col">
-        <div class="field-label small">板厚(mm) <span class="req">必須</span></div>
-        <input type="number" id="rjn-板厚" placeholder="例: 25">
+        <div class="field-label small">板厚(mm)</div>
+        <div class="stepper">
+          <button type="button" class="stepper-btn" onclick="changeStepper('rjn-板厚',-1)">−</button>
+          <div class="stepper-value" id="rjn-板厚">25</div>
+          <button type="button" class="stepper-btn" onclick="changeStepper('rjn-板厚',1)">＋</button>
+        </div>
       </div>
       <div class="field-col" id="rjn-半径標準値-wrap">
         <div class="field-label small">半径標準値</div>
-        <input type="number" id="rjn-半径標準値" placeholder="例: 3">
+        <div class="stepper">
+          <button type="button" class="stepper-btn" onclick="changeStepper('rjn-半径標準値',-0.5)">−</button>
+          <div class="stepper-value" id="rjn-半径標準値">3</div>
+          <button type="button" class="stepper-btn" onclick="changeStepper('rjn-半径標準値',0.5)">＋</button>
+        </div>
       </div>
       <div class="field-col" id="rjn-計画層数-wrap">
         <div class="field-label small">計画層数</div>
-        <input type="number" id="rjn-計画層数" placeholder="例: 7">
+        <div class="stepper">
+          <button type="button" class="stepper-btn" onclick="changeStepper('rjn-計画層数',-1)">−</button>
+          <div class="stepper-value" id="rjn-計画層数">7</div>
+          <button type="button" class="stepper-btn" onclick="changeStepper('rjn-計画層数',1)">＋</button>
+        </div>
       </div>
     </div>
   </div>
 
   <div class="section">
     <div class="field-row-group">
-      <div class="field-col">
-        <div class="field-label small">入熱上限(kJ/cm)</div>
-        <input type="number" id="rjn-入熱上限">
+      <div class="field-col" style="flex:1 1 320px;">
+        <div class="field-label small">入熱条件</div>
+        <div class="choice-group" id="rjn-入熱条件">
+          <button type="button" class="choice-btn" data-value="30" onclick="selectHeatCondition('30')">30kJ/cm以下<br>(上限温度250℃)</button>
+          <button type="button" class="choice-btn" data-value="40" onclick="selectHeatCondition('40')">40kJ/cm以下<br>(上限温度350℃)</button>
+        </div>
       </div>
       <div class="field-col">
         <div class="field-label small">パス間温度下限(℃)</div>
-        <input type="number" id="rjn-温度下限">
-      </div>
-      <div class="field-col">
-        <div class="field-label small">パス間温度上限(℃)</div>
-        <input type="number" id="rjn-温度上限">
+        <div class="stepper">
+          <button type="button" class="stepper-btn" onclick="changeStepper('rjn-温度下限',-1)">−</button>
+          <div class="stepper-value" id="rjn-温度下限">0</div>
+          <button type="button" class="stepper-btn" onclick="changeStepper('rjn-温度下限',1)">＋</button>
+        </div>
       </div>
       <div class="field-col">
         <div class="field-label small">気温(℃)</div>
-        <input type="number" id="rjn-気温">
+        <div class="stepper">
+          <button type="button" class="stepper-btn" onclick="changeStepper('rjn-気温',-1)">−</button>
+          <div class="stepper-value" id="rjn-気温">10</div>
+          <button type="button" class="stepper-btn" onclick="changeStepper('rjn-気温',1)">＋</button>
+        </div>
       </div>
     </div>
   </div>
@@ -144,11 +167,11 @@
       </div>
       <div class="field-col">
         <div class="field-label small">オペレータ</div>
-        <input type="text" id="rjn-オペレータ">
+        <select id="rjn-オペレータ"></select>
       </div>
       <div class="field-col">
         <div class="field-label small">記録者</div>
-        <input type="text" id="rjn-記録者">
+        <select id="rjn-記録者"></select>
       </div>
     </div>
     <div class="field-row-group">
@@ -176,7 +199,11 @@
       </div>
       <div class="field-col">
         <div class="field-label small">天候</div>
-        <input type="text" id="rjn-天候" placeholder="例: 晴">
+        <div class="choice-group" id="rjn-天候">
+          <button type="button" class="choice-btn" data-value="晴" onclick="selectWeather('晴')">晴</button>
+          <button type="button" class="choice-btn" data-value="曇" onclick="selectWeather('曇')">曇</button>
+          <button type="button" class="choice-btn" data-value="雨" onclick="selectWeather('雨')">雨</button>
+        </div>
       </div>
     </div>
   </div>

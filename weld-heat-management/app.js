@@ -308,6 +308,12 @@ function setupRequiredValidation() {
 const STEPPER_FIELDS = {
   'jn-ルートギャップ': { default: 7, step: 0.5, min: 0 },
   'jn-開先角度': { default: 35, step: 0.5, min: 0 },
+  'rjn-コラム径': { default: 700, step: 50 },
+  'rjn-板厚': { default: 25, step: 1 },
+  'rjn-半径標準値': { default: 3, step: 0.5 },
+  'rjn-計画層数': { default: 7, step: 1 },
+  'rjn-温度下限': { default: 0, step: 1 },
+  'rjn-気温': { default: 10, step: 1 },
 };
 let stepperValues = {};
 
@@ -329,6 +335,29 @@ function changeStepper(id, delta) {
 }
 
 function getStepperValue(id) { return stepperValues[id]; }
+
+// ---------- ロボット溶接: 入熱条件2択(入熱上限・パス間温度上限を同時に確定する)・天候3択 ----------
+const HEAT_CONDITIONS = {
+  '30': { heatLimit: 30, tempMax: 250 },
+  '40': { heatLimit: 40, tempMax: 350 },
+};
+let selectedHeatCondition = '30';
+
+function selectHeatCondition(key) {
+  selectedHeatCondition = key;
+  document.querySelectorAll('#rjn-入熱条件 .choice-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.value === key);
+  });
+}
+
+let selectedWeather = '曇';
+
+function selectWeather(value) {
+  selectedWeather = value;
+  document.querySelectorAll('#rjn-天候 .choice-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.value === value);
+  });
+}
 
 function populateMasterSelect(f) {
   const select = document.getElementById(f.selectId);
@@ -1143,13 +1172,14 @@ let robotMasterLists = {};
 
 async function initRobotJointNewForm() {
   document.getElementById('rjn-検査日').value = new Date().toISOString().slice(0, 10);
-  ['rjn-製品名', 'rjn-コラム径', 'rjn-板厚', 'rjn-半径標準値', 'rjn-計画層数',
-    'rjn-入熱上限', 'rjn-温度下限', 'rjn-温度上限', 'rjn-気温',
-    'rjn-溶接管理者', 'rjn-オペレータ', 'rjn-記録者', 'rjn-溶接部位',
-    'rjn-継手形状姿勢', 'rjn-溶接材料', 'rjn-銘柄径', 'rjn-使用温度計', 'rjn-天候',
+  ['rjn-製品名', 'rjn-溶接管理者', 'rjn-溶接部位',
+    'rjn-継手形状姿勢', 'rjn-溶接材料', 'rjn-銘柄径', 'rjn-使用温度計',
   ].forEach(id => { document.getElementById(id).value = ''; });
   document.getElementById('rjn-溶接区分').value = '全周溶接';
   onRobotWeldKindChange();
+  resetSteppers();
+  selectHeatCondition('30');
+  selectWeather('曇');
 
   const inspectorSelect = document.getElementById('rjn-検査員');
   inspectorSelect.innerHTML = inspectorRoster.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
@@ -1167,6 +1197,8 @@ async function initRobotJointNewForm() {
   fillSelect('rjn-部材', robotMasterLists['部材'] || []);
   fillSelect('rjn-材質', robotMasterLists['材質'] || []);
   fillSelect('rjn-溶接方法', (robotMasterLists['溶接方法'] || []).filter(v => v.indexOf('ロボット') !== -1));
+  fillSelect('rjn-オペレータ', robotMasterLists['溶接者'] || []);
+  fillSelect('rjn-記録者', robotMasterLists['検査員'] || []);
 }
 
 // 全周溶接の時だけ「半径標準値」「計画層数」を使う(一辺溶接では不要なので隠す)
@@ -1236,10 +1268,10 @@ function submitRobotNewJoint() {
   const material = document.getElementById('rjn-材質').value;
   const weldMethod = document.getElementById('rjn-溶接方法').value;
   const weldKind = document.getElementById('rjn-溶接区分').value;
-  const columnDia = document.getElementById('rjn-コラム径').value;
-  const thickness = document.getElementById('rjn-板厚').value;
-  const radiusStd = document.getElementById('rjn-半径標準値').value;
-  const planLayers = document.getElementById('rjn-計画層数').value;
+  const columnDia = getStepperValue('rjn-コラム径');
+  const thickness = getStepperValue('rjn-板厚');
+  const radiusStd = getStepperValue('rjn-半径標準値');
+  const planLayers = getStepperValue('rjn-計画層数');
 
   if (!inspector) { showOverlay('⚠️', '検査員を選んでください', true); return; }
   if (!construction) { showOverlay('⚠️', '工事名を選んでください', true); return; }
@@ -1247,11 +1279,6 @@ function submitRobotNewJoint() {
   if (!productName) { showOverlay('⚠️', '製品名を入力してください', true); return; }
   if (!material) { showOverlay('⚠️', '材質を選んでください', true); return; }
   if (!weldMethod) { showOverlay('⚠️', '溶接方法を選んでください', true); return; }
-  if (columnDia === '') { showOverlay('⚠️', 'コラム径を入力してください', true); return; }
-  if (thickness === '') { showOverlay('⚠️', '板厚を入力してください', true); return; }
-  if (weldKind === '全周溶接' && (radiusStd === '' || planLayers === '')) {
-    showOverlay('⚠️', '全周溶接の場合、半径標準値と計画層数を入力してください', true); return;
-  }
 
   const geo = robotGeometry(Number(columnDia), Number(thickness), Number(radiusStd) || 0);
   const header = {
@@ -1271,17 +1298,17 @@ function submitRobotNewJoint() {
     "溶接材料": document.getElementById('rjn-溶接材料').value.trim(),
     "銘柄・径": document.getElementById('rjn-銘柄径').value.trim(),
     "使用温度計": document.getElementById('rjn-使用温度計').value.trim(),
-    "天候": document.getElementById('rjn-天候').value.trim(),
-    "気温": document.getElementById('rjn-気温').value,
+    "天候": selectedWeather,
+    "気温": getStepperValue('rjn-気温'),
     "コラム径": columnDia,
     "板厚": thickness,
     "半径標準値": radiusStd,
     "計画層数": planLayers,
     "内周R半径": Math.round(geo.innerR * 100) / 100,
     "速度測定長さ": weldKind === '一辺溶接' ? Math.round((Number(columnDia) - 2 * geo.innerR) * 100) / 100 : '',
-    "入熱上限(kJ/cm)": document.getElementById('rjn-入熱上限').value,
-    "パス間温度下限(℃)": document.getElementById('rjn-温度下限').value,
-    "パス間温度上限(℃)": document.getElementById('rjn-温度上限').value,
+    "入熱上限(kJ/cm)": HEAT_CONDITIONS[selectedHeatCondition].heatLimit,
+    "パス間温度下限(℃)": getStepperValue('rjn-温度下限'),
+    "パス間温度上限(℃)": HEAT_CONDITIONS[selectedHeatCondition].tempMax,
   };
 
   robotState.header = header;

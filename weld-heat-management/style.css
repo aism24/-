@@ -21,6 +21,15 @@ body {
 .brand-logo { height: 30px; width: auto; }
 .brand-name { font-size: 15px; font-weight: bold; color: #1a1a1a; white-space: nowrap; }
 
+/* 溶接モード選択画面・ロボット溶接ホーム画面(ボタンを中央揃え・縦並びにする) */
+#mode-select-screen, #robot-home-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
 /* ホーム画面 */
 #home-screen {
   position: relative;
@@ -169,6 +178,21 @@ button:disabled {
 }
 .stepper-btn:active { background: #35414d; }
 .stepper-value { font-size: 26px; font-weight: bold; min-width: 50px; text-align: center; }
+
+/* 2択・3択ボタン群(入熱条件・天候など) */
+.choice-group { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.choice-btn {
+  flex: 1 1 90px;
+  padding: 14px 10px;
+  font-size: 17px; font-weight: bold; line-height: 1.4;
+  border: 2px solid #3a4256; border-radius: 12px;
+  background: #10131a; color: #ddd; cursor: pointer;
+}
+.choice-btn.active {
+  background: linear-gradient(135deg, #ff9800, #e65100);
+  border-color: #ff9800; color: #fff;
+}
+.choice-btn:active { opacity: 0.85; }
 
 /* 写真 */
 .photo-btns { display: flex; gap: 12px; }
