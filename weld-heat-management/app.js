@@ -112,7 +112,9 @@ const HOME_BG_IMAGES = [
   'https://www.masamiz.com/image/flow/image09.png',
   'https://www.masamiz.com/image/flow/image10.png',
   'https://www.masamiz.com/image/flow/image11.png',
-  'https://www.masamiz.com/image/quality/image01.jpg',
+  // quality/image01.jpgは検査員3名の顔がはっきり判別できてしまう(うち社外の方を含む)ため、
+  // 元画像をダウンロードして解像度を落としてぼかし処理したものを自社ホスティングして使用する
+  'images/home-bg/quality-image01.jpg',
 ];
 const HOME_BG_INTERVAL_MS = 3000;
 
