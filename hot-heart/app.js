@@ -97,7 +97,6 @@ function applyGenderTheme(isFemale) {
   ['lbl-gender','lbl-date','lbl-opponent','lbl-sh','lbl-st','lbl-su','lbl-ch','lbl-ct','lbl-cu','lbl-photo'].forEach(id => {
     document.getElementById(id).classList.toggle('female', f);
   });
-  document.getElementById('radio-group').classList.toggle('female', f);
   document.getElementById('date-label').classList.toggle('female', f);
   document.getElementById('opponent-select').classList.toggle('female', f);
   document.getElementById('new-opponent').classList.toggle('female', f);
@@ -147,7 +146,6 @@ function showScreen(screen) {
   homeBgStopSlideshow();
   document.getElementById('gender-select-screen').style.display = 'none';
   document.getElementById('result-screen').style.display = 'none';
-  document.getElementById('record-header-wrap').style.display = 'none';
   document.getElementById('input-screen').style.display = 'none';
   document.getElementById('complete-screen').style.display = 'none';
   document.getElementById('hot-screen').style.display = 'none';
@@ -159,7 +157,6 @@ function showScreen(screen) {
   } else if (screen === 'result') {
     document.getElementById('result-screen').style.display = 'block';
   } else if (screen === 'record') {
-    document.getElementById('record-header-wrap').style.display = 'block';
     document.getElementById('input-screen').style.display = 'block';
     initRecord();
   } else if (screen === 'complete') {
@@ -392,7 +389,6 @@ async function onSave() {
         document.getElementById('res-diff').textContent = diff;
         document.getElementById('res-result').textContent = res;
         document.getElementById('res-result').className = 'complete-val ' + resClass;
-        document.getElementById('record-header-wrap').style.display = 'none';
         document.getElementById('input-screen').style.display = 'none';
         showScreen('complete');
       }, 600);
