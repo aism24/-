@@ -57,6 +57,7 @@ function doPost(e) {
     const action = body.action;
     if (action === "addOpponent") return ok_(addOpponent(body.name));
     if (action === "uploadImageAndSave") return ok_(uploadImageAndSave(body));
+    if (action === "replacePhoto") return ok_(replacePhoto(body));
     return errRes_("不明なaction: " + action);
   } catch (err) {
     return errRes_(err.message);
@@ -141,6 +142,45 @@ function uploadImageAndSave(payload) {
   ]]);
 
   return { success: true };
+}
+
+/**
+ * 既存の記録行の写真を差し替える。画像は常に1枚になるよう、
+ * 差し替え前の写真ファイルはDriveのゴミ箱に移動する。
+ */
+function replacePhoto(payload) {
+  const id = Number(payload.id);
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) throw new Error("データがありません");
+
+  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  let targetRow = -1;
+  for (let i = 0; i < ids.length; i++) {
+    if (Number(ids[i][0]) === id) { targetRow = i + 2; break; }
+  }
+  if (targetRow === -1) throw new Error("該当する記録が見つかりません(ID: " + id + ")");
+
+  const oldUrl = sheet.getRange(targetRow, 9).getValue();
+  if (oldUrl) {
+    const match = String(oldUrl).match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (match) {
+      try { DriveApp.getFileById(match[1]).setTrashed(true); } catch (e) { /* 既に削除済み等は無視 */ }
+    }
+  }
+
+  const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+  const decoded = Utilities.base64Decode(payload.base64);
+  const mimeType = (payload.mimeType === "image/heic" || payload.mimeType === "image/heif")
+    ? "image/jpeg" : payload.mimeType;
+  const blob = Utilities.newBlob(decoded, mimeType, payload.fileName);
+  const file = folder.createFile(blob.setName(payload.fileName));
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const newUrl = "https://drive.google.com/file/d/" + file.getId() + "/view";
+
+  sheet.getRange(targetRow, 9).setValue(newUrl);
+  return { success: true, photoUrl: newUrl };
 }
 
 function getResults(gender) {
