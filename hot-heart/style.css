@@ -19,15 +19,17 @@
       flex: 1; min-width: 0; text-align: center;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    .header-save-btn, .header-back-btn {
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 24px;
+      font-weight: bold;
+      cursor: pointer;
+    }
     .header-save-btn {
       background: linear-gradient(135deg, #ffd700, #ff8f00);
       color: #0d1b4b;
       border: none;
-      border-radius: 14px;
-      padding: 20px 36px;
-      font-size: 40px;
-      font-weight: bold;
-      cursor: pointer;
       box-shadow: 0 4px 15px rgba(255,215,0,0.4);
     }
     .header-save-btn:active { opacity: 0.8; }
@@ -36,11 +38,6 @@
       background: rgba(255,255,255,0.15);
       color: white;
       border: 2px solid rgba(255,255,255,0.4);
-      border-radius: 8px;
-      padding: 10px 20px;
-      font-size: 24px;
-      font-weight: bold;
-      cursor: pointer;
     }
     .header-back-btn:active { background: rgba(255,255,255,0.3); }
     .header-spacer { width: 120px; flex-shrink: 0; }
@@ -256,8 +253,8 @@
     .summary-wld-label.lbl-win  { font-size: 52px; color: #e53935; }
     .summary-wld-label.lbl-lose { font-size: 52px; color: #9e9e9e; }
     .summary-wld-label.lbl-draw { font-size: 20px; color: #aaa; }
-    .summary-score { text-align: center; font-size: 34px; color: #90caf9; border-top: 1px solid #1e2a6e; padding: 14px 22px 16px; }
-    .summary-card-female .summary-score { color: #f48fb1; border-top-color: #880e4f; }
+    .summary-score { text-align: center; font-size: 34px; color: #90caf9; border-top: 1px solid #1e2a6e; padding: 14px 22px 16px; background: #0d1b4b; }
+    .summary-score.female { color: #f48fb1; border-top-color: #880e4f; background: #4a0030; }
     .result-list { margin: 12px 16px 16px; }
     .result-row { display: flex; align-items: center; padding: 20px 18px; border-radius: 14px; margin-bottom: 10px; gap: 12px; }
     .result-row-male { background: #0d1b4b; border: 1px solid #1e2a6e; }
@@ -333,8 +330,7 @@
     body { font-size: 15px; }
     header { height: clamp(64px, 16vw, 96px); padding: 0 clamp(12px, 4vw, 20px); }
     .header-title { font-size: clamp(20px, 6vw, 32px); }
-    .header-back-btn { padding: clamp(6px, 1.75vw, 10px) clamp(10px, 2.8vw, 17px); font-size: clamp(11px, 3.15vw, 18px); border-radius: 7px; }
-    .header-save-btn { padding: clamp(10px, 3vw, 16px) clamp(18px, 5vw, 28px); font-size: clamp(16px, 5vw, 28px); border-radius: 12px; }
+    .header-back-btn, .header-save-btn { padding: clamp(6px, 1.75vw, 10px) clamp(10px, 2.8vw, 17px); font-size: clamp(11px, 3.15vw, 18px); border-radius: 7px; }
     .header-spacer { width: clamp(40px, 12vw, 90px); }
     .scoreboard { padding: clamp(12px, 4vw, 20px) clamp(10px, 3vw, 20px); }
     .sb-label { font-size: clamp(16px, 4.5vw, 26px); }
@@ -518,8 +514,7 @@
   @media (orientation: landscape) and (max-height: 500px) {
     header { height: 56px; padding: 0 14px; }
     .header-title { font-size: 22px; letter-spacing: 1px; }
-    .header-save-btn { padding: 10px 20px; font-size: 20px; border-radius: 10px; }
-    .header-back-btn { padding: 6px 11px; font-size: 13px; border-radius: 6px; }
+    .header-back-btn, .header-save-btn { padding: 6px 11px; font-size: 13px; border-radius: 6px; }
     .header-spacer { width: 40px; }
     .scoreboard { padding: 8px 14px; }
     .sb-label { font-size: 16px; margin-bottom: 2px; }
