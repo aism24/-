@@ -168,7 +168,9 @@ function showScreen(screen) {
     hotStartBgSlideshow();
   }
 }
+let currentResultsGender = null;
 function showResults(gender) {
+  currentResultsGender = gender;
   showScreen('result');
   const isFemale = gender === '女';
   const header = document.getElementById('result-header');
@@ -216,9 +218,9 @@ function renderResults(rows, gender) {
     if (isWin) { rowClass += 'result-row-win'; }
     else { rowClass += isFemale ? 'result-row-female' : 'result-row-male'; }
     const photoBtn = r.photoUrl
-      ? '<button class="result-photo-btn" onclick="window.open(\'' + escapeHtml(String(r.photoUrl)) + '\',\'_blank\')">📷</button>'
+      ? '<button class="result-photo-btn" onclick="event.stopPropagation();window.open(\'' + escapeHtml(String(r.photoUrl)) + '\',\'_blank\')">📷</button>'
       : '';
-    return '<div class="' + rowClass + '">'
+    return '<div class="' + rowClass + '" onclick="onResultRowClick(' + Number(r.id) + ')">'
       + '<span class="result-date">' + escapeHtml(String(r.date)) + '</span>'
       + '<span class="result-opponent">' + escapeHtml(String(r.opponent)) + '</span>'
       + '<span class="result-score">' + r.score + 'vs' + r.concede + '</span>'
@@ -229,6 +231,45 @@ function renderResults(rows, gender) {
 }
 function escapeHtml(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+let photoEditTargetId = null;
+function onResultRowClick(id) {
+  photoEditTargetId = id;
+  document.getElementById('photo-edit-modal').classList.add('show');
+}
+function photoEditNo() {
+  document.getElementById('photo-edit-modal').classList.remove('show');
+  photoEditTargetId = null;
+}
+function photoEditYes() {
+  document.getElementById('photo-edit-modal').classList.remove('show');
+  document.getElementById('photo-edit-file-input').click();
+}
+function onPhotoEditFileSelected(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  const id = photoEditTargetId;
+  photoEditTargetId = null;
+  if (!file || id === null) return;
+  showSavingPopup();
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    const base64 = e.target.result.split(',')[1];
+    const ext = file.type === 'image/png' ? 'png' : 'jpg';
+    try {
+      await apiPost('replacePhoto', {
+        id: id, base64: base64, fileName: 'edit_' + id + '.' + ext, mimeType: file.type
+      });
+      completeSavingPopup();
+      setTimeout(function() {
+        document.getElementById('saving-overlay').classList.remove('show');
+        if (currentResultsGender) showResults(currentResultsGender);
+      }, 600);
+    } catch (err) {
+      errorSavingPopup(err.message);
+    }
+  };
+  reader.readAsDataURL(file);
 }
 let recordInited = false;
 function initRecord() {

@@ -70,16 +70,16 @@
       <div class="header-title">🏀 試合記録</div>
       <button class="header-save-btn" id="save-btn" onclick="onSave()">保存</button>
     </header>
-  </div>
-  <div class="scoreboard" id="scoreboard">
-    <div class="sb-block">
-      <div class="sb-label">得点</div>
-      <div class="sb-num" id="sb-score">0</div>
-    </div>
-    <div class="sb-colon">:</div>
-    <div class="sb-block">
-      <div class="sb-label">失点</div>
-      <div class="sb-num" id="sb-concede">0</div>
+    <div class="scoreboard" id="scoreboard">
+      <div class="sb-block">
+        <div class="sb-label">得点</div>
+        <div class="sb-num" id="sb-score">0</div>
+      </div>
+      <div class="sb-colon">:</div>
+      <div class="sb-block">
+        <div class="sb-label">失点</div>
+        <div class="sb-num" id="sb-concede">0</div>
+      </div>
     </div>
   </div>
   <div class="section" id="sec-top">
@@ -213,6 +213,17 @@
     </div>
   </div>
 </div>
+<div class="modal-overlay" id="photo-edit-modal">
+  <div class="modal">
+    <div class="modal-title">📷 画像の編集をしますか？</div>
+    <div class="modal-body" id="photo-edit-modal-body">この記録の写真を新しい写真に差し替えます。</div>
+    <div class="modal-btns">
+      <button class="modal-btn yes" onclick="photoEditYes()">YES</button>
+      <button class="modal-btn no"  onclick="photoEditNo()">NO</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="photo-edit-file-input" accept="image/*" style="display:none" onchange="onPhotoEditFileSelected(event)">
 <div class="saving-overlay" id="saving-overlay">
   <div class="saving-popup">
     <div class="saving-icon" id="saving-icon">⏳</div>
