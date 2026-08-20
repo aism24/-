@@ -180,6 +180,7 @@ function showResults(gender) {
   const headerTitle = document.getElementById('result-header-title');
   header.className = isFemale ? 'result-header-female' : 'result-header-male';
   summaryCard.className = 'summary-card ' + (isFemale ? 'summary-card-female' : 'summary-card-male');
+  document.getElementById('sum-score').classList.toggle('female', isFemale);
   headerTitle.textContent = isFemale ? '🌸 女子一覧' : '🔵 男子一覧';
   resultList.innerHTML = '<div class="result-loading">読み込み中だで...</div>';
   apiGet('getResults', { gender: gender })
