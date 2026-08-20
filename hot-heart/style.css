@@ -76,14 +76,15 @@
     .radio-group { display: flex; gap: 14px; }
     .radio-group label {
       flex: 1; display: flex; align-items: center; justify-content: center;
-      padding: 22px 10px; border: 3px solid #1e2a6e; border-radius: 16px;
-      font-size: 40px; font-weight: bold; cursor: pointer; color: #aaa;
-      background: #0d1b4b; transition: background 0.4s, border-color 0.4s;
+      padding: 20px 10px; border: 2px solid; border-radius: 16px;
+      font-size: 30px; font-weight: bold; cursor: pointer;
+      transition: background 0.4s, border-color 0.4s, color 0.4s, box-shadow 0.4s;
     }
     .radio-group input[type=radio] { display: none; }
-    .radio-group label.selected { border-color: #ffd700; background: #1a237e; color: #ffd700; }
-    .radio-group.female label { background: #2a0020; border-color: #880e4f; }
-    .radio-group.female label.selected { background: #4a0030; border-color: #ffd700; color: #ffd700; }
+    #label-male { background: #0d2060; border-color: #1565c0; color: #64b5f6; }
+    #label-male.selected { background: #1565c0; border-color: #64b5f6; color: #fff; box-shadow: 0 0 14px rgba(21,101,192,0.6); }
+    #label-female { background: #2a0020; border-color: #e91e8c; color: #f48fb1; }
+    #label-female.selected { background: #e91e8c; border-color: #f48fb1; color: #fff; box-shadow: 0 0 14px rgba(233,30,140,0.6); }
     .date-display-wrap { position: relative; width: 100%; }
     .date-display-label {
       width: 100%; padding: 20px 14px; border: 2px solid #1e2a6e;
@@ -344,6 +345,7 @@
     .field-label { font-size: clamp(18px, 5vw, 28px); }
     select { font-size: clamp(16px, 4.5vw, 26px); padding: clamp(12px, 4vw, 18px) clamp(38px, 10vw, 46px) clamp(12px, 4vw, 18px) clamp(12px, 4vw, 16px); }
     .date-display-label { font-size: clamp(16px, 4.5vw, 24px); padding: clamp(12px, 4vw, 16px) clamp(10px, 3vw, 14px); }
+    .radio-group label { font-size: clamp(16px, 4.5vw, 24px); padding: clamp(12px, 4vw, 16px) clamp(10px, 3vw, 14px); }
     .new-input-wrap input { font-size: clamp(16px, 4.5vw, 26px); padding: clamp(12px, 4vw, 18px) clamp(10px, 3vw, 16px); }
     .score-row { flex-direction: column; align-items: stretch; gap: 8px; }
     .score-row-label { font-size: clamp(18px, 5vw, 24px); width: auto; }
@@ -405,6 +407,7 @@
     .field-label { font-size: 17px; margin-bottom: 6px; }
     select { font-size: 18px; padding: 10px 40px 10px 6px; border-radius: 10px; }
     .date-display-label { font-size: 16px; padding: 10px 8px; border-radius: 10px; }
+    .radio-group label { font-size: 16px; padding: 10px 8px; border-radius: 10px; }
     .new-input-wrap input { font-size: 18px; padding: 12px 8px; border-radius: 10px; }
     .score-row-label { font-size: 20px; width: 60px; }
     .pm-btn { width: 52px; height: 52px; font-size: 28px; border-radius: 10px; }
@@ -463,6 +466,7 @@
     .field-label { font-size: 16px; margin-bottom: 6px; }
     select { font-size: 16px; padding: 9px 36px 9px 6px; }
     .date-display-label { font-size: 15px; padding: 9px 8px; }
+    .radio-group label { font-size: 15px; padding: 9px 8px; }
     .new-input-wrap input { font-size: 16px; padding: 10px 8px; }
     .score-row-label { font-size: 18px; width: 55px; }
     .pm-btn { width: 46px; height: 46px; font-size: 24px; border-radius: 9px; }
@@ -536,7 +540,7 @@
     .top-row { gap: 10px; }
     .field-wrap { margin-bottom: 16px; }
     .radio-group { gap: 10px; }
-    .radio-group label { padding: 10px 8px; font-size: 20px; border-radius: 10px; }
+    .radio-group label { padding: 10px 10px; font-size: 16px; border-radius: 10px; }
     .date-display-label { padding: 10px 10px; font-size: 16px; border-radius: 10px; }
     select { padding: 12px 40px 12px 12px; font-size: 18px; }
     .new-input-wrap input { padding: 12px 12px; font-size: 18px; }
