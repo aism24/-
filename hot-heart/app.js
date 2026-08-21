@@ -112,28 +112,37 @@ function applyGenderTheme(isFemale) {
     if (el.classList.contains('zero')) el.classList.toggle('female', f);
   });
 }
-const homeBgImages = ['images/home-bg/team-photo-1.jpg', 'images/home-bg/team-photo-2.jpg'];
+// デフォルトのチーム写真2枚は常に固定でスライドショーに含める(選択解除できない)
+const FIXED_HOME_BG_IMAGES = ['images/home-bg/team-photo-1.jpg', 'images/home-bg/team-photo-2.jpg'];
+let customHomeBgImages = []; // [{url, selected}] 追加した写真(チェックで含める/外せる)
 let homeBgActiveLayer = 0;
 let homeBgCurrentIndex = -1;
 let homeBgInterval = null;
+function getActiveHomeBgImages() {
+  const selected = customHomeBgImages.filter(function(img) { return img.selected; }).map(function(img) { return img.url; });
+  return FIXED_HOME_BG_IMAGES.concat(selected);
+}
 function homeBgSwitch() {
+  const images = getActiveHomeBgImages();
   const layers = [document.getElementById('home-bg-img-a'), document.getElementById('home-bg-img-b')];
   const nextLayer = layers[1 - homeBgActiveLayer];
   const currentLayer = layers[homeBgActiveLayer];
   let nextIndex = homeBgCurrentIndex;
-  if (homeBgImages.length > 1) {
-    while (nextIndex === homeBgCurrentIndex) nextIndex = Math.floor(Math.random() * homeBgImages.length);
+  if (images.length > 1) {
+    while (nextIndex === homeBgCurrentIndex) nextIndex = Math.floor(Math.random() * images.length);
   } else {
     nextIndex = 0;
   }
   homeBgCurrentIndex = nextIndex;
-  nextLayer.src = homeBgImages[nextIndex];
+  nextLayer.src = images[nextIndex];
   nextLayer.classList.add('visible');
   currentLayer.classList.remove('visible');
   homeBgActiveLayer = 1 - homeBgActiveLayer;
 }
 function homeBgStartSlideshow() {
-  if (homeBgImages.length === 0 || homeBgInterval) return;
+  homeBgStopSlideshow();
+  homeBgCurrentIndex = -1;
+  if (getActiveHomeBgImages().length === 0) return;
   homeBgSwitch();
   homeBgInterval = setInterval(homeBgSwitch, 3000);
 }
@@ -141,25 +150,11 @@ function homeBgStopSlideshow() {
   clearInterval(homeBgInterval);
   homeBgInterval = null;
 }
-let customHomeBgUrl = null;
-function loadHomeBgSetting() {
-  apiGet('getHomeBg').then(function(data) {
-    customHomeBgUrl = (data && data.url) ? data.url : null;
-    if (document.getElementById('home-screen').style.display !== 'none') applyHomeBg();
+function loadHomeBgImages() {
+  apiGet('getHomeBgImages').then(function(list) {
+    customHomeBgImages = list || [];
+    if (document.getElementById('home-screen').style.display !== 'none') homeBgStartSlideshow();
   }).catch(() => {});
-}
-function applyHomeBg() {
-  homeBgStopSlideshow();
-  if (customHomeBgUrl) {
-    const layerA = document.getElementById('home-bg-img-a');
-    const layerB = document.getElementById('home-bg-img-b');
-    layerB.classList.remove('visible');
-    homeBgActiveLayer = 0;
-    layerA.src = customHomeBgUrl;
-    layerA.classList.add('visible');
-  } else {
-    homeBgStartSlideshow();
-  }
 }
 function showScreen(screen) {
   document.getElementById('home-screen').style.display = 'none';
@@ -172,7 +167,7 @@ function showScreen(screen) {
   document.getElementById('bg-custom-screen').style.display = 'none';
   if (screen === 'home') {
     document.getElementById('home-screen').style.display = 'flex';
-    applyHomeBg();
+    homeBgStartSlideshow();
   } else if (screen === 'gender-select') {
     document.getElementById('gender-select-screen').style.display = 'flex';
   } else if (screen === 'result') {
@@ -189,6 +184,7 @@ function showScreen(screen) {
     hotStartBgSlideshow();
   } else if (screen === 'bg-custom') {
     document.getElementById('bg-custom-screen').style.display = 'block';
+    openBgCustomScreen();
   }
 }
 let currentResultsGender = null;
@@ -644,6 +640,39 @@ function hotSwitchBackground() {
 }
 window.addEventListener('resize', hotInitPosition);
 
+function openBgCustomScreen() {
+  document.getElementById('bg-custom-list').innerHTML = '<div class="bg-custom-loading">読み込み中だで...</div>';
+  apiGet('getHomeBgImages').then(function(list) {
+    customHomeBgImages = list || [];
+    renderBgCustomList();
+  }).catch(function(err) {
+    document.getElementById('bg-custom-list').innerHTML = '<div class="bg-custom-loading">読み込みに失敗しただ: ' + err.message + '</div>';
+  });
+}
+function renderBgCustomList() {
+  const wrap = document.getElementById('bg-custom-list');
+  if (!customHomeBgImages.length) {
+    wrap.innerHTML = '<div class="bg-custom-loading">まだ追加した写真はないだで</div>';
+    return;
+  }
+  wrap.innerHTML = customHomeBgImages.map(function(img, i) {
+    return '<div class="bg-custom-item">' +
+      '<img src="' + img.url + '" alt="">' +
+      '<label><input type="checkbox" ' + (img.selected ? 'checked' : '') +
+      ' onchange="onBgCustomToggle(' + i + ', this.checked)"> スライドショーに含める</label>' +
+      '</div>';
+  }).join('');
+}
+function onBgCustomToggle(index, selected) {
+  const img = customHomeBgImages[index];
+  if (!img) return;
+  img.selected = selected;
+  apiPost('toggleHomeBgImage', { url: img.url, selected: selected }).catch(function(err) {
+    img.selected = !selected;
+    renderBgCustomList();
+    alert('更新に失敗しただ: ' + err.message);
+  });
+}
 let bgCustomSelectedFile = null;
 function onBgCustomPhotoSelected(event) {
   const file = event.target.files[0];
@@ -661,23 +690,24 @@ function onBgCustomConfirm() {
   if (!bgCustomSelectedFile) return;
   document.getElementById('bg-custom-confirm-btn').disabled = true;
   showSavingPopup();
-  document.getElementById('saving-message').textContent = '背景を設定中だで...';
+  document.getElementById('saving-message').textContent = '写真を追加中だで...';
   document.getElementById('saving-sub').textContent = 'しばらく待っとってごしない';
   const reader = new FileReader();
   reader.onload = async function(e) {
     const base64 = e.target.result.split(',')[1];
     try {
       const ext = (bgCustomSelectedFile.name.match(/\.[a-zA-Z0-9]+$/) || [''])[0];
-      const data = await apiPost('setHomeBg', {
+      const data = await apiPost('addHomeBgImage', {
         base64: base64,
         mimeType: bgCustomSelectedFile.type,
         fileName: 'home_bg_' + Date.now() + ext
       });
-      customHomeBgUrl = data.url;
+      customHomeBgImages.push({ url: data.url, selected: true });
+      renderBgCustomList();
       completeSavingPopup();
       setTimeout(function() {
         document.getElementById('saving-overlay').classList.remove('show');
-        leaveBgCustom();
+        resetBgCustomForm();
       }, 400);
     } catch (err) {
       errorSavingPopup(err.message);
@@ -685,14 +715,6 @@ function onBgCustomConfirm() {
     }
   };
   reader.readAsDataURL(bgCustomSelectedFile);
-}
-function onBgCustomResetToDefault() {
-  apiPost('resetHomeBg', {}).then(function() {
-    customHomeBgUrl = null;
-    leaveBgCustom();
-  }).catch(function(err) {
-    alert('リセットに失敗しました: ' + err.message);
-  });
 }
 function resetBgCustomForm() {
   bgCustomSelectedFile = null;
@@ -721,5 +743,5 @@ function onLogoTap() {
 }
 
 loadImageIds();
-loadHomeBgSetting();
+loadHomeBgImages();
 showScreen('home');

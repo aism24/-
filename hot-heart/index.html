@@ -266,11 +266,22 @@
 <div id="bg-custom-screen" style="display:none;">
   <header id="bg-custom-header">
     <button class="header-back-btn" onclick="leaveBgCustom()">← 戻る</button>
-    <div class="header-title">🖼 背景を設定</div>
+    <div class="header-title">🖼 背景の管理</div>
     <div class="header-spacer"></div>
   </header>
-  <div class="section" id="bg-custom-input-section">
-    <div class="field-label">ホーム画面の背景にする写真(1枚)</div>
+  <div class="section" id="bg-custom-fixed-section">
+    <div class="field-label">デフォルト(常に表示・変更不可)</div>
+    <div class="bg-thumb-row">
+      <img class="bg-thumb-fixed" src="images/home-bg/team-photo-1.jpg" alt="">
+      <img class="bg-thumb-fixed" src="images/home-bg/team-photo-2.jpg" alt="">
+    </div>
+  </div>
+  <div class="section" id="bg-custom-list-section">
+    <div class="field-label">追加した写真</div>
+    <div id="bg-custom-list"></div>
+  </div>
+  <div class="section" id="bg-custom-add-section">
+    <div class="field-label">写真を追加</div>
     <div class="photo-btns">
       <button class="photo-btn photo-btn-camera" onclick="document.getElementById('bg-custom-file-camera').click()">📷 写真を撮る</button>
       <button class="photo-btn photo-btn-gallery" onclick="document.getElementById('bg-custom-file-gallery').click()">🖼 ファイルから選択</button>
@@ -280,8 +291,7 @@
     <div class="thumb-wrap" id="bg-custom-thumb-wrap">
       <img id="bg-custom-thumb-img" src="" alt="preview">
     </div>
-    <button class="reset-btn" id="bg-custom-confirm-btn" onclick="onBgCustomConfirm()" disabled>✅ この画像を背景に設定する</button>
-    <button class="reset-btn secondary" onclick="onBgCustomResetToDefault()">🔄 デフォルトの背景に戻す</button>
+    <button class="reset-btn" id="bg-custom-confirm-btn" onclick="onBgCustomConfirm()" disabled>➕ この写真を追加する</button>
   </div>
 </div>
 <script src="app.js"></script>

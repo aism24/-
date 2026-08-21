@@ -36,7 +36,7 @@ function doGet(e) {
     if (action === "getOpponentList") return ok_(getOpponentList());
     if (action === "getResults") return ok_(getResults(e.parameter.gender));
     if (action === "checkImageDuplicate") return ok_(checkImageDuplicate(e.parameter.fileName));
-    if (action === "getHomeBg") return ok_(getHomeBg());
+    if (action === "getHomeBgImages") return ok_(getHomeBgImages());
     return errRes_("不明なaction: " + action);
   } catch (err) {
     return errRes_(err.message);
@@ -59,8 +59,8 @@ function doPost(e) {
     if (action === "addOpponent") return ok_(addOpponent(body.name));
     if (action === "uploadImageAndSave") return ok_(uploadImageAndSave(body));
     if (action === "replacePhoto") return ok_(replacePhoto(body));
-    if (action === "setHomeBg") return ok_(setHomeBg(body));
-    if (action === "resetHomeBg") return ok_(resetHomeBg());
+    if (action === "addHomeBgImage") return ok_(addHomeBgImage(body));
+    if (action === "toggleHomeBgImage") return ok_(toggleHomeBgImage(body));
     return errRes_("不明なaction: " + action);
   } catch (err) {
     return errRes_(err.message);
@@ -186,50 +186,41 @@ function replacePhoto(payload) {
   return { success: true, photoUrl: newUrl };
 }
 
-const HOME_BG_LABEL = "ホーム背景画像";
+// 背景写真シートのH列=追加した背景写真のURL、I列=スライドショーに含めるか(TRUE/FALSE)。
+// A列は既存のHotタイマー用画像ID一覧(getImageIds)が使っているため、別の列を使う。
+const HOME_BG_COL_URL = 8;  // H列
+const HOME_BG_COL_SEL = 9;  // I列
 
-/**
- * 背景写真シートのF/G列から、指定ラベルの設定値を読み書きする。
- */
-function getHomeBgUrl_() {
+function getHomeBgImages_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(BG_SHEET_NAME);
-  if (!sheet) return "";
-  const lastRow = Math.max(sheet.getLastRow(), 1);
-  const values = sheet.getRange(1, 6, lastRow, 2).getValues();
-  for (let i = 0; i < values.length; i++) {
-    if (String(values[i][0] || "").trim() === HOME_BG_LABEL) return String(values[i][1] || "").trim();
-  }
-  return "";
-}
-
-function setHomeBgUrl_(url) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(BG_SHEET_NAME);
-  if (!sheet) throw new Error("背景写真シートが見つかりません");
-  const lastRow = Math.max(sheet.getLastRow(), 1);
-  const values = sheet.getRange(1, 6, lastRow, 1).getValues();
-  for (let i = 0; i < values.length; i++) {
-    if (String(values[i][0] || "").trim() === HOME_BG_LABEL) {
-      sheet.getRange(i + 1, 7).setValue(url);
-      return;
-    }
-  }
-  sheet.getRange(lastRow + 1, 6, 1, 2).setValues([[HOME_BG_LABEL, url]]);
+  if (!sheet) return [];
+  const lastRow = sheet.getLastRow();
+  if (lastRow === 0) return [];
+  const values = sheet.getRange(1, HOME_BG_COL_URL, lastRow, 2).getValues();
+  const list = [];
+  values.forEach(function(row) {
+    const url = String(row[0] || "").trim();
+    if (!url) return;
+    list.push({ url: url, selected: row[1] === true || String(row[1]).toUpperCase() === "TRUE" });
+  });
+  return list;
 }
 
 /**
- * ホーム画面の背景として設定されている画像のURLを返す(未設定なら空文字)。
+ * 追加した背景写真の一覧(URLと選択状態)を返す。デフォルトのチーム写真2枚は
+ * フロントエンド側に固定で持たせているため、ここには含まない。
  */
-function getHomeBg() {
-  return { url: getHomeBgUrl_() };
+function getHomeBgImages() {
+  return getHomeBgImages_();
 }
 
 /**
- * ホーム画面の背景写真をDriveに保存し、その表示用URLを背景写真シートに記録する。
- * 全員が同じ背景を見るよう、端末側ではなくスプレッドシート側で共有設定として保持する。
+ * ホーム画面の背景候補として写真を追加する。Driveに保存し、背景写真シートの
+ * H/I列に新しい行として記録する(初期状態はスライドショーに含める=TRUE)。
+ * 全員が同じ候補を見るよう、端末側ではなくスプレッドシート側で共有管理する。
  */
-function setHomeBg(payload) {
+function addHomeBgImage(payload) {
   const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
   const decoded = Utilities.base64Decode(payload.base64);
   const mimeType = (payload.mimeType === "image/heic" || payload.mimeType === "image/heif")
@@ -238,16 +229,37 @@ function setHomeBg(payload) {
   const file = folder.createFile(blob);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   const url = "https://drive.google.com/uc?export=view&id=" + file.getId();
-  setHomeBgUrl_(url);
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(BG_SHEET_NAME);
+  if (!sheet) throw new Error("背景写真シートが見つかりません");
+  const lastRow = sheet.getLastRow();
+  const urlValues = lastRow > 0 ? sheet.getRange(1, HOME_BG_COL_URL, lastRow, 1).getValues() : [];
+  let writeRow = lastRow + 1;
+  for (let i = 0; i < urlValues.length; i++) {
+    if (String(urlValues[i][0] || "").trim() === "") { writeRow = i + 1; break; }
+  }
+  sheet.getRange(writeRow, HOME_BG_COL_URL, 1, 2).setValues([[url, true]]);
   return { url: url };
 }
 
 /**
- * ホーム画面の背景設定をクリアし、デフォルトのチーム写真スライドショーに戻す。
+ * 追加済みの背景写真をスライドショーに含める/含めないを切り替える。
  */
-function resetHomeBg() {
-  setHomeBgUrl_("");
-  return { success: true };
+function toggleHomeBgImage(payload) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(BG_SHEET_NAME);
+  if (!sheet) throw new Error("背景写真シートが見つかりません");
+  const lastRow = sheet.getLastRow();
+  if (lastRow === 0) throw new Error("該当する写真が見つかりません");
+  const urlValues = sheet.getRange(1, HOME_BG_COL_URL, lastRow, 1).getValues();
+  for (let i = 0; i < urlValues.length; i++) {
+    if (String(urlValues[i][0] || "").trim() === String(payload.url || "").trim()) {
+      sheet.getRange(i + 1, HOME_BG_COL_SEL).setValue(!!payload.selected);
+      return { success: true };
+    }
+  }
+  throw new Error("該当する写真が見つかりません");
 }
 
 function getResults(gender) {
