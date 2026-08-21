@@ -28,7 +28,14 @@
  *       タイムゾーン         … 日時表示に使うタイムゾーン(例: Asia/Tokyo)
  *       APIKEY               … Gemini APIキー。サーバー側(このスクリプト内)でのみ使用し、
  *                                クライアント(app.js)には絶対に返さないこと。
+ *       型式認証記号         … ロボット溶接の記録票(Excel)に印字する固定値(ロボット1台分の
+ *                                設定。複数行可。例: "R090116N02\nSDFN071")
+ *       使用ロボット         … 同上(例: RAL-20)
+ *       バージョン           … 同上(例: Ver3.00)
+ *       ロボット製造会社     … 同上。記録票の「溶接方法」欄に(  )書きで添える製造会社名
+ *                                (例: コマツ産機)。未設定でも動作する(既定値を使う)
  *
+
  *   検査員別シート(シート名=検査員名。resolveInspectorが自動作成):
  *     初めてその検査員が選ばれた時点で、「情報」シートのA:F列の現在の内容を丸ごと複製して作る。
  *     以後、工事名・部材・材質・溶接方法・溶接者の追加/削除/デフォルト設定はこの専用シートの中だけで
@@ -192,7 +199,9 @@ function doPost(e) {
     if (action === "updateJointRecord") return ok_(updateJointRecord(body));
     if (action === "uploadPhoto") return ok_(uploadPhoto(body));
     if (action === "updateJointLayerDiagram") return ok_(updateJointLayerDiagram(body.ids, body.url));
+    if (action === "updateRobotJointLayerDiagram") return ok_(updateRobotJointLayerDiagram(body.ids, body.url));
     if (action === "generatePdf") return ok_(generatePdf(body));
+    if (action === "generateRobotExcel") return ok_(generateRobotExcel(body));
     return errRes_("不明なaction: " + action);
   } catch (err) {
     return errRes_(err.message);
@@ -609,6 +618,30 @@ function updateJointLayerDiagram(ids, url) {
   if (!ids || !ids.length) throw new Error("idsを指定してください");
   return withLock_(() => {
     const sh = sheet_(RECORD_SHEET);
+    const map = headerMap_(sh);
+    const idCol = requireCol_(map, "ID");
+    const col = requireCol_(map, "積層図");
+    const lastRow = sh.getLastRow();
+    if (lastRow < 2) throw new Error("更新対象の行が見つかりません");
+    const idValues = sh.getRange(2, idCol, lastRow - 1, 1).getValues().map(r => Number(r[0]));
+    let updated = 0;
+    ids.forEach(id => {
+      const rowIndex = idValues.indexOf(Number(id));
+      if (rowIndex === -1) return;
+      sh.getRange(rowIndex + 2, col).setValue(url);
+      updated += 1;
+    });
+    return { updated: updated };
+  });
+}
+
+// 履歴詳細(閲覧)画面から、保存済みのロボット溶接の継手に積層図(実写真またはPDF)を後付けで
+// 追加・差し替えできるようにする。積層図は継手のヘッダー情報として全パス行に重複して保持している
+// ため、該当する全行を更新する(updateJointLayerDiagramのロボット溶接版)。
+function updateRobotJointLayerDiagram(ids, url) {
+  if (!ids || !ids.length) throw new Error("idsを指定してください");
+  return withLock_(() => {
+    const sh = sheet_(ROBOT_RECORD_SHEET);
     const map = headerMap_(sh);
     const idCol = requireCol_(map, "ID");
     const col = requireCol_(map, "積層図");
@@ -1135,4 +1168,287 @@ function generatePdf(body) {
 
   // PDFはDriveに保存せず、base64でそのままブラウザに返して端末へ直接ダウンロードさせる
   return { pdfBase64: Utilities.base64Encode(pdfBlob.getBytes()), fileName: docName + ".pdf" };
+}
+
+// ---------- ロボット溶接: Excel出力(様式「溶接条件、溶接入熱・パス間温度管理記録表」) ----------
+// 依頼者から提供された様式(xlsx)のレイアウトを、SpreadsheetAppでシートを新規作成して再現する
+// (元のxlsxをテンプレートとして読み込むのではなく、セル位置を直接書き込んで組み立てる方式)。
+// 完全なピクセル一致ではなく、実用上の情報配置を優先している。
+//
+// 既知の割り切り・制約(依頼者に確認済み/要相談の点):
+//  - 型式認証記号・使用ロボット・バージョン・(溶接方法欄の)製造会社名は、情報シートI:J列の
+//    設定値(ロボット1台分の固定値)を使う。ロボット種別ごとに値を分けたい場合は要拡張。
+//  - 「パス間温度測定位置」(柱の断面図)は空欄のままにする(依頼者が後で手動貼付する)。
+//  - 「溶接積層図」は、積層図列に保存された画像/PDFがあればそこに貼り込み、無ければ空欄。
+//    画像ならシートに直接埋め込み、PDFなら埋め込みができないためハイパーリンクを置く。
+//  - 「部材長」は現在のロボット溶接フォームに対応する項目が無いため空欄。
+//  - 「トータル」(累積時間)は、アプリのデータモデルに実測の総経過時間の記録が無いため、
+//    各パスの(アークタイム+インターバル)の累積和で近似する。
+//  - 天候は○で囲む代わりに、選択された語だけを太字にして示す。
+//  - グラフ(入熱量の変化・パス間温度の変化)は、パス数に応じて範囲を自動拡張する。
+
+function robotFixedConfig_() {
+  const cfg = getConfig_();
+  return {
+    certNo: cfg["型式認証記号"] || "",
+    robotModel: cfg["使用ロボット"] || "",
+    version: cfg["バージョン"] || "",
+    maker: cfg["ロボット製造会社"] || "コマツ産機",
+  };
+}
+
+// Google Driveの「file/d/<ID>/view」形式のURLからファイルIDを取り出す
+function driveFileIdFromUrl_(url) {
+  const m = String(url || "").match(/\/d\/([^/]+)/);
+  return m ? m[1] : null;
+}
+
+function mergeSetValue_(sh, a1Range, value) {
+  const range = sh.getRange(a1Range);
+  if (a1Range.indexOf(":") !== -1) range.merge();
+  range.setValue(value);
+  return range;
+}
+
+function robotExcelHeaderGrid_(sh, header, cfg) {
+  sh.setColumnWidths(1, 19, 46); // A〜S列(印刷範囲)の幅を揃える
+
+  mergeSetValue_(sh, "B1:Q2", "溶接条件、溶接入熱・パス間温度管理記録表")
+    .setFontSize(16).setFontWeight("bold").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.getRange("R1").setValue("№").setHorizontalAlignment("center");
+  sh.getRange("S1").setValue("1").setHorizontalAlignment("center");
+
+  const heatLimit = header["入熱上限(kJ/cm)"];
+  const tempMax = header["パス間温度上限(℃)"];
+  const heatText = (heatLimit !== "" && heatLimit != null) ? heatLimit + "kJ/cm以下" : "";
+  const tempText = (tempMax !== "" && tempMax != null) ? tempMax + "℃以下" : "";
+  const sizeText = (header["コラム径"] && header["板厚"])
+    ? "□-" + header["コラム径"] + "x" + header["コラム径"] + "x" + header["板厚"] : "";
+  const weldMethodText = (header["溶接方法"] || "") + (cfg.maker ? "\n(" + cfg.maker + ")" : "");
+
+  // [ラベル範囲, ラベル文字, 値範囲, 値] の並び。行3〜10のヘッダーグリッドをまとめて書き込む。
+  const rows = [
+    ["A3:H3", "工　　　事　　　名", "A4:H5", header["工事名"]],
+    ["I3:K3", "型式認証記号", "I4:K5", cfg.certNo],
+    ["L3:M3", "使用ロボット", "L4:M5", cfg.robotModel],
+    ["N3", "バージョン", "N4:N5", cfg.version],
+    ["O3:P3", "検　査　日", "O4:P5", header["検査日"]],
+    ["Q3:S3", "溶接管理者(確認者)", "Q4:S5", header["溶接管理者(確認者)"]],
+
+    ["A6:B6", "管理条件　", null, null],
+    ["F6:H6", "溶接部位：", "I6:K6", header["溶接部位"]],
+    ["L6:M6", "材質：", "N6:P6", header["材質"]],
+    ["Q6", "溶接方法：", "R6:S6", weldMethodText],
+
+    ["A7:B7", "入熱：", "C7:E7", heatText],
+    ["F7:H7", "部材名：", "I7:K7", header["製品名"]],
+    ["L7:M7", "サイズ：", "N7:P7", sizeText],
+    ["Q7", "オペレータ：", "R7:S7", header["オペレータ"]],
+
+    ["A8:B8", "パス間温度：", "C8:E8", tempText],
+    ["F8:H8", "溶接材料：", "I8:K8", header["溶接材料"]],
+    ["L8:M8", "部材長：", "N8:P8", ""], // 現在のフォームに対応項目が無いため空欄
+    ["Q8", "記録者：", "R8:S8", header["記録者"]],
+
+    ["L9:M9", "使用温度計：", "N9:P9", header["使用温度計"]],
+
+    ["F10:H10", "銘柄・径：", "I10:K10", header["銘柄・径"]],
+    ["L10:M10", "継手形状・姿勢：", "N10:P10", header["継手形状・姿勢"]],
+    ["Q10", "気温：", "R10:S10", (header["気温"] !== "" && header["気温"] != null) ? header["気温"] + "　℃" : ""],
+  ];
+  rows.forEach(r => {
+    mergeSetValue_(sh, r[0], r[1]).setFontWeight("bold").setHorizontalAlignment("left").setVerticalAlignment("middle");
+    if (r[2]) mergeSetValue_(sh, r[2], r[3] == null ? "" : r[3]).setHorizontalAlignment("left").setVerticalAlignment("middle").setWrap(true);
+  });
+
+  // 天候欄(R9:S9)は「晴・曇・雨」を並べ、選択された語だけ太字にする(○で囲む代わりの簡易表現)
+  const weatherCell = sh.getRange("R9:S9").merge();
+  const weatherWords = ["晴", "曇", "雨"];
+  const selected = header["天候"] || "";
+  const weatherText = weatherWords.join("　");
+  weatherCell.setValue(weatherText).setHorizontalAlignment("left").setVerticalAlignment("middle");
+  const idx = weatherWords.indexOf(selected);
+  if (idx !== -1) {
+    const charStart = idx * 2; // 単語+全角スペース区切りなので1語=2文字分
+    const rich = SpreadsheetApp.newRichTextValue()
+      .setText(weatherText)
+      .setTextStyle(0, weatherText.length, SpreadsheetApp.newTextStyle().setBold(false).build())
+      .setTextStyle(charStart, charStart + 1, SpreadsheetApp.newTextStyle().setBold(true).setFontSize(14).build())
+      .build();
+    weatherCell.setRichTextValue(rich);
+  }
+  sh.getRange("Q9").setValue("天候：").setFontWeight("bold").setVerticalAlignment("middle");
+
+  sh.setRowHeights(1, 10, 24);
+}
+
+// 断面図(空欄)・積層図(画像またはPDFリンク、無ければ空欄)の領域を作る
+function robotExcelDiagramArea_(sh, header) {
+  sh.getRange("F11").setValue("パス間温度測定位置").setFontWeight("bold");
+  sh.getRange("O11").setValue("溶接積層図").setFontWeight("bold");
+  sh.getRange("A12:H21").merge().setBorder(true, true, true, true, false, false);
+  sh.getRange("I12:S21").merge().setBorder(true, true, true, true, false, false)
+    .setVerticalAlignment("middle").setHorizontalAlignment("center");
+
+  const url = header["積層図"];
+  if (!url) return;
+  const fileId = driveFileIdFromUrl_(url);
+  if (!fileId) return;
+  let file;
+  try {
+    file = DriveApp.getFileById(fileId);
+  } catch (e) {
+    return; // アクセスできない/削除済みの場合は空欄のまま
+  }
+  const mimeType = file.getMimeType();
+  if (mimeType.indexOf("image/") === 0) {
+    try {
+      sh.insertImage(file.getBlob(), 9, 12); // I列=9列目, 12行目から挿入
+    } catch (e) {
+      sh.getRange("I12").setValue("(積層図画像の埋め込みに失敗しました。手動で貼付してください)");
+    }
+  } else {
+    // PDFなどは画像として埋め込めないため、開くためのリンクを置く
+    sh.getRange("I12:S21").setFormula('=HYPERLINK("' + url + '","📎 積層図PDFを開く")');
+  }
+}
+
+// パステーブル(層数・パス数・電流・電圧・スタート・エンド・速度測定部溶接時間・トータル・
+// 溶接速度・入熱・パス間温度・インターバル・備考)を書き込む。層数が同じ連続行は1セルに結合する。
+// 戻り値のstartRow/endRowはグラフの参照範囲作成に使う。
+function robotExcelPassTable_(sh, header, passes) {
+  const startRow = 26;
+
+  sh.getRange("A22:D22").merge().setValue("速度測定長さ").setFontWeight("bold");
+  const measureLenText = header["溶接区分"] === "全周溶接"
+    ? "層により変化(内周〜外周)"
+    : (header["速度測定長さ"] !== "" && header["速度測定長さ"] != null ? header["速度測定長さ"] : "");
+  sh.getRange("E22:G22").merge().setValue(measureLenText).setHorizontalAlignment("center");
+  sh.getRange("H22").setValue("㎜");
+
+  const labels23 = [
+    ["A23:A25", "層数"], ["B23:B25", "パス数"], ["C23:D24", "電流"], ["E23:F24", "電圧"],
+    ["G23:I24", "スタート"], ["J23:L24", "エンド"], ["M23:M24", "速度測定部\n溶接時間"],
+    ["N23:N24", "トータル"], ["O23:O24", "溶接\n速度"], ["P23:P24", "入熱"],
+    ["Q23:Q24", "パス間\n温度"], ["R23:R24", "インター\nバル"], ["S23:S24", "備考"],
+  ];
+  labels23.forEach(([range, text]) => {
+    mergeSetValue_(sh, range, text).setFontWeight("bold").setHorizontalAlignment("center")
+      .setVerticalAlignment("middle").setWrap(true).setBorder(true, true, true, true, true, true);
+  });
+  const units25 = { C: "Ａ", E: "Ｖ", G: "分", I: "秒", J: "分", K: "秒", M: "秒", N: "秒", O: "ｃｍ／分", P: "kＪ／ｃｍ", Q: "℃", R: "秒" };
+  Object.keys(units25).forEach(col => {
+    sh.getRange(col + "25").setValue(units25[col]).setFontWeight("bold").setHorizontalAlignment("center").setBorder(true, true, true, true, true, true);
+  });
+
+  // 層数が同じ連続行をグルーピングして、A列(層数)を結合する
+  let cumulativeSec = 0;
+  let r = startRow;
+  let i = 0;
+  while (i < passes.length) {
+    let j = i;
+    while (j + 1 < passes.length && String(passes[j + 1].層数) === String(passes[i].層数) && passes[i].層数 !== "" && passes[i].層数 != null) j++;
+    const groupSize = j - i + 1;
+    if (groupSize > 1) sh.getRange(r, 1, groupSize, 1).merge();
+    sh.getRange(r, 1).setValue(passes[i].層数).setVerticalAlignment("middle").setHorizontalAlignment("center");
+
+    for (let k = i; k <= j; k++) {
+      const p = passes[k];
+      const arcSec = Number(p.アークタイム) || 0;
+      const intervalSec = Number(p.インターバル) || 0;
+      cumulativeSec += arcSec + intervalSec;
+      const row = r + (k - i);
+      sh.getRange(row, 2).setValue(p.パス数 != null ? p.パス数 : k + 1);
+      sh.getRange(row, 3).setValue(p.電流);
+      sh.getRange(row, 5).setValue(p.電圧);
+      // スタート/エンドは元データに絶対タイムスタンプしか無いため、各パスの計測タイマーが
+      // 0:00から始まる前提で、アークタイム(秒)から分・秒を逆算する(様式のG,I,J,K列に相当)
+      sh.getRange(row, 7).setValue(0);
+      sh.getRange(row, 9).setValue(0);
+      sh.getRange(row, 10).setValue(Math.floor(arcSec / 60));
+      sh.getRange(row, 11).setValue(arcSec % 60);
+      sh.getRange(row, 13).setValue(arcSec);
+      sh.getRange(row, 14).setValue(cumulativeSec);
+      sh.getRange(row, 15).setValue(p.溶接速度 === "" || p.溶接速度 == null ? "" : p.溶接速度);
+      sh.getRange(row, 16).setValue(p.入熱 === "" || p.入熱 == null ? "" : p.入熱);
+      sh.getRange(row, 17).setValue(p.パス間温度);
+      sh.getRange(row, 18).setValue(p.インターバル === "" || p.インターバル == null ? "" : p.インターバル);
+      sh.getRange(row, 19).setValue(p.備考 || "");
+      sh.getRange(row, 1, 1, 19).setBorder(true, true, true, true, false, false);
+    }
+    r += groupSize;
+    i = j + 1;
+  }
+
+  const endRow = r - 1;
+  sh.getRange(startRow, 1, endRow - startRow + 1, 19).setBorder(true, true, true, true, true, true);
+
+  const notes = [
+    "※溶接電流・アーク電圧は、溶接電源メーター読みとする",
+    "※インターバルは非アーク時間を示し、ロボット停止した場合には停止時間を備考欄に記入する",
+    "※型式認証溶接条件は認証付属書参照",
+  ];
+  let noteRow = Math.max(endRow + 2, 49);
+  notes.forEach(t => { sh.getRange(noteRow, 1).setValue(t); noteRow += 1; });
+
+  return { startRow: startRow, endRow: endRow, chartStartRow: noteRow + 1 };
+}
+
+// 入熱量の変化(折れ線)・パス間温度の変化(散布図)の2つのグラフを、実際のパス数に応じた
+// セル範囲を参照して追加する
+function robotExcelCharts_(sh, range) {
+  const passCountRange = sh.getRange(range.startRow, 2, range.endRow - range.startRow + 1, 1); // B列=パス数
+  const heatRange = sh.getRange(range.startRow, 16, range.endRow - range.startRow + 1, 1); // P列=入熱
+  const totalRange = sh.getRange(range.startRow, 14, range.endRow - range.startRow + 1, 1); // N列=トータル
+  const tempRange = sh.getRange(range.startRow, 17, range.endRow - range.startRow + 1, 1); // Q列=パス間温度
+
+  const chart1 = sh.newChart()
+    .setChartType(Charts.ChartType.LINE)
+    .addRange(passCountRange)
+    .addRange(heatRange)
+    .setTransposeRowsAndColumns(false)
+    .setOption("title", "入熱量の変化")
+    .setOption("hAxis.title", "パス数")
+    .setOption("vAxis.title", "入熱（kJ／cm）")
+    .setOption("legend", "none")
+    .setPosition(range.chartStartRow, 1, 0, 0)
+    .build();
+  sh.insertChart(chart1);
+
+  const chart2 = sh.newChart()
+    .setChartType(Charts.ChartType.SCATTER)
+    .addRange(totalRange)
+    .addRange(tempRange)
+    .setOption("title", "パス間温度の変化")
+    .setOption("hAxis.title", "溶接時間（秒）")
+    .setOption("vAxis.title", "パス間温度（℃）")
+    .setOption("legend", "none")
+    .setOption("pointSize", 4)
+    .setOption("curveType", "function")
+    .setPosition(range.chartStartRow + 20, 1, 0, 0)
+    .build();
+  sh.insertChart(chart2);
+}
+
+function generateRobotExcel(body) {
+  const header = body.header || {};
+  const passes = body.passes || [];
+  const cfg = robotFixedConfig_();
+
+  const fileBaseName = "溶接条件_溶接入熱パス間温度管理記録表_" + (header["工事名"] || "") + "_" + (header["製品名"] || "");
+  const ss = SpreadsheetApp.create(fileBaseName);
+  const sh = ss.getSheets()[0];
+  sh.setName(String(header["製品名"] || "記録").substring(0, 90) || "記録");
+
+  robotExcelHeaderGrid_(sh, header, cfg);
+  robotExcelDiagramArea_(sh, header);
+  const range = robotExcelPassTable_(sh, header, passes);
+  if (range.endRow >= range.startRow) robotExcelCharts_(sh, range);
+
+  SpreadsheetApp.flush();
+  const blob = DriveApp.getFileById(ss.getId()).getAs(MimeType.MICROSOFT_EXCEL);
+  const base64 = Utilities.base64Encode(blob.getBytes());
+  DriveApp.getFileById(ss.getId()).setTrashed(true); // 出力専用の一時ファイルなので残さない
+
+  return { excelBase64: base64, fileName: fileBaseName + ".xlsx" };
 }
