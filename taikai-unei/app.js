@@ -1,6 +1,6 @@
 // デプロイ済みGAS WebアプリのURL（/exec で終わるURL）
 // GASプロジェクトを新規デプロイした後、ここを実際のURLに書き換えてください。
-const GAS_API_URL = "https://script.google.com/macros/s/xxxxx/exec";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbza8gL9-L5tPhAJSZ7wcGF7XS-3oY5v5HOQuTeWxf3E17aVxWemarv4r6B_THZdPCdZRQ/exec";
 
 // ---------- GAS API通信 ----------
 
