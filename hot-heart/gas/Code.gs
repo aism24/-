@@ -36,6 +36,7 @@ function doGet(e) {
     if (action === "getOpponentList") return ok_(getOpponentList());
     if (action === "getResults") return ok_(getResults(e.parameter.gender));
     if (action === "checkImageDuplicate") return ok_(checkImageDuplicate(e.parameter.fileName));
+    if (action === "getHomeBg") return ok_(getHomeBg());
     return errRes_("不明なaction: " + action);
   } catch (err) {
     return errRes_(err.message);
@@ -58,7 +59,8 @@ function doPost(e) {
     if (action === "addOpponent") return ok_(addOpponent(body.name));
     if (action === "uploadImageAndSave") return ok_(uploadImageAndSave(body));
     if (action === "replacePhoto") return ok_(replacePhoto(body));
-    if (action === "ghibliStyle") return ok_(ghibliStyle(body));
+    if (action === "setHomeBg") return ok_(setHomeBg(body));
+    if (action === "resetHomeBg") return ok_(resetHomeBg());
     return errRes_("不明なaction: " + action);
   } catch (err) {
     return errRes_(err.message);
@@ -184,155 +186,68 @@ function replacePhoto(payload) {
   return { success: true, photoUrl: newUrl };
 }
 
+const HOME_BG_LABEL = "ホーム背景画像";
+
 /**
- * 背景写真シートのF/G列(Geminiモデル名・タイムゾーン・APIKEY)を読み込む。
+ * 背景写真シートのF/G列から、指定ラベルの設定値を読み書きする。
  */
-function getConfig_() {
+function getHomeBgUrl_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(BG_SHEET_NAME);
-  const config = { geminiModel: "gemini-3.5-flash-lite", timezone: "Asia/Tokyo", apiKey: "" };
-  if (!sheet) return config;
+  if (!sheet) return "";
   const lastRow = Math.max(sheet.getLastRow(), 1);
   const values = sheet.getRange(1, 6, lastRow, 2).getValues();
-  values.forEach(function(row) {
-    const label = String(row[0] || "").trim();
-    const value = row[1];
-    if (label === "Geminiモデル名" && value) config.geminiModel = String(value).trim();
-    if (label === "タイムゾーン" && value) config.timezone = String(value).trim();
-    if (label === "APIKEY" && value) config.apiKey = String(value).trim();
-  });
-  return config;
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || "").trim() === HOME_BG_LABEL) return String(values[i][1] || "").trim();
+  }
+  return "";
+}
+
+function setHomeBgUrl_(url) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(BG_SHEET_NAME);
+  if (!sheet) throw new Error("背景写真シートが見つかりません");
+  const lastRow = Math.max(sheet.getLastRow(), 1);
+  const values = sheet.getRange(1, 6, lastRow, 1).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || "").trim() === HOME_BG_LABEL) {
+      sheet.getRange(i + 1, 7).setValue(url);
+      return;
+    }
+  }
+  sheet.getRange(lastRow + 1, 6, 1, 2).setValues([[HOME_BG_LABEL, url]]);
 }
 
 /**
- * 写真をジブリ風のアニメイラストに加工する。
- * 1. 元写真をDriveに保存して公開URLを作る
- * 2. Gemini(config.geminiModel)に写真を読ませ、ポーズ・服装・背景を保ったまま
- *    ジブリ風にするための英語の指示文を生成させる(テキストのみ・無料)
- * 3. Pollinations.ai の gptimageモデル(APIキー不要・無料)に指示文と元写真URLを渡し、
- *    元の構図・色を保ったアニメ画像を生成する
+ * ホーム画面の背景として設定されている画像のURLを返す(未設定なら空文字)。
  */
-function ghibliStyle(payload) {
-  const config = getConfig_();
-  if (!config.apiKey) throw new Error("背景写真シートにAPIKEYが設定されていません");
+function getHomeBg() {
+  return { url: getHomeBgUrl_() };
+}
 
+/**
+ * ホーム画面の背景写真をDriveに保存し、その表示用URLを背景写真シートに記録する。
+ * 全員が同じ背景を見るよう、端末側ではなくスプレッドシート側で共有設定として保持する。
+ */
+function setHomeBg(payload) {
   const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
   const decoded = Utilities.base64Decode(payload.base64);
   const mimeType = (payload.mimeType === "image/heic" || payload.mimeType === "image/heif")
     ? "image/jpeg" : payload.mimeType;
-  const stamp = Utilities.formatDate(new Date(), config.timezone, "yyyyMMdd_HHmmss");
-
-  const srcExt = mimeType === "image/png" ? "png" : "jpg";
-  const srcBlob = Utilities.newBlob(decoded, mimeType, "ghibli_src_" + stamp + "." + srcExt);
-  const srcFile = folder.createFile(srcBlob);
-  srcFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  const srcImageUrl = "https://drive.google.com/uc?export=view&id=" + srcFile.getId();
-
-  const genderChoice = Math.random() < 0.5 ? "男性" : "女性";
-  const describePrompt =
-    "この画像を画像編集AI向けの英語の指示文にしてください。目的は、人物のポーズ・服の色や種類・髪型・" +
-    "背景の要素(地形、天候、光の向きなど)をできる限りそのまま保ちながら、絵柄だけをスタジオジブリ風の" +
-    "手描きアニメ塗りに変換することです。写真に写っている人物は、実際の性別に関わらず全員を" + genderChoice +
-    "のキャラクターとして描くよう指示文に明記してください(写っている人数分、統一してこの性別で描く)。" +
-    "写真から読み取れる具体的な色や物を必ず明記し、" +
-    "「変えないでください/keep unchanged」という指示も含めてください。" +
-    "出力は指示文の英語テキストのみ。前置きや説明は不要です。";
-  const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" +
-    config.geminiModel + ":generateContent?key=" + config.apiKey;
-  const geminiResp = UrlFetchApp.fetch(geminiUrl, {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify({
-      contents: [{
-        parts: [
-          { text: describePrompt },
-          { inline_data: { mime_type: mimeType, data: payload.base64 } }
-        ]
-      }]
-    }),
-    muteHttpExceptions: true
-  });
-  if (geminiResp.getResponseCode() !== 200) {
-    const errJson = JSON.parse(geminiResp.getContentText());
-    throw new Error((errJson.error && errJson.error.message) || "Gemini APIエラー");
-  }
-  const geminiJson = JSON.parse(geminiResp.getContentText());
-  const geminiParts = (((geminiJson.candidates || [])[0] || {}).content || {}).parts || [];
-  const stylePrompt = geminiParts.map(function(p) { return p.text || ""; }).join("").trim();
-  if (!stylePrompt) throw new Error("Geminiから説明文を取得できませんでした");
-
-  let imgBlob = generateStyledImage_(stylePrompt, srcImageUrl);
-  const looksGood = verifyMatchesSource_(config, mimeType, payload.base64, imgBlob);
-  if (!looksGood) {
-    // 元写真を無視した無関係な画像になっていた場合、1回だけ別のseedで再生成する
-    const retryBlob = generateStyledImage_(stylePrompt, srcImageUrl);
-    if (retryBlob) imgBlob = retryBlob;
-  }
-
-  const outMime = imgBlob.getContentType() || "image/jpeg";
-  const outExt = outMime.indexOf("png") !== -1 ? "png" : "jpg";
-  const outFile = folder.createFile(imgBlob.setName("ghibli_" + stamp + "." + outExt));
-  outFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  const outUrl = "https://drive.google.com/file/d/" + outFile.getId() + "/view";
-
-  return {
-    photoUrl: outUrl,
-    base64: Utilities.base64Encode(imgBlob.getBytes()),
-    mimeType: outMime,
-    gender: genderChoice
-  };
+  const blob = Utilities.newBlob(decoded, mimeType, payload.fileName);
+  const file = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const url = "https://drive.google.com/uc?export=view&id=" + file.getId();
+  setHomeBgUrl_(url);
+  return { url: url };
 }
 
 /**
- * Pollinations.ai(gptimageモデル)に指示文と元写真URLを渡して画像を生成する。
- * 呼ぶたびに乱数のseedを使うため、同じ入力でも結果は毎回変わる。
+ * ホーム画面の背景設定をクリアし、デフォルトのチーム写真スライドショーに戻す。
  */
-function generateStyledImage_(stylePrompt, srcImageUrl) {
-  const seed = Math.floor(Math.random() * 1000000);
-  const pollinationsUrl = "https://image.pollinations.ai/prompt/" + encodeURIComponent(stylePrompt) +
-    "?model=gptimage&image=" + encodeURIComponent(srcImageUrl) + "&nologo=true&seed=" + seed;
-  const imgResp = UrlFetchApp.fetch(pollinationsUrl, { muteHttpExceptions: true });
-  if (imgResp.getResponseCode() !== 200) {
-    throw new Error("画像生成に失敗しました(HTTP " + imgResp.getResponseCode() + ")");
-  }
-  return imgResp.getBlob();
-}
-
-/**
- * Geminiに元写真と生成結果を両方見せて、生成結果が元写真の特徴(服装・髪型・背景など)を
- * ある程度反映しているかを判定させる。判定できない場合は「問題なし」とみなして無駄な
- * リトライをしないようにする。
- */
-function verifyMatchesSource_(config, srcMimeType, srcBase64, resultBlob) {
-  try {
-    const verifyPrompt =
-      "1枚目は元の写真、2枚目はそれをアニメ風に加工した画像です。2枚目は1枚目の人物の服装・髪型・" +
-      "ポーズ・背景など何らかの特徴を反映していますか？元の写真と全く無関係な画像になっている場合のみ" +
-      "「NO」、それ以外は「YES」と、YESかNOの1単語だけで答えてください。";
-    const geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/" +
-      config.geminiModel + ":generateContent?key=" + config.apiKey;
-    const resp = UrlFetchApp.fetch(geminiUrl, {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: verifyPrompt },
-            { inline_data: { mime_type: srcMimeType, data: srcBase64 } },
-            { inline_data: { mime_type: resultBlob.getContentType() || "image/jpeg", data: Utilities.base64Encode(resultBlob.getBytes()) } }
-          ]
-        }]
-      }),
-      muteHttpExceptions: true
-    });
-    if (resp.getResponseCode() !== 200) return true;
-    const json = JSON.parse(resp.getContentText());
-    const parts = (((json.candidates || [])[0] || {}).content || {}).parts || [];
-    const answer = parts.map(function(p) { return p.text || ""; }).join("").trim().toUpperCase();
-    return answer.indexOf("NO") !== 0;
-  } catch (e) {
-    return true;
-  }
+function resetHomeBg() {
+  setHomeBgUrl_("");
+  return { success: true };
 }
 
 function getResults(gender) {
