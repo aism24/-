@@ -686,21 +686,45 @@ function onBgCustomPhotoSelected(event) {
   };
   reader.readAsDataURL(file);
 }
+// 背景写真はアップロード前に長辺1600pxまで縮小・JPEG圧縮する。
+// 「フォルダから選択」で選ばれた元画像は数MB〜十数MBになることがあり、
+// 無圧縮のままbase64送信するとモバイル回線で送信中に失敗しやすいため。
+function resizeImageForUpload_(file, maxDim, quality) {
+  return new Promise(function(resolve, reject) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const img = new Image();
+      img.onload = function() {
+        let w = img.width, h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+          else { w = Math.round(w * maxDim / h); h = maxDim; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve({ base64: canvas.toDataURL('image/jpeg', quality).split(',')[1], mimeType: 'image/jpeg' });
+      };
+      img.onerror = function() { reject(new Error('画像を読み込めませんでした')); };
+      img.src = e.target.result;
+    };
+    reader.onerror = function() { reject(new Error('ファイルを読み込めませんでした')); };
+    reader.readAsDataURL(file);
+  });
+}
 function onBgCustomConfirm() {
   if (!bgCustomSelectedFile) return;
   document.getElementById('bg-custom-confirm-btn').disabled = true;
   showSavingPopup();
   document.getElementById('saving-message').textContent = '写真を追加中だで...';
   document.getElementById('saving-sub').textContent = 'しばらく待っとってごしない';
-  const reader = new FileReader();
-  reader.onload = async function(e) {
-    const base64 = e.target.result.split(',')[1];
+  resizeImageForUpload_(bgCustomSelectedFile, 1600, 0.85).then(async function(resized) {
     try {
-      const ext = (bgCustomSelectedFile.name.match(/\.[a-zA-Z0-9]+$/) || [''])[0];
       const data = await apiPost('addHomeBgImage', {
-        base64: base64,
-        mimeType: bgCustomSelectedFile.type,
-        fileName: 'home_bg_' + Date.now() + ext
+        base64: resized.base64,
+        mimeType: resized.mimeType,
+        fileName: 'home_bg_' + Date.now() + '.jpg'
       });
       customHomeBgImages.push({ url: data.url, selected: true });
       renderBgCustomList();
@@ -713,8 +737,10 @@ function onBgCustomConfirm() {
       errorSavingPopup(err.message);
       document.getElementById('bg-custom-confirm-btn').disabled = false;
     }
-  };
-  reader.readAsDataURL(bgCustomSelectedFile);
+  }).catch(function(err) {
+    errorSavingPopup(err.message);
+    document.getElementById('bg-custom-confirm-btn').disabled = false;
+  });
 }
 function resetBgCustomForm() {
   bgCustomSelectedFile = null;
