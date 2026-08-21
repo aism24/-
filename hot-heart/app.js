@@ -127,12 +127,7 @@ function homeBgSwitch() {
   const layers = [document.getElementById('home-bg-img-a'), document.getElementById('home-bg-img-b')];
   const nextLayer = layers[1 - homeBgActiveLayer];
   const currentLayer = layers[homeBgActiveLayer];
-  let nextIndex = homeBgCurrentIndex;
-  if (images.length > 1) {
-    while (nextIndex === homeBgCurrentIndex) nextIndex = Math.floor(Math.random() * images.length);
-  } else {
-    nextIndex = 0;
-  }
+  const nextIndex = (homeBgCurrentIndex + 1) % images.length;
   homeBgCurrentIndex = nextIndex;
   nextLayer.src = images[nextIndex];
   nextLayer.classList.add('visible');
