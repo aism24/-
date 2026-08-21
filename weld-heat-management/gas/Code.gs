@@ -1446,8 +1446,19 @@ function generateRobotExcel(body) {
   if (range.endRow >= range.startRow) robotExcelCharts_(sh, range);
 
   SpreadsheetApp.flush();
-  const blob = DriveApp.getFileById(ss.getId()).getAs(MimeType.MICROSOFT_EXCEL);
-  const base64 = Utilities.base64Encode(blob.getBytes());
+  // DriveApp.getFileById(id).getAs(MimeType.MICROSOFT_EXCEL)は「変換はサポートされていません」
+  // エラーになることがあるため(Google Sheets→xlsxの変換はgetAs()では不安定)、
+  // Driveのエクスポート用URLを直接叩いて確実にxlsxを取得する。
+  const exportUrl = "https://docs.google.com/spreadsheets/d/" + ss.getId() + "/export?format=xlsx";
+  const response = UrlFetchApp.fetch(exportUrl, {
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true,
+  });
+  if (response.getResponseCode() !== 200) {
+    DriveApp.getFileById(ss.getId()).setTrashed(true);
+    throw new Error("Excel変換に失敗しました(HTTP " + response.getResponseCode() + ")");
+  }
+  const base64 = Utilities.base64Encode(response.getBlob().getBytes());
   DriveApp.getFileById(ss.getId()).setTrashed(true); // 出力専用の一時ファイルなので残さない
 
   return { excelBase64: base64, fileName: fileBaseName + ".xlsx" };
