@@ -149,6 +149,7 @@ function showScreen(screen) {
   document.getElementById('input-screen').style.display = 'none';
   document.getElementById('complete-screen').style.display = 'none';
   document.getElementById('hot-screen').style.display = 'none';
+  document.getElementById('ghibli-screen').style.display = 'none';
   if (screen === 'home') {
     document.getElementById('home-screen').style.display = 'flex';
     homeBgStartSlideshow();
@@ -166,6 +167,8 @@ function showScreen(screen) {
     hotUpdateDisplay();
     hotAnimateHotheart();
     hotStartBgSlideshow();
+  } else if (screen === 'ghibli') {
+    document.getElementById('ghibli-screen').style.display = 'block';
   }
 }
 let currentResultsGender = null;
@@ -620,6 +623,59 @@ function hotSwitchBackground() {
   }, 1500);
 }
 window.addEventListener('resize', hotInitPosition);
+
+let ghibliSelectedFile = null;
+function onGhibliPhotoSelected(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  ghibliSelectedFile = file;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById('ghibli-thumb-img').src = e.target.result;
+    document.getElementById('ghibli-thumb-wrap').style.display = 'flex';
+    document.getElementById('ghibli-convert-btn').disabled = false;
+  };
+  reader.readAsDataURL(file);
+}
+function onGhibliConvert() {
+  if (!ghibliSelectedFile) return;
+  document.getElementById('ghibli-convert-btn').disabled = true;
+  showSavingPopup();
+  document.getElementById('saving-message').textContent = 'ジブリ風に変換中だで...';
+  document.getElementById('saving-sub').textContent = '数十秒かかることがあるでな';
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    const base64 = e.target.result.split(',')[1];
+    try {
+      const data = await apiPost('ghibliStyle', { base64: base64, mimeType: ghibliSelectedFile.type });
+      completeSavingPopup();
+      setTimeout(function() {
+        document.getElementById('saving-overlay').classList.remove('show');
+        document.getElementById('ghibli-result-img').src = 'data:' + data.mimeType + ';base64,' + data.base64;
+        document.getElementById('ghibli-result-section').style.display = 'block';
+        document.getElementById('ghibli-convert-btn').disabled = false;
+      }, 400);
+    } catch (err) {
+      errorSavingPopup(err.message);
+      document.getElementById('ghibli-convert-btn').disabled = false;
+    }
+  };
+  reader.readAsDataURL(ghibliSelectedFile);
+}
+function resetGhibli() {
+  ghibliSelectedFile = null;
+  document.getElementById('ghibli-file-camera').value = '';
+  document.getElementById('ghibli-file-gallery').value = '';
+  document.getElementById('ghibli-thumb-wrap').style.display = 'none';
+  document.getElementById('ghibli-thumb-img').src = '';
+  document.getElementById('ghibli-result-section').style.display = 'none';
+  document.getElementById('ghibli-result-img').src = '';
+  document.getElementById('ghibli-convert-btn').disabled = true;
+}
+function leaveGhibli() {
+  resetGhibli();
+  showScreen('home');
+}
 
 loadImageIds();
 showScreen('home');
