@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>バスケ大会 運営アプリ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="homeScreen">
+  <h1>バスケ大会 運営アプリ</h1>
+  <button onclick="showApp('tournament')">大会運営</button>
+  <button onclick="showApp('search')">個別検索</button>
+</div>
+
+<div id="loadingOverlay">
+  <div class="loadingBox">
+    <div class="loadingBar"><div class="loadingBarInner"></div></div>
+    <div id="loadingText">読み取り中…</div>
+  </div>
+</div>
+
+<!-- ============ 大会運営 ============ -->
+<div id="tournamentApp" style="display:none">
+  <button type="button" class="backBtn" onclick="showHome()">← トップに戻る</button>
+  <h1>バスケ大会 運営アプリ</h1>
+  <div class="tabs">
+    <button id="tabBtn-info" onclick="showTab('info')">情報編集</button>
+    <button id="tabBtn-assign" onclick="showTab('assign')">割り当て</button>
+    <button id="tabBtn-score" onclick="showTab('score')">試合結果</button>
+  </div>
+  <div id="status"></div>
+  <div id="day2Bar">
+    <p>初日の全結果（グループ最終順位）が出揃いました。２日目の組み合わせを作成できます。</p>
+    <button type="button" onclick="createDay2()">２日目作成</button>
+  </div>
+
+  <!-- ============ 情報編集 ============ -->
+  <div id="panel-info" class="panel">
+    <p style="font-size:13px;color:#aaa">編集する項目を選び、内容を変更すると「保存」ボタンが表示されます。保存するとスプレッドシートと全シートに自動反映されます。</p>
+    <div class="row2">
+      <button onclick="startInfoEdit('venue')">会場名編集</button>
+      <button onclick="startInfoEdit('team')">チーム名編集</button>
+    </div>
+    <button id="resetScoresBtn" onclick="resetScores()">試合結果リセット</button>
+    <div id="infoForm"></div>
+    <div id="infoError"></div>
+    <button id="infoSaveBtn" style="display:none" onclick="saveInfoEdits()">保存</button>
+
+    <h2>結果表ダウンロード（Excel）</h2>
+    <p style="font-size:13px;color:#aaa">現時点の結果をもとに、見やすく整形した結果表（Excel）を作成します。</p>
+    <button onclick="exportDay1Results()">初日結果</button>
+    <button onclick="exportDay2RoundRobin()">２日目総当たり</button>
+    <button onclick="exportDay2Tournament()">２日目トーナメント</button>
+    <div id="downloadLinks"></div>
+
+    <h2>速報PDF</h2>
+    <p style="font-size:13px;color:#aaa">現時点の速報をPDFでダウンロードします。</p>
+    <div class="row2">
+      <button onclick="downloadBulletinPdf('day1')">１日目</button>
+      <button onclick="downloadBulletinPdf('day2')">２日目</button>
+    </div>
+    <div id="pdfExportLink"></div>
+  </div>
+
+  <!-- ============ 割り当て ============ -->
+  <div id="panel-assign" class="panel active">
+    <p style="font-size:13px;color:#aaa">会場を選んでください（２日目はさらにコートを選びます）。内容は読み取り専用です。</p>
+    <div id="assignCourtButtons"></div>
+    <div id="assignSubCourtButtons" class="courtBtnRow"></div>
+    <div id="assignTables"></div>
+
+    <h2>PDFダウンロード</h2>
+    <p style="font-size:13px;color:#aaa">現時点の結果を1枚のPDFにまとめてダウンロードします。</p>
+    <div class="row2">
+      <button onclick="downloadAssignPdf('day1')">１日目</button>
+      <button onclick="downloadAssignPdf('day2')">２日目</button>
+    </div>
+    <div id="assignPdfExportLink"></div>
+  </div>
+
+  <!-- ============ 試合結果 ============ -->
+  <div id="panel-score" class="panel">
+    <p style="font-size:13px;color:#aaa">会場を選んでください（２日目はさらにコートを選びます）。審判・TOは自動計算のため表示のみです（手動変更なし）。得点欄に入力して「保存」を押すと記録されます。</p>
+    <div id="courtButtons"></div>
+    <div id="subCourtButtons" class="courtBtnRow"></div>
+    <div id="matchTableContainer"></div>
+
+    <h2>PDFダウンロード</h2>
+    <p style="font-size:13px;color:#aaa">現時点の結果を1枚のPDFにまとめてダウンロードします。</p>
+    <div class="row2">
+      <button onclick="downloadScorePdf('day1')">１日目</button>
+      <button onclick="downloadScorePdf('day2')">２日目</button>
+    </div>
+    <div id="scorePdfExportLink"></div>
+  </div>
+</div>
+
+<!-- ============ 個別検索 ============ -->
+<div id="searchApp" style="display:none">
+  <button type="button" class="backBtn" onclick="showHome()">← トップに戻る</button>
+  <h1>個別検索</h1>
+  <p style="font-size:13px;color:#aaa">チームを選んでください。</p>
+  <div id="teamRadioList"></div>
+  <div id="searchStatus"></div>
+  <div id="teamDetailResult"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
