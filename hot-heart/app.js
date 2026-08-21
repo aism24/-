@@ -114,12 +114,16 @@ function applyGenderTheme(isFemale) {
 }
 // デフォルトのチーム写真2枚は常に固定でスライドショーに含める(選択解除できない)
 const FIXED_HOME_BG_IMAGES = ['images/home-bg/team-photo-1.jpg', 'images/home-bg/team-photo-2.jpg'];
-let customHomeBgImages = []; // [{url, selected}] 追加した写真(チェックで含める/外せる)
+let customHomeBgImages = []; // [{url, selected, dataUrl}] 追加した写真(チェックで含める/外せる)
 let homeBgActiveLayer = 0;
 let homeBgCurrentIndex = -1;
 let homeBgInterval = null;
 function getActiveHomeBgImages() {
-  const selected = customHomeBgImages.filter(function(img) { return img.selected; }).map(function(img) { return img.url; });
+  // Driveへの外部リンクを<img>から直接読み込ませると失敗することがあるため、
+  // GAS側で読み込み済みのdata URL(dataUrl)を表示に使う。
+  const selected = customHomeBgImages
+    .filter(function(img) { return img.selected && img.dataUrl; })
+    .map(function(img) { return img.dataUrl; });
   return FIXED_HOME_BG_IMAGES.concat(selected);
 }
 function homeBgSwitch() {
@@ -145,11 +149,12 @@ function homeBgStopSlideshow() {
   clearInterval(homeBgInterval);
   homeBgInterval = null;
 }
-// 追加した写真は共有直後で読み込みが一時的に失敗することがあるため、
-// 読み込み失敗時は真っ暗のまま止まらず、少し待って別の写真に切り替える。
+// 万一画像の読み込みに失敗しても真っ暗のまま止まらないよう、通常の
+// 3秒間隔のタイマーを仕切り直して切り替える(通常間隔と二重に動いて
+// 切り替えが早まってしまわないよう、独立したタイマーは追加しない)。
 function homeBgHandleLoadError_(event) {
   event.target.classList.remove('visible');
-  if (getActiveHomeBgImages().length > 1) setTimeout(homeBgSwitch, 800);
+  if (getActiveHomeBgImages().length > 1) homeBgStartSlideshow();
 }
 document.getElementById('home-bg-img-a').addEventListener('error', homeBgHandleLoadError_);
 document.getElementById('home-bg-img-b').addEventListener('error', homeBgHandleLoadError_);
@@ -652,17 +657,6 @@ function openBgCustomScreen() {
     document.getElementById('bg-custom-list').innerHTML = '<div class="bg-custom-loading">読み込みに失敗しただ: ' + err.message + '</div>';
   });
 }
-// 一覧のサムネイルが1回目の読み込みに失敗しても、キャッシュを避けて
-// 1回だけ読み直す(共有直後の一時的な失敗などで壊れアイコンのまま
-// 固定されてしまうのを防ぐ)。
-function bgThumbRetry_(imgEl) {
-  if (imgEl.dataset.retried) return;
-  imgEl.dataset.retried = '1';
-  const src = imgEl.src;
-  setTimeout(function() {
-    imgEl.src = src + (src.indexOf('?') === -1 ? '?' : '&') + 'retry=' + Date.now();
-  }, 1000);
-}
 function renderBgCustomList() {
   const wrap = document.getElementById('bg-custom-list');
   if (!customHomeBgImages.length) {
@@ -671,7 +665,7 @@ function renderBgCustomList() {
   }
   wrap.innerHTML = customHomeBgImages.map(function(img, i) {
     return '<div class="bg-custom-item">' +
-      '<img src="' + img.url + '" alt="" referrerpolicy="no-referrer" onerror="bgThumbRetry_(this)">' +
+      '<img src="' + (img.dataUrl || '') + '" alt="">' +
       '<label><input type="checkbox" ' + (img.selected ? 'checked' : '') +
       ' onchange="onBgCustomToggle(' + i + ', this.checked)"> スライドショーに含める</label>' +
       '</div>';

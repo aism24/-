@@ -208,11 +208,30 @@ function getHomeBgImages_() {
 }
 
 /**
- * 追加した背景写真の一覧(URLと選択状態)を返す。デフォルトのチーム写真2枚は
- * フロントエンド側に固定で持たせているため、ここには含まない。
+ * 追加した背景写真の一覧(URL・選択状態・画像本体のdata URL)を返す。
+ * デフォルトのチーム写真2枚はフロントエンド側に固定で持たせているため、
+ * ここには含まない。
+ *
+ * Driveの外部リンク(uc?export=view)をブラウザから直接読み込ませる方式は、
+ * 端末やタイミングによって読み込みに失敗することがあるため、GAS側で
+ * 画像本体を読み込んでbase64のdata URLとしてAPIレスポンスに含める
+ * (ブラウザがDriveへ別リクエストを送る必要がなくなり、確実に表示できる)。
  */
 function getHomeBgImages() {
-  return getHomeBgImages_();
+  return getHomeBgImages_().map(function(item) {
+    return { url: item.url, selected: item.selected, dataUrl: homeBgUrlToDataUrl_(item.url) };
+  });
+}
+
+function homeBgUrlToDataUrl_(url) {
+  try {
+    const match = String(url).match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (!match) return "";
+    const blob = DriveApp.getFileById(match[1]).getBlob();
+    return "data:" + (blob.getContentType() || "image/jpeg") + ";base64," + Utilities.base64Encode(blob.getBytes());
+  } catch (e) {
+    return "";
+  }
 }
 
 /**
