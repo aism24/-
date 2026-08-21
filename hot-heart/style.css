@@ -209,6 +209,7 @@
     }
     .home-bg-img.visible { opacity: 1; }
     .home-title { font-size: 52px; font-weight: bold; color: #ffd700; text-align: center; text-shadow: 0 0 20px rgba(255,215,0,0.5); letter-spacing: 4px; margin-bottom: 20px; }
+    #home-logo { height: 1em; width: auto; vertical-align: middle; filter: drop-shadow(0 0 10px rgba(255,215,0,0.5)); }
     .home-subtitle { font-size: 30px; color: #90caf9; text-align: center; margin-top: -20px; margin-bottom: 10px; }
     .home-btn { width: 100%; max-width: 500px; padding: 40px 20px; border: none; border-radius: 20px; font-size: 42px; font-weight: bold; cursor: pointer; text-align: center; letter-spacing: 2px; }
     .home-btn-record { background: linear-gradient(135deg, #1565c0, #0d47a1); color: #fff; border: 3px solid #64b5f6; box-shadow: 0 8px 30px rgba(21,101,192,0.5); }
