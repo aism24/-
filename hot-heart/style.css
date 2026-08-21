@@ -209,7 +209,17 @@
     }
     .home-bg-img.visible { opacity: 1; }
     .home-title { font-size: 52px; font-weight: bold; color: #ffd700; text-align: center; text-shadow: 0 0 20px rgba(255,215,0,0.5); letter-spacing: 4px; margin-bottom: 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-    #home-logo { height: 3em; width: auto; filter: drop-shadow(0 0 10px rgba(255,215,0,0.5)); }
+    #home-logo { height: 3em; width: auto; animation: logo-glow-cycle 14s linear infinite; }
+    @keyframes logo-glow-cycle {
+      0%      { filter: drop-shadow(0 0 14px #ff2d40) drop-shadow(0 0 30px #ff2d40); }
+      14.2857%{ filter: drop-shadow(0 0 14px #ff6ec7) drop-shadow(0 0 30px #ff6ec7); }
+      28.5714%{ filter: drop-shadow(0 0 14px #ffd700) drop-shadow(0 0 30px #ffd700); }
+      42.8571%{ filter: drop-shadow(0 0 14px #c6ff00) drop-shadow(0 0 30px #c6ff00); }
+      57.1429%{ filter: drop-shadow(0 0 14px #00e676) drop-shadow(0 0 30px #00e676); }
+      71.4286%{ filter: drop-shadow(0 0 14px #2979ff) drop-shadow(0 0 30px #2979ff); }
+      85.7143%{ filter: drop-shadow(0 0 14px #a259ff) drop-shadow(0 0 30px #a259ff); }
+      100%    { filter: drop-shadow(0 0 14px #ff2d40) drop-shadow(0 0 30px #ff2d40); }
+    }
     .home-title-text { white-space: nowrap; }
     .home-subtitle { font-size: 30px; color: #90caf9; text-align: center; margin-top: -20px; margin-bottom: 10px; }
     .home-btn { width: 100%; max-width: 500px; padding: 40px 20px; border: none; border-radius: 20px; font-size: 42px; font-weight: bold; cursor: pointer; text-align: center; letter-spacing: 2px; }
