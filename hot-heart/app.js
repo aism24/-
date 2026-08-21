@@ -652,6 +652,17 @@ function openBgCustomScreen() {
     document.getElementById('bg-custom-list').innerHTML = '<div class="bg-custom-loading">読み込みに失敗しただ: ' + err.message + '</div>';
   });
 }
+// 一覧のサムネイルが1回目の読み込みに失敗しても、キャッシュを避けて
+// 1回だけ読み直す(共有直後の一時的な失敗などで壊れアイコンのまま
+// 固定されてしまうのを防ぐ)。
+function bgThumbRetry_(imgEl) {
+  if (imgEl.dataset.retried) return;
+  imgEl.dataset.retried = '1';
+  const src = imgEl.src;
+  setTimeout(function() {
+    imgEl.src = src + (src.indexOf('?') === -1 ? '?' : '&') + 'retry=' + Date.now();
+  }, 1000);
+}
 function renderBgCustomList() {
   const wrap = document.getElementById('bg-custom-list');
   if (!customHomeBgImages.length) {
@@ -660,7 +671,7 @@ function renderBgCustomList() {
   }
   wrap.innerHTML = customHomeBgImages.map(function(img, i) {
     return '<div class="bg-custom-item">' +
-      '<img src="' + img.url + '" alt="">' +
+      '<img src="' + img.url + '" alt="" referrerpolicy="no-referrer" onerror="bgThumbRetry_(this)">' +
       '<label><input type="checkbox" ' + (img.selected ? 'checked' : '') +
       ' onchange="onBgCustomToggle(' + i + ', this.checked)"> スライドショーに含める</label>' +
       '</div>';
