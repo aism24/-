@@ -104,6 +104,54 @@ function setupRobotWeldSheet() {
   Logger.log("作成しました: " + ROBOT_RECORD_SHEET);
 }
 
+// 「入熱パス間記録(ロボット溶接)」シートに、アプリ経由ではなく手入力で行を追加した場合、
+// 「順序」「判定」列(本来はsaveRobotJointRecordが自動入力する)が空欄のままになる。
+// この関数は既存の全行を対象に、他の列の値から「順序」(=パス数の値をそのまま使う。
+// saveRobotJointRecordも1継手内の連番として同じ値を両方の列に書き込むため)と「判定」
+// (入熱・パス間温度をその行の入熱上限・パス間温度下限/上限と比較して判定)を再計算し、
+// 空欄かどうかに関わらず全行を上書きする。
+// Apps Scriptエディタから手動実行する想定の関数(doGet/doPostからは呼ばない)。
+function recalcRobotOrderAndJudgement() {
+  const sh = sheet_(ROBOT_RECORD_SHEET);
+  const map = headerMap_(sh);
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) { Logger.log("データがありません"); return; }
+  const lastCol = sh.getLastColumn();
+  const values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+  const orderCol = requireCol_(map, "順序");
+  const judgeCol = requireCol_(map, "判定");
+  const passCol = requireCol_(map, "パス数");
+  const heatInputCol = optionalCol_(map, "入熱");
+  const heatLimitCol = optionalCol_(map, "入熱上限(kJ/cm)");
+  const tempCol = optionalCol_(map, "パス間温度");
+  const tempMinCol = optionalCol_(map, "パス間温度下限(℃)");
+  const tempMaxCol = optionalCol_(map, "パス間温度上限(℃)");
+
+  let updated = 0;
+  values.forEach((row, i) => {
+    const order = row[passCol - 1];
+    if (order === "" || order == null) return; // パス数が未入力の行は判定できないためスキップ
+
+    const judged = judgePass_(
+      tempCol ? row[tempCol - 1] : "",
+      heatInputCol ? row[heatInputCol - 1] : "",
+      {
+        tempMin: tempMinCol ? row[tempMinCol - 1] : "",
+        tempMax: tempMaxCol ? row[tempMaxCol - 1] : "",
+        heatInputLimit: heatLimitCol ? row[heatLimitCol - 1] : "",
+      }
+    );
+
+    const sheetRow = i + 2;
+    sh.getRange(sheetRow, orderCol).setValue(order);
+    sh.getRange(sheetRow, judgeCol).setValue(judged.judgement);
+    updated += 1;
+  });
+
+  Logger.log("順序・判定を再計算しました: " + updated + "行");
+}
+
 // マスタ選択肢として公開してよい列名のホワイトリスト。
 // 「情報」シートのI:J列(設定値・APIKEYを含む)を誤って外部に公開しないよう、
 // listMasterLists/addMasterValueはこのリストにある列名しか扱わない。
@@ -888,17 +936,22 @@ function readAllRobotRecords_() {
     });
 }
 
-// 「順序」が1に戻った行を新しい継手の開始とみなしてグルーピングする
+// 「順序」が1に戻った行、または「製品名」が前の行と変わった行を新しい継手の開始とみなして
+// グルーピングする(手入力などで順序列が未入力のデータでも、製品名の変化から継手の境目を
+// 判別できるようにするための保険)。
 function groupIntoRobotJoints_(records) {
   const joints = [];
   let current = null;
+  let prevProduct = null;
   records.forEach(r => {
     const order = Number(getField_(r, "順序")) || 0;
-    if (!current || order === 1) {
+    const product = getField_(r, "製品名");
+    if (!current || order === 1 || product !== prevProduct) {
       current = { records: [] };
       joints.push(current);
     }
     current.records.push(r);
+    prevProduct = product;
   });
   return joints.map(j => {
     const first = j.records[0];
