@@ -150,6 +150,14 @@ function homeBgStopSlideshow() {
   clearInterval(homeBgInterval);
   homeBgInterval = null;
 }
+// 追加した写真は共有直後で読み込みが一時的に失敗することがあるため、
+// 読み込み失敗時は真っ暗のまま止まらず、少し待って別の写真に切り替える。
+function homeBgHandleLoadError_(event) {
+  event.target.classList.remove('visible');
+  if (getActiveHomeBgImages().length > 1) setTimeout(homeBgSwitch, 800);
+}
+document.getElementById('home-bg-img-a').addEventListener('error', homeBgHandleLoadError_);
+document.getElementById('home-bg-img-b').addEventListener('error', homeBgHandleLoadError_);
 function loadHomeBgImages() {
   apiGet('getHomeBgImages').then(function(list) {
     customHomeBgImages = list || [];
@@ -695,6 +703,10 @@ function resizeImageForUpload_(file, maxDim, quality) {
     reader.onload = function(e) {
       const img = new Image();
       img.onload = function() {
+        if (!img.naturalWidth || !img.naturalHeight) {
+          reject(new Error('この写真の形式はこの端末では読み込めませんでした(iPhoneの場合、設定→カメラ→フォーマットで「互換性優先」にすると解決することがあります)'));
+          return;
+        }
         let w = img.width, h = img.height;
         if (w > maxDim || h > maxDim) {
           if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
