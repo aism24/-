@@ -201,7 +201,7 @@ function getHomeBgImages_() {
   const list = [];
   values.forEach(function(row) {
     const url = String(row[0] || "").trim();
-    if (!url) return;
+    if (url.indexOf("http") !== 0) return; // 見出し行など、URL以外の文字列は無視する
     list.push({ url: url, selected: row[1] === true || String(row[1]).toUpperCase() === "TRUE" });
   });
   return list;
