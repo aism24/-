@@ -677,5 +677,18 @@ function leaveGhibli() {
   showScreen('home');
 }
 
+let logoTapCount = 0;
+let logoTapTimer = null;
+function onLogoTap() {
+  logoTapCount++;
+  clearTimeout(logoTapTimer);
+  logoTapTimer = setTimeout(function() { logoTapCount = 0; }, 2000);
+  if (logoTapCount >= 5) {
+    logoTapCount = 0;
+    clearTimeout(logoTapTimer);
+    showScreen('ghibli');
+  }
+}
+
 loadImageIds();
 showScreen('home');
