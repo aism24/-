@@ -652,7 +652,7 @@ function openBgCustomScreen() {
 function renderBgCustomList() {
   const wrap = document.getElementById('bg-custom-list');
   if (!customHomeBgImages.length) {
-    wrap.innerHTML = '<div class="bg-custom-loading">まだ追加した写真はないだで</div>';
+    wrap.innerHTML = '<div class="bg-custom-loading">まだ、画像がありゃーしません</div>';
     return;
   }
   wrap.innerHTML = customHomeBgImages.map(function(img, i) {
