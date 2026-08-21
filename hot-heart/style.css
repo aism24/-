@@ -218,6 +218,8 @@
     .home-divider { width: 100%; max-width: 500px; border: none; border-top: 2px solid #2a2a4a; margin: 10px 0; }
     .home-btn-hot { background: linear-gradient(135deg, #c84b00, #ff6d00); color: #fff; border: 3px solid #ffab40; box-shadow: 0 8px 30px rgba(200,75,0,0.5); }
     .home-btn-hot:active { opacity: 0.8; }
+    .home-btn-ghibli { background: linear-gradient(135deg, #2e7d32, #66bb6a); color: #fff; border: 3px solid #a5d6a7; box-shadow: 0 8px 30px rgba(46,125,50,0.5); }
+    .home-btn-ghibli:active { opacity: 0.8; }
     #gender-select-screen {
       display: none; flex-direction: column; align-items: center;
       justify-content: center; min-height: 70vh; padding: 30px 20px; gap: 30px;

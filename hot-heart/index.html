@@ -18,6 +18,7 @@
   <button class="home-btn home-btn-list" onclick="showScreen('gender-select')">📊 結果一覧</button>
   <hr class="home-divider">
   <button class="home-btn home-btn-hot" onclick="showScreen('hot')">🔥 Hotタイマー起動</button>
+  <button class="home-btn home-btn-ghibli" onclick="showScreen('ghibli')">🎨 ジブリ風に加工</button>
 </div>
 <div id="gender-select-screen">
   <div class="gender-select-title">どっち見るだぁ？</div>
@@ -261,6 +262,33 @@
       <button class="hot-btn" id="hot-start-stop-btn" onclick="hotToggleTimer()">スタート</button>
       <button class="hot-btn" id="hot-reset-btn" onclick="hotResetTimer()">リセット</button>
     </div>
+  </div>
+</div>
+<div id="ghibli-screen" style="display:none;">
+  <header id="ghibli-header">
+    <button class="header-back-btn" onclick="leaveGhibli()">← 戻る</button>
+    <div class="header-title">🎨 ジブリ風に加工</div>
+    <div class="header-spacer"></div>
+  </header>
+  <div class="section" id="ghibli-input-section">
+    <div class="field-label">元の写真(1枚)</div>
+    <div class="photo-btns">
+      <button class="photo-btn photo-btn-camera" onclick="document.getElementById('ghibli-file-camera').click()">📷 写真を撮る</button>
+      <button class="photo-btn photo-btn-gallery" onclick="document.getElementById('ghibli-file-gallery').click()">🖼 ファイルから選択</button>
+    </div>
+    <input type="file" id="ghibli-file-camera" accept="image/*" capture="environment" style="display:none" onchange="onGhibliPhotoSelected(event)">
+    <input type="file" id="ghibli-file-gallery" accept="image/*" style="display:none" onchange="onGhibliPhotoSelected(event)">
+    <div class="thumb-wrap" id="ghibli-thumb-wrap">
+      <img id="ghibli-thumb-img" src="" alt="preview">
+    </div>
+    <button class="reset-btn" id="ghibli-convert-btn" onclick="onGhibliConvert()" disabled>✨ ジブリ風に変換する</button>
+  </div>
+  <div class="section" id="ghibli-result-section" style="display:none;">
+    <div class="field-label">変換結果</div>
+    <div class="thumb-wrap" id="ghibli-result-wrap">
+      <img id="ghibli-result-img" src="" alt="result">
+    </div>
+    <button class="reset-btn" onclick="resetGhibli()">🔄 別の写真で試す</button>
   </div>
 </div>
 <script src="app.js"></script>
