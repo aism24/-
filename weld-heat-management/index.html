@@ -253,9 +253,12 @@
     <div class="field-label small">備考</div>
     <input type="text" id="rpi-note" placeholder="任意">
 
+    <input type="file" id="robot-photo-layer" accept="image/*,application/pdf" style="display:none" onchange="onRobotLayerPhotoSelected(event)">
     <div class="button-row">
+      <button class="photo-btn" onclick="document.getElementById('robot-photo-layer').click()">📎 積層図を追加</button>
       <button class="finish-btn" id="robot-complete-btn" onclick="onCompleteRobotJoint()">🏁 溶接完了・スプレッドシートへ記録する</button>
     </div>
+    <div id="robot-rec-photo-status" class="photo-status"></div>
   </div>
 
   <div class="section" id="robot-pass-list-section">
@@ -281,7 +284,8 @@
 <div id="app-header" class="app-header" style="display:none;">
   <button class="header-back-btn" id="header-back-btn" onclick="goBack()">← 戻る</button>
   <div class="header-title" id="app-header-title">タイトル</div>
-  <div class="header-spacer"></div>
+  <button class="header-back-btn" id="header-excel-btn" style="display:none;" onclick="onGenerateRobotExcel()">📥 Excel</button>
+  <div class="header-spacer" id="header-spacer"></div>
 </div>
 
 <!-- ロボット溶接: 履歴検索画面 -->
@@ -295,7 +299,7 @@
   <div class="list" id="robot-history-list"><div class="loading-text">読み込み中...</div></div>
 </div>
 
-<!-- ロボット溶接: 履歴詳細(閲覧専用。編集・PDF出力・積層図追加は未対応) -->
+<!-- ロボット溶接: 履歴詳細(閲覧専用。編集・PDF出力は未対応。積層図の後付け追加とExcelダウンロードのみ対応) -->
 <div id="robot-joint-view-screen" class="screen" style="display:none;">
   <div class="joint-summary" id="robot-view-joint-summary"></div>
   <div class="section">
@@ -311,6 +315,9 @@
   </div>
   <div class="section">
     <div class="result-banner" id="robot-view-result-banner"></div>
+    <input type="file" id="robot-view-photo-layer" accept="image/*,application/pdf" style="display:none" onchange="onRobotViewLayerPhotoSelected(event)">
+    <button class="photo-btn full-btn" onclick="document.getElementById('robot-view-photo-layer').click()">📎 積層図を追加(後から追加・差し替え)</button>
+    <div id="robot-view-layer-photo-status" class="photo-status"></div>
   </div>
 </div>
 

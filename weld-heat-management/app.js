@@ -155,6 +155,9 @@ function renderEntry(entry) {
   // パス記録画面は、誤タップで記録中の内容が見えなくなる事故を防ぐため「← 戻る」を出さない
   // (ホームへは完了後の「🏠 ホームに戻る」ボタンから戻る)
   document.getElementById('header-back-btn').style.visibility = entry.noBack ? 'hidden' : 'visible';
+  // ロボット溶接の履歴詳細画面のみ、ヘッダー固定領域に「📥 Excel」ダウンロードボタンを出す
+  document.getElementById('header-excel-btn').style.display = entry.showExcelBtn ? 'inline-block' : 'none';
+  document.getElementById('header-spacer').style.display = entry.showExcelBtn ? 'none' : 'block';
   showScreen(entry.screenId);
   entry.load();
 }
@@ -1488,6 +1491,82 @@ function renderRobotPassTable() {
     </tr>`).join('');
 }
 
+// 積層図(実写真またはPDF)を選択してアップロードする(記録中の継手にまだIDが無い場合。
+// 半自動溶接側のonPhotoSelected(kind:'layerDiagram')のロボット版。保存前なのでrobotState.headerに
+// 直接URLを持たせておき、溶接完了時にsaveRobotJointRecordへ一緒に送信する)
+function onRobotLayerPhotoSelected(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const base64 = reader.result.split(',')[1];
+    showOverlay('⏳', '積層図をアップロード中...');
+    const ext = file.type === 'application/pdf' ? '.pdf' : '.jpg';
+    apiPost('uploadPhoto', {
+      kind: 'layerDiagram', base64: base64, mimeType: file.type, fileName: 'layer_' + Date.now() + ext,
+    }).then(result => {
+      robotState.header["積層図"] = result.url;
+      hideOverlay();
+      document.getElementById('robot-rec-photo-status').textContent = '✅ 積層図 添付済み';
+    }).catch(showError);
+  };
+  reader.readAsDataURL(file);
+}
+
+// 履歴詳細画面から、保存済みのロボット溶接の継手に積層図を後付けで追加・差し替えする
+// (半自動溶接側のonViewLayerPhotoSelectedのロボット版)
+function onRobotViewLayerPhotoSelected(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const joint = robotState.viewingJoint;
+  const ids = joint.records.map(r => r.ID);
+  const reader = new FileReader();
+  reader.onload = () => {
+    const base64 = reader.result.split(',')[1];
+    showOverlay('⏳', '積層図をアップロード中...');
+    const ext = file.type === 'application/pdf' ? '.pdf' : '.jpg';
+    let uploadedUrl = '';
+    apiPost('uploadPhoto', {
+      kind: 'layerDiagram', base64: base64, mimeType: file.type, fileName: 'layer_' + Date.now() + ext,
+    }).then(result => {
+      uploadedUrl = result.url;
+      return apiPost('updateRobotJointLayerDiagram', { ids: ids, url: uploadedUrl });
+    }).then(() => {
+      joint.header["積層図"] = uploadedUrl;
+      hideOverlay();
+      document.getElementById('robot-view-layer-photo-status').textContent = '✅ 積層図 添付済み';
+    }).catch(showError);
+  };
+  reader.readAsDataURL(file);
+}
+
+// ---------- ロボット溶接: Excelダウンロード(履歴詳細画面のヘッダー固定ボタンから) ----------
+
+function downloadFileBase64_(base64, fileName, mimeType) {
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  const blob = new Blob([new Uint8Array(byteNumbers)], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function onGenerateRobotExcel() {
+  const joint = robotState.viewingJoint;
+  if (!joint) return;
+  showOverlay('⏳', 'Excelを作成しています...(数秒かかります)');
+  apiPost('generateRobotExcel', { header: joint.header, passes: joint.records }).then(result => {
+    hideOverlay();
+    downloadFileBase64_(result.excelBase64, result.fileName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  }).catch(showError);
+}
+
 function onCompleteRobotJoint() {
   if (!robotState.passes.length) { showOverlay('⚠️', 'パスが1件も記録されていません', true); return; }
   if (!confirm('この継手の溶接記録を確定し、スプレッドシートへ記録します。よろしいですか？')) return;
@@ -1535,16 +1614,18 @@ function renderRobotHistoryList(rows) {
 
 function viewRobotJoint(index) {
   const joint = robotHistoryCache[index];
-  goTo({ screenId: 'robot-joint-view-screen', title: joint.製品名 || '継手詳細', load: () => renderRobotJointView(joint) });
+  goTo({ screenId: 'robot-joint-view-screen', title: joint.製品名 || '継手詳細', showExcelBtn: true, load: () => renderRobotJointView(joint) });
 }
 
 function renderRobotJointView(joint) {
+  robotState.viewingJoint = joint; // Excelダウンロード・積層図の後付け追加で参照する
   const h = joint.header;
   document.getElementById('robot-view-joint-summary').innerHTML = `
     <div>工事名: ${escapeHtml(h["工事名"] || '-')}　部材: ${escapeHtml(h["部材"] || '-')}　溶接区分: ${escapeHtml(h["溶接区分"] || '-')}</div>
     <div>検査員: ${escapeHtml(h["検査員（入力者）"] || '-')}　オペレータ: ${escapeHtml(h["オペレータ"] || '-')}　記録者: ${escapeHtml(h["記録者"] || '-')}　検査日: ${escapeHtml(h["検査日"] || '-')}</div>
     <div>溶接部位: ${escapeHtml(h["溶接部位"] || '-')}　継手形状・姿勢: ${escapeHtml(h["継手形状・姿勢"] || '-')}</div>
   `;
+  document.getElementById('robot-view-layer-photo-status').textContent = h["積層図"] ? '✅ 積層図 添付済み' : '';
   const tbody = document.getElementById('robot-view-pass-table-body');
   if (!joint.records.length) {
     tbody.innerHTML = '<tr><td colspan="10" class="loading-text">パスが記録されていません</td></tr>';
