@@ -1,0 +1,82 @@
+body { font-family: sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background:#000; color:#eee; }
+h1 { font-size: 18px; }
+h2 { font-size: 15px; margin-top: 24px; color:#eee; }
+label { display: block; margin-top: 10px; font-size: 14px; }
+select, input, button { padding: 8px; margin-top: 4px; font-size: 16px; box-sizing: border-box; background:#222; color:#eee; border:1px solid #555; border-radius:4px; }
+input, select { width: 100%; }
+button { margin-top: 14px; cursor: pointer; min-height: 44px; touch-action: manipulation; }
+.row2 { display: flex; gap: 8px; }
+.row2 > div { flex: 1; }
+.row2 > button { flex: 1; }
+#status { margin: 10px 0; font-weight: bold; min-height: 1.2em; color:#fff; }
+
+#homeScreen { text-align: center; padding-top: 60px; }
+#homeScreen button { display: block; width: 100%; max-width: 280px; margin: 16px auto 0; padding: 20px; font-size: 18px; background:#222; color:#eee; border: 1px solid #666; }
+.backBtn { background: none; border: none; color: #8ab4f8; padding: 0; margin: 0 0 10px 0; text-decoration: underline; font-size: 13px; display: inline-block; min-height: auto; }
+
+.tabs { display: flex; gap: 6px; position: sticky; top: 0; background: #000; padding-bottom: 8px; flex-wrap: wrap; }
+.tabs button { flex: 1 1 30%; margin-top: 0; padding: 10px; border: 1px solid #555; background: #222; color: #eee; border-radius: 6px; }
+.tabs button.active { outline: 3px solid #fff; outline-offset: -3px; }
+#tabBtn-assign { background: #e6c200; color: #000; }
+#tabBtn-score { background: #c62828; color: #fff; }
+.panel { display: none; }
+.panel.active { display: block; }
+
+table { border-collapse: collapse; width: 100%; margin-top: 6px; font-size: 13px; background: #fff; border: 3px double #555; }
+th, td { border-top: 1px solid #999; border-bottom: 1px solid #999; border-left: 1px dashed #ccc; border-right: 1px dashed #ccc; padding: 4px 6px; text-align: center; white-space: nowrap; color: #000; }
+th { background: #ddd; }
+.groupBlock { margin-top: 18px; padding: 10px; border: 1px solid #444; border-radius: 6px; }
+.teamRow { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.teamRow .teamLabel { flex: 0 0 auto; font-size: 14px; white-space: nowrap; }
+.teamRow input { flex: 1; margin-top: 0; width: auto; min-width: 0; }
+#infoError { color: #ff6666; font-weight: bold; min-height: 1.2em; margin-top: 10px; }
+#infoSaveBtn { background: #3366cc; color: #fff; border: none; border-radius: 6px; }
+#resetScoresBtn { background: #b00020; color: #fff; border: none; border-radius: 6px; }
+
+.courtBtnRow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.dayRow { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.dayRow .courtBtnRow { flex: 1; margin-top: 0; }
+.dayRowLabel { flex: 0 0 auto; font-size: 12px; color: #aaa; font-weight: bold; white-space: nowrap; }
+.courtBtnRow button { flex: 1 1 21%; min-width: 70px; margin-top: 0; }
+.courtBtnRow button.active { outline: 3px solid #fff; outline-offset: -3px; }
+.subCourtBtn[data-index="0"] { background: #2e7d32; color: #fff; }
+.subCourtBtn[data-index="1"] { background: #1565c0; color: #fff; }
+#matchTableContainer, #assignTables, #teamDetailResult { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+#matchTableContainer table input, #matchTableContainer table select { width: 62px; padding: 4px; margin: 0; font-size: 13px; min-height: auto; }
+#matchTableContainer table button { margin: 0; padding: 5px 10px; font-size: 12px; min-height: auto; }
+#matchTableContainer table td.winCell { background: #ffd700; color: #000; font-weight: bold; }
+
+#day2Bar { display: none; margin: 10px 0; padding: 12px; background: #4a3b00; border: 1px solid #ffc107; border-radius: 6px; }
+#day2Bar p { margin: 0 0 8px 0; font-size: 13px; color: #ffe9a8; }
+#day2Bar button { margin-top: 0; background: #e67700; color: #fff; border: none; border-radius: 6px; }
+
+.scheduleCond { display: block; font-size: 11px; color: #f0ad4e; }
+
+#downloadLinks a, #pdfExportLink a, #scorePdfExportLink a, #assignPdfExportLink a { display: inline-block; margin-top: 8px; }
+.pdfViewBtn { display: inline-block; margin-top: 8px; padding: 10px 22px; background: #ffd700; color: #000; font-weight: bold; text-decoration: none; border-radius: 6px; border: 2px solid #ffd700; animation: pdfGlow 2s ease-in-out infinite; }
+@keyframes pdfGlow {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(255, 215, 0, 0.4); }
+  50% { box-shadow: 0 0 18px 7px rgba(255, 215, 0, 0.9); }
+}
+
+#loadingOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 1000; }
+#loadingOverlay.active { display: flex; }
+.loadingBox { background: #222; color: #eee; padding: 20px 28px; border-radius: 8px; text-align: center; min-width: 200px; }
+.loadingBar { width: 100%; height: 6px; background: #444; border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
+.loadingBarInner { width: 40%; height: 100%; background: #3366cc; border-radius: 3px; animation: loadingMove 1s infinite linear; }
+@keyframes loadingMove {
+  0% { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}
+#loadingText { font-size: 14px; color: #eee; }
+
+#teamRadioList { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.teamBtn { width: 8em; padding: 10px 4px; box-sizing: border-box; overflow: hidden; white-space: nowrap; text-align: center; margin-top: 0; }
+.teamBtn .teamBtnText { display: inline-block; max-width: 100%; }
+.dayTabRow { display: flex; gap: 6px; margin: 10px 0; }
+.dayTabBtn { flex: 1; margin-top: 0; padding: 10px; border: 1px solid #555; background: #222; color: #eee; border-radius: 6px; }
+.dayTabBtn.active { outline: 3px solid #fff; outline-offset: -3px; background: #3366cc; color: #fff; }
+tr.matchRow td { background: #ffe066; color: #000; }
+tr.matchRow.patternStart td { border-top: 3px solid #aaa; }
+td.dutyRole { background: #bcdcff; color: #c62828; font-weight: bold; }
+#searchStatus { color: #ff6666; font-weight: bold; min-height: 1.2em; margin-top: 10px; }
