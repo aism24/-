@@ -161,7 +161,13 @@ document.getElementById('home-bg-img-b').addEventListener('error', homeBgHandleL
 function loadHomeBgImages() {
   apiGet('getHomeBgImages').then(function(list) {
     customHomeBgImages = list || [];
-    if (document.getElementById('home-screen').style.display !== 'none') homeBgStartSlideshow();
+    // スライドショーが既に動いている場合はここで開始し直さない。開始し直すと
+    // インデックスとタイマーがリセットされ、GAS APIの応答が返ってくるタイミング
+    // (回線状況で毎回変わる)で1〜2枚目の切り替えが早まって見えてしまうため。
+    // 取得した写真は次回以降の切り替え(homeBgSwitch)から自動的に反映される。
+    if (document.getElementById('home-screen').style.display !== 'none' && !homeBgInterval) {
+      homeBgStartSlideshow();
+    }
   }).catch(() => {});
 }
 function showScreen(screen) {
