@@ -1,0 +1,85 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+  background: #f4f5f7;
+  color: #1c1f26;
+  padding-top: 64px;
+  padding-bottom: 40px;
+}
+
+.app-header {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+  height: 56px;
+  background: #1a2540;
+  border-bottom: 3px solid #ff9800;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px;
+}
+.header-title { flex: 1; text-align: center; color: #fff; font-size: 18px; font-weight: bold; }
+.header-back-btn {
+  background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 8px; padding: 8px 14px; font-size: 14px; cursor: pointer;
+}
+.header-spacer { width: 90px; flex-shrink: 0; }
+
+main { max-width: 960px; margin: 0 auto; padding: 16px; }
+
+.home-buttons { display: flex; flex-direction: column; gap: 16px; padding: 32px 8px; }
+.home-btn {
+  padding: 22px 20px; font-size: 18px; font-weight: bold; border: none; border-radius: 12px;
+  cursor: pointer; text-align: left;
+}
+.home-btn-main { background: linear-gradient(135deg, #ff9800, #e65100); color: #fff; box-shadow: 0 4px 14px rgba(255,152,0,0.35); }
+.home-btn-sub { background: #fff; color: #1a2540; border: 2px solid #d7dae0; }
+.home-btn:active { opacity: 0.85; }
+
+.section {
+  background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 16px;
+  border: 1px solid #e2e5ea; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.section h2 { font-size: 18px; margin-bottom: 12px; color: #1a2540; }
+.hint { color: #666; font-size: 13px; margin-bottom: 14px; line-height: 1.6; }
+
+.btn {
+  padding: 10px 18px; font-size: 14px; border-radius: 8px; border: 1px solid #d7dae0;
+  background: #fff; color: #1a2540; cursor: pointer; font-weight: bold;
+}
+.btn:hover { background: #f0f2f5; }
+.btn-primary { background: #1a2540; color: #fff; border: none; margin-top: 12px; }
+.btn-primary:hover { background: #263559; }
+.btn-danger { background: #c62828; color: #fff; border: none; }
+.btn-confirm { background: #2e7d32; color: #fff; border: none; }
+
+input[type="file"] { display: block; margin: 8px 0 16px; }
+
+.filter-row { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; margin-bottom: 16px; }
+.filter-row label { display: flex; flex-direction: column; font-size: 13px; color: #555; gap: 4px; }
+.filter-row select, .filter-row input { padding: 8px 10px; font-size: 14px; border-radius: 6px; border: 1px solid #d7dae0; min-width: 160px; }
+
+.detected-info {
+  background: #e8f0fe; border: 1px solid #b6d0fb; border-radius: 8px;
+  padding: 12px 14px; margin: 12px 0; font-size: 14px; color: #1a2540;
+}
+.import-status { margin: 12px 0; font-size: 14px; white-space: pre-line; }
+.import-status.error { color: #c62828; font-weight: bold; }
+.import-status.success { color: #2e7d32; font-weight: bold; }
+
+table.data-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+table.data-table th, table.data-table td { border: 1px solid #e2e5ea; padding: 8px 10px; text-align: right; }
+table.data-table th:first-child, table.data-table td:first-child { text-align: left; }
+table.data-table th { background: #f4f5f7; font-weight: bold; }
+table.data-table tr.total-row td { font-weight: bold; background: #fafbfc; }
+
+.status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: bold; }
+.status-badge.confirmed { background: #e2f3e5; color: #2e7d32; }
+.status-badge.pending { background: #fff3e0; color: #e65100; }
+.status-badge.none { background: #eee; color: #888; }
+
+.excluded-table th, .excluded-table td { font-size: 12px; }
+.reason-tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; color: #fff; }
+.reason-delete_request { background: #c62828; }
+.reason-date_fix_request { background: #ef6c00; }
+.reason-next_month_review { background: #1565c0; }
+.reason-date_mismatch_review, .reason-date_invalid { background: #6a1b9a; }
+
+.overflow-x { overflow-x: auto; }
