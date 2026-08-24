@@ -42,6 +42,7 @@
       <p class="hint">業者から受け取った配車Excelファイル(.xlsm/.xlsx)を選択してください(画面上にドラッグ&ドロップでも取り込めます)。<br>
         ファイル名(例: 「20260820〆　山陰運送.xlsm」)から業者・締め月を自動判定します。</p>
       <input type="file" id="file-input" accept=".xlsx,.xlsm,.xls" onchange="onFileSelected(event)">
+      <span class="drop-hint">ここにドラッグ&amp;ドロップも可</span>
       <div id="detected-info" class="detected-info" style="display:none;"></div>
       <button id="import-submit-btn" class="btn btn-primary" style="display:none;" onclick="submitImport()">この内容で取り込む</button>
       <div id="import-status" class="import-status"></div>
