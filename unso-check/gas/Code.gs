@@ -37,18 +37,40 @@ const DUPLICATE_CHECK_FIELDS = [
 ];
 const DUPLICATE_MATCH_THRESHOLD = 7; // 11項目中7項目以上一致で「同一」と判断する
 
+// 日付・日時のような文字列("2026/08/20"等)は、Sheetsに書き込むとセルが自動的に
+// 日付型に変換されてしまう(setValueの既知の挙動)。この変換が起きると文字列としての
+// 完全一致比較(締め月フィルタ・重複判定)が壊れるため、該当列は明示的にテキスト書式(@)を
+// 適用して自動変換を防ぐ。
+const DATE_LIKE_HAULING_COLS = ["締め月", "積日", "降日", "取込日時"];
+const DATE_LIKE_STATUS_COLS = ["締め月", "取込日時", "確定日時"];
+
 // ---------- 初回セットアップ(Apps Scriptエディタから手動で1回だけ実行) ----------
 
 function setupSheets() {
   const ss = ss_();
-  ensureSheet_(ss, SHEET_HAULING, HAULING_HEADERS);
-  ensureSheet_(ss, SHEET_STATUS, STATUS_HEADERS);
+  const haulingSheet = ensureSheet_(ss, SHEET_HAULING, HAULING_HEADERS);
+  const statusSheet = ensureSheet_(ss, SHEET_STATUS, STATUS_HEADERS);
   const companySheet = ensureSheet_(ss, SHEET_COMPANY, COMPANY_HEADERS);
   if (companySheet.getLastRow() < 2) {
     companySheet.getRange(2, 1, DEFAULT_COMPANIES.length, 1)
       .setValues(DEFAULT_COMPANIES.map(name => [name]));
   }
+  // 既存シートに対しても毎回再適用する(何度実行しても安全)
+  forceTextColumns_(haulingSheet, DATE_LIKE_HAULING_COLS);
+  forceTextColumns_(statusSheet, DATE_LIKE_STATUS_COLS);
   Logger.log("セットアップ完了");
+}
+
+// 動作確認中に日付型として誤って保存されてしまったテスト・過去データを全て削除し、
+// 配車データ・締め状態を空の状態に戻す(見出し行は残す)。Apps Scriptエディタから
+// 手動で1回だけ実行する想定の関数(doGet/doPostからは呼ばない)。
+function resetAllData() {
+  [SHEET_HAULING, SHEET_STATUS].forEach(name => {
+    const sh = sheet_(name);
+    const lastRow = sh.getLastRow();
+    if (lastRow > 1) sh.deleteRows(2, lastRow - 1);
+  });
+  Logger.log("配車データ・締め状態をリセットしました");
 }
 
 function ensureSheet_(ss, name, headers) {
@@ -59,6 +81,17 @@ function ensureSheet_(ss, name, headers) {
   sh.setFrozenRows(1);
   sh.getRange(1, 1, 1, headers.length).setFontWeight("bold");
   return sh;
+}
+
+// 指定した列名(見出し名)の全データ行に、プレーンテキスト書式(@)を適用する
+function forceTextColumns_(sheet, colNames) {
+  const map = headerMap_(sheet);
+  const numRows = Math.max(sheet.getMaxRows() - 1, 1);
+  colNames.forEach(name => {
+    const col = map[name];
+    if (!col) return;
+    sheet.getRange(2, col, numRows, 1).setNumberFormat("@");
+  });
 }
 
 // ---------- JSON API共通 ----------
@@ -143,6 +176,16 @@ function normalizeDateStr_(s) {
   return ymd_(y, m, d);
 }
 
+// スプレッドシートのセルから読み取った値を "yyyy/MM/dd" 文字列に正規化する。
+// setValues()に日付らしい文字列を渡すとセルが自動的に日付型に変換されてしまうことがあるため、
+// 実際に読み取った値がDateオブジェクトであっても正しく比較できるようにする(forceTextColumns_で
+// 今後の自動変換自体は防止しているが、既存データや想定外の入力に対する保険として残す)。
+function cellToYmd_(v) {
+  if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, "Asia/Tokyo", "yyyy/MM/dd");
+  if (!v) return "";
+  try { return normalizeDateStr_(v); } catch (e) { return String(v).trim(); }
+}
+
 // 「21日始まり・20日締め」ルール: 降日から、その配送が属する締め月(その月20日、または
 // 21日以降なら翌月20日)を求める
 function closingMonthFromDateStr_(dateStr) {
@@ -195,7 +238,7 @@ function statusRows_() {
   return values.map((row, i) => ({
     sheetRow: i + 2,
     業者: row[map["業者"] - 1],
-    締め月: row[map["締め月"] - 1],
+    締め月: cellToYmd_(row[map["締め月"] - 1]),
     状態: row[map["状態"] - 1],
     取込日時: row[map["取込日時"] - 1],
     確定日時: row[map["確定日時"] - 1],
@@ -258,6 +301,9 @@ function haulingRows_() {
     .map((row, i) => {
       const obj = { sheetRow: i + 2 };
       HAULING_HEADERS.forEach(h => { obj[h] = row[map[h] - 1]; });
+      obj["締め月"] = cellToYmd_(obj["締め月"]);
+      obj["積日"] = cellToYmd_(obj["積日"]);
+      obj["降日"] = cellToYmd_(obj["降日"]);
       return obj;
     });
 }
@@ -281,9 +327,7 @@ function toNum_(v) { return Number(v) || 0; }
 
 // 重複判定用に1項目分の値を比較可能な文字列に正規化する
 function normalizeForCompare_(field, value) {
-  if (field === "積日" || field === "降日") {
-    try { return normalizeDateStr_(value); } catch (e) { return String(value || "").trim(); }
-  }
+  if (field === "積日" || field === "降日") return cellToYmd_(value);
   if (field === "総重量" || field === "通常単価") return String(Math.round(toNum_(value) * 100) / 100);
   return String(value == null ? "" : value).trim();
 }
@@ -308,7 +352,7 @@ function deleteHaulingRowsFor_(sh, map, company, closingMonth) {
   if (lastRow < 2) return;
   const values = sh.getRange(2, 1, lastRow - 1, HAULING_HEADERS.length).getValues();
   for (let i = values.length - 1; i >= 0; i--) {
-    if (values[i][map["業者"] - 1] === company && values[i][map["締め月"] - 1] === closingMonth) {
+    if (values[i][map["業者"] - 1] === company && cellToYmd_(values[i][map["締め月"] - 1]) === closingMonth) {
       sh.deleteRow(i + 2);
     }
   }
