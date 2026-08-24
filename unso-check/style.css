@@ -112,6 +112,9 @@ table.summary-table tr.total-row td { background: #fdf3cf; }
 table.summary-table th:last-child, table.summary-table td:last-child { background: #fdf3cf; }
 table.summary-table tbody tr:not(.total-row):nth-child(even) td:not(:last-child) { background: #e9f7ea; }
 
+.per-ton-summary { margin-top: 10px; font-size: 14px; }
+.per-ton-summary strong { color: #1a2540; }
+
 .status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: bold; }
 .status-badge.confirmed { background: #e2f3e5; color: #2e7d32; }
 .status-badge.pending { background: #fff3e0; color: #e65100; }

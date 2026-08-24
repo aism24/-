@@ -29,12 +29,13 @@ async function apiPost(action, payload) {
 
 // ---------- 画面切り替え ----------
 
-const SCREENS = ["home", "import", "check", "yearly"];
+const SCREENS = ["home", "import", "check", "yearly", "project"];
 function showScreen(name) {
   SCREENS.forEach(s => { document.getElementById("screen-" + s).style.display = (s === name) ? "block" : "none"; });
   document.getElementById("header-back-btn").style.display = (name === "home") ? "none" : "inline-block";
   if (name === "check") initCheckScreen();
   if (name === "yearly") initYearlyScreen();
+  if (name === "project") initProjectScreen();
 }
 function goHome() { showScreen("home"); }
 
@@ -581,4 +582,57 @@ function renderYearlyResult(data) {
   html += "</tbody></table></div>";
 
   resultEl.innerHTML = html;
+}
+
+// ---------- 工事別内訳画面 ----------
+
+let projectState = { name: null };
+
+async function initProjectScreen() {
+  projectState = { name: null };
+  document.getElementById("project-result").innerHTML = "";
+  const container = document.getElementById("project-buttons");
+  container.innerHTML = "<span class=\"hint\">読み込み中...</span>";
+  let names;
+  try {
+    names = await apiGet("listProjects");
+  } catch (err) {
+    container.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
+    return;
+  }
+  if (names.length === 0) { container.innerHTML = "<span class=\"hint\">物件データがありません</span>"; return; }
+  container.innerHTML = names.map(n =>
+    "<button type=\"button\" class=\"btn\" data-name=\"" + n + "\">" + n + "</button>"
+  ).join("");
+  container.querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => {
+      projectState.name = btn.dataset.name;
+      container.querySelectorAll("button").forEach(b => b.classList.toggle("btn-primary", b === btn));
+      loadProjectDetail();
+    };
+  });
+}
+
+async function loadProjectDetail() {
+  const resultEl = document.getElementById("project-result");
+  resultEl.innerHTML = "<p class=\"hint\">読み込み中...</p>";
+  try {
+    const data = await apiGet("getProjectDetail", { projectName: projectState.name });
+    let html = "<div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>業者</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
+    data.業者別.forEach(c => {
+      html += "<tr><td>" + c.業者 + "</td><td>" + fmtYen(c.コラム横持) + "</td><td>" + fmtYen(c.製品横持) + "</td><td>" + fmtYen(c.他横持) + "</td><td>" + fmtYen(c.メッキ費用) + "</td><td>" +
+        fmtYen(c.現場搬入費用) + "</td><td>" + (c.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(c.合計) + "</td></tr>";
+    });
+    html += feeBucketTotalRowHtml_(data.total);
+    html += "</tbody></table></div>";
+
+    const t = data.total;
+    const perTonText = t.重量 > 0 ? fmtYen(t.合計 / t.重量) + "/t" : "現場搬入の重量が無いため算出不可";
+    html += "<p class=\"per-ton-summary\">合計重量: " + (t.重量 || 0).toFixed(1) + "t　総額: " + fmtYen(t.合計) +
+      "　<strong>1トン当たりの金額: " + perTonText + "</strong></p>";
+
+    resultEl.innerHTML = html;
+  } catch (err) {
+    resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
+  }
 }

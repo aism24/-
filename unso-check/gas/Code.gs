@@ -111,6 +111,8 @@ function doGet(e) {
     if (p.action === "getCheckScreenInit") return ok_(getCheckScreenInit());
     if (p.action === "getYearlySummary") return ok_(getYearlySummary(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
     if (p.action === "getYearlySummaryInit") return ok_(getYearlySummaryInit(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
+    if (p.action === "listProjects") return ok_(listProjects());
+    if (p.action === "getProjectDetail") return ok_(getProjectDetail(p.projectName));
     return errRes_("不明なaction: " + p.action);
   } catch (err) {
     return errRes_(err.message);
@@ -691,6 +693,44 @@ function getYearlySummaryInit(fiscalYearEnd) {
     years: availableYearsFromRows_(rows),
     summary: getYearlySummary(fiscalYearEnd, rows),
   };
+}
+
+// 工事別内訳画面の物件ボタン用: 配車データに実際に登録されている物件名(D列)を重複排除して返す
+function listProjects() {
+  const names = {};
+  haulingRows_().forEach(r => { if (r.物件名) names[r.物件名] = true; });
+  return Object.keys(names).sort();
+}
+
+// 工事別内訳: 指定した物件名の配車データを業者ごとに集計する(横持3区分・メッキ費用・
+// 現場搬入費用・重量・合計)。重量はgetClosingCheck/getYearlySummaryと同じ方針で
+// 現場搬入費用分のみを対象にする(横持4種・メッキ費用の重量は含めない)。
+function getProjectDetail(projectName) {
+  if (!projectName) throw new Error("物件名を指定してください");
+  const rows = haulingRows_().filter(r => r.物件名 === projectName);
+  const emptyFeeBucket_ = () => ({ コラム横持: 0, 製品横持: 0, 他横持: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 });
+
+  const byCompany = {};
+  rows.forEach(r => {
+    const amt = toNum_(r.費用額);
+    const feeType = classifyFeeType_(r.ブロック);
+    const yardWeight = feeType === "現場搬入費用" ? toNum_(r.総重量) : 0;
+    const cKey = r.業者 || "(業者不明)";
+    if (!byCompany[cKey]) byCompany[cKey] = Object.assign({ 業者: cKey }, emptyFeeBucket_());
+    byCompany[cKey][feeType] += amt;
+    byCompany[cKey].重量 += yardWeight;
+    byCompany[cKey].合計 += amt;
+  });
+
+  const companies = Object.keys(byCompany).map(k => byCompany[k]);
+  const total = companies.reduce((acc, c) => {
+    acc.コラム横持 += c.コラム横持; acc.製品横持 += c.製品横持; acc.他横持 += c.他横持;
+    acc.メッキ費用 += c.メッキ費用; acc.現場搬入費用 += c.現場搬入費用;
+    acc.重量 += c.重量; acc.合計 += c.合計;
+    return acc;
+  }, emptyFeeBucket_());
+
+  return { 物件名: projectName, 業者別: companies, total: total };
 }
 
 // ---------- 過去データ移行(運送QUERY2026等からの一括インポート。確定済みとして取り込む) ----------
