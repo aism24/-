@@ -68,7 +68,15 @@ body.drag-over::after {
 .btn-danger { background: #c62828; color: #fff; border: none; }
 .btn-confirm { background: #2e7d32; color: #fff; border: none; }
 
-input[type="file"] { display: block; margin: 8px 0 16px; }
+input[type="file"] { display: inline-block; margin: 8px 8px 16px 0; }
+.drop-hint {
+  color: #d32f2f; font-size: 13px; font-weight: bold;
+  animation: drop-hint-blink 2s ease-in-out infinite;
+}
+@keyframes drop-hint-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
 
 .filter-row { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; margin-bottom: 16px; }
 .filter-row label { display: flex; flex-direction: column; font-size: 13px; color: #555; gap: 4px; }
@@ -96,6 +104,13 @@ table.data-table th:first-child, table.data-table td:first-child { text-align: l
 table.data-table th { background: #f4f5f7; font-weight: bold; }
 table.data-table tr.total-row td { font-weight: bold; background: #fafbfc; }
 table.data-table tr.total-row td.grand-total-cell { color: #000; font-weight: 900; }
+
+/* 集計テーブル(20日締めチェック・年度集計)専用の行の色分け:
+   項目行(th)・合計行(total-row)・右端の合計列は薄い黄色、それ以外は奇数/偶数行で無色/薄い緑 */
+table.summary-table th { background: #fdf3cf; }
+table.summary-table tr.total-row td { background: #fdf3cf; }
+table.summary-table th:last-child, table.summary-table td:last-child { background: #fdf3cf; }
+table.summary-table tbody tr:not(.total-row):nth-child(even) td:not(:last-child) { background: #e9f7ea; }
 
 .status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: bold; }
 .status-badge.confirmed { background: #e2f3e5; color: #2e7d32; }

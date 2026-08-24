@@ -335,20 +335,42 @@ function fiscalMonthToClosing(fiscalYear, month) {
 
 function fmtYen(n) { return "¥" + Math.round(n || 0).toLocaleString("ja-JP"); }
 
+// 業者は「日興」、締め月は実績のある最新の締め月(全業者共通)をデフォルトにする
+async function computeCheckDefaults_() {
+  const defaults = { company: "日本興運", fiscalYear: null, month: null };
+  try {
+    const statusList = await apiGet("listClosingStatus", {});
+    if (statusList.length > 0) {
+      const latest = statusList.map(s => s.締め月).sort().pop();
+      const [y, m] = latest.split("/").map(Number);
+      defaults.fiscalYear = m === 12 ? y + 1 : y;
+      defaults.month = m;
+    }
+  } catch (e) {
+    // 取得に失敗した場合はデフォルト未選択のままにする
+  }
+  return defaults;
+}
+
 async function initCheckScreen() {
   checkState = { company: null, fiscalYear: null, month: null };
   document.getElementById("check-status-badge").innerHTML = "";
   document.getElementById("check-confirm-slot").innerHTML = "";
   document.getElementById("check-result").innerHTML = "";
+  const defaults = await computeCheckDefaults_();
+  checkState.company = defaults.company;
+  checkState.fiscalYear = defaults.fiscalYear;
+  checkState.month = defaults.month;
   renderCheckCompanyButtons();
   renderCheckMonthButtons();
   await renderCheckYearButtons();
+  await refreshCheckResult();
 }
 
 function renderCheckCompanyButtons() {
   const container = document.getElementById("check-company-buttons");
   container.innerHTML = CHECK_COMPANY_BUTTONS.map(c =>
-    "<button type=\"button\" class=\"btn\" data-company=\"" + c.name + "\">" + c.label + "</button>"
+    "<button type=\"button\" class=\"btn" + (c.name === checkState.company ? " btn-primary" : "") + "\" data-company=\"" + c.name + "\">" + c.label + "</button>"
   ).join("");
   container.querySelectorAll("button").forEach(btn => {
     btn.onclick = () => {
@@ -362,7 +384,7 @@ function renderCheckCompanyButtons() {
 function renderCheckMonthButtons() {
   const container = document.getElementById("check-month-buttons");
   container.innerHTML = CHECK_MONTH_ORDER.map(m =>
-    "<button type=\"button\" class=\"btn\" data-month=\"" + m + "\">" + m + "月</button>"
+    "<button type=\"button\" class=\"btn" + (m === checkState.month ? " btn-primary" : "") + "\" data-month=\"" + m + "\">" + m + "月</button>"
   ).join("");
   container.querySelectorAll("button").forEach(btn => {
     btn.onclick = () => {
@@ -384,7 +406,7 @@ async function renderCheckYearButtons() {
   }
   if (years.length === 0) { container.innerHTML = "<span class=\"hint\">対象年度がありません</span>"; return; }
   container.innerHTML = years.map(y =>
-    "<div class=\"year-btn-item\"><button type=\"button\" class=\"btn\" data-year=\"" + y + "\">" + y + "年</button>" +
+    "<div class=\"year-btn-item\"><button type=\"button\" class=\"btn" + (y === checkState.fiscalYear ? " btn-primary" : "") + "\" data-year=\"" + y + "\">" + y + "年</button>" +
     "<div class=\"year-period\">" + fiscalYearPeriodLabel(y) + "</div></div>"
   ).join("");
   container.querySelectorAll("button").forEach(btn => {
@@ -412,7 +434,7 @@ async function refreshCheckResult() {
     const data = await apiGet("getClosingCheck", { company: checkState.company, closingMonth: closingMonth });
     const badgeClass = data.status === "確定済み" ? "confirmed" : (data.status === "未確定" ? "pending" : "none");
     badgeEl.innerHTML = "<span class=\"status-badge " + badgeClass + "\">" + data.status + "</span>";
-    let html = "<div class=\"overflow-x\"><table class=\"data-table\"><thead><tr>" +
+    let html = "<div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr>" +
       "<th>工事名</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>請求額</th><th>消費税</th><th>合計請求額</th></tr></thead><tbody>";
     data.projects.forEach(p => {
       html += "<tr><td>" + p.物件名 + "</td><td>" + fmtYen(p.コラム横持) + "</td><td>" + fmtYen(p.製品横持) + "</td><td>" +
@@ -519,7 +541,7 @@ function renderYearlyResult(data) {
   const resultEl = document.getElementById("yearly-result");
   let html = "<p><strong>" + data.fiscalYearEnd + "年度 合計請求額: " + fmtYen(data.合計請求額) + "</strong></p>";
 
-  html += "<h3>月別内訳</h3><div class=\"overflow-x\"><table class=\"data-table\"><thead><tr><th>締め月</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
+  html += "<h3>月別内訳</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>締め月</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
   data.月別.forEach(m => {
     html += "<tr><td>" + m.締め月 + "〆</td><td>" + fmtYen(m.コラム横持) + "</td><td>" + fmtYen(m.製品横持) + "</td><td>" + fmtYen(m.他横持) + "</td><td>" + fmtYen(m.メッキ費用) + "</td><td>" +
       fmtYen(m.現場搬入費用) + "</td><td>" + (m.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(m.合計) + "</td></tr>";
@@ -527,7 +549,7 @@ function renderYearlyResult(data) {
   html += feeBucketTotalRowHtml_(sumFeeBuckets_(data.月別));
   html += "</tbody></table></div>";
 
-  html += "<h3>工事別内訳</h3><div class=\"overflow-x\"><table class=\"data-table\"><thead><tr><th>物件名</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
+  html += "<h3>工事別内訳</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>物件名</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
   data.工事別.forEach(p => {
     html += "<tr><td>" + p.物件名 + "</td><td>" + fmtYen(p.コラム横持) + "</td><td>" + fmtYen(p.製品横持) + "</td><td>" + fmtYen(p.他横持) + "</td><td>" + fmtYen(p.メッキ費用) + "</td><td>" +
       fmtYen(p.現場搬入費用) + "</td><td>" + (p.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(p.合計) + "</td></tr>";
@@ -535,7 +557,7 @@ function renderYearlyResult(data) {
   html += feeBucketTotalRowHtml_(sumFeeBuckets_(data.工事別));
   html += "</tbody></table></div>";
 
-  html += "<h3>業者別内訳</h3><div class=\"overflow-x\"><table class=\"data-table\"><thead><tr><th>業者</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
+  html += "<h3>業者別内訳</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>業者</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
   data.業者別.forEach(c => {
     html += "<tr><td>" + c.業者 + "</td><td>" + fmtYen(c.コラム横持) + "</td><td>" + fmtYen(c.製品横持) + "</td><td>" + fmtYen(c.他横持) + "</td><td>" + fmtYen(c.メッキ費用) + "</td><td>" +
       fmtYen(c.現場搬入費用) + "</td><td>" + (c.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(c.合計) + "</td></tr>";
