@@ -32,6 +32,7 @@
       <button class="home-btn home-btn-main" onclick="showScreen('import')">📤 Excelファイルを取り込む</button>
       <button class="home-btn home-btn-sub" onclick="showScreen('check')">📋 20日締めチェック</button>
       <button class="home-btn home-btn-sub" onclick="showScreen('yearly')">📊 年度集計</button>
+      <button class="home-btn home-btn-sub" onclick="showScreen('project')">🏗️ 工事別内訳</button>
     </div>
   </section>
 
@@ -77,6 +78,17 @@
         <div class="button-group" id="yearly-year-buttons"></div>
       </div>
       <div id="yearly-result"></div>
+    </div>
+  </section>
+
+  <!-- 工事別内訳画面 -->
+  <section id="screen-project" class="screen" style="display:none;">
+    <div class="section">
+      <h2>工事別内訳</h2>
+      <div class="check-row">
+        <div class="button-group" id="project-buttons"></div>
+      </div>
+      <div id="project-result"></div>
     </div>
   </section>
 
