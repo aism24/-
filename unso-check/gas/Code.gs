@@ -346,6 +346,20 @@ function findDuplicateRow_(candidateRow, existingRows) {
   return null;
 }
 
+// 取込み中の行群(newRows)が、既に取り込まれている行群(existingRows)と完全に同一内容かどうかを判定する。
+// 行数が異なる、またはDUPLICATE_CHECK_FIELDS(11項目)のいずれか1つでも不一致な行があれば「別内容」と判断する。
+// 同じファイルの誤った再アップロード検知用のため、行の並び順まで一致することを前提とする。
+function isExactSameBatch_(newRows, existingRows) {
+  if (newRows.length === 0 || newRows.length !== existingRows.length) return false;
+  for (let i = 0; i < newRows.length; i++) {
+    const matches = DUPLICATE_CHECK_FIELDS.every(field =>
+      normalizeForCompare_(field, newRows[i][field]) === normalizeForCompare_(field, existingRows[i][field])
+    );
+    if (!matches) return false;
+  }
+  return true;
+}
+
 // 対象外行(前月・来月混入分)を既存の配車データから削除する際に使う、書き込み用の一括削除
 function deleteHaulingRowsFor_(sh, map, company, closingMonth) {
   const lastRow = sh.getLastRow();
@@ -363,7 +377,9 @@ function deleteHaulingRowsFor_(sh, map, company, closingMonth) {
  * payload: {
  *   fileName: "20260820〆　山陰運送.xlsm",
  *   rows: [{ 物件名, 積日:"YYYY-MM-DD", 降日:"YYYY-MM-DD", ブロック, 節, 積荷, 現場待機,
- *            車種, 最大長さ, 総重量, 通常単価, エキストラ1, エキストラ2 }, ...]
+ *            車種, 最大長さ, 総重量, 通常単価, エキストラ1, エキストラ2 }, ...],
+ *   force: true (省略可) — 重複確認ポップアップでユーザーが「OK」を選んだ際、
+ *          クライアントがこのフラグを付けて再送することで、重複チェックをスキップして保存する。
  * }
  * 対象外行(前月分・来月分の混入)が1件でもあれば、今回のインポート全体を保存せず、
  * 一覧+理由を返す(担当者が業者に確認し、正しいファイルを再アップロードする運用)。
@@ -440,6 +456,18 @@ function importHaulingFile(payload) {
       imported: false, company: company, closingMonth: targetClosing,
       importedCount: 0, excludedRows: excludedRows,
     };
+  }
+
+  // 未確定の状態へ再アップロードする際、既に取り込まれている内容と完全に一致する場合は、
+  // 誤って同じファイルを再選択した可能性が高いため、force指定が無い限り保存せず重複を通知する。
+  if (!payload.force && existingStatus && existingStatus.状態 === "未確定") {
+    const currentRows = haulingRows_().filter(r => r.業者 === company && r.締め月 === targetClosing);
+    if (isExactSameBatch_(okRows, currentRows)) {
+      return {
+        imported: false, duplicate: true, company: company, closingMonth: targetClosing,
+        importedCount: 0, excludedRows: [],
+      };
+    }
   }
 
   return withLock_(() => {
