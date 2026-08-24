@@ -20,6 +20,9 @@ body {
   color: #fff; font-size: 18px; font-weight: bold; margin: 0;
 }
 .header-logo { height: 32px; width: auto; flex-shrink: 0; }
+/* ロゴの「masamiz」文字色: 背景が暗い場所では白抜き、明るい場所では黒(デフォルト) */
+.logo-text { fill: #000; }
+.app-header .logo-text { fill: #fff; }
 .header-back-btn {
   background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.3);
   border-radius: 8px; padding: 8px 14px; font-size: 14px; cursor: pointer;
