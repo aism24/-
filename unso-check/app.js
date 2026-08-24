@@ -335,36 +335,50 @@ function fiscalMonthToClosing(fiscalYear, month) {
 
 function fmtYen(n) { return "¥" + Math.round(n || 0).toLocaleString("ja-JP"); }
 
-// 業者は「日興」、締め月は実績のある最新の締め月(全業者共通)をデフォルトにする
-async function computeCheckDefaults_() {
-  const defaults = { company: "日本興運", fiscalYear: null, month: null };
-  try {
-    const statusList = await apiGet("listClosingStatus", {});
-    if (statusList.length > 0) {
-      const latest = statusList.map(s => s.締め月).sort().pop();
-      const [y, m] = latest.split("/").map(Number);
-      defaults.fiscalYear = m === 12 ? y + 1 : y;
-      defaults.month = m;
-    }
-  } catch (e) {
-    // 取得に失敗した場合はデフォルト未選択のままにする
-  }
-  return defaults;
+// 締め日文字列("YYYY/MM/DD")を会計年度+月ボタンの値に変換する(fiscalMonthToClosingの逆変換)
+function closingToFiscalYearMonth_(closingStr) {
+  const [y, m] = closingStr.split("/").map(Number);
+  return { fiscalYear: m === 12 ? y + 1 : y, month: m };
 }
 
+// 20日締めチェック画面の初期表示。以前は「年ボタンの選択肢取得」「デフォルト締め月の判定」
+// 「集計結果取得」の3回に分けてGASを呼んでいたため、呼び出しごとのオーバーヘッド(スプレッド
+// シートを開く処理等)が重なって表示が遅くなっていた。GAS側のgetCheckScreenInitに統合し、
+// 1回のリクエストで全て取得する。
 async function initCheckScreen() {
   checkState = { company: null, fiscalYear: null, month: null };
   document.getElementById("check-status-badge").innerHTML = "";
   document.getElementById("check-confirm-slot").innerHTML = "";
-  document.getElementById("check-result").innerHTML = "";
-  const defaults = await computeCheckDefaults_();
-  checkState.company = defaults.company;
-  checkState.fiscalYear = defaults.fiscalYear;
-  checkState.month = defaults.month;
+  const resultEl = document.getElementById("check-result");
+  const yearContainer = document.getElementById("check-year-buttons");
+  resultEl.innerHTML = "<p class=\"hint\">読み込み中...</p>";
+  yearContainer.innerHTML = "<span class=\"hint\">読み込み中...</span>";
+
+  let init;
+  try {
+    init = await apiGet("getCheckScreenInit");
+  } catch (err) {
+    resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
+    yearContainer.innerHTML = "";
+    return;
+  }
+
+  checkState.company = init.defaultCompany;
+  if (init.latestClosing) {
+    const fm = closingToFiscalYearMonth_(init.latestClosing);
+    checkState.fiscalYear = fm.fiscalYear;
+    checkState.month = fm.month;
+  }
+
   renderCheckCompanyButtons();
   renderCheckMonthButtons();
-  await renderCheckYearButtons();
-  await refreshCheckResult();
+  renderCheckYearButtons(init.years);
+
+  if (init.result) {
+    renderCheckResultData_(init.result);
+  } else {
+    resultEl.innerHTML = "";
+  }
 }
 
 function renderCheckCompanyButtons() {
@@ -395,15 +409,8 @@ function renderCheckMonthButtons() {
   });
 }
 
-async function renderCheckYearButtons() {
+function renderCheckYearButtons(years) {
   const container = document.getElementById("check-year-buttons");
-  container.innerHTML = "<span class=\"hint\">読み込み中...</span>";
-  let years;
-  try {
-    years = await apiGet("listAvailableYears");
-  } catch (e) {
-    years = [];
-  }
   if (years.length === 0) { container.innerHTML = "<span class=\"hint\">対象年度がありません</span>"; return; }
   container.innerHTML = years.map(y =>
     "<div class=\"year-btn-item\"><button type=\"button\" class=\"btn" + (y === checkState.fiscalYear ? " btn-primary" : "") + "\" data-year=\"" + y + "\">" + y + "年</button>" +
@@ -416,6 +423,30 @@ async function renderCheckYearButtons() {
       refreshCheckResult();
     };
   });
+}
+
+function renderCheckResultData_(data) {
+  const badgeEl = document.getElementById("check-status-badge");
+  const confirmSlot = document.getElementById("check-confirm-slot");
+  const resultEl = document.getElementById("check-result");
+  const badgeClass = data.status === "確定済み" ? "confirmed" : (data.status === "未確定" ? "pending" : "none");
+  badgeEl.innerHTML = "<span class=\"status-badge " + badgeClass + "\">" + data.status + "</span>";
+  let html = "<div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr>" +
+    "<th>工事名</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>請求額</th><th>消費税</th><th>合計請求額</th></tr></thead><tbody>";
+  data.projects.forEach(p => {
+    html += "<tr><td>" + p.物件名 + "</td><td>" + fmtYen(p.コラム横持) + "</td><td>" + fmtYen(p.製品横持) + "</td><td>" +
+      fmtYen(p.他横持) + "</td><td>" + fmtYen(p.メッキ費用) + "</td><td>" + fmtYen(p.現場搬入費用) + "</td><td>" +
+      (p.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(p.請求額) + "</td><td>" + fmtYen(p.消費税) + "</td><td>" + fmtYen(p.合計請求額) + "</td></tr>";
+  });
+  const t = data.total;
+  html += "<tr class=\"total-row\"><td>合計</td><td>" + fmtYen(t.コラム横持) + "</td><td>" + fmtYen(t.製品横持) + "</td><td>" +
+    fmtYen(t.他横持) + "</td><td>" + fmtYen(t.メッキ費用) + "</td><td>" + fmtYen(t.現場搬入費用) + "</td><td>" +
+    (t.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(t.請求額) + "</td><td>" + fmtYen(t.消費税) + "</td><td>" + fmtYen(t.合計請求額) + "</td></tr>";
+  html += "</tbody></table></div>";
+  resultEl.innerHTML = html;
+  confirmSlot.innerHTML = (data.status === "未確定" && data.projects.length > 0)
+    ? "<button class=\"btn btn-confirm\" onclick=\"confirmCurrentClosing()\">この内容で確定する(担当者チェック完了・支払可)</button>"
+    : "";
 }
 
 async function refreshCheckResult() {
@@ -432,24 +463,7 @@ async function refreshCheckResult() {
   resultEl.innerHTML = "<p class=\"hint\">読み込み中...</p>";
   try {
     const data = await apiGet("getClosingCheck", { company: checkState.company, closingMonth: closingMonth });
-    const badgeClass = data.status === "確定済み" ? "confirmed" : (data.status === "未確定" ? "pending" : "none");
-    badgeEl.innerHTML = "<span class=\"status-badge " + badgeClass + "\">" + data.status + "</span>";
-    let html = "<div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr>" +
-      "<th>工事名</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>請求額</th><th>消費税</th><th>合計請求額</th></tr></thead><tbody>";
-    data.projects.forEach(p => {
-      html += "<tr><td>" + p.物件名 + "</td><td>" + fmtYen(p.コラム横持) + "</td><td>" + fmtYen(p.製品横持) + "</td><td>" +
-        fmtYen(p.他横持) + "</td><td>" + fmtYen(p.メッキ費用) + "</td><td>" + fmtYen(p.現場搬入費用) + "</td><td>" +
-        (p.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(p.請求額) + "</td><td>" + fmtYen(p.消費税) + "</td><td>" + fmtYen(p.合計請求額) + "</td></tr>";
-    });
-    const t = data.total;
-    html += "<tr class=\"total-row\"><td>合計</td><td>" + fmtYen(t.コラム横持) + "</td><td>" + fmtYen(t.製品横持) + "</td><td>" +
-      fmtYen(t.他横持) + "</td><td>" + fmtYen(t.メッキ費用) + "</td><td>" + fmtYen(t.現場搬入費用) + "</td><td>" +
-      (t.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(t.請求額) + "</td><td>" + fmtYen(t.消費税) + "</td><td>" + fmtYen(t.合計請求額) + "</td></tr>";
-    html += "</tbody></table></div>";
-    resultEl.innerHTML = html;
-    confirmSlot.innerHTML = (data.status === "未確定" && data.projects.length > 0)
-      ? "<button class=\"btn btn-confirm\" onclick=\"confirmCurrentClosing()\">この内容で確定する(担当者チェック完了・支払可)</button>"
-      : "";
+    renderCheckResultData_(data);
   } catch (err) {
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
     confirmSlot.innerHTML = "";
@@ -503,16 +517,17 @@ async function renderYearlyYearButtons() {
   const resultEl = document.getElementById("yearly-result");
   container.innerHTML = "<span class=\"hint\">読み込み中...</span>";
   resultEl.innerHTML = "<p class=\"hint\">読み込み中...</p>";
-  let years, data;
+  let init;
   try {
-    [years, data] = await Promise.all([apiGet("listAvailableYears"), apiGet("getYearlySummary", {})]);
+    init = await apiGet("getYearlySummaryInit", {});
   } catch (err) {
     container.innerHTML = "";
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
     return;
   }
+  const data = init.summary;
   yearlyState.fiscalYear = data.fiscalYearEnd;
-  container.innerHTML = years.map(y =>
+  container.innerHTML = init.years.map(y =>
     "<div class=\"year-btn-item\"><button type=\"button\" class=\"btn" + (y === yearlyState.fiscalYear ? " btn-primary" : "") + "\" data-year=\"" + y + "\">" + y + "年</button>" +
     "<div class=\"year-period\">" + fiscalYearPeriodLabel(y) + "</div></div>"
   ).join("");

@@ -106,10 +106,11 @@ function doGet(e) {
   try {
     const p = e.parameter;
     if (p.action === "listCompanies") return ok_(listCompanies());
-    if (p.action === "listAvailableYears") return ok_(listAvailableYears());
     if (p.action === "listClosingStatus") return ok_(listClosingStatus(p.company || ""));
     if (p.action === "getClosingCheck") return ok_(getClosingCheck(p.company, p.closingMonth));
+    if (p.action === "getCheckScreenInit") return ok_(getCheckScreenInit());
     if (p.action === "getYearlySummary") return ok_(getYearlySummary(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
+    if (p.action === "getYearlySummaryInit") return ok_(getYearlySummaryInit(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
     return errRes_("不明なaction: " + p.action);
   } catch (err) {
     return errRes_(err.message);
@@ -540,9 +541,10 @@ function importHaulingFile(payload) {
 // 「20日締めチェック」: 業者+締め月を選択すると、工事名別の費用区分内訳・請求額・消費税・合計を返す。
 // 費用区分は保存済みの列値を信用せず、「ブロック」列から毎回classifyFeeType_で再判定する
 // (過去に別区分で保存された行があっても、常に最新の分類ロジックで正しく仕分けるため)。
-function getClosingCheck(company, closingMonth) {
+function getClosingCheck(company, closingMonth, rowsIn) {
   if (!company || !closingMonth) throw new Error("業者・締め月を指定してください");
-  const rows = haulingRows_().filter(r => r.業者 === company && r.締め月 === normalizeDateStr_(closingMonth));
+  const allRows = rowsIn || haulingRows_();
+  const rows = allRows.filter(r => r.業者 === company && r.締め月 === normalizeDateStr_(closingMonth));
   const byProject = {};
   rows.forEach(r => {
     const key = r.物件名 || "(物件名なし)";
@@ -577,13 +579,31 @@ function fiscalYearForClosingStr_(closingStr) {
   return m === 12 ? y + 1 : y;
 }
 
-// 20日締めチェック画面の「年」ボタン用: 配車データに実際に登録されている締め月から、
-// 該当する会計年度を重複排除・昇順で返す(現在の会計年度は、データが無くても常に含める)
-function listAvailableYears() {
+// 配車データの全行から、実際に登録されている締め月の会計年度を重複排除・昇順で返す
+// (現在の会計年度は、データが無くても常に含める)
+function availableYearsFromRows_(rows) {
   const years = {};
   years[currentFiscalYearEnd_()] = true;
-  haulingRows_().forEach(r => { if (r.締め月) years[fiscalYearForClosingStr_(r.締め月)] = true; });
+  rows.forEach(r => { if (r.締め月) years[fiscalYearForClosingStr_(r.締め月)] = true; });
   return Object.keys(years).map(Number).sort((a, b) => a - b);
+}
+
+// 20日締めチェック画面の初期表示用。配車データの読み込みを1回にまとめ、年ボタンの選択肢・
+// デフォルト業者(日興)・実績のある最新の締め月・その集計結果までを1回のリクエストで返す
+// (以前は年ボタン取得→デフォルト締め月取得→集計取得の3回に分かれており、GAS呼び出しごとの
+// オーバーヘッド(スプレッドシートを開く処理等)が重なって表示が遅くなっていたため統合した)。
+function getCheckScreenInit() {
+  const rows = haulingRows_();
+  const years = availableYearsFromRows_(rows);
+  let latestClosing = null;
+  rows.forEach(r => { if (r.締め月 && (!latestClosing || r.締め月 > latestClosing)) latestClosing = r.締め月; });
+  const defaultCompany = "日本興運";
+  return {
+    years: years,
+    defaultCompany: defaultCompany,
+    latestClosing: latestClosing,
+    result: latestClosing ? getClosingCheck(defaultCompany, latestClosing, rows) : null,
+  };
 }
 
 // 会計年度(11月21日始まり、翌年11月20日決算)内の12回の締め月を、fiscalYearEnd(決算年、
@@ -610,13 +630,14 @@ function currentFiscalYearEnd_() {
 // 「年度全体集計」: 年度・工事別・業者別の合計、費用区分別の内訳、月別(締め月単位)の内訳を返す。
 // 費用区分は保存済みの列値を信用せず、「ブロック」列から毎回classifyFeeType_で再判定する
 // (getClosingCheckと同じ方針。過去データも常に最新の分類ロジックで仕分けられる)。
-function getYearlySummary(fiscalYearEnd) {
+function getYearlySummary(fiscalYearEnd, rowsIn) {
   const fye = fiscalYearEnd || currentFiscalYearEnd_();
   const closingMonths = fiscalYearClosingMonths_(fye);
   const closingSet = {};
   closingMonths.forEach(c => { closingSet[c] = true; });
 
-  const rows = haulingRows_().filter(r => closingSet[r.締め月]);
+  const allRows = rowsIn || haulingRows_();
+  const rows = allRows.filter(r => closingSet[r.締め月]);
 
   const emptyFeeBucket_ = () => ({ コラム横持: 0, 製品横持: 0, 他横持: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 });
   const byProject = {};
@@ -657,6 +678,18 @@ function getYearlySummary(fiscalYearEnd) {
     工事別: Object.keys(byProject).map(k => byProject[k]),
     業者別: Object.keys(byCompany).map(k => byCompany[k]),
     月別: closingMonths.map(c => byMonth[c]),
+  };
+}
+
+// 年度集計画面の初期表示用。配車データの読み込みを1回にまとめ、年ボタンの選択肢と
+// (省略時は今年度の)集計結果を1回のリクエストで返す(以前は年ボタン取得と集計取得が
+// 別々のGAS呼び出しになっており、それぞれがスプレッドシートを開き直すオーバーヘッドで
+// 表示が遅くなっていたため統合した)。
+function getYearlySummaryInit(fiscalYearEnd) {
+  const rows = haulingRows_();
+  return {
+    years: availableYearsFromRows_(rows),
+    summary: getYearlySummary(fiscalYearEnd, rows),
   };
 }
 
