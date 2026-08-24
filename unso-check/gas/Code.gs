@@ -330,6 +330,14 @@ function classifyFeeType_(block) {
 
 function toNum_(v) { return Number(v) || 0; }
 
+// 値が空欄、または数値として0であるかを判定する(数値でない文字列は0とみなさない)
+function isBlankOrZero_(v) {
+  const s = String(v == null ? "" : v).trim();
+  if (s === "") return true;
+  const n = Number(s);
+  return !isNaN(n) && n === 0;
+}
+
 // 重複判定用に1項目分の値を比較可能な文字列に正規化する
 function normalizeForCompare_(field, value) {
   if (field === "積日" || field === "降日") return cellToYmd_(value);
@@ -421,6 +429,13 @@ function importHaulingFile(payload) {
     }
 
     if (rowClosing === targetClosing) {
+      if (classifyFeeType_(row["ブロック"]) === "現場搬入費用" && isBlankOrZero_(row["最大長さ"]) && isBlankOrZero_(row["総重量"])) {
+        excludedRows.push({
+          row: row, reason: "yard_zero_error", rowIndex: idx,
+          detail: "現場搬入費用に分類されていますが、最大長さ・総重量が両方ゼロです。値を確認のうえ業者に確認してください。",
+        });
+        return;
+      }
       okRows.push(row);
       return;
     }
@@ -534,7 +549,8 @@ function getClosingCheck(company, closingMonth) {
     if (!byProject[key]) byProject[key] = { 物件名: key, コラム横持: 0, 製品横持: 0, 他横持: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0 };
     const feeType = classifyFeeType_(r.ブロック);
     byProject[key][feeType] = (byProject[key][feeType] || 0) + toNum_(r.費用額);
-    byProject[key].重量 += toNum_(r.総重量);
+    // 重量は現場搬入費用分のみを集計する(横持4種・メッキ費用の重量は含めない)
+    if (feeType === "現場搬入費用") byProject[key].重量 += toNum_(r.総重量);
   });
   const projects = Object.keys(byProject).map(k => {
     const p = byProject[k];
@@ -613,20 +629,23 @@ function getYearlySummary(fiscalYearEnd) {
     const weight = toNum_(r.総重量);
     const feeType = classifyFeeType_(r.ブロック);
 
+    // 重量は現場搬入費用分のみを集計する(横持4種・メッキ費用の重量は含めない)
+    const yardWeight = feeType === "現場搬入費用" ? weight : 0;
+
     const pKey = r.物件名 || "(物件名なし)";
     if (!byProject[pKey]) byProject[pKey] = Object.assign({ 物件名: pKey }, emptyFeeBucket_());
     byProject[pKey][feeType] += amt;
-    byProject[pKey].重量 += weight;
+    byProject[pKey].重量 += yardWeight;
     byProject[pKey].合計 += amt;
 
     const cKey = r.業者 || "(業者不明)";
     if (!byCompany[cKey]) byCompany[cKey] = Object.assign({ 業者: cKey }, emptyFeeBucket_());
     byCompany[cKey][feeType] += amt;
-    byCompany[cKey].重量 += weight;
+    byCompany[cKey].重量 += yardWeight;
     byCompany[cKey].合計 += amt;
 
     byMonth[r.締め月][feeType] += amt;
-    byMonth[r.締め月].重量 += weight;
+    byMonth[r.締め月].重量 += yardWeight;
     byMonth[r.締め月].合計 += amt;
   });
 

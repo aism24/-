@@ -95,6 +95,7 @@ table.data-table th, table.data-table td { border: 1px solid #e2e5ea; padding: 8
 table.data-table th:first-child, table.data-table td:first-child { text-align: left; }
 table.data-table th { background: #f4f5f7; font-weight: bold; }
 table.data-table tr.total-row td { font-weight: bold; background: #fafbfc; }
+table.data-table tr.total-row td.grand-total-cell { color: #000; font-weight: 900; }
 
 .status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: bold; }
 .status-badge.confirmed { background: #e2f3e5; color: #2e7d32; }
