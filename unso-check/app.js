@@ -33,10 +33,6 @@ const SCREENS = ["home", "import", "check", "yearly"];
 function showScreen(name) {
   SCREENS.forEach(s => { document.getElementById("screen-" + s).style.display = (s === name) ? "block" : "none"; });
   document.getElementById("header-back-btn").style.display = (name === "home") ? "none" : "inline-block";
-  document.getElementById("header-title").textContent =
-    name === "home" ? "鳥取運送アプリ" :
-    name === "import" ? "Excel取り込み" :
-    name === "check" ? "20日締めチェック" : "年度集計";
   if (name === "check") initCheckScreen();
 }
 function goHome() { showScreen("home"); }
@@ -165,7 +161,10 @@ function parseHaulingSheet(workbook) {
 let pendingImport = null; // { fileName, rows }
 
 async function onFileSelected(event) {
-  const file = event.target.files[0];
+  await handleSelectedFile(event.target.files[0]);
+}
+
+async function handleSelectedFile(file) {
   const detectedInfo = document.getElementById("detected-info");
   const submitBtn = document.getElementById("import-submit-btn");
   const statusEl = document.getElementById("import-status");
@@ -198,6 +197,43 @@ async function onFileSelected(event) {
   }
 }
 
+// 画面全体へのドラッグ&ドロップ対応(「Excel取り込み」画面が表示されている時のみ)
+function setupImportDragDrop() {
+  const isImportScreenActive = () => document.getElementById("screen-import").style.display !== "none";
+  let dragDepth = 0;
+  window.addEventListener("dragenter", event => {
+    if (!isImportScreenActive()) return;
+    event.preventDefault();
+    dragDepth++;
+    document.body.classList.add("drag-over");
+  });
+  window.addEventListener("dragover", event => {
+    if (!isImportScreenActive()) return;
+    event.preventDefault();
+  });
+  window.addEventListener("dragleave", () => {
+    if (!isImportScreenActive()) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) document.body.classList.remove("drag-over");
+  });
+  window.addEventListener("drop", event => {
+    if (!isImportScreenActive()) return;
+    event.preventDefault();
+    dragDepth = 0;
+    document.body.classList.remove("drag-over");
+    const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+    if (file) handleSelectedFile(file);
+  });
+}
+document.addEventListener("DOMContentLoaded", setupImportDragDrop);
+
+function resetImportSelection() {
+  document.getElementById("file-input").value = "";
+  document.getElementById("detected-info").style.display = "none";
+  document.getElementById("import-submit-btn").style.display = "none";
+  pendingImport = null;
+}
+
 const REASON_LABELS = {
   delete_request: "削除依頼(前月確定済みと重複)",
   date_fix_request: "降日修正依頼(前月分だが重複データなし)",
@@ -222,7 +258,7 @@ function renderExcludedRows(excludedRows) {
   container.innerHTML = html;
 }
 
-async function submitImport() {
+async function submitImport(force) {
   if (!pendingImport) return;
   const statusEl = document.getElementById("import-status");
   const submitBtn = document.getElementById("import-submit-btn");
@@ -230,13 +266,29 @@ async function submitImport() {
   statusEl.textContent = "取り込み中...";
   statusEl.className = "import-status";
   try {
-    const result = await apiPost("importHaulingFile", pendingImport);
+    const payload = force ? Object.assign({}, pendingImport, { force: true }) : pendingImport;
+    const result = await apiPost("importHaulingFile", payload);
+    if (result.duplicate) {
+      statusEl.textContent = "";
+      const proceed = confirm(
+        "この内容は、既に取り込まれている " + result.company + " " + result.closingMonth + "〆 のデータと完全に一致しています。\n" +
+        "同じファイルを間違って選択していませんか？\n\n" +
+        "そのまま同じ内容で再取込みする場合は「OK」を、取り消す場合は「キャンセル」を押してください。"
+      );
+      if (proceed) {
+        await submitImport(true);
+      } else {
+        statusEl.textContent = "取り込みを中止しました(重複のため)。";
+        statusEl.className = "import-status error";
+      }
+      return;
+    }
     if (result.imported) {
       statusEl.textContent = "取り込み完了: " + result.company + " " + result.closingMonth + "〆 (" + result.importedCount + "行)。" +
         "内容を確認し、問題なければ「20日締めチェック」画面で確定してください。";
       statusEl.className = "import-status success";
       document.getElementById("excluded-rows-container").innerHTML = "";
-      document.getElementById("import-submit-btn").style.display = "none";
+      resetImportSelection();
     } else {
       statusEl.textContent = "対象外の行があったため、今回の取り込みは保存されませんでした。内容を確認し、正しいファイルを再アップロードしてください。";
       statusEl.className = "import-status error";
