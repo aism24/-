@@ -10,7 +10,7 @@
 <body>
 
 <header class="app-header">
-  <button id="header-back-btn" class="header-back-btn" onclick="goHome()" style="display:none;">← ホーム</button>
+  <div class="header-title-group">
   <h1 class="header-title">
     <svg class="header-logo" role="img" aria-label="masamiz" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 464 514">
       <!-- 正光 (masamiz) Logo Mark -->
@@ -20,7 +20,8 @@
     </svg>
     <span id="header-title">鳥取運送アプリ</span>
   </h1>
-  <span class="header-spacer"></span>
+  <button id="header-back-btn" class="header-back-btn" onclick="goHome()" style="display:none;">← ホーム</button>
+  </div>
 </header>
 
 <main id="app">
@@ -51,15 +52,17 @@
   <!-- 20日締めチェック画面 -->
   <section id="screen-check" class="screen" style="display:none;">
     <div class="section">
-      <h2>20日締めチェック</h2>
-      <div class="filter-row">
-        <label>業者
-          <select id="check-company"></select>
-        </label>
-        <label>締め月
-          <select id="check-closing-month"></select>
-        </label>
-        <button class="btn" onclick="loadClosingCheck()">表示</button>
+      <div class="check-title-row">
+        <h2>20日締めチェック</h2>
+        <span id="check-confirm-slot"></span>
+      </div>
+      <div class="check-row">
+        <div class="button-group" id="check-company-buttons"></div>
+        <span id="check-status-badge"></span>
+      </div>
+      <div class="check-row">
+        <div class="button-group" id="check-year-buttons"></div>
+        <div class="button-group" id="check-month-buttons"></div>
       </div>
       <div id="check-result"></div>
     </div>

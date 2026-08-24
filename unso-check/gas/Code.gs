@@ -106,6 +106,7 @@ function doGet(e) {
   try {
     const p = e.parameter;
     if (p.action === "listCompanies") return ok_(listCompanies());
+    if (p.action === "listAvailableYears") return ok_(listAvailableYears());
     if (p.action === "listClosingStatus") return ok_(listClosingStatus(p.company || ""));
     if (p.action === "getClosingCheck") return ok_(getClosingCheck(p.company, p.closingMonth));
     if (p.action === "getYearlySummary") return ok_(getYearlySummary(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
@@ -316,10 +317,14 @@ function nextHaulingId_(sh, idCol) {
 }
 
 // ブロック(積地)の文字列から費用区分を自動判定する
+// 横持は種別番号でさらに細分化する: 横持1=コラム横持、横持3=製品横持、横持2・横持4=他横持
 function classifyFeeType_(block) {
   const b = String(block || "");
   if (b.indexOf("メッキ") !== -1) return "メッキ費用";
-  if (b.indexOf("横持") !== -1) return "横持費用";
+  if (b.indexOf("横持1") !== -1) return "コラム横持";
+  if (b.indexOf("横持3") !== -1) return "製品横持";
+  if (b.indexOf("横持2") !== -1 || b.indexOf("横持4") !== -1) return "他横持";
+  if (b.indexOf("横持") !== -1) return "他横持";
   return "現場搬入費用";
 }
 
@@ -517,32 +522,52 @@ function importHaulingFile(payload) {
 
 // ---------- 集計・分析 ----------
 
-// 「20日締めチェック」: 業者+締め月を選択すると、工事名別の費用区分内訳・請求額・消費税・合計を返す
+// 「20日締めチェック」: 業者+締め月を選択すると、工事名別の費用区分内訳・請求額・消費税・合計を返す。
+// 費用区分は保存済みの列値を信用せず、「ブロック」列から毎回classifyFeeType_で再判定する
+// (過去に別区分で保存された行があっても、常に最新の分類ロジックで正しく仕分けるため)。
 function getClosingCheck(company, closingMonth) {
   if (!company || !closingMonth) throw new Error("業者・締め月を指定してください");
   const rows = haulingRows_().filter(r => r.業者 === company && r.締め月 === normalizeDateStr_(closingMonth));
   const byProject = {};
   rows.forEach(r => {
     const key = r.物件名 || "(物件名なし)";
-    if (!byProject[key]) byProject[key] = { 物件名: key, 横持費用: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0 };
-    byProject[key][r.費用区分] = (byProject[key][r.費用区分] || 0) + toNum_(r.費用額);
+    if (!byProject[key]) byProject[key] = { 物件名: key, コラム横持: 0, 製品横持: 0, 他横持: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0 };
+    const feeType = classifyFeeType_(r.ブロック);
+    byProject[key][feeType] = (byProject[key][feeType] || 0) + toNum_(r.費用額);
     byProject[key].重量 += toNum_(r.総重量);
   });
   const projects = Object.keys(byProject).map(k => {
     const p = byProject[k];
-    p.請求額 = p.横持費用 + p.メッキ費用 + p.現場搬入費用;
+    p.請求額 = p.コラム横持 + p.製品横持 + p.他横持 + p.メッキ費用 + p.現場搬入費用;
     p.消費税 = Math.round(p.請求額 * 0.1);
     p.合計請求額 = p.請求額 + p.消費税;
     return p;
   });
   const total = projects.reduce((acc, p) => {
-    acc.横持費用 += p.横持費用; acc.メッキ費用 += p.メッキ費用; acc.現場搬入費用 += p.現場搬入費用;
+    acc.コラム横持 += p.コラム横持; acc.製品横持 += p.製品横持; acc.他横持 += p.他横持;
+    acc.メッキ費用 += p.メッキ費用; acc.現場搬入費用 += p.現場搬入費用;
     acc.重量 += p.重量; acc.請求額 += p.請求額; acc.消費税 += p.消費税; acc.合計請求額 += p.合計請求額;
     return acc;
-  }, { 横持費用: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 請求額: 0, 消費税: 0, 合計請求額: 0 });
+  }, { コラム横持: 0, 製品横持: 0, 他横持: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 請求額: 0, 消費税: 0, 合計請求額: 0 });
 
   const status = findStatusRow_(company, normalizeDateStr_(closingMonth));
   return { company: company, closingMonth: normalizeDateStr_(closingMonth), status: status ? status.状態 : "未取込", projects: projects, total: total };
+}
+
+// 締め日文字列("YYYY/MM/DD")が属する会計年度(11月21日始まり、翌年11月20日決算)を返す。
+// 12月分の締めは翌年の会計年度に属する(fiscalYearClosingMonths_の逆変換)
+function fiscalYearForClosingStr_(closingStr) {
+  const { y, m } = splitDateStr_(closingStr);
+  return m === 12 ? y + 1 : y;
+}
+
+// 20日締めチェック画面の「年」ボタン用: 配車データに実際に登録されている締め月から、
+// 該当する会計年度を重複排除・昇順で返す(現在の会計年度は、データが無くても常に含める)
+function listAvailableYears() {
+  const years = {};
+  years[currentFiscalYearEnd_()] = true;
+  haulingRows_().forEach(r => { if (r.締め月) years[fiscalYearForClosingStr_(r.締め月)] = true; });
+  return Object.keys(years).map(Number).sort((a, b) => a - b);
 }
 
 // 会計年度(11月21日始まり、翌年11月20日決算)内の12回の締め月を、fiscalYearEnd(決算年、
@@ -566,7 +591,9 @@ function currentFiscalYearEnd_() {
   return y;
 }
 
-// 「年度全体集計」: 年度・工事別・業者別の合計、費用区分別の内訳、月別(締め月単位)の内訳を返す
+// 「年度全体集計」: 年度・工事別・業者別の合計、費用区分別の内訳、月別(締め月単位)の内訳を返す。
+// 費用区分は保存済みの列値を信用せず、「ブロック」列から毎回classifyFeeType_で再判定する
+// (getClosingCheckと同じ方針。過去データも常に最新の分類ロジックで仕分けられる)。
 function getYearlySummary(fiscalYearEnd) {
   const fye = fiscalYearEnd || currentFiscalYearEnd_();
   const closingMonths = fiscalYearClosingMonths_(fye);
@@ -575,28 +602,30 @@ function getYearlySummary(fiscalYearEnd) {
 
   const rows = haulingRows_().filter(r => closingSet[r.締め月]);
 
+  const emptyFeeBucket_ = () => ({ コラム横持: 0, 製品横持: 0, 他横持: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 });
   const byProject = {};
   const byCompany = {};
   const byMonth = {};
-  closingMonths.forEach(c => { byMonth[c] = { 締め月: c, 横持費用: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 }; });
+  closingMonths.forEach(c => { byMonth[c] = Object.assign({ 締め月: c }, emptyFeeBucket_()); });
 
   rows.forEach(r => {
     const amt = toNum_(r.費用額);
     const weight = toNum_(r.総重量);
+    const feeType = classifyFeeType_(r.ブロック);
 
     const pKey = r.物件名 || "(物件名なし)";
-    if (!byProject[pKey]) byProject[pKey] = { 物件名: pKey, 横持費用: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 };
-    byProject[pKey][r.費用区分] += amt;
+    if (!byProject[pKey]) byProject[pKey] = Object.assign({ 物件名: pKey }, emptyFeeBucket_());
+    byProject[pKey][feeType] += amt;
     byProject[pKey].重量 += weight;
     byProject[pKey].合計 += amt;
 
     const cKey = r.業者 || "(業者不明)";
-    if (!byCompany[cKey]) byCompany[cKey] = { 業者: cKey, 横持費用: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 };
-    byCompany[cKey][r.費用区分] += amt;
+    if (!byCompany[cKey]) byCompany[cKey] = Object.assign({ 業者: cKey }, emptyFeeBucket_());
+    byCompany[cKey][feeType] += amt;
     byCompany[cKey].重量 += weight;
     byCompany[cKey].合計 += amt;
 
-    byMonth[r.締め月][r.費用区分] += amt;
+    byMonth[r.締め月][feeType] += amt;
     byMonth[r.締め月].重量 += weight;
     byMonth[r.締め月].合計 += amt;
   });
