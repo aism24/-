@@ -31,6 +31,17 @@ body {
 
 main { max-width: 960px; margin: 0 auto; padding: 16px; }
 
+/* Excel取り込み画面でファイルをドラッグしている間、画面全体をドロップ可能として強調表示する */
+body.drag-over::after {
+  content: "ここにファイルをドロップして取り込み";
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  border: 4px dashed #ff9800;
+  background: rgba(255,152,0,0.10);
+  color: #e65100; font-size: 20px; font-weight: bold;
+  pointer-events: none;
+}
+
 .home-buttons { display: flex; flex-direction: column; gap: 16px; padding: 32px 8px; }
 .home-btn {
   padding: 22px 20px; font-size: 18px; font-weight: bold; border: none; border-radius: 12px;
