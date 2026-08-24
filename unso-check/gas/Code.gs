@@ -1,0 +1,637 @@
+/**
+ * 「鳥取運送アプリ」(運送業者の配車データ取込み・締め月チェック・年度集計)のGAS APIバックエンド。
+ *
+ * このスクリプトは、データストアとなるスプレッドシート(「鳥取運送アプリ」)の
+ * 「拡張機能→Apps Script」から作成するコンテナバインド型スクリプトとして使う前提です。
+ * SpreadsheetApp.getActiveSpreadsheet()で自分自身のスプレッドシートを参照するため、
+ * SPREADSHEET_IDの設定は不要です。
+ *
+ * 初回セットアップ: このファイルを保存後、Apps Scriptエディタ上部の関数選択で
+ * 「setupSheets」を選び、▶実行ボタンを押してください(1回だけでよい。シート・見出し・
+ * 業者マスタの初期データを自動作成します。既にシートがある場合は何もしません)。
+ *
+ * 業務ルールの詳細は「鳥取運送アプリ_引き継ぎ書」を参照。要点:
+ *   - 締め月は「21日始まり・20日締め」(前月21日〜当月20日)
+ *   - 業者・締め月はアップロードされたExcelファイル名(「YYYYMMDD〆　<業者名>」)から判定する
+ *   - 各行の降日が対象締め月からズレている場合は取り込まず、一覧+理由を返す(修正依頼フロー)
+ *   - 確定(状態=確定済み)=担当者チェック完了=検収完了=支払完了とみなす
+ */
+
+const SHEET_HAULING = "配車データ";
+const SHEET_STATUS = "締め状態";
+const SHEET_COMPANY = "業者マスタ";
+
+const DEFAULT_COMPANIES = ["日本興運", "誠和梱包", "用瀬運送", "川崎クレーン", "鳥取グレーン", "山陰運送"];
+
+const HAULING_HEADERS = [
+  "ID", "業者", "締め月", "物件名", "積日", "降日", "ブロック", "節", "積荷", "現場待機",
+  "車種", "最大長さ", "総重量", "通常単価", "エキストラ1", "エキストラ2",
+  "費用区分", "費用額", "取込日時", "元ファイル名",
+];
+const STATUS_HEADERS = ["業者", "締め月", "状態", "取込日時", "確定日時"];
+const COMPANY_HEADERS = ["業者名"];
+
+// 重複判定(前月分混入チェック)で比較する項目。この並び順のまま比較する。
+const DUPLICATE_CHECK_FIELDS = [
+  "物件名", "積日", "降日", "ブロック", "節", "積荷", "現場待機", "車種", "最大長さ", "総重量", "通常単価",
+];
+const DUPLICATE_MATCH_THRESHOLD = 7; // 11項目中7項目以上一致で「同一」と判断する
+
+// 日付・日時のような文字列("2026/08/20"等)は、Sheetsに書き込むとセルが自動的に
+// 日付型に変換されてしまう(setValueの既知の挙動)。この変換が起きると文字列としての
+// 完全一致比較(締め月フィルタ・重複判定)が壊れるため、該当列は明示的にテキスト書式(@)を
+// 適用して自動変換を防ぐ。
+const DATE_LIKE_HAULING_COLS = ["締め月", "積日", "降日", "取込日時"];
+const DATE_LIKE_STATUS_COLS = ["締め月", "取込日時", "確定日時"];
+
+// ---------- 初回セットアップ(Apps Scriptエディタから手動で1回だけ実行) ----------
+
+function setupSheets() {
+  const ss = ss_();
+  const haulingSheet = ensureSheet_(ss, SHEET_HAULING, HAULING_HEADERS);
+  const statusSheet = ensureSheet_(ss, SHEET_STATUS, STATUS_HEADERS);
+  const companySheet = ensureSheet_(ss, SHEET_COMPANY, COMPANY_HEADERS);
+  if (companySheet.getLastRow() < 2) {
+    companySheet.getRange(2, 1, DEFAULT_COMPANIES.length, 1)
+      .setValues(DEFAULT_COMPANIES.map(name => [name]));
+  }
+  // 既存シートに対しても毎回再適用する(何度実行しても安全)
+  forceTextColumns_(haulingSheet, DATE_LIKE_HAULING_COLS);
+  forceTextColumns_(statusSheet, DATE_LIKE_STATUS_COLS);
+  Logger.log("セットアップ完了");
+}
+
+// 動作確認中に日付型として誤って保存されてしまったテスト・過去データを全て削除し、
+// 配車データ・締め状態を空の状態に戻す(見出し行は残す)。Apps Scriptエディタから
+// 手動で1回だけ実行する想定の関数(doGet/doPostからは呼ばない)。
+function resetAllData() {
+  [SHEET_HAULING, SHEET_STATUS].forEach(name => {
+    const sh = sheet_(name);
+    const lastRow = sh.getLastRow();
+    if (lastRow > 1) sh.deleteRows(2, lastRow - 1);
+  });
+  Logger.log("配車データ・締め状態をリセットしました");
+}
+
+function ensureSheet_(ss, name, headers) {
+  let sh = ss.getSheetByName(name);
+  if (sh) return sh;
+  sh = ss.insertSheet(name);
+  sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sh.setFrozenRows(1);
+  sh.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+  return sh;
+}
+
+// 指定した列名(見出し名)の全データ行に、プレーンテキスト書式(@)を適用する
+function forceTextColumns_(sheet, colNames) {
+  const map = headerMap_(sheet);
+  const numRows = Math.max(sheet.getMaxRows() - 1, 1);
+  colNames.forEach(name => {
+    const col = map[name];
+    if (!col) return;
+    sheet.getRange(2, col, numRows, 1).setNumberFormat("@");
+  });
+}
+
+// ---------- JSON API共通 ----------
+
+function jsonResponse_(payload) {
+  return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
+}
+function ok_(data) { return jsonResponse_({ status: "success", data: data }); }
+function errRes_(message) { return jsonResponse_({ status: "error", message: message }); }
+
+function doGet(e) {
+  try {
+    const p = e.parameter;
+    if (p.action === "listCompanies") return ok_(listCompanies());
+    if (p.action === "listClosingStatus") return ok_(listClosingStatus(p.company || ""));
+    if (p.action === "getClosingCheck") return ok_(getClosingCheck(p.company, p.closingMonth));
+    if (p.action === "getYearlySummary") return ok_(getYearlySummary(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
+    return errRes_("不明なaction: " + p.action);
+  } catch (err) {
+    return errRes_(err.message);
+  }
+}
+
+function doPost(e) {
+  try {
+    const body = JSON.parse(e.postData.contents);
+    if (body.action === "importHaulingFile") return ok_(importHaulingFile(body));
+    if (body.action === "confirmClosing") return ok_(confirmClosing(body.company, body.closingMonth));
+    if (body.action === "bulkImportLegacy") return ok_(bulkImportLegacy(body));
+    return errRes_("不明なaction: " + body.action);
+  } catch (err) {
+    return errRes_(err.message);
+  }
+}
+
+// ---------- 共通ヘルパー ----------
+
+function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
+
+function sheet_(name) {
+  const sh = ss_().getSheetByName(name);
+  if (!sh) throw new Error("シートが見つかりません。setupSheetsを実行してください: " + name);
+  return sh;
+}
+
+function headerMap_(sheet) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol < 1) return {};
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const map = {};
+  headers.forEach((h, i) => {
+    const name = String(h || "").trim();
+    if (name) map[name] = i + 1;
+  });
+  return map;
+}
+
+function withLock_(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
+function nowStr_() {
+  return Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy/MM/dd HH:mm:ss");
+}
+
+function pad2_(n) { return (n < 10 ? "0" : "") + n; }
+
+function ymd_(y, m, d) { return y + "/" + pad2_(m) + "/" + pad2_(d); }
+
+// "YYYY-MM-DD" または "YYYY/MM/DD" 形式の日付文字列を { y, m, d } に分解する
+function splitDateStr_(s) {
+  const parts = String(s || "").trim().split(/[-\/]/).map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) throw new Error("日付の形式が不正です: " + s);
+  return { y: parts[0], m: parts[1], d: parts[2] };
+}
+
+function normalizeDateStr_(s) {
+  if (!s) return "";
+  const { y, m, d } = splitDateStr_(s);
+  return ymd_(y, m, d);
+}
+
+// スプレッドシートのセルから読み取った値を "yyyy/MM/dd" 文字列に正規化する。
+// setValues()に日付らしい文字列を渡すとセルが自動的に日付型に変換されてしまうことがあるため、
+// 実際に読み取った値がDateオブジェクトであっても正しく比較できるようにする(forceTextColumns_で
+// 今後の自動変換自体は防止しているが、既存データや想定外の入力に対する保険として残す)。
+function cellToYmd_(v) {
+  if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, "Asia/Tokyo", "yyyy/MM/dd");
+  if (!v) return "";
+  try { return normalizeDateStr_(v); } catch (e) { return String(v).trim(); }
+}
+
+// 「21日始まり・20日締め」ルール: 降日から、その配送が属する締め月(その月20日、または
+// 21日以降なら翌月20日)を求める
+function closingMonthFromDateStr_(dateStr) {
+  const { y, m, d } = splitDateStr_(dateStr);
+  if (d <= 20) return ymd_(y, m, 20);
+  let y2 = y, m2 = m + 1;
+  if (m2 > 12) { m2 = 1; y2 += 1; }
+  return ymd_(y2, m2, 20);
+}
+
+function shiftClosingMonth_(closingStr, deltaMonths) {
+  const { y, m } = splitDateStr_(closingStr);
+  let total = (y * 12 + (m - 1)) + deltaMonths;
+  const y2 = Math.floor(total / 12);
+  const m2 = (total % 12) + 1;
+  return ymd_(y2, m2, 20);
+}
+
+// ファイル名(例: "20260820〆　山陰運送.xlsm")から締め日・業者を判定する
+function parseFileName_(fileName) {
+  const name = String(fileName || "");
+  const dateMatch = name.match(/(\d{4})(\d{2})(\d{2})/);
+  if (!dateMatch) throw new Error("ファイル名から締め日(YYYYMMDD)を読み取れません: " + fileName);
+  const closingMonth = ymd_(Number(dateMatch[1]), Number(dateMatch[2]), Number(dateMatch[3]));
+
+  const companies = listCompanies();
+  const normalize = s => String(s || "").replace(/﨑/g, "崎");
+  const normalizedName = normalize(name);
+  const company = companies.find(c => normalizedName.indexOf(normalize(c)) !== -1);
+  if (!company) throw new Error("ファイル名から業者名を判定できません(業者マスタに無い名称です): " + fileName);
+
+  return { company: company, closingMonth: closingMonth };
+}
+
+function listCompanies() {
+  const sh = sheet_(SHEET_COMPANY);
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return [];
+  return sh.getRange(2, 1, lastRow - 1, 1).getValues().map(r => String(r[0] || "").trim()).filter(v => v);
+}
+
+// ---------- 締め状態 ----------
+
+function statusRows_() {
+  const sh = sheet_(SHEET_STATUS);
+  const map = headerMap_(sh);
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return [];
+  const values = sh.getRange(2, 1, lastRow - 1, STATUS_HEADERS.length).getValues();
+  return values.map((row, i) => ({
+    sheetRow: i + 2,
+    業者: row[map["業者"] - 1],
+    締め月: cellToYmd_(row[map["締め月"] - 1]),
+    状態: row[map["状態"] - 1],
+    取込日時: row[map["取込日時"] - 1],
+    確定日時: row[map["確定日時"] - 1],
+  }));
+}
+
+function listClosingStatus(company) {
+  const rows = statusRows_();
+  return rows
+    .filter(r => !company || r.業者 === company)
+    .map(r => ({ 業者: r.業者, 締め月: r.締め月, 状態: r.状態, 取込日時: r.取込日時, 確定日時: r.確定日時 }));
+}
+
+function findStatusRow_(company, closingMonth) {
+  const rows = statusRows_();
+  return rows.find(r => r.業者 === company && r.締め月 === closingMonth) || null;
+}
+
+function upsertStatus_(company, closingMonth, status, extra) {
+  const sh = sheet_(SHEET_STATUS);
+  const map = headerMap_(sh);
+  const existing = findStatusRow_(company, closingMonth);
+  const now = nowStr_();
+  if (existing) {
+    sh.getRange(existing.sheetRow, map["状態"]).setValue(status);
+    if (extra && extra.取込日時) sh.getRange(existing.sheetRow, map["取込日時"]).setValue(now);
+    if (extra && extra.確定日時) sh.getRange(existing.sheetRow, map["確定日時"]).setValue(now);
+    return;
+  }
+  const row = new Array(STATUS_HEADERS.length).fill("");
+  row[map["業者"] - 1] = company;
+  row[map["締め月"] - 1] = closingMonth;
+  row[map["状態"] - 1] = status;
+  if (extra && extra.取込日時) row[map["取込日時"] - 1] = now;
+  if (extra && extra.確定日時) row[map["確定日時"] - 1] = now;
+  sh.appendRow(row);
+}
+
+function confirmClosing(company, closingMonth) {
+  if (!company || !closingMonth) throw new Error("業者・締め月を指定してください");
+  return withLock_(() => {
+    const existing = findStatusRow_(company, closingMonth);
+    if (!existing) throw new Error("取り込み済みのデータがありません: " + company + " " + closingMonth);
+    if (existing.状態 === "確定済み") return { ok: true, alreadyConfirmed: true };
+    upsertStatus_(company, closingMonth, "確定済み", { 確定日時: true });
+    return { ok: true };
+  });
+}
+
+// ---------- 配車データ ----------
+
+function haulingRows_() {
+  const sh = sheet_(SHEET_HAULING);
+  const map = headerMap_(sh);
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return [];
+  const values = sh.getRange(2, 1, lastRow - 1, HAULING_HEADERS.length).getValues();
+  return values
+    .filter(row => row[map["ID"] - 1] !== "" && row[map["ID"] - 1] !== null)
+    .map((row, i) => {
+      const obj = { sheetRow: i + 2 };
+      HAULING_HEADERS.forEach(h => { obj[h] = row[map[h] - 1]; });
+      obj["締め月"] = cellToYmd_(obj["締め月"]);
+      obj["積日"] = cellToYmd_(obj["積日"]);
+      obj["降日"] = cellToYmd_(obj["降日"]);
+      return obj;
+    });
+}
+
+function nextHaulingId_(sh, idCol) {
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return 1;
+  const ids = sh.getRange(2, idCol, lastRow - 1, 1).getValues().map(r => Number(r[0]) || 0);
+  return Math.max(0, ...ids) + 1;
+}
+
+// ブロック(積地)の文字列から費用区分を自動判定する
+function classifyFeeType_(block) {
+  const b = String(block || "");
+  if (b.indexOf("メッキ") !== -1) return "メッキ費用";
+  if (b.indexOf("横持") !== -1) return "横持費用";
+  return "現場搬入費用";
+}
+
+function toNum_(v) { return Number(v) || 0; }
+
+// 重複判定用に1項目分の値を比較可能な文字列に正規化する
+function normalizeForCompare_(field, value) {
+  if (field === "積日" || field === "降日") return cellToYmd_(value);
+  if (field === "総重量" || field === "通常単価") return String(Math.round(toNum_(value) * 100) / 100);
+  return String(value == null ? "" : value).trim();
+}
+
+// candidateRow(取込み中の行)とexistingRows(前月の確定済みデータ)を比較し、
+// DUPLICATE_CHECK_FIELDSのうちDUPLICATE_MATCH_THRESHOLD項目以上一致する行があれば「同一」と判断する
+function findDuplicateRow_(candidateRow, existingRows) {
+  for (let i = 0; i < existingRows.length; i++) {
+    const ex = existingRows[i];
+    let matchCount = 0;
+    DUPLICATE_CHECK_FIELDS.forEach(field => {
+      if (normalizeForCompare_(field, candidateRow[field]) === normalizeForCompare_(field, ex[field])) matchCount += 1;
+    });
+    if (matchCount >= DUPLICATE_MATCH_THRESHOLD) return ex;
+  }
+  return null;
+}
+
+// 対象外行(前月・来月混入分)を既存の配車データから削除する際に使う、書き込み用の一括削除
+function deleteHaulingRowsFor_(sh, map, company, closingMonth) {
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return;
+  const values = sh.getRange(2, 1, lastRow - 1, HAULING_HEADERS.length).getValues();
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (values[i][map["業者"] - 1] === company && cellToYmd_(values[i][map["締め月"] - 1]) === closingMonth) {
+      sh.deleteRow(i + 2);
+    }
+  }
+}
+
+/**
+ * 業者から受け取ったExcel(配車シート)の取込み。
+ * payload: {
+ *   fileName: "20260820〆　山陰運送.xlsm",
+ *   rows: [{ 物件名, 積日:"YYYY-MM-DD", 降日:"YYYY-MM-DD", ブロック, 節, 積荷, 現場待機,
+ *            車種, 最大長さ, 総重量, 通常単価, エキストラ1, エキストラ2 }, ...]
+ * }
+ * 対象外行(前月分・来月分の混入)が1件でもあれば、今回のインポート全体を保存せず、
+ * 一覧+理由を返す(担当者が業者に確認し、正しいファイルを再アップロードする運用)。
+ */
+function importHaulingFile(payload) {
+  const fileName = payload.fileName;
+  const rowsIn = payload.rows || [];
+  const parsed = parseFileName_(fileName);
+  const company = parsed.company;
+  const targetClosing = parsed.closingMonth;
+
+  const existingStatus = findStatusRow_(company, targetClosing);
+  if (existingStatus && existingStatus.状態 === "確定済み") {
+    throw new Error("このファイルは既に取り込み済みです(確定済み): " + company + " " + targetClosing + "〆");
+  }
+
+  const prevClosing = shiftClosingMonth_(targetClosing, -1);
+  const confirmedPrevRows = haulingRows_().filter(r => r.業者 === company && r.締め月 === prevClosing);
+
+  const okRows = [];
+  const excludedRows = [];
+
+  rowsIn.forEach((row, idx) => {
+    const 物件名 = String(row["物件名"] || "").trim();
+    const 降日 = row["降日"];
+    if (!物件名 && !降日) return; // 空行はスキップ
+
+    let rowClosing;
+    try {
+      rowClosing = closingMonthFromDateStr_(降日);
+    } catch (e) {
+      excludedRows.push({ row: row, reason: "date_invalid", detail: "降日の形式が不正です: " + 降日, rowIndex: idx });
+      return;
+    }
+
+    if (rowClosing === targetClosing) {
+      okRows.push(row);
+      return;
+    }
+
+    if (rowClosing === prevClosing) {
+      const dup = findDuplicateRow_(row, confirmedPrevRows);
+      if (dup) {
+        excludedRows.push({
+          row: row, reason: "delete_request", rowIndex: idx,
+          detail: "前月(" + prevClosing + "〆)に同一内容が確定済みのため、業者にこの行の削除を依頼してください。",
+        });
+      } else {
+        excludedRows.push({
+          row: row, reason: "date_fix_request", rowIndex: idx,
+          detail: "降日が前月(" + prevClosing + "〆)分になっていますが前月分に同一データが無いため、正しい降日に修正して再送するよう業者に依頼してください。",
+        });
+      }
+      return;
+    }
+
+    const nextClosing = shiftClosingMonth_(targetClosing, 1);
+    if (rowClosing === nextClosing) {
+      excludedRows.push({
+        row: row, reason: "next_month_review", rowIndex: idx,
+        detail: "降日が来月(" + nextClosing + "〆)分になっています。担当者が内容を確認して対応を判断してください。",
+      });
+      return;
+    }
+
+    excludedRows.push({
+      row: row, reason: "date_mismatch_review", rowIndex: idx,
+      detail: "降日(" + 降日 + ")が今回の締め月(" + targetClosing + "〆)からズレています。担当者が内容を確認してください。",
+    });
+  });
+
+  if (excludedRows.length > 0) {
+    return {
+      imported: false, company: company, closingMonth: targetClosing,
+      importedCount: 0, excludedRows: excludedRows,
+    };
+  }
+
+  return withLock_(() => {
+    const sh = sheet_(SHEET_HAULING);
+    const map = headerMap_(sh);
+    // 未確定の状態への再アップロードは、修正後の正しいファイルとして前回分を置き換える
+    deleteHaulingRowsFor_(sh, map, company, targetClosing);
+
+    const idCol = map["ID"];
+    let nextId = nextHaulingId_(sh, idCol);
+    const now = nowStr_();
+    const outRows = okRows.map(row => {
+      const feeType = classifyFeeType_(row["ブロック"]);
+      const feeAmount = toNum_(row["通常単価"]) + toNum_(row["エキストラ1"]) + toNum_(row["エキストラ2"]);
+      const out = new Array(HAULING_HEADERS.length).fill("");
+      out[map["ID"] - 1] = nextId++;
+      out[map["業者"] - 1] = company;
+      out[map["締め月"] - 1] = targetClosing;
+      out[map["物件名"] - 1] = row["物件名"] || "";
+      out[map["積日"] - 1] = row["積日"] || "";
+      out[map["降日"] - 1] = row["降日"] || "";
+      out[map["ブロック"] - 1] = row["ブロック"] || "";
+      out[map["節"] - 1] = row["節"] || "";
+      out[map["積荷"] - 1] = row["積荷"] || "";
+      out[map["現場待機"] - 1] = row["現場待機"] || "";
+      out[map["車種"] - 1] = row["車種"] || "";
+      out[map["最大長さ"] - 1] = row["最大長さ"] || "";
+      out[map["総重量"] - 1] = toNum_(row["総重量"]);
+      out[map["通常単価"] - 1] = toNum_(row["通常単価"]);
+      out[map["エキストラ1"] - 1] = toNum_(row["エキストラ1"]);
+      out[map["エキストラ2"] - 1] = toNum_(row["エキストラ2"]);
+      out[map["費用区分"] - 1] = feeType;
+      out[map["費用額"] - 1] = feeAmount;
+      out[map["取込日時"] - 1] = now;
+      out[map["元ファイル名"] - 1] = fileName;
+      return out;
+    });
+
+    if (outRows.length > 0) {
+      sh.getRange(sh.getLastRow() + 1, 1, outRows.length, HAULING_HEADERS.length).setValues(outRows);
+    }
+    upsertStatus_(company, targetClosing, "未確定", { 取込日時: true });
+
+    return { imported: true, company: company, closingMonth: targetClosing, importedCount: outRows.length, excludedRows: [] };
+  });
+}
+
+// ---------- 集計・分析 ----------
+
+// 「20日締めチェック」: 業者+締め月を選択すると、工事名別の費用区分内訳・請求額・消費税・合計を返す
+function getClosingCheck(company, closingMonth) {
+  if (!company || !closingMonth) throw new Error("業者・締め月を指定してください");
+  const rows = haulingRows_().filter(r => r.業者 === company && r.締め月 === normalizeDateStr_(closingMonth));
+  const byProject = {};
+  rows.forEach(r => {
+    const key = r.物件名 || "(物件名なし)";
+    if (!byProject[key]) byProject[key] = { 物件名: key, 横持費用: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0 };
+    byProject[key][r.費用区分] = (byProject[key][r.費用区分] || 0) + toNum_(r.費用額);
+    byProject[key].重量 += toNum_(r.総重量);
+  });
+  const projects = Object.keys(byProject).map(k => {
+    const p = byProject[k];
+    p.請求額 = p.横持費用 + p.メッキ費用 + p.現場搬入費用;
+    p.消費税 = Math.round(p.請求額 * 0.1);
+    p.合計請求額 = p.請求額 + p.消費税;
+    return p;
+  });
+  const total = projects.reduce((acc, p) => {
+    acc.横持費用 += p.横持費用; acc.メッキ費用 += p.メッキ費用; acc.現場搬入費用 += p.現場搬入費用;
+    acc.重量 += p.重量; acc.請求額 += p.請求額; acc.消費税 += p.消費税; acc.合計請求額 += p.合計請求額;
+    return acc;
+  }, { 横持費用: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 請求額: 0, 消費税: 0, 合計請求額: 0 });
+
+  const status = findStatusRow_(company, normalizeDateStr_(closingMonth));
+  return { company: company, closingMonth: normalizeDateStr_(closingMonth), status: status ? status.状態 : "未取込", projects: projects, total: total };
+}
+
+// 会計年度(11月21日始まり、翌年11月20日決算)内の12回の締め月を、fiscalYearEnd(決算年、
+// 例:2026なら2025/12/20〜2026/11/20)の昇順で返す
+function fiscalYearClosingMonths_(fiscalYearEnd) {
+  const months = [];
+  // 12/20(fiscalYearEnd-1年) → 11/20(fiscalYearEnd年)
+  months.push(ymd_(fiscalYearEnd - 1, 12, 20));
+  for (let m = 1; m <= 11; m++) months.push(ymd_(fiscalYearEnd, m, 20));
+  return months;
+}
+
+function currentFiscalYearEnd_() {
+  const now = new Date();
+  const tz = "Asia/Tokyo";
+  const y = Number(Utilities.formatDate(now, tz, "yyyy"));
+  const m = Number(Utilities.formatDate(now, tz, "M"));
+  const d = Number(Utilities.formatDate(now, tz, "d"));
+  // 11/21以降は「翌年11月20日決算」の年度に入る
+  if (m > 11 || (m === 11 && d >= 21)) return y + 1;
+  return y;
+}
+
+// 「年度全体集計」: 年度・工事別・業者別の合計、費用区分別の内訳、月別(締め月単位)の内訳を返す
+function getYearlySummary(fiscalYearEnd) {
+  const fye = fiscalYearEnd || currentFiscalYearEnd_();
+  const closingMonths = fiscalYearClosingMonths_(fye);
+  const closingSet = {};
+  closingMonths.forEach(c => { closingSet[c] = true; });
+
+  const rows = haulingRows_().filter(r => closingSet[r.締め月]);
+
+  const byProject = {};
+  const byCompany = {};
+  const byMonth = {};
+  closingMonths.forEach(c => { byMonth[c] = { 締め月: c, 横持費用: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 }; });
+
+  rows.forEach(r => {
+    const amt = toNum_(r.費用額);
+    const weight = toNum_(r.総重量);
+
+    const pKey = r.物件名 || "(物件名なし)";
+    if (!byProject[pKey]) byProject[pKey] = { 物件名: pKey, 横持費用: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 };
+    byProject[pKey][r.費用区分] += amt;
+    byProject[pKey].重量 += weight;
+    byProject[pKey].合計 += amt;
+
+    const cKey = r.業者 || "(業者不明)";
+    if (!byCompany[cKey]) byCompany[cKey] = { 業者: cKey, 横持費用: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 };
+    byCompany[cKey][r.費用区分] += amt;
+    byCompany[cKey].重量 += weight;
+    byCompany[cKey].合計 += amt;
+
+    byMonth[r.締め月][r.費用区分] += amt;
+    byMonth[r.締め月].重量 += weight;
+    byMonth[r.締め月].合計 += amt;
+  });
+
+  const total = rows.reduce((acc, r) => acc + toNum_(r.費用額), 0);
+
+  return {
+    fiscalYearEnd: fye,
+    合計請求額: total,
+    工事別: Object.keys(byProject).map(k => byProject[k]),
+    業者別: Object.keys(byCompany).map(k => byCompany[k]),
+    月別: closingMonths.map(c => byMonth[c]),
+  };
+}
+
+// ---------- 過去データ移行(運送QUERY2026等からの一括インポート。確定済みとして取り込む) ----------
+/**
+ * payload: {
+ *   company: "山陰運送",
+ *   rows: [{ 物件名, 降日:"YYYY-MM-DD", ブロック, 車種, 総重量, 費用区分, 費用額 }, ...]
+ * }
+ * 過去の運送QUERY2026の各業者タブのデータを、締め月ごとに自動判定して確定済みとして書き込む。
+ * (積日・節・積荷・現場待機・最大長さ・通常単価・エキストラは移行元データに無いため空欄になる。
+ *  重複判定は、これらの列が空欄の行同士でも11項目中7項目以上一致すれば機能する想定だが、
+ *  過去データ同士(移行データ)を対象に重複判定を行うことは無い(移行は1回のみ・確定済み扱いのため)。)
+ */
+function bulkImportLegacy(payload) {
+  const company = payload.company;
+  const rowsIn = payload.rows || [];
+  if (!company) throw new Error("業者を指定してください");
+
+  return withLock_(() => {
+    const sh = sheet_(SHEET_HAULING);
+    const map = headerMap_(sh);
+    const idCol = map["ID"];
+    let nextId = nextHaulingId_(sh, idCol);
+    const now = nowStr_();
+    const byClosing = {};
+
+    const outRows = rowsIn.map(row => {
+      const closingMonth = closingMonthFromDateStr_(row["降日"]);
+      byClosing[closingMonth] = true;
+      const out = new Array(HAULING_HEADERS.length).fill("");
+      out[map["ID"] - 1] = nextId++;
+      out[map["業者"] - 1] = company;
+      out[map["締め月"] - 1] = closingMonth;
+      out[map["物件名"] - 1] = row["物件名"] || "";
+      out[map["降日"] - 1] = row["降日"] || "";
+      out[map["ブロック"] - 1] = row["ブロック"] || "";
+      out[map["車種"] - 1] = row["車種"] || "";
+      out[map["総重量"] - 1] = toNum_(row["総重量"]);
+      out[map["費用区分"] - 1] = row["費用区分"] || classifyFeeType_(row["ブロック"]);
+      out[map["費用額"] - 1] = toNum_(row["費用額"]);
+      out[map["取込日時"] - 1] = now;
+      out[map["元ファイル名"] - 1] = "(過去データ移行: 運送QUERY2026)";
+      return out;
+    });
+
+    if (outRows.length > 0) {
+      sh.getRange(sh.getLastRow() + 1, 1, outRows.length, HAULING_HEADERS.length).setValues(outRows);
+    }
+    Object.keys(byClosing).forEach(c => upsertStatus_(company, c, "確定済み", { 取込日時: true, 確定日時: true }));
+
+    return { importedCount: outRows.length, closingMonths: Object.keys(byClosing).sort() };
+  });
+}

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>鳥取運送アプリ</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<header class="app-header">
+  <button id="header-back-btn" class="header-back-btn" onclick="goHome()" style="display:none;">← ホーム</button>
+  <h1 id="header-title" class="header-title">鳥取運送アプリ</h1>
+  <span class="header-spacer"></span>
+</header>
+
+<main id="app">
+
+  <!-- ホーム画面 -->
+  <section id="screen-home" class="screen">
+    <div class="home-buttons">
+      <button class="home-btn home-btn-main" onclick="showScreen('import')">📤 Excelファイルを取り込む</button>
+      <button class="home-btn home-btn-sub" onclick="showScreen('check')">📋 20日締めチェック</button>
+      <button class="home-btn home-btn-sub" onclick="showScreen('yearly')">📊 年度集計</button>
+    </div>
+  </section>
+
+  <!-- インポート画面 -->
+  <section id="screen-import" class="screen" style="display:none;">
+    <div class="section">
+      <h2>Excelファイルを取り込む</h2>
+      <p class="hint">業者から受け取った配車Excelファイル(.xlsm/.xlsx)を選択してください。<br>
+        ファイル名(例: 「20260820〆　山陰運送.xlsm」)から業者・締め月を自動判定します。</p>
+      <input type="file" id="file-input" accept=".xlsx,.xlsm,.xls" onchange="onFileSelected(event)">
+      <div id="detected-info" class="detected-info" style="display:none;"></div>
+      <button id="import-submit-btn" class="btn btn-primary" style="display:none;" onclick="submitImport()">この内容で取り込む</button>
+      <div id="import-status" class="import-status"></div>
+      <div id="excluded-rows-container"></div>
+    </div>
+  </section>
+
+  <!-- 20日締めチェック画面 -->
+  <section id="screen-check" class="screen" style="display:none;">
+    <div class="section">
+      <h2>20日締めチェック</h2>
+      <div class="filter-row">
+        <label>業者
+          <select id="check-company"></select>
+        </label>
+        <label>締め月
+          <select id="check-closing-month"></select>
+        </label>
+        <button class="btn" onclick="loadClosingCheck()">表示</button>
+      </div>
+      <div id="check-result"></div>
+    </div>
+  </section>
+
+  <!-- 年度集計画面 -->
+  <section id="screen-yearly" class="screen" style="display:none;">
+    <div class="section">
+      <h2>年度集計</h2>
+      <div class="filter-row">
+        <label>会計年度(決算年)
+          <input type="number" id="yearly-fye" placeholder="例: 2026">
+        </label>
+        <button class="btn" onclick="loadYearlySummary()">表示</button>
+      </div>
+      <div id="yearly-result"></div>
+    </div>
+  </section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
