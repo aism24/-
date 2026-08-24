@@ -295,8 +295,11 @@ async function submitImport(force) {
       renderExcludedRows(result.excludedRows);
     }
   } catch (err) {
-    statusEl.textContent = "エラー: " + err.message;
-    statusEl.className = "import-status error";
+    alert("エラー: " + err.message);
+    document.getElementById("excluded-rows-container").innerHTML = "";
+    resetImportSelection();
+    statusEl.textContent = "";
+    statusEl.className = "import-status";
   } finally {
     submitBtn.disabled = false;
   }
