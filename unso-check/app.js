@@ -34,6 +34,7 @@ function showScreen(name) {
   SCREENS.forEach(s => { document.getElementById("screen-" + s).style.display = (s === name) ? "block" : "none"; });
   document.getElementById("header-back-btn").style.display = (name === "home") ? "none" : "inline-block";
   if (name === "check") initCheckScreen();
+  if (name === "yearly") initYearlyScreen();
 }
 function goHome() { showScreen("home"); }
 
@@ -240,6 +241,7 @@ const REASON_LABELS = {
   next_month_review: "来月分・担当者確認",
   date_mismatch_review: "締め月ズレ・担当者確認",
   date_invalid: "日付形式エラー",
+  yard_zero_error: "現場搬入費用なのに長さ・重量が共にゼロ",
 };
 
 function renderExcludedRows(excludedRows) {
@@ -446,37 +448,100 @@ async function confirmCurrentClosing() {
 
 // ---------- 年度集計画面 ----------
 
+let yearlyState = { fiscalYear: null };
+
+function sumFeeBuckets_(rows) {
+  const total = { コラム横持: 0, 製品横持: 0, 他横持: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 };
+  rows.forEach(r => {
+    total.コラム横持 += r.コラム横持 || 0;
+    total.製品横持 += r.製品横持 || 0;
+    total.他横持 += r.他横持 || 0;
+    total.メッキ費用 += r.メッキ費用 || 0;
+    total.現場搬入費用 += r.現場搬入費用 || 0;
+    total.重量 += r.重量 || 0;
+    total.合計 += r.合計 || 0;
+  });
+  return total;
+}
+
+// 月別/工事別/業者別いずれも同じ列構成なので、合計行の描画を共通化する
+function feeBucketTotalRowHtml_(r) {
+  return "<tr class=\"total-row\"><td>合計</td><td>" + fmtYen(r.コラム横持) + "</td><td>" + fmtYen(r.製品横持) + "</td><td>" +
+    fmtYen(r.他横持) + "</td><td>" + fmtYen(r.メッキ費用) + "</td><td>" + fmtYen(r.現場搬入費用) + "</td><td>" +
+    (r.重量 || 0).toFixed(1) + "t</td><td class=\"grand-total-cell\">" + fmtYen(r.合計) + "</td></tr>";
+}
+
+async function initYearlyScreen() {
+  yearlyState = { fiscalYear: null };
+  await renderYearlyYearButtons();
+}
+
+async function renderYearlyYearButtons() {
+  const container = document.getElementById("yearly-year-buttons");
+  const resultEl = document.getElementById("yearly-result");
+  container.innerHTML = "<span class=\"hint\">読み込み中...</span>";
+  resultEl.innerHTML = "<p class=\"hint\">読み込み中...</p>";
+  let years, data;
+  try {
+    [years, data] = await Promise.all([apiGet("listAvailableYears"), apiGet("getYearlySummary", {})]);
+  } catch (err) {
+    container.innerHTML = "";
+    resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
+    return;
+  }
+  yearlyState.fiscalYear = data.fiscalYearEnd;
+  container.innerHTML = years.map(y =>
+    "<div class=\"year-btn-item\"><button type=\"button\" class=\"btn" + (y === yearlyState.fiscalYear ? " btn-primary" : "") + "\" data-year=\"" + y + "\">" + y + "年</button>" +
+    "<div class=\"year-period\">" + fiscalYearPeriodLabel(y) + "</div></div>"
+  ).join("");
+  container.querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => {
+      yearlyState.fiscalYear = Number(btn.dataset.year);
+      container.querySelectorAll("button").forEach(b => b.classList.toggle("btn-primary", b === btn));
+      loadYearlySummary();
+    };
+  });
+  renderYearlyResult(data);
+}
+
 async function loadYearlySummary() {
-  const fyeInput = document.getElementById("yearly-fye").value;
   const resultEl = document.getElementById("yearly-result");
   resultEl.innerHTML = "<p class=\"hint\">読み込み中...</p>";
   try {
-    const data = await apiGet("getYearlySummary", fyeInput ? { fiscalYearEnd: fyeInput } : {});
-    let html = "<p><strong>" + data.fiscalYearEnd + "年度 合計請求額: " + fmtYen(data.合計請求額) + "</strong></p>";
-
-    html += "<h3>月別内訳</h3><div class=\"overflow-x\"><table class=\"data-table\"><thead><tr><th>締め月</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
-    data.月別.forEach(m => {
-      html += "<tr><td>" + m.締め月 + "〆</td><td>" + fmtYen(m.コラム横持) + "</td><td>" + fmtYen(m.製品横持) + "</td><td>" + fmtYen(m.他横持) + "</td><td>" + fmtYen(m.メッキ費用) + "</td><td>" +
-        fmtYen(m.現場搬入費用) + "</td><td>" + (m.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(m.合計) + "</td></tr>";
-    });
-    html += "</tbody></table></div>";
-
-    html += "<h3>工事別内訳</h3><div class=\"overflow-x\"><table class=\"data-table\"><thead><tr><th>物件名</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
-    data.工事別.forEach(p => {
-      html += "<tr><td>" + p.物件名 + "</td><td>" + fmtYen(p.コラム横持) + "</td><td>" + fmtYen(p.製品横持) + "</td><td>" + fmtYen(p.他横持) + "</td><td>" + fmtYen(p.メッキ費用) + "</td><td>" +
-        fmtYen(p.現場搬入費用) + "</td><td>" + (p.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(p.合計) + "</td></tr>";
-    });
-    html += "</tbody></table></div>";
-
-    html += "<h3>業者別内訳</h3><div class=\"overflow-x\"><table class=\"data-table\"><thead><tr><th>業者</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
-    data.業者別.forEach(c => {
-      html += "<tr><td>" + c.業者 + "</td><td>" + fmtYen(c.コラム横持) + "</td><td>" + fmtYen(c.製品横持) + "</td><td>" + fmtYen(c.他横持) + "</td><td>" + fmtYen(c.メッキ費用) + "</td><td>" +
-        fmtYen(c.現場搬入費用) + "</td><td>" + (c.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(c.合計) + "</td></tr>";
-    });
-    html += "</tbody></table></div>";
-
-    resultEl.innerHTML = html;
+    const data = await apiGet("getYearlySummary", { fiscalYearEnd: yearlyState.fiscalYear });
+    renderYearlyResult(data);
   } catch (err) {
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
   }
+}
+
+function renderYearlyResult(data) {
+  const resultEl = document.getElementById("yearly-result");
+  let html = "<p><strong>" + data.fiscalYearEnd + "年度 合計請求額: " + fmtYen(data.合計請求額) + "</strong></p>";
+
+  html += "<h3>月別内訳</h3><div class=\"overflow-x\"><table class=\"data-table\"><thead><tr><th>締め月</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
+  data.月別.forEach(m => {
+    html += "<tr><td>" + m.締め月 + "〆</td><td>" + fmtYen(m.コラム横持) + "</td><td>" + fmtYen(m.製品横持) + "</td><td>" + fmtYen(m.他横持) + "</td><td>" + fmtYen(m.メッキ費用) + "</td><td>" +
+      fmtYen(m.現場搬入費用) + "</td><td>" + (m.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(m.合計) + "</td></tr>";
+  });
+  html += feeBucketTotalRowHtml_(sumFeeBuckets_(data.月別));
+  html += "</tbody></table></div>";
+
+  html += "<h3>工事別内訳</h3><div class=\"overflow-x\"><table class=\"data-table\"><thead><tr><th>物件名</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
+  data.工事別.forEach(p => {
+    html += "<tr><td>" + p.物件名 + "</td><td>" + fmtYen(p.コラム横持) + "</td><td>" + fmtYen(p.製品横持) + "</td><td>" + fmtYen(p.他横持) + "</td><td>" + fmtYen(p.メッキ費用) + "</td><td>" +
+      fmtYen(p.現場搬入費用) + "</td><td>" + (p.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(p.合計) + "</td></tr>";
+  });
+  html += feeBucketTotalRowHtml_(sumFeeBuckets_(data.工事別));
+  html += "</tbody></table></div>";
+
+  html += "<h3>業者別内訳</h3><div class=\"overflow-x\"><table class=\"data-table\"><thead><tr><th>業者</th><th>コラム横持</th><th>製品横持</th><th>他横持</th><th>メッキ費用</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
+  data.業者別.forEach(c => {
+    html += "<tr><td>" + c.業者 + "</td><td>" + fmtYen(c.コラム横持) + "</td><td>" + fmtYen(c.製品横持) + "</td><td>" + fmtYen(c.他横持) + "</td><td>" + fmtYen(c.メッキ費用) + "</td><td>" +
+      fmtYen(c.現場搬入費用) + "</td><td>" + (c.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(c.合計) + "</td></tr>";
+  });
+  html += feeBucketTotalRowHtml_(sumFeeBuckets_(data.業者別));
+  html += "</tbody></table></div>";
+
+  resultEl.innerHTML = html;
 }
