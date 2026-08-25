@@ -125,6 +125,16 @@ table.summary-table tr.total-row td { background: #fdf3cf; }
 table.summary-table tbody tr:not(.total-row):nth-child(odd) td { background: #fff; }
 table.summary-table tbody tr:not(.total-row):nth-child(even) td { background: #e9f7ea; }
 
+/* 先頭列(工事名・物件名・業者・締め月)は固定幅にし、残りの列(金額・重量など)は
+   table-layout:fixedにより残り幅を均等に分け合うので幅が揃う。見出し(th)と
+   合計行の先頭セル(「合計」の文字)は中央揃え、先頭列の実際のデータ(物件名等)は左揃え、
+   金額・重量などの数値セルは右揃え(table.data-tableの既定を維持)のまま。 */
+table.summary-table { table-layout: fixed; }
+table.summary-table th:first-child, table.summary-table td:first-child { width: 200px; }
+table.summary-table th { text-align: center; }
+table.summary-table th:first-child { text-align: center; }
+table.summary-table tr.total-row td:first-child { text-align: center; }
+
 .per-ton-summary { margin-top: 10px; font-size: 14px; }
 .per-ton-summary strong { color: #1a2540; }
 
