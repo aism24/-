@@ -73,6 +73,21 @@ function resetAllData() {
   Logger.log("配車データ・締め状態をリセットしました");
 }
 
+// 配車データの「費用区分」列(Q列)を、「ブロック」列(G列)から現在のclassifyFeeType_で
+// 再計算して上書きする。分類ロジックやブロック列の表記ルールを変更した際、既存データに
+// 反映するためApps Scriptエディタから手動で1回実行する想定の関数(doGet/doPostからは呼ばない)。
+function recalculateFeeTypes_() {
+  const sh = sheet_(SHEET_HAULING);
+  const map = headerMap_(sh);
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return;
+  const numRows = lastRow - 1;
+  const blocks = sh.getRange(2, map["ブロック"], numRows, 1).getValues();
+  const feeTypes = blocks.map(row => [classifyFeeType_(row[0])]);
+  sh.getRange(2, map["費用区分"], numRows, 1).setValues(feeTypes);
+  Logger.log("費用区分を" + numRows + "行分、再計算しました。");
+}
+
 function ensureSheet_(ss, name, headers) {
   let sh = ss.getSheetByName(name);
   if (sh) return sh;
