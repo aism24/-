@@ -106,11 +106,11 @@ table.data-table tr.total-row td { font-weight: bold; background: #fafbfc; }
 table.data-table tr.total-row td.grand-total-cell { color: #000; font-weight: 900; }
 
 /* 集計テーブル(20日締めチェック・年度集計)専用の行の色分け:
-   項目行(th)・合計行(total-row)は薄い黄色。それ以外のデータ行は奇数/偶数で無色/薄い緑
-   (右端の合計列も含め、データ行は他の列と同じ奇数/偶数の色分けに従う。合計列だけを
-   固定で黄色にしていたのは撤廃した) */
+   項目行(th)・合計行(total-row)は薄い黄色。それ以外のデータ行は奇数行=白、偶数行=薄い緑
+   (右端の合計列も含め、データ行は他の列と同じ奇数/偶数の色分けに従う) */
 table.summary-table th { background: #fdf3cf; }
 table.summary-table tr.total-row td { background: #fdf3cf; }
+table.summary-table tbody tr:not(.total-row):nth-child(odd) td { background: #fff; }
 table.summary-table tbody tr:not(.total-row):nth-child(even) td { background: #e9f7ea; }
 
 .per-ton-summary { margin-top: 10px; font-size: 14px; }
