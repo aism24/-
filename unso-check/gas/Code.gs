@@ -311,15 +311,16 @@ function nextHaulingId_(sh, idCol) {
   return Math.max(0, ...ids) + 1;
 }
 
-// ブロック(積地)の文字列から費用区分を自動判定する
-// 横持は種別番号でさらに細分化する: 横持1=コラム横持、横持3=製品横持、横持2・横持4=他横持
+// ブロック(積地)の文字列から費用区分を自動判定する。実データの表記は「横持ち1」のように
+// 「ち」が入るため、番号ごとに完全一致するパターンでのみ判定する:
+// 横持ち1=コラム横持、横持ち3=製品等横持、横持ち2・横持ち4=その他横持
+// メッキ・横持ちのいずれにも一致しない場合は現場搬入費用として扱う
 function classifyFeeType_(block) {
   const b = String(block || "");
-  if (b.indexOf("メッキ") !== -1) return "メッキ費用";
-  if (b.indexOf("横持1") !== -1) return "コラム横持";
-  if (b.indexOf("横持3") !== -1) return "製品横持";
-  if (b.indexOf("横持2") !== -1 || b.indexOf("横持4") !== -1) return "他横持";
-  if (b.indexOf("横持") !== -1) return "他横持";
+  if (b.indexOf("メッキ") !== -1) return "メッキ";
+  if (b.indexOf("横持ち1") !== -1) return "コラム横持";
+  if (b.indexOf("横持ち3") !== -1) return "製品等横持";
+  if (b.indexOf("横持ち2") !== -1 || b.indexOf("横持ち4") !== -1) return "その他横持";
   return "現場搬入費用";
 }
 
@@ -549,25 +550,25 @@ function getClosingCheck(company, closingMonth, rowsIn) {
   const byProject = {};
   rows.forEach(r => {
     const key = r.物件名 || "(物件名なし)";
-    if (!byProject[key]) byProject[key] = { 物件名: key, コラム横持: 0, 製品横持: 0, 他横持: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0 };
+    if (!byProject[key]) byProject[key] = { 物件名: key, コラム横持: 0, 製品等横持: 0, その他横持: 0, メッキ: 0, 現場搬入費用: 0, 重量: 0 };
     const feeType = classifyFeeType_(r.ブロック);
     byProject[key][feeType] = (byProject[key][feeType] || 0) + toNum_(r.費用額);
-    // 重量は現場搬入費用分のみを集計する(横持4種・メッキ費用の重量は含めない)
+    // 重量は現場搬入費用分のみを集計する(横持4種・メッキの重量は含めない)
     if (feeType === "現場搬入費用") byProject[key].重量 += toNum_(r.総重量);
   });
   const projects = Object.keys(byProject).map(k => {
     const p = byProject[k];
-    p.請求額 = p.コラム横持 + p.製品横持 + p.他横持 + p.メッキ費用 + p.現場搬入費用;
+    p.請求額 = p.コラム横持 + p.製品等横持 + p.その他横持 + p.メッキ + p.現場搬入費用;
     p.消費税 = Math.round(p.請求額 * 0.1);
     p.合計請求額 = p.請求額 + p.消費税;
     return p;
   });
   const total = projects.reduce((acc, p) => {
-    acc.コラム横持 += p.コラム横持; acc.製品横持 += p.製品横持; acc.他横持 += p.他横持;
-    acc.メッキ費用 += p.メッキ費用; acc.現場搬入費用 += p.現場搬入費用;
+    acc.コラム横持 += p.コラム横持; acc.製品等横持 += p.製品等横持; acc.その他横持 += p.その他横持;
+    acc.メッキ += p.メッキ; acc.現場搬入費用 += p.現場搬入費用;
     acc.重量 += p.重量; acc.請求額 += p.請求額; acc.消費税 += p.消費税; acc.合計請求額 += p.合計請求額;
     return acc;
-  }, { コラム横持: 0, 製品横持: 0, 他横持: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 請求額: 0, 消費税: 0, 合計請求額: 0 });
+  }, { コラム横持: 0, 製品等横持: 0, その他横持: 0, メッキ: 0, 現場搬入費用: 0, 重量: 0, 請求額: 0, 消費税: 0, 合計請求額: 0 });
 
   const status = findStatusRow_(company, normalizeDateStr_(closingMonth));
   return { company: company, closingMonth: normalizeDateStr_(closingMonth), status: status ? status.状態 : "未取込", projects: projects, total: total };
@@ -640,7 +641,7 @@ function getYearlySummary(fiscalYearEnd, rowsIn) {
   const allRows = rowsIn || haulingRows_();
   const rows = allRows.filter(r => closingSet[r.締め月]);
 
-  const emptyFeeBucket_ = () => ({ コラム横持: 0, 製品横持: 0, 他横持: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 });
+  const emptyFeeBucket_ = () => ({ コラム横持: 0, 製品等横持: 0, その他横持: 0, メッキ: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 });
   const byProject = {};
   const byCompany = {};
   const byMonth = {};
@@ -651,7 +652,7 @@ function getYearlySummary(fiscalYearEnd, rowsIn) {
     const weight = toNum_(r.総重量);
     const feeType = classifyFeeType_(r.ブロック);
 
-    // 重量は現場搬入費用分のみを集計する(横持4種・メッキ費用の重量は含めない)
+    // 重量は現場搬入費用分のみを集計する(横持4種・メッキの重量は含めない)
     const yardWeight = feeType === "現場搬入費用" ? weight : 0;
 
     const pKey = r.物件名 || "(物件名なし)";
@@ -701,13 +702,13 @@ function listProjects() {
   return Object.keys(names).sort();
 }
 
-// 工事別内訳: 指定した物件名の配車データを業者ごとに集計する(横持3区分・メッキ費用・
+// 工事別内訳: 指定した物件名の配車データを業者ごとに集計する(横持3区分・メッキ・
 // 現場搬入費用・重量・合計)。重量はgetClosingCheck/getYearlySummaryと同じ方針で
-// 現場搬入費用分のみを対象にする(横持4種・メッキ費用の重量は含めない)。
+// 現場搬入費用分のみを対象にする(横持4種・メッキの重量は含めない)。
 function getProjectDetail(projectName) {
   if (!projectName) throw new Error("物件名を指定してください");
   const rows = haulingRows_().filter(r => r.物件名 === projectName);
-  const emptyFeeBucket_ = () => ({ コラム横持: 0, 製品横持: 0, 他横持: 0, メッキ費用: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 });
+  const emptyFeeBucket_ = () => ({ コラム横持: 0, 製品等横持: 0, その他横持: 0, メッキ: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 });
 
   const byCompany = {};
   rows.forEach(r => {
@@ -723,8 +724,8 @@ function getProjectDetail(projectName) {
 
   const companies = Object.keys(byCompany).map(k => byCompany[k]);
   const total = companies.reduce((acc, c) => {
-    acc.コラム横持 += c.コラム横持; acc.製品横持 += c.製品横持; acc.他横持 += c.他横持;
-    acc.メッキ費用 += c.メッキ費用; acc.現場搬入費用 += c.現場搬入費用;
+    acc.コラム横持 += c.コラム横持; acc.製品等横持 += c.製品等横持; acc.その他横持 += c.その他横持;
+    acc.メッキ += c.メッキ; acc.現場搬入費用 += c.現場搬入費用;
     acc.重量 += c.重量; acc.合計 += c.合計;
     return acc;
   }, emptyFeeBucket_());
