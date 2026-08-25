@@ -135,6 +135,30 @@ table.summary-table th { text-align: center; }
 table.summary-table th:first-child { text-align: center; }
 table.summary-table tr.total-row td:first-child { text-align: center; }
 
+/* 20日締めチェックのテーブルは10列と多く、「合計請求額」や「現場搬入費用」が7桁になると
+   横スクロールが発生していたため、このテーブルだけ列幅の配分を専用に変える。
+   コラム横持・製品等横持・その他横持・メッキの4列(値がほぼ0円で狭くても困らない)を
+   テキスト1文字分ずつ狭め、浮いた分を現場搬入費用と合計請求額の2列に半分ずつ足す。
+   他の列(工事名・現場搬入重量・請求額・消費税)は元とほぼ同じ比率を維持する。
+   (table-layout:fixedの列幅計算はcalc()を正しく評価しないため、比率をそのまま
+   パーセント値で指定する) */
+table.check-table th:first-child, table.check-table td:first-child { width: 18%; }
+table.check-table th:nth-child(2), table.check-table td:nth-child(2),
+table.check-table th:nth-child(3), table.check-table td:nth-child(3),
+table.check-table th:nth-child(4), table.check-table td:nth-child(4),
+table.check-table th:nth-child(5), table.check-table td:nth-child(5) {
+  width: 7.8%;
+}
+table.check-table th:nth-child(6), table.check-table td:nth-child(6),
+table.check-table th:nth-child(10), table.check-table td:nth-child(10) {
+  width: 11.7%;
+}
+table.check-table th:nth-child(7), table.check-table td:nth-child(7),
+table.check-table th:nth-child(8), table.check-table td:nth-child(8),
+table.check-table th:nth-child(9), table.check-table td:nth-child(9) {
+  width: 9.1%;
+}
+
 .per-ton-summary { margin-top: 10px; font-size: 14px; }
 .per-ton-summary strong { color: #1a2540; }
 
