@@ -52,7 +52,7 @@ body.drag-over::after {
 .home-btn:active { opacity: 0.85; }
 
 .section {
-  background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 16px;
+  background: #eaf3fb; border-radius: 12px; padding: 20px; margin-bottom: 16px;
   border: 1px solid #e2e5ea; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
 }
 .section h2 { font-size: 18px; margin-bottom: 12px; color: #1a2540; }
