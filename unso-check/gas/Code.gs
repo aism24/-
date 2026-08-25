@@ -722,11 +722,27 @@ function getYearlySummaryInit(fiscalYearEnd) {
   };
 }
 
-// 工事別内訳画面の物件ボタン用: 配車データに実際に登録されている物件名(D列)を重複排除して返す
+// 工事別内訳画面の物件ボタン用: 配車データに実際に登録されている物件名(D列)を、その物件の
+// 最後の締め月(最新の配送記録)が属する年度ごとに区分けして返す。新しい年度が先頭に来るよう
+// 降順で返し、各年度内の物件名はアルファベット順にする。
 function listProjects() {
-  const names = {};
-  haulingRows_().forEach(r => { if (r.物件名) names[r.物件名] = true; });
-  return Object.keys(names).sort();
+  const latestClosingByProject = {};
+  haulingRows_().forEach(r => {
+    if (!r.物件名 || !r.締め月) return;
+    if (!latestClosingByProject[r.物件名] || r.締め月 > latestClosingByProject[r.物件名]) {
+      latestClosingByProject[r.物件名] = r.締め月;
+    }
+  });
+  const byYear = {};
+  Object.keys(latestClosingByProject).forEach(name => {
+    const year = fiscalYearForClosingStr_(latestClosingByProject[name]);
+    if (!byYear[year]) byYear[year] = [];
+    byYear[year].push(name);
+  });
+  return Object.keys(byYear).map(Number).sort((a, b) => b - a).map(year => ({
+    year: year,
+    names: byYear[year].sort(),
+  }));
 }
 
 // 工事別内訳: 指定した物件名の配車データを業者ごとに集計する(横持3区分・メッキ・
