@@ -92,6 +92,13 @@ input[type="file"] { display: inline-block; margin: 8px 8px 16px 0; }
 /* 年度ボタンは下の期間テキストが横に並ぶと読みにくいため、ボタン1個分ほど間隔を広く取る */
 #check-year-buttons, #yearly-year-buttons { gap: 80px; }
 
+/* 工事別内訳の物件ボタンを、最後に記録された年度ごとに区切って表示する。
+   隣り合う年度がひと目でわかるよう、背景の薄い青色を2色で交互に切り替える。 */
+.project-year-group { border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.project-year-group:nth-child(odd) { background: #e6f2fc; }
+.project-year-group:nth-child(even) { background: #d3e6f7; }
+.project-year-label { font-weight: bold; font-size: 13px; color: #1a2540; margin-bottom: 8px; }
+
 .detected-info {
   background: #e8f0fe; border: 1px solid #b6d0fb; border-radius: 8px;
   padding: 12px 14px; margin: 12px 0; font-size: 14px; color: #1a2540;

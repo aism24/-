@@ -633,16 +633,18 @@ async function initProjectScreen() {
   document.getElementById("project-result").innerHTML = "";
   const container = document.getElementById("project-buttons");
   container.innerHTML = "<span class=\"hint\">読み込み中...</span>";
-  let names;
+  let yearGroups;
   try {
-    names = await apiGet("listProjects");
+    yearGroups = await apiGet("listProjects");
   } catch (err) {
     container.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
     return;
   }
-  if (names.length === 0) { container.innerHTML = "<span class=\"hint\">物件データがありません</span>"; return; }
-  container.innerHTML = names.map(n =>
-    "<button type=\"button\" class=\"btn\" data-name=\"" + n + "\">" + n + "</button>"
+  if (yearGroups.length === 0) { container.innerHTML = "<span class=\"hint\">物件データがありません</span>"; return; }
+  container.innerHTML = yearGroups.map(g =>
+    "<div class=\"project-year-group\"><div class=\"project-year-label\">" + g.year + "年度</div><div class=\"button-group\">" +
+    g.names.map(n => "<button type=\"button\" class=\"btn\" data-name=\"" + n + "\">" + n + "</button>").join("") +
+    "</div></div>"
   ).join("");
   container.querySelectorAll("button").forEach(btn => {
     btn.onclick = () => {
