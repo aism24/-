@@ -434,7 +434,7 @@ function renderCheckYearButtons(years) {
 // 1業者分の工事名別内訳テーブル(合計行込み)のHTMLを組み立てる。単独業者表示・「全て」表示の
 // 両方から使う共通部品。
 function closingCheckTableHtml_(data) {
-  let html = "<div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr>" +
+  let html = "<div class=\"overflow-x\"><table class=\"data-table summary-table check-table\"><thead><tr>" +
     "<th>工事名</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>請求額</th><th>消費税</th><th>合計請求額</th></tr></thead><tbody>";
   data.projects.forEach(p => {
     html += "<tr><td>" + p.物件名 + "</td><td>" + fmtYen(p.コラム横持) + "</td><td>" + fmtYen(p.製品等横持) + "</td><td>" +
