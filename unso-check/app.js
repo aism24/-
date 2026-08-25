@@ -30,10 +30,13 @@ async function apiPost(action, payload) {
 // ---------- 画面切り替え ----------
 
 const SCREENS = ["home", "import", "check", "yearly", "project"];
-function showScreen(name) {
+// opts.preselect: { company, closingMonth } — 20日締めチェック画面を、業者「全て」+最新月の
+// デフォルト表示ではなく、指定した業者+締め月の結果を開いた状態で表示する(Excel取込み直後、
+// その場で確定を促すために使う)。
+function showScreen(name, opts) {
   SCREENS.forEach(s => { document.getElementById("screen-" + s).style.display = (s === name) ? "block" : "none"; });
   document.getElementById("header-back-btn").style.display = (name === "home") ? "none" : "inline-block";
-  if (name === "check") initCheckScreen();
+  if (name === "check") initCheckScreen(opts && opts.preselect);
   if (name === "yearly") initYearlyScreen();
   if (name === "project") initProjectScreen();
 }
@@ -287,11 +290,14 @@ async function submitImport(force) {
       return;
     }
     if (result.imported) {
-      statusEl.textContent = "取り込み完了: " + result.company + " " + result.closingMonth + "〆 (" + result.importedCount + "行)。" +
-        "内容を確認し、問題なければ「20日締めチェック」画面で確定してください。";
-      statusEl.className = "import-status success";
+      statusEl.textContent = "";
+      statusEl.className = "import-status";
       document.getElementById("excluded-rows-container").innerHTML = "";
       resetImportSelection();
+      // 取込み成功後は「20日締めチェック」画面のこの業者+締め月の結果へ自動的に移動し、
+      // その場で確定を促す(確定を忘れたまま次のファイルを選んでしまうことを防ぐため)。
+      // 別のファイルを取り込みたい場合は、ホームから「Excelファイルを取り込む」をやり直す。
+      showScreen("check", { preselect: { company: result.company, closingMonth: result.closingMonth } });
     } else {
       statusEl.textContent = "対象外の行があったため、今回の取り込みは保存されませんでした。内容を確認し、正しいファイルを再アップロードしてください。";
       statusEl.className = "import-status error";
@@ -351,7 +357,9 @@ function closingToFiscalYearMonth_(closingStr) {
 // 「集計結果取得」の3回に分けてGASを呼んでいたため、呼び出しごとのオーバーヘッド(スプレッド
 // シートを開く処理等)が重なって表示が遅くなっていた。GAS側のgetCheckScreenInitに統合し、
 // 1回のリクエストで全て取得する。
-async function initCheckScreen() {
+// preselect: { company, closingMonth } が指定された場合、デフォルトの業者「全て」+最新月では
+// なく、その業者+締め月の結果を開いた状態で表示する(Excel取込み直後の確定促し用)。
+async function initCheckScreen(preselect) {
   checkState = { company: null, fiscalYear: null, month: null };
   document.getElementById("check-status-badge").innerHTML = "";
   document.getElementById("check-confirm-slot").innerHTML = "";
@@ -369,18 +377,27 @@ async function initCheckScreen() {
     return;
   }
 
-  checkState.company = CHECK_COMPANY_ALL;
-  if (init.latestClosing) {
-    const fm = closingToFiscalYearMonth_(init.latestClosing);
+  if (preselect) {
+    const fm = closingToFiscalYearMonth_(preselect.closingMonth);
+    checkState.company = preselect.company;
     checkState.fiscalYear = fm.fiscalYear;
     checkState.month = fm.month;
+  } else {
+    checkState.company = CHECK_COMPANY_ALL;
+    if (init.latestClosing) {
+      const fm = closingToFiscalYearMonth_(init.latestClosing);
+      checkState.fiscalYear = fm.fiscalYear;
+      checkState.month = fm.month;
+    }
   }
 
   renderCheckCompanyButtons();
   renderCheckMonthButtons();
   renderCheckYearButtons(init.years);
 
-  if (init.result) {
+  if (preselect) {
+    await refreshCheckResult();
+  } else if (init.result) {
     renderCheckResultAll_(init.result);
   } else {
     resultEl.innerHTML = "";
