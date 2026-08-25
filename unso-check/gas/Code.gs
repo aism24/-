@@ -123,6 +123,7 @@ function doGet(e) {
     const p = e.parameter;
     if (p.action === "listCompanies") return ok_(listCompanies());
     if (p.action === "getClosingCheck") return ok_(getClosingCheck(p.company, p.closingMonth));
+    if (p.action === "getClosingCheckAll") return ok_(getClosingCheckAll(p.closingMonth));
     if (p.action === "getCheckScreenInit") return ok_(getCheckScreenInit());
     if (p.action === "getYearlySummary") return ok_(getYearlySummary(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
     if (p.action === "getYearlySummaryInit") return ok_(getYearlySummaryInit(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
@@ -590,6 +591,17 @@ function getClosingCheck(company, closingMonth, rowsIn) {
   return { company: company, closingMonth: normalizeDateStr_(closingMonth), status: status ? status.状態 : "未取込", projects: projects, total: total };
 }
 
+// 「20日締めチェック」の業者「全て」表示: 指定した締め月について、業者マスタの全業者分の
+// getClosingCheckの結果(業者ごとの状態・工事名別内訳・業者ごとの合計)をまとめて返す。
+// 業者をまたいだ総合計は作らない(業者ごとに完結した表として扱うため)。
+function getClosingCheckAll(closingMonth) {
+  if (!closingMonth) throw new Error("締め月を指定してください");
+  const normalizedClosing = normalizeDateStr_(closingMonth);
+  const rows = haulingRows_();
+  const companies = listCompanies().map(company => getClosingCheck(company, normalizedClosing, rows));
+  return { closingMonth: normalizedClosing, companies: companies };
+}
+
 // 締め日文字列("YYYY/MM/DD")が属する会計年度(11月21日始まり、翌年11月20日決算)を返す。
 // 12月分の締めは翌年の会計年度に属する(fiscalYearClosingMonths_の逆変換)
 function fiscalYearForClosingStr_(closingStr) {
@@ -607,20 +619,19 @@ function availableYearsFromRows_(rows) {
 }
 
 // 20日締めチェック画面の初期表示用。配車データの読み込みを1回にまとめ、年ボタンの選択肢・
-// デフォルト業者(日興)・実績のある最新の締め月・その集計結果までを1回のリクエストで返す
+// 実績のある最新の締め月・業者「全て」の集計結果までを1回のリクエストで返す
 // (以前は年ボタン取得→デフォルト締め月取得→集計取得の3回に分かれており、GAS呼び出しごとの
 // オーバーヘッド(スプレッドシートを開く処理等)が重なって表示が遅くなっていたため統合した)。
+// デフォルト表示は業者「全て」(getClosingCheckAll)。
 function getCheckScreenInit() {
   const rows = haulingRows_();
   const years = availableYearsFromRows_(rows);
   let latestClosing = null;
   rows.forEach(r => { if (r.締め月 && (!latestClosing || r.締め月 > latestClosing)) latestClosing = r.締め月; });
-  const defaultCompany = "日本興運";
   return {
     years: years,
-    defaultCompany: defaultCompany,
     latestClosing: latestClosing,
-    result: latestClosing ? getClosingCheck(defaultCompany, latestClosing, rows) : null,
+    result: latestClosing ? getClosingCheckAll(latestClosing) : null,
   };
 }
 

@@ -310,8 +310,13 @@ async function submitImport(force) {
 
 // ---------- 20日締めチェック画面 ----------
 
-// 表示ラベル(短縮名)→業者マスタ上のフルネームの固定マッピング(この順序でボタン表示)
+// 業者「全て」を示す内部値(業者マスタの実名とは衝突しない固定値)
+const CHECK_COMPANY_ALL = "ALL";
+
+// 表示ラベル(短縮名)→業者マスタ上のフルネームの固定マッピング(この順序でボタン表示)。
+// 「全て」は一番左に固定でデフォルト選択とする。
 const CHECK_COMPANY_BUTTONS = [
+  { label: "全て", name: CHECK_COMPANY_ALL },
   { label: "日興", name: "日本興運" },
   { label: "誠和", name: "誠和梱包" },
   { label: "用瀬", name: "用瀬運送" },
@@ -364,7 +369,7 @@ async function initCheckScreen() {
     return;
   }
 
-  checkState.company = init.defaultCompany;
+  checkState.company = CHECK_COMPANY_ALL;
   if (init.latestClosing) {
     const fm = closingToFiscalYearMonth_(init.latestClosing);
     checkState.fiscalYear = fm.fiscalYear;
@@ -376,7 +381,7 @@ async function initCheckScreen() {
   renderCheckYearButtons(init.years);
 
   if (init.result) {
-    renderCheckResultData_(init.result);
+    renderCheckResultAll_(init.result);
   } else {
     resultEl.innerHTML = "";
   }
@@ -426,12 +431,9 @@ function renderCheckYearButtons(years) {
   });
 }
 
-function renderCheckResultData_(data) {
-  const badgeEl = document.getElementById("check-status-badge");
-  const confirmSlot = document.getElementById("check-confirm-slot");
-  const resultEl = document.getElementById("check-result");
-  const badgeClass = data.status === "確定済み" ? "confirmed" : (data.status === "未確定" ? "pending" : "none");
-  badgeEl.innerHTML = "<span class=\"status-badge " + badgeClass + "\">" + data.status + "</span>";
+// 1業者分の工事名別内訳テーブル(合計行込み)のHTMLを組み立てる。単独業者表示・「全て」表示の
+// 両方から使う共通部品。
+function closingCheckTableHtml_(data) {
   let html = "<div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr>" +
     "<th>工事名</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>重量</th><th>請求額</th><th>消費税</th><th>合計請求額</th></tr></thead><tbody>";
   data.projects.forEach(p => {
@@ -444,10 +446,42 @@ function renderCheckResultData_(data) {
     fmtYen(t.その他横持) + "</td><td>" + fmtYen(t.メッキ) + "</td><td>" + fmtYen(t.現場搬入費用) + "</td><td>" +
     (t.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(t.請求額) + "</td><td>" + fmtYen(t.消費税) + "</td><td>" + fmtYen(t.合計請求額) + "</td></tr>";
   html += "</tbody></table></div>";
-  resultEl.innerHTML = html;
+  return html;
+}
+
+function statusBadgeHtml_(status) {
+  const badgeClass = status === "確定済み" ? "confirmed" : (status === "未確定" ? "pending" : "none");
+  return "<span class=\"status-badge " + badgeClass + "\">" + status + "</span>";
+}
+
+function renderCheckResultData_(data) {
+  const badgeEl = document.getElementById("check-status-badge");
+  const confirmSlot = document.getElementById("check-confirm-slot");
+  const resultEl = document.getElementById("check-result");
+  badgeEl.innerHTML = statusBadgeHtml_(data.status);
+  resultEl.innerHTML = closingCheckTableHtml_(data);
   confirmSlot.innerHTML = (data.status === "未確定" && data.projects.length > 0)
     ? "<button class=\"btn btn-confirm\" onclick=\"confirmCurrentClosing()\">この内容で確定する(担当者チェック完了・支払可)</button>"
     : "";
+}
+
+// 業者「全て」表示: 業者ごとに見出し(業者名+状態)とテーブルを並べる。業者をまたいだ
+// 総合計は表示しない(確定操作も業者を個別に選んで行う運用のため、ここでは表示しない)。
+function renderCheckResultAll_(data) {
+  const badgeEl = document.getElementById("check-status-badge");
+  const confirmSlot = document.getElementById("check-confirm-slot");
+  const resultEl = document.getElementById("check-result");
+  badgeEl.innerHTML = "";
+  confirmSlot.innerHTML = "";
+  if (data.companies.length === 0) {
+    resultEl.innerHTML = "<p class=\"hint\">データがありません</p>";
+    return;
+  }
+  resultEl.innerHTML = data.companies.map(c => {
+    let block = "<h3>" + c.company + " " + statusBadgeHtml_(c.status) + "</h3>";
+    block += c.projects.length > 0 ? closingCheckTableHtml_(c) : "<p class=\"hint\">データがありません</p>";
+    return block;
+  }).join("");
 }
 
 async function refreshCheckResult() {
@@ -463,11 +497,17 @@ async function refreshCheckResult() {
   const closingMonth = fiscalMonthToClosing(checkState.fiscalYear, checkState.month);
   resultEl.innerHTML = "<p class=\"hint\">読み込み中...</p>";
   try {
-    const data = await apiGet("getClosingCheck", { company: checkState.company, closingMonth: closingMonth });
-    renderCheckResultData_(data);
+    if (checkState.company === CHECK_COMPANY_ALL) {
+      const data = await apiGet("getClosingCheckAll", { closingMonth: closingMonth });
+      renderCheckResultAll_(data);
+    } else {
+      const data = await apiGet("getClosingCheck", { company: checkState.company, closingMonth: closingMonth });
+      renderCheckResultData_(data);
+    }
   } catch (err) {
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
     confirmSlot.innerHTML = "";
+    badgeEl.innerHTML = "";
   }
 }
 
