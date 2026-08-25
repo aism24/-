@@ -435,7 +435,7 @@ function renderCheckYearButtons(years) {
 // 両方から使う共通部品。
 function closingCheckTableHtml_(data) {
   let html = "<div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr>" +
-    "<th>工事名</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>重量</th><th>請求額</th><th>消費税</th><th>合計請求額</th></tr></thead><tbody>";
+    "<th>工事名</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>請求額</th><th>消費税</th><th>合計請求額</th></tr></thead><tbody>";
   data.projects.forEach(p => {
     html += "<tr><td>" + p.物件名 + "</td><td>" + fmtYen(p.コラム横持) + "</td><td>" + fmtYen(p.製品等横持) + "</td><td>" +
       fmtYen(p.その他横持) + "</td><td>" + fmtYen(p.メッキ) + "</td><td>" + fmtYen(p.現場搬入費用) + "</td><td>" +
@@ -597,7 +597,7 @@ function renderYearlyResult(data) {
   const resultEl = document.getElementById("yearly-result");
   let html = "<p><strong>" + data.fiscalYearEnd + "年度 合計請求額: " + fmtYen(data.合計請求額) + "</strong></p>";
 
-  html += "<h3>月別内訳</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>締め月</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
+  html += "<h3>月別内訳</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>締め月</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>合計</th></tr></thead><tbody>";
   data.月別.forEach(m => {
     html += "<tr><td>" + m.締め月 + "〆</td><td>" + fmtYen(m.コラム横持) + "</td><td>" + fmtYen(m.製品等横持) + "</td><td>" + fmtYen(m.その他横持) + "</td><td>" + fmtYen(m.メッキ) + "</td><td>" +
       fmtYen(m.現場搬入費用) + "</td><td>" + (m.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(m.合計) + "</td></tr>";
@@ -605,7 +605,7 @@ function renderYearlyResult(data) {
   html += feeBucketTotalRowHtml_(sumFeeBuckets_(data.月別));
   html += "</tbody></table></div>";
 
-  html += "<h3>工事別内訳</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>物件名</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
+  html += "<h3>工事別内訳</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>物件名</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>合計</th></tr></thead><tbody>";
   data.工事別.forEach(p => {
     html += "<tr><td>" + p.物件名 + "</td><td>" + fmtYen(p.コラム横持) + "</td><td>" + fmtYen(p.製品等横持) + "</td><td>" + fmtYen(p.その他横持) + "</td><td>" + fmtYen(p.メッキ) + "</td><td>" +
       fmtYen(p.現場搬入費用) + "</td><td>" + (p.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(p.合計) + "</td></tr>";
@@ -613,7 +613,7 @@ function renderYearlyResult(data) {
   html += feeBucketTotalRowHtml_(sumFeeBuckets_(data.工事別));
   html += "</tbody></table></div>";
 
-  html += "<h3>業者別内訳</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>業者</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
+  html += "<h3>業者別内訳</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>業者</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>合計</th></tr></thead><tbody>";
   data.業者別.forEach(c => {
     html += "<tr><td>" + c.業者 + "</td><td>" + fmtYen(c.コラム横持) + "</td><td>" + fmtYen(c.製品等横持) + "</td><td>" + fmtYen(c.その他横持) + "</td><td>" + fmtYen(c.メッキ) + "</td><td>" +
       fmtYen(c.現場搬入費用) + "</td><td>" + (c.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(c.合計) + "</td></tr>";
@@ -660,7 +660,7 @@ async function loadProjectDetail() {
   resultEl.innerHTML = "<p class=\"hint\">読み込み中...</p>";
   try {
     const data = await apiGet("getProjectDetail", { projectName: projectState.name });
-    let html = "<div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>業者</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>重量</th><th>合計</th></tr></thead><tbody>";
+    let html = "<div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>業者</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>合計</th></tr></thead><tbody>";
     data.業者別.forEach(c => {
       html += "<tr><td>" + c.業者 + "</td><td>" + fmtYen(c.コラム横持) + "</td><td>" + fmtYen(c.製品等横持) + "</td><td>" + fmtYen(c.その他横持) + "</td><td>" + fmtYen(c.メッキ) + "</td><td>" +
         fmtYen(c.現場搬入費用) + "</td><td>" + (c.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(c.合計) + "</td></tr>";
