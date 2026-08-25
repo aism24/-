@@ -106,7 +106,6 @@ function doGet(e) {
   try {
     const p = e.parameter;
     if (p.action === "listCompanies") return ok_(listCompanies());
-    if (p.action === "listClosingStatus") return ok_(listClosingStatus(p.company || ""));
     if (p.action === "getClosingCheck") return ok_(getClosingCheck(p.company, p.closingMonth));
     if (p.action === "getCheckScreenInit") return ok_(getCheckScreenInit());
     if (p.action === "getYearlySummary") return ok_(getYearlySummary(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
@@ -249,13 +248,6 @@ function statusRows_() {
   }));
 }
 
-function listClosingStatus(company) {
-  const rows = statusRows_();
-  return rows
-    .filter(r => !company || r.業者 === company)
-    .map(r => ({ 業者: r.業者, 締め月: r.締め月, 状態: r.状態, 取込日時: r.取込日時, 確定日時: r.確定日時 }));
-}
-
 function findStatusRow_(company, closingMonth) {
   const rows = statusRows_();
   return rows.find(r => r.業者 === company && r.締め月 === closingMonth) || null;
@@ -376,18 +368,6 @@ function isExactSameBatch_(newRows, existingRows) {
   return true;
 }
 
-// 対象外行(前月・来月混入分)を既存の配車データから削除する際に使う、書き込み用の一括削除
-function deleteHaulingRowsFor_(sh, map, company, closingMonth) {
-  const lastRow = sh.getLastRow();
-  if (lastRow < 2) return;
-  const values = sh.getRange(2, 1, lastRow - 1, HAULING_HEADERS.length).getValues();
-  for (let i = values.length - 1; i >= 0; i--) {
-    if (values[i][map["業者"] - 1] === company && cellToYmd_(values[i][map["締め月"] - 1]) === closingMonth) {
-      sh.deleteRow(i + 2);
-    }
-  }
-}
-
 /**
  * 業者から受け取ったExcel(配車シート)の取込み。
  * payload: {
@@ -412,8 +392,12 @@ function importHaulingFile(payload) {
     throw new Error("このファイルは既に取り込み済みです(確定済み): " + company + " " + targetClosing + "〆");
   }
 
+  // 配車データの読み込みは1回にまとめ、前月分の重複チェックと今回分の完全一致チェックの
+  // 両方でこの結果を使い回す(以前はそれぞれが個別にhaulingRows_()を呼び、全行読み込みを
+  // 重複して行っていたため)。
   const prevClosing = shiftClosingMonth_(targetClosing, -1);
-  const confirmedPrevRows = haulingRows_().filter(r => r.業者 === company && r.締め月 === prevClosing);
+  const allHaulingRows = haulingRows_();
+  const confirmedPrevRows = allHaulingRows.filter(r => r.業者 === company && r.締め月 === prevClosing);
 
   const okRows = [];
   const excludedRows = [];
@@ -484,7 +468,7 @@ function importHaulingFile(payload) {
   // 未確定の状態へ再アップロードする際、既に取り込まれている内容と完全に一致する場合は、
   // 誤って同じファイルを再選択した可能性が高いため、force指定が無い限り保存せず重複を通知する。
   if (!payload.force && existingStatus && existingStatus.状態 === "未確定") {
-    const currentRows = haulingRows_().filter(r => r.業者 === company && r.締め月 === targetClosing);
+    const currentRows = allHaulingRows.filter(r => r.業者 === company && r.締め月 === targetClosing);
     if (isExactSameBatch_(okRows, currentRows)) {
       return {
         imported: false, duplicate: true, company: company, closingMonth: targetClosing,
@@ -496,11 +480,21 @@ function importHaulingFile(payload) {
   return withLock_(() => {
     const sh = sheet_(SHEET_HAULING);
     const map = headerMap_(sh);
-    // 未確定の状態への再アップロードは、修正後の正しいファイルとして前回分を置き換える
-    deleteHaulingRowsFor_(sh, map, company, targetClosing);
+    const numCols = HAULING_HEADERS.length;
+    const idCol = map["ID"] - 1;
+    const companyCol = map["業者"] - 1;
+    const closingCol = map["締め月"] - 1;
 
-    const idCol = map["ID"];
-    let nextId = nextHaulingId_(sh, idCol);
+    // ロック取得後に最新状態を1回だけ読み込み、削除対象を除いた行(kept)とID採番の
+    // 両方に使い回す。以前はdeleteRow()を対象行1件ずつ呼んでおり(シートが大きいほど
+    // 行のシフトコストが積み重なって遅くなる)、さらにID採番・追記もそれぞれ別に
+    // シートへアクセスしていたため、読み書きの回数が対象行数に比例して増えていた。
+    const lastRow = sh.getLastRow();
+    const values = lastRow >= 2 ? sh.getRange(2, 1, lastRow - 1, numCols).getValues() : [];
+    // 未確定の状態への再アップロードは、修正後の正しいファイルとして前回分を置き換える
+    const keptRows = values.filter(row => !(row[companyCol] === company && cellToYmd_(row[closingCol]) === targetClosing));
+
+    let nextId = values.reduce((max, row) => Math.max(max, Number(row[idCol]) || 0), 0) + 1;
     const now = nowStr_();
     const outRows = okRows.map(row => {
       const feeType = classifyFeeType_(row["ブロック"]);
@@ -529,8 +523,13 @@ function importHaulingFile(payload) {
       return out;
     });
 
-    if (outRows.length > 0) {
-      sh.getRange(sh.getLastRow() + 1, 1, outRows.length, HAULING_HEADERS.length).setValues(outRows);
+    const finalRows = keptRows.concat(outRows);
+    if (finalRows.length > 0) {
+      sh.getRange(2, 1, finalRows.length, numCols).setValues(finalRows);
+    }
+    // 置き換え後に行数が減った場合、末尾に残る旧データを消す
+    if (finalRows.length < values.length) {
+      sh.getRange(finalRows.length + 2, 1, values.length - finalRows.length, numCols).clearContent();
     }
     upsertStatus_(company, targetClosing, "未確定", { 取込日時: true });
 
