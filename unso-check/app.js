@@ -413,7 +413,7 @@ function renderCheckMonthButtons() {
 function renderCheckYearButtons(years) {
   const container = document.getElementById("check-year-buttons");
   if (years.length === 0) { container.innerHTML = "<span class=\"hint\">対象年度がありません</span>"; return; }
-  container.innerHTML = years.map(y =>
+  container.innerHTML = years.slice().reverse().map(y =>
     "<div class=\"year-btn-item\"><button type=\"button\" class=\"btn" + (y === checkState.fiscalYear ? " btn-primary" : "") + "\" data-year=\"" + y + "\">" + y + "年</button>" +
     "<div class=\"year-period\">" + fiscalYearPeriodLabel(y) + "</div></div>"
   ).join("");
@@ -528,7 +528,7 @@ async function renderYearlyYearButtons() {
   }
   const data = init.summary;
   yearlyState.fiscalYear = data.fiscalYearEnd;
-  container.innerHTML = init.years.map(y =>
+  container.innerHTML = init.years.slice().reverse().map(y =>
     "<div class=\"year-btn-item\"><button type=\"button\" class=\"btn" + (y === yearlyState.fiscalYear ? " btn-primary" : "") + "\" data-year=\"" + y + "\">" + y + "年</button>" +
     "<div class=\"year-period\">" + fiscalYearPeriodLabel(y) + "</div></div>"
   ).join("");
