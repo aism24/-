@@ -76,7 +76,8 @@ function resetAllData() {
 // 配車データの「費用区分」列(Q列)を、「ブロック」列(G列)から現在のclassifyFeeType_で
 // 再計算して上書きする。分類ロジックやブロック列の表記ルールを変更した際、既存データに
 // 反映するためApps Scriptエディタから手動で1回実行する想定の関数(doGet/doPostからは呼ばない)。
-function recalculateFeeTypes_() {
+// (末尾に"_"を付けると実行ドロップダウンに出なくなるため、あえて付けていない)
+function recalculateFeeTypes() {
   const sh = sheet_(SHEET_HAULING);
   const map = headerMap_(sh);
   const lastRow = sh.getLastRow();
