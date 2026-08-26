@@ -263,39 +263,19 @@ function jsonResponse_(payload) {
 function ok_(data) { return jsonResponse_({ status: "success", data: data }); }
 function errRes_(message) { return jsonResponse_({ status: "error", message: message }); }
 
-// ---------- 【診断用・一時コード】区間タイミング計測 ----------
-// URLに &debug=1 を付けたリクエストのときだけ、doGet内の主要な区間の経過時間(ms)を
-// レスポンスJSONの_debugLogに含めて返す。debug指定が無い通常利用時はdbg_()が即return
-// する(DEBUG_ON_がfalse)ため、動作・レスポンス形式とも一切変わらない。
-// 遅延の原因(①GAS起動/通信オーバーヘッドか、②スクリプト内部の処理か)を切り分けるための
-// 一時的な調査用コードであり、原因特定後は削除する想定。
-let DEBUG_ON_ = false;
-let DEBUG_LOG_ = [];
-let DEBUG_T0_ = 0;
-function dbgReset_() { DEBUG_LOG_ = []; DEBUG_T0_ = Date.now(); }
-function dbg_(label) { if (DEBUG_ON_) DEBUG_LOG_.push(label + ": " + (Date.now() - DEBUG_T0_) + "ms"); }
-
 function doGet(e) {
-  const p = e.parameter;
-  DEBUG_ON_ = p.debug === "1";
-  dbgReset_();
-  dbg_("doGet start action=" + p.action);
   try {
-    let data;
-    if (p.action === "listCompanies") data = listCompanies();
-    else if (p.action === "getClosingCheck") data = getClosingCheck(p.company, p.closingMonth);
-    else if (p.action === "getClosingCheckAll") data = getClosingCheckAll(p.closingMonth);
-    else if (p.action === "getCheckScreenInit") data = getCheckScreenInit(p.company, p.closingMonth);
-    else if (p.action === "getYearlySummary") data = getYearlySummary(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null);
-    else if (p.action === "getYearlySummaryInit") data = getYearlySummaryInit(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null);
-    else if (p.action === "listProjects") data = listProjects();
-    else if (p.action === "getProjectDetail") data = getProjectDetail(p.projectName);
-    else return errRes_("不明なaction: " + p.action);
-    dbg_("doGet dispatch done");
-    if (DEBUG_ON_) return ok_({ result: data, _debugLog: DEBUG_LOG_ });
-    return ok_(data);
+    const p = e.parameter;
+    if (p.action === "listCompanies") return ok_(listCompanies());
+    if (p.action === "getClosingCheck") return ok_(getClosingCheck(p.company, p.closingMonth));
+    if (p.action === "getClosingCheckAll") return ok_(getClosingCheckAll(p.closingMonth));
+    if (p.action === "getCheckScreenInit") return ok_(getCheckScreenInit(p.company, p.closingMonth));
+    if (p.action === "getYearlySummary") return ok_(getYearlySummary(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
+    if (p.action === "getYearlySummaryInit") return ok_(getYearlySummaryInit(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
+    if (p.action === "listProjects") return ok_(listProjects());
+    if (p.action === "getProjectDetail") return ok_(getProjectDetail(p.projectName));
+    return errRes_("不明なaction: " + p.action);
   } catch (err) {
-    if (DEBUG_ON_) return errRes_(err.message + " | debugLog=" + JSON.stringify(DEBUG_LOG_));
     return errRes_(err.message);
   }
 }
@@ -315,17 +295,11 @@ function doPost(e) {
 
 // ---------- 共通ヘルパー ----------
 
-function ss_() {
-  dbg_("ss_() call");
-  const s = SpreadsheetApp.getActiveSpreadsheet();
-  dbg_("ss_() done");
-  return s;
-}
+function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
 
 function sheet_(name) {
   const sh = ss_().getSheetByName(name);
   if (!sh) throw new Error("シートが見つかりません。setupSheetsを実行してください: " + name);
-  dbg_("sheet_(" + name + ") getSheetByName done");
   return sh;
 }
 
@@ -434,13 +408,11 @@ function listCompanies() {
 // ---------- 締め状態 ----------
 
 function statusRows_() {
-  dbg_("statusRows_ call");
   const sh = sheet_(SHEET_STATUS);
   const map = headerMap_(sh);
   const lastRow = sh.getLastRow();
   if (lastRow < 2) return [];
   const values = sh.getRange(2, 1, lastRow - 1, STATUS_HEADERS.length).getValues();
-  dbg_("statusRows_ getValues done (" + values.length + "rows)");
   return values.map((row, i) => ({
     sheetRow: i + 2,
     業者: row[map["業者"] - 1],
@@ -555,15 +527,11 @@ function deleteConfirmedMonth(companies, closingMonth) {
 // プロパティ組み立てコストを軽減する。フィルタ・整形結果(sheetRow・締め月等の正規化)は
 // 変更前と完全に同じになるようにしている。
 function haulingRows_() {
-  dbg_("haulingRows_ start");
   const sh = sheet_(SHEET_HAULING);
   const map = headerMap_(sh);
-  dbg_("haulingRows_ headerMap done");
   const lastRow = sh.getLastRow();
-  dbg_("haulingRows_ getLastRow=" + lastRow);
   if (lastRow < 2) return [];
   const values = sh.getRange(2, 1, lastRow - 1, HAULING_HEADERS.length).getValues();
-  dbg_("haulingRows_ getValues done (" + values.length + "rows)");
   const colIdx = HAULING_HEADERS.map(h => map[h] - 1);
   const idCol = colIdx[0]; // HAULING_HEADERS[0] === "ID"
 
@@ -581,7 +549,6 @@ function haulingRows_() {
     obj["降日"] = cellToYmd_(obj["降日"]);
     result.push(obj);
   }
-  dbg_("haulingRows_ build done (" + result.length + "rows)");
   return result;
 }
 
@@ -669,7 +636,10 @@ function importHaulingFile(payload) {
   const company = parsed.company;
   const targetClosing = parsed.closingMonth;
 
-  const existingStatus = findStatusRow_(company, targetClosing);
+  // 締め状態シートの読み込みは1回にまとめ、確定済みチェックと未確定データの有無チェックの
+  // 両方でこの結果を使い回す(以前はそれぞれが個別にstatusRows_()を呼び、二重読み込みしていた)。
+  const allStatusRows = statusRows_();
+  const existingStatus = findStatusRow_(company, targetClosing, allStatusRows);
   if (existingStatus && existingStatus.状態 === "確定済み") {
     throw new Error("このファイルは既に取り込み済みです(確定済み): " + company + " " + targetClosing + "〆");
   }
@@ -680,7 +650,7 @@ function importHaulingFile(payload) {
   //   (未確定データが前月分として残っていると、後で修正されるかもしれないデータを基準に
   //   「削除依頼」「降日修正依頼」を判定してしまうため)
   // ただし、今回と同じ(業者+締め月)の再アップロード(内容の修正)はここでは妨げない。
-  const pendingOther = statusRows_().find(r =>
+  const pendingOther = allStatusRows.find(r =>
     r.状態 === "未確定" && !(r.業者 === company && r.締め月 === targetClosing)
   );
   if (pendingOther) {
@@ -962,11 +932,12 @@ function fiscalYearClosingMonths_(fiscalYearEnd) {
 }
 
 function currentFiscalYearEnd_() {
-  const now = new Date();
-  const tz = "Asia/Tokyo";
-  const y = Number(Utilities.formatDate(now, tz, "yyyy"));
-  const m = Number(Utilities.formatDate(now, tz, "M"));
-  const d = Number(Utilities.formatDate(now, tz, "d"));
+  // Utilities.formatDateはGASのサービス呼び出しでコストがあるため、cellToYmd_と同じ方針
+  // (dateToYmdJst_)でAsia/Tokyoの年月日を求める。
+  const t = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const y = t.getUTCFullYear();
+  const m = t.getUTCMonth() + 1;
+  const d = t.getUTCDate();
   // 11/21以降は「翌年11月20日決算」の年度に入る
   if (m > 11 || (m === 11 && d >= 21)) return y + 1;
   return y;
