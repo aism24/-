@@ -37,6 +37,7 @@
       <button class="home-btn home-btn-sub" onclick="showScreen('check')">📋 20日締めチェック</button>
       <button class="home-btn home-btn-sub" onclick="showScreen('yearly')">📊 年度集計</button>
       <button class="home-btn home-btn-sub" onclick="showScreen('project')">🏗️ 工事別内訳</button>
+      <button class="home-btn home-btn-sub" onclick="showScreen('company')">🏢 業者別内訳</button>
     </div>
   </section>
 
@@ -96,6 +97,17 @@
         <div id="project-buttons"></div>
       </div>
       <div id="project-result"></div>
+    </div>
+  </section>
+
+  <!-- 業者別内訳画面 -->
+  <section id="screen-company" class="screen" style="display:none;">
+    <div class="section">
+      <h2>業者別内訳</h2>
+      <div class="check-row">
+        <div class="button-group" id="company-buttons"></div>
+      </div>
+      <div id="company-result"></div>
     </div>
   </section>
 
