@@ -342,12 +342,24 @@ function normalizeDateStr_(s) {
   return ymd_(y, m, d);
 }
 
+// DateオブジェクトからAsia/Tokyo(常にUTC+9固定・夏時間なし)基準の"yyyy/MM/dd"を求める。
+// Utilities.formatDateはGASのサービス呼び出しを伴い1回あたりのコストが大きく、cellToYmd_の
+// ように配車データ全行×日付列ぶん(数千回規模)呼ばれる場面ではこれが処理時間の大半を
+// 占めるボトルネックになっていた(実測: 3854行の変換で約21秒)。Asia/Tokyoは夏時間が無く
+// 常にUTC+9固定のため、エポック時刻に9時間を足してUTC基準のgetterで年月日を取り出せば、
+// Utilities.formatDate(v, "Asia/Tokyo", "yyyy/MM/dd")と数学的に完全に同じ結果を、
+// GASのサービス呼び出しを介さない純粋なJS計算だけで得られる。
+function dateToYmdJst_(d) {
+  const t = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  return t.getUTCFullYear() + "/" + pad2_(t.getUTCMonth() + 1) + "/" + pad2_(t.getUTCDate());
+}
+
 // スプレッドシートのセルから読み取った値を "yyyy/MM/dd" 文字列に正規化する。
 // setValues()に日付らしい文字列を渡すとセルが自動的に日付型に変換されてしまうことがあるため、
 // 実際に読み取った値がDateオブジェクトであっても正しく比較できるようにする(forceTextColumns_で
 // 今後の自動変換自体は防止しているが、既存データや想定外の入力に対する保険として残す)。
 function cellToYmd_(v) {
-  if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, "Asia/Tokyo", "yyyy/MM/dd");
+  if (v instanceof Date && !isNaN(v)) return dateToYmdJst_(v);
   if (!v) return "";
   try { return normalizeDateStr_(v); } catch (e) { return String(v).trim(); }
 }
@@ -411,8 +423,11 @@ function statusRows_() {
   }));
 }
 
-function findStatusRow_(company, closingMonth) {
-  const rows = statusRows_();
+// rowsIn省略時は締め状態シートを自身で読み込む。呼び出し元が既に読み込み済みの場合は
+// rowsInで渡すことで、締め状態シートの二重読み込みを避けられる(getClosingCheckAllのように
+// 業者数ぶん繰り返し呼ぶ場面で、そのたびにシートを開き直す無駄を無くすため)。
+function findStatusRow_(company, closingMonth, rowsIn) {
+  const rows = rowsIn || statusRows_();
   return rows.find(r => r.業者 === company && r.締め月 === closingMonth) || null;
 }
 
@@ -506,22 +521,35 @@ function deleteConfirmedMonth(companies, closingMonth) {
 
 // ---------- 配車データ ----------
 
+// 【高速化】列名→列インデックスの対応(colIdx)を1回だけ計算しておき、行ごとに
+// map["列名"]をオブジェクトハッシュで引き直すのをやめ、配列インデックスでの参照に置き換えた。
+// forEach+クロージャ生成もfor文に置き換え、全行(3800行超)×全列(20列)ぶんの
+// プロパティ組み立てコストを軽減する。フィルタ・整形結果(sheetRow・締め月等の正規化)は
+// 変更前と完全に同じになるようにしている。
 function haulingRows_() {
   const sh = sheet_(SHEET_HAULING);
   const map = headerMap_(sh);
   const lastRow = sh.getLastRow();
   if (lastRow < 2) return [];
   const values = sh.getRange(2, 1, lastRow - 1, HAULING_HEADERS.length).getValues();
-  return values
-    .filter(row => row[map["ID"] - 1] !== "" && row[map["ID"] - 1] !== null)
-    .map((row, i) => {
-      const obj = { sheetRow: i + 2 };
-      HAULING_HEADERS.forEach(h => { obj[h] = row[map[h] - 1]; });
-      obj["締め月"] = cellToYmd_(obj["締め月"]);
-      obj["積日"] = cellToYmd_(obj["積日"]);
-      obj["降日"] = cellToYmd_(obj["降日"]);
-      return obj;
-    });
+  const colIdx = HAULING_HEADERS.map(h => map[h] - 1);
+  const idCol = colIdx[0]; // HAULING_HEADERS[0] === "ID"
+
+  const result = [];
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    const idVal = row[idCol];
+    if (idVal === "" || idVal === null) continue;
+    const obj = { sheetRow: result.length + 2 };
+    for (let j = 0; j < HAULING_HEADERS.length; j++) {
+      obj[HAULING_HEADERS[j]] = row[colIdx[j]];
+    }
+    obj["締め月"] = cellToYmd_(obj["締め月"]);
+    obj["積日"] = cellToYmd_(obj["積日"]);
+    obj["降日"] = cellToYmd_(obj["降日"]);
+    result.push(obj);
+  }
+  return result;
 }
 
 function nextHaulingId_(sh, idCol) {
@@ -608,7 +636,10 @@ function importHaulingFile(payload) {
   const company = parsed.company;
   const targetClosing = parsed.closingMonth;
 
-  const existingStatus = findStatusRow_(company, targetClosing);
+  // 締め状態シートの読み込みは1回にまとめ、確定済みチェックと未確定データの有無チェックの
+  // 両方でこの結果を使い回す(以前はそれぞれが個別にstatusRows_()を呼び、二重読み込みしていた)。
+  const allStatusRows = statusRows_();
+  const existingStatus = findStatusRow_(company, targetClosing, allStatusRows);
   if (existingStatus && existingStatus.状態 === "確定済み") {
     throw new Error("このファイルは既に取り込み済みです(確定済み): " + company + " " + targetClosing + "〆");
   }
@@ -619,7 +650,7 @@ function importHaulingFile(payload) {
   //   (未確定データが前月分として残っていると、後で修正されるかもしれないデータを基準に
   //   「削除依頼」「降日修正依頼」を判定してしまうため)
   // ただし、今回と同じ(業者+締め月)の再アップロード(内容の修正)はここでは妨げない。
-  const pendingOther = statusRows_().find(r =>
+  const pendingOther = allStatusRows.find(r =>
     r.状態 === "未確定" && !(r.業者 === company && r.締め月 === targetClosing)
   );
   if (pendingOther) {
@@ -776,13 +807,11 @@ function importHaulingFile(payload) {
 
 // ---------- 集計・分析 ----------
 
-// 「20日締めチェック」: 業者+締め月を選択すると、工事名別の費用区分内訳・請求額・消費税・合計を返す。
-// 費用区分は保存済みの列値を信用せず、「ブロック」列から毎回classifyFeeType_で再判定する
-// (過去に別区分で保存された行があっても、常に最新の分類ロジックで正しく仕分けるため)。
-function getClosingCheck(company, closingMonth, rowsIn) {
-  if (!company || !closingMonth) throw new Error("業者・締め月を指定してください");
-  const allRows = rowsIn || haulingRows_();
-  const rows = allRows.filter(r => r.業者 === company && r.締め月 === normalizeDateStr_(closingMonth));
+// company+closingMonthで既に絞り込み済みの行配列(rows)から、工事名別の費用区分内訳・
+// 請求額・消費税・合計を組み立てる、getClosingCheck/getClosingCheckAll共通の内部処理。
+// statusRowsIn省略時は締め状態シートを自身で読み込む(getClosingCheckAllのように業者数ぶん
+// 繰り返し呼ぶ場合は、呼び出し元で1回だけ読んだ結果をstatusRowsInで渡して使い回す)。
+function buildClosingCheckResult_(company, closingMonth, rows, statusRowsIn) {
   const byProject = {};
   rows.forEach(r => {
     const key = r.物件名 || "(物件名なし)";
@@ -806,8 +835,19 @@ function getClosingCheck(company, closingMonth, rowsIn) {
     return acc;
   }, { コラム横持: 0, 製品等横持: 0, その他横持: 0, メッキ: 0, 現場搬入費用: 0, 重量: 0, 請求額: 0, 消費税: 0, 合計請求額: 0 });
 
-  const status = findStatusRow_(company, normalizeDateStr_(closingMonth));
-  return { company: company, closingMonth: normalizeDateStr_(closingMonth), status: status ? status.状態 : "未取込", projects: projects, total: total };
+  const status = findStatusRow_(company, closingMonth, statusRowsIn);
+  return { company: company, closingMonth: closingMonth, status: status ? status.状態 : "未取込", projects: projects, total: total };
+}
+
+// 「20日締めチェック」: 業者+締め月を選択すると、工事名別の費用区分内訳・請求額・消費税・合計を返す。
+// 費用区分は保存済みの列値を信用せず、「ブロック」列から毎回classifyFeeType_で再判定する
+// (過去に別区分で保存された行があっても、常に最新の分類ロジックで正しく仕分けるため)。
+function getClosingCheck(company, closingMonth, rowsIn) {
+  if (!company || !closingMonth) throw new Error("業者・締め月を指定してください");
+  const normalizedClosing = normalizeDateStr_(closingMonth);
+  const allRows = rowsIn || haulingRows_();
+  const rows = allRows.filter(r => r.業者 === company && r.締め月 === normalizedClosing);
+  return buildClosingCheckResult_(company, normalizedClosing, rows);
 }
 
 // 「20日締めチェック」の業者「全て」表示: 指定した締め月について、業者マスタの全業者分の
@@ -815,11 +855,26 @@ function getClosingCheck(company, closingMonth, rowsIn) {
 // 業者をまたいだ総合計は作らない(業者ごとに完結した表として扱うため)。
 // rowsIn省略時は配車データを自身で読み込む(getCheckScreenInit等、呼び出し元が既に
 // 読み込み済みの場合はrowsInで渡すことで、配車データの二重読み込みを避けられる)。
+// 【高速化】以前は業者数(6社)ぶんgetClosingCheckを呼び出しており、そのたびに全行を
+// filterしていた(全行スキャンが業者数に比例して繰り返されていた)。全行を1回だけ走査して
+// 業者ごとにグルーピングしてから、業者ごとの集計はグルーピング済みの小さい配列に対して行う
+// ように変更し、全行スキャンを1回に集約した。締め状態シートについても同様に、以前は
+// 業者ごとにfindStatusRow_→statusRows_()でシートを毎回開き直していたのを、1回だけ
+// 読み込んで使い回すように変更した。
 function getClosingCheckAll(closingMonth, rowsIn) {
   if (!closingMonth) throw new Error("締め月を指定してください");
   const normalizedClosing = normalizeDateStr_(closingMonth);
   const rows = rowsIn || haulingRows_();
-  const companies = listCompanies().map(company => getClosingCheck(company, normalizedClosing, rows));
+  const byCompany = {};
+  rows.forEach(r => {
+    if (r.締め月 !== normalizedClosing) return;
+    if (!byCompany[r.業者]) byCompany[r.業者] = [];
+    byCompany[r.業者].push(r);
+  });
+  const statusRows = statusRows_();
+  const companies = listCompanies().map(company =>
+    buildClosingCheckResult_(company, normalizedClosing, byCompany[company] || [], statusRows)
+  );
   return { closingMonth: normalizedClosing, companies: companies };
 }
 
@@ -877,11 +932,12 @@ function fiscalYearClosingMonths_(fiscalYearEnd) {
 }
 
 function currentFiscalYearEnd_() {
-  const now = new Date();
-  const tz = "Asia/Tokyo";
-  const y = Number(Utilities.formatDate(now, tz, "yyyy"));
-  const m = Number(Utilities.formatDate(now, tz, "M"));
-  const d = Number(Utilities.formatDate(now, tz, "d"));
+  // Utilities.formatDateはGASのサービス呼び出しでコストがあるため、cellToYmd_と同じ方針
+  // (dateToYmdJst_)でAsia/Tokyoの年月日を求める。
+  const t = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const y = t.getUTCFullYear();
+  const m = t.getUTCMonth() + 1;
+  const d = t.getUTCDate();
   // 11/21以降は「翌年11月20日決算」の年度に入る
   if (m > 11 || (m === 11 && d >= 21)) return y + 1;
   return y;
