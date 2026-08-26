@@ -429,6 +429,10 @@ function closingToFiscalYearMonth_(closingStr) {
 // 1回のリクエストで全て取得する。
 // preselect: { company, closingMonth } が指定された場合、デフォルトの業者「全て」+最新月では
 // なく、その業者+締め月の結果を開いた状態で表示する(Excel取込み直後の確定促し用)。
+// 【本更新で修正】以前はpreselect指定時も一旦「全て」の結果をGAS側で計算させてから使わずに
+// 捨て、refreshCheckResult()で単体の結果を別リクエストとして取り直していた(配車データの
+// 二重読み込み+GAS呼び出しがもう1往復発生していた)。GAS側にpreselectの業者+締め月を渡し、
+// 最初から単体の結果を返してもらう形にして、この無駄な往復を無くした。
 async function initCheckScreen(preselect) {
   checkState = { company: null, fiscalYear: null, month: null };
   document.getElementById("check-status-badge").innerHTML = "";
@@ -439,7 +443,7 @@ async function initCheckScreen(preselect) {
 
   let init;
   try {
-    init = await apiGet("getCheckScreenInit");
+    init = await apiGet("getCheckScreenInit", preselect ? { company: preselect.company, closingMonth: preselect.closingMonth } : null);
   } catch (err) {
     hideLoadingModal(false);
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
@@ -466,14 +470,13 @@ async function initCheckScreen(preselect) {
   renderCheckYearButtons(init.years);
 
   if (preselect) {
-    await refreshCheckResult(); // 読み込み中ポップアップを閉じる処理はrefreshCheckResult側で行う
+    renderCheckResultData_(init.result);
   } else if (init.result) {
     renderCheckResultAll_(init.result);
-    hideLoadingModal(true);
   } else {
     resultEl.innerHTML = "";
-    hideLoadingModal(true);
   }
+  hideLoadingModal(true);
 }
 
 function renderCheckCompanyButtons() {
