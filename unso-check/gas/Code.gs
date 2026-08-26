@@ -9,6 +9,8 @@
  * 初回セットアップ: このファイルを保存後、Apps Scriptエディタ上部の関数選択で
  * 「setupSheets」を選び、▶実行ボタンを押してください(1回だけでよい。シート・見出し・
  * 業者マスタの初期データを自動作成します。既にシートがある場合は何もしません)。
+ * 続けて「createBackupTrigger」も1回実行してください(毎月1日、Google Driveへスプレッド
+ * シートを丸ごとバックアップする月次トリガーを設定します)。
  *
  * 業務ルールの詳細は「鳥取運送アプリ_引き継ぎ書」を参照。要点:
  *   - 締め月は「21日始まり・20日締め」(前月21日〜当月20日)
@@ -22,6 +24,9 @@
  *   - 「締め状態」シートも開くたびに自動で並び替わる(締め月→業者の優先順、最新が上)。onOpen()参照
  *   - 確定済みの(業者+締め月)を丸ごとやり直したい場合は、フロントの隠しコマンド(ロゴ5回タップ)
  *     経由でdeleteConfirmedMonthを呼び、「配車データ」「締め状態」両シートの該当行を削除できる
+ *   - 毎月1日、スプレッドシートを丸ごとコピーしてGoogle Driveの「保存用バックアップ」
+ *     フォルダへ保存する(backupSpreadsheetToDrive。createBackupTriggerで設定した
+ *     月次トリガーから呼ばれる)
  */
 
 const SHEET_HAULING = "配車データ";
@@ -188,6 +193,36 @@ function recalculateFeeTypes() {
   const feeTypes = blocks.map(row => [classifyFeeType_(row[0])]);
   sh.getRange(2, map["費用区分"], numRows, 1).setValues(feeTypes);
   Logger.log("費用区分を" + numRows + "行分、再計算しました。");
+}
+
+// ---------- 月次バックアップ(毎月1日、Google Driveへスプレッドシートを丸ごとコピー保存) ----------
+
+// バックアップの保存先フォルダ(Google Drive「保存用バックアップ」フォルダ)
+const BACKUP_FOLDER_ID = "1-tqGWDV7wg4mQc8PmeNgF3mLvFKKQROc";
+
+// スプレッドシート「鳥取運送アプリ」を丸ごとコピーし、Google Driveの指定フォルダへ
+// 「鳥取スプレッドシートYYYY.MM.DD保存」という名前で保存する。createBackupTriggerで設定した
+// 毎月1日のトリガーから自動的に呼ばれるほか、Apps Scriptエディタから手動実行してその場で
+// バックアップを取ることもできる。
+function backupSpreadsheetToDrive() {
+  const folder = DriveApp.getFolderById(BACKUP_FOLDER_ID);
+  const dateStr = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy.MM.dd");
+  const fileName = "鳥取スプレッドシート" + dateStr + "保存";
+  const copy = DriveApp.getFileById(ss_().getId()).makeCopy(fileName, folder);
+  Logger.log("バックアップを作成しました: " + fileName + " (" + copy.getId() + ")");
+  return { fileName: fileName, fileId: copy.getId() };
+}
+
+// 初回のみApps Scriptエディタから手動で1回実行する。backupSpreadsheetToDriveを毎月1日
+// 朝6時(Asia/Tokyo。appsscript.jsonのタイムゾーン設定に従う)に呼ぶトリガーを設定する。
+// 毎月1日はどの月にも必ず存在するため、2月等の特別扱いは不要。
+// 何度実行しても、既存の同名トリガーを削除してから作り直すので安全。
+function createBackupTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === "backupSpreadsheetToDrive") ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger("backupSpreadsheetToDrive").timeBased().onMonthDay(1).atHour(6).create();
+  Logger.log("毎月1日6時のバックアップトリガーを作成しました");
 }
 
 function ensureSheet_(ss, name, headers) {
