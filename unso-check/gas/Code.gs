@@ -368,12 +368,24 @@ function normalizeDateStr_(s) {
   return ymd_(y, m, d);
 }
 
+// DateオブジェクトからAsia/Tokyo(常にUTC+9固定・夏時間なし)基準の"yyyy/MM/dd"を求める。
+// Utilities.formatDateはGASのサービス呼び出しを伴い1回あたりのコストが大きく、cellToYmd_の
+// ように配車データ全行×日付列ぶん(数千回規模)呼ばれる場面ではこれが処理時間の大半を
+// 占めるボトルネックになっていた(実測: 3854行の変換で約21秒)。Asia/Tokyoは夏時間が無く
+// 常にUTC+9固定のため、エポック時刻に9時間を足してUTC基準のgetterで年月日を取り出せば、
+// Utilities.formatDate(v, "Asia/Tokyo", "yyyy/MM/dd")と数学的に完全に同じ結果を、
+// GASのサービス呼び出しを介さない純粋なJS計算だけで得られる。
+function dateToYmdJst_(d) {
+  const t = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  return t.getUTCFullYear() + "/" + pad2_(t.getUTCMonth() + 1) + "/" + pad2_(t.getUTCDate());
+}
+
 // スプレッドシートのセルから読み取った値を "yyyy/MM/dd" 文字列に正規化する。
 // setValues()に日付らしい文字列を渡すとセルが自動的に日付型に変換されてしまうことがあるため、
 // 実際に読み取った値がDateオブジェクトであっても正しく比較できるようにする(forceTextColumns_で
 // 今後の自動変換自体は防止しているが、既存データや想定外の入力に対する保険として残す)。
 function cellToYmd_(v) {
-  if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, "Asia/Tokyo", "yyyy/MM/dd");
+  if (v instanceof Date && !isNaN(v)) return dateToYmdJst_(v);
   if (!v) return "";
   try { return normalizeDateStr_(v); } catch (e) { return String(v).trim(); }
 }
