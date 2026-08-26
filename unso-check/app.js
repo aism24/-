@@ -36,9 +36,10 @@ const SCREENS = ["home", "import", "check", "yearly", "project"];
 function showScreen(name, opts) {
   SCREENS.forEach(s => { document.getElementById("screen-" + s).style.display = (s === name) ? "block" : "none"; });
   document.getElementById("header-back-btn").style.display = (name === "home") ? "none" : "inline-block";
-  if (name === "check") initCheckScreen(opts && opts.preselect);
-  if (name === "yearly") initYearlyScreen();
-  if (name === "project") initProjectScreen();
+  // 呼び出し元(submitImport)が画面の表示完了を待てるよう、各初期化処理のPromiseを返す
+  if (name === "check") return initCheckScreen(opts && opts.preselect);
+  if (name === "yearly") return initYearlyScreen();
+  if (name === "project") return initProjectScreen();
 }
 function goHome() { showScreen("home"); }
 
@@ -264,17 +265,60 @@ function renderExcludedRows(excludedRows) {
   container.innerHTML = html;
 }
 
+// ---------- 読み込み中ポップアップ(GAS呼び出しを伴う全ての画面表示・更新で共通) ----------
+// カード内に「読み込み中...」を個別表示する代わりに、画面中央のポップアップ+データバーで
+// 読み込み中であることを示す。20秒かけて95%まで進み(それ以上は実際の完了を待つ)、実際に
+// 表示が完了した時点で100%まで一気に進めてから閉じる。
+// showLoadingModal()は、複数のGAS呼び出しを連続して挟む一連の処理(例: Excel取込み→
+// 20日締めチェック画面への自動遷移→その業者+締め月の内容表示)の間に何度呼ばれても、既に
+// 表示中であれば進捗をリセットしない(処理が続いている間、体感上は1本の読み込み中として見せる)。
+let loadingModalTimer = null;
+let loadingModalStart = null;
+
+function showLoadingModal() {
+  const overlay = document.getElementById("loading-progress-overlay");
+  if (overlay.style.display === "flex") return;
+  const bar = document.getElementById("loading-progress-bar");
+  bar.style.width = "0%";
+  overlay.style.display = "flex";
+
+  loadingModalStart = Date.now();
+  const DURATION_MS = 20000;
+  const TARGET_PERCENT = 95;
+  clearInterval(loadingModalTimer);
+  loadingModalTimer = setInterval(() => {
+    const percent = Math.min(TARGET_PERCENT, ((Date.now() - loadingModalStart) / DURATION_MS) * TARGET_PERCENT);
+    bar.style.width = percent + "%";
+  }, 200);
+}
+
+// completed=true: 100%まで進めてから閉じる(一連の処理が全て成功し、表示が完了した時点)
+// completed=false: 進行を止めて即座に閉じる(重複確認・対象外行・エラー等、この後表示を続けないため)
+function hideLoadingModal(completed) {
+  clearInterval(loadingModalTimer);
+  loadingModalTimer = null;
+  const overlay = document.getElementById("loading-progress-overlay");
+  if (completed) {
+    document.getElementById("loading-progress-bar").style.width = "100%";
+    setTimeout(() => { overlay.style.display = "none"; }, 300);
+  } else {
+    overlay.style.display = "none";
+  }
+}
+
 async function submitImport(force) {
   if (!pendingImport) return;
   const statusEl = document.getElementById("import-status");
   const submitBtn = document.getElementById("import-submit-btn");
   submitBtn.disabled = true;
-  statusEl.textContent = "取り込み中...";
+  statusEl.textContent = "";
   statusEl.className = "import-status";
+  showLoadingModal();
   try {
     const payload = force ? Object.assign({}, pendingImport, { force: true }) : pendingImport;
     const result = await apiPost("importHaulingFile", payload);
     if (result.duplicate) {
+      hideLoadingModal(false);
       statusEl.textContent = "";
       const proceed = confirm(
         "この内容は、既に取り込まれている " + result.company + " " + result.closingMonth + "〆 のデータと完全に一致しています。\n" +
@@ -297,13 +341,16 @@ async function submitImport(force) {
       // 取込み成功後は「20日締めチェック」画面のこの業者+締め月の結果へ自動的に移動し、
       // その場で確定を促す(確定を忘れたまま次のファイルを選んでしまうことを防ぐため)。
       // 別のファイルを取り込みたい場合は、ホームから「Excelファイルを取り込む」をやり直す。
-      showScreen("check", { preselect: { company: result.company, closingMonth: result.closingMonth } });
+      // (読み込み中ポップアップは、遷移先のinitCheckScreen→refreshCheckResultが閉じる)
+      await showScreen("check", { preselect: { company: result.company, closingMonth: result.closingMonth } });
     } else {
+      hideLoadingModal(false);
       statusEl.textContent = "対象外の行があったため、今回の取り込みは保存されませんでした。内容を確認し、正しいファイルを再アップロードしてください。";
       statusEl.className = "import-status error";
       renderExcludedRows(result.excludedRows);
     }
   } catch (err) {
+    hideLoadingModal(false);
     alert("エラー: " + err.message);
     document.getElementById("excluded-rows-container").innerHTML = "";
     resetImportSelection();
@@ -365,13 +412,13 @@ async function initCheckScreen(preselect) {
   document.getElementById("check-confirm-slot").innerHTML = "";
   const resultEl = document.getElementById("check-result");
   const yearContainer = document.getElementById("check-year-buttons");
-  resultEl.innerHTML = "<p class=\"hint\">読み込み中...</p>";
-  yearContainer.innerHTML = "<span class=\"hint\">読み込み中...</span>";
+  showLoadingModal();
 
   let init;
   try {
     init = await apiGet("getCheckScreenInit");
   } catch (err) {
+    hideLoadingModal(false);
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
     yearContainer.innerHTML = "";
     return;
@@ -396,11 +443,13 @@ async function initCheckScreen(preselect) {
   renderCheckYearButtons(init.years);
 
   if (preselect) {
-    await refreshCheckResult();
+    await refreshCheckResult(); // 読み込み中ポップアップを閉じる処理はrefreshCheckResult側で行う
   } else if (init.result) {
     renderCheckResultAll_(init.result);
+    hideLoadingModal(true);
   } else {
     resultEl.innerHTML = "";
+    hideLoadingModal(true);
   }
 }
 
@@ -478,7 +527,7 @@ function renderCheckResultData_(data) {
   badgeEl.innerHTML = statusBadgeHtml_(data.status);
   resultEl.innerHTML = closingCheckTableHtml_(data);
   confirmSlot.innerHTML = (data.status === "未確定" && data.projects.length > 0)
-    ? "<button class=\"btn btn-confirm\" onclick=\"confirmCurrentClosing()\">この内容で確定する(担当者チェック完了・支払可)</button>"
+    ? "<button class=\"btn btn-confirm\" onclick=\"confirmCurrentClosing()\">内容確定(担当者チェック)</button>"
     : "";
 }
 
@@ -512,7 +561,7 @@ async function refreshCheckResult() {
     return;
   }
   const closingMonth = fiscalMonthToClosing(checkState.fiscalYear, checkState.month);
-  resultEl.innerHTML = "<p class=\"hint\">読み込み中...</p>";
+  showLoadingModal();
   try {
     if (checkState.company === CHECK_COMPANY_ALL) {
       const data = await apiGet("getClosingCheckAll", { closingMonth: closingMonth });
@@ -521,7 +570,9 @@ async function refreshCheckResult() {
       const data = await apiGet("getClosingCheck", { company: checkState.company, closingMonth: closingMonth });
       renderCheckResultData_(data);
     }
+    hideLoadingModal(true);
   } catch (err) {
+    hideLoadingModal(false);
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
     confirmSlot.innerHTML = "";
     badgeEl.innerHTML = "";
@@ -531,13 +582,27 @@ async function refreshCheckResult() {
 async function confirmCurrentClosing() {
   const company = checkState.company;
   const closingMonth = fiscalMonthToClosing(checkState.fiscalYear, checkState.month);
-  if (!confirm(company + " " + closingMonth + "〆 を確定します(以後、修正するには担当者による対応が必要になります)。よろしいですか?")) return;
+  showLoadingModal();
   try {
     await apiPost("confirmClosing", { company: company, closingMonth: closingMonth });
-    await refreshCheckResult();
+    hideLoadingModal(true);
+    showConfirmDoneModal(company, closingMonth);
   } catch (err) {
+    hideLoadingModal(false);
     alert("エラー: " + err.message);
   }
+}
+
+// 確定完了ポップアップ: 業者名+締め月を表示し、OKボタンを押すとホーム画面へ戻る
+function showConfirmDoneModal(company, closingMonth) {
+  const month = Number(closingMonth.split("/")[1]);
+  document.getElementById("confirm-done-message").textContent = company + "の" + month + "月20日〆が確定しました";
+  document.getElementById("confirm-done-overlay").style.display = "flex";
+}
+
+function closeConfirmDoneModal() {
+  document.getElementById("confirm-done-overlay").style.display = "none";
+  goHome();
 }
 
 // ---------- 年度集計画面 ----------
@@ -573,12 +638,12 @@ async function initYearlyScreen() {
 async function renderYearlyYearButtons() {
   const container = document.getElementById("yearly-year-buttons");
   const resultEl = document.getElementById("yearly-result");
-  container.innerHTML = "<span class=\"hint\">読み込み中...</span>";
-  resultEl.innerHTML = "<p class=\"hint\">読み込み中...</p>";
+  showLoadingModal();
   let init;
   try {
     init = await apiGet("getYearlySummaryInit", {});
   } catch (err) {
+    hideLoadingModal(false);
     container.innerHTML = "";
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
     return;
@@ -597,15 +662,18 @@ async function renderYearlyYearButtons() {
     };
   });
   renderYearlyResult(data);
+  hideLoadingModal(true);
 }
 
 async function loadYearlySummary() {
   const resultEl = document.getElementById("yearly-result");
-  resultEl.innerHTML = "<p class=\"hint\">読み込み中...</p>";
+  showLoadingModal();
   try {
     const data = await apiGet("getYearlySummary", { fiscalYearEnd: yearlyState.fiscalYear });
     renderYearlyResult(data);
+    hideLoadingModal(true);
   } catch (err) {
+    hideLoadingModal(false);
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
   }
 }
@@ -649,15 +717,20 @@ async function initProjectScreen() {
   projectState = { name: null };
   document.getElementById("project-result").innerHTML = "";
   const container = document.getElementById("project-buttons");
-  container.innerHTML = "<span class=\"hint\">読み込み中...</span>";
+  showLoadingModal();
   let yearGroups;
   try {
     yearGroups = await apiGet("listProjects");
   } catch (err) {
+    hideLoadingModal(false);
     container.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
     return;
   }
-  if (yearGroups.length === 0) { container.innerHTML = "<span class=\"hint\">物件データがありません</span>"; return; }
+  if (yearGroups.length === 0) {
+    container.innerHTML = "<span class=\"hint\">物件データがありません</span>";
+    hideLoadingModal(true);
+    return;
+  }
   container.innerHTML = yearGroups.map(g =>
     "<div class=\"project-year-group\"><div class=\"project-year-label\">" + g.year + "年度</div><div class=\"button-group\">" +
     g.names.map(n => "<button type=\"button\" class=\"btn\" data-name=\"" + n + "\">" + n + "</button>").join("") +
@@ -670,11 +743,12 @@ async function initProjectScreen() {
       loadProjectDetail();
     };
   });
+  hideLoadingModal(true);
 }
 
 async function loadProjectDetail() {
   const resultEl = document.getElementById("project-result");
-  resultEl.innerHTML = "<p class=\"hint\">読み込み中...</p>";
+  showLoadingModal();
   try {
     const data = await apiGet("getProjectDetail", { projectName: projectState.name });
     let html = "<div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>業者</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>合計</th></tr></thead><tbody>";
@@ -691,7 +765,9 @@ async function loadProjectDetail() {
       "　<strong>1トン当たりの金額: " + perTonText + "</strong></p>";
 
     resultEl.innerHTML = html;
+    hideLoadingModal(true);
   } catch (err) {
+    hideLoadingModal(false);
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
   }
 }

@@ -66,7 +66,34 @@ body.drag-over::after {
 .btn-primary { background: #1a2540; color: #fff; border: none; margin-top: 12px; }
 .btn-primary:hover { background: #263559; }
 .btn-danger { background: #c62828; color: #fff; border: none; }
-.btn-confirm { background: #2e7d32; color: #fff; border: none; }
+/* 「内容確定」ボタン: 黄色背景・赤太文字で目立たせ、縁が光りながら点滅してクリックを促す */
+.btn-confirm {
+  background: #ffeb3b; color: #c62828; font-weight: 900; border: 3px solid #ffc107;
+  animation: confirm-btn-glow 1.2s ease-in-out infinite;
+}
+@keyframes confirm-btn-glow {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(255,193,7,0.5); border-color: #ffc107; }
+  50% { box-shadow: 0 0 18px 7px rgba(255,193,7,0.95); border-color: #fff59d; }
+}
+
+/* 画面中央のポップアップ(Excel取込み〜表示完了までの読み込み中・確定完了時)共通 */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-box {
+  background: #fff; border-radius: 12px; padding: 28px 32px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+  width: 340px; max-width: 90%; text-align: center;
+}
+.modal-message { font-size: 15px; color: #1a2540; margin-bottom: 10px; line-height: 1.6; }
+.modal-loading-label { font-size: 14px; color: #1a2540; margin-bottom: 16px; }
+.progress-bar-track { width: 100%; height: 14px; border-radius: 999px; background: #e2e5ea; overflow: hidden; }
+.progress-bar-fill {
+  height: 100%; background: linear-gradient(90deg, #ff9800, #e65100);
+  border-radius: 999px; transition: width 0.3s ease-out;
+}
 
 input[type="file"] { display: inline-block; margin: 8px 8px 16px 0; }
 .drop-hint {
