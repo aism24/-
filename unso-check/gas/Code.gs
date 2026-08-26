@@ -17,8 +17,8 @@
  *   - 確定(状態=確定済み)=担当者チェック完了=検収完了=支払完了とみなす
  *   - 未確定(確定待ち)のデータが1件でも残っている間は、新しい取込みができない
  *     (同じ業者+締め月への修正の再アップロードは可)
- *   - 「配車データ」シートは開くたびに自動で並び替わる(締め月→業者→降日→物件名の優先順、
- *     最新が上)。onOpen()参照
+ *   - 「配車データ」シートは開くたびに自動で並び替わる(締め月→業者→物件名→降日の優先順、
+ *     最新が上)。並び替え後、ID列は2行目から行番号に合わせて振り直される。onOpen()参照
  */
 
 const SHEET_HAULING = "配車データ";
@@ -88,11 +88,14 @@ function onOpen() {
   }
 }
 
-// 「配車データ」シートを、締め月(新しい順)→業者(下記の指定順)→降日(新しい順)→物件名(降順)の
+// 「配車データ」シートを、締め月(新しい順)→業者(下記の指定順)→物件名(降順)→降日(新しい順)の
 // 優先順で並び替える。onOpen()から自動的に呼ばれるほか、Apps Scriptエディタから手動実行も
 // できる(過去データを一度に並び替え直したい場合等)。
 // ヘッダー行(1行目)は対象外。各行は20列すべてをひとかたまりのまま入れ替えるだけなので、
-// 値が消えたり列がズレたりすることはない(ID・費用区分・締め状態への影響も無い)。
+// 値が消えたり列がズレたりすることはない(費用区分・締め状態への影響も無い)。
+// 並び替え後、ID列は2行目から順に2,3,4...と行番号に合わせて振り直す(ID=行番号になるため、
+// IDから該当行をすぐに特定できる)。IDは「重複しなければ何でもよい」値であり、新規取込み時の
+// 採番も既存データの最大値+1で行っているため、この振り直しによる不整合は起きない。
 const HAULING_SORT_COMPANY_ORDER = ["日本興運", "誠和梱包", "用瀬運送", "鳥取グレーン", "川崎クレーン", "山陰運送"];
 
 function sortHaulingData() {
@@ -106,6 +109,7 @@ function sortHaulingData() {
     const range = sh.getRange(2, 1, lastRow - 1, numCols);
     const values = range.getValues();
 
+    const idIdx = map["ID"] - 1;
     const closingIdx = map["締め月"] - 1;
     const companyIdx = map["業者"] - 1;
     const arrivalIdx = map["降日"] - 1;
@@ -119,10 +123,13 @@ function sortHaulingData() {
       const rankA = companyRank[a[companyIdx]] !== undefined ? companyRank[a[companyIdx]] : 999;
       const rankB = companyRank[b[companyIdx]] !== undefined ? companyRank[b[companyIdx]] : 999;
       if (rankA !== rankB) return rankA - rankB;
-      const arrivalCmp = cellToYmd_(b[arrivalIdx]).localeCompare(cellToYmd_(a[arrivalIdx]));
-      if (arrivalCmp !== 0) return arrivalCmp;
-      return String(b[projectIdx] || "").localeCompare(String(a[projectIdx] || ""), "ja");
+      const projectCmp = String(b[projectIdx] || "").localeCompare(String(a[projectIdx] || ""), "ja");
+      if (projectCmp !== 0) return projectCmp;
+      return cellToYmd_(b[arrivalIdx]).localeCompare(cellToYmd_(a[arrivalIdx]));
     });
+
+    // ID列を2行目から順に振り直す(ID=行番号にする)
+    values.forEach((row, i) => { row[idIdx] = i + 2; });
 
     range.setValues(values);
   });
