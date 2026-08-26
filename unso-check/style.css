@@ -210,6 +210,16 @@ input[type="file"] { display: inline-block; margin: 8px 8px 16px 0; }
   50% { opacity: 0.25; }
 }
 
+/* 確定済みデータ削除ボタンの横に表示する、完全に削除されることへの強い注意書き。
+   ボタンの文字サイズ(14px)の1.5倍・赤字・太字で、project-note-blinkと同じ
+   ゆっくりした点滅にする */
+.delete-danger-warning {
+  color: #d32f2f;
+  font-size: 21px;
+  font-weight: 900;
+  animation: project-note-blink 3.6s ease-in-out infinite;
+}
+
 .filter-row { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; margin-bottom: 16px; }
 .filter-row label { display: flex; flex-direction: column; font-size: 13px; color: #555; gap: 4px; }
 .filter-row select, .filter-row input { padding: 8px 10px; font-size: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); min-width: 160px; }
