@@ -154,6 +154,9 @@ h3 { font-size: 15px; font-weight: 700; color: var(--brand-strong); margin: 16px
   50% { box-shadow: 0 0 18px 7px rgba(255,193,7,0.95); border-color: #fff59d; }
 }
 .btn-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 4px; }
+/* 「物件選択に戻る」ボタン: 黄色背景(内容確定ボタンの点滅アニメーションは付けない) */
+.btn-back { background: #ffeb3b; color: var(--brand-strong); border: none; flex-shrink: 0; }
+.btn-back:hover { background: #fff59d; }
 
 /* 画面中央のポップアップ(Excel取込み〜表示完了までの読み込み中・確定完了・
    エラー表示・確認ダイアログ)共通 */
@@ -212,7 +215,7 @@ input[type="file"] { display: inline-block; margin: 8px 8px 16px 0; }
 .filter-row select, .filter-row input { padding: 8px 10px; font-size: 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); min-width: 160px; }
 
 .check-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.check-title-row h2 { margin-bottom: 0; }
+.check-title-row h2, .check-title-row h3 { margin: 0; }
 .check-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 16px; }
 .button-group { display: flex; flex-wrap: wrap; gap: 8px; }
 .button-group .btn-primary { margin-top: 0; }
