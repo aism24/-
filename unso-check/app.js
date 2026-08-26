@@ -785,6 +785,7 @@ async function initProjectScreen() {
   projectState = { name: null };
   document.getElementById("project-result").innerHTML = "";
   const container = document.getElementById("project-buttons");
+  container.style.display = "";
   showLoadingModal();
   let yearGroups;
   try {
@@ -811,17 +812,20 @@ async function initProjectScreen() {
     btn.onclick = () => {
       projectState.name = btn.dataset.name;
       container.querySelectorAll("button").forEach(b => b.classList.toggle("btn-primary", b === btn));
+      container.style.display = "none";
       loadProjectDetail();
     };
   });
   hideLoadingModal(true);
 }
 
-// 「物件選択に戻る」: 選択状態を解除し、物件一覧のボタンのハイライトも外す
+// 「物件選択に戻る」: 選択状態を解除し、物件一覧のボタンのハイライトを外して再表示する
 function backToProjectSelection() {
   projectState.name = null;
   document.getElementById("project-result").innerHTML = "";
-  document.querySelectorAll("#project-buttons button").forEach(b => b.classList.remove("btn-primary"));
+  const container = document.getElementById("project-buttons");
+  container.querySelectorAll("button").forEach(b => b.classList.remove("btn-primary"));
+  container.style.display = "";
 }
 
 async function loadProjectDetail() {
