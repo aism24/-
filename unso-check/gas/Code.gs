@@ -274,6 +274,7 @@ function doGet(e) {
     if (p.action === "getYearlySummaryInit") return ok_(getYearlySummaryInit(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
     if (p.action === "listProjects") return ok_(listProjects());
     if (p.action === "getProjectDetail") return ok_(getProjectDetail(p.projectName));
+    if (p.action === "getCompanyDetail") return ok_(getCompanyDetail(p.company, p.fiscalYearEnds));
     return errRes_("不明なaction: " + p.action);
   } catch (err) {
     return errRes_(err.message);
@@ -1081,6 +1082,79 @@ function getProjectDetail(projectName) {
   }, emptyFeeBucket_());
 
   return { 物件名: projectName, 開始日: 開始日, 終了日: 終了日, 業者別: companies, 締め月別: months, total: total };
+}
+
+// 業者別内訳: 指定した業者の配車データを締め月ごと・物件名ごとに集計する(横持3区分・
+// メッキ・現場搬入費用・重量・合計)。重量はgetClosingCheck/getYearlySummaryと同じ方針で
+// 現場搬入費用分のみを対象にする(横持4種・メッキの重量は含めない)。
+// fiscalYearEndsCsv: カンマ区切りの会計年度末(例:"2026,2025")。空文字/未指定なら全期間が対象。
+// 締め月別は、対象となる会計年度(複数指定時は全て)の12ヶ月分を、データが無い月も0円で
+// 必ず全て並べる(getYearlySummaryの月別と同じ方針。ユーザー指示により、実績の有無に関わらず
+// 締め月の並びが常に揃うようにする)。物件別はgetProjectDetailの業者別と異なり、
+// 「全ての物件名」という固定の母集合が無いため、実際にデータがある物件だけを列挙する。
+function getCompanyDetail(company, fiscalYearEndsCsv) {
+  if (!company) throw new Error("業者を指定してください");
+  const allRows = haulingRows_().filter(r => (r.業者 || "(業者不明)") === company);
+
+  const selectedYears = String(fiscalYearEndsCsv || "").split(",").map(s => s.trim()).filter(Boolean).map(Number);
+  const yearsToSeed = selectedYears.length > 0 ? selectedYears : availableYearsFromRows_(allRows);
+  const rows = selectedYears.length > 0
+    ? allRows.filter(r => selectedYears.indexOf(fiscalYearForClosingStr_(r.締め月)) !== -1)
+    : allRows;
+
+  const emptyFeeBucket_ = () => ({ コラム横持: 0, 製品等横持: 0, その他横持: 0, メッキ: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 });
+
+  // 搬入期間(いつからいつまでのデータか): 対象行(選択中の年度で絞り込んだ後)の降日の最小・最大
+  let 開始日 = "", 終了日 = "";
+  rows.forEach(r => {
+    if (!r.降日) return;
+    if (!開始日 || r.降日 < 開始日) 開始日 = r.降日;
+    if (!終了日 || r.降日 > 終了日) 終了日 = r.降日;
+  });
+
+  const byMonth = {};
+  yearsToSeed.forEach(fye => {
+    fiscalYearClosingMonths_(fye).forEach(c => {
+      if (!byMonth[c]) byMonth[c] = Object.assign({ 締め月: c }, emptyFeeBucket_());
+    });
+  });
+
+  const byProject = {};
+  rows.forEach(r => {
+    const amt = toNum_(r.費用額);
+    const feeType = classifyFeeType_(r.ブロック);
+    const yardWeight = feeType === "現場搬入費用" ? toNum_(r.総重量) : 0;
+
+    if (byMonth[r.締め月]) {
+      byMonth[r.締め月][feeType] += amt;
+      byMonth[r.締め月].重量 += yardWeight;
+      byMonth[r.締め月].合計 += amt;
+    }
+
+    const pKey = r.物件名 || "(物件名なし)";
+    if (!byProject[pKey]) byProject[pKey] = Object.assign({ 物件名: pKey }, emptyFeeBucket_());
+    byProject[pKey][feeType] += amt;
+    byProject[pKey].重量 += yardWeight;
+    byProject[pKey].合計 += amt;
+  });
+
+  const months = Object.keys(byMonth).sort().map(k => byMonth[k]);
+  const projects = Object.keys(byProject).map(k => byProject[k]);
+  const total = projects.reduce((acc, p) => {
+    acc.コラム横持 += p.コラム横持; acc.製品等横持 += p.製品等横持; acc.その他横持 += p.その他横持;
+    acc.メッキ += p.メッキ; acc.現場搬入費用 += p.現場搬入費用;
+    acc.重量 += p.重量; acc.合計 += p.合計;
+    return acc;
+  }, emptyFeeBucket_());
+
+  return {
+    業者: company,
+    開始日: 開始日, 終了日: 終了日,
+    年度一覧: availableYearsFromRows_(allRows),
+    締め月別: months,
+    物件別: projects,
+    total: total,
+  };
 }
 
 // ---------- 過去データ移行(運送QUERY2026等からの一括インポート。確定済みとして取り込む) ----------

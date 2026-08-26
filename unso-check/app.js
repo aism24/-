@@ -29,7 +29,7 @@ async function apiPost(action, payload) {
 
 // ---------- 画面切り替え ----------
 
-const SCREENS = ["home", "import", "check", "yearly", "project", "delete"];
+const SCREENS = ["home", "import", "check", "yearly", "project", "company", "delete"];
 // opts.preselect: { company, closingMonth } — 20日締めチェック画面を、業者「全て」+最新月の
 // デフォルト表示ではなく、指定した業者+締め月の結果を開いた状態で表示する(Excel取込み直後、
 // その場で確定を促すために使う)。
@@ -40,6 +40,7 @@ function showScreen(name, opts) {
   if (name === "check") return initCheckScreen(opts && opts.preselect);
   if (name === "yearly") return initYearlyScreen();
   if (name === "project") return initProjectScreen();
+  if (name === "company") return initCompanyScreen();
   if (name === "delete") return initDeleteScreen();
 }
 function goHome() { showScreen("home"); }
@@ -854,6 +855,100 @@ async function loadProjectDetail() {
     (data.締め月別 || []).forEach(m => {
       html += "<tr><td>" + m.締め月 + "〆</td><td>" + fmtYen(m.コラム横持) + "</td><td>" + fmtYen(m.製品等横持) + "</td><td>" + fmtYen(m.その他横持) + "</td><td>" + fmtYen(m.メッキ) + "</td><td>" +
         fmtYen(m.現場搬入費用) + "</td><td>" + (m.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(m.合計) + "</td></tr>";
+    });
+    html += feeBucketTotalRowHtml_(data.total);
+    html += "</tbody></table></div>";
+
+    resultEl.innerHTML = html;
+    hideLoadingModal(true);
+  } catch (err) {
+    hideLoadingModal(false);
+    resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
+  }
+}
+
+// ---------- 業者別内訳画面 ----------
+
+let companyState = { name: null, years: [] };
+
+async function initCompanyScreen() {
+  companyState = { name: null, years: [] };
+  document.getElementById("company-result").innerHTML = "";
+  const container = document.getElementById("company-buttons");
+  container.style.display = "";
+  const companies = await getCompanies();
+  container.innerHTML = companies.map(c => "<button type=\"button\" class=\"btn\" data-name=\"" + c + "\">" + c + "</button>").join("");
+  container.querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => {
+      companyState.name = btn.dataset.name;
+      companyState.years = [];
+      container.querySelectorAll("button").forEach(b => b.classList.toggle("btn-primary", b === btn));
+      container.style.display = "none";
+      loadCompanyDetail();
+    };
+  });
+}
+
+// 「業者選択に戻る」: 選択状態(年度フィルターも含む)を解除し、業者一覧を再表示する
+function backToCompanySelection() {
+  companyState.name = null;
+  companyState.years = [];
+  document.getElementById("company-result").innerHTML = "";
+  const container = document.getElementById("company-buttons");
+  container.querySelectorAll("button").forEach(b => b.classList.remove("btn-primary"));
+  container.style.display = "";
+}
+
+// 年度フィルターボタンの押下: 「全ての年度」は排他的(押すと個別年度の選択を全て解除する)。
+// 個別年度は複数選択可(トグル)。個別年度を選ぶと、選択数が0でなくなるため
+// 「全ての年度」は自動的に非アクティブ表示になる(companyState.years.length===0で判定するため)。
+function toggleCompanyYear(fiscalYearEnd) {
+  if (fiscalYearEnd === null) {
+    companyState.years = [];
+  } else {
+    const idx = companyState.years.indexOf(fiscalYearEnd);
+    if (idx !== -1) companyState.years.splice(idx, 1);
+    else companyState.years.push(fiscalYearEnd);
+  }
+  loadCompanyDetail();
+}
+
+async function loadCompanyDetail() {
+  const resultEl = document.getElementById("company-result");
+  showLoadingModal();
+  try {
+    const data = await apiGet("getCompanyDetail", { company: companyState.name, fiscalYearEnds: companyState.years.join(",") });
+    let html = "<div class=\"check-title-row\"><h3>" + data.業者 + "</h3>" +
+      "<button type=\"button\" class=\"btn btn-back\" onclick=\"backToCompanySelection()\">← 業者選択に戻る</button></div>";
+
+    const allYearsActive = companyState.years.length === 0;
+    html += "<div class=\"button-group\">";
+    html += "<button type=\"button\" class=\"btn" + (allYearsActive ? " btn-primary" : "") + "\" onclick=\"toggleCompanyYear(null)\">全ての年度</button>";
+    data.年度一覧.slice().reverse().forEach(y => {
+      const active = companyState.years.indexOf(y) !== -1;
+      html += "<button type=\"button\" class=\"btn" + (active ? " btn-primary" : "") + "\" onclick=\"toggleCompanyYear(" + y + ")\">" + y + "年度</button>";
+    });
+    html += "</div>";
+
+    html += "<p class=\"hint\">搬入期間: " + (data.開始日 && data.終了日 ? data.開始日 + " 〜 " + data.終了日 : "データがありません") + "</p>";
+
+    const t = data.total;
+    const perTonText = t.重量 > 0 ? fmtYen(t.合計 / t.重量) + "/t" : "現場搬入の重量が無いため算出不可";
+    html += "<p class=\"per-ton-summary\">合計重量: " + (t.重量 || 0).toFixed(1) + "t　総額: " + fmtYen(t.合計) +
+      "　<strong>1トン当たりの金額: " + perTonText + "</strong></p>";
+
+    html += "<h3>締め月別</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>締め月</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>合計</th></tr></thead><tbody>";
+    data.締め月別.forEach(m => {
+      html += "<tr><td>" + m.締め月 + "〆</td><td>" + fmtYen(m.コラム横持) + "</td><td>" + fmtYen(m.製品等横持) + "</td><td>" + fmtYen(m.その他横持) + "</td><td>" + fmtYen(m.メッキ) + "</td><td>" +
+        fmtYen(m.現場搬入費用) + "</td><td>" + (m.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(m.合計) + "</td></tr>";
+    });
+    html += feeBucketTotalRowHtml_(data.total);
+    html += "</tbody></table></div>";
+
+    html += "<h3>物件別</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>物件名</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>合計</th></tr></thead><tbody>";
+    data.物件別.forEach(p => {
+      html += "<tr><td>" + p.物件名 + "</td><td>" + fmtYen(p.コラム横持) + "</td><td>" + fmtYen(p.製品等横持) + "</td><td>" + fmtYen(p.その他横持) + "</td><td>" + fmtYen(p.メッキ) + "</td><td>" +
+        fmtYen(p.現場搬入費用) + "</td><td>" + (p.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(p.合計) + "</td></tr>";
     });
     html += feeBucketTotalRowHtml_(data.total);
     html += "</tbody></table></div>";
