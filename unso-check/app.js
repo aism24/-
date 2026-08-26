@@ -876,7 +876,9 @@ async function initCompanyScreen() {
   document.getElementById("company-result").innerHTML = "";
   const container = document.getElementById("company-buttons");
   container.style.display = "";
+  showLoadingModal();
   const companies = await getCompanies();
+  hideLoadingModal(true);
   container.innerHTML = companies.map(c => "<button type=\"button\" class=\"btn\" data-name=\"" + c + "\">" + c + "</button>").join("");
   container.querySelectorAll("button").forEach(btn => {
     btn.onclick = () => {
