@@ -1065,7 +1065,8 @@ async function refreshDeleteCompanies() {
 function renderDeleteConfirmSlot() {
   const slot = document.getElementById("delete-confirm-slot");
   slot.innerHTML = deleteState.companies.size > 0
-    ? "<button class=\"btn btn-danger\" onclick=\"executeDelete()\">確定済みデータを削除</button>"
+    ? "<div class=\"check-row\"><button class=\"btn btn-danger\" onclick=\"executeDelete()\">確定済みデータを削除</button>" +
+      "<span class=\"delete-danger-warning\">！！！完全にデータが消えるので注意！！！</span></div>"
     : "";
 }
 
