@@ -136,13 +136,14 @@ input[type="file"] { display: inline-block; margin: 8px 8px 16px 0; }
 #check-year-buttons, #yearly-year-buttons { gap: 80px; }
 
 /* 工事別内訳の物件ボタンを、最後に記録された年度ごとに区切って表示する。
-   年度グループごとに濃さの異なる青を順番に付け、カードの背景色(.sectionの#eaf3fb)とも
-   被らないようにする(4色で循環)。 */
+   年度グループは新しい年度が先頭(DOM順)に来るため、新しいほど濃い緑になるよう
+   nth-child(4n+1)を最も濃く、以降を段階的に薄くする(4色で循環。カードの背景色
+   (.sectionの#eaf3fb)は青系のため、緑にすることで被らない)。 */
 .project-year-group { border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
-.project-year-group:nth-child(4n+1) { background: #dceefc; }
-.project-year-group:nth-child(4n+2) { background: #c3e0f7; }
-.project-year-group:nth-child(4n+3) { background: #a8d0f0; }
-.project-year-group:nth-child(4n+4) { background: #8dc0e9; }
+.project-year-group:nth-child(4n+1) { background: #86cf95; }
+.project-year-group:nth-child(4n+2) { background: #a3dcae; }
+.project-year-group:nth-child(4n+3) { background: #c0e8c8; }
+.project-year-group:nth-child(4n+4) { background: #dcf3e0; }
 .project-year-label { font-weight: bold; font-size: 13px; color: #1a2540; margin-bottom: 8px; }
 
 .detected-info {
