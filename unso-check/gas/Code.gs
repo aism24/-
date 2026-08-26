@@ -17,6 +17,8 @@
  *   - 確定(状態=確定済み)=担当者チェック完了=検収完了=支払完了とみなす
  *   - 未確定(確定待ち)のデータが1件でも残っている間は、新しい取込みができない
  *     (同じ業者+締め月への修正の再アップロードは可)
+ *   - 「配車データ」シートは開くたびに自動で並び替わる(締め月→業者→降日→物件名の優先順、
+ *     最新が上)。onOpen()参照
  */
 
 const SHEET_HAULING = "配車データ";
@@ -73,6 +75,57 @@ function resetAllData() {
     if (lastRow > 1) sh.deleteRows(2, lastRow - 1);
   });
   Logger.log("配車データ・締め状態をリセットしました");
+}
+
+// 配車データシートを開くたびにGoogle Sheetsが自動的に呼び出す特殊関数(手動実行は不要)。
+// 「配車データ」シートを最新の内容が一番上に来るよう自動的に並び替える。
+function onOpen() {
+  try {
+    sortHaulingData();
+  } catch (e) {
+    // 開いた瞬間にエラーダイアログを出さないよう、失敗してもログに残すだけにする
+    Logger.log("onOpenでの自動並び替えに失敗しました: " + e.message);
+  }
+}
+
+// 「配車データ」シートを、締め月(新しい順)→業者(下記の指定順)→降日(新しい順)→物件名(降順)の
+// 優先順で並び替える。onOpen()から自動的に呼ばれるほか、Apps Scriptエディタから手動実行も
+// できる(過去データを一度に並び替え直したい場合等)。
+// ヘッダー行(1行目)は対象外。各行は20列すべてをひとかたまりのまま入れ替えるだけなので、
+// 値が消えたり列がズレたりすることはない(ID・費用区分・締め状態への影響も無い)。
+const HAULING_SORT_COMPANY_ORDER = ["日本興運", "誠和梱包", "用瀬運送", "鳥取グレーン", "川崎クレーン", "山陰運送"];
+
+function sortHaulingData() {
+  withLock_(() => {
+    const sh = sheet_(SHEET_HAULING);
+    const map = headerMap_(sh);
+    const lastRow = sh.getLastRow();
+    if (lastRow < 3) return; // データ行が0〜1行なら並び替え不要
+
+    const numCols = HAULING_HEADERS.length;
+    const range = sh.getRange(2, 1, lastRow - 1, numCols);
+    const values = range.getValues();
+
+    const closingIdx = map["締め月"] - 1;
+    const companyIdx = map["業者"] - 1;
+    const arrivalIdx = map["降日"] - 1;
+    const projectIdx = map["物件名"] - 1;
+    const companyRank = {};
+    HAULING_SORT_COMPANY_ORDER.forEach((name, i) => { companyRank[name] = i; });
+
+    values.sort((a, b) => {
+      const closingCmp = cellToYmd_(b[closingIdx]).localeCompare(cellToYmd_(a[closingIdx]));
+      if (closingCmp !== 0) return closingCmp;
+      const rankA = companyRank[a[companyIdx]] !== undefined ? companyRank[a[companyIdx]] : 999;
+      const rankB = companyRank[b[companyIdx]] !== undefined ? companyRank[b[companyIdx]] : 999;
+      if (rankA !== rankB) return rankA - rankB;
+      const arrivalCmp = cellToYmd_(b[arrivalIdx]).localeCompare(cellToYmd_(a[arrivalIdx]));
+      if (arrivalCmp !== 0) return arrivalCmp;
+      return String(b[projectIdx] || "").localeCompare(String(a[projectIdx] || ""), "ja");
+    });
+
+    range.setValues(values);
+  });
 }
 
 // 配車データの「費用区分」列(Q列)を、「ブロック」列(G列)から現在のclassifyFeeType_で
