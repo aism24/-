@@ -1040,6 +1040,15 @@ function getProjectDetail(projectName) {
   const rows = haulingRows_().filter(r => r.物件名 === projectName);
   const emptyFeeBucket_ = () => ({ コラム横持: 0, 製品等横持: 0, その他横持: 0, メッキ: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 });
 
+  // 搬入期間(いつからいつまでのデータか): 対象行の降日の最小・最大。
+  // 降日は"YYYY/MM/DD"形式(ゼロ埋め)の文字列なので、そのまま文字列比較でmin/maxが求まる。
+  let 開始日 = "", 終了日 = "";
+  rows.forEach(r => {
+    if (!r.降日) return;
+    if (!開始日 || r.降日 < 開始日) 開始日 = r.降日;
+    if (!終了日 || r.降日 > 終了日) 終了日 = r.降日;
+  });
+
   const byCompany = {};
   rows.forEach(r => {
     const amt = toNum_(r.費用額);
@@ -1060,7 +1069,7 @@ function getProjectDetail(projectName) {
     return acc;
   }, emptyFeeBucket_());
 
-  return { 物件名: projectName, 業者別: companies, total: total };
+  return { 物件名: projectName, 開始日: 開始日, 終了日: 終了日, 業者別: companies, total: total };
 }
 
 // ---------- 過去データ移行(運送QUERY2026等からの一括インポート。確定済みとして取り込む) ----------
