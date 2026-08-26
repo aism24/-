@@ -109,6 +109,10 @@ const SORT_COMPANY_ORDER = ["日本興運", "誠和梱包", "用瀬運送", "鳥
 // 並び替え後、ID列は2行目から順に2,3,4...と行番号に合わせて振り直す(ID=行番号になるため、
 // IDから該当行をすぐに特定できる)。IDは「重複しなければ何でもよい」値であり、新規取込み時の
 // 採番も既存データの最大値+1で行っているため、この振り直しによる不整合は起きない。
+// 【本更新で追記】並び替え・振り直しの結果が読み込んだ内容と完全に同じ場合は書き込みを
+// スキップする。スプレッドシートを開くたびにonOpen()経由で呼ばれるため、既に並び替え済みの
+// 状態で開き直しただけの場合(実務上最も多いケース)まで毎回全行を書き戻すと、読み込みだけで
+// 済むはずの操作が不必要に重くなるため。
 
 function sortHaulingData() {
   withLock_(() => {
@@ -119,7 +123,8 @@ function sortHaulingData() {
 
     const numCols = HAULING_HEADERS.length;
     const range = sh.getRange(2, 1, lastRow - 1, numCols);
-    const values = range.getValues();
+    const original = range.getValues();
+    const values = original.map(row => row.slice()); // 書き込み要否の比較用に元の内容を残す
 
     const idIdx = map["ID"] - 1;
     const closingIdx = map["締め月"] - 1;
@@ -143,7 +148,8 @@ function sortHaulingData() {
     // ID列を2行目から順に振り直す(ID=行番号にする)
     values.forEach((row, i) => { row[idIdx] = i + 2; });
 
-    range.setValues(values);
+    const changed = values.some((row, i) => row.some((cell, j) => cell !== original[i][j]));
+    if (changed) range.setValues(values);
   });
 }
 
@@ -151,6 +157,7 @@ function sortHaulingData() {
 // 並び替える。onOpen()から自動的に呼ばれるほか、Apps Scriptエディタから手動実行もできる。
 // ヘッダー行(1行目)は対象外。各行は5列すべてをひとかたまりのまま入れ替えるだけなので、
 // 値が消えたり列がズレたりすることはない。ID列は無いため振り直しは行わない。
+// sortHaulingData同様、並び替えの結果が読み込んだ内容と完全に同じ場合は書き込みをスキップする。
 function sortStatusData() {
   withLock_(() => {
     const sh = sheet_(SHEET_STATUS);
@@ -160,7 +167,8 @@ function sortStatusData() {
 
     const numCols = STATUS_HEADERS.length;
     const range = sh.getRange(2, 1, lastRow - 1, numCols);
-    const values = range.getValues();
+    const original = range.getValues();
+    const values = original.map(row => row.slice());
 
     const closingIdx = map["締め月"] - 1;
     const companyIdx = map["業者"] - 1;
@@ -175,7 +183,8 @@ function sortStatusData() {
       return rankA - rankB;
     });
 
-    range.setValues(values);
+    const changed = values.some((row, i) => row.some((cell, j) => cell !== original[i][j]));
+    if (changed) range.setValues(values);
   });
 }
 
@@ -260,7 +269,7 @@ function doGet(e) {
     if (p.action === "listCompanies") return ok_(listCompanies());
     if (p.action === "getClosingCheck") return ok_(getClosingCheck(p.company, p.closingMonth));
     if (p.action === "getClosingCheckAll") return ok_(getClosingCheckAll(p.closingMonth));
-    if (p.action === "getCheckScreenInit") return ok_(getCheckScreenInit());
+    if (p.action === "getCheckScreenInit") return ok_(getCheckScreenInit(p.company, p.closingMonth));
     if (p.action === "getYearlySummary") return ok_(getYearlySummary(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
     if (p.action === "getYearlySummaryInit") return ok_(getYearlySummaryInit(p.fiscalYearEnd ? Number(p.fiscalYearEnd) : null));
     if (p.action === "listProjects") return ok_(listProjects());
@@ -804,10 +813,12 @@ function getClosingCheck(company, closingMonth, rowsIn) {
 // 「20日締めチェック」の業者「全て」表示: 指定した締め月について、業者マスタの全業者分の
 // getClosingCheckの結果(業者ごとの状態・工事名別内訳・業者ごとの合計)をまとめて返す。
 // 業者をまたいだ総合計は作らない(業者ごとに完結した表として扱うため)。
-function getClosingCheckAll(closingMonth) {
+// rowsIn省略時は配車データを自身で読み込む(getCheckScreenInit等、呼び出し元が既に
+// 読み込み済みの場合はrowsInで渡すことで、配車データの二重読み込みを避けられる)。
+function getClosingCheckAll(closingMonth, rowsIn) {
   if (!closingMonth) throw new Error("締め月を指定してください");
   const normalizedClosing = normalizeDateStr_(closingMonth);
-  const rows = haulingRows_();
+  const rows = rowsIn || haulingRows_();
   const companies = listCompanies().map(company => getClosingCheck(company, normalizedClosing, rows));
   return { closingMonth: normalizedClosing, companies: companies };
 }
@@ -829,20 +840,30 @@ function availableYearsFromRows_(rows) {
 }
 
 // 20日締めチェック画面の初期表示用。配車データの読み込みを1回にまとめ、年ボタンの選択肢・
-// 実績のある最新の締め月・業者「全て」の集計結果までを1回のリクエストで返す
+// 実績のある最新の締め月・初期表示する集計結果までを1回のリクエストで返す
 // (以前は年ボタン取得→デフォルト締め月取得→集計取得の3回に分かれており、GAS呼び出しごとの
 // オーバーヘッド(スプレッドシートを開く処理等)が重なって表示が遅くなっていたため統合した)。
-// デフォルト表示は業者「全て」(getClosingCheckAll)。
-function getCheckScreenInit() {
+// preselectCompany・preselectClosingMonthが指定された場合(Excel取込み直後にその業者+締め月へ
+// 自動遷移する場合)は、その組み合わせ単体の結果(getClosingCheck)を返す。指定が無い場合は
+// これまで通り業者「全て」+最新月の結果(getClosingCheckAll)を返す。
+// 【本更新で修正】以前はpreselect指定の有無に関わらず必ず業者「全て」の結果を計算しており、
+// preselect指定時はその結果を使わず捨てた上で、フロントが追加でgetClosingCheckを呼び直して
+// いた(配車データの二重読み込み+GAS呼び出しがもう1往復発生していた)。preselect指定時は
+// 最初から単体の結果だけを計算するようにし、この無駄を無くした。
+function getCheckScreenInit(preselectCompany, preselectClosingMonth) {
   const rows = haulingRows_();
   const years = availableYearsFromRows_(rows);
   let latestClosing = null;
   rows.forEach(r => { if (r.締め月 && (!latestClosing || r.締め月 > latestClosing)) latestClosing = r.締め月; });
-  return {
-    years: years,
-    latestClosing: latestClosing,
-    result: latestClosing ? getClosingCheckAll(latestClosing) : null,
-  };
+
+  let result = null;
+  if (preselectCompany && preselectClosingMonth) {
+    result = getClosingCheck(preselectCompany, preselectClosingMonth, rows);
+  } else if (latestClosing) {
+    result = getClosingCheckAll(latestClosing, rows);
+  }
+
+  return { years: years, latestClosing: latestClosing, result: result };
 }
 
 // 会計年度(11月21日始まり、翌年11月20日決算)内の12回の締め月を、fiscalYearEnd(決算年、
