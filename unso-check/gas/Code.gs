@@ -1032,8 +1032,8 @@ function listProjects() {
   }));
 }
 
-// 工事別内訳: 指定した物件名の配車データを業者ごとに集計する(横持3区分・メッキ・
-// 現場搬入費用・重量・合計)。重量はgetClosingCheck/getYearlySummaryと同じ方針で
+// 工事別内訳: 指定した物件名の配車データを業者ごと・締め月ごとに集計する(横持3区分・
+// メッキ・現場搬入費用・重量・合計)。重量はgetClosingCheck/getYearlySummaryと同じ方針で
 // 現場搬入費用分のみを対象にする(横持4種・メッキの重量は含めない)。
 function getProjectDetail(projectName) {
   if (!projectName) throw new Error("物件名を指定してください");
@@ -1050,6 +1050,7 @@ function getProjectDetail(projectName) {
   });
 
   const byCompany = {};
+  const byMonth = {};
   rows.forEach(r => {
     const amt = toNum_(r.費用額);
     const feeType = classifyFeeType_(r.ブロック);
@@ -1059,9 +1060,19 @@ function getProjectDetail(projectName) {
     byCompany[cKey][feeType] += amt;
     byCompany[cKey].重量 += yardWeight;
     byCompany[cKey].合計 += amt;
+
+    // 物件は会計年度をまたいで存在しうるため、getYearlySummaryのfiscalYearClosingMonths_は
+    // 使えない。実際に出現した締め月だけをキーにして集計し、あとで文字列ソート
+    // (締め月は"YYYY/MM/DD"のゼロ埋め文字列なので昇順ソートで時系列になる)する。
+    const mKey = r.締め月 || "(締め月不明)";
+    if (!byMonth[mKey]) byMonth[mKey] = Object.assign({ 締め月: mKey }, emptyFeeBucket_());
+    byMonth[mKey][feeType] += amt;
+    byMonth[mKey].重量 += yardWeight;
+    byMonth[mKey].合計 += amt;
   });
 
   const companies = Object.keys(byCompany).map(k => byCompany[k]);
+  const months = Object.keys(byMonth).sort().map(k => byMonth[k]);
   const total = companies.reduce((acc, c) => {
     acc.コラム横持 += c.コラム横持; acc.製品等横持 += c.製品等横持; acc.その他横持 += c.その他横持;
     acc.メッキ += c.メッキ; acc.現場搬入費用 += c.現場搬入費用;
@@ -1069,7 +1080,7 @@ function getProjectDetail(projectName) {
     return acc;
   }, emptyFeeBucket_());
 
-  return { 物件名: projectName, 開始日: 開始日, 終了日: 終了日, 業者別: companies, total: total };
+  return { 物件名: projectName, 開始日: 開始日, 終了日: 終了日, 業者別: companies, 締め月別: months, total: total };
 }
 
 // ---------- 過去データ移行(運送QUERY2026等からの一括インポート。確定済みとして取り込む) ----------
