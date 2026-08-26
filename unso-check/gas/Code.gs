@@ -20,6 +20,8 @@
  *   - 「配車データ」シートは開くたびに自動で並び替わる(締め月→業者→物件名→降日の優先順、
  *     最新が上)。並び替え後、ID列は2行目から行番号に合わせて振り直される。onOpen()参照
  *   - 「締め状態」シートも開くたびに自動で並び替わる(締め月→業者の優先順、最新が上)。onOpen()参照
+ *   - 確定済みの(業者+締め月)を丸ごとやり直したい場合は、フロントの隠しコマンド(ロゴ5回タップ)
+ *     経由でdeleteConfirmedMonthを呼び、「配車データ」「締め状態」両シートの該当行を削除できる
  */
 
 const SHEET_HAULING = "配車データ";
@@ -240,6 +242,7 @@ function doPost(e) {
     if (body.action === "importHaulingFile") return ok_(importHaulingFile(body));
     if (body.action === "confirmClosing") return ok_(confirmClosing(body.company, body.closingMonth));
     if (body.action === "bulkImportLegacy") return ok_(bulkImportLegacy(body));
+    if (body.action === "deleteConfirmedMonth") return ok_(deleteConfirmedMonth(body.companies, body.closingMonth));
     return errRes_("不明なaction: " + body.action);
   } catch (err) {
     return errRes_(err.message);
@@ -397,6 +400,63 @@ function confirmClosing(company, closingMonth) {
     if (existing.状態 === "確定済み") return { ok: true, alreadyConfirmed: true };
     upsertStatus_(company, closingMonth, "確定済み", { 確定日時: true });
     return { ok: true };
+  });
+}
+
+// 「一意の月を全てやり直したい」場合の管理者向け復旧手段。指定した(業者+締め月)のうち
+// 実際に「確定済み」であるものだけを対象に、「配車データ」「締め状態」両シートの該当行を
+// 完全に削除する(取り消し不可)。フロント側は確定済みの業者しかボタンとして出さないが、
+// 念のためGAS側でも確定済みでない組み合わせは無視して対象から除外する。
+function deleteConfirmedMonth(companies, closingMonth) {
+  if (!Array.isArray(companies) || companies.length === 0) throw new Error("業者を指定してください");
+  if (!closingMonth) throw new Error("締め月を指定してください");
+  const normalizedClosing = normalizeDateStr_(closingMonth);
+
+  return withLock_(() => {
+    const targets = companies.filter(company => {
+      const status = findStatusRow_(company, normalizedClosing);
+      return status && status.状態 === "確定済み";
+    });
+    if (targets.length === 0) throw new Error("指定した業者・締め月に確定済みデータがありません: " + normalizedClosing + "〆");
+
+    // 配車データ: 対象行を除いた行だけをまとめて書き戻す(■24の効率化方針と同じ、
+    // deleteRow()を1行ずつ呼ぶより高速)
+    const haulingSh = sheet_(SHEET_HAULING);
+    const haulingMap = headerMap_(haulingSh);
+    const haulingLastRow = haulingSh.getLastRow();
+    const haulingCols = HAULING_HEADERS.length;
+    const haulingValues = haulingLastRow >= 2 ? haulingSh.getRange(2, 1, haulingLastRow - 1, haulingCols).getValues() : [];
+    const hCompanyCol = haulingMap["業者"] - 1;
+    const hClosingCol = haulingMap["締め月"] - 1;
+    const keptHauling = haulingValues.filter(row =>
+      !(targets.indexOf(row[hCompanyCol]) !== -1 && cellToYmd_(row[hClosingCol]) === normalizedClosing)
+    );
+    if (keptHauling.length > 0) haulingSh.getRange(2, 1, keptHauling.length, haulingCols).setValues(keptHauling);
+    if (keptHauling.length < haulingValues.length) {
+      haulingSh.getRange(keptHauling.length + 2, 1, haulingValues.length - keptHauling.length, haulingCols).clearContent();
+    }
+
+    // 締め状態: 対象行を除いた行だけをまとめて書き戻す
+    const statusSh = sheet_(SHEET_STATUS);
+    const statusMap = headerMap_(statusSh);
+    const statusLastRow = statusSh.getLastRow();
+    const statusCols = STATUS_HEADERS.length;
+    const statusValues = statusLastRow >= 2 ? statusSh.getRange(2, 1, statusLastRow - 1, statusCols).getValues() : [];
+    const sCompanyCol = statusMap["業者"] - 1;
+    const sClosingCol = statusMap["締め月"] - 1;
+    const keptStatus = statusValues.filter(row =>
+      !(targets.indexOf(row[sCompanyCol]) !== -1 && cellToYmd_(row[sClosingCol]) === normalizedClosing)
+    );
+    if (keptStatus.length > 0) statusSh.getRange(2, 1, keptStatus.length, statusCols).setValues(keptStatus);
+    if (keptStatus.length < statusValues.length) {
+      statusSh.getRange(keptStatus.length + 2, 1, statusValues.length - keptStatus.length, statusCols).clearContent();
+    }
+
+    return {
+      deletedCompanies: targets,
+      closingMonth: normalizedClosing,
+      deletedHaulingRows: haulingValues.length - keptHauling.length,
+    };
   });
 }
 

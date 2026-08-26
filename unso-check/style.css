@@ -47,6 +47,9 @@ body.drag-over::after {
   pointer-events: none;
 }
 
+/* データ削除機能(隠しコマンド)の存在だけを示す控えめなヒントテキスト */
+.delete-hint-text { text-align: center; color: #a3aab5; font-size: 12px; margin: 10px 0 -4px; }
+
 .home-buttons { display: flex; flex-direction: column; gap: 16px; padding: 32px 8px; }
 .home-btn {
   padding: 22px 20px; font-size: 18px; font-weight: bold; border: none; border-radius: 12px;

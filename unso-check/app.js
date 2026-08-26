@@ -29,7 +29,7 @@ async function apiPost(action, payload) {
 
 // ---------- 画面切り替え ----------
 
-const SCREENS = ["home", "import", "check", "yearly", "project"];
+const SCREENS = ["home", "import", "check", "yearly", "project", "delete"];
 // opts.preselect: { company, closingMonth } — 20日締めチェック画面を、業者「全て」+最新月の
 // デフォルト表示ではなく、指定した業者+締め月の結果を開いた状態で表示する(Excel取込み直後、
 // その場で確定を促すために使う)。
@@ -40,6 +40,7 @@ function showScreen(name, opts) {
   if (name === "check") return initCheckScreen(opts && opts.preselect);
   if (name === "yearly") return initYearlyScreen();
   if (name === "project") return initProjectScreen();
+  if (name === "delete") return initDeleteScreen();
 }
 function goHome() { showScreen("home"); }
 
@@ -232,6 +233,28 @@ function setupImportDragDrop() {
   });
 }
 document.addEventListener("DOMContentLoaded", setupImportDragDrop);
+
+// ロゴを短時間(2秒)以内に5回連続タップすると、データ削除画面へ移動する隠しコマンド。
+// ホーム画面には「データ削除はコマンド入力」というヒントテキストのみを表示し、ロゴ自体に
+// クリック可能を示す見た目上の変化は付けない。
+function setupSecretLogoTap() {
+  const logo = document.querySelector(".header-logo");
+  if (!logo) return;
+  const TAP_COUNT = 5;
+  const TAP_WINDOW_MS = 2000;
+  let count = 0;
+  let lastTap = 0;
+  logo.addEventListener("click", () => {
+    const now = Date.now();
+    count = (now - lastTap <= TAP_WINDOW_MS) ? count + 1 : 1;
+    lastTap = now;
+    if (count >= TAP_COUNT) {
+      count = 0;
+      showScreen("delete");
+    }
+  });
+}
+document.addEventListener("DOMContentLoaded", setupSecretLogoTap);
 
 function resetImportSelection() {
   document.getElementById("file-input").value = "";
@@ -593,11 +616,15 @@ async function confirmCurrentClosing() {
   }
 }
 
-// 確定完了ポップアップ: 業者名+締め月を表示し、OKボタンを押すとホーム画面へ戻る
+// 完了ポップアップ(確定完了・削除完了で共用): メッセージを表示し、OKボタンを押すとホーム画面へ戻る
+function showDoneModal(message) {
+  document.getElementById("confirm-done-message").textContent = message;
+  document.getElementById("confirm-done-overlay").style.display = "flex";
+}
+
 function showConfirmDoneModal(company, closingMonth) {
   const month = Number(closingMonth.split("/")[1]);
-  document.getElementById("confirm-done-message").textContent = company + "の" + month + "月20日〆が確定しました";
-  document.getElementById("confirm-done-overlay").style.display = "flex";
+  showDoneModal(company + "の" + month + "月20日〆が確定しました");
 }
 
 function closeConfirmDoneModal() {
@@ -777,5 +804,128 @@ async function loadProjectDetail() {
   } catch (err) {
     hideLoadingModal(false);
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
+  }
+}
+
+// ---------- データ削除画面(ロゴ5回タップの隠しコマンドからのみ遷移) ----------
+// 「一意の月をやり直したい」場合の復旧手段。年度→月→業者の順で選択させ、業者ボタンは
+// その締め月で実際に「確定済み」のものしか表示しない(確定済み以外は選びようが無い)。
+// 業者は複数選択可(1回の操作で複数社まとめて削除できる)。削除は「配車データ」「締め状態」
+// 両シートの該当行を完全に削除する、取り消しの無い操作(ユーザー指示により確認ダイアログは無し)。
+
+let deleteState = { fiscalYear: null, month: null, companies: new Set() };
+
+async function initDeleteScreen() {
+  deleteState = { fiscalYear: null, month: null, companies: new Set() };
+  document.getElementById("delete-company-buttons").innerHTML = "";
+  document.getElementById("delete-confirm-slot").innerHTML = "";
+  const yearContainer = document.getElementById("delete-year-buttons");
+  showLoadingModal();
+  let init;
+  try {
+    init = await apiGet("getCheckScreenInit");
+    hideLoadingModal(true);
+  } catch (err) {
+    hideLoadingModal(false);
+    yearContainer.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
+    return;
+  }
+  renderDeleteYearButtons(init.years);
+  renderDeleteMonthButtons();
+}
+
+function renderDeleteYearButtons(years) {
+  const container = document.getElementById("delete-year-buttons");
+  if (years.length === 0) { container.innerHTML = "<span class=\"hint\">対象年度がありません</span>"; return; }
+  container.innerHTML = years.slice().reverse().map(y =>
+    "<div class=\"year-btn-item\"><button type=\"button\" class=\"btn" + (y === deleteState.fiscalYear ? " btn-primary" : "") + "\" data-year=\"" + y + "\">" + y + "年</button>" +
+    "<div class=\"year-period\">" + fiscalYearPeriodLabel(y) + "</div></div>"
+  ).join("");
+  container.querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => {
+      deleteState.fiscalYear = Number(btn.dataset.year);
+      container.querySelectorAll("button").forEach(b => b.classList.toggle("btn-primary", b === btn));
+      refreshDeleteCompanies();
+    };
+  });
+}
+
+function renderDeleteMonthButtons() {
+  const container = document.getElementById("delete-month-buttons");
+  container.innerHTML = CHECK_MONTH_ORDER.map(m =>
+    "<button type=\"button\" class=\"btn" + (m === deleteState.month ? " btn-primary" : "") + "\" data-month=\"" + m + "\">" + m + "月</button>"
+  ).join("");
+  container.querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => {
+      deleteState.month = Number(btn.dataset.month);
+      container.querySelectorAll("button").forEach(b => b.classList.toggle("btn-primary", b === btn));
+      refreshDeleteCompanies();
+    };
+  });
+}
+
+// 年度+月が両方選択されたら、その締め月で実際に「確定済み」の業者だけをボタンとして表示する
+// (①の指示: 確定済み以外はそもそも選べないようにする)。
+async function refreshDeleteCompanies() {
+  deleteState.companies = new Set();
+  const companyContainer = document.getElementById("delete-company-buttons");
+  document.getElementById("delete-confirm-slot").innerHTML = "";
+  if (!deleteState.fiscalYear || !deleteState.month) {
+    companyContainer.innerHTML = "";
+    return;
+  }
+  const closingMonth = fiscalMonthToClosing(deleteState.fiscalYear, deleteState.month);
+  showLoadingModal();
+  try {
+    const data = await apiGet("getClosingCheckAll", { closingMonth: closingMonth });
+    hideLoadingModal(true);
+    const confirmed = data.companies.filter(c => c.status === "確定済み");
+    if (confirmed.length === 0) {
+      companyContainer.innerHTML = "<span class=\"hint\">この締め月(" + closingMonth + "〆)に確定済みのデータがありません</span>";
+      return;
+    }
+    companyContainer.innerHTML = confirmed.map(c =>
+      "<button type=\"button\" class=\"btn\" data-company=\"" + c.company + "\">" + c.company + "</button>"
+    ).join("");
+    companyContainer.querySelectorAll("button").forEach(btn => {
+      btn.onclick = () => {
+        const name = btn.dataset.company;
+        if (deleteState.companies.has(name)) {
+          deleteState.companies.delete(name);
+          btn.classList.remove("btn-primary");
+        } else {
+          deleteState.companies.add(name);
+          btn.classList.add("btn-primary");
+        }
+        renderDeleteConfirmSlot();
+      };
+    });
+  } catch (err) {
+    hideLoadingModal(false);
+    companyContainer.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
+  }
+}
+
+function renderDeleteConfirmSlot() {
+  const slot = document.getElementById("delete-confirm-slot");
+  slot.innerHTML = deleteState.companies.size > 0
+    ? "<button class=\"btn btn-danger\" onclick=\"executeDelete()\">確定済みデータを削除</button>"
+    : "";
+}
+
+// 削除実行: 確認ダイアログ無し(ユーザー指示による)。「配車データ」「締め状態」両シートの
+// 該当行を削除するGAS APIを1回のリクエストで(選択した複数業者分まとめて)呼び出す。
+async function executeDelete() {
+  const closingMonth = fiscalMonthToClosing(deleteState.fiscalYear, deleteState.month);
+  const companies = Array.from(deleteState.companies);
+  showLoadingModal();
+  try {
+    await apiPost("deleteConfirmedMonth", { companies: companies, closingMonth: closingMonth });
+    hideLoadingModal(true);
+    const month = Number(closingMonth.split("/")[1]);
+    showDoneModal(companies.join("・") + "の" + month + "月20日〆の確定済みデータを削除しました");
+  } catch (err) {
+    hideLoadingModal(false);
+    alert("エラー: " + err.message);
   }
 }

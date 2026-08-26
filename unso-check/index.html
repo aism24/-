@@ -28,6 +28,7 @@
 
   <!-- ホーム画面 -->
   <section id="screen-home" class="screen">
+    <p class="delete-hint-text">データ削除はコマンド入力</p>
     <div class="home-buttons">
       <button class="home-btn home-btn-main" onclick="showScreen('import')">📤 Excelファイルを取り込む</button>
       <button class="home-btn home-btn-sub" onclick="showScreen('check')">📋 20日締めチェック</button>
@@ -92,6 +93,22 @@
         <div id="project-buttons"></div>
       </div>
       <div id="project-result"></div>
+    </div>
+  </section>
+
+  <!-- データ削除画面(ロゴ5回タップの隠しコマンドからのみ遷移) -->
+  <section id="screen-delete" class="screen" style="display:none;">
+    <div class="section">
+      <h2>確定済みデータの削除</h2>
+      <p class="hint">年度→月を選択すると、その締め月で確定済みの業者のみボタンが表示されます(複数選択可)。業者を1つ以上選ぶと削除ボタンが出現します。</p>
+      <div class="check-row">
+        <div class="button-group" id="delete-year-buttons"></div>
+        <div class="button-group" id="delete-month-buttons"></div>
+      </div>
+      <div class="check-row">
+        <div class="button-group" id="delete-company-buttons"></div>
+      </div>
+      <div id="delete-confirm-slot"></div>
     </div>
   </section>
 
