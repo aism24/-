@@ -817,23 +817,34 @@ async function initProjectScreen() {
   hideLoadingModal(true);
 }
 
+// 「物件選択に戻る」: 選択状態を解除し、物件一覧のボタンのハイライトも外す
+function backToProjectSelection() {
+  projectState.name = null;
+  document.getElementById("project-result").innerHTML = "";
+  document.querySelectorAll("#project-buttons button").forEach(b => b.classList.remove("btn-primary"));
+}
+
 async function loadProjectDetail() {
   const resultEl = document.getElementById("project-result");
   showLoadingModal();
   try {
     const data = await apiGet("getProjectDetail", { projectName: projectState.name });
-    let html = "<div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>業者</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>合計</th></tr></thead><tbody>";
+    let html = "<button type=\"button\" class=\"btn\" onclick=\"backToProjectSelection()\">← 物件選択に戻る</button>";
+    html += "<h3>" + data.物件名 + "</h3>";
+    html += "<p class=\"hint\">搬入期間: " + (data.開始日 && data.終了日 ? data.開始日 + " 〜 " + data.終了日 : "データがありません") + "</p>";
+
+    const t = data.total;
+    const perTonText = t.重量 > 0 ? fmtYen(t.合計 / t.重量) + "/t" : "現場搬入の重量が無いため算出不可";
+    html += "<p class=\"per-ton-summary\">合計重量: " + (t.重量 || 0).toFixed(1) + "t　総額: " + fmtYen(t.合計) +
+      "　<strong>1トン当たりの金額: " + perTonText + "</strong></p>";
+
+    html += "<div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>業者</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>合計</th></tr></thead><tbody>";
     data.業者別.forEach(c => {
       html += "<tr><td>" + c.業者 + "</td><td>" + fmtYen(c.コラム横持) + "</td><td>" + fmtYen(c.製品等横持) + "</td><td>" + fmtYen(c.その他横持) + "</td><td>" + fmtYen(c.メッキ) + "</td><td>" +
         fmtYen(c.現場搬入費用) + "</td><td>" + (c.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(c.合計) + "</td></tr>";
     });
     html += feeBucketTotalRowHtml_(data.total);
     html += "</tbody></table></div>";
-
-    const t = data.total;
-    const perTonText = t.重量 > 0 ? fmtYen(t.合計 / t.重量) + "/t" : "現場搬入の重量が無いため算出不可";
-    html += "<p class=\"per-ton-summary\">合計重量: " + (t.重量 || 0).toFixed(1) + "t　総額: " + fmtYen(t.合計) +
-      "　<strong>1トン当たりの金額: " + perTonText + "</strong></p>";
 
     resultEl.innerHTML = html;
     hideLoadingModal(true);

@@ -121,6 +121,7 @@ body.drag-over::after {
   border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(0,0,0,0.04);
 }
 .section h2 { font-size: 18px; font-weight: 700; margin-bottom: 12px; color: var(--brand-strong); }
+h3 { font-size: 15px; font-weight: 700; color: var(--brand-strong); margin: 16px 0 8px; }
 .hint { color: var(--ink-muted); font-size: 13px; margin-bottom: 14px; line-height: 1.6; }
 
 .btn {
@@ -295,7 +296,7 @@ table.check-table th:nth-child(9), table.check-table td:nth-child(9) {
   width: 9.1%;
 }
 
-.per-ton-summary { margin-top: 10px; font-size: 14px; }
+.per-ton-summary { margin: 10px 0; font-size: 14px; }
 .per-ton-summary strong { color: var(--brand); }
 
 /* 状態チップ: 色(意味は維持)+アイコン+ラベルで構成し、色だけに頼らず判別できるようにする */
