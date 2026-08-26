@@ -829,8 +829,8 @@ async function loadProjectDetail() {
   showLoadingModal();
   try {
     const data = await apiGet("getProjectDetail", { projectName: projectState.name });
-    let html = "<button type=\"button\" class=\"btn\" onclick=\"backToProjectSelection()\">← 物件選択に戻る</button>";
-    html += "<h3>" + data.物件名 + "</h3>";
+    let html = "<div class=\"check-title-row\"><h3>" + data.物件名 + "</h3>" +
+      "<button type=\"button\" class=\"btn btn-back\" onclick=\"backToProjectSelection()\">← 物件選択に戻る</button></div>";
     html += "<p class=\"hint\">搬入期間: " + (data.開始日 && data.終了日 ? data.開始日 + " 〜 " + data.終了日 : "データがありません") + "</p>";
 
     const t = data.total;
