@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>鳥取運送アプリ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
@@ -130,6 +133,31 @@
     <p id="confirm-done-message" class="modal-message"></p>
     <p class="modal-message">ホームへ戻ります</p>
     <button class="btn btn-primary" onclick="closeConfirmDoneModal()">OK</button>
+  </div>
+</div>
+
+<!-- エラー表示ポップアップ(ブラウザ標準alertの代替) -->
+<div id="error-modal-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal-box modal-box-alert">
+    <div class="modal-icon-badge modal-icon-badge-error" aria-hidden="true">
+      <svg viewBox="0 0 20 20" fill="none"><path d="M10 6v5M10 14h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.6"/></svg>
+    </div>
+    <p id="error-modal-message" class="modal-message"></p>
+    <button class="btn btn-primary" onclick="closeErrorModal()">OK</button>
+  </div>
+</div>
+
+<!-- 確認ポップアップ(ブラウザ標準confirmの代替) -->
+<div id="confirm-modal-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal-box modal-box-alert">
+    <div class="modal-icon-badge modal-icon-badge-warn" aria-hidden="true">
+      <svg viewBox="0 0 20 20" fill="none"><path d="M10 6v5M10 14h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.6"/></svg>
+    </div>
+    <p id="confirm-modal-message" class="modal-message modal-message-pre"></p>
+    <div class="btn-row">
+      <button class="btn btn-accent" onclick="resolveConfirmModal(true)">続行する</button>
+      <button class="btn btn-ghost" onclick="resolveConfirmModal(false)">キャンセル</button>
+    </div>
   </div>
 </div>
 
