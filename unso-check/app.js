@@ -713,6 +713,11 @@ function renderYearlyResult(data) {
 
 let projectState = { name: null };
 
+// 特定の会計年度について、工事別内訳の年度ラベル横に注意書きを出す(ユーザー指示による)
+const PROJECT_YEAR_CAUTION = {
+  2024: "2024年度のデータは不正確(古いデータ処理)の為、参考程度の内容となります。(※合計金額は正確ですが、その他は参考としてください)",
+};
+
 async function initProjectScreen() {
   projectState = { name: null };
   document.getElementById("project-result").innerHTML = "";
@@ -731,11 +736,14 @@ async function initProjectScreen() {
     hideLoadingModal(true);
     return;
   }
-  container.innerHTML = yearGroups.map(g =>
-    "<div class=\"project-year-group\"><div class=\"project-year-label\">" + g.year + "年度</div><div class=\"button-group\">" +
-    g.names.map(n => "<button type=\"button\" class=\"btn\" data-name=\"" + n + "\">" + n + "</button>").join("") +
-    "</div></div>"
-  ).join("");
+  container.innerHTML = yearGroups.map(g => {
+    const caution = PROJECT_YEAR_CAUTION[g.year]
+      ? "<span class=\"project-year-caution\">" + PROJECT_YEAR_CAUTION[g.year] + "</span>"
+      : "";
+    return "<div class=\"project-year-group\"><div class=\"project-year-label\"><span class=\"project-year-num\">" + g.year + "年度</span>" + caution + "</div><div class=\"button-group\">" +
+      g.names.map(n => "<button type=\"button\" class=\"btn\" data-name=\"" + n + "\">" + n + "</button>").join("") +
+      "</div></div>";
+  }).join("");
   container.querySelectorAll("button").forEach(btn => {
     btn.onclick = () => {
       projectState.name = btn.dataset.name;
