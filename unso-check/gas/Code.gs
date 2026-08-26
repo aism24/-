@@ -19,6 +19,7 @@
  *     (同じ業者+締め月への修正の再アップロードは可)
  *   - 「配車データ」シートは開くたびに自動で並び替わる(締め月→業者→物件名→降日の優先順、
  *     最新が上)。並び替え後、ID列は2行目から行番号に合わせて振り直される。onOpen()参照
+ *   - 「締め状態」シートも開くたびに自動で並び替わる(締め月→業者の優先順、最新が上)。onOpen()参照
  */
 
 const SHEET_HAULING = "配車データ";
@@ -77,16 +78,21 @@ function resetAllData() {
   Logger.log("配車データ・締め状態をリセットしました");
 }
 
-// 配車データシートを開くたびにGoogle Sheetsが自動的に呼び出す特殊関数(手動実行は不要)。
-// 「配車データ」シートを最新の内容が一番上に来るよう自動的に並び替える。
+// スプレッドシートを開くたびにGoogle Sheetsが自動的に呼び出す特殊関数(手動実行は不要)。
+// 「配車データ」「締め状態」の両シートを、それぞれ最新の内容が一番上に来るよう自動的に並び替える。
 function onOpen() {
   try {
     sortHaulingData();
+    sortStatusData();
   } catch (e) {
     // 開いた瞬間にエラーダイアログを出さないよう、失敗してもログに残すだけにする
     Logger.log("onOpenでの自動並び替えに失敗しました: " + e.message);
   }
 }
+
+// 「配車データ」「締め状態」シートの並び替えで共通して使う業者の優先順(日本興運→誠和梱包→
+// 用瀬運送→鳥取グレーン→川崎クレーン→山陰運送)。
+const SORT_COMPANY_ORDER = ["日本興運", "誠和梱包", "用瀬運送", "鳥取グレーン", "川崎クレーン", "山陰運送"];
 
 // 「配車データ」シートを、締め月(新しい順)→業者(下記の指定順)→物件名(降順)→降日(新しい順)の
 // 優先順で並び替える。onOpen()から自動的に呼ばれるほか、Apps Scriptエディタから手動実行も
@@ -96,7 +102,6 @@ function onOpen() {
 // 並び替え後、ID列は2行目から順に2,3,4...と行番号に合わせて振り直す(ID=行番号になるため、
 // IDから該当行をすぐに特定できる)。IDは「重複しなければ何でもよい」値であり、新規取込み時の
 // 採番も既存データの最大値+1で行っているため、この振り直しによる不整合は起きない。
-const HAULING_SORT_COMPANY_ORDER = ["日本興運", "誠和梱包", "用瀬運送", "鳥取グレーン", "川崎クレーン", "山陰運送"];
 
 function sortHaulingData() {
   withLock_(() => {
@@ -115,7 +120,7 @@ function sortHaulingData() {
     const arrivalIdx = map["降日"] - 1;
     const projectIdx = map["物件名"] - 1;
     const companyRank = {};
-    HAULING_SORT_COMPANY_ORDER.forEach((name, i) => { companyRank[name] = i; });
+    SORT_COMPANY_ORDER.forEach((name, i) => { companyRank[name] = i; });
 
     values.sort((a, b) => {
       const closingCmp = cellToYmd_(b[closingIdx]).localeCompare(cellToYmd_(a[closingIdx]));
@@ -130,6 +135,38 @@ function sortHaulingData() {
 
     // ID列を2行目から順に振り直す(ID=行番号にする)
     values.forEach((row, i) => { row[idIdx] = i + 2; });
+
+    range.setValues(values);
+  });
+}
+
+// 「締め状態」シートを、締め月(新しい順)→業者(SORT_COMPANY_ORDERの指定順)の優先順で
+// 並び替える。onOpen()から自動的に呼ばれるほか、Apps Scriptエディタから手動実行もできる。
+// ヘッダー行(1行目)は対象外。各行は5列すべてをひとかたまりのまま入れ替えるだけなので、
+// 値が消えたり列がズレたりすることはない。ID列は無いため振り直しは行わない。
+function sortStatusData() {
+  withLock_(() => {
+    const sh = sheet_(SHEET_STATUS);
+    const map = headerMap_(sh);
+    const lastRow = sh.getLastRow();
+    if (lastRow < 3) return; // データ行が0〜1行なら並び替え不要
+
+    const numCols = STATUS_HEADERS.length;
+    const range = sh.getRange(2, 1, lastRow - 1, numCols);
+    const values = range.getValues();
+
+    const closingIdx = map["締め月"] - 1;
+    const companyIdx = map["業者"] - 1;
+    const companyRank = {};
+    SORT_COMPANY_ORDER.forEach((name, i) => { companyRank[name] = i; });
+
+    values.sort((a, b) => {
+      const closingCmp = cellToYmd_(b[closingIdx]).localeCompare(cellToYmd_(a[closingIdx]));
+      if (closingCmp !== 0) return closingCmp;
+      const rankA = companyRank[a[companyIdx]] !== undefined ? companyRank[a[companyIdx]] : 999;
+      const rankB = companyRank[b[companyIdx]] !== undefined ? companyRank[b[companyIdx]] : 999;
+      return rankA - rankB;
+    });
 
     range.setValues(values);
   });
