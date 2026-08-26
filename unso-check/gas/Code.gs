@@ -451,8 +451,11 @@ function statusRows_() {
   }));
 }
 
-function findStatusRow_(company, closingMonth) {
-  const rows = statusRows_();
+// rowsIn省略時は締め状態シートを自身で読み込む。呼び出し元が既に読み込み済みの場合は
+// rowsInで渡すことで、締め状態シートの二重読み込みを避けられる(getClosingCheckAllのように
+// 業者数ぶん繰り返し呼ぶ場面で、そのたびにシートを開き直す無駄を無くすため)。
+function findStatusRow_(company, closingMonth, rowsIn) {
+  const rows = rowsIn || statusRows_();
   return rows.find(r => r.業者 === company && r.締め月 === closingMonth) || null;
 }
 
@@ -836,7 +839,9 @@ function importHaulingFile(payload) {
 
 // company+closingMonthで既に絞り込み済みの行配列(rows)から、工事名別の費用区分内訳・
 // 請求額・消費税・合計を組み立てる、getClosingCheck/getClosingCheckAll共通の内部処理。
-function buildClosingCheckResult_(company, closingMonth, rows) {
+// statusRowsIn省略時は締め状態シートを自身で読み込む(getClosingCheckAllのように業者数ぶん
+// 繰り返し呼ぶ場合は、呼び出し元で1回だけ読んだ結果をstatusRowsInで渡して使い回す)。
+function buildClosingCheckResult_(company, closingMonth, rows, statusRowsIn) {
   const byProject = {};
   rows.forEach(r => {
     const key = r.物件名 || "(物件名なし)";
@@ -860,7 +865,7 @@ function buildClosingCheckResult_(company, closingMonth, rows) {
     return acc;
   }, { コラム横持: 0, 製品等横持: 0, その他横持: 0, メッキ: 0, 現場搬入費用: 0, 重量: 0, 請求額: 0, 消費税: 0, 合計請求額: 0 });
 
-  const status = findStatusRow_(company, closingMonth);
+  const status = findStatusRow_(company, closingMonth, statusRowsIn);
   return { company: company, closingMonth: closingMonth, status: status ? status.状態 : "未取込", projects: projects, total: total };
 }
 
@@ -883,7 +888,9 @@ function getClosingCheck(company, closingMonth, rowsIn) {
 // 【高速化】以前は業者数(6社)ぶんgetClosingCheckを呼び出しており、そのたびに全行を
 // filterしていた(全行スキャンが業者数に比例して繰り返されていた)。全行を1回だけ走査して
 // 業者ごとにグルーピングしてから、業者ごとの集計はグルーピング済みの小さい配列に対して行う
-// ように変更し、全行スキャンを1回に集約した。
+// ように変更し、全行スキャンを1回に集約した。締め状態シートについても同様に、以前は
+// 業者ごとにfindStatusRow_→statusRows_()でシートを毎回開き直していたのを、1回だけ
+// 読み込んで使い回すように変更した。
 function getClosingCheckAll(closingMonth, rowsIn) {
   if (!closingMonth) throw new Error("締め月を指定してください");
   const normalizedClosing = normalizeDateStr_(closingMonth);
@@ -894,8 +901,9 @@ function getClosingCheckAll(closingMonth, rowsIn) {
     if (!byCompany[r.業者]) byCompany[r.業者] = [];
     byCompany[r.業者].push(r);
   });
+  const statusRows = statusRows_();
   const companies = listCompanies().map(company =>
-    buildClosingCheckResult_(company, normalizedClosing, byCompany[company] || [])
+    buildClosingCheckResult_(company, normalizedClosing, byCompany[company] || [], statusRows)
   );
   return { closingMonth: normalizedClosing, companies: companies };
 }
