@@ -329,6 +329,31 @@ function hideLoadingModal(completed) {
   }
 }
 
+// エラー表示ポップアップ(ブラウザ標準alertの代替)
+function showErrorModal(message) {
+  document.getElementById("error-modal-message").textContent = message;
+  document.getElementById("error-modal-overlay").style.display = "flex";
+}
+function closeErrorModal() {
+  document.getElementById("error-modal-overlay").style.display = "none";
+}
+
+// 確認ポップアップ(ブラウザ標準confirmの代替)。resolveConfirmModal(true/false)が
+// 呼ばれるまで待つPromiseを返すので、呼び出し側は const proceed = await showConfirmModal(...) で使う。
+let confirmModalResolve_ = null;
+function showConfirmModal(message) {
+  document.getElementById("confirm-modal-message").textContent = message;
+  document.getElementById("confirm-modal-overlay").style.display = "flex";
+  return new Promise(resolve => { confirmModalResolve_ = resolve; });
+}
+function resolveConfirmModal(result) {
+  document.getElementById("confirm-modal-overlay").style.display = "none";
+  if (confirmModalResolve_) {
+    confirmModalResolve_(result);
+    confirmModalResolve_ = null;
+  }
+}
+
 async function submitImport(force) {
   if (!pendingImport) return;
   const statusEl = document.getElementById("import-status");
@@ -343,10 +368,10 @@ async function submitImport(force) {
     if (result.duplicate) {
       hideLoadingModal(false);
       statusEl.textContent = "";
-      const proceed = confirm(
+      const proceed = await showConfirmModal(
         "この内容は、既に取り込まれている " + result.company + " " + result.closingMonth + "〆 のデータと完全に一致しています。\n" +
         "同じファイルを間違って選択していませんか？\n\n" +
-        "そのまま同じ内容で再取込みする場合は「OK」を、取り消す場合は「キャンセル」を押してください。"
+        "そのまま同じ内容で再取込みする場合は「続行する」を、取り消す場合は「キャンセル」を押してください。"
       );
       if (proceed) {
         await submitImport(true);
@@ -374,7 +399,7 @@ async function submitImport(force) {
     }
   } catch (err) {
     hideLoadingModal(false);
-    alert("エラー: " + err.message);
+    showErrorModal("エラー: " + err.message);
     document.getElementById("excluded-rows-container").innerHTML = "";
     resetImportSelection();
     statusEl.textContent = "";
@@ -541,9 +566,17 @@ function closingCheckTableHtml_(data) {
   return html;
 }
 
+// 状態チップ: 色だけでなくアイコン+ラベルで判別できるようにする(色弱の方への配慮、および
+// 単色バッジよりも視覚的な情報量を増やすため)。色の意味(緑=確定済み/オレンジ=未確定/
+// グレー=データなし)自体は変更していない。
+const STATUS_BADGE_ICON_ = {
+  confirmed: "<svg viewBox=\"0 0 20 20\" fill=\"none\"><path d=\"M4 10.5l3.5 3.5L16 5\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+  pending: "<svg viewBox=\"0 0 20 20\" fill=\"none\"><circle cx=\"10\" cy=\"10\" r=\"7\" stroke=\"currentColor\" stroke-width=\"1.6\"/><path d=\"M10 6.5V10l2.5 1.5\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"/></svg>",
+  none: "<svg viewBox=\"0 0 20 20\" fill=\"none\"><circle cx=\"10\" cy=\"10\" r=\"1.4\" fill=\"currentColor\"/></svg>"
+};
 function statusBadgeHtml_(status) {
   const badgeClass = status === "確定済み" ? "confirmed" : (status === "未確定" ? "pending" : "none");
-  return "<span class=\"status-badge " + badgeClass + "\">" + status + "</span>";
+  return "<span class=\"status-badge " + badgeClass + "\">" + STATUS_BADGE_ICON_[badgeClass] + status + "</span>";
 }
 
 function renderCheckResultData_(data) {
@@ -615,7 +648,7 @@ async function confirmCurrentClosing() {
     showConfirmDoneModal(company, closingMonth);
   } catch (err) {
     hideLoadingModal(false);
-    alert("エラー: " + err.message);
+    showErrorModal("エラー: " + err.message);
   }
 }
 
@@ -929,6 +962,6 @@ async function executeDelete() {
     showDoneModal(companies.join("・") + "の" + month + "月20日〆の確定済みデータを削除しました");
   } catch (err) {
     hideLoadingModal(false);
-    alert("エラー: " + err.message);
+    showErrorModal("エラー: " + err.message);
   }
 }
