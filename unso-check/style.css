@@ -52,7 +52,7 @@ body {
      方式(background-repeat)に変更し、単純な画像タイリングにすることで
      この描画不具合を回避している(45度の対角線はタイルの角同士がぴったり
      繋がるため、境界での位置ズレが原理的に起きない)。 */
-  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc4NScgaGVpZ2h0PSc4NSc+PGxpbmUgeDE9JzAnIHkxPScwJyB4Mj0nODUnIHkyPSc4NScgc3Ryb2tlPSdyZ2JhKDI2LDM3LDY0LDAuMTQpJyBzdHJva2Utd2lkdGg9JzInLz48bGluZSB4MT0nODUnIHkxPScwJyB4Mj0nMCcgeTI9Jzg1JyBzdHJva2U9J3JnYmEoMjYsMzcsNjQsMC4wOCknIHN0cm9rZS13aWR0aD0nMS41Jy8+PC9zdmc+");
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc4NScgaGVpZ2h0PSc4NSc+PGxpbmUgeDE9JzAnIHkxPScwJyB4Mj0nODUnIHkyPSc4NScgc3Ryb2tlPSdyZ2JhKDI2LDM3LDY0LDAuMDcpJyBzdHJva2Utd2lkdGg9JzInLz48bGluZSB4MT0nODUnIHkxPScwJyB4Mj0nMCcgeTI9Jzg1JyBzdHJva2U9J3JnYmEoMjYsMzcsNjQsMC4wNDUpJyBzdHJva2Utd2lkdGg9JzEuNScvPjwvc3ZnPg==");
   background-repeat: repeat;
 }
 
