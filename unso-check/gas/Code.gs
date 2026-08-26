@@ -506,22 +506,35 @@ function deleteConfirmedMonth(companies, closingMonth) {
 
 // ---------- 配車データ ----------
 
+// 【高速化】列名→列インデックスの対応(colIdx)を1回だけ計算しておき、行ごとに
+// map["列名"]をオブジェクトハッシュで引き直すのをやめ、配列インデックスでの参照に置き換えた。
+// forEach+クロージャ生成もfor文に置き換え、全行(3800行超)×全列(20列)ぶんの
+// プロパティ組み立てコストを軽減する。フィルタ・整形結果(sheetRow・締め月等の正規化)は
+// 変更前と完全に同じになるようにしている。
 function haulingRows_() {
   const sh = sheet_(SHEET_HAULING);
   const map = headerMap_(sh);
   const lastRow = sh.getLastRow();
   if (lastRow < 2) return [];
   const values = sh.getRange(2, 1, lastRow - 1, HAULING_HEADERS.length).getValues();
-  return values
-    .filter(row => row[map["ID"] - 1] !== "" && row[map["ID"] - 1] !== null)
-    .map((row, i) => {
-      const obj = { sheetRow: i + 2 };
-      HAULING_HEADERS.forEach(h => { obj[h] = row[map[h] - 1]; });
-      obj["締め月"] = cellToYmd_(obj["締め月"]);
-      obj["積日"] = cellToYmd_(obj["積日"]);
-      obj["降日"] = cellToYmd_(obj["降日"]);
-      return obj;
-    });
+  const colIdx = HAULING_HEADERS.map(h => map[h] - 1);
+  const idCol = colIdx[0]; // HAULING_HEADERS[0] === "ID"
+
+  const result = [];
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    const idVal = row[idCol];
+    if (idVal === "" || idVal === null) continue;
+    const obj = { sheetRow: result.length + 2 };
+    for (let j = 0; j < HAULING_HEADERS.length; j++) {
+      obj[HAULING_HEADERS[j]] = row[colIdx[j]];
+    }
+    obj["締め月"] = cellToYmd_(obj["締め月"]);
+    obj["積日"] = cellToYmd_(obj["積日"]);
+    obj["降日"] = cellToYmd_(obj["降日"]);
+    result.push(obj);
+  }
+  return result;
 }
 
 function nextHaulingId_(sh, idCol) {
@@ -776,13 +789,9 @@ function importHaulingFile(payload) {
 
 // ---------- 集計・分析 ----------
 
-// 「20日締めチェック」: 業者+締め月を選択すると、工事名別の費用区分内訳・請求額・消費税・合計を返す。
-// 費用区分は保存済みの列値を信用せず、「ブロック」列から毎回classifyFeeType_で再判定する
-// (過去に別区分で保存された行があっても、常に最新の分類ロジックで正しく仕分けるため)。
-function getClosingCheck(company, closingMonth, rowsIn) {
-  if (!company || !closingMonth) throw new Error("業者・締め月を指定してください");
-  const allRows = rowsIn || haulingRows_();
-  const rows = allRows.filter(r => r.業者 === company && r.締め月 === normalizeDateStr_(closingMonth));
+// company+closingMonthで既に絞り込み済みの行配列(rows)から、工事名別の費用区分内訳・
+// 請求額・消費税・合計を組み立てる、getClosingCheck/getClosingCheckAll共通の内部処理。
+function buildClosingCheckResult_(company, closingMonth, rows) {
   const byProject = {};
   rows.forEach(r => {
     const key = r.物件名 || "(物件名なし)";
@@ -806,8 +815,19 @@ function getClosingCheck(company, closingMonth, rowsIn) {
     return acc;
   }, { コラム横持: 0, 製品等横持: 0, その他横持: 0, メッキ: 0, 現場搬入費用: 0, 重量: 0, 請求額: 0, 消費税: 0, 合計請求額: 0 });
 
-  const status = findStatusRow_(company, normalizeDateStr_(closingMonth));
-  return { company: company, closingMonth: normalizeDateStr_(closingMonth), status: status ? status.状態 : "未取込", projects: projects, total: total };
+  const status = findStatusRow_(company, closingMonth);
+  return { company: company, closingMonth: closingMonth, status: status ? status.状態 : "未取込", projects: projects, total: total };
+}
+
+// 「20日締めチェック」: 業者+締め月を選択すると、工事名別の費用区分内訳・請求額・消費税・合計を返す。
+// 費用区分は保存済みの列値を信用せず、「ブロック」列から毎回classifyFeeType_で再判定する
+// (過去に別区分で保存された行があっても、常に最新の分類ロジックで正しく仕分けるため)。
+function getClosingCheck(company, closingMonth, rowsIn) {
+  if (!company || !closingMonth) throw new Error("業者・締め月を指定してください");
+  const normalizedClosing = normalizeDateStr_(closingMonth);
+  const allRows = rowsIn || haulingRows_();
+  const rows = allRows.filter(r => r.業者 === company && r.締め月 === normalizedClosing);
+  return buildClosingCheckResult_(company, normalizedClosing, rows);
 }
 
 // 「20日締めチェック」の業者「全て」表示: 指定した締め月について、業者マスタの全業者分の
@@ -815,11 +835,23 @@ function getClosingCheck(company, closingMonth, rowsIn) {
 // 業者をまたいだ総合計は作らない(業者ごとに完結した表として扱うため)。
 // rowsIn省略時は配車データを自身で読み込む(getCheckScreenInit等、呼び出し元が既に
 // 読み込み済みの場合はrowsInで渡すことで、配車データの二重読み込みを避けられる)。
+// 【高速化】以前は業者数(6社)ぶんgetClosingCheckを呼び出しており、そのたびに全行を
+// filterしていた(全行スキャンが業者数に比例して繰り返されていた)。全行を1回だけ走査して
+// 業者ごとにグルーピングしてから、業者ごとの集計はグルーピング済みの小さい配列に対して行う
+// ように変更し、全行スキャンを1回に集約した。
 function getClosingCheckAll(closingMonth, rowsIn) {
   if (!closingMonth) throw new Error("締め月を指定してください");
   const normalizedClosing = normalizeDateStr_(closingMonth);
   const rows = rowsIn || haulingRows_();
-  const companies = listCompanies().map(company => getClosingCheck(company, normalizedClosing, rows));
+  const byCompany = {};
+  rows.forEach(r => {
+    if (r.締め月 !== normalizedClosing) return;
+    if (!byCompany[r.業者]) byCompany[r.業者] = [];
+    byCompany[r.業者].push(r);
+  });
+  const companies = listCompanies().map(company =>
+    buildClosingCheckResult_(company, normalizedClosing, byCompany[company] || [])
+  );
   return { closingMonth: normalizedClosing, companies: companies };
 }
 
