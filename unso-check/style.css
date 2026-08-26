@@ -27,7 +27,6 @@
   --ink: #1c1f26;
   --ink-muted: #666;
   --border: #dde1e8;
-  --wash-rgb: 26 37 64;
 
   /* 形状 */
   --radius-sm: 6px;
@@ -46,10 +45,15 @@ body {
   background-color: var(--bg);
   /* 運送アプリらしい、交差する走行ラインを模した控えめな地模様。
      文字・表・カードは必ず.section等の白い面の上に置くことで、模様は面と面の
-     すき間にだけ見えるようにし、可読性を落とさない。 */
-  background-image:
-    repeating-linear-gradient(-32deg, rgba(var(--wash-rgb) / 0.14) 0 2px, transparent 2px 60px),
-    repeating-linear-gradient(58deg, rgba(var(--wash-rgb) / 0.08) 0 1.5px, transparent 1.5px 60px);
+     すき間にだけ見えるようにし、可読性を落とさない。
+     以前はrepeating-linear-gradientで描いていたが、ページが長くなると
+     ブラウザの描画タイル境界で線がわずかにズレ、途中で折れて見える不具合が
+     発生した。85x85pxの正方形1マス分だけをSVGタイル画像として敷き詰める
+     方式(background-repeat)に変更し、単純な画像タイリングにすることで
+     この描画不具合を回避している(45度の対角線はタイルの角同士がぴったり
+     繋がるため、境界での位置ズレが原理的に起きない)。 */
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc4NScgaGVpZ2h0PSc4NSc+PGxpbmUgeDE9JzAnIHkxPScwJyB4Mj0nODUnIHkyPSc4NScgc3Ryb2tlPSdyZ2JhKDI2LDM3LDY0LDAuMTQpJyBzdHJva2Utd2lkdGg9JzInLz48bGluZSB4MT0nODUnIHkxPScwJyB4Mj0nMCcgeTI9Jzg1JyBzdHJva2U9J3JnYmEoMjYsMzcsNjQsMC4wOCknIHN0cm9rZS13aWR0aD0nMS41Jy8+PC9zdmc+");
+  background-repeat: repeat;
 }
 
 .app-header {
