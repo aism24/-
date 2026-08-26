@@ -265,12 +265,17 @@ table.summary-table th { background: var(--total-bg); }
 table.summary-table tbody tr:not(.total-row):nth-child(odd) td { background: #fff; }
 table.summary-table tbody tr:not(.total-row):nth-child(even) td { background: #e9f7ea; }
 
-/* 先頭列(工事名・物件名・業者・締め月)は固定幅にし、残りの列(金額・重量など)は
-   table-layout:fixedにより残り幅を均等に分け合うので幅が揃う。見出し(th)と
-   合計行の先頭セル(「合計」の文字)は中央揃え、先頭列の実際のデータ(物件名等)は左揃え、
-   金額・重量などの数値セルは右揃え(table.data-tableの既定を維持)のまま。 */
+/* 全8列(先頭列+横持3種+メッキ+現場搬入費用+現場搬入重量+合計)を均等割り付けにする。
+   以前は先頭列(工事名・物件名・業者・締め月)だけ固定幅(200px)にしていたが、
+   「現場搬入費用」「現場搬入重量」の見出しが折り返す幅しか残らないことがあったため、
+   全列均等にして見出しの折り返しを防ぐ。先頭列に物件名など長い文字列が入って
+   セル内に納まらない場合は、行の高さを保つため折り返さずに省略記号(…)で切り詰める。
+   見出し(th)と合計行の先頭セル(「合計」の文字)は
+   中央揃え、先頭列の実際のデータ(物件名等)は左揃え、金額・重量などの数値セルは
+   右揃え(table.data-tableの既定を維持)のまま。 */
 table.summary-table { table-layout: fixed; }
-table.summary-table th:first-child, table.summary-table td:first-child { width: 200px; }
+table.summary-table th, table.summary-table td { width: 12.5%; }
+table.summary-table td:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 table.summary-table th { text-align: center; }
 table.summary-table th:first-child { text-align: center; }
 table.summary-table tr.total-row td:first-child { text-align: center; }
