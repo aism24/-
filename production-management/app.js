@@ -1,0 +1,319 @@
+// デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。デプロイ後にここへ差し替えてください。
+const GAS_API_URL = "PASTE_YOUR_GAS_WEB_APP_URL_HERE";
+
+const SITES = ['本社', '夢前', '鳥取'];
+const SITE_CLASS = { 本社: 'honsha', 夢前: 'yumesaki', 鳥取: 'tottori' };
+const SITE_COLOR = { 本社: '#4da3ff', 夢前: '#35c98b', 鳥取: '#ffb454' };
+const PARTS = ['柱', '大梁', '小梁', '他'];
+const PERIOD_OFFSETS = [0, -1, -2, -3, -4];
+
+let state = {
+  data: null,
+  selectedSites: new Set(SITES),
+  period: null,
+  targets: {},
+  chart: null,
+};
+
+// ---------- GAS API ----------
+async function apiGet(action) {
+  const url = new URL(GAS_API_URL);
+  url.searchParams.set('action', action);
+  const res = await fetch(url.toString(), { method: 'GET' });
+  if (!res.ok) throw new Error('サーバーエラー(HTTP ' + res.status + ')');
+  const json = await res.json();
+  if (json.status !== 'success') throw new Error(json.message || '取得に失敗しました');
+  return json.data;
+}
+
+function showMessage(text, kind) {
+  const el = document.getElementById('msgArea');
+  el.textContent = text;
+  el.className = 'msg' + (kind ? ' ' + kind : '');
+}
+
+// ---------- 期間(前月21日〜当月20日)の計算 ----------
+function periodForOffset(offsetMonths) {
+  const now = new Date();
+  let endMonth = now.getMonth();
+  let endYear = now.getFullYear();
+  if (now.getDate() > 20) {
+    endMonth += 1;
+    if (endMonth > 11) { endMonth = 0; endYear++; }
+  }
+  endMonth += offsetMonths;
+  while (endMonth < 0) { endMonth += 12; endYear--; }
+  while (endMonth > 11) { endMonth -= 12; endYear++; }
+  const end = new Date(endYear, endMonth, 20);
+  let startMonth = endMonth - 1, startYear = endYear;
+  if (startMonth < 0) { startMonth = 11; startYear--; }
+  const start = new Date(startYear, startMonth, 21);
+  return { start, end };
+}
+
+function dateKey(d) {
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+}
+function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+function mdLabel(key) {
+  const parts = key.split('-');
+  return Number(parts[1]) + '/' + Number(parts[2]);
+}
+function parseDateKey(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+function periodLabel(period) {
+  const fmt = (d) => (d.getMonth() + 1) + '/' + d.getDate();
+  return fmt(period.start) + '〜' + fmt(period.end) + '（' + period.end.getFullYear() + '年' + (period.end.getMonth() + 1) + '月締め）';
+}
+function datesInPeriod(period) {
+  const dates = [];
+  const cur = new Date(period.start);
+  while (cur <= period.end) {
+    dates.push(dateKey(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
+// ---------- 初期化 ----------
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.site-btn').forEach(function (btn) {
+    btn.classList.add('on');
+    btn.addEventListener('click', function () {
+      const site = btn.dataset.site;
+      if (state.selectedSites.has(site)) {
+        if (state.selectedSites.size === 1) return; // 最低1拠点は表示する
+        state.selectedSites.delete(site);
+        btn.classList.remove('on');
+      } else {
+        state.selectedSites.add(site);
+        btn.classList.add('on');
+      }
+      renderAll();
+    });
+  });
+
+  const periodSelect = document.getElementById('periodSelect');
+  PERIOD_OFFSETS.forEach(function (offset) {
+    const period = periodForOffset(offset);
+    const opt = document.createElement('option');
+    opt.value = String(offset);
+    opt.textContent = periodLabel(period);
+    periodSelect.appendChild(opt);
+  });
+  periodSelect.addEventListener('change', function () {
+    state.period = periodForOffset(Number(periodSelect.value));
+    renderAll();
+  });
+  state.period = periodForOffset(0);
+
+  SITES.forEach(function (site) {
+    document.getElementById('target' + site).addEventListener('input', function (e) {
+      state.targets[site] = Number(e.target.value) || 0;
+      renderChart();
+    });
+  });
+
+  document.getElementById('btnRefresh').addEventListener('click', function () {
+    loadData(true);
+  });
+
+  loadData(false);
+});
+
+async function loadData(forceRefresh) {
+  const btn = document.getElementById('btnRefresh');
+  btn.disabled = true;
+  showMessage(forceRefresh ? '最新のExcelを読み込んで再集計しています…(数十秒かかる場合があります)' : '読み込み中…', '');
+  try {
+    if (GAS_API_URL.indexOf('PASTE_YOUR_GAS_WEB_APP_URL_HERE') >= 0) {
+      throw new Error('app.js の GAS_API_URL がまだ設定されていません。');
+    }
+    const data = await apiGet(forceRefresh ? 'refresh' : 'getData');
+    state.data = data;
+    SITES.forEach(function (site) {
+      if (state.targets[site] === undefined) {
+        state.targets[site] = (data.targets && data.targets[site] !== undefined) ? data.targets[site] : 0;
+        document.getElementById('target' + site).value = state.targets[site];
+      }
+    });
+    document.getElementById('updatedAt').textContent = data.generatedAt ? ('最終更新: ' + data.generatedAt.replace('T', ' ').slice(0, 19)) : '';
+    renderAll();
+    showMessage(forceRefresh ? '最新化しました。' : '', 'ok');
+
+    const warnEl = document.getElementById('warningsArea');
+    warnEl.textContent = (data.warnings && data.warnings.length) ? data.warnings.join('\n') : '';
+  } catch (err) {
+    console.error(err);
+    showMessage('エラー: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderAll() {
+  if (!state.data) return;
+  renderChart();
+  renderSchedule();
+}
+
+// ---------- グラフ ----------
+function renderChart() {
+  const data = state.data;
+  const period = state.period;
+  const dates = datesInPeriod(period);
+  const selected = SITES.filter(function (s) { return state.selectedSites.has(s); });
+
+  const datasets = [];
+  selected.forEach(function (site) {
+    const dailyMap = {};
+    (data.dailyBySite[site] || []).forEach(function (r) { dailyMap[r.date] = r.weight; });
+    const color = SITE_COLOR[site];
+
+    const dailyValues = dates.map(function (d) { return dailyMap[d] || 0; });
+
+    let cum = 0;
+    const cumActual = dailyValues.map(function (v) { cum += v; return Math.round(cum * 100) / 100; });
+
+    const target = state.targets[site] || 0;
+    let cumTarget = 0;
+    const cumTargetArr = dates.map(function (d) {
+      const isWorkday = data.calendar[d] === true;
+      if (isWorkday) cumTarget += target;
+      return Math.round(cumTarget * 100) / 100;
+    });
+
+    datasets.push({
+      type: 'bar', label: site + ' 日次実績(t)', data: dailyValues,
+      backgroundColor: color + '88', borderColor: color, yAxisID: 'yDaily', order: 3,
+    });
+    datasets.push({
+      type: 'line', label: site + ' 累積実績(t)', data: cumActual,
+      borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0,
+      yAxisID: 'yCum', order: 1,
+    });
+    datasets.push({
+      type: 'line', label: site + ' 目標ライン(t)', data: cumTargetArr,
+      borderColor: color, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0,
+      yAxisID: 'yCum', order: 2,
+    });
+  });
+
+  const ctx = document.getElementById('prodChart').getContext('2d');
+  if (state.chart) state.chart.destroy();
+  state.chart = new Chart(ctx, {
+    data: { labels: dates.map(mdLabel), datasets: datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        yDaily: { position: 'left', title: { display: true, text: '日次生産量(t)' }, grid: { color: '#2a3348' } },
+        yCum: { position: 'right', title: { display: true, text: '累積生産量(t)' }, grid: { display: false } },
+        x: { grid: { color: '#1d2436' } },
+      },
+      plugins: { legend: { labels: { color: '#e7ebf3', boxWidth: 14 } } },
+    },
+  });
+}
+
+// ---------- 工程表 ----------
+function th(text, cls) {
+  const el = document.createElement('th');
+  el.textContent = text;
+  if (cls) el.className = cls;
+  return el;
+}
+
+function renderSchedule() {
+  const data = state.data;
+  const period = state.period;
+  const dates = datesInPeriod(period);
+  const container = document.getElementById('scheduleArea');
+  container.innerHTML = '';
+
+  const selected = SITES.filter(function (s) { return state.selectedSites.has(s); });
+
+  selected.forEach(function (site) {
+    const worksForSite = (data.works || []).filter(function (w) {
+      if (!w.bySite || !w.bySite[site]) return false;
+      const wd = w.bySite[site].weightByDate || {};
+      return dates.some(function (d) { return wd[d] !== undefined; });
+    });
+
+    const block = document.createElement('div');
+    block.className = 'schedule-site-block';
+    const title = document.createElement('div');
+    title.className = 'schedule-site-title';
+    title.innerHTML = '<span class="site-dot ' + SITE_CLASS[site] + '"></span>' + site;
+    block.appendChild(title);
+
+    if (worksForSite.length === 0) {
+      const p = document.createElement('div');
+      p.className = 'empty-note';
+      p.textContent = 'この期間・拠点に該当する工事データはありません。';
+      block.appendChild(p);
+      container.appendChild(block);
+      return;
+    }
+
+    const scrollWrap = document.createElement('div');
+    scrollWrap.className = 'table-scroll';
+    const table = document.createElement('table');
+    table.className = 'schedule-table';
+
+    const headTr = document.createElement('tr');
+    headTr.appendChild(th('工事', 'work-name-col'));
+    headTr.appendChild(th('', ''));
+    dates.forEach(function (d) {
+      headTr.appendChild(th(mdLabel(d), data.calendar[d] === false ? 'holiday' : ''));
+    });
+    table.appendChild(headTr);
+
+    worksForSite.forEach(function (w) {
+      const siteData = w.bySite[site];
+      const rowKeys = PARTS.concat(['生産重量']);
+      rowKeys.forEach(function (rowKey, ri) {
+        const tr = document.createElement('tr');
+        if (rowKey === '生産重量') tr.classList.add('weight-row');
+        if (ri === 0) {
+          const nameTd = document.createElement('td');
+          nameTd.className = 'work-name-col';
+          nameTd.rowSpan = rowKeys.length;
+          nameTd.textContent = w.workNo + ' ' + w.workName;
+          tr.appendChild(nameTd);
+        }
+        const labelTd = document.createElement('td');
+        labelTd.className = 'part-label';
+        labelTd.textContent = rowKey;
+        tr.appendChild(labelTd);
+
+        dates.forEach(function (d) {
+          const td = document.createElement('td');
+          if (data.calendar[d] === false) td.classList.add('holiday');
+          let val;
+          if (rowKey === '生産重量') {
+            val = siteData.weightByDate ? siteData.weightByDate[d] : undefined;
+          } else {
+            val = (siteData.byPart && siteData.byPart[rowKey]) ? siteData.byPart[rowKey][d] : undefined;
+          }
+          if (val === undefined) {
+            td.classList.add('empty');
+          } else if (val === 0) {
+            td.classList.add('zero');
+            td.textContent = '0';
+          } else {
+            td.textContent = rowKey === '生産重量' ? val.toFixed(2) : val;
+          }
+          tr.appendChild(td);
+        });
+        table.appendChild(tr);
+      });
+    });
+
+    scrollWrap.appendChild(table);
+    block.appendChild(scrollWrap);
+    container.appendChild(block);
+  });
+}
