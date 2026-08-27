@@ -198,7 +198,7 @@ function renderChart() {
     });
     datasets.push({
       type: 'line', label: site + ' 目標ライン(t)', data: cumTargetArr,
-      borderColor: color, borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0,
+      borderColor: color, borderDash: [4, 3], borderWidth: 1, pointRadius: 0,
       yAxisID: 'yCum', order: 2,
     });
   });
