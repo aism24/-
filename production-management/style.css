@@ -303,3 +303,26 @@ body.pdf-export .msg { display: none !important; }
 body.pdf-export .app-header { position: static; }
 body.pdf-export .table-scroll,
 body.pdf-export .chart-scroll { overflow: visible !important; }
+
+/* html2canvasはCSSカスタムプロパティ(var(--text)等)の解決や、position:stickyの
+   セルを完全には正しく描画できないことがあるため、工程表まわりは色・位置を
+   直接ハードコードして上書きする(見にくい文字・消える罫線・休日セルの黒塗り対策)。 */
+body.pdf-export table.schedule-table th,
+body.pdf-export table.schedule-table td {
+  color: #111111 !important;
+  border-color: #999999 !important;
+  background: #ffffff;
+}
+body.pdf-export table.schedule-table th.work-name-col,
+body.pdf-export table.schedule-table td.work-name-col,
+body.pdf-export table.schedule-table th.part-label,
+body.pdf-export table.schedule-table td.part-label {
+  position: static !important;
+  background: #f4f4f7 !important;
+}
+body.pdf-export table.schedule-table td.work-name-col .work-name { color: #333333 !important; }
+body.pdf-export table.schedule-table td.zero { color: #999999 !important; }
+body.pdf-export table.schedule-table th.holiday,
+body.pdf-export table.schedule-table td.holiday { background: #fbe3e3 !important; }
+body.pdf-export table.schedule-table tr.total-row td { background: #fff7d6 !important; }
+body.pdf-export table.schedule-table tr.weight-row td { color: #1a5fb4 !important; }

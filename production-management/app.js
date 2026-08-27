@@ -79,7 +79,18 @@ async function downloadPdf() {
 
     await addElementImage(document.querySelector('.app-header'));
     await addElementImage(document.querySelector('.toolbar'));
-    await addElementImage(document.querySelectorAll('.panel')[0]); // 生産量グラフ
+
+    // Chart.jsのcanvasは描画時の文字色がそのままピクセルに焼き込まれるため、
+    // 通常表示用の明るい文字色のままキャプチャすると白背景のPDF上でほぼ見えなくなる。
+    // 濃い色で一時的に再描画してキャプチャし、直後に元の色へ戻す(失敗時も必ず戻す)。
+    try {
+      Chart.defaults.color = '#111111';
+      renderChart();
+      await addElementImage(document.querySelectorAll('.panel')[0]); // 生産量グラフ
+    } finally {
+      Chart.defaults.color = '#e7ebf3';
+      renderChart();
+    }
 
     const blocks = document.querySelectorAll('.schedule-site-block');
     for (let i = 0; i < blocks.length; i++) {
