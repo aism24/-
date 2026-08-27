@@ -167,6 +167,7 @@ function renderChart() {
   const selected = SITES.filter(function (s) { return state.selectedSites.has(s); });
 
   const datasets = [];
+  const cumStats = [];
   selected.forEach(function (site) {
     const dailyMap = {};
     (data.dailyBySite[site] || []).forEach(function (r) { dailyMap[r.date] = r.weight; });
@@ -176,6 +177,7 @@ function renderChart() {
 
     let cum = 0;
     const cumActual = dailyValues.map(function (v) { cum += v; return Math.round(cum * 100) / 100; });
+    cumStats.push({ site: site, color: color, value: cumActual.length ? cumActual[cumActual.length - 1] : 0 });
 
     const target = state.targets[site] || 0;
     let cumTarget = 0;
@@ -213,8 +215,38 @@ function renderChart() {
         yCum: { position: 'right', title: { display: true, text: '累積生産量(t)' }, grid: { display: false } },
         x: { grid: { color: '#1d2436' } },
       },
-      plugins: { legend: { labels: { color: '#e7ebf3', boxWidth: 14 } } },
+      plugins: {
+        legend: { labels: { color: '#e7ebf3', boxWidth: 14 } },
+        tooltip: {
+          callbacks: {
+            label: function (item) {
+              return item.dataset.label + ': ' + item.parsed.y.toFixed(2) + 't';
+            },
+          },
+        },
+      },
     },
+  });
+
+  renderCumStats(cumStats);
+}
+
+// その時点までの累積生産重量を、拠点ごとに数値で表示する(小数第2位で四捨五入)。
+function renderCumStats(cumStats) {
+  const el = document.getElementById('cumStats');
+  el.innerHTML = '';
+  cumStats.forEach(function (s) {
+    const card = document.createElement('div');
+    card.className = 'cum-stat-card';
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.innerHTML = '<span class="site-dot ' + SITE_CLASS[s.site] + '"></span>' + s.site + ' 累積生産重量';
+    const value = document.createElement('div');
+    value.className = 'value';
+    value.innerHTML = (Math.round(s.value * 100) / 100).toFixed(2) + '<span class="unit">t</span>';
+    card.appendChild(label);
+    card.appendChild(value);
+    el.appendChild(card);
   });
 }
 
