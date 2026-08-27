@@ -7,10 +7,9 @@ const SITE_COLOR = { 本社: '#4da3ff', 夢前: '#35c98b', 鳥取: '#ffb454' };
 const PARTS = ['柱', '大梁', '小梁', '他'];
 const PERIOD_OFFSETS = [0, -1, -2, -3, -4];
 
-// グラフの左右軸幅を、工程表のリード列幅(style.css: .work-name-col + .part-label)に
-// 近い値で固定しておくため。
+// グラフの左軸幅を、工程表のリード列幅(style.css: .work-name-col + .part-label)に
+// 固定しておくため。
 const TABLE_LEAD_WIDTH = 112; // work-name-col(64) + part-label(48)
-const CHART_RIGHT_AXIS_WIDTH = 60;
 
 let state = {
   data: null,
@@ -222,10 +221,10 @@ function renderChart() {
           position: 'left', title: { display: true, text: '日次生産量(t)' }, grid: { color: '#2a3348' },
           afterFit: function (scale) { scale.width = TABLE_LEAD_WIDTH; },
         },
-        yCum: {
-          position: 'right', title: { display: true, text: '累積生産量(t)' }, grid: { display: false },
-          afterFit: function (scale) { scale.width = CHART_RIGHT_AXIS_WIDTH; },
-        },
+        // 右側の累積軸は表示せず(現在値は上部の数値カードで確認できる)、その分の幅を
+        // 日付の描画エリアに回す。これにより工程表(左のリード列だけを引いた残りを
+        // 日数で等分)と、グラフの1日あたりの幅がほぼ一致する。
+        yCum: { position: 'right', display: false },
         x: { grid: { color: '#1d2436' }, offset: true },
       },
       plugins: {
@@ -336,6 +335,7 @@ function renderSchedule() {
     scrollWrap.className = 'table-scroll ' + SITE_CLASS[site];
     const table = document.createElement('table');
     table.className = 'schedule-table';
+    table.style.setProperty('--num-dates', dates.length);
 
     const headTr = document.createElement('tr');
     headTr.appendChild(th('工事', 'work-name-col'));

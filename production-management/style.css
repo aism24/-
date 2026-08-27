@@ -100,7 +100,7 @@ select option { background: #372a52; color: var(--text); }
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 .site-btn:last-child { margin-right: 0; }
-.site-btn:hover { transform: translateY(-2px); }
+.site-btn:hover { transform: translateY(-2px) scale(1.5); position: relative; z-index: 2; }
 .site-btn[data-site="本社"]:hover { border-color: var(--honsha); box-shadow: 0 0 9px 2px rgba(77, 163, 255, 0.55); }
 .site-btn[data-site="夢前"]:hover { border-color: var(--yumesaki); box-shadow: 0 0 9px 2px rgba(53, 201, 139, 0.55); }
 .site-btn[data-site="鳥取"]:hover { border-color: var(--tottori); box-shadow: 0 0 9px 2px rgba(255, 180, 84, 0.55); }
@@ -198,11 +198,13 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .site-dot.yumesaki { background: var(--yumesaki); }
 .site-dot.tottori { background: var(--tottori); }
 
-.table-scroll { overflow-x: auto; border: 3px double var(--border); border-radius: 2px; }
+.table-scroll { overflow: hidden; border: 3px double var(--border); border-radius: 2px; }
 .table-scroll.honsha { border-color: var(--honsha); }
 .table-scroll.yumesaki { border-color: var(--yumesaki); }
 .table-scroll.tottori { border-color: var(--tottori); }
 table.schedule-table {
+  table-layout: fixed;
+  width: 100%;
   border-collapse: collapse;
   font-size: 0.78rem;
   white-space: nowrap;
@@ -237,9 +239,7 @@ table.schedule-table th.part-label, table.schedule-table td.part-label {
 }
 table.schedule-table td:not(.work-name-col):not(.part-label),
 table.schedule-table th:not(.work-name-col):not(.part-label) {
-  width: 38px;
-  min-width: 38px;
-  max-width: 38px;
+  width: calc((100% - 112px) / var(--num-dates, 31));
   padding: 3px 2px;
   overflow: hidden;
   font-size: 0.72rem;
