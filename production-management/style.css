@@ -155,7 +155,7 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .msg.ok { color: var(--ok); }
 .msg.warn { color: var(--warn); }
 .msg.err { color: var(--err); }
-.msg.loading { color: var(--err); animation: blink-slow 1.6s ease-in-out infinite; }
+.msg.loading { color: var(--err); font-weight: 700; animation: blink-slow 1.6s ease-in-out infinite; }
 @keyframes blink-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 .panel {
