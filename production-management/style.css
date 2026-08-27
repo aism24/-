@@ -122,6 +122,8 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .msg.ok { color: var(--ok); }
 .msg.warn { color: var(--warn); }
 .msg.err { color: var(--err); }
+.msg.loading { color: var(--err); animation: blink-slow 1.6s ease-in-out infinite; }
+@keyframes blink-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 .panel {
   background: var(--panel);
@@ -136,8 +138,8 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .panel-head h2 { margin: 0; }
 
 .chart-wrap { position: relative; height: 460px; }
-.chart-scroll { overflow-x: auto; height: 100%; }
-.chart-inner { height: 100%; }
+.chart-scroll { overflow: hidden; height: 100%; }
+.chart-inner { width: 100%; height: 100%; }
 
 .cum-stats { display: flex; gap: 14px; flex-wrap: wrap; }
 .cum-stat-card {
