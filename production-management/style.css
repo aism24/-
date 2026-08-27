@@ -55,7 +55,9 @@ body {
   font-size: 0.95rem;
   cursor: pointer;
   animation: glow-pulse 1.8s ease-in-out infinite;
+  transition: transform 0.15s ease;
 }
+.btn-refresh-header:hover:not(:disabled) { transform: translateY(-2px); }
 .btn-refresh-header:disabled { opacity: 0.6; animation: none; box-shadow: none; cursor: default; }
 @keyframes glow-pulse {
   0%, 100% { box-shadow: 0 0 6px 2px rgba(255, 212, 0, 0.55), 0 0 14px 4px rgba(255, 212, 0, 0.25); }
@@ -74,6 +76,7 @@ body {
   margin-bottom: 18px;
 }
 .toolbar .group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.toolbar .group-right { margin-left: auto; }
 .toolbar label { color: var(--muted); font-size: 0.85rem; }
 
 select {
@@ -83,6 +86,7 @@ select {
   border-radius: 6px;
   padding: 6px 10px;
 }
+select option { background: #372a52; color: var(--text); }
 
 .site-btn {
   border: 1px solid var(--border);
@@ -90,9 +94,16 @@ select {
   color: var(--muted);
   border-radius: 999px;
   padding: 6px 14px;
+  margin-right: 8px;
   cursor: pointer;
   font-size: 0.85rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
+.site-btn:last-child { margin-right: 0; }
+.site-btn:hover { transform: translateY(-2px); }
+.site-btn[data-site="本社"]:hover { border-color: var(--honsha); box-shadow: 0 0 9px 2px rgba(77, 163, 255, 0.55); }
+.site-btn[data-site="夢前"]:hover { border-color: var(--yumesaki); box-shadow: 0 0 9px 2px rgba(53, 201, 139, 0.55); }
+.site-btn[data-site="鳥取"]:hover { border-color: var(--tottori); box-shadow: 0 0 9px 2px rgba(255, 180, 84, 0.55); }
 .site-btn.on[data-site="本社"] { background: var(--honsha); color: #06111f; border-color: var(--honsha); }
 .site-btn.on[data-site="夢前"] { background: var(--yumesaki); color: #06111f; border-color: var(--yumesaki); }
 .site-btn.on[data-site="鳥取"] { background: var(--tottori); color: #06111f; border-color: var(--tottori); }
@@ -104,7 +115,13 @@ select {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 4px 6px;
-  text-align: right;
+  text-align: left;
+  color-scheme: dark;
+}
+.target-input::-webkit-outer-spin-button,
+.target-input::-webkit-inner-spin-button {
+  -webkit-appearance: auto;
+  opacity: 1;
 }
 
 button.primary {
@@ -154,6 +171,14 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .cum-stat-card .label { font-size: 0.78rem; color: var(--muted); display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
 .cum-stat-card .value { font-size: 1.05rem; font-weight: 700; white-space: nowrap; }
 .cum-stat-card .value .unit { font-size: 0.75rem; font-weight: 400; color: var(--muted); margin-left: 2px; }
+.cum-stat-card.honsha { background: var(--honsha); border-color: var(--honsha); }
+.cum-stat-card.yumesaki { background: var(--yumesaki); border-color: var(--yumesaki); }
+.cum-stat-card.tottori { background: var(--tottori); border-color: var(--tottori); }
+.cum-stat-card.honsha .label, .cum-stat-card.honsha .value, .cum-stat-card.honsha .value .unit,
+.cum-stat-card.yumesaki .label, .cum-stat-card.yumesaki .value, .cum-stat-card.yumesaki .value .unit,
+.cum-stat-card.tottori .label, .cum-stat-card.tottori .value, .cum-stat-card.tottori .value .unit {
+  color: #06111f;
+}
 
 .legend-note { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
 
@@ -170,18 +195,21 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .site-dot.yumesaki { background: var(--yumesaki); }
 .site-dot.tottori { background: var(--tottori); }
 
-.table-scroll { overflow-x: auto; border: 3px double var(--accent); border-radius: 2px; }
+.table-scroll { overflow-x: auto; border: 3px double var(--border); border-radius: 2px; }
+.table-scroll.honsha { border-color: var(--honsha); }
+.table-scroll.yumesaki { border-color: var(--yumesaki); }
+.table-scroll.tottori { border-color: var(--tottori); }
 table.schedule-table {
   border-collapse: collapse;
   font-size: 0.78rem;
   white-space: nowrap;
 }
-table.schedule-table th.date-th { background: rgba(255, 212, 0, 0.16); }
 table.schedule-table th, table.schedule-table td {
   border: 1px solid var(--border);
   padding: 3px 6px;
   text-align: center;
 }
+table.schedule-table tr:first-child th { border-bottom: 2px solid var(--muted); }
 table.schedule-table th.work-name-col, table.schedule-table td.work-name-col {
   text-align: left;
   position: sticky;
@@ -191,6 +219,7 @@ table.schedule-table th.work-name-col, table.schedule-table td.work-name-col {
   min-width: 64px;
   max-width: 64px;
 }
+table.schedule-table td.work-name-col { border-bottom: 2px solid var(--muted); }
 table.schedule-table th.part-label, table.schedule-table td.part-label {
   text-align: left;
   position: sticky;
