@@ -226,6 +226,26 @@ function th(text, cls) {
   return el;
 }
 
+// 「工事番号」+改行+「工事名」(5文字ごとに改行)のラベルを組み立てる。
+function buildWorkLabel(workNo, workName) {
+  const frag = document.createDocumentFragment();
+  const noDiv = document.createElement('div');
+  noDiv.className = 'work-no';
+  noDiv.textContent = workNo;
+  frag.appendChild(noDiv);
+
+  const nameDiv = document.createElement('div');
+  nameDiv.className = 'work-name';
+  const name = workName || '';
+  for (let i = 0; i < name.length; i += 5) {
+    const lineDiv = document.createElement('div');
+    lineDiv.textContent = name.slice(i, i + 5);
+    nameDiv.appendChild(lineDiv);
+  }
+  frag.appendChild(nameDiv);
+  return frag;
+}
+
 function renderSchedule() {
   const data = state.data;
   const period = state.period;
@@ -281,7 +301,7 @@ function renderSchedule() {
           const nameTd = document.createElement('td');
           nameTd.className = 'work-name-col';
           nameTd.rowSpan = rowKeys.length;
-          nameTd.textContent = w.workNo + ' ' + w.workName;
+          nameTd.appendChild(buildWorkLabel(w.workNo, w.workName));
           tr.appendChild(nameTd);
         }
         const labelTd = document.createElement('td');
@@ -311,6 +331,24 @@ function renderSchedule() {
         table.appendChild(tr);
       });
     });
+
+    const dailyMap = {};
+    (data.dailyBySite[site] || []).forEach(function (r) { dailyMap[r.date] = r.weight; });
+    const totalTr = document.createElement('tr');
+    totalTr.className = 'total-row';
+    const totalLabelTd = document.createElement('td');
+    totalLabelTd.className = 'work-name-col';
+    totalLabelTd.colSpan = 2;
+    totalLabelTd.textContent = site + ' 合計';
+    totalTr.appendChild(totalLabelTd);
+    dates.forEach(function (d) {
+      const td = document.createElement('td');
+      if (data.calendar[d] === false) td.classList.add('holiday');
+      const val = dailyMap[d];
+      td.textContent = (val !== undefined) ? val.toFixed(2) : '0.00';
+      totalTr.appendChild(td);
+    });
+    table.appendChild(totalTr);
 
     scrollWrap.appendChild(table);
     block.appendChild(scrollWrap);
