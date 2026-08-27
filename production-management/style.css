@@ -120,6 +120,8 @@ select option { background: #372a52; color: var(--text); }
 .site-btn.on[data-site="本社"] { background: var(--honsha); color: #06111f; border-color: var(--honsha); }
 .site-btn.on[data-site="夢前"] { background: var(--yumesaki); color: #06111f; border-color: var(--yumesaki); }
 .site-btn.on[data-site="鳥取"] { background: var(--tottori); color: #06111f; border-color: var(--tottori); }
+.site-btn[data-site="__all__"]:hover { border-color: var(--text); box-shadow: 0 0 9px 2px rgba(231, 235, 243, 0.35); }
+.site-btn.on[data-site="__all__"] { background: var(--text); color: #06111f; border-color: var(--text); }
 
 .target-input {
   width: 56px;
@@ -265,6 +267,21 @@ table.schedule-table tr.total-row td { font-weight: 700; color: var(--text); bac
 table.schedule-table tr.total-row td.work-name-col { font-size: 0.68rem; white-space: normal; line-height: 1.2; border-bottom: none; }
 table.schedule-table td.zero { color: var(--text); }
 table.schedule-table td.empty { color: transparent; }
+/* 合計行はゼロの日でも背景の薄黄色は見せつつ、数値そのものは見えなくする */
+table.schedule-table tr.total-row td.zero-total { color: transparent; }
+
+/* タブレット・スマホ幅では日付列を固定幅に戻し、表側だけ横スクロールを許可する
+   (パソコン幅ではこれまで通り全列が画面内に収まる)。 */
+@media (max-width: 900px) {
+  .table-scroll { overflow-x: auto; }
+  table.schedule-table { width: auto; }
+  table.schedule-table td:not(.work-name-col):not(.part-label),
+  table.schedule-table th:not(.work-name-col):not(.part-label) {
+    width: 30px;
+    min-width: 30px;
+    max-width: 30px;
+  }
+}
 
 .empty-note { color: var(--text); padding: 8px 0; }
 

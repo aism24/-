@@ -143,6 +143,12 @@ function mdLabel(key) {
   const parts = key.split('-');
   return Number(parts[1]) + '/' + Number(parts[2]);
 }
+// 工程表の日付見出し用。期間が「前月21日〜当月20日」に固定されているため、
+// 日の数字(1〜31)だけで月をまたいでも重複しない。月はブロック見出し側の
+// 「〆」表記(renderSchedule内のtitle生成)で示す。
+function dayLabel(key) {
+  return Number(key.split('-')[2]);
+}
 function parseDateKey(key) {
   const [y, m, d] = key.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -161,20 +167,24 @@ function datesInPeriod(period) {
   return dates;
 }
 
+// 拠点ボタンの選択状態(state.selectedSitesとボタンの見た目)をまとめて切り替える。
+function applySiteSelection(sites) {
+  state.selectedSites = new Set(sites);
+  document.querySelectorAll('.site-btn').forEach(function (btn) {
+    const site = btn.dataset.site;
+    const on = (site === '__all__') ? (sites.length === SITES.length) : sites.length === 1 && sites[0] === site;
+    btn.classList.toggle('on', on);
+  });
+}
+
 // ---------- 初期化 ----------
 document.addEventListener('DOMContentLoaded', function () {
+  // 拠点ボタンは「全て」or「1拠点だけ」のラジオ的な排他選択。
+  applySiteSelection(SITES);
   document.querySelectorAll('.site-btn').forEach(function (btn) {
-    btn.classList.add('on');
     btn.addEventListener('click', function () {
       const site = btn.dataset.site;
-      if (state.selectedSites.has(site)) {
-        if (state.selectedSites.size === 1) return; // 最低1拠点は表示する
-        state.selectedSites.delete(site);
-        btn.classList.remove('on');
-      } else {
-        state.selectedSites.add(site);
-        btn.classList.add('on');
-      }
+      applySiteSelection(site === '__all__' ? SITES : [site]);
       renderAll();
     });
   });
@@ -401,7 +411,9 @@ function renderSchedule() {
     block.className = 'schedule-site-block';
     const title = document.createElement('div');
     title.className = 'schedule-site-title';
-    title.innerHTML = '<span class="site-dot ' + SITE_CLASS[site] + '"></span>' + site;
+    // 日付見出しを日だけにした分、この行で「何月何日締めか」を示す(例: 本社「9/20〆工程表」)。
+    title.innerHTML = '<span class="site-dot ' + SITE_CLASS[site] + '"></span>' +
+      site + '「' + mdLabel(dateKey(period.end)) + '〆工程表」';
     block.appendChild(title);
 
     if (worksForSite.length === 0) {
@@ -423,7 +435,7 @@ function renderSchedule() {
     headTr.appendChild(th('工事', 'work-name-col'));
     headTr.appendChild(th('', 'part-label'));
     dates.forEach(function (d) {
-      headTr.appendChild(th(mdLabel(d), 'date-th' + (data.calendar[d] === false ? ' holiday' : '')));
+      headTr.appendChild(th(dayLabel(d), 'date-th' + (data.calendar[d] === false ? ' holiday' : '')));
     });
     table.appendChild(headTr);
 
@@ -481,7 +493,10 @@ function renderSchedule() {
       const td = document.createElement('td');
       if (data.calendar[d] === false) td.classList.add('holiday');
       const val = dailyMap[d];
-      td.textContent = (val !== undefined) ? val.toFixed(1) : '0.0';
+      const text = (val !== undefined) ? val.toFixed(1) : '0.0';
+      // 合計がゼロの日は数値を背景色に同化させて見えなくする(ゼロが並ぶ見た目のノイズを消す)。
+      if (text === '0.0') td.classList.add('zero-total');
+      td.textContent = text;
       totalTr.appendChild(td);
     });
     table.appendChild(totalTr);
