@@ -45,6 +45,19 @@ body {
 
 .refresh-note { margin-left: auto; color: var(--text); font-size: 0.78rem; max-width: 360px; text-align: right; }
 
+.btn-pdf-print {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-pdf-print:hover { transform: translateY(-2px); box-shadow: 0 0 8px 2px rgba(77, 163, 255, 0.5); }
+
 .btn-refresh-header {
   background: #ffd400;
   color: #0b3fae;
@@ -256,3 +269,18 @@ table.schedule-table td.empty { color: transparent; }
 .empty-note { color: var(--text); padding: 8px 0; }
 
 footer.warnings { color: var(--warn); font-size: 0.8rem; margin-top: 10px; white-space: pre-line; }
+
+@media print {
+  :root {
+    --bg: #ffffff;
+    --panel: #ffffff;
+    --panel2: #f4f4f7;
+    --border: #ccc;
+    --text: #111111;
+    --muted: #444444;
+  }
+  .btn-pdf-print, .btn-refresh-header, .refresh-note, .msg { display: none !important; }
+  .app-header { position: static; }
+  .table-scroll, .chart-scroll { overflow: visible !important; }
+  .schedule-site-block { break-inside: avoid; }
+}
