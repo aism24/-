@@ -210,10 +210,17 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .cum-stat-card.tottori .label, .cum-stat-card.tottori .value, .cum-stat-card.tottori .value .unit, .cum-stat-card.tottori .avg {
   color: #06111f;
 }
-/* 平均生産重量が目標日産量を下回っている場合の警告表示。「現時点のデータを取得」
-   ボタンと同じ色(#ffd400系)・同じglow-pulseアニメーションでカードの縁を光らせる。 */
+/* 平均生産重量が目標日産量を下回っている場合の警告表示。カード自身の拠点色で
+   縁を光らせる(--glow-rgbを拠点ごとに設定し、共通のglow-pulse-siteで点滅させる)。 */
 .cum-stat-card .avg.warn, .cum-stat-card .avg.warn .unit { color: #ff2b2b !important; font-weight: 800; }
-.cum-stat-card.below-target { border-color: #fff1a8 !important; animation: glow-pulse 1.8s ease-in-out infinite; }
+.cum-stat-card.below-target { animation: glow-pulse-site 1.8s ease-in-out infinite; }
+.cum-stat-card.honsha.below-target { --glow-rgb: 77, 163, 255; }
+.cum-stat-card.yumesaki.below-target { --glow-rgb: 53, 201, 139; }
+.cum-stat-card.tottori.below-target { --glow-rgb: 255, 180, 84; }
+@keyframes glow-pulse-site {
+  0%, 100% { box-shadow: 0 0 6px 2px rgba(var(--glow-rgb), 0.55), 0 0 14px 4px rgba(var(--glow-rgb), 0.25); }
+  50% { box-shadow: 0 0 10px 4px rgba(var(--glow-rgb), 0.9), 0 0 24px 9px rgba(var(--glow-rgb), 0.5); }
+}
 
 .legend-note { color: var(--text); font-size: 0.8rem; margin-top: 8px; }
 
