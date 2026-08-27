@@ -123,6 +123,9 @@ select option { background: #372a52; color: var(--text); }
   -webkit-appearance: auto;
   opacity: 1;
 }
+#target本社 { background: var(--honsha); border-color: var(--honsha); color: #06111f; color-scheme: light; }
+#target夢前 { background: var(--yumesaki); border-color: var(--yumesaki); color: #06111f; color-scheme: light; }
+#target鳥取 { background: var(--tottori); border-color: var(--tottori); color: #06111f; color-scheme: light; }
 
 button.primary {
   background: var(--accent);
@@ -168,7 +171,7 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
   padding: 5px 12px;
   background: var(--panel2);
 }
-.cum-stat-card .label { font-size: 0.78rem; color: var(--muted); display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.cum-stat-card .label { font-size: 0.78rem; font-weight: 700; color: var(--muted); display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
 .cum-stat-card .value { font-size: 1.05rem; font-weight: 700; white-space: nowrap; }
 .cum-stat-card .value .unit { font-size: 0.75rem; font-weight: 400; color: var(--muted); margin-left: 2px; }
 .cum-stat-card.honsha { background: var(--honsha); border-color: var(--honsha); }
