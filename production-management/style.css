@@ -186,7 +186,7 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .chart-scroll { overflow: hidden; height: 100%; }
 .chart-inner { width: 100%; height: 100%; }
 
-.header-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.header-left { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .cum-stats { display: flex; gap: 14px; flex-wrap: wrap; }
 .cum-stat-card {
   display: flex;
