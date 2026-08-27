@@ -115,7 +115,13 @@ select option { background: #372a52; color: var(--text); }
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 4px 6px;
-  text-align: right;
+  text-align: left;
+  color-scheme: dark;
+}
+.target-input::-webkit-outer-spin-button,
+.target-input::-webkit-inner-spin-button {
+  -webkit-appearance: auto;
+  opacity: 1;
 }
 
 button.primary {
