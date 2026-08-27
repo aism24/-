@@ -271,6 +271,16 @@ function renderChart() {
   const dates = datesInPeriod(period);
   const selected = SITES.filter(function (s) { return state.selectedSites.has(s); });
 
+  // 平均生産重量の分母(営業日数)。進行中の期間(今日を含む/未来)は「経過営業日数
+  // (今日を含まない)」、既に終わった期間は「期間全体の営業日数」で割る。
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isOngoingPeriod = !(period.end < today);
+  const workdays = dates.filter(function (d) { return data.calendar[d] === true; });
+  const avgDenom = isOngoingPeriod
+    ? workdays.filter(function (d) { return parseDateKey(d) < today; }).length
+    : workdays.length;
+
   const datasets = [];
   const cumStats = [];
   selected.forEach(function (site) {
@@ -282,9 +292,13 @@ function renderChart() {
 
     let cum = 0;
     const cumActual = dailyValues.map(function (v) { cum += v; return Math.round(cum * 100) / 100; });
-    cumStats.push({ site: site, color: color, value: cumActual.length ? cumActual[cumActual.length - 1] : 0 });
+    const totalWeight = cumActual.length ? cumActual[cumActual.length - 1] : 0;
 
     const target = state.targets[site] || 0;
+    const avg = avgDenom > 0 ? totalWeight / avgDenom : 0;
+    const belowTarget = target > 0 && avg < target;
+    cumStats.push({ site: site, color: color, value: totalWeight, avg: avg, belowTarget: belowTarget });
+
     let cumTarget = 0;
     const cumTargetArr = dates.map(function (d) {
       const isWorkday = data.calendar[d] === true;
@@ -355,15 +369,19 @@ function renderCumStats(cumStats) {
   el.innerHTML = '';
   cumStats.forEach(function (s) {
     const card = document.createElement('div');
-    card.className = 'cum-stat-card ' + SITE_CLASS[s.site];
+    card.className = 'cum-stat-card ' + SITE_CLASS[s.site] + (s.belowTarget ? ' below-target' : '');
     const label = document.createElement('div');
     label.className = 'label';
     label.textContent = s.site + '生産重量';
     const value = document.createElement('div');
     value.className = 'value';
     value.innerHTML = (Math.round(s.value * 10) / 10).toFixed(1) + '<span class="unit">t</span>';
+    const avg = document.createElement('div');
+    avg.className = 'avg' + (s.belowTarget ? ' warn' : '');
+    avg.innerHTML = '平均生産重量＝' + (Math.round(s.avg * 10) / 10).toFixed(1) + '<span class="unit">t/日</span>';
     card.appendChild(label);
     card.appendChild(value);
+    card.appendChild(avg);
     el.appendChild(card);
   });
 }
