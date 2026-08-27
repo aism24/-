@@ -80,7 +80,7 @@ body {
 .toolbar label { color: var(--muted); font-size: 0.85rem; }
 
 select {
-  background: var(--panel2);
+  background: #372a52;
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
