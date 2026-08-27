@@ -209,10 +209,10 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .cum-stat-card.tottori .label, .cum-stat-card.tottori .value, .cum-stat-card.tottori .value .unit, .cum-stat-card.tottori .avg {
   color: #06111f;
 }
-/* 平均生産重量が目標日産量を下回っている場合の警告表示(現在時点のデータ取得ボタンと
-   同じglow-pulseアニメーションでカードの縁を光らせる)。 */
+/* 平均生産重量が目標日産量を下回っている場合の警告表示。「現時点のデータを取得」
+   ボタンと同じ色(#ffd400系)・同じglow-pulseアニメーションでカードの縁を光らせる。 */
 .cum-stat-card .avg.warn, .cum-stat-card .avg.warn .unit { color: #ff2b2b !important; font-weight: 800; }
-.cum-stat-card.below-target { animation: glow-pulse 1.8s ease-in-out infinite; }
+.cum-stat-card.below-target { border-color: #fff1a8 !important; animation: glow-pulse 1.8s ease-in-out infinite; }
 
 .legend-note { color: var(--text); font-size: 0.8rem; margin-top: 8px; }
 
@@ -252,6 +252,7 @@ table.schedule-table th.work-name-col, table.schedule-table td.work-name-col {
   left: 0;
   background: var(--panel2);
   z-index: 1;
+  width: 64px;
   min-width: 64px;
   max-width: 64px;
 }
@@ -261,6 +262,7 @@ table.schedule-table th.part-label, table.schedule-table td.part-label {
   position: sticky;
   left: 64px;
   background: var(--panel2);
+  width: 48px;
   min-width: 48px;
   max-width: 48px;
   padding: 3px 2px;
