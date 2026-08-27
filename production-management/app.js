@@ -154,6 +154,10 @@ function parseDateKey(key) {
   const [y, m, d] = key.split('-').map(Number);
   return new Date(y, m - 1, d);
 }
+// 締め日を和暦(令和)表記にする。アプリが扱う期間は常に令和(2019/5/1〜)の範囲内。
+function eraLabel(d) {
+  return 'R' + (d.getFullYear() - 2018) + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日〆';
+}
 function periodLabel(period) {
   const fmt = (d) => (d.getMonth() + 1) + '/' + d.getDate();
   return fmt(period.start) + '〜' + fmt(period.end) + '（' + period.end.getFullYear() + '年' + (period.end.getMonth() + 1) + '月締め）';
@@ -255,6 +259,7 @@ function renderAll() {
   renderChart();
   renderSchedule();
   renderWorkdayBadge();
+  document.getElementById('periodEndBadge').textContent = eraLabel(state.period.end);
 }
 
 // 選択中の締め期間について、カレンダー(会社カレンダーの出勤/休日)から

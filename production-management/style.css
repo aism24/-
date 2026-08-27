@@ -130,8 +130,8 @@ select option { background: #372a52; color: var(--text); }
 .site-btn.on[data-site="本社"] { background: var(--honsha); color: #06111f; border-color: var(--honsha); }
 .site-btn.on[data-site="夢前"] { background: var(--yumesaki); color: #06111f; border-color: var(--yumesaki); }
 .site-btn.on[data-site="鳥取"] { background: var(--tottori); color: #06111f; border-color: var(--tottori); }
-.site-btn[data-site="__all__"]:hover { border-color: var(--text); box-shadow: 0 0 9px 2px rgba(231, 235, 243, 0.35); }
-.site-btn.on[data-site="__all__"] { background: var(--text); color: #06111f; border-color: var(--text); }
+.site-btn[data-site="__all__"]:hover { border-color: #ffe9a8; box-shadow: 0 0 9px 2px rgba(255, 212, 0, 0.45); }
+.site-btn.on[data-site="__all__"] { background: #ffe9a8; color: #06111f; border-color: #ffe9a8; }
 
 .target-input {
   width: 56px;
@@ -186,6 +186,7 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .chart-scroll { overflow: hidden; height: 100%; }
 .chart-inner { width: 100%; height: 100%; }
 
+.header-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .cum-stats { display: flex; gap: 14px; flex-wrap: wrap; }
 .cum-stat-card {
   display: flex;
