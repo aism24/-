@@ -255,10 +255,10 @@ function renderCumStats(cumStats) {
   el.innerHTML = '';
   cumStats.forEach(function (s) {
     const card = document.createElement('div');
-    card.className = 'cum-stat-card';
+    card.className = 'cum-stat-card ' + SITE_CLASS[s.site];
     const label = document.createElement('div');
     label.className = 'label';
-    label.innerHTML = '<span class="site-dot ' + SITE_CLASS[s.site] + '"></span>' + s.site + '生産重量';
+    label.textContent = s.site + '生産重量';
     const value = document.createElement('div');
     value.className = 'value';
     value.innerHTML = (Math.round(s.value * 10) / 10).toFixed(1) + '<span class="unit">t</span>';
@@ -333,7 +333,7 @@ function renderSchedule() {
     }
 
     const scrollWrap = document.createElement('div');
-    scrollWrap.className = 'table-scroll';
+    scrollWrap.className = 'table-scroll ' + SITE_CLASS[site];
     const table = document.createElement('table');
     table.className = 'schedule-table';
 
