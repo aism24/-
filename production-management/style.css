@@ -43,8 +43,9 @@ body {
 .app-logo { height: 36px; }
 .updated-at { color: var(--muted); font-size: 0.85rem; }
 
+.refresh-note { margin-left: auto; color: var(--muted); font-size: 0.78rem; max-width: 360px; text-align: right; }
+
 .btn-refresh-header {
-  margin-left: auto;
   background: #ffd400;
   color: #0b3fae;
   font-weight: 800;
