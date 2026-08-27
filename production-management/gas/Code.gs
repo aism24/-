@@ -126,6 +126,8 @@ function extractFileIdFromUrl_(url) {
 }
 
 // A:E列。工事番号が空、または"00-00"の行(テンプレートファイル)は除外する。
+// マスタNo(B列)の先頭が"S"ならスプレッドシート、それ以外(数字のみ・"E"始まり等)は
+// Excelファイルとして扱う(過去分の無印マスタNoも従来通りExcel扱いになる)。
 function readFileIndex_() {
   const sh = indexSheet_();
   const lastRow = sh.getLastRow();
@@ -140,12 +142,15 @@ function readFileIndex_() {
     if (workNo === IGNORE_WORK_NO) return;
     const fileId = extractFileIdFromUrl_(url);
     if (!fileId) return;
+    const masterNo = row[1];
+    const sourceType = /^s/i.test(String(masterNo || '').trim()) ? 'sheet' : 'excel';
     list.push({
       drive: String(row[0] || '').trim(),
-      masterNo: row[1],
+      masterNo: masterNo,
       workNo: workNo,
       fileName: fileName,
       fileId: fileId,
+      sourceType: sourceType,
     });
   });
   return list;
@@ -245,6 +250,14 @@ function convertToSheet_(sourceFileId, label, folder) {
   return created.id;
 }
 
+// entry.sourceTypeが'sheet'なら、既にGoogleスプレッドシートなので変換不要でそのまま
+// そのIDを使う(getBlob()はGoogleネイティブファイルには使えずエラーになるため)。
+// 'excel'(既定)の場合のみ、従来通りExcel→スプレッドシート変換を行う。
+function resolveSheetId_(entry, folder) {
+  if (entry.sourceType === 'sheet') return entry.fileId;
+  return convertToSheet_(entry.fileId, entry.workNo + '_' + entry.fileName, folder);
+}
+
 // ========== マスターExcel(変換後)の解析 ==========
 
 function isValidDateCell_(v) {
@@ -326,7 +339,7 @@ function runFullAggregation_() {
   fileIndex.forEach(function (entry) {
     let records;
     try {
-      const convertedId = convertToSheet_(entry.fileId, entry.workNo + '_' + entry.fileName, folder);
+      const convertedId = resolveSheetId_(entry, folder);
       records = parseMasterSheet_(convertedId, calendarMinKey, calendarMaxKey);
     } catch (err) {
       warnings.push('「' + entry.fileName + '」の読み込みに失敗しました: ' + err.message);
