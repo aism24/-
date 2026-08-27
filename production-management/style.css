@@ -101,6 +101,16 @@ select {
 }
 select option { background: #372a52; color: var(--text); }
 
+.workday-badge {
+  background: #b39ddb;
+  color: #1f1436;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
 .site-btn {
   border: 1px solid var(--border);
   background: var(--panel2);

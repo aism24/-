@@ -253,6 +253,15 @@ function renderAll() {
   if (!state.data) return;
   renderChart();
   renderSchedule();
+  renderWorkdayBadge();
+}
+
+// 選択中の締め期間について、カレンダー(会社カレンダーの出勤/休日)から
+// 営業日数を数えて期間セレクトの横に表示する。
+function renderWorkdayBadge() {
+  const dates = datesInPeriod(state.period);
+  const count = dates.filter(function (d) { return state.data.calendar[d] === true; }).length;
+  document.getElementById('workdayBadge').textContent = '営業日数＝' + count + '日';
 }
 
 // ---------- グラフ ----------
