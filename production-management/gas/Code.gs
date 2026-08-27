@@ -177,7 +177,7 @@ function readCalendar_() {
     const dateVal = row[0];
     const holiday = String(row[1] || '').trim();
     if (!(dateVal instanceof Date)) return;
-    const key = Utilities.formatDate(dateVal, TIMEZONE, 'yyyy-MM-dd');
+    const key = dateToYmdJst_(dateVal);
     cal[key] = (holiday === '出勤');
   });
   return cal;
@@ -251,6 +251,17 @@ function isValidDateCell_(v) {
   return v instanceof Date && !isNaN(v.getTime());
 }
 
+// Asia/Tokyo(常にUTC+9固定・夏時間なし)の"yyyy-MM-dd"を、Utilities.formatDateを
+// 使わずに求める。マスターExcelの全行ループ内で日付ごとに呼ばれるため、GASサービス
+// 呼び出し(Utilities.*)を避けて純粋なJS計算にすることで、数千行規模のファイルを
+// 多数処理する集計処理全体を大きく高速化できる(20万件超のランダム日時・日付境界での
+// Utilities.formatDate(d,'Asia/Tokyo','yyyy-MM-dd')との一致を検証済み)。
+function pad2_(n) { return n < 10 ? '0' + n : String(n); }
+function dateToYmdJst_(d) {
+  const t = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  return t.getUTCFullYear() + '-' + pad2_(t.getUTCMonth() + 1) + '-' + pad2_(t.getUTCDate());
+}
+
 function classifyPart_(part) {
   return MAIN_PARTS.indexOf(part) >= 0 ? part : OTHER_PART;
 }
@@ -281,7 +292,7 @@ function parseMasterSheet_(convertedSheetId, calendarMinKey, calendarMaxKey) {
     const dateVal = row[col.workDate];
     if (!site || !part || !isValidDateCell_(dateVal)) continue;
 
-    const dateKey = Utilities.formatDate(dateVal, TIMEZONE, 'yyyy-MM-dd');
+    const dateKey = dateToYmdJst_(dateVal);
     if (dateKey < calendarMinKey || dateKey > calendarMaxKey) continue; // カレンダー範囲外は除外
 
     records.push({
