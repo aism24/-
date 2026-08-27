@@ -1,5 +1,5 @@
 // デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。デプロイ後にここへ差し替えてください。
-const GAS_API_URL = "https://script.google.com/macros/s/REPLACE_WITH_DEPLOYED_URL/exec";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyMInuKdNL9RTiOdw9D9zN9XPFcve896nL2V03_fXkPgTy6xin63OgRf00Jx1n4/exec";
 
 // ---------- GAS API共通 ----------
 // (URL未設定・GAS側の不調時もアプリ本来の計算・Excel出力は止めない。
