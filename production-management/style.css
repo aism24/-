@@ -228,8 +228,8 @@ table.schedule-table th.part-label, table.schedule-table td.part-label {
   position: sticky;
   left: 64px;
   background: var(--panel2);
-  min-width: 28px;
-  max-width: 28px;
+  min-width: 48px;
+  max-width: 48px;
   padding: 3px 2px;
   font-size: 0.7rem;
   line-height: 1.2;
