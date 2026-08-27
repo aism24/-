@@ -200,19 +200,36 @@ function readTargets_() {
 
 // ========== Excel→Googleスプレッドシート変換(読み取り専用の元ファイルには触れない) ==========
 
-// 変換結果のスプレッドシートIDをスクリプトプロパティに記憶しておき、次回以降は
-// 同じファイルの中身だけを差し替える。フォルダ内が増え続けないようにするため。
+// 変換結果のスプレッドシートIDと、変換時点の元Excelファイルの最終更新日時を
+// スクリプトプロパティに記憶しておく。次回以降、元ファイルの最終更新日時が
+// 前回と変わっていなければ(=誰も編集していなければ)ダウンロード・変換処理そのものを
+// スキップし、前回変換済みのスプレッドシートをそのまま再利用する。変更があった
+// ファイルだけ差し替えるので、多くの案件が未変更の場合は更新がかなり速くなる。
 // (Drive API 高度なサービスは v3 を使用。v3では変換用の特別なオプション指定は不要で、
 //  メタデータのmimeTypeをGoogleネイティブ形式にしておけばアップロード内容が自動変換される)
 function convertToSheet_(sourceFileId, label, folder) {
   const props = PropertiesService.getScriptProperties();
   const propKey = 'conv_' + sourceFileId;
-  const blob = DriveApp.getFileById(sourceFileId).getBlob();
+  const mtimeKey = 'mtime_' + sourceFileId;
+  const sourceFile = DriveApp.getFileById(sourceFileId);
+  const currentMtime = String(sourceFile.getLastUpdated().getTime());
+  const lastMtime = props.getProperty(mtimeKey);
   const existingId = props.getProperty(propKey);
 
+  if (existingId && lastMtime === currentMtime) {
+    try {
+      DriveApp.getFileById(existingId); // 作業用ファイルがまだ存在するかだけ確認する(軽量)
+      return existingId; // 元ファイルは前回から変更なし。再変換をスキップする。
+    } catch (e) {
+      // 作業用ファイルが手動で削除されていた場合は、下の再変換にフォールバックする。
+    }
+  }
+
+  const blob = sourceFile.getBlob();
   if (existingId) {
     try {
       Drive.Files.update({}, existingId, blob);
+      props.setProperty(mtimeKey, currentMtime);
       return existingId;
     } catch (e) {
       // 作業用ファイルが手動で削除されている等の場合は、新規作成にフォールバックする。
@@ -224,6 +241,7 @@ function convertToSheet_(sourceFileId, label, folder) {
     blob
   );
   props.setProperty(propKey, created.id);
+  props.setProperty(mtimeKey, currentMtime);
   return created.id;
 }
 
