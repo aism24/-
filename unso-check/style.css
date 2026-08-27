@@ -107,12 +107,17 @@ body.drag-over::after {
 
 .home-buttons { display: flex; flex-direction: column; gap: 16px; padding: 32px 8px; }
 .home-btn {
-  padding: 22px 20px; font-size: 18px; font-weight: 700; border: none; border-radius: var(--radius-lg);
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 22px 20px; border: none; border-radius: var(--radius-lg);
   cursor: pointer; text-align: left;
   transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
 }
+.home-btn-title { font-size: 18px; font-weight: 700; }
+.home-btn-desc { font-size: 13px; font-weight: 400; }
 .home-btn-main { background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: #fff; box-shadow: 0 4px 14px rgba(255,152,0,0.35); }
+.home-btn-main .home-btn-desc { color: rgba(255,255,255,0.85); }
 .home-btn-sub { background: var(--surface); color: var(--brand); border: 2px solid var(--border); }
+.home-btn-sub .home-btn-desc { color: var(--ink-muted); }
 .home-btn:hover { transform: translateY(-2px); }
 .home-btn:active { opacity: 0.85; transform: scale(0.99); }
 
@@ -344,7 +349,9 @@ table.check-table th:nth-child(9), table.check-table td:nth-child(9) {
 @media (max-width: 480px) {
   .header-title { font-size: 15px; }
   .header-back-btn { padding: 6px 10px; font-size: 13px; }
-  .home-btn { padding: 18px 16px; font-size: 16px; }
+  .home-btn { padding: 18px 16px; }
+  .home-btn-title { font-size: 16px; }
+  .home-btn-desc { font-size: 12px; }
   .modal-box { padding: 22px 20px; }
   #check-year-buttons, #yearly-year-buttons { gap: 16px; }
 }

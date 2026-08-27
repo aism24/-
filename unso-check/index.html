@@ -33,11 +33,25 @@
   <section id="screen-home" class="screen">
     <p class="delete-hint-text">データ削除はコマンド入力</p>
     <div class="home-buttons">
-      <button class="home-btn home-btn-main" onclick="showScreen('import')">📤 Excelファイルを取り込む</button>
-      <button class="home-btn home-btn-sub" onclick="showScreen('check')">📋 20日締めチェック</button>
-      <button class="home-btn home-btn-sub" onclick="showScreen('yearly')">📊 年度集計</button>
-      <button class="home-btn home-btn-sub" onclick="showScreen('project')">🏗️ 工事別内訳</button>
-      <button class="home-btn home-btn-sub" onclick="showScreen('company')">🏢 業者別内訳</button>
+      <button class="home-btn home-btn-main" onclick="showScreen('import')">
+        <span class="home-btn-title">📤 Excelファイルを取り込む</span>
+        <span class="home-btn-desc">(20日〆業者別Excelファイルを取り込みます)</span>
+      </button>
+      <button class="home-btn home-btn-sub" onclick="showScreen('check')">
+        <span class="home-btn-title">📋 20日締めチェック</span>
+        <span class="home-btn-desc">(指定の年月における20日〆集計結果を表示します)</span>
+      </button>
+      <button class="home-btn home-btn-sub" onclick="showScreen('yearly')">
+        <span class="home-btn-title">📊 年度集計</span>
+      </button>
+      <button class="home-btn home-btn-sub" onclick="showScreen('project')">
+        <span class="home-btn-title">🏗️ 工事別内訳</span>
+        <span class="home-btn-desc">(指定工事の全ての期間の集計結果を表示します)</span>
+      </button>
+      <button class="home-btn home-btn-sub" onclick="showScreen('company')">
+        <span class="home-btn-title">🏢 業者別内訳</span>
+        <span class="home-btn-desc">(指定業者の指定期間の集計結果を表示します)</span>
+      </button>
     </div>
   </section>
 
