@@ -1,5 +1,5 @@
 // デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。デプロイ後にここへ差し替えてください。
-const GAS_API_URL = "PASTE_YOUR_GAS_WEB_APP_URL_HERE";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbya0wgwbTuBN1laM8tWFGTJhJw--pTAOBAYVyrsOoXbrOXZgs9q3ZsErTSQZwJFT2c2/exec";
 
 const SITES = ['本社', '夢前', '鳥取'];
 const SITE_CLASS = { 本社: 'honsha', 夢前: 'yumesaki', 鳥取: 'tottori' };
