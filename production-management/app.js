@@ -359,7 +359,7 @@ function renderSchedule() {
             td.classList.add('empty');
           } else if (val === 0) {
             td.classList.add('zero');
-            td.textContent = '0';
+            td.textContent = rowKey === '生産重量' ? '0.00' : '0';
           } else {
             td.textContent = rowKey === '生産重量' ? val.toFixed(2) : val;
           }
