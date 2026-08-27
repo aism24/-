@@ -9,7 +9,7 @@ const PERIOD_OFFSETS = [0, -1, -2, -3, -4];
 
 // グラフの左右軸幅を、工程表のリード列幅(style.css: .work-name-col + .part-label)に
 // 近い値で固定しておくため。
-const TABLE_LEAD_WIDTH = 90; // work-name-col(64) + part-label(26)
+const TABLE_LEAD_WIDTH = 112; // work-name-col(64) + part-label(48)
 const CHART_RIGHT_AXIS_WIDTH = 60;
 
 let state = {
@@ -360,7 +360,7 @@ function renderSchedule() {
         }
         const labelTd = document.createElement('td');
         labelTd.className = 'part-label';
-        labelTd.appendChild(wrapText(rowKey, 2));
+        labelTd.textContent = rowKey;
         tr.appendChild(labelTd);
 
         dates.forEach(function (d) {

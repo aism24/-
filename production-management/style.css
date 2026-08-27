@@ -41,9 +41,9 @@ body {
 }
 .app-header h1 { font-size: 1.4rem; margin: 0; }
 .app-logo { height: 36px; }
-.updated-at { color: var(--muted); font-size: 0.85rem; }
+.updated-at { color: var(--text); font-size: 0.85rem; }
 
-.refresh-note { margin-left: auto; color: var(--muted); font-size: 0.78rem; max-width: 360px; text-align: right; }
+.refresh-note { margin-left: auto; color: var(--text); font-size: 0.78rem; max-width: 360px; text-align: right; }
 
 .btn-refresh-header {
   background: #ffd400;
@@ -77,7 +77,7 @@ body {
 }
 .toolbar .group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .toolbar .group-right { margin-left: auto; }
-.toolbar label { color: var(--muted); font-size: 0.85rem; }
+.toolbar label { color: var(--text); font-size: 0.85rem; }
 
 select {
   background: #372a52;
@@ -91,7 +91,7 @@ select option { background: #372a52; color: var(--text); }
 .site-btn {
   border: 1px solid var(--border);
   background: var(--panel2);
-  color: var(--muted);
+  color: var(--text);
   border-radius: 999px;
   padding: 6px 14px;
   margin-right: 8px;
@@ -171,9 +171,9 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
   padding: 5px 12px;
   background: var(--panel2);
 }
-.cum-stat-card .label { font-size: 0.78rem; font-weight: 700; color: var(--muted); display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.cum-stat-card .label { font-size: 0.78rem; font-weight: 700; color: var(--text); display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
 .cum-stat-card .value { font-size: 1.05rem; font-weight: 700; white-space: nowrap; }
-.cum-stat-card .value .unit { font-size: 0.75rem; font-weight: 400; color: var(--muted); margin-left: 2px; }
+.cum-stat-card .value .unit { font-size: 0.75rem; font-weight: 400; color: var(--text); margin-left: 2px; }
 .cum-stat-card.honsha { background: var(--honsha); border-color: var(--honsha); }
 .cum-stat-card.yumesaki { background: var(--yumesaki); border-color: var(--yumesaki); }
 .cum-stat-card.tottori { background: var(--tottori); border-color: var(--tottori); }
@@ -183,7 +183,7 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
   color: #06111f;
 }
 
-.legend-note { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
+.legend-note { color: var(--text); font-size: 0.8rem; margin-top: 8px; }
 
 .schedule-site-block { margin-bottom: 22px; }
 .schedule-site-title {
@@ -228,12 +228,12 @@ table.schedule-table th.part-label, table.schedule-table td.part-label {
   position: sticky;
   left: 64px;
   background: var(--panel2);
-  min-width: 28px;
-  max-width: 28px;
+  min-width: 48px;
+  max-width: 48px;
   padding: 3px 2px;
   font-size: 0.7rem;
   line-height: 1.2;
-  color: var(--muted);
+  color: var(--text);
 }
 table.schedule-table td:not(.work-name-col):not(.part-label),
 table.schedule-table th:not(.work-name-col):not(.part-label) {
@@ -245,14 +245,14 @@ table.schedule-table th:not(.work-name-col):not(.part-label) {
   font-size: 0.72rem;
 }
 table.schedule-table td.work-name-col .work-no { font-weight: 700; }
-table.schedule-table td.work-name-col .work-name { color: var(--muted); line-height: 1.35; margin-top: 2px; }
+table.schedule-table td.work-name-col .work-name { color: var(--text); line-height: 1.35; margin-top: 2px; }
 table.schedule-table th.holiday, table.schedule-table td.holiday { background: var(--holiday); }
 table.schedule-table tr.weight-row td { font-weight: 700; color: var(--accent); border-bottom: 2px solid var(--muted); }
 table.schedule-table tr.total-row td { font-weight: 700; color: var(--text); background: rgba(255, 212, 0, 0.16); border-top: 2px solid var(--border); }
 table.schedule-table tr.total-row td.work-name-col { font-size: 0.68rem; white-space: normal; line-height: 1.2; }
-table.schedule-table td.zero { color: var(--muted); }
+table.schedule-table td.zero { color: var(--text); }
 table.schedule-table td.empty { color: transparent; }
 
-.empty-note { color: var(--muted); padding: 8px 0; }
+.empty-note { color: var(--text); padding: 8px 0; }
 
 footer.warnings { color: var(--warn); font-size: 0.8rem; margin-top: 10px; white-space: pre-line; }
