@@ -9,7 +9,7 @@ const PERIOD_OFFSETS = [0, -1, -2, -3, -4];
 
 // 工程表(style.css: .work-name-col + .part-label)と生産量グラフの列幅を揃えるための共通値。
 const TABLE_LEAD_WIDTH = 90; // work-name-col(64) + part-label(26)
-const TABLE_DAY_WIDTH = 34;
+const TABLE_DAY_WIDTH = 38;
 const CHART_RIGHT_AXIS_WIDTH = 60;
 
 let state = {
@@ -253,7 +253,7 @@ function renderChart() {
   renderCumStats(cumStats);
 }
 
-// その時点までの累積生産重量を、拠点ごとに数値で表示する(小数第2位で四捨五入)。
+// その時点までの累積生産重量を、拠点ごとに数値で表示する(小数第1位で四捨五入)。
 function renderCumStats(cumStats) {
   const el = document.getElementById('cumStats');
   el.innerHTML = '';
@@ -262,7 +262,7 @@ function renderCumStats(cumStats) {
     card.className = 'cum-stat-card';
     const label = document.createElement('div');
     label.className = 'label';
-    label.innerHTML = '<span class="site-dot ' + SITE_CLASS[s.site] + '"></span>' + s.site + ' 累積生産重量';
+    label.innerHTML = '<span class="site-dot ' + SITE_CLASS[s.site] + '"></span>' + s.site + '生産重量';
     const value = document.createElement('div');
     value.className = 'value';
     value.innerHTML = (Math.round(s.value * 10) / 10).toFixed(1) + '<span class="unit">t</span>';
@@ -345,7 +345,7 @@ function renderSchedule() {
     headTr.appendChild(th('工事', 'work-name-col'));
     headTr.appendChild(th('', 'part-label'));
     dates.forEach(function (d) {
-      headTr.appendChild(th(mdLabel(d), data.calendar[d] === false ? 'holiday' : ''));
+      headTr.appendChild(th(mdLabel(d), 'date-th' + (data.calendar[d] === false ? ' holiday' : '')));
     });
     table.appendChild(headTr);
 
