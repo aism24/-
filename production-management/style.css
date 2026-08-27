@@ -130,8 +130,8 @@ select option { background: #372a52; color: var(--text); }
 .site-btn.on[data-site="本社"] { background: var(--honsha); color: #06111f; border-color: var(--honsha); }
 .site-btn.on[data-site="夢前"] { background: var(--yumesaki); color: #06111f; border-color: var(--yumesaki); }
 .site-btn.on[data-site="鳥取"] { background: var(--tottori); color: #06111f; border-color: var(--tottori); }
-.site-btn[data-site="__all__"]:hover { border-color: var(--text); box-shadow: 0 0 9px 2px rgba(231, 235, 243, 0.35); }
-.site-btn.on[data-site="__all__"] { background: var(--text); color: #06111f; border-color: var(--text); }
+.site-btn[data-site="__all__"]:hover { border-color: #ffe9a8; box-shadow: 0 0 9px 2px rgba(255, 212, 0, 0.45); }
+.site-btn.on[data-site="__all__"] { background: #ffe9a8; color: #06111f; border-color: #ffe9a8; }
 
 .target-input {
   width: 56px;
@@ -186,6 +186,7 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .chart-scroll { overflow: hidden; height: 100%; }
 .chart-inner { width: 100%; height: 100%; }
 
+.header-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .cum-stats { display: flex; gap: 14px; flex-wrap: wrap; }
 .cum-stat-card {
   display: flex;
@@ -209,10 +210,17 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .cum-stat-card.tottori .label, .cum-stat-card.tottori .value, .cum-stat-card.tottori .value .unit, .cum-stat-card.tottori .avg {
   color: #06111f;
 }
-/* 平均生産重量が目標日産量を下回っている場合の警告表示。「現時点のデータを取得」
-   ボタンと同じ色(#ffd400系)・同じglow-pulseアニメーションでカードの縁を光らせる。 */
+/* 平均生産重量が目標日産量を下回っている場合の警告表示。カード自身の拠点色で
+   縁を光らせる(--glow-rgbを拠点ごとに設定し、共通のglow-pulse-siteで点滅させる)。 */
 .cum-stat-card .avg.warn, .cum-stat-card .avg.warn .unit { color: #ff2b2b !important; font-weight: 800; }
-.cum-stat-card.below-target { border-color: #fff1a8 !important; animation: glow-pulse 1.8s ease-in-out infinite; }
+.cum-stat-card.below-target { animation: glow-pulse-site 1.8s ease-in-out infinite; }
+.cum-stat-card.honsha.below-target { --glow-rgb: 77, 163, 255; }
+.cum-stat-card.yumesaki.below-target { --glow-rgb: 53, 201, 139; }
+.cum-stat-card.tottori.below-target { --glow-rgb: 255, 180, 84; }
+@keyframes glow-pulse-site {
+  0%, 100% { box-shadow: 0 0 6px 2px rgba(var(--glow-rgb), 0.55), 0 0 14px 4px rgba(var(--glow-rgb), 0.25); }
+  50% { box-shadow: 0 0 10px 4px rgba(var(--glow-rgb), 0.9), 0 0 24px 9px rgba(var(--glow-rgb), 0.5); }
+}
 
 .legend-note { color: var(--text); font-size: 0.8rem; margin-top: 8px; }
 
