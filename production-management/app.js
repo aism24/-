@@ -7,6 +7,11 @@ const SITE_COLOR = { 本社: '#4da3ff', 夢前: '#35c98b', 鳥取: '#ffb454' };
 const PARTS = ['柱', '大梁', '小梁', '他'];
 const PERIOD_OFFSETS = [0, -1, -2, -3, -4];
 
+// 工程表(style.css: .work-name-col + .part-label)と生産量グラフの列幅を揃えるための共通値。
+const TABLE_LEAD_WIDTH = 90; // work-name-col(64) + part-label(26)
+const TABLE_DAY_WIDTH = 34;
+const CHART_RIGHT_AXIS_WIDTH = 60;
+
 let state = {
   data: null,
   selectedSites: new Set(SITES),
@@ -203,6 +208,12 @@ function renderChart() {
     });
   });
 
+  // 工程表の日付列(工事名+部位ラベルの幅 + 日付1列あたりの幅)とグラフのx軸目盛りが
+  // 縦にできるだけ揃うよう、左右の軸の幅を工程表の列幅に合わせて固定し、キャンバス自体の
+  // 幅も「工程表と同じ列幅×日数分」になるよう明示的に指定する。
+  const chartInner = document.getElementById('chartInner');
+  chartInner.style.width = (TABLE_LEAD_WIDTH + dates.length * TABLE_DAY_WIDTH + CHART_RIGHT_AXIS_WIDTH) + 'px';
+
   const ctx = document.getElementById('prodChart').getContext('2d');
   if (state.chart) state.chart.destroy();
   state.chart = new Chart(ctx, {
@@ -211,9 +222,15 @@ function renderChart() {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       scales: {
-        yDaily: { position: 'left', title: { display: true, text: '日次生産量(t)' }, grid: { color: '#2a3348' } },
-        yCum: { position: 'right', title: { display: true, text: '累積生産量(t)' }, grid: { display: false } },
-        x: { grid: { color: '#1d2436' } },
+        yDaily: {
+          position: 'left', title: { display: true, text: '日次生産量(t)' }, grid: { color: '#2a3348' },
+          afterFit: function (scale) { scale.width = TABLE_LEAD_WIDTH; },
+        },
+        yCum: {
+          position: 'right', title: { display: true, text: '累積生産量(t)' }, grid: { display: false },
+          afterFit: function (scale) { scale.width = CHART_RIGHT_AXIS_WIDTH; },
+        },
+        x: { grid: { color: '#1d2436' }, offset: true },
       },
       plugins: {
         legend: {
@@ -225,7 +242,7 @@ function renderChart() {
         tooltip: {
           callbacks: {
             label: function (item) {
-              return item.dataset.label + ': ' + item.parsed.y.toFixed(2) + 't';
+              return item.dataset.label + ': ' + item.parsed.y.toFixed(1) + 't';
             },
           },
         },
@@ -248,7 +265,7 @@ function renderCumStats(cumStats) {
     label.innerHTML = '<span class="site-dot ' + SITE_CLASS[s.site] + '"></span>' + s.site + ' 累積生産重量';
     const value = document.createElement('div');
     value.className = 'value';
-    value.innerHTML = (Math.round(s.value * 100) / 100).toFixed(2) + '<span class="unit">t</span>';
+    value.innerHTML = (Math.round(s.value * 10) / 10).toFixed(1) + '<span class="unit">t</span>';
     card.appendChild(label);
     card.appendChild(value);
     el.appendChild(card);
@@ -263,23 +280,27 @@ function th(text, cls) {
   return el;
 }
 
-// 「工事番号」+改行+「工事名」(5文字ごとに改行)のラベルを組み立てる。
+// テキストをchunkSize文字ごとに改行したdiv群にする。
+function wrapText(text, chunkSize, cls) {
+  const wrap = document.createElement('div');
+  if (cls) wrap.className = cls;
+  const s = text || '';
+  for (let i = 0; i < s.length; i += chunkSize) {
+    const lineDiv = document.createElement('div');
+    lineDiv.textContent = s.slice(i, i + chunkSize);
+    wrap.appendChild(lineDiv);
+  }
+  return wrap;
+}
+
+// 「工事番号」+改行+「工事名」(4文字ごとに改行)のラベルを組み立てる。
 function buildWorkLabel(workNo, workName) {
   const frag = document.createDocumentFragment();
   const noDiv = document.createElement('div');
   noDiv.className = 'work-no';
   noDiv.textContent = workNo;
   frag.appendChild(noDiv);
-
-  const nameDiv = document.createElement('div');
-  nameDiv.className = 'work-name';
-  const name = workName || '';
-  for (let i = 0; i < name.length; i += 5) {
-    const lineDiv = document.createElement('div');
-    lineDiv.textContent = name.slice(i, i + 5);
-    nameDiv.appendChild(lineDiv);
-  }
-  frag.appendChild(nameDiv);
+  frag.appendChild(wrapText(workName, 4, 'work-name'));
   return frag;
 }
 
@@ -322,7 +343,7 @@ function renderSchedule() {
 
     const headTr = document.createElement('tr');
     headTr.appendChild(th('工事', 'work-name-col'));
-    headTr.appendChild(th('', ''));
+    headTr.appendChild(th('', 'part-label'));
     dates.forEach(function (d) {
       headTr.appendChild(th(mdLabel(d), data.calendar[d] === false ? 'holiday' : ''));
     });
@@ -343,7 +364,7 @@ function renderSchedule() {
         }
         const labelTd = document.createElement('td');
         labelTd.className = 'part-label';
-        labelTd.textContent = rowKey;
+        labelTd.appendChild(wrapText(rowKey, 2));
         tr.appendChild(labelTd);
 
         dates.forEach(function (d) {

@@ -45,8 +45,12 @@
 
 <div class="panel">
   <h2>生産量グラフ(拠点別累積 vs 目標ライン)</h2>
-  <div class="cum-stats" id="cumStats"></div>
-  <div class="chart-wrap"><canvas id="prodChart"></canvas></div>
+  <div class="chart-wrap">
+    <div class="cum-stats" id="cumStats"></div>
+    <div class="chart-scroll" id="chartScroll">
+      <div class="chart-inner" id="chartInner"><canvas id="prodChart"></canvas></div>
+    </div>
+  </div>
 </div>
 
 <div class="panel">
