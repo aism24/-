@@ -101,6 +101,16 @@ select {
 }
 select option { background: #372a52; color: var(--text); }
 
+.workday-badge {
+  background: #b39ddb;
+  color: #1f1436;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
 .site-btn {
   border: 1px solid var(--border);
   background: var(--panel2);
@@ -120,6 +130,8 @@ select option { background: #372a52; color: var(--text); }
 .site-btn.on[data-site="本社"] { background: var(--honsha); color: #06111f; border-color: var(--honsha); }
 .site-btn.on[data-site="夢前"] { background: var(--yumesaki); color: #06111f; border-color: var(--yumesaki); }
 .site-btn.on[data-site="鳥取"] { background: var(--tottori); color: #06111f; border-color: var(--tottori); }
+.site-btn[data-site="__all__"]:hover { border-color: var(--text); box-shadow: 0 0 9px 2px rgba(231, 235, 243, 0.35); }
+.site-btn.on[data-site="__all__"] { background: var(--text); color: #06111f; border-color: var(--text); }
 
 .target-input {
   width: 56px;
@@ -187,14 +199,20 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .cum-stat-card .label { font-size: 0.78rem; font-weight: 700; color: var(--text); display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
 .cum-stat-card .value { font-size: 1.05rem; font-weight: 700; white-space: nowrap; }
 .cum-stat-card .value .unit { font-size: 0.75rem; font-weight: 400; color: var(--text); margin-left: 2px; }
+.cum-stat-card .avg { font-size: 0.78rem; font-weight: 700; white-space: nowrap; }
+.cum-stat-card .avg .unit { font-size: 0.72rem; font-weight: 400; margin-left: 2px; }
 .cum-stat-card.honsha { background: var(--honsha); border-color: var(--honsha); }
 .cum-stat-card.yumesaki { background: var(--yumesaki); border-color: var(--yumesaki); }
 .cum-stat-card.tottori { background: var(--tottori); border-color: var(--tottori); }
-.cum-stat-card.honsha .label, .cum-stat-card.honsha .value, .cum-stat-card.honsha .value .unit,
-.cum-stat-card.yumesaki .label, .cum-stat-card.yumesaki .value, .cum-stat-card.yumesaki .value .unit,
-.cum-stat-card.tottori .label, .cum-stat-card.tottori .value, .cum-stat-card.tottori .value .unit {
+.cum-stat-card.honsha .label, .cum-stat-card.honsha .value, .cum-stat-card.honsha .value .unit, .cum-stat-card.honsha .avg,
+.cum-stat-card.yumesaki .label, .cum-stat-card.yumesaki .value, .cum-stat-card.yumesaki .value .unit, .cum-stat-card.yumesaki .avg,
+.cum-stat-card.tottori .label, .cum-stat-card.tottori .value, .cum-stat-card.tottori .value .unit, .cum-stat-card.tottori .avg {
   color: #06111f;
 }
+/* 平均生産重量が目標日産量を下回っている場合の警告表示(現在時点のデータ取得ボタンと
+   同じglow-pulseアニメーションでカードの縁を光らせる)。 */
+.cum-stat-card .avg.warn, .cum-stat-card .avg.warn .unit { color: #ff2b2b !important; font-weight: 800; }
+.cum-stat-card.below-target { animation: glow-pulse 1.8s ease-in-out infinite; }
 
 .legend-note { color: var(--text); font-size: 0.8rem; margin-top: 8px; }
 
@@ -265,6 +283,21 @@ table.schedule-table tr.total-row td { font-weight: 700; color: var(--text); bac
 table.schedule-table tr.total-row td.work-name-col { font-size: 0.68rem; white-space: normal; line-height: 1.2; border-bottom: none; }
 table.schedule-table td.zero { color: var(--text); }
 table.schedule-table td.empty { color: transparent; }
+/* 合計行はゼロの日でも背景の薄黄色は見せつつ、数値そのものは見えなくする */
+table.schedule-table tr.total-row td.zero-total { color: transparent; }
+
+/* タブレット・スマホ幅では日付列を固定幅に戻し、表側だけ横スクロールを許可する
+   (パソコン幅ではこれまで通り全列が画面内に収まる)。 */
+@media (max-width: 900px) {
+  .table-scroll { overflow-x: auto; }
+  table.schedule-table { width: auto; }
+  table.schedule-table td:not(.work-name-col):not(.part-label),
+  table.schedule-table th:not(.work-name-col):not(.part-label) {
+    width: 30px;
+    min-width: 30px;
+    max-width: 30px;
+  }
+}
 
 .empty-note { color: var(--text); padding: 8px 0; }
 

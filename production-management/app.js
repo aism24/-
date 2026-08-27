@@ -143,6 +143,12 @@ function mdLabel(key) {
   const parts = key.split('-');
   return Number(parts[1]) + '/' + Number(parts[2]);
 }
+// 工程表の日付見出し用。期間が「前月21日〜当月20日」に固定されているため、
+// 日の数字(1〜31)だけで月をまたいでも重複しない。月はブロック見出し側の
+// 「〆」表記(renderSchedule内のtitle生成)で示す。
+function dayLabel(key) {
+  return Number(key.split('-')[2]);
+}
 function parseDateKey(key) {
   const [y, m, d] = key.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -161,20 +167,24 @@ function datesInPeriod(period) {
   return dates;
 }
 
+// 拠点ボタンの選択状態(state.selectedSitesとボタンの見た目)をまとめて切り替える。
+function applySiteSelection(sites) {
+  state.selectedSites = new Set(sites);
+  document.querySelectorAll('.site-btn').forEach(function (btn) {
+    const site = btn.dataset.site;
+    const on = (site === '__all__') ? (sites.length === SITES.length) : sites.length === 1 && sites[0] === site;
+    btn.classList.toggle('on', on);
+  });
+}
+
 // ---------- 初期化 ----------
 document.addEventListener('DOMContentLoaded', function () {
+  // 拠点ボタンは「全て」or「1拠点だけ」のラジオ的な排他選択。
+  applySiteSelection(SITES);
   document.querySelectorAll('.site-btn').forEach(function (btn) {
-    btn.classList.add('on');
     btn.addEventListener('click', function () {
       const site = btn.dataset.site;
-      if (state.selectedSites.has(site)) {
-        if (state.selectedSites.size === 1) return; // 最低1拠点は表示する
-        state.selectedSites.delete(site);
-        btn.classList.remove('on');
-      } else {
-        state.selectedSites.add(site);
-        btn.classList.add('on');
-      }
+      applySiteSelection(site === '__all__' ? SITES : [site]);
       renderAll();
     });
   });
@@ -243,6 +253,15 @@ function renderAll() {
   if (!state.data) return;
   renderChart();
   renderSchedule();
+  renderWorkdayBadge();
+}
+
+// 選択中の締め期間について、カレンダー(会社カレンダーの出勤/休日)から
+// 営業日数を数えて期間セレクトの横に表示する。
+function renderWorkdayBadge() {
+  const dates = datesInPeriod(state.period);
+  const count = dates.filter(function (d) { return state.data.calendar[d] === true; }).length;
+  document.getElementById('workdayBadge').textContent = '営業日数＝' + count + '日';
 }
 
 // ---------- グラフ ----------
@@ -251,6 +270,16 @@ function renderChart() {
   const period = state.period;
   const dates = datesInPeriod(period);
   const selected = SITES.filter(function (s) { return state.selectedSites.has(s); });
+
+  // 平均生産重量の分母(営業日数)。進行中の期間(今日を含む/未来)は「経過営業日数
+  // (今日を含まない)」、既に終わった期間は「期間全体の営業日数」で割る。
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isOngoingPeriod = !(period.end < today);
+  const workdays = dates.filter(function (d) { return data.calendar[d] === true; });
+  const avgDenom = isOngoingPeriod
+    ? workdays.filter(function (d) { return parseDateKey(d) < today; }).length
+    : workdays.length;
 
   const datasets = [];
   const cumStats = [];
@@ -263,9 +292,13 @@ function renderChart() {
 
     let cum = 0;
     const cumActual = dailyValues.map(function (v) { cum += v; return Math.round(cum * 100) / 100; });
-    cumStats.push({ site: site, color: color, value: cumActual.length ? cumActual[cumActual.length - 1] : 0 });
+    const totalWeight = cumActual.length ? cumActual[cumActual.length - 1] : 0;
 
     const target = state.targets[site] || 0;
+    const avg = avgDenom > 0 ? totalWeight / avgDenom : 0;
+    const belowTarget = target > 0 && avg < target;
+    cumStats.push({ site: site, color: color, value: totalWeight, avg: avg, belowTarget: belowTarget });
+
     let cumTarget = 0;
     const cumTargetArr = dates.map(function (d) {
       const isWorkday = data.calendar[d] === true;
@@ -336,15 +369,19 @@ function renderCumStats(cumStats) {
   el.innerHTML = '';
   cumStats.forEach(function (s) {
     const card = document.createElement('div');
-    card.className = 'cum-stat-card ' + SITE_CLASS[s.site];
+    card.className = 'cum-stat-card ' + SITE_CLASS[s.site] + (s.belowTarget ? ' below-target' : '');
     const label = document.createElement('div');
     label.className = 'label';
     label.textContent = s.site + '生産重量';
     const value = document.createElement('div');
     value.className = 'value';
     value.innerHTML = (Math.round(s.value * 10) / 10).toFixed(1) + '<span class="unit">t</span>';
+    const avg = document.createElement('div');
+    avg.className = 'avg' + (s.belowTarget ? ' warn' : '');
+    avg.innerHTML = '平均生産重量＝' + (Math.round(s.avg * 10) / 10).toFixed(1) + '<span class="unit">t/日</span>';
     card.appendChild(label);
     card.appendChild(value);
+    card.appendChild(avg);
     el.appendChild(card);
   });
 }
@@ -401,7 +438,9 @@ function renderSchedule() {
     block.className = 'schedule-site-block';
     const title = document.createElement('div');
     title.className = 'schedule-site-title';
-    title.innerHTML = '<span class="site-dot ' + SITE_CLASS[site] + '"></span>' + site;
+    // 日付見出しを日だけにした分、この行で「何月何日締めか」を示す(例: 本社「9/20〆工程表」)。
+    title.innerHTML = '<span class="site-dot ' + SITE_CLASS[site] + '"></span>' +
+      site + '「' + mdLabel(dateKey(period.end)) + '〆工程表」';
     block.appendChild(title);
 
     if (worksForSite.length === 0) {
@@ -423,7 +462,7 @@ function renderSchedule() {
     headTr.appendChild(th('工事', 'work-name-col'));
     headTr.appendChild(th('', 'part-label'));
     dates.forEach(function (d) {
-      headTr.appendChild(th(mdLabel(d), 'date-th' + (data.calendar[d] === false ? ' holiday' : '')));
+      headTr.appendChild(th(dayLabel(d), 'date-th' + (data.calendar[d] === false ? ' holiday' : '')));
     });
     table.appendChild(headTr);
 
@@ -481,7 +520,10 @@ function renderSchedule() {
       const td = document.createElement('td');
       if (data.calendar[d] === false) td.classList.add('holiday');
       const val = dailyMap[d];
-      td.textContent = (val !== undefined) ? val.toFixed(1) : '0.0';
+      const text = (val !== undefined) ? val.toFixed(1) : '0.0';
+      // 合計がゼロの日は数値を背景色に同化させて見えなくする(ゼロが並ぶ見た目のノイズを消す)。
+      if (text === '0.0') td.classList.add('zero-total');
+      td.textContent = text;
       totalTr.appendChild(td);
     });
     table.appendChild(totalTr);
