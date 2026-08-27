@@ -189,10 +189,10 @@ function renderChart() {
 
     datasets.push({
       type: 'bar', label: site + ' 日次実績(t)', data: dailyValues,
-      backgroundColor: color + '88', borderColor: color, yAxisID: 'yDaily', order: 3,
+      backgroundColor: color, borderColor: color, yAxisID: 'yDaily', order: 3,
     });
     datasets.push({
-      type: 'line', label: site + ' 累積実績(t)', data: cumActual,
+      type: 'line', label: site + '(t)', data: cumActual,
       borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0,
       yAxisID: 'yCum', order: 1,
     });
@@ -216,7 +216,12 @@ function renderChart() {
         x: { grid: { color: '#1d2436' } },
       },
       plugins: {
-        legend: { labels: { color: '#e7ebf3', boxWidth: 14 } },
+        legend: {
+          labels: {
+            color: '#e7ebf3', boxWidth: 14,
+            filter: function (item) { return item.text.indexOf('日次実績') === -1; },
+          },
+        },
         tooltip: {
           callbacks: {
             label: function (item) {
