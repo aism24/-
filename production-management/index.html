@@ -6,6 +6,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 </head>
 <body>
 <div class="page">
@@ -16,8 +18,8 @@
     <path d="M 363 438 L 364 450 L 370 450 L 376 450 L 385 450 L 391 450 L 388 452 L 381 455 L 374 460 L 365 464 L 363 466 L 364 485 L 421 485 L 421 473 L 389 472 L 392 470 L 397 467 L 401 466 L 406 463 L 415 457 L 418 456 L 420 455 L 421 437 Z M 298 436 L 298 485 L 316 485 L 317 448 L 320 449 L 320 485 L 338 484 L 339 448 L 343 448 L 349 453 L 342 455 L 342 471 L 343 485 L 360 485 L 360 454 L 353 453 L 358 449 L 359 447 L 359 442 L 357 438 L 356 438 L 354 436 L 348 436 L 346 437 L 344 439 L 343 441 L 342 436 Z M 236 436 L 236 450 L 245 450 L 248 449 L 251 450 L 260 450 L 279 450 L 278 455 L 241 455 L 239 456 L 237 458 L 236 460 L 236 485 L 295 485 L 295 443 L 294 441 L 293 439 L 292 438 L 291 438 L 289 436 Z M 253 467 L 279 468 L 278 472 L 253 473 Z M 178 436 L 175 437 L 172 440 L 171 447 L 171 449 L 171 454 L 173 458 L 175 458 L 177 460 L 179 461 L 181 461 L 183 463 L 194 467 L 196 469 L 203 472 L 172 473 L 171 475 L 172 485 L 228 485 L 230 484 L 231 483 L 232 481 L 232 466 L 229 464 L 224 462 L 218 460 L 216 458 L 210 455 L 203 453 L 201 451 L 198 450 L 232 449 L 232 436 Z M 110 436 L 109 450 L 152 451 L 151 455 L 117 455 L 114 456 L 112 457 L 110 459 L 109 461 L 109 485 L 168 485 L 168 442 L 167 440 L 165 438 L 163 437 L 160 436 L 133 437 L 115 437 Z M 127 467 L 152 468 L 151 473 L 126 472 Z M 44 436 L 43 474 L 45 486 L 63 485 L 64 448 L 68 449 L 68 486 L 73 486 L 84 485 L 85 448 L 89 449 L 89 485 L 106 485 L 106 445 L 105 441 L 104 439 L 103 438 L 101 437 L 99 436 Z" fill="#ffffff" fill-rule="evenodd" />
   </svg>
   <h1>生産管理ダッシュボード</h1>
-  <button class="btn-pdf-print" id="btnPdfPrint">PDF印刷</button>
   <div class="updated-at" id="updatedAt"></div>
+  <button class="btn-pdf-print" id="btnPdfDownload">PDFダウンロード</button>
   <div class="refresh-note">※少し時間がかかります</div>
   <button class="btn-refresh-header" id="btnRefresh">現時点のデータを取得</button>
 </header>
