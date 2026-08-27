@@ -249,7 +249,7 @@ table.schedule-table td.work-name-col .work-name { color: var(--text); line-heig
 table.schedule-table th.holiday, table.schedule-table td.holiday { background: var(--holiday); }
 table.schedule-table tr.weight-row td { font-weight: 700; color: var(--accent); border-bottom: 2px solid var(--muted); }
 table.schedule-table tr.total-row td { font-weight: 700; color: var(--text); background: rgba(255, 212, 0, 0.16); border-top: 2px solid var(--border); }
-table.schedule-table tr.total-row td.work-name-col { font-size: 0.68rem; white-space: normal; line-height: 1.2; }
+table.schedule-table tr.total-row td.work-name-col { font-size: 0.68rem; white-space: normal; line-height: 1.2; border-bottom: none; }
 table.schedule-table td.zero { color: var(--text); }
 table.schedule-table td.empty { color: transparent; }
 
