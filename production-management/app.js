@@ -124,6 +124,10 @@ document.addEventListener('DOMContentLoaded', function () {
     loadData(true);
   });
 
+  document.getElementById('btnPdfPrint').addEventListener('click', function () {
+    window.print();
+  });
+
   loadData(false);
 });
 
