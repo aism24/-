@@ -1,0 +1,161 @@
+:root {
+  --bg: #0f1420;
+  --panel: #171d2c;
+  --panel2: #1d2436;
+  --border: #2a3348;
+  --text: #e7ebf3;
+  --muted: #93a0b8;
+  --accent: #4da3ff;
+  --honsha: #4da3ff;
+  --yumesaki: #35c98b;
+  --tottori: #ffb454;
+  --holiday: #2a2030;
+  --ok: #35c98b;
+  --warn: #ffb454;
+  --err: #ff6b6b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Hiragino Sans", "Yu Gothic", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.page { max-width: 1400px; margin: 0 auto; padding: 20px 20px 60px; }
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.app-header h1 { font-size: 1.4rem; margin: 0; }
+.app-logo { height: 36px; }
+.updated-at { color: var(--muted); font-size: 0.85rem; margin-left: auto; }
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+.toolbar .group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.toolbar label { color: var(--muted); font-size: 0.85rem; }
+
+select {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.site-btn {
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.site-btn.on[data-site="本社"] { background: var(--honsha); color: #06111f; border-color: var(--honsha); }
+.site-btn.on[data-site="夢前"] { background: var(--yumesaki); color: #06111f; border-color: var(--yumesaki); }
+.site-btn.on[data-site="鳥取"] { background: var(--tottori); color: #06111f; border-color: var(--tottori); }
+
+.target-input {
+  width: 56px;
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  text-align: right;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #06111f;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.primary:disabled { opacity: 0.5; cursor: default; }
+
+.msg { min-height: 1.2em; font-size: 0.85rem; margin-bottom: 12px; }
+.msg.ok { color: var(--ok); }
+.msg.warn { color: var(--warn); }
+.msg.err { color: var(--err); }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.panel h2 { margin: 0 0 12px; font-size: 1.05rem; }
+
+.chart-wrap { position: relative; height: 340px; }
+
+.legend-note { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
+
+.schedule-site-block { margin-bottom: 22px; }
+.schedule-site-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.site-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.site-dot.honsha { background: var(--honsha); }
+.site-dot.yumesaki { background: var(--yumesaki); }
+.site-dot.tottori { background: var(--tottori); }
+
+.table-scroll { overflow-x: auto; }
+table.schedule-table {
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+table.schedule-table th, table.schedule-table td {
+  border: 1px solid var(--border);
+  padding: 3px 6px;
+  text-align: center;
+}
+table.schedule-table th.work-name-col, table.schedule-table td.work-name-col {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  background: var(--panel2);
+  z-index: 1;
+  min-width: 140px;
+}
+table.schedule-table td.part-label {
+  text-align: left;
+  position: sticky;
+  left: 140px;
+  background: var(--panel2);
+  min-width: 64px;
+  color: var(--muted);
+}
+table.schedule-table th.holiday, table.schedule-table td.holiday { background: var(--holiday); }
+table.schedule-table tr.weight-row td { font-weight: 700; color: var(--accent); }
+table.schedule-table td.zero { color: var(--muted); }
+table.schedule-table td.empty { color: transparent; }
+
+.empty-note { color: var(--muted); padding: 8px 0; }
+
+footer.warnings { color: var(--warn); font-size: 0.8rem; margin-top: 10px; white-space: pre-line; }
