@@ -141,18 +141,22 @@ table.schedule-table th.work-name-col, table.schedule-table td.work-name-col {
   left: 0;
   background: var(--panel2);
   z-index: 1;
-  min-width: 140px;
+  min-width: 90px;
+  max-width: 90px;
 }
 table.schedule-table td.part-label {
   text-align: left;
   position: sticky;
-  left: 140px;
+  left: 90px;
   background: var(--panel2);
-  min-width: 64px;
+  min-width: 56px;
   color: var(--muted);
 }
+table.schedule-table td.work-name-col .work-no { font-weight: 700; }
+table.schedule-table td.work-name-col .work-name { color: var(--muted); line-height: 1.35; margin-top: 2px; }
 table.schedule-table th.holiday, table.schedule-table td.holiday { background: var(--holiday); }
 table.schedule-table tr.weight-row td { font-weight: 700; color: var(--accent); }
+table.schedule-table tr.total-row td { font-weight: 700; color: var(--text); background: var(--panel2); border-top: 2px solid var(--border); }
 table.schedule-table td.zero { color: var(--muted); }
 table.schedule-table td.empty { color: transparent; }
 
