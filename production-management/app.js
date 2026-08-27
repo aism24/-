@@ -7,9 +7,9 @@ const SITE_COLOR = { 本社: '#4da3ff', 夢前: '#35c98b', 鳥取: '#ffb454' };
 const PARTS = ['柱', '大梁', '小梁', '他'];
 const PERIOD_OFFSETS = [0, -1, -2, -3, -4];
 
-// 工程表(style.css: .work-name-col + .part-label)と生産量グラフの列幅を揃えるための共通値。
+// グラフの左右軸幅を、工程表のリード列幅(style.css: .work-name-col + .part-label)に
+// 近い値で固定しておくため。
 const TABLE_LEAD_WIDTH = 90; // work-name-col(64) + part-label(26)
-const TABLE_DAY_WIDTH = 38;
 const CHART_RIGHT_AXIS_WIDTH = 60;
 
 let state = {
@@ -131,7 +131,7 @@ document.addEventListener('DOMContentLoaded', function () {
 async function loadData(forceRefresh) {
   const btn = document.getElementById('btnRefresh');
   btn.disabled = true;
-  showMessage(forceRefresh ? '最新のExcelを読み込んで再集計しています…(数十秒かかる場合があります)' : '読み込み中…', '');
+  showMessage(forceRefresh ? '最新のExcelを読み込んで再集計しています…(数十秒かかる場合があります) ボタン操作などは現状の記録で操作反映できます' : '読み込み中…', forceRefresh ? 'loading' : '');
   try {
     if (GAS_API_URL.indexOf('PASTE_YOUR_GAS_WEB_APP_URL_HERE') >= 0) {
       throw new Error('app.js の GAS_API_URL がまだ設定されていません。');
@@ -208,12 +208,8 @@ function renderChart() {
     });
   });
 
-  // 工程表の日付列(工事名+部位ラベルの幅 + 日付1列あたりの幅)とグラフのx軸目盛りが
-  // 縦にできるだけ揃うよう、左右の軸の幅を工程表の列幅に合わせて固定し、キャンバス自体の
-  // 幅も「工程表と同じ列幅×日数分」になるよう明示的に指定する。
-  const chartInner = document.getElementById('chartInner');
-  chartInner.style.width = (TABLE_LEAD_WIDTH + dates.length * TABLE_DAY_WIDTH + CHART_RIGHT_AXIS_WIDTH) + 'px';
-
+  // グラフ自体は横スクロールさせず、常にコンテナ幅いっぱいに収める。左右の軸幅だけは
+  // 工程表のリード列幅・右側余白に近い値で固定し、日付の位置がおおまかに揃うようにする。
   const ctx = document.getElementById('prodChart').getContext('2d');
   if (state.chart) state.chart.destroy();
   state.chart = new Chart(ctx, {
