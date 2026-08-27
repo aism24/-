@@ -32,6 +32,73 @@ async function apiGet(action) {
   return json.data;
 }
 
+// 現在の画面表示(ヘッダー・ツールバー・グラフ・拠点ごとの工程表)を、そのままPDFとして
+// ダウンロードする。jsPDF単体は日本語フォントを持たないため、html2canvasで各セクションを
+// 画像化してPDFに貼り付ける方式にしている。キャプチャ中だけ.pdf-exportクラスを付け、
+// 印刷用と同じ明るい配色・ボタン非表示にして読みやすい見た目にする。
+async function downloadPdf() {
+  const btn = document.getElementById('btnPdfDownload');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'PDF作成中…';
+  document.body.classList.add('pdf-export');
+  // クラス切り替えによるレイアウト確定を待つ
+  await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    const margin = 24;
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const maxW = pageW - margin * 2;
+    const maxH = pageH - margin * 2;
+
+    let cursorY = margin;
+    let isFirstImage = true;
+
+    async function addElementImage(el, opts) {
+      if (!el) return;
+      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' });
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      let w = maxW;
+      let h = (canvas.height / canvas.width) * w;
+      const needsNewPage = (opts && opts.alwaysNewPage) || h > maxH || (!isFirstImage && cursorY + h > pageH - margin);
+      if (needsNewPage) {
+        if (!isFirstImage) doc.addPage();
+        cursorY = margin;
+      }
+      if (h > maxH) {
+        w = w * (maxH / h);
+        h = maxH;
+      }
+      doc.addImage(imgData, 'JPEG', margin, cursorY, w, h);
+      cursorY += h + 14;
+      isFirstImage = false;
+    }
+
+    await addElementImage(document.querySelector('.app-header'));
+    await addElementImage(document.querySelector('.toolbar'));
+    await addElementImage(document.querySelectorAll('.panel')[0]); // 生産量グラフ
+
+    const blocks = document.querySelectorAll('.schedule-site-block');
+    for (let i = 0; i < blocks.length; i++) {
+      await addElementImage(blocks[i], { alwaysNewPage: true }); // 拠点ごとに新しいページ
+    }
+
+    const now = new Date();
+    const fname = '生産管理ダッシュボード_' + now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate()) + '.pdf';
+    doc.save(fname);
+  } catch (err) {
+    console.error(err);
+    showMessage('PDF作成でエラーが発生しました: ' + err.message, 'err');
+  } finally {
+    document.body.classList.remove('pdf-export');
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
 function showMessage(text, kind) {
   const el = document.getElementById('msgArea');
   el.textContent = text;
@@ -126,9 +193,7 @@ document.addEventListener('DOMContentLoaded', function () {
     loadData(true);
   });
 
-  document.getElementById('btnPdfPrint').addEventListener('click', function () {
-    window.print();
-  });
+  document.getElementById('btnPdfDownload').addEventListener('click', downloadPdf);
 
   loadData(false);
 });

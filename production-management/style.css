@@ -284,3 +284,22 @@ footer.warnings { color: var(--warn); font-size: 0.8rem; margin-top: 10px; white
   .table-scroll, .chart-scroll { overflow: visible !important; }
   .schedule-site-block { break-inside: avoid; }
 }
+
+/* PDFダウンロード用に、html2canvasでキャプチャする直前だけ一時的に付与するクラス。
+   @media printと同じ配色(白背景・濃い文字)にして読みやすいPDFにする。 */
+body.pdf-export {
+  --bg: #ffffff;
+  --panel: #ffffff;
+  --panel2: #f4f4f7;
+  --border: #ccc;
+  --text: #111111;
+  --muted: #444444;
+  background: #ffffff;
+}
+body.pdf-export .btn-pdf-print,
+body.pdf-export .btn-refresh-header,
+body.pdf-export .refresh-note,
+body.pdf-export .msg { display: none !important; }
+body.pdf-export .app-header { position: static; }
+body.pdf-export .table-scroll,
+body.pdf-export .chart-scroll { overflow: visible !important; }
