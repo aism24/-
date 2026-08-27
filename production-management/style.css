@@ -198,11 +198,13 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .site-dot.yumesaki { background: var(--yumesaki); }
 .site-dot.tottori { background: var(--tottori); }
 
-.table-scroll { overflow-x: auto; border: 3px double var(--border); border-radius: 2px; }
+.table-scroll { overflow: hidden; border: 3px double var(--border); border-radius: 2px; }
 .table-scroll.honsha { border-color: var(--honsha); }
 .table-scroll.yumesaki { border-color: var(--yumesaki); }
 .table-scroll.tottori { border-color: var(--tottori); }
 table.schedule-table {
+  table-layout: fixed;
+  width: 100%;
   border-collapse: collapse;
   font-size: 0.78rem;
   white-space: nowrap;
@@ -237,9 +239,7 @@ table.schedule-table th.part-label, table.schedule-table td.part-label {
 }
 table.schedule-table td:not(.work-name-col):not(.part-label),
 table.schedule-table th:not(.work-name-col):not(.part-label) {
-  width: 38px;
-  min-width: 38px;
-  max-width: 38px;
+  width: calc((100% - 112px) / var(--num-dates, 31));
   padding: 3px 2px;
   overflow: hidden;
   font-size: 0.72rem;
