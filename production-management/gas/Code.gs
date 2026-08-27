@@ -201,8 +201,9 @@ function readTargets_() {
 // ========== Excel→Googleスプレッドシート変換(読み取り専用の元ファイルには触れない) ==========
 
 // 変換結果のスプレッドシートIDをスクリプトプロパティに記憶しておき、次回以降は
-// 同じファイルの中身だけを差し替える(convert:trueで再アップロード)。フォルダ内が
-// 増え続けないようにするため。
+// 同じファイルの中身だけを差し替える。フォルダ内が増え続けないようにするため。
+// (Drive API 高度なサービスは v3 を使用。v3では変換用の特別なオプション指定は不要で、
+//  メタデータのmimeTypeをGoogleネイティブ形式にしておけばアップロード内容が自動変換される)
 function convertToSheet_(sourceFileId, label, folder) {
   const props = PropertiesService.getScriptProperties();
   const propKey = 'conv_' + sourceFileId;
@@ -211,17 +212,16 @@ function convertToSheet_(sourceFileId, label, folder) {
 
   if (existingId) {
     try {
-      Drive.Files.update({}, existingId, blob, { convert: true });
+      Drive.Files.update({}, existingId, blob);
       return existingId;
     } catch (e) {
       // 作業用ファイルが手動で削除されている等の場合は、新規作成にフォールバックする。
     }
   }
 
-  const created = Drive.Files.insert(
-    { title: WORK_COPY_PREFIX + label, mimeType: MimeType.GOOGLE_SHEETS, parents: [{ id: folder.getId() }] },
-    blob,
-    { convert: true }
+  const created = Drive.Files.create(
+    { name: WORK_COPY_PREFIX + label, mimeType: MimeType.GOOGLE_SHEETS, parents: [folder.getId()] },
+    blob
   );
   props.setProperty(propKey, created.id);
   return created.id;
