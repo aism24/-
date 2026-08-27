@@ -359,9 +359,9 @@ function renderSchedule() {
             td.classList.add('empty');
           } else if (val === 0) {
             td.classList.add('zero');
-            td.textContent = rowKey === '生産重量' ? '0.00' : '0';
+            td.textContent = rowKey === '生産重量' ? '0.0' : '0';
           } else {
-            td.textContent = rowKey === '生産重量' ? val.toFixed(2) : val;
+            td.textContent = rowKey === '生産重量' ? val.toFixed(1) : val;
           }
           tr.appendChild(td);
         });
@@ -382,7 +382,7 @@ function renderSchedule() {
       const td = document.createElement('td');
       if (data.calendar[d] === false) td.classList.add('holiday');
       const val = dailyMap[d];
-      td.textContent = (val !== undefined) ? val.toFixed(2) : '0.00';
+      td.textContent = (val !== undefined) ? val.toFixed(1) : '0.0';
       totalTr.appendChild(td);
     });
     table.appendChild(totalTr);
