@@ -107,13 +107,12 @@ body.drag-over::after {
 
 .home-buttons { display: flex; flex-direction: column; gap: 16px; padding: 32px 8px; }
 .home-btn {
-  display: flex; flex-direction: column; gap: 4px;
   padding: 22px 20px; border: none; border-radius: var(--radius-lg);
-  cursor: pointer; text-align: left;
+  cursor: pointer; text-align: left; line-height: 1.6;
   transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
 }
 .home-btn-title { font-size: 18px; font-weight: 700; }
-.home-btn-desc { font-size: 13px; font-weight: 400; }
+.home-btn-desc { font-size: 13px; font-weight: 400; margin-left: 4px; }
 .home-btn-main { background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: #fff; box-shadow: 0 4px 14px rgba(255,152,0,0.35); }
 .home-btn-main .home-btn-desc { color: rgba(255,255,255,0.85); }
 .home-btn-sub { background: var(--surface); color: var(--brand); border: 2px solid var(--border); }
