@@ -17,6 +17,7 @@
   </svg>
   <h1>生産管理ダッシュボード</h1>
   <div class="updated-at" id="updatedAt"></div>
+  <button class="btn-refresh-header" id="btnRefresh">現時点のデータを取得</button>
 </header>
 
 <div class="toolbar">
@@ -37,7 +38,6 @@
     <input class="target-input" id="target夢前" type="number" step="0.5">
     <label>鳥取</label>
     <input class="target-input" id="target鳥取" type="number" step="0.5">
-    <button class="primary" id="btnRefresh">最新化</button>
   </div>
 </div>
 
@@ -45,6 +45,7 @@
 
 <div class="panel">
   <h2>生産量グラフ(拠点別累積 vs 目標ライン)</h2>
+  <div class="cum-stats" id="cumStats"></div>
   <div class="chart-wrap"><canvas id="prodChart"></canvas></div>
 </div>
 
