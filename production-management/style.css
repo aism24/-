@@ -100,7 +100,7 @@ select option { background: #372a52; color: var(--text); }
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 .site-btn:last-child { margin-right: 0; }
-.site-btn:hover { transform: translateY(-2px); }
+.site-btn:hover { transform: translateY(-2px) scale(1.5); position: relative; z-index: 2; }
 .site-btn[data-site="本社"]:hover { border-color: var(--honsha); box-shadow: 0 0 9px 2px rgba(77, 163, 255, 0.55); }
 .site-btn[data-site="夢前"]:hover { border-color: var(--yumesaki); box-shadow: 0 0 9px 2px rgba(53, 201, 139, 0.55); }
 .site-btn[data-site="鳥取"]:hover { border-color: var(--tottori); box-shadow: 0 0 9px 2px rgba(255, 180, 84, 0.55); }
