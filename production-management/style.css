@@ -490,6 +490,15 @@ body.pdf-export table.schedule-table td:not(.work-name-col):not(.part-label),
 body.pdf-export table.schedule-table th:not(.work-name-col):not(.part-label) {
   width: calc((100% - 208px) / var(--num-dates, 31)) !important;
 }
+/* 日付列は最大31列ぶん均等割りするため、生成した端末の画面幅が狭い(iPad等)場合に
+   数字がセルの幅に収まりきらないことがある。html2canvasはtd/thのoverflow:hiddenを
+   キャプチャ時に反映しないことがあり(隣のセルにはみ出して見える)、画面表示より
+   ひとまわり小さいフォントサイズ・余白にして、収まりきらない事態そのものを減らす。 */
+body.pdf-export table.schedule-table td:not(.work-name-col):not(.part-label),
+body.pdf-export table.schedule-table th:not(.work-name-col):not(.part-label) {
+  font-size: 0.58rem !important;
+  padding: 3px 1px !important;
+}
 
 /* 生産結果明細ポップアップをPDF化する際、通常表示の黄色文字(#ffd400)は白背景で
    読みにくいため、他のPDF用ボタンと同じ濃紺に切り替える(ダウンロードするダイアログ自体は

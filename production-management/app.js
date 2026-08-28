@@ -178,8 +178,12 @@ async function buildPdf_(btn, opts) {
       const w = maxW * scale;
       const chartHFinal = chartH * scale;
       const scheduleHFinal = scheduleH * scale;
-      doc.addImage(chartCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin, cursorY, w, chartHFinal);
-      doc.addImage(scheduleCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin, cursorY + chartHFinal + gap * scale, w, scheduleHFinal);
+      // 高さの都合で縮小(scale<1)すると、アスペクト比を保つため幅もmaxWより
+      // 小さくなり、そのまま左寄せ(x=margin)だと右側にだけ余白が偏って残ってしまう。
+      // 左右均等になるよう中央寄せにする。
+      const x = margin + (maxW - w) / 2;
+      doc.addImage(chartCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', x, cursorY, w, chartHFinal);
+      doc.addImage(scheduleCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', x, cursorY + chartHFinal + gap * scale, w, scheduleHFinal);
     } else {
       await addElementImage(document.getElementById('scheduleArea'), { alwaysNewPage: opts.scheduleAlwaysNewPage });
     }
