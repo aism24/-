@@ -541,6 +541,11 @@ function renderChart() {
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
+      // 折れ線はpointRadius:0で通常時は点を描いていないが、カーソルを合わせた位置の
+      // 点だけはChart.jsの既定(hoverRadius:4)でハイライト表示されてしまう。ツールチップは
+      // 残しつつ、この●表示だけは不要(PDFキャプチャ時にカーソル位置が残っていると
+      // そのまま画像に写り込むこともある)なので、ホバー時の点半径も0にして無効化する。
+      elements: { point: { hoverRadius: 0 } },
       scales: {
         yDaily: {
           position: 'left', title: { display: true, text: '日次生産量(t)' },
