@@ -426,7 +426,7 @@ body.pdf-export table.schedule-table td.part-label {
   background: #f4f4f7 !important;
 }
 body.pdf-export table.schedule-table td.work-name-col .work-name { color: #333333 !important; }
-body.pdf-export table.schedule-table td.zero { color: #999999 !important; }
+body.pdf-export table.schedule-table td.zero { color: #111111 !important; }
 body.pdf-export table.schedule-table th.holiday,
 body.pdf-export table.schedule-table td.holiday { background: #fbe3e3 !important; }
 body.pdf-export table.schedule-table tr.total-row td { background: #fff7d6 !important; }
