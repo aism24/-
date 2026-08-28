@@ -90,6 +90,13 @@ body {
   border-radius: 10px;
   padding: 14px 16px;
   margin-bottom: 18px;
+  /* app-headerのすぐ下に貼り付けて、下にスクロールしても拠点・期間・目標日産量を
+     常に操作できるようにする。topはJS側(syncHeaderHeight_)がapp-headerの実際の
+     高さを--app-header-heightに反映するので、ウィンドウ幅によるヘッダーの折り返しにも
+     追従する(未反映時のfallbackとしてある程度の高さを既定値にしておく)。 */
+  position: sticky;
+  top: var(--app-header-height, 65px);
+  z-index: 25;
 }
 .toolbar .group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .toolbar .group-right { margin-left: auto; }
@@ -397,7 +404,7 @@ footer.warnings { color: var(--warn); font-size: 0.8rem; margin-top: 10px; white
     --muted: #444444;
   }
   .btn-pdf-print, .btn-refresh-header, .refresh-note, .msg { display: none !important; }
-  .app-header { position: static; }
+  .app-header, .toolbar { position: static; }
   .table-scroll, .chart-scroll { overflow: visible !important; }
   .schedule-site-block { break-inside: avoid; }
 }
@@ -418,7 +425,7 @@ body.pdf-export .btn-refresh-header,
 body.pdf-export .refresh-note,
 body.pdf-export .period-nav-btn,
 body.pdf-export .msg { display: none !important; }
-body.pdf-export .app-header { position: static; }
+body.pdf-export .app-header, body.pdf-export .toolbar { position: static; }
 body.pdf-export .table-scroll,
 body.pdf-export .chart-scroll { overflow: visible !important; }
 /* html2canvasは<select>/<input>の中身(選択中のテキストや入力値)を正しく描画できないことが

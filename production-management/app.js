@@ -33,8 +33,9 @@ let scheduleHoverCell = null;
 let pdfCaptureMode = false;
 
 // 「工場別PDF」出力中だけtrueにする(buildPdf_内でのみ切り替える)。trueの間、
-// renderChartはグラフ上部(Chart.jsのtitle領域)に選択中拠点の合計生産重量を表示する。
-let showChartTotal = false;
+// renderChartはグラフ上部(Chart.jsのtitle領域)に選択中拠点の合計生産重量を表示し、
+// 日次実績の各棒の上にもその日の生産重量を表示する(いずれも3工場PDF・通常表示では出さない)。
+let isSitePdfExport = false;
 
 // ---------- GAS API ----------
 async function apiGet(action) {
@@ -144,7 +145,7 @@ async function buildPdf_(btn, opts) {
       pdfCaptureMode = true;
       // 「工場別PDF」だけ、グラフ上部(Chart.jsのtitle領域。凡例と重ならない専用の
       // レイアウト枠)に選択中拠点の合計生産重量をテキストで入れる。
-      showChartTotal = !!opts.showChartTotal;
+      isSitePdfExport = !!opts.isSitePdfExport;
       renderChart();
       // Chart.jsの描画自体もrequestAnimationFrameで行われるため、再描画呼び出し直後では
       // なく数フレーム後にキャプチャする。
@@ -158,7 +159,7 @@ async function buildPdf_(btn, opts) {
       Chart.defaults.color = '#e7ebf3';
       Chart.defaults.animation = originalAnimation;
       pdfCaptureMode = false;
-      showChartTotal = false;
+      isSitePdfExport = false;
       renderChart();
     }
 
@@ -216,7 +217,7 @@ function downloadPdfSite() {
   return buildPdf_(document.getElementById('btnPdfSite'), {
     includeHeaderToolbar: false,
     combineChartAndSchedule: true,
-    showChartTotal: true,
+    isSitePdfExport: true,
     filenameTag: site,
   });
 }
@@ -304,8 +305,19 @@ function applySiteSelection(sites) {
   document.getElementById('btnPdfSite').classList.toggle('soft-disabled', sites.length !== 1);
 }
 
+// .toolbar(拠点・期間・目標日産量の行)をapp-headerのすぐ下に貼り付けて固定するため、
+// app-headerの実際の高さ(ウィンドウ幅によって折り返して変わりうる)を
+// CSSカスタムプロパティに反映する(style.css側の.toolbarのtopで参照)。
+function syncHeaderHeight_() {
+  const header = document.querySelector('.app-header');
+  if (header) document.documentElement.style.setProperty('--app-header-height', header.offsetHeight + 'px');
+}
+
 // ---------- 初期化 ----------
 document.addEventListener('DOMContentLoaded', function () {
+  syncHeaderHeight_();
+  window.addEventListener('resize', syncHeaderHeight_);
+
   // 拠点ボタンは「全て」or「1拠点だけ」のラジオ的な排他選択。
   applySiteSelection(SITES);
   document.querySelectorAll('.site-btn').forEach(function (btn) {
@@ -419,6 +431,12 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('dayDetailClose').addEventListener('click', function () {
     document.getElementById('dayDetailOverlay').hidden = true;
   });
+  // モーダル本体(.day-detail-modal)の外側、背景の半透明部分をクリックした時だけ閉じる。
+  // e.target === e.currentTargetで「オーバーレイ自身がクリックされた」場合に限定することで、
+  // モーダル内のクリックがバブリングしてきても誤って閉じないようにする。
+  document.getElementById('dayDetailOverlay').addEventListener('click', function (e) {
+    if (e.target === e.currentTarget) e.currentTarget.hidden = true;
+  });
   document.getElementById('dayDetailPdf').addEventListener('click', downloadDayDetailPdf);
 
   loadData(false);
@@ -508,7 +526,7 @@ function renderChart() {
 
   const datasets = [];
   const cumStats = [];
-  selected.forEach(function (site) {
+  selected.forEach(function (site, siteIndex) {
     const dailyMap = {};
     (data.dailyBySite[site] || []).forEach(function (r) { dailyMap[r.date] = r.weight; });
     const color = SITE_COLOR[site];
@@ -538,6 +556,14 @@ function renderChart() {
       type: 'bar', label: site + ' 日次実績(t)', data: dailyValues,
       backgroundColor: chartColor, borderColor: chartColor, yAxisID: 'yDaily', order: 3,
       tooltipLabel: site + '本日', // ツールチップ表示専用の短い名前(凡例フィルタ等ではlabelを使うため別に持つ)
+      // 「工場別PDF」ダウンロード時だけ、各棒の上にその日の生産重量を数値で入れる
+      // (アプリ画面上・3工場PDFでは出さない。拠点数×日数ぶん並ぶと逆に見にくくなるため)。
+      // 実績0の日は表示しない。
+      datalabels: {
+        display: function (ctx) { return isSitePdfExport && ctx.dataset.data[ctx.dataIndex] > 0; },
+        color: chartColor, align: 'top', anchor: 'end',
+        font: { size: 9 }, formatter: function (v) { return v.toFixed(1) + 't'; },
+      },
     });
     datasets.push({
       type: 'line', label: site + '(t)', data: cumActual,
@@ -549,10 +575,20 @@ function renderChart() {
       // ここだけ個別にtrueで上書きする。
       datalabels: {
         // 毎日分表示すると数字同士が重なって見づらいため、期間最終日(締め日)の
-        // 1点だけに絞って表示する。
+        // 1点だけに絞って表示する。複数拠点の最終値が近いと、線・ラベル同士が重なって
+        // 読めなくなるため、拠点ごとに線を挟んで上下交互に、かつ少しずつ離す位置へずらす
+        // (siteIndex: 0番目は線の上、1番目は線の下、2番目は0番目よりさらに上)。
         display: function (ctx) { return ctx.dataIndex === ctx.dataset.data.length - 1; },
-        color: chartColor, align: 'left', anchor: 'end',
-        font: { size: 10, weight: 'bold' }, formatter: function (v) { return v.toFixed(1) + 't'; },
+        color: chartColor,
+        align: siteIndex % 2 === 0 ? 'top' : 'bottom',
+        anchor: 'end',
+        offset: 6 + Math.floor(siteIndex / 2) * 16,
+        // 最終日はプロット領域の右端ぴったりの位置になるため、clampなしだとラベルの
+        // 右半分がグラフ領域の外へはみ出して見切れる。chart area内に収まるよう
+        // 自動的に位置調整させる。
+        clamp: true,
+        font: { size: 10, weight: 'bold' },
+        formatter: function (v) { return site + '　' + v.toFixed(1) + 't'; },
       },
     });
     datasets.push({
@@ -588,6 +624,11 @@ function renderChart() {
       // 残しつつ、この●表示だけは不要(PDFキャプチャ時にカーソル位置が残っていると
       // そのまま画像に写り込むこともある)なので、ホバー時の点半径も0にして無効化する。
       elements: { point: { hoverRadius: 0 } },
+      // 累積実績の最終日ラベル(拠点名+数値)がプロット領域の右端ぎりぎりに乗るため、
+      // 余白が無いとラベルの右側がキャンバス外に切れてしまう。右側にラベル分の
+      // 余白を確保しておく(datalabelsのclampだけではラベルの描画幅までは
+      // 考慮されず、はみ出しを防ぎきれなかったため)。
+      layout: { padding: { right: 64 } },
       scales: {
         yDaily: {
           position: 'left', title: { display: true, text: '日次生産量(t)' },
@@ -613,7 +654,7 @@ function renderChart() {
         // Chart.js自身のtitle領域を使うことで、凡例(legend)と場所が重ならないように
         // レイアウトが自動調整される(HTML要素を重ねる方式だと凡例と衝突しやすいため)。
         title: {
-          display: showChartTotal && cumStats.length > 0,
+          display: isSitePdfExport && cumStats.length > 0,
           text: cumStats.length ? '合計生産重量　' + cumStats[0].value.toFixed(1) + 't' : '',
           color: '#111111',
           font: { size: 15, weight: 'bold' },
