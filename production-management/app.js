@@ -14,6 +14,9 @@ const PERIOD_OFFSETS = Array.from({ length: 12 }, function (_, i) { return -i ||
 // グラフの左軸幅を、工程表のリード列幅(style.css: .work-name-col + .part-label)に
 // 固定しておくため。
 const TABLE_LEAD_WIDTH = 112; // work-name-col(64) + part-label(48)
+// 左(日次生産量)と右(累積生産量)の目盛りの本数。両軸で揃えることで、数値のスケールが
+// 違ってもグリッド線の高さが一致する(renderChartのscales.yDaily/yCumを参照)。
+const Y_AXIS_TICK_COUNT = 7;
 
 let state = {
   data: null,
@@ -636,11 +639,21 @@ function renderChart() {
           // 明るいグレーにする。
           grid: { color: pdfCaptureMode ? '#cccccc' : '#2a3348' },
           afterFit: function (scale) { scale.width = TABLE_LEAD_WIDTH; },
+          beginAtZero: true,
+          // 右側のyCum軸と目盛りの本数(=グリッド線の位置)を揃えるため、両軸とも
+          // 同じticks.countを指定する(min:0で揃えた上で、同じ本数に等分すれば
+          // 数値のスケールが違っても同じ高さにグリッド線・目盛りが並ぶ)。
+          ticks: { count: Y_AXIS_TICK_COUNT },
         },
-        // 右側の累積軸は表示せず(現在値は上部の数値カードで確認できる)、その分の幅を
-        // 日付の描画エリアに回す。これにより工程表(左のリード列だけを引いた残りを
-        // 日数で等分)と、グラフの1日あたりの幅がほぼ一致する。
-        yCum: { position: 'right', display: false },
+        // 累積重量の目盛りを右側に表示する。自身のグリッド線は描かず(drawOnChartArea:false)、
+        // 左のyDaily軸が引いているグリッド線と同じ高さに数値だけ並べる。
+        yCum: {
+          position: 'right',
+          title: { display: true, text: '累積生産量(t)' },
+          grid: { drawOnChartArea: false, color: pdfCaptureMode ? '#cccccc' : '#1d2436' },
+          beginAtZero: true,
+          ticks: { count: Y_AXIS_TICK_COUNT, callback: function (v) { return Math.round(v * 10) / 10; } },
+        },
         x: { grid: { color: pdfCaptureMode ? '#cccccc' : '#1d2436' }, offset: true },
         // 目標日産量の一点鎖線専用のx軸。offset:falseにすることで、日付ごとの中心に
         // 寄せる通常のx軸と違い、プロットエリアの左端から右端までぴったり伸びる。
