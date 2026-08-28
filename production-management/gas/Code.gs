@@ -44,6 +44,7 @@ const MAIN_PARTS = ['柱', '大梁', '小梁'];
 const OTHER_PART = '他';
 const WEIGHT_ROW_KEY = '生産重量';
 const CACHE_FILE_NAME = '_cache_dashboard.json';
+const RECORDS_CACHE_FILE_NAME = '_records_cache.json';
 const WORK_COPY_PREFIX = '_作業用_';
 const TIMEZONE = 'Asia/Tokyo';
 
@@ -212,12 +213,12 @@ function readTargets_() {
 // ファイルだけ差し替えるので、多くの案件が未変更の場合は更新がかなり速くなる。
 // (Drive API 高度なサービスは v3 を使用。v3では変換用の特別なオプション指定は不要で、
 //  メタデータのmimeTypeをGoogleネイティブ形式にしておけばアップロード内容が自動変換される)
-function convertToSheet_(sourceFileId, label, folder) {
+// currentMtime/sourceFileは呼び出し側(runFullAggregation_)で1回だけ取得済みのものを渡す
+// (この関数の中で改めてDriveApp.getFileByIdを呼び直さない)。
+function convertToSheet_(sourceFileId, label, folder, currentMtime, sourceFile) {
   const props = PropertiesService.getScriptProperties();
   const propKey = 'conv_' + sourceFileId;
   const mtimeKey = 'mtime_' + sourceFileId;
-  const sourceFile = DriveApp.getFileById(sourceFileId);
-  const currentMtime = String(sourceFile.getLastUpdated().getTime());
   const lastMtime = props.getProperty(mtimeKey);
   const existingId = props.getProperty(propKey);
 
@@ -253,9 +254,36 @@ function convertToSheet_(sourceFileId, label, folder) {
 // entry.sourceTypeが'sheet'なら、既にGoogleスプレッドシートなので変換不要でそのまま
 // そのIDを使う(getBlob()はGoogleネイティブファイルには使えずエラーになるため)。
 // 'excel'(既定)の場合のみ、従来通りExcel→スプレッドシート変換を行う。
-function resolveSheetId_(entry, folder) {
+function resolveSheetId_(entry, folder, currentMtime, sourceFile) {
   if (entry.sourceType === 'sheet') return entry.fileId;
-  return convertToSheet_(entry.fileId, entry.workNo + '_' + entry.fileName, folder);
+  return convertToSheet_(entry.fileId, entry.workNo + '_' + entry.fileName, folder, currentMtime, sourceFile);
+}
+
+// ========== 案件ごとの集計結果(records)のキャッシュ ==========
+// 変換(convertToSheet_)をスキップできても、変換済みシートの中身を読んで集計する処理
+// (parseMasterSheet_)は毎回発生していた。特に19行目以降のような「二度と更新されない」
+// 案件が増えるほど、これが更新のたびに積み重なるムダなコストになる。
+// ここでは案件(fileId)ごとに、最後に読んだ時点のファイル更新日時とその時の集計結果
+// (records)を保存しておき、ファイル更新日時が前回と変わっていなければ
+// parseMasterSheet_ 自体を丸ごとスキップして、保存済みのrecordsをそのまま使い回す。
+function loadRecordsCache_(folder) {
+  const files = folder.getFilesByName(RECORDS_CACHE_FILE_NAME);
+  if (!files.hasNext()) return {};
+  try {
+    return JSON.parse(files.next().getBlob().getDataAsString());
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveRecordsCache_(folder, cache) {
+  const content = JSON.stringify(cache);
+  const files = folder.getFilesByName(RECORDS_CACHE_FILE_NAME);
+  if (files.hasNext()) {
+    files.next().setContent(content);
+  } else {
+    folder.createFile(RECORDS_CACHE_FILE_NAME, content, MimeType.PLAIN_TEXT);
+  }
 }
 
 // ========== マスターExcel(変換後)の解析 ==========
@@ -336,28 +364,45 @@ function runFullAggregation_() {
   const worksMap = {}; // workNo -> { workName, bySite: { site: { byPart: {part: {dateKey:qty}}, weightByDate: {dateKey:weight} } } }
   const warnings = [];
   const nameMismatches = [];
+  const recordsCache = loadRecordsCache_(folder);
+  const newRecordsCache = {};
 
   fileIndex.forEach(function (entry) {
-    let records;
+    let driveFile;
     try {
-      const convertedId = resolveSheetId_(entry, folder);
-      records = parseMasterSheet_(convertedId, calendarMinKey, calendarMaxKey);
+      driveFile = DriveApp.getFileById(entry.fileId);
     } catch (err) {
       warnings.push('「' + entry.fileName + '」の読み込みに失敗しました: ' + err.message);
       return;
     }
+    const currentMtime = String(driveFile.getLastUpdated().getTime());
 
     // 使い回しの枠(2〜18行目など)は、工事が切り替わった際に索引シートのD列(ファイル名)を
     // 更新し忘れると気づきにくいため、実際のドライブ上のファイル名と食い違っていないか
     // ここでチェックし、あればフロント側でポップアップ表示する。
-    try {
-      const actualFileName = DriveApp.getFileById(entry.fileId).getName();
-      if (actualFileName !== entry.fileName) {
-        nameMismatches.push({ workNo: entry.workNo, indexFileName: entry.fileName, actualFileName: actualFileName });
-      }
-    } catch (err) {
-      // 名前チェックの失敗は集計自体を止めない。
+    const actualFileName = driveFile.getName();
+    if (actualFileName !== entry.fileName) {
+      nameMismatches.push({ workNo: entry.workNo, indexFileName: entry.fileName, actualFileName: actualFileName });
     }
+
+    // ファイルの更新日時が前回集計時から変わっていなければ、変換(convertToSheet_)だけで
+    // なくparseMasterSheet_自体を丸ごとスキップし、前回のrecordsをそのまま使い回す。
+    // 19行目以降のような「二度と更新されない」旧工事の案件は、これで初回以降ずっと
+    // 読み込みコストがかからなくなる。
+    const cached = recordsCache[entry.fileId];
+    let records;
+    if (cached && cached.mtime === currentMtime) {
+      records = cached.records;
+    } else {
+      try {
+        const convertedId = resolveSheetId_(entry, folder, currentMtime, driveFile);
+        records = parseMasterSheet_(convertedId, calendarMinKey, calendarMaxKey);
+      } catch (err) {
+        warnings.push('「' + entry.fileName + '」の読み込みに失敗しました: ' + err.message);
+        return;
+      }
+    }
+    newRecordsCache[entry.fileId] = { mtime: currentMtime, records: records };
 
     if (!worksMap[entry.workNo]) {
       worksMap[entry.workNo] = {
@@ -382,6 +427,10 @@ function runFullAggregation_() {
       siteData.weightByDate[rec.dateKey] = (siteData.weightByDate[rec.dateKey] || 0) + rec.weight;
     });
   });
+
+  // 索引シートから消えた案件のキャッシュは持ち越さない(newRecordsCacheには今回処理した
+  // 案件のfileIdしか入っていないため、そのまま保存するだけで自然に整理される)。
+  saveRecordsCache_(folder, newRecordsCache);
 
   const dailyBySiteArray = {};
   Object.keys(dailyBySite).forEach(function (site) {
