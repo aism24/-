@@ -101,6 +101,7 @@ body {
 .toolbar .group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .toolbar .group-right { margin-left: auto; }
 .toolbar label { color: var(--text); font-size: 0.85rem; }
+.target-title-label { color: #ffffff; font-weight: 700; }
 
 select {
   background: #372a52;
@@ -255,7 +256,11 @@ table.schedule-table .date-col-hover { box-shadow: inset 0 0 0 999px rgba(77, 16
 
 .panel {
   background: var(--panel);
-  border: 1px solid var(--border);
+  /* borderではなくbox-shadow(inset)で枠線を描く。html2canvasはborder+border-radiusの
+     組み合わせだと下端の1pxが丸め誤差で描画されないことがあり、PDF化したときに
+     枠線の下側だけ欠けて見える不具合があったため。box-shadowはレイアウトの高さ計算に
+     影響しないpaint専用のプロパティなので、この問題を回避できる。 */
+  box-shadow: inset 0 0 0 1px var(--border);
   border-radius: 10px;
   padding: 16px;
   margin-bottom: 20px;

@@ -321,6 +321,20 @@ document.addEventListener('DOMContentLoaded', function () {
   syncHeaderHeight_();
   window.addEventListener('resize', syncHeaderHeight_);
 
+  // iPad等のタッチデバイスでは、タップでツールチップが表示された後、指を離しても
+  // (マウスのようなmouseleaveが発生しないため)Chart.js既定のままだと表示されっぱなしに
+  // なる。touchend/touchcancelのタイミングで明示的にアクティブ要素を解除し、指を離したら
+  // 消えるようにする。
+  const chartCanvas = document.getElementById('prodChart');
+  function clearChartTooltip_() {
+    if (!state.chart) return;
+    state.chart.setActiveElements([]);
+    state.chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+    state.chart.update();
+  }
+  chartCanvas.addEventListener('touchend', clearChartTooltip_);
+  chartCanvas.addEventListener('touchcancel', clearChartTooltip_);
+
   // 拠点ボタンは「全て」or「1拠点だけ」のラジオ的な排他選択。
   applySiteSelection(SITES);
   document.querySelectorAll('.site-btn').forEach(function (btn) {
@@ -632,7 +646,7 @@ function renderChart() {
       // 少しだけ重なる程度で収まるよう、最小限の余白だけ確保する(以前はyCum非表示だったため
       // 64pxの余白が必要だったが、yCumを表示するようになった今は軸自体の幅が緩衝になる。
       // 余白を広く取りすぎると、工程表の日付列との横位置のズレが目立つため最小限にする)。
-      layout: { padding: { right: 8 } },
+      layout: { padding: { right: 2 } },
       scales: {
         yDaily: {
           position: 'left', title: { display: true, text: '日次生産量(t)' },
