@@ -5,7 +5,7 @@ Chart.defaults.color = '#e7ebf3'; // 軸目盛り・タイトル・ツールチ�
 
 const SITES = ['本社', '夢前', '鳥取'];
 const SITE_CLASS = { 本社: 'honsha', 夢前: 'yumesaki', 鳥取: 'tottori' };
-const SITE_COLOR = { 本社: '#4da3ff', 夢前: '#35c98b', 鳥取: '#ffb454' };
+const SITE_COLOR = { 本社: '#4da3ff', 夢前: '#ffb454', 鳥取: '#35c98b' };
 const PARTS = ['柱', '大梁', '小梁', '他'];
 // カレンダーが1年前の分まで用意されたので、期間セレクトも当月を含む過去12ヶ月分(1年)を選べるようにする。
 const PERIOD_OFFSETS = Array.from({ length: 12 }, function (_, i) { return -i || 0; });
