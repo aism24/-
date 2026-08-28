@@ -449,14 +449,17 @@ function renderChart() {
       interaction: { mode: 'index', intersect: false },
       scales: {
         yDaily: {
-          position: 'left', title: { display: true, text: '日次生産量(t)' }, grid: { color: '#2a3348' },
+          position: 'left', title: { display: true, text: '日次生産量(t)' },
+          // PDF出力時は白背景なので、通常表示用の暗色グリッド(黒っぽく見える)ではなく
+          // 明るいグレーにする。
+          grid: { color: pdfCaptureMode ? '#cccccc' : '#2a3348' },
           afterFit: function (scale) { scale.width = TABLE_LEAD_WIDTH; },
         },
         // 右側の累積軸は表示せず(現在値は上部の数値カードで確認できる)、その分の幅を
         // 日付の描画エリアに回す。これにより工程表(左のリード列だけを引いた残りを
         // 日数で等分)と、グラフの1日あたりの幅がほぼ一致する。
         yCum: { position: 'right', display: false },
-        x: { grid: { color: '#1d2436' }, offset: true },
+        x: { grid: { color: pdfCaptureMode ? '#cccccc' : '#1d2436' }, offset: true },
       },
       plugins: {
         legend: {
