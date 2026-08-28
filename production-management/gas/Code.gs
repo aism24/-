@@ -76,10 +76,21 @@ function getDashboardData_() {
 }
 
 // 手動更新ボタン、および毎日の自動トリガー(dailyRefresh)から呼ばれる本体処理。
+// 「現時点のデータを取得」が短時間に連打されたり、自動トリガーと手動更新が重なったりすると、
+// ロックが無い場合はrunFullAggregation_が並行して複数走り、_cache_dashboard.json や
+// _records_cache.jsonの読み書きが競合して同名ファイルが重複作成されることがある。
+// スクリプトロックで直列化し、後発の呼び出しは先発の完了(=キャッシュ更新)を待ってから
+// 実行する。
 function refreshAndGetData_() {
-  const data = runFullAggregation_();
-  saveCache_(getCacheFolder_(), data);
-  return data;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(120000); // 先行する集計の完了を最大2分待つ
+  try {
+    const data = runFullAggregation_();
+    saveCache_(getCacheFolder_(), data);
+    return data;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // 時間主導トリガー用のエントリーポイント。
