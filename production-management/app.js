@@ -533,9 +533,10 @@ function renderChart() {
     const dailyMap = {};
     (data.dailyBySite[site] || []).forEach(function (r) { dailyMap[r.date] = r.weight; });
     const color = SITE_COLOR[site];
-    // PDF印刷時は、拠点ごとの色分けではなくグラフ(棒・折れ線)を黒一色にする指定のため、
-    // データセットの色はこちらを使う(cumStats・上部カードの色は従来通りcolorのまま)。
-    const chartColor = pdfCaptureMode ? '#000000' : color;
+    // 「工場別PDF」(拠点1つだけ)は、拠点ごとの色分けをする意味が無いためグラフ
+    // (棒・折れ線)を黒一色にする。「3工場PDF」は複数拠点が並ぶため、どの線がどの拠点か
+    // 区別できるよう拠点色のまま出力する(cumStats・上部カードは従来通りcolorのまま)。
+    const chartColor = isSitePdfExport ? '#000000' : color;
 
     const dailyValues = dates.map(function (d) { return dailyMap[d] || 0; });
 
