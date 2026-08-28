@@ -817,6 +817,11 @@ function setScheduleColumnHover_(table, dateKey) {
   }
 }
 
+// 1列あたりの目安行数(工事見出し1行・製品1行をそれぞれ1行として数える)。これを超えたら
+// 次の列(隣)に続ける。本数が多い日でも、1列に縦長へ詰め込んでPDFで極端に文字が
+// 小さくなるのを避けるための調整値。
+const DAY_DETAIL_ROWS_PER_COLUMN = 32;
+
 // ---------- 生産結果明細ポップアップ(工程表のセルクリック) ----------
 // data.works[].bySite[site].itemsByDate[dateKey] は [{part, mark, weight}, ...] の配列
 // (案件マスターの1行=1製品=1本の前提で、合算せず行の出現順のまま保持している)。
@@ -838,48 +843,75 @@ function showDayDetail(site, dateKey) {
 
   const body = document.getElementById('dayDetailBody');
   body.innerHTML = '';
-  works.forEach(function (w) {
-    body.appendChild(buildDayDetailWorkBlock(w, site, dateKey));
-  });
+  buildDayDetailColumns(works, site, dateKey).forEach(function (col) { body.appendChild(col); });
 
   document.getElementById('dayDetailOverlay').hidden = false;
 }
 
-// 1工事分の「工事名 合計＝○本、○t」見出し+部位(柱→大梁→小梁→他の順)ごとの
-// 「製品マーク　重量」テーブルを組み立てる。
-function buildDayDetailWorkBlock(w, site, dateKey) {
-  const items = w.bySite[site].itemsByDate[dateKey];
-  const totalWeight = items.reduce(function (sum, it) { return sum + it.weight; }, 0);
+// 全工事の「工事名 合計＝○本、○t」見出し+部位(柱→大梁→小梁→他の順)ごとの
+// 「製品マーク　重量」を、DAY_DETAIL_ROWS_PER_COLUMN行を超えるごとに新しい列
+// (.day-detail-column)に分けて並べる。1つの工事の途中で列をまたぐ場合は、続きの列の
+// 先頭に「工事名(続き)」という小見出しを入れて、どの工事の続きか分かるようにする。
+function buildDayDetailColumns(works, site, dateKey) {
+  const columns = [];
+  let column, table, rowsInColumn;
 
-  const block = document.createElement('div');
-  block.className = 'day-detail-work';
+  function startColumn() {
+    column = document.createElement('div');
+    column.className = 'day-detail-column';
+    columns.push(column);
+    table = null;
+    rowsInColumn = 0;
+  }
+  function addHeading(text, isContinuation) {
+    const block = document.createElement('div');
+    block.className = 'day-detail-work';
+    const titleEl = document.createElement('div');
+    titleEl.className = 'day-detail-work-title' + (isContinuation ? ' day-detail-continued' : '');
+    titleEl.textContent = text;
+    block.appendChild(titleEl);
+    table = document.createElement('table');
+    table.className = 'day-detail-table';
+    block.appendChild(table);
+    column.appendChild(block);
+    rowsInColumn += 1;
+  }
 
-  const titleEl = document.createElement('div');
-  titleEl.className = 'day-detail-work-title';
-  titleEl.textContent = w.workName + '　合計＝' + items.length + '本、' + totalWeight.toFixed(1) + 't';
-  block.appendChild(titleEl);
+  startColumn();
+  works.forEach(function (w) {
+    const items = w.bySite[site].itemsByDate[dateKey];
+    const totalWeight = items.reduce(function (sum, it) { return sum + it.weight; }, 0);
 
-  const table = document.createElement('table');
-  table.className = 'day-detail-table';
-  PARTS.forEach(function (part) {
-    items.filter(function (it) { return it.part === part; }).forEach(function (it) {
-      const tr = document.createElement('tr');
-      const partTd = document.createElement('td');
-      partTd.className = 'day-detail-part-col';
-      partTd.textContent = part;
-      const markTd = document.createElement('td');
-      markTd.textContent = it.mark || '-';
-      const weightTd = document.createElement('td');
-      weightTd.className = 'day-detail-weight-col';
-      weightTd.textContent = it.weight.toFixed(1) + 't';
-      tr.appendChild(partTd);
-      tr.appendChild(markTd);
-      tr.appendChild(weightTd);
-      table.appendChild(tr);
+    // 見出し行だけ書いて製品が1行も続けられないと空振りになるため、残り行数が
+    // 「見出し+製品1行」の2行に満たない場合は先に次の列へ送る。
+    if (rowsInColumn > 0 && rowsInColumn + 2 > DAY_DETAIL_ROWS_PER_COLUMN) startColumn();
+    addHeading(w.workName + '　合計＝' + items.length + '本、' + totalWeight.toFixed(1) + 't', false);
+
+    PARTS.forEach(function (part) {
+      items.filter(function (it) { return it.part === part; }).forEach(function (it) {
+        if (rowsInColumn >= DAY_DETAIL_ROWS_PER_COLUMN) {
+          startColumn();
+          addHeading(w.workName + '(続き)', true);
+        }
+        const tr = document.createElement('tr');
+        const partTd = document.createElement('td');
+        partTd.className = 'day-detail-part-col';
+        partTd.textContent = part;
+        const markTd = document.createElement('td');
+        markTd.textContent = it.mark || '-';
+        const weightTd = document.createElement('td');
+        weightTd.className = 'day-detail-weight-col';
+        weightTd.textContent = it.weight.toFixed(1) + 't';
+        tr.appendChild(partTd);
+        tr.appendChild(markTd);
+        tr.appendChild(weightTd);
+        table.appendChild(tr);
+        rowsInColumn += 1;
+      });
     });
   });
-  block.appendChild(table);
-  return block;
+
+  return columns;
 }
 
 // 生産結果明細ポップアップの中身(#dayDetailContent。PDF出力/閉じるボタンは含まない)だけを
@@ -891,13 +923,18 @@ async function downloadDayDetailPdf() {
   btn.textContent = 'PDF作成中…';
   document.body.classList.add('pdf-export');
 
-  // 画面表示用のスクロール制限(day-detail-body の max-height/overflow-y)を外し、
-  // スクロールで隠れている分も含めた全内容を1枚の画像としてキャプチャできるようにする。
+  // 画面表示用のスクロール制限(day-detail-body の max-height/overflow、および
+  // day-detail-modal の max-width)を外し、縦横どちらの方向にスクロールで隠れている分も
+  // 含めた全内容を1枚の画像としてキャプチャできるようにする。overflow-yだけでなく
+  // overflow-x(列が多くて画面幅からはみ出す場合)も見えるようにする必要がある。
   const bodyEl = document.getElementById('dayDetailBody');
+  const modalEl = document.querySelector('.day-detail-modal');
   const prevMaxHeight = bodyEl.style.maxHeight;
-  const prevOverflowY = bodyEl.style.overflowY;
+  const prevOverflow = bodyEl.style.overflow;
+  const prevModalMaxWidth = modalEl.style.maxWidth;
   bodyEl.style.maxHeight = 'none';
-  bodyEl.style.overflowY = 'visible';
+  bodyEl.style.overflow = 'visible';
+  modalEl.style.maxWidth = 'none';
   await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
 
   try {
@@ -933,7 +970,8 @@ async function downloadDayDetailPdf() {
     showMessage('PDF作成でエラーが発生しました: ' + err.message, 'err');
   } finally {
     bodyEl.style.maxHeight = prevMaxHeight;
-    bodyEl.style.overflowY = prevOverflowY;
+    bodyEl.style.overflow = prevOverflow;
+    modalEl.style.maxWidth = prevModalMaxWidth;
     document.body.classList.remove('pdf-export');
     btn.disabled = false;
     btn.textContent = originalLabel;

@@ -208,16 +208,24 @@ select option.prev-fy { color: var(--tottori); }
   cursor: pointer;
 }
 
-/* 工程表のセルクリックで出す、拠点×日付の生産結果明細ポップアップ。 */
-.day-detail-modal { max-width: 640px; }
+/* 工程表のセルクリックで出す、拠点×日付の生産結果明細ポップアップ。
+   本数が多い日でも1列に縦長へ詰め込まないよう、DAY_DETAIL_ROWS_PER_COLUMN行を超えるごとに
+   列を横に増やす(app.jsのbuildDayDetailColumns_)。列数が増えても画面高さは65vhで頭打ちに
+   し、はみ出す分は横スクロールで見る。 */
+.day-detail-modal { max-width: min(94vw, 920px); }
 .day-detail-body {
   max-height: 65vh;
-  overflow-y: auto;
+  overflow: auto;
   white-space: normal;
+  display: flex;
+  align-items: flex-start;
+  gap: 0 20px;
 }
+.day-detail-column { flex: 0 0 220px; width: 220px; }
 .day-detail-work { margin-bottom: 14px; }
 .day-detail-work:last-child { margin-bottom: 0; }
 .day-detail-work-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 4px; }
+.day-detail-work-title.day-detail-continued { color: var(--muted); font-weight: 600; }
 .day-detail-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-bottom: 4px; }
 .day-detail-table th, .day-detail-table td {
   border-bottom: 1px solid var(--border);
