@@ -71,8 +71,11 @@ function restoreControlsAfterCapture_(swaps) {
 }
 
 // 印刷用と同じ明るい配色・ボタン非表示にして読みやすい見た目にする。
-async function downloadPdf() {
-  const btn = document.getElementById('btnPdfDownload');
+// opts.includeHeaderToolbar: アプリ行・ツールバー(拠点/締日/目標日産量)を含めるか
+// opts.scheduleAlwaysNewPage: 工程表を新しいページから始めるか(3工場PDFはtrue、
+//   工場別PDFはグラフと同じページに続けたいのでfalse)
+// opts.filenameTag: ファイル名に挟む拠点名など(3工場PDFでは不要)
+async function buildPdf_(btn, opts) {
   const originalLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'PDF作成中…';
@@ -93,13 +96,13 @@ async function downloadPdf() {
     let cursorY = margin;
     let isFirstImage = true;
 
-    async function addElementImage(el, opts) {
+    async function addElementImage(el, imgOpts) {
       if (!el) return;
       const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff' });
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
       let w = maxW;
       let h = (canvas.height / canvas.width) * w;
-      const needsNewPage = (opts && opts.alwaysNewPage) || h > maxH || (!isFirstImage && cursorY + h > pageH - margin);
+      const needsNewPage = (imgOpts && imgOpts.alwaysNewPage) || h > maxH || (!isFirstImage && cursorY + h > pageH - margin);
       if (needsNewPage) {
         if (!isFirstImage) doc.addPage();
         cursorY = margin;
@@ -113,8 +116,10 @@ async function downloadPdf() {
       isFirstImage = false;
     }
 
-    await addElementImage(document.querySelector('.app-header'));
-    await addElementImage(document.querySelector('.toolbar'));
+    if (opts.includeHeaderToolbar) {
+      await addElementImage(document.querySelector('.app-header'));
+      await addElementImage(document.querySelector('.toolbar'));
+    }
 
     // Chart.jsのcanvasは描画時の文字色がそのままピクセルに焼き込まれるため、
     // 通常表示用の明るい文字色のままキャプチャすると白背景のPDF上でほぼ見えなくなる。
@@ -139,16 +144,17 @@ async function downloadPdf() {
       renderChart();
     }
 
-    // 拠点ごとに別ページにせず、3拠点の工程表をまとめて1枚の画像として1ページに収める。
-    await addElementImage(document.getElementById('scheduleArea'), { alwaysNewPage: true });
+    await addElementImage(document.getElementById('scheduleArea'), { alwaysNewPage: opts.scheduleAlwaysNewPage });
 
-    // ファイル名は「ダウンロード日付_締め日_時刻」の順(例: 20260828_R8年9月20日〆_103618)。
+    // ファイル名は「ダウンロード日付_(拠点名_)締め日_時刻」の順
+    // (例: 20260828_R8年9月20日〆_103618 / 20260828_本社_R8年9月20日〆_103618)。
     // 日付を先頭にすることでファイル一覧が日付順に並び、時刻は末尾にして同じ締め日を
     // 何度出力しても重複しないようにする。
     const now = new Date();
     const datePart = now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate());
     const timePart = pad2(now.getHours()) + pad2(now.getMinutes()) + pad2(now.getSeconds());
-    const fname = datePart + '_' + eraLabel(state.period.end) + '_' + timePart + '.pdf';
+    const tag = opts.filenameTag ? opts.filenameTag + '_' : '';
+    const fname = datePart + '_' + tag + eraLabel(state.period.end) + '_' + timePart + '.pdf';
     doc.save(fname);
   } catch (err) {
     console.error(err);
@@ -159,6 +165,25 @@ async function downloadPdf() {
     btn.disabled = false;
     btn.textContent = originalLabel;
   }
+}
+
+// 「3工場PDF」: これまで通りアプリ行・ツールバーを含み、工程表は新しいページにまとめる。
+function downloadPdfAll() {
+  return buildPdf_(document.getElementById('btnPdfAll'), {
+    includeHeaderToolbar: true,
+    scheduleAlwaysNewPage: true,
+  });
+}
+
+// 「工場別PDF」: アプリ行・ツールバー(拠点/締日/目標日産量)は含めず、選択中の1拠点の
+// グラフと工程表だけを同じページに続けて1枚に収める。
+function downloadPdfSite() {
+  const site = Array.from(state.selectedSites)[0];
+  return buildPdf_(document.getElementById('btnPdfSite'), {
+    includeHeaderToolbar: false,
+    scheduleAlwaysNewPage: false,
+    filenameTag: site,
+  });
 }
 
 function showMessage(text, kind) {
@@ -231,6 +256,10 @@ function applySiteSelection(sites) {
     const on = (site === '__all__') ? (sites.length === SITES.length) : sites.length === 1 && sites[0] === site;
     btn.classList.toggle('on', on);
   });
+  // 「3工場PDF」は拠点が全て選択中、「工場別PDF」は拠点が1つだけ選択中の時だけ有効。
+  // 見た目だけグレーにして、押されたときにポップアップで案内する(クリック自体は塞がない)。
+  document.getElementById('btnPdfAll').classList.toggle('soft-disabled', sites.length !== SITES.length);
+  document.getElementById('btnPdfSite').classList.toggle('soft-disabled', sites.length !== 1);
 }
 
 // ---------- 初期化 ----------
@@ -296,7 +325,20 @@ document.addEventListener('DOMContentLoaded', function () {
     loadData(true);
   });
 
-  document.getElementById('btnPdfDownload').addEventListener('click', downloadPdf);
+  document.getElementById('btnPdfAll').addEventListener('click', function () {
+    if (state.selectedSites.size !== SITES.length) {
+      alert('拠点を「全て」に選択してください');
+      return;
+    }
+    downloadPdfAll();
+  });
+  document.getElementById('btnPdfSite').addEventListener('click', function () {
+    if (state.selectedSites.size !== 1) {
+      alert('拠点を1つ選択してください');
+      return;
+    }
+    downloadPdfSite();
+  });
 
   document.getElementById('mismatchClose').addEventListener('click', function () {
     document.getElementById('mismatchOverlay').hidden = true;
@@ -472,7 +514,11 @@ function renderChart() {
           // 濃い色へ切り替えるため、固定色にすると凡例だけ反映されず薄いままになる。
           labels: {
             boxWidth: 14,
-            filter: function (item) { return item.text.indexOf('日次実績') === -1; },
+            // 日次実績(棒)と目標日産量(一点鎖線)は色・形でグラフ上から判別できるため、
+            // 凡例には出さない(目標ラインの累積系だけ凡例に残す)。
+            filter: function (item) {
+              return item.text.indexOf('日次実績') === -1 && item.text.indexOf('目標日産量') === -1;
+            },
           },
         },
         tooltip: {
