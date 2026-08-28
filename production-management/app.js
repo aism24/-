@@ -22,6 +22,11 @@ let state = {
   chart: null,
 };
 
+// PDFキャプチャ用にグラフを再描画している間だけtrueにする(downloadPdf内でのみ切り替える)。
+// body.pdf-exportクラスの有無で判定すると、クラスが外れるタイミングとの前後関係次第で
+// 通常表示に戻す最後の再描画までツールチップが無効なままになりかねないため、専用のフラグにする。
+let pdfCaptureMode = false;
+
 // ---------- GAS API ----------
 async function apiGet(action) {
   const url = new URL(GAS_API_URL);
@@ -121,6 +126,7 @@ async function downloadPdf() {
       // 描画途中)の状態でhtml2canvasがキャプチャしてしまい、グラフが真っ白になることが
       // あったため、キャプチャ用の再描画はアニメーション無しにする。
       Chart.defaults.animation = false;
+      pdfCaptureMode = true;
       renderChart();
       // Chart.jsの描画自体もrequestAnimationFrameで行われるため、再描画呼び出し直後では
       // なく数フレーム後にキャプチャする。
@@ -129,6 +135,7 @@ async function downloadPdf() {
     } finally {
       Chart.defaults.color = '#e7ebf3';
       Chart.defaults.animation = originalAnimation;
+      pdfCaptureMode = false;
       renderChart();
     }
 
@@ -419,6 +426,16 @@ function renderChart() {
       borderColor: color, borderDash: [4, 3], borderWidth: 1, pointRadius: 0,
       yAxisID: 'yCum', order: 2,
     });
+    // 日次の実績棒がこの目標日産量を上回っているかどうかをひと目で分かるように、
+    // 累積目標ライン(yCum、破線)とは別に、日次実績と同じyDaily軸上へ目標日産量の
+    // 水平な細い直線を引く。
+    if (target > 0) {
+      datasets.push({
+        type: 'line', label: site + ' 目標日産量(t)', data: dates.map(function () { return target; }),
+        borderColor: color, borderWidth: 1, pointRadius: 0,
+        yAxisID: 'yDaily', order: 4,
+      });
+    }
   });
 
   // グラフ自体は横スクロールさせず、常にコンテナ幅いっぱいに収める。左右の軸幅だけは
@@ -451,6 +468,9 @@ function renderChart() {
           },
         },
         tooltip: {
+          // PDFキャプチャ中はマウスカーソルがグラフ上にあるとツールチップが開いたまま
+          // 画像に写り込んでしまうことがあるため、その間は無効化する。
+          enabled: !pdfCaptureMode,
           callbacks: {
             label: function (item) {
               return item.dataset.label + ': ' + item.parsed.y.toFixed(1) + 't';
