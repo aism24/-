@@ -84,22 +84,33 @@ async function downloadPdf() {
     // Chart.jsのcanvasは描画時の文字色がそのままピクセルに焼き込まれるため、
     // 通常表示用の明るい文字色のままキャプチャすると白背景のPDF上でほぼ見えなくなる。
     // 濃い色で一時的に再描画してキャプチャし、直後に元の色へ戻す(失敗時も必ず戻す)。
+    const originalAnimation = Chart.defaults.animation;
     try {
       Chart.defaults.color = '#111111';
+      // アニメーション有効のままだと、再描画直後はcanvasにまだ何も描かれていない(または
+      // 描画途中)の状態でhtml2canvasがキャプチャしてしまい、グラフが真っ白になることが
+      // あったため、キャプチャ用の再描画はアニメーション無しにする。
+      Chart.defaults.animation = false;
       renderChart();
+      // Chart.jsの描画自体もrequestAnimationFrameで行われるため、再描画呼び出し直後では
+      // なく数フレーム後にキャプチャする。
+      await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
       await addElementImage(document.querySelectorAll('.panel')[0]); // 生産量グラフ
     } finally {
       Chart.defaults.color = '#e7ebf3';
+      Chart.defaults.animation = originalAnimation;
       renderChart();
     }
 
-    const blocks = document.querySelectorAll('.schedule-site-block');
-    for (let i = 0; i < blocks.length; i++) {
-      await addElementImage(blocks[i], { alwaysNewPage: true }); // 拠点ごとに新しいページ
-    }
+    // 拠点ごとに別ページにせず、3拠点の工程表をまとめて1枚の画像として1ページに収める。
+    await addElementImage(document.getElementById('scheduleArea'), { alwaysNewPage: true });
 
+    // ファイル名に締め日(例: R8年9月20日〆)を入れて中身が分かるようにし、さらに
+    // ダウンロードした日時を付けて、同じ締め日を何度出力しても重複しないようにする。
     const now = new Date();
-    const fname = '生産管理ダッシュボード_' + now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate()) + '.pdf';
+    const timestamp = now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate()) +
+      '_' + pad2(now.getHours()) + pad2(now.getMinutes()) + pad2(now.getSeconds());
+    const fname = '生産管理ダッシュボード_' + eraLabel(state.period.end) + '_' + timestamp + '.pdf';
     doc.save(fname);
   } catch (err) {
     console.error(err);
