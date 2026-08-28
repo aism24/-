@@ -514,7 +514,11 @@ function renderChart() {
           // 濃い色へ切り替えるため、固定色にすると凡例だけ反映されず薄いままになる。
           labels: {
             boxWidth: 14,
-            filter: function (item) { return item.text.indexOf('日次実績') === -1; },
+            // 日次実績(棒)と目標日産量(一点鎖線)は色・形でグラフ上から判別できるため、
+            // 凡例には出さない(目標ラインの累積系だけ凡例に残す)。
+            filter: function (item) {
+              return item.text.indexOf('日次実績') === -1 && item.text.indexOf('目標日産量') === -1;
+            },
           },
         },
         tooltip: {
