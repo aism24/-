@@ -428,12 +428,14 @@ function renderChart() {
     });
     // 日次の実績棒がこの目標日産量を上回っているかどうかをひと目で分かるように、
     // 累積目標ライン(yCum、破線)とは別に、日次実績と同じyDaily軸上へ目標日産量の
-    // 水平な細い直線を引く。
+    // 一点鎖線を引く。xAxisIDを専用のxLine(offset:false)にすることで、通常のx軸
+    // (offset:trueで各日付の中心に寄せている)とは違い、グラフの左端から右端まで
+    // 隙間なく伸びるようにする。
     if (target > 0) {
       datasets.push({
         type: 'line', label: site + ' 目標日産量(t)', data: dates.map(function () { return target; }),
-        borderColor: color, borderWidth: 1, pointRadius: 0,
-        yAxisID: 'yDaily', order: 4,
+        borderColor: color, borderWidth: 1, borderDash: [8, 3, 1, 3], pointRadius: 0,
+        yAxisID: 'yDaily', xAxisID: 'xLine', order: 4,
       });
     }
   });
@@ -460,6 +462,9 @@ function renderChart() {
         // 日数で等分)と、グラフの1日あたりの幅がほぼ一致する。
         yCum: { position: 'right', display: false },
         x: { grid: { color: pdfCaptureMode ? '#cccccc' : '#1d2436' }, offset: true },
+        // 目標日産量の一点鎖線専用のx軸。offset:falseにすることで、日付ごとの中心に
+        // 寄せる通常のx軸と違い、プロットエリアの左端から右端までぴったり伸びる。
+        xLine: { type: 'category', display: false, offset: false },
       },
       plugins: {
         legend: {
