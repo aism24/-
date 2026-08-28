@@ -74,7 +74,7 @@ function restoreControlsAfterCapture_(swaps) {
 // opts.includeHeaderToolbar: アプリ行・ツールバー(拠点/締日/目標日産量)を含めるか
 // opts.scheduleAlwaysNewPage: 工程表を新しいページから始めるか(3工場PDFはtrue、
 //   工場別PDFはグラフと同じページに続けたいのでfalse)
-// opts.filenameTag: ファイル名に挟む拠点名など(3工場PDFでは不要)
+// opts.filenameTag: ファイル名の先頭【】内に入れる拠点名(3工場PDFは'全て'固定)
 async function buildPdf_(btn, opts) {
   const originalLabel = btn.textContent;
   btn.disabled = true;
@@ -167,15 +167,14 @@ async function buildPdf_(btn, opts) {
       await addElementImage(document.getElementById('scheduleArea'), { alwaysNewPage: opts.scheduleAlwaysNewPage });
     }
 
-    // ファイル名は「ダウンロード日付_(拠点名_)締め日_時刻」の順
-    // (例: 20260828_R8年9月20日〆_103618 / 20260828_本社_R8年9月20日〆_103618)。
-    // 日付を先頭にすることでファイル一覧が日付順に並び、時刻は末尾にして同じ締め日を
-    // 何度出力しても重複しないようにする。
+    // ファイル名は「【拠点名】ダウンロード日付_締め日_時刻」の順
+    // (例: 【全て】20260828_R8年9月20日〆_103618 / 【本社】20260828_R8年9月20日〆_103618)。
+    // 拠点名を先頭にすることでどちらのPDFかひと目で分かり、日付・時刻は従来通り
+    // 日付順に並び同じ締め日を何度出力しても重複しないようにする。
     const now = new Date();
     const datePart = now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate());
     const timePart = pad2(now.getHours()) + pad2(now.getMinutes()) + pad2(now.getSeconds());
-    const tag = opts.filenameTag ? opts.filenameTag + '_' : '';
-    const fname = datePart + '_' + tag + eraLabel(state.period.end) + '_' + timePart + '.pdf';
+    const fname = '【' + opts.filenameTag + '】' + datePart + '_' + eraLabel(state.period.end) + '_' + timePart + '.pdf';
     doc.save(fname);
   } catch (err) {
     console.error(err);
@@ -193,6 +192,7 @@ function downloadPdfAll() {
   return buildPdf_(document.getElementById('btnPdfAll'), {
     includeHeaderToolbar: true,
     scheduleAlwaysNewPage: true,
+    filenameTag: '全て',
   });
 }
 
