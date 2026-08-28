@@ -102,6 +102,19 @@ select {
 select option { background: #372a52; color: var(--text); }
 select option.prev-fy { color: var(--tottori); }
 
+.period-nav-btn {
+  background: #372a52;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+.period-nav-btn:hover:not(:disabled) { border-color: var(--accent); }
+.period-nav-btn:disabled { opacity: 0.35; cursor: default; }
+
 .workday-badge {
   background: #b39ddb;
   color: #1f1436;
