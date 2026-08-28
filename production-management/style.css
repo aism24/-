@@ -312,7 +312,7 @@ table.schedule-table th.work-name-col, table.schedule-table td.work-name-col {
 }
 table.schedule-table td.work-name-col { border-bottom: 2px solid var(--muted); }
 table.schedule-table th.part-label, table.schedule-table td.part-label {
-  text-align: left;
+  text-align: center;
   position: sticky;
   left: 64px;
   background: var(--panel2);
