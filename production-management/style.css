@@ -415,3 +415,21 @@ body.pdf-export table.schedule-table th.holiday,
 body.pdf-export table.schedule-table td.holiday { background: #fbe3e3 !important; }
 body.pdf-export table.schedule-table tr.total-row td { background: #fff7d6 !important; }
 body.pdf-export table.schedule-table tr.weight-row td { color: #1a5fb4 !important; }
+
+/* PDFでは日付列の大半が空欄になりがちで横方向に余裕があるため、工事名を画面表示用の
+   4文字ごとの折り返しをやめて1行にまとめる(work-name内の各断片をinline化して連結する)。
+   その分work-name-col自体も広げ、日付列の幅計算(TABLE_LEAD_WIDTH相当)もそれに合わせる。 */
+body.pdf-export table.schedule-table th.work-name-col,
+body.pdf-export table.schedule-table td.work-name-col {
+  width: 160px !important;
+  min-width: 160px !important;
+  max-width: 160px !important;
+}
+body.pdf-export table.schedule-table td.work-name-col .work-name,
+body.pdf-export table.schedule-table td.work-name-col .work-name div {
+  display: inline;
+}
+body.pdf-export table.schedule-table td:not(.work-name-col):not(.part-label),
+body.pdf-export table.schedule-table th:not(.work-name-col):not(.part-label) {
+  width: calc((100% - 208px) / var(--num-dates, 31)) !important;
+}
