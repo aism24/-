@@ -30,9 +30,10 @@
  *   いずれも1行目が見出し、2行目以降がデータです。
  *
  * ■ 案件マスターExcelファイルの列構成(各行=部材1つ):
- *   ...,部位,加工先,...,本数,重量,...,加工,... (列の並び順はファイルによって多少ずれるため、
- *   見出し行の文字列で列位置を特定する。詳細はMasterParser部分を参照)
- *   「加工」列の日付を基準に日次生産実績として集計する。
+ *   ...,部位,加工先,...,本数,重量,製品マーク,...,加工,... (列の並び順はファイルによって多少
+ *   ずれるため、見出し行の文字列で列位置を特定する。詳細はMasterParser部分を参照)
+ *   「加工」列の日付を基準に日次生産実績として集計する。「製品マーク」は工程表のセルを
+ *   クリックした際の日別内訳ポップアップ(工事×部位×製品マーク×重量)にのみ使用する。
  *
  * セットアップ手順は README.md を参照してください。
  */
@@ -45,6 +46,10 @@ const OTHER_PART = '他';
 const WEIGHT_ROW_KEY = '生産重量';
 const CACHE_FILE_NAME = '_cache_dashboard.json';
 const RECORDS_CACHE_FILE_NAME = '_records_cache.json';
+// records(案件ごとの読み込み結果キャッシュ)の形式を変える際にインクリメントする。
+// 保存済みキャッシュのバージョンがこれと違えば、mtimeが同じでも再解析する(古い形式の
+// recordsを誤って使い回して、新しく追加したフィールドが欠けたまま表示されるのを防ぐ)。
+const RECORDS_CACHE_VERSION = 2;
 const WORK_COPY_PREFIX = '_作業用_';
 const TIMEZONE = 'Asia/Tokyo';
 
@@ -333,6 +338,7 @@ function parseMasterSheet_(convertedSheetId, calendarMinKey, calendarMaxKey) {
     workDate: header.indexOf('加工'),
     qty: header.indexOf('本数'),
     weight: header.indexOf('重量'),
+    mark: header.indexOf('製品マーク'),
   };
   if (col.part < 0 || col.site < 0 || col.workDate < 0) return [];
 
@@ -353,6 +359,9 @@ function parseMasterSheet_(convertedSheetId, calendarMinKey, calendarMaxKey) {
       dateKey: dateKey,
       qty: col.qty >= 0 ? (Number(row[col.qty]) || 0) : 0,
       weight: col.weight >= 0 ? (Number(row[col.weight]) || 0) : 0,
+      // 1行=1製品=1本の前提(同じ製品マークが複数行に重複することはない)。
+      // 工程表のセルクリック時の日別内訳ポップアップ表示にのみ使用する。
+      mark: col.mark >= 0 ? String(row[col.mark] || '').trim() : '',
     });
   }
   return records;
@@ -402,9 +411,13 @@ function runFullAggregation_(folder) {
     // なくparseMasterSheet_自体を丸ごとスキップし、前回のrecordsをそのまま使い回す。
     // 19行目以降のような「二度と更新されない」旧工事の案件は、これで初回以降ずっと
     // 読み込みコストがかからなくなる。
+    // cached.vがRECORDS_CACHE_VERSIONと異なる場合(records自体の形式を変更した後、まだ
+    // 一度も再解析されていない旧キャッシュ)は、mtimeが同じでも再解析する。そうしないと、
+    // 二度と更新されない旧工事のファイルなどで、新しく追加したフィールド(製品マーク等)が
+    // 欠けたままの古い形式のrecordsを永遠に使い回してしまう。
     const cached = recordsCache[entry.fileId];
     let records;
-    if (cached && cached.mtime === currentMtime) {
+    if (cached && cached.mtime === currentMtime && cached.v === RECORDS_CACHE_VERSION) {
       records = cached.records;
     } else {
       try {
@@ -415,7 +428,7 @@ function runFullAggregation_(folder) {
         return;
       }
     }
-    newRecordsCache[entry.fileId] = { mtime: currentMtime, records: records };
+    newRecordsCache[entry.fileId] = { mtime: currentMtime, v: RECORDS_CACHE_VERSION, records: records };
 
     if (!worksMap[entry.workNo]) {
       worksMap[entry.workNo] = {
@@ -432,12 +445,17 @@ function runFullAggregation_(folder) {
 
       // 工事番号×拠点×部位×日別(工程表用)
       if (!work.bySite[rec.site]) {
-        work.bySite[rec.site] = { byPart: {}, weightByDate: {} };
+        work.bySite[rec.site] = { byPart: {}, weightByDate: {}, itemsByDate: {} };
         MAIN_PARTS.concat([OTHER_PART]).forEach(function (p) { work.bySite[rec.site].byPart[p] = {}; });
       }
       const siteData = work.bySite[rec.site];
       siteData.byPart[rec.part][rec.dateKey] = (siteData.byPart[rec.part][rec.dateKey] || 0) + rec.qty;
       siteData.weightByDate[rec.dateKey] = (siteData.weightByDate[rec.dateKey] || 0) + rec.weight;
+
+      // 工程表のセルクリック時の日別内訳ポップアップ用(工事×拠点×日付ごとの製品明細)。
+      // 1行=1製品=1本の前提なので合算はせず、行の出現順のまま保持する。
+      if (!siteData.itemsByDate[rec.dateKey]) siteData.itemsByDate[rec.dateKey] = [];
+      siteData.itemsByDate[rec.dateKey].push({ part: rec.part, mark: rec.mark, weight: rec.weight });
     });
   });
 

@@ -20,6 +20,7 @@ let state = {
   period: null,
   targets: {},
   chart: null,
+  dayDetail: null, // 生産結果明細ポップアップで開いている{site, dateKey}(PDF出力のファイル名生成用)
 };
 
 // PDFキャプチャ用にグラフを再描画している間だけtrueにする(downloadPdf内でのみ切り替える)。
@@ -375,6 +376,22 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('alertOverlay').hidden = true;
   });
 
+  // 工程表の日付列(部位の行・生産重量の行・合計行・日付見出し、いずれのセルでも)を
+  // クリックすると、その拠点・その日の生産結果明細ポップアップを開く。工程表全体は
+  // renderScheduleのたびに作り直されるため、要素を毎回個別にbindするのではなく
+  // #scheduleArea自体に1回だけイベント委譲で仕込む。
+  document.getElementById('scheduleArea').addEventListener('click', function (e) {
+    const cell = e.target.closest('[data-date]');
+    if (!cell) return;
+    const table = cell.closest('table.schedule-table');
+    if (!table) return;
+    showDayDetail(table.dataset.site, cell.dataset.date);
+  });
+  document.getElementById('dayDetailClose').addEventListener('click', function () {
+    document.getElementById('dayDetailOverlay').hidden = true;
+  });
+  document.getElementById('dayDetailPdf').addEventListener('click', downloadDayDetailPdf);
+
   loadData(false);
 });
 
@@ -488,11 +505,13 @@ function renderChart() {
     datasets.push({
       type: 'bar', label: site + ' 日次実績(t)', data: dailyValues,
       backgroundColor: color, borderColor: color, yAxisID: 'yDaily', order: 3,
+      tooltipLabel: site + '本日', // ツールチップ表示専用の短い名前(凡例フィルタ等ではlabelを使うため別に持つ)
     });
     datasets.push({
       type: 'line', label: site + '(t)', data: cumActual,
       borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0,
       yAxisID: 'yCum', order: 1,
+      tooltipLabel: site + '累積',
     });
     datasets.push({
       type: 'line', label: site + ' 目標ライン(t)', data: cumTargetArr,
@@ -556,9 +575,18 @@ function renderChart() {
           // PDFキャプチャ中はマウスカーソルがグラフ上にあるとツールチップが開いたまま
           // 画像に写り込んでしまうことがあるため、その間は無効化する。
           enabled: !pdfCaptureMode,
+          // interaction.mode:'index'により、その日付にある全データセットがツールチップに
+          // 並ぶ。拠点を複数選択していると「日次実績・累積実績・目標ライン・目標日産量」の
+          // 4種類×拠点数ぶん並んで非常に見にくいため、tooltipLabelを持つデータセット
+          // (日次実績・累積実績)だけに絞り、目標系(目標ライン・目標日産量)は出さない。
+          filter: function (item) {
+            return !!item.dataset.tooltipLabel;
+          },
           callbacks: {
+            // 表示は「日付(ツールチップ見出し)・{拠点}本日・{拠点}累積」だけのシンプルな
+            // 表記に統一する(dataset.label自体は凡例フィルタ等で使うため書き換えない)。
             label: function (item) {
-              return item.dataset.label + ': ' + item.parsed.y.toFixed(1) + 't';
+              return item.dataset.tooltipLabel + ': ' + item.parsed.y.toFixed(1) + 't';
             },
           },
         },
@@ -663,12 +691,16 @@ function renderSchedule() {
     const table = document.createElement('table');
     table.className = 'schedule-table';
     table.style.setProperty('--num-dates', dates.length);
+    // その拠点・その日付の生産結果明細ポップアップ(クリック時のイベント委譲)で参照する。
+    table.dataset.site = site;
 
     const headTr = document.createElement('tr');
     headTr.appendChild(th('工事', 'work-name-col'));
     headTr.appendChild(th('', 'part-label'));
     dates.forEach(function (d) {
-      headTr.appendChild(th(dayLabel(d), 'date-th' + (data.calendar[d] === false ? ' holiday' : '')));
+      const headCell = th(dayLabel(d), 'date-th' + (data.calendar[d] === false ? ' holiday' : ''));
+      headCell.dataset.date = d;
+      headTr.appendChild(headCell);
     });
     table.appendChild(headTr);
 
@@ -692,6 +724,7 @@ function renderSchedule() {
 
         dates.forEach(function (d) {
           const td = document.createElement('td');
+          td.dataset.date = d;
           if (data.calendar[d] === false) td.classList.add('holiday');
           let val;
           if (rowKey === '生産重量') {
@@ -724,6 +757,7 @@ function renderSchedule() {
     totalTr.appendChild(totalLabelTd);
     dates.forEach(function (d) {
       const td = document.createElement('td');
+      td.dataset.date = d;
       if (data.calendar[d] === false) td.classList.add('holiday');
       const val = dailyMap[d];
       const text = (val !== undefined) ? val.toFixed(1) : '0.0';
@@ -738,4 +772,121 @@ function renderSchedule() {
     block.appendChild(scrollWrap);
     container.appendChild(block);
   });
+}
+
+// ---------- 生産結果明細ポップアップ(工程表のセルクリック) ----------
+// data.works[].bySite[site].itemsByDate[dateKey] は [{part, mark, weight}, ...] の配列
+// (案件マスターの1行=1製品=1本の前提で、合算せず行の出現順のまま保持している)。
+function showDayDetail(site, dateKey) {
+  const works = (state.data.works || []).filter(function (w) {
+    const items = w.bySite && w.bySite[site] && w.bySite[site].itemsByDate;
+    return items && items[dateKey] && items[dateKey].length > 0;
+  });
+  if (works.length === 0) {
+    showCenterAlert('この日の生産データはありません。');
+    return;
+  }
+
+  state.dayDetail = { site: site, dateKey: dateKey };
+
+  const d = parseDateKey(dateKey);
+  document.getElementById('dayDetailTitle').textContent =
+    site + ' ' + (d.getMonth() + 1) + '月' + d.getDate() + '日 生産結果明細';
+
+  const body = document.getElementById('dayDetailBody');
+  body.innerHTML = '';
+  works.forEach(function (w) {
+    body.appendChild(buildDayDetailWorkBlock(w, site, dateKey));
+  });
+
+  document.getElementById('dayDetailOverlay').hidden = false;
+}
+
+// 1工事分の「工事名 合計＝○本、○t」見出し+部位(柱→大梁→小梁→他の順)ごとの
+// 「製品マーク　重量」テーブルを組み立てる。
+function buildDayDetailWorkBlock(w, site, dateKey) {
+  const items = w.bySite[site].itemsByDate[dateKey];
+  const totalWeight = items.reduce(function (sum, it) { return sum + it.weight; }, 0);
+
+  const block = document.createElement('div');
+  block.className = 'day-detail-work';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'day-detail-work-title';
+  titleEl.textContent = w.workName + '　合計＝' + items.length + '本、' + totalWeight.toFixed(1) + 't';
+  block.appendChild(titleEl);
+
+  const table = document.createElement('table');
+  table.className = 'day-detail-table';
+  PARTS.forEach(function (part) {
+    items.filter(function (it) { return it.part === part; }).forEach(function (it) {
+      const tr = document.createElement('tr');
+      const partTd = document.createElement('td');
+      partTd.className = 'day-detail-part-col';
+      partTd.textContent = part;
+      const markTd = document.createElement('td');
+      markTd.textContent = it.mark || '-';
+      const weightTd = document.createElement('td');
+      weightTd.className = 'day-detail-weight-col';
+      weightTd.textContent = it.weight.toFixed(1) + 't';
+      tr.appendChild(partTd);
+      tr.appendChild(markTd);
+      tr.appendChild(weightTd);
+      table.appendChild(tr);
+    });
+  });
+  block.appendChild(table);
+  return block;
+}
+
+// 生産結果明細ポップアップの中身(#dayDetailContent。PDF出力/閉じるボタンは含まない)だけを
+// 縦向きA4 1枚に収まるよう縮小してPDF化する。
+async function downloadDayDetailPdf() {
+  const btn = document.getElementById('dayDetailPdf');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'PDF作成中…';
+  document.body.classList.add('pdf-export');
+
+  // 画面表示用のスクロール制限(day-detail-body の max-height/overflow-y)を外し、
+  // スクロールで隠れている分も含めた全内容を1枚の画像としてキャプチャできるようにする。
+  const bodyEl = document.getElementById('dayDetailBody');
+  const prevMaxHeight = bodyEl.style.maxHeight;
+  const prevOverflowY = bodyEl.style.overflowY;
+  bodyEl.style.maxHeight = 'none';
+  bodyEl.style.overflowY = 'visible';
+  await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    const margin = 24;
+    const maxW = doc.internal.pageSize.getWidth() - margin * 2;
+    const maxH = doc.internal.pageSize.getHeight() - margin * 2;
+
+    const canvas = await html2canvas(document.getElementById('dayDetailContent'), { scale: 2, backgroundColor: '#ffffff' });
+    let w = maxW;
+    let h = (canvas.height / canvas.width) * w;
+    if (h > maxH) { // 縦に長すぎる場合は、幅・高さとも同じ比率で縮小して必ず1ページに収める。
+      w = w * (maxH / h);
+      h = maxH;
+    }
+    const x = margin + (maxW - w) / 2;
+    doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', x, margin, w, h);
+
+    const site = state.dayDetail.site;
+    const d = parseDateKey(state.dayDetail.dateKey);
+    const now = new Date();
+    const timePart = pad2(now.getHours()) + pad2(now.getMinutes()) + pad2(now.getSeconds());
+    doc.save('【' + site + '】' + (d.getMonth() + 1) + '月' + d.getDate() + '日生産結果明細_' + timePart + '.pdf');
+  } catch (err) {
+    console.error(err);
+    showMessage('PDF作成でエラーが発生しました: ' + err.message, 'err');
+  } finally {
+    bodyEl.style.maxHeight = prevMaxHeight;
+    bodyEl.style.overflowY = prevOverflowY;
+    document.body.classList.remove('pdf-export');
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
 }
