@@ -158,9 +158,10 @@ function parseDateKey(key) {
 function eraLabel(d) {
   return 'R' + (d.getFullYear() - 2018) + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日〆';
 }
-// 年度(4月始まり)。3月締めまでが前年度、4月締め以降が新年度。
+// 年度(11月21日始まり・翌年11月20日決算)。11月20日締めまでが前年度、
+// 12月20日締め以降が新年度。
 function fiscalYear(d) {
-  return (d.getMonth() + 1) >= 4 ? d.getFullYear() : d.getFullYear() - 1;
+  return (d.getMonth() + 1) >= 12 ? d.getFullYear() : d.getFullYear() - 1;
 }
 function datesInPeriod(period) {
   const dates = [];
