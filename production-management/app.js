@@ -158,9 +158,9 @@ function parseDateKey(key) {
 function eraLabel(d) {
   return 'R' + (d.getFullYear() - 2018) + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日〆';
 }
-function periodLabel(period) {
-  const fmt = (d) => (d.getMonth() + 1) + '/' + d.getDate();
-  return fmt(period.start) + '〜' + fmt(period.end) + '（' + period.end.getFullYear() + '年' + (period.end.getMonth() + 1) + '月締め）';
+// 年度(4月始まり)。3月締めまでが前年度、4月締め以降が新年度。
+function fiscalYear(d) {
+  return (d.getMonth() + 1) >= 4 ? d.getFullYear() : d.getFullYear() - 1;
 }
 function datesInPeriod(period) {
   const dates = [];
@@ -195,11 +195,14 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   const periodSelect = document.getElementById('periodSelect');
+  const currentFiscalYear = fiscalYear(periodForOffset(0).end);
   PERIOD_OFFSETS.forEach(function (offset) {
     const period = periodForOffset(offset);
     const opt = document.createElement('option');
     opt.value = String(offset);
-    opt.textContent = periodLabel(period);
+    opt.textContent = eraLabel(period.end);
+    // 1年分のリストのうち、当年度より前(前年度)の締めはオレンジ文字で区別する。
+    if (fiscalYear(period.end) < currentFiscalYear) opt.classList.add('prev-fy');
     periodSelect.appendChild(opt);
   });
   periodSelect.addEventListener('change', function () {
