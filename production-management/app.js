@@ -36,6 +36,35 @@ async function apiGet(action) {
 // 現在の画面表示(ヘッダー・ツールバー・グラフ・拠点ごとの工程表)を、そのままPDFとして
 // ダウンロードする。jsPDF単体は日本語フォントを持たないため、html2canvasで各セクションを
 // 画像化してPDFに貼り付ける方式にしている。キャプチャ中だけ.pdf-exportクラスを付け、
+// html2canvasは<select>/<input>の中身(選択中のテキストや入力値)を正しく描画できず、
+// 見えなくなったり途切れたりすることがある。PDFキャプチャ中だけ、同じ内容を表示する
+// 読み取り専用のspanに差し替え、キャプチャ後に元へ戻す。
+function swapControlsForCapture_() {
+  const swaps = [];
+  function swap(el, text) {
+    if (!el) return;
+    const mirror = document.createElement('span');
+    mirror.className = 'pdf-control-mirror';
+    mirror.textContent = text;
+    el.style.display = 'none';
+    el.parentNode.insertBefore(mirror, el);
+    swaps.push({ el: el, mirror: mirror });
+  }
+  const periodSelect = document.getElementById('periodSelect');
+  swap(periodSelect, periodSelect.options[periodSelect.selectedIndex].textContent);
+  SITES.forEach(function (site) {
+    const input = document.getElementById('target' + site);
+    swap(input, input.value);
+  });
+  return swaps;
+}
+function restoreControlsAfterCapture_(swaps) {
+  swaps.forEach(function (s) {
+    s.mirror.remove();
+    s.el.style.display = '';
+  });
+}
+
 // 印刷用と同じ明るい配色・ボタン非表示にして読みやすい見た目にする。
 async function downloadPdf() {
   const btn = document.getElementById('btnPdfDownload');
@@ -45,6 +74,7 @@ async function downloadPdf() {
   document.body.classList.add('pdf-export');
   // クラス切り替えによるレイアウト確定を待つ
   await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+  const controlSwaps = swapControlsForCapture_();
 
   try {
     const { jsPDF } = window.jspdf;
@@ -117,6 +147,7 @@ async function downloadPdf() {
     console.error(err);
     showMessage('PDF作成でエラーが発生しました: ' + err.message, 'err');
   } finally {
+    restoreControlsAfterCapture_(controlSwaps);
     document.body.classList.remove('pdf-export');
     btn.disabled = false;
     btn.textContent = originalLabel;
@@ -412,8 +443,10 @@ function renderChart() {
       },
       plugins: {
         legend: {
+          // colorを指定せずChart.defaults.colorに委ねる。PDF出力時はここを一時的に
+          // 濃い色へ切り替えるため、固定色にすると凡例だけ反映されず薄いままになる。
           labels: {
-            color: '#e7ebf3', boxWidth: 14,
+            boxWidth: 14,
             filter: function (item) { return item.text.indexOf('日次実績') === -1; },
           },
         },

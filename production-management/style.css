@@ -388,10 +388,25 @@ body.pdf-export {
 body.pdf-export .btn-pdf-print,
 body.pdf-export .btn-refresh-header,
 body.pdf-export .refresh-note,
+body.pdf-export .period-nav-btn,
 body.pdf-export .msg { display: none !important; }
 body.pdf-export .app-header { position: static; }
 body.pdf-export .table-scroll,
 body.pdf-export .chart-scroll { overflow: visible !important; }
+/* 1枚目下部の余白を減らすため、PDF時だけグラフを縦に伸ばす。 */
+body.pdf-export .chart-wrap { height: 700px; }
+/* html2canvasは<select>/<input>の中身(選択中のテキストや入力値)を正しく描画できないことが
+   あるため(見えない/途切れる)、PDFキャプチャ中だけ同じ内容のテキストに差し替えて表示する
+   (JS側でmirror要素を生成・削除する。詳細はswapControlsForCapture_)。 */
+body.pdf-export .pdf-control-mirror {
+  display: inline-block;
+  background: #f4f4f7;
+  color: #111111 !important;
+  border: 1px solid #999999;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+}
 
 /* html2canvasはCSSカスタムプロパティ(var(--text)等)の解決や、position:stickyの
    セルを完全には正しく描画できないことがあるため、工程表まわりは色・位置を
@@ -418,7 +433,11 @@ body.pdf-export table.schedule-table tr.weight-row td { color: #1a5fb4 !importan
 
 /* PDFでは日付列の大半が空欄になりがちで横方向に余裕があるため、工事名を画面表示用の
    4文字ごとの折り返しをやめて1行にまとめる(work-name内の各断片をinline化して連結する)。
-   その分work-name-col自体も広げ、日付列の幅計算(TABLE_LEAD_WIDTH相当)もそれに合わせる。 */
+   部位ラベル列・日付列も、画面表示時の幅の1.25倍の固定幅にする。パーセント計算のままだと
+   合計が100%を超えられないため、表自体の幅を100%固定から外し(auto)、各列とも固定pxで
+   指定した分だけ表を横に広げる(.table-scrollはoverflow:visibleなのではみ出しても
+   隠れず、最終的にPDF画像として1ページ幅に収まるよう縮小されるので問題ない)。 */
+body.pdf-export table.schedule-table { width: auto; }
 body.pdf-export table.schedule-table th.work-name-col,
 body.pdf-export table.schedule-table td.work-name-col {
   width: 160px !important;
@@ -429,7 +448,15 @@ body.pdf-export table.schedule-table td.work-name-col .work-name,
 body.pdf-export table.schedule-table td.work-name-col .work-name div {
   display: inline;
 }
+body.pdf-export table.schedule-table th.part-label,
+body.pdf-export table.schedule-table td.part-label {
+  width: 60px !important; /* 画面表示の48pxの1.25倍 */
+  min-width: 60px !important;
+  max-width: 60px !important;
+}
 body.pdf-export table.schedule-table td:not(.work-name-col):not(.part-label),
 body.pdf-export table.schedule-table th:not(.work-name-col):not(.part-label) {
-  width: calc((100% - 208px) / var(--num-dates, 31)) !important;
+  width: 48px !important; /* 画面表示時の実効幅(概算)の1.25倍相当 */
+  min-width: 48px !important;
+  max-width: 48px !important;
 }
