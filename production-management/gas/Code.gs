@@ -72,7 +72,7 @@ function getDashboardData_() {
   const folder = getCacheFolder_();
   const cached = loadCache_(folder);
   if (cached) return cached;
-  return refreshAndGetData_();
+  return refreshAndGetData_(folder);
 }
 
 // 手動更新ボタン、および毎日の自動トリガー(dailyRefresh)から呼ばれる本体処理。
@@ -81,12 +81,16 @@ function getDashboardData_() {
 // _records_cache.jsonの読み書きが競合して同名ファイルが重複作成されることがある。
 // スクリプトロックで直列化し、後発の呼び出しは先発の完了(=キャッシュ更新)を待ってから
 // 実行する。
-function refreshAndGetData_() {
+// folder: 呼び出し元(getDashboardData_)が既に取得済みのフォルダがあれば渡してもらい、
+// DriveApp.getFileById(...).getParents()の呼び出し(ネットワーク往復)を1回省略する。
+// 未指定(dailyRefresh等からの呼び出し)ならここで1回だけ取得する。
+function refreshAndGetData_(folder) {
   const lock = LockService.getScriptLock();
   lock.waitLock(120000); // 先行する集計の完了を最大2分待つ
   try {
-    const data = runFullAggregation_();
-    saveCache_(getCacheFolder_(), data);
+    const targetFolder = folder || getCacheFolder_();
+    const data = runFullAggregation_(targetFolder);
+    saveCache_(targetFolder, data);
     return data;
   } finally {
     lock.releaseLock();
@@ -109,10 +113,11 @@ function createDailyTrigger() {
 
 // Apps Scriptエディタから手動で実行して、索引スプレッドシートの構成を確認する。
 function checkSetup() {
-  const idx = readFileIndex_();
-  const names = readWorkNameMap_();
-  const cal = readCalendar_();
-  const targets = readTargets_();
+  const rows = readIndexRows_();
+  const idx = readFileIndex_(rows);
+  const names = readWorkNameMap_(rows);
+  const cal = readCalendar_(rows);
+  const targets = readTargets_(rows);
   Logger.log('案件マスターファイル: ' + idx.length + '件(00-00は除外済み)');
   Logger.log('工事番号→工事名リスト: ' + Object.keys(names).length + '件');
   Logger.log('カレンダー日数: ' + Object.keys(cal).length + '件');
@@ -137,16 +142,24 @@ function extractFileIdFromUrl_(url) {
   return m ? m[1] : '';
 }
 
-// A:E列。工事番号が空、または"00-00"の行(テンプレートファイル)は除外する。
-// マスタNo(B列)の先頭が"S"ならスプレッドシート、それ以外(数字のみ・"E"始まり等)は
-// Excelファイルとして扱う(過去分の無印マスタNoも従来通りExcel扱いになる)。
-function readFileIndex_() {
+// A〜L列をまとめて1回のgetValues()で読み取る(以前はA:E/G:H/I:J/K:Lをそれぞれ個別に
+// getRange().getValues()しており、案件一覧・工事名リスト・カレンダー・目標値を読むたびに
+// 4回のSpreadsheetApp往復が発生していた。SpreadsheetApp呼び出しはネットワーク往復を伴うため、
+// 1回にまとめることでrunFullAggregation_・checkSetup双方の実行のたびに発生していた無駄な
+// 往復を減らす)。F列は空き列だが範囲に含めても実害はない。
+function readIndexRows_() {
   const sh = indexSheet_();
   const lastRow = sh.getLastRow();
   if (lastRow < 2) return [];
-  const values = sh.getRange(2, 1, lastRow - 1, 5).getValues();
+  return sh.getRange(2, 1, lastRow - 1, 12).getValues(); // A:L
+}
+
+// A:E列。工事番号が空、または"00-00"の行(テンプレートファイル)は除外する。
+// マスタNo(B列)の先頭が"S"ならスプレッドシート、それ以外(数字のみ・"E"始まり等)は
+// Excelファイルとして扱う(過去分の無印マスタNoも従来通りExcel扱いになる)。
+function readFileIndex_(rows) {
   const list = [];
-  values.forEach(function (row) {
+  rows.forEach(function (row) {
     const workNo = String(row[2] || '').trim();
     const fileName = String(row[3] || '').trim();
     const url = String(row[4] || '').trim();
@@ -157,7 +170,6 @@ function readFileIndex_() {
     const masterNo = row[1];
     const sourceType = /^s/i.test(String(masterNo || '').trim()) ? 'sheet' : 'excel';
     list.push({
-      drive: String(row[0] || '').trim(),
       masterNo: masterNo,
       workNo: workNo,
       fileName: fileName,
@@ -169,30 +181,22 @@ function readFileIndex_() {
 }
 
 // G:H列。工事番号→工事名の対応表。
-function readWorkNameMap_() {
-  const sh = indexSheet_();
-  const lastRow = sh.getLastRow();
-  if (lastRow < 2) return {};
-  const values = sh.getRange(2, 7, lastRow - 1, 2).getValues(); // G,H
+function readWorkNameMap_(rows) {
   const map = {};
-  values.forEach(function (row) {
-    const no = String(row[0] || '').trim();
-    const name = String(row[1] || '').trim();
+  rows.forEach(function (row) {
+    const no = String(row[6] || '').trim();
+    const name = String(row[7] || '').trim();
     if (no) map[no] = name;
   });
   return map;
 }
 
 // I:J列。会社カレンダー。{ "yyyy-MM-dd": true(出勤)/false(休日) }
-function readCalendar_() {
-  const sh = indexSheet_();
-  const lastRow = sh.getLastRow();
-  if (lastRow < 2) return {};
-  const values = sh.getRange(2, 9, lastRow - 1, 2).getValues(); // I,J
+function readCalendar_(rows) {
   const cal = {};
-  values.forEach(function (row) {
-    const dateVal = row[0];
-    const holiday = String(row[1] || '').trim();
+  rows.forEach(function (row) {
+    const dateVal = row[8];
+    const holiday = String(row[9] || '').trim();
     if (!(dateVal instanceof Date)) return;
     const key = dateToYmdJst_(dateVal);
     cal[key] = (holiday === '出勤');
@@ -201,15 +205,11 @@ function readCalendar_() {
 }
 
 // K:L列。拠点別の目標日産量デフォルト(トン)。
-function readTargets_() {
-  const sh = indexSheet_();
-  const lastRow = sh.getLastRow();
-  if (lastRow < 2) return {};
-  const values = sh.getRange(2, 11, lastRow - 1, 2).getValues(); // K,L
+function readTargets_(rows) {
   const targets = {};
-  values.forEach(function (row) {
-    const site = String(row[0] || '').trim();
-    const val = row[1];
+  rows.forEach(function (row) {
+    const site = String(row[10] || '').trim();
+    const val = row[11];
     if (site && val !== '' && val !== null) targets[site] = Number(val) || 0;
   });
   return targets;
@@ -360,12 +360,14 @@ function parseMasterSheet_(convertedSheetId, calendarMinKey, calendarMaxKey) {
 
 // ========== 集計本体 ==========
 
-function runFullAggregation_() {
-  const fileIndex = readFileIndex_();
-  const workNames = readWorkNameMap_();
-  const calendar = readCalendar_();
-  const targets = readTargets_();
-  const folder = getCacheFolder_();
+// folder: getDashboardData_/refreshAndGetData_が既に取得済みのフォルダを渡してもらい、
+// ここで改めてgetCacheFolder_()を呼び直さない(1リクエストあたりのDrive API往復を減らす)。
+function runFullAggregation_(folder) {
+  const rows = readIndexRows_();
+  const fileIndex = readFileIndex_(rows);
+  const workNames = readWorkNameMap_(rows);
+  const calendar = readCalendar_(rows);
+  const targets = readTargets_(rows);
 
   const calKeys = Object.keys(calendar).sort();
   const calendarMinKey = calKeys.length ? calKeys[0] : '0000-00-00';
