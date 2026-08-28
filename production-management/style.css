@@ -7,8 +7,8 @@
   --muted: #93a0b8;
   --accent: #4da3ff;
   --honsha: #4da3ff;
-  --yumesaki: #35c98b;
-  --tottori: #ffb454;
+  --yumesaki: #ffb454;
+  --tottori: #35c98b;
   --holiday: #2a2030;
   --ok: #35c98b;
   --warn: #ffb454;
@@ -139,8 +139,8 @@ select option.prev-fy { color: var(--tottori); }
 .site-btn:last-child { margin-right: 0; }
 .site-btn:hover { transform: translateY(-2px) scale(1.5); position: relative; z-index: 2; }
 .site-btn[data-site="本社"]:hover { border-color: var(--honsha); box-shadow: 0 0 9px 2px rgba(77, 163, 255, 0.55); }
-.site-btn[data-site="夢前"]:hover { border-color: var(--yumesaki); box-shadow: 0 0 9px 2px rgba(53, 201, 139, 0.55); }
-.site-btn[data-site="鳥取"]:hover { border-color: var(--tottori); box-shadow: 0 0 9px 2px rgba(255, 180, 84, 0.55); }
+.site-btn[data-site="夢前"]:hover { border-color: var(--yumesaki); box-shadow: 0 0 9px 2px rgba(255, 180, 84, 0.55); }
+.site-btn[data-site="鳥取"]:hover { border-color: var(--tottori); box-shadow: 0 0 9px 2px rgba(53, 201, 139, 0.55); }
 .site-btn.on[data-site="本社"] { background: var(--honsha); color: #06111f; border-color: var(--honsha); }
 .site-btn.on[data-site="夢前"] { background: var(--yumesaki); color: #06111f; border-color: var(--yumesaki); }
 .site-btn.on[data-site="鳥取"] { background: var(--tottori); color: #06111f; border-color: var(--tottori); }
@@ -261,8 +261,8 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .cum-stat-card .avg.warn, .cum-stat-card .avg.warn .unit { color: #ff2b2b !important; font-weight: 800; }
 .cum-stat-card.below-target { animation: glow-pulse-site 1.8s ease-in-out infinite; }
 .cum-stat-card.honsha.below-target { --glow-rgb: 77, 163, 255; }
-.cum-stat-card.yumesaki.below-target { --glow-rgb: 53, 201, 139; }
-.cum-stat-card.tottori.below-target { --glow-rgb: 255, 180, 84; }
+.cum-stat-card.yumesaki.below-target { --glow-rgb: 255, 180, 84; }
+.cum-stat-card.tottori.below-target { --glow-rgb: 53, 201, 139; }
 @keyframes glow-pulse-site {
   0%, 100% { box-shadow: 0 0 6px 2px rgba(var(--glow-rgb), 0.55), 0 0 14px 4px rgba(var(--glow-rgb), 0.25); }
   50% { box-shadow: 0 0 10px 4px rgba(var(--glow-rgb), 0.9), 0 0 24px 9px rgba(var(--glow-rgb), 0.5); }
