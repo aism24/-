@@ -125,6 +125,7 @@ async function buildPdf_(btn, opts) {
     // 通常表示用の明るい文字色のままキャプチャすると白背景のPDF上でほぼ見えなくなる。
     // 濃い色で一時的に再描画してキャプチャし、直後に元の色へ戻す(失敗時も必ず戻す)。
     const originalAnimation = Chart.defaults.animation;
+    let chartCanvas;
     try {
       Chart.defaults.color = '#111111';
       // アニメーション有効のままだと、再描画直後はcanvasにまだ何も描かれていない(または
@@ -136,7 +137,11 @@ async function buildPdf_(btn, opts) {
       // Chart.jsの描画自体もrequestAnimationFrameで行われるため、再描画呼び出し直後では
       // なく数フレーム後にキャプチャする。
       await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
-      await addElementImage(document.querySelectorAll('.panel')[0]); // 生産量グラフ
+      if (opts.combineChartAndSchedule) {
+        chartCanvas = await html2canvas(document.querySelectorAll('.panel')[0], { scale: 2, backgroundColor: '#ffffff' });
+      } else {
+        await addElementImage(document.querySelectorAll('.panel')[0]); // 生産量グラフ
+      }
     } finally {
       Chart.defaults.color = '#e7ebf3';
       Chart.defaults.animation = originalAnimation;
@@ -144,7 +149,23 @@ async function buildPdf_(btn, opts) {
       renderChart();
     }
 
-    await addElementImage(document.getElementById('scheduleArea'), { alwaysNewPage: opts.scheduleAlwaysNewPage });
+    if (opts.combineChartAndSchedule) {
+      // 工場別PDF: グラフと工程表を必ず同じ1ページに収める。それぞれ独立にaddElementImage
+      // すると、2つ目(工程表)が入り切らない時に自動で2ページ目へ送られてしまうため、
+      // ここでは2枚をまとめて採寸し、収まらない場合は2枚まとめて同じ比率で縮小する。
+      const scheduleCanvas = await html2canvas(document.getElementById('scheduleArea'), { scale: 2, backgroundColor: '#ffffff' });
+      const gap = 14;
+      const chartH = (chartCanvas.height / chartCanvas.width) * maxW;
+      const scheduleH = (scheduleCanvas.height / scheduleCanvas.width) * maxW;
+      const scale = Math.min(1, maxH / (chartH + gap + scheduleH));
+      const w = maxW * scale;
+      const chartHFinal = chartH * scale;
+      const scheduleHFinal = scheduleH * scale;
+      doc.addImage(chartCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin, cursorY, w, chartHFinal);
+      doc.addImage(scheduleCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin, cursorY + chartHFinal + gap * scale, w, scheduleHFinal);
+    } else {
+      await addElementImage(document.getElementById('scheduleArea'), { alwaysNewPage: opts.scheduleAlwaysNewPage });
+    }
 
     // ファイル名は「ダウンロード日付_(拠点名_)締め日_時刻」の順
     // (例: 20260828_R8年9月20日〆_103618 / 20260828_本社_R8年9月20日〆_103618)。
@@ -176,12 +197,12 @@ function downloadPdfAll() {
 }
 
 // 「工場別PDF」: アプリ行・ツールバー(拠点/締日/目標日産量)は含めず、選択中の1拠点の
-// グラフと工程表だけを同じページに続けて1枚に収める。
+// グラフと工程表を必ず同じ1ページに収める(収まらなければ2枚まとめて縮小する)。
 function downloadPdfSite() {
   const site = Array.from(state.selectedSites)[0];
   return buildPdf_(document.getElementById('btnPdfSite'), {
     includeHeaderToolbar: false,
-    scheduleAlwaysNewPage: false,
+    combineChartAndSchedule: true,
     filenameTag: site,
   });
 }
@@ -190,6 +211,13 @@ function showMessage(text, kind) {
   const el = document.getElementById('msgArea');
   el.textContent = text;
   el.className = 'msg' + (kind ? ' ' + kind : '');
+}
+
+// ブラウザ標準のalert()は画面上部に出て見落としやすいため、案内メッセージは
+// 画面中央のポップアップ(#alertOverlay)で表示する。
+function showCenterAlert(message) {
+  document.getElementById('alertBody').textContent = message;
+  document.getElementById('alertOverlay').hidden = false;
 }
 
 // ---------- 期間(前月21日〜当月20日)の計算 ----------
@@ -327,14 +355,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
   document.getElementById('btnPdfAll').addEventListener('click', function () {
     if (state.selectedSites.size !== SITES.length) {
-      alert('拠点を「全て」に選択してください');
+      showCenterAlert('拠点を「全て」に選択してください');
       return;
     }
     downloadPdfAll();
   });
   document.getElementById('btnPdfSite').addEventListener('click', function () {
     if (state.selectedSites.size !== 1) {
-      alert('拠点を1つ選択してください');
+      showCenterAlert('拠点を1つ選択してください');
       return;
     }
     downloadPdfSite();
@@ -342,6 +370,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
   document.getElementById('mismatchClose').addEventListener('click', function () {
     document.getElementById('mismatchOverlay').hidden = true;
+  });
+  document.getElementById('alertClose').addEventListener('click', function () {
+    document.getElementById('alertOverlay').hidden = true;
   });
 
   loadData(false);
