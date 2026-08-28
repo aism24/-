@@ -32,6 +32,10 @@ let scheduleHoverCell = null;
 // 通常表示に戻す最後の再描画までツールチップが無効なままになりかねないため、専用のフラグにする。
 let pdfCaptureMode = false;
 
+// 「工場別PDF」出力中だけtrueにする(buildPdf_内でのみ切り替える)。trueの間、
+// renderChartはグラフ上部(Chart.jsのtitle領域)に選択中拠点の合計生産重量を表示する。
+let showChartTotal = false;
+
 // ---------- GAS API ----------
 async function apiGet(action) {
   const url = new URL(GAS_API_URL);
@@ -138,6 +142,9 @@ async function buildPdf_(btn, opts) {
       // あったため、キャプチャ用の再描画はアニメーション無しにする。
       Chart.defaults.animation = false;
       pdfCaptureMode = true;
+      // 「工場別PDF」だけ、グラフ上部(Chart.jsのtitle領域。凡例と重ならない専用の
+      // レイアウト枠)に選択中拠点の合計生産重量をテキストで入れる。
+      showChartTotal = !!opts.showChartTotal;
       renderChart();
       // Chart.jsの描画自体もrequestAnimationFrameで行われるため、再描画呼び出し直後では
       // なく数フレーム後にキャプチャする。
@@ -151,6 +158,7 @@ async function buildPdf_(btn, opts) {
       Chart.defaults.color = '#e7ebf3';
       Chart.defaults.animation = originalAnimation;
       pdfCaptureMode = false;
+      showChartTotal = false;
       renderChart();
     }
 
@@ -208,6 +216,7 @@ function downloadPdfSite() {
   return buildPdf_(document.getElementById('btnPdfSite'), {
     includeHeaderToolbar: false,
     combineChartAndSchedule: true,
+    showChartTotal: true,
     filenameTag: site,
   });
 }
@@ -539,8 +548,11 @@ function renderChart() {
       // (棒・目標ライン・目標日産量)には出さないよう、チャート全体の既定はdisplay:falseにし、
       // ここだけ個別にtrueで上書きする。
       datalabels: {
-        display: true, color: chartColor, align: 'top', anchor: 'end',
-        font: { size: 9 }, formatter: function (v) { return v.toFixed(1); },
+        // 毎日分表示すると数字同士が重なって見づらいため、期間最終日(締め日)の
+        // 1点だけに絞って表示する。
+        display: function (ctx) { return ctx.dataIndex === ctx.dataset.data.length - 1; },
+        color: chartColor, align: 'left', anchor: 'end',
+        font: { size: 10, weight: 'bold' }, formatter: function (v) { return v.toFixed(1) + 't'; },
       },
     });
     datasets.push({
@@ -597,6 +609,16 @@ function renderChart() {
         // chartjs-plugin-datalabelsの既定はここでオフにし、累積実績のデータセットだけ
         // dataset.datalabels.display:trueで個別に上書きする(棒・目標系には出さない)。
         datalabels: { display: false },
+        // 「工場別PDF」出力時だけ、選択中拠点の合計生産重量をグラフ上部に表示する。
+        // Chart.js自身のtitle領域を使うことで、凡例(legend)と場所が重ならないように
+        // レイアウトが自動調整される(HTML要素を重ねる方式だと凡例と衝突しやすいため)。
+        title: {
+          display: showChartTotal && cumStats.length > 0,
+          text: cumStats.length ? '合計生産重量　' + cumStats[0].value.toFixed(1) + 't' : '',
+          color: '#111111',
+          font: { size: 15, weight: 'bold' },
+          padding: { bottom: 10 },
+        },
         legend: {
           // colorを指定せずChart.defaults.colorに委ねる。PDF出力時はここを一時的に
           // 濃い色へ切り替えるため、固定色にすると凡例だけ反映されず薄いままになる。
