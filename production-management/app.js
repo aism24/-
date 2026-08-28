@@ -23,6 +23,9 @@ let state = {
   dayDetail: null, // 生産結果明細ポップアップで開いている{site, dateKey}(PDF出力のファイル名生成用)
 };
 
+// 工程表で現在ハイライト中の列({table, dateKey})。setScheduleColumnHover_でのみ更新する。
+let scheduleHoverCell = null;
+
 // PDFキャプチャ用にグラフを再描画している間だけtrueにする(downloadPdf内でのみ切り替える)。
 // body.pdf-exportクラスの有無で判定すると、クラスが外れるタイミングとの前後関係次第で
 // 通常表示に戻す最後の再描画までツールチップが無効なままになりかねないため、専用のフラグにする。
@@ -386,6 +389,22 @@ document.addEventListener('DOMContentLoaded', function () {
     const table = cell.closest('table.schedule-table');
     if (!table) return;
     showDayDetail(table.dataset.site, cell.dataset.date);
+  });
+  // クリックできる列であることが分かるよう、カーソルを合わせたセルと同じ日付の列全体
+  // (日付見出し〜合計行まで)を水色でハイライトする。工程表は複数の拠点ブロックに分かれて
+  // 独立したtableを持つため、拠点をまたいで同じ日付を誤ってハイライトしないようtable単位で
+  // 管理する。
+  document.getElementById('scheduleArea').addEventListener('mouseover', function (e) {
+    const cell = e.target.closest('[data-date]');
+    const table = cell && cell.closest('table.schedule-table');
+    if (table) {
+      setScheduleColumnHover_(table, cell.dataset.date);
+    } else {
+      setScheduleColumnHover_(null, null);
+    }
+  });
+  document.getElementById('scheduleArea').addEventListener('mouseleave', function () {
+    setScheduleColumnHover_(null, null);
   });
   document.getElementById('dayDetailClose').addEventListener('click', function () {
     document.getElementById('dayDetailOverlay').hidden = true;
@@ -777,6 +796,25 @@ function renderSchedule() {
     block.appendChild(scrollWrap);
     container.appendChild(block);
   });
+}
+
+// クリックできる列であることが一目で分かるよう、カーソルを合わせたセルと同じ日付の
+// td/th(日付見出し〜合計行まで)全体に.date-col-hoverを付け外しする。table/dateKeyが
+// nullなら現在のハイライトを解除するだけ。同じ列に留まっている間は無駄にDOMを
+// 触らないよう、直前とtable・dateKeyが同じ場合は何もしない。
+function setScheduleColumnHover_(table, dateKey) {
+  if (scheduleHoverCell && scheduleHoverCell.table === table && scheduleHoverCell.dateKey === dateKey) return;
+  if (scheduleHoverCell) {
+    scheduleHoverCell.table.querySelectorAll('.date-col-hover').forEach(function (el) {
+      el.classList.remove('date-col-hover');
+    });
+  }
+  scheduleHoverCell = (table && dateKey) ? { table: table, dateKey: dateKey } : null;
+  if (scheduleHoverCell) {
+    table.querySelectorAll('[data-date="' + dateKey + '"]').forEach(function (el) {
+      el.classList.add('date-col-hover');
+    });
+  }
 }
 
 // ---------- 生産結果明細ポップアップ(工程表のセルクリック) ----------
