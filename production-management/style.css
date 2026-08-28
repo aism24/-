@@ -46,17 +46,20 @@ body {
 .refresh-note { margin-left: auto; color: var(--text); font-size: 0.78rem; max-width: 360px; text-align: right; }
 
 .btn-pdf-print {
-  background: var(--panel2);
-  color: var(--text);
-  border: 1px solid var(--accent);
+  background: #ffd6e8;
+  color: #0b3fae;
+  border: 1px solid #ffb3d1;
   border-radius: 8px;
   padding: 8px 16px;
   font-size: 0.9rem;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 }
-.btn-pdf-print:hover { transform: translateY(-2px); box-shadow: 0 0 8px 2px rgba(77, 163, 255, 0.5); }
+.btn-pdf-print:hover { transform: translateY(-2px); box-shadow: 0 0 8px 2px rgba(255, 105, 180, 0.5); }
+/* 拠点の選択状態と合っていないボタンは見た目だけ薄くする(クリックは塞がない。押されたら
+   ポップアップで案内する)。 */
+.btn-pdf-print.soft-disabled { opacity: 0.4; }
 
 .btn-refresh-header {
   background: #ffd400;
