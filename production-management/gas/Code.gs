@@ -59,7 +59,7 @@ function doGet(e) {
   try {
     const action = (e && e.parameter && e.parameter.action) || 'getData';
     if (action === 'getData') return ok_(getDashboardData_());
-    if (action === 'refresh') return ok_(refreshAndGetData_());
+    if (action === 'refresh') return userRefresh_();
     return errRes_('不明なaction: ' + action);
   } catch (err) {
     return errRes_(err.message);
@@ -71,6 +71,7 @@ function jsonResponse_(payload) {
 }
 function ok_(data) { return jsonResponse_({ status: 'success', data: data }); }
 function errRes_(message) { return jsonResponse_({ status: 'error', message: message }); }
+function busyRes_(message) { return jsonResponse_({ status: 'busy', message: message }); }
 
 // キャッシュがあればそれを返し、無ければ初回のみ集計する。
 function getDashboardData_() {
@@ -80,7 +81,9 @@ function getDashboardData_() {
   return refreshAndGetData_(folder);
 }
 
-// 手動更新ボタン、および毎日の自動トリガー(dailyRefresh)から呼ばれる本体処理。
+// getDashboardData_(初回・キャッシュが無い場合のみ)、および毎日の自動トリガー
+// (dailyRefresh)から呼ばれる本体処理。どちらも画面の前で人が待っているボタン操作では
+// ないため、先行する集計の完了を長めに待ってから実行してよい。
 // 「現時点のデータを取得」が短時間に連打されたり、自動トリガーと手動更新が重なったりすると、
 // ロックが無い場合はrunFullAggregation_が並行して複数走り、_cache_dashboard.json や
 // _records_cache.jsonの読み書きが競合して同名ファイルが重複作成されることがある。
@@ -97,6 +100,26 @@ function refreshAndGetData_(folder) {
     const data = runFullAggregation_(targetFolder);
     saveCache_(targetFolder, data);
     return data;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 「現時点のデータを取得」ボタン(action=refresh)専用のエントリーポイント。
+// refreshAndGetData_と違い、既に他の集計(別の人の同時クリック、または自動トリガー)が
+// 実行中でロックを取れない場合は、120秒待って画面を固まらせたりタイムアウトエラーに
+// したりせず、その場で「他の人が更新中」であることをすぐ返す(ボタンのほぼ同時押し程度は
+// 3秒のtryLockで吸収できるが、実際に集計が走っている間はほぼ確実にbusyになる)。
+function userRefresh_() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) {
+    return busyRes_('他の人がデータを更新中です。完了までしばらくお待ちください(通常は数十秒程度で終わります)。');
+  }
+  try {
+    const folder = getCacheFolder_();
+    const data = runFullAggregation_(folder);
+    saveCache_(folder, data);
+    return ok_(data);
   } finally {
     lock.releaseLock();
   }

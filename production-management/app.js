@@ -47,6 +47,14 @@ async function apiGet(action) {
   const res = await fetch(url.toString(), { method: 'GET' });
   if (!res.ok) throw new Error('サーバーエラー(HTTP ' + res.status + ')');
   const json = await res.json();
+  // GAS側(action=refresh)が、他の人の更新処理とロックが競合してすぐには実行できなかった
+  // 場合に返すステータス。通常のエラーと区別し、呼び出し元(loadData)で専用のポップアップを
+  // 出せるようにerr.busyを立てて投げる。
+  if (json.status === 'busy') {
+    const busyErr = new Error(json.message || '他の人がデータを更新中です。しばらく待ってから再度お試しください。');
+    busyErr.busy = true;
+    throw busyErr;
+  }
   if (json.status !== 'success') throw new Error(json.message || '取得に失敗しました');
   return json.data;
 }
@@ -489,7 +497,14 @@ async function loadData(forceRefresh) {
     renderNameMismatchPopup(data.nameMismatches);
   } catch (err) {
     console.error(err);
-    showMessage('エラー: ' + err.message, 'err');
+    // 他の人が更新中でロックが取れなかった場合は、他のエラーと違い一時的なもので
+    // 見落としやすいため、画面下のメッセージ欄ではなく画面中央のポップアップで案内する。
+    if (err.busy) {
+      showMessage('', '');
+      showCenterAlert(err.message);
+    } else {
+      showMessage('エラー: ' + err.message, 'err');
+    }
   } finally {
     btn.disabled = false;
   }
