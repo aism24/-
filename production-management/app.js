@@ -105,12 +105,13 @@ async function downloadPdf() {
     // 拠点ごとに別ページにせず、3拠点の工程表をまとめて1枚の画像として1ページに収める。
     await addElementImage(document.getElementById('scheduleArea'), { alwaysNewPage: true });
 
-    // ファイル名に締め日(例: R8年9月20日〆)を入れて中身が分かるようにし、さらに
-    // ダウンロードした日時を付けて、同じ締め日を何度出力しても重複しないようにする。
+    // ファイル名は「ダウンロード日付_締め日_時刻」の順(例: 20260828_R8年9月20日〆_103618)。
+    // 日付を先頭にすることでファイル一覧が日付順に並び、時刻は末尾にして同じ締め日を
+    // 何度出力しても重複しないようにする。
     const now = new Date();
-    const timestamp = now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate()) +
-      '_' + pad2(now.getHours()) + pad2(now.getMinutes()) + pad2(now.getSeconds());
-    const fname = '生産管理ダッシュボード_' + eraLabel(state.period.end) + '_' + timestamp + '.pdf';
+    const datePart = now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate());
+    const timePart = pad2(now.getHours()) + pad2(now.getMinutes()) + pad2(now.getSeconds());
+    const fname = datePart + '_' + eraLabel(state.period.end) + '_' + timePart + '.pdf';
     doc.save(fname);
   } catch (err) {
     console.error(err);
