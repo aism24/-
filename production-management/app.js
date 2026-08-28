@@ -196,6 +196,8 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   const periodSelect = document.getElementById('periodSelect');
+  const periodPrevBtn = document.getElementById('periodPrev');
+  const periodNextBtn = document.getElementById('periodNext');
   const currentFiscalYear = fiscalYear(periodForOffset(0).end);
   PERIOD_OFFSETS.forEach(function (offset) {
     const period = periodForOffset(offset);
@@ -206,11 +208,32 @@ document.addEventListener('DOMContentLoaded', function () {
     if (fiscalYear(period.end) < currentFiscalYear) opt.classList.add('prev-fy');
     periodSelect.appendChild(opt);
   });
-  periodSelect.addEventListener('change', function () {
-    state.period = periodForOffset(Number(periodSelect.value));
+
+  // PERIOD_OFFSETSは[0, -1, ..., -11]の順(先頭が最新月、末尾が最も古い月)。
+  // ▼(1ヶ月前)は末尾方向、▲(翌月)は先頭方向へ1つ進む。リストの端に達したら
+  // その方向のボタンをグレーアウトする。
+  function selectPeriodOffset(offset) {
+    periodSelect.value = String(offset);
+    state.period = periodForOffset(offset);
+    const idx = PERIOD_OFFSETS.indexOf(offset);
+    periodPrevBtn.disabled = (idx >= PERIOD_OFFSETS.length - 1);
+    periodNextBtn.disabled = (idx <= 0);
     renderAll();
+  }
+
+  periodSelect.addEventListener('change', function () {
+    selectPeriodOffset(Number(periodSelect.value));
   });
-  state.period = periodForOffset(0);
+  periodPrevBtn.addEventListener('click', function () {
+    const idx = PERIOD_OFFSETS.indexOf(Number(periodSelect.value));
+    if (idx < PERIOD_OFFSETS.length - 1) selectPeriodOffset(PERIOD_OFFSETS[idx + 1]);
+  });
+  periodNextBtn.addEventListener('click', function () {
+    const idx = PERIOD_OFFSETS.indexOf(Number(periodSelect.value));
+    if (idx > 0) selectPeriodOffset(PERIOD_OFFSETS[idx - 1]);
+  });
+
+  selectPeriodOffset(0);
 
   SITES.forEach(function (site) {
     document.getElementById('target' + site).addEventListener('input', function (e) {
