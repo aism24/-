@@ -170,6 +170,38 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
 .msg.loading { color: var(--err); font-weight: 700; animation: blink-slow 1.6s ease-in-out infinite; }
 @keyframes blink-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
+/* 索引シートのファイル名と実際のドライブ上のファイル名が食い違っている場合の警告ポップアップ。 */
+.mismatch-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+.mismatch-overlay[hidden] { display: none; }
+.mismatch-modal {
+  background: var(--panel);
+  border: 2px solid #ffd400;
+  border-radius: 10px;
+  padding: 20px 24px;
+  max-width: 480px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+.mismatch-title { font-weight: 800; font-size: 1.05rem; color: #ffd400; margin-bottom: 10px; }
+.mismatch-body { font-size: 0.85rem; line-height: 1.7; white-space: pre-line; color: var(--text); margin-bottom: 16px; }
+.mismatch-close {
+  background: #ffd400;
+  color: #0b3fae;
+  font-weight: 800;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 20px;
+  cursor: pointer;
+}
+
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);

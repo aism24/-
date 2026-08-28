@@ -221,6 +221,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
   document.getElementById('btnPdfDownload').addEventListener('click', downloadPdf);
 
+  document.getElementById('mismatchClose').addEventListener('click', function () {
+    document.getElementById('mismatchOverlay').hidden = true;
+  });
+
   loadData(false);
 });
 
@@ -246,12 +250,31 @@ async function loadData(forceRefresh) {
 
     const warnEl = document.getElementById('warningsArea');
     warnEl.textContent = (data.warnings && data.warnings.length) ? data.warnings.join('\n') : '';
+
+    renderNameMismatchPopup(data.nameMismatches);
   } catch (err) {
     console.error(err);
     showMessage('エラー: ' + err.message, 'err');
   } finally {
     btn.disabled = false;
   }
+}
+
+// 索引シートのD列(ファイル名)と、実際にドライブ上にあるファイルの名前が食い違っている
+// 案件があれば、工事が差し替わったのに索引シートの更新が漏れている可能性が高いのでポップアップ表示する。
+function renderNameMismatchPopup(nameMismatches) {
+  const overlay = document.getElementById('mismatchOverlay');
+  if (!nameMismatches || !nameMismatches.length) {
+    overlay.hidden = true;
+    return;
+  }
+  const body = document.getElementById('mismatchBody');
+  body.textContent = nameMismatches.map(function (m) {
+    return '工事番号「' + m.workNo + '」: 索引シートのファイル名は「' + m.indexFileName +
+      '」ですが、実際のファイル名は「' + m.actualFileName + '」になっています。' +
+      '工事が差し替わっている可能性があるため、管理者に工事更新依頼をしてください。';
+  }).join('\n\n');
+  overlay.hidden = false;
 }
 
 function renderAll() {

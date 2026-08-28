@@ -335,6 +335,7 @@ function runFullAggregation_() {
   const dailyBySite = {}; // site -> { dateKey: weight }
   const worksMap = {}; // workNo -> { workName, bySite: { site: { byPart: {part: {dateKey:qty}}, weightByDate: {dateKey:weight} } } }
   const warnings = [];
+  const nameMismatches = [];
 
   fileIndex.forEach(function (entry) {
     let records;
@@ -344,6 +345,18 @@ function runFullAggregation_() {
     } catch (err) {
       warnings.push('「' + entry.fileName + '」の読み込みに失敗しました: ' + err.message);
       return;
+    }
+
+    // 使い回しの枠(2〜18行目など)は、工事が切り替わった際に索引シートのD列(ファイル名)を
+    // 更新し忘れると気づきにくいため、実際のドライブ上のファイル名と食い違っていないか
+    // ここでチェックし、あればフロント側でポップアップ表示する。
+    try {
+      const actualFileName = DriveApp.getFileById(entry.fileId).getName();
+      if (actualFileName !== entry.fileName) {
+        nameMismatches.push({ workNo: entry.workNo, indexFileName: entry.fileName, actualFileName: actualFileName });
+      }
+    } catch (err) {
+      // 名前チェックの失敗は集計自体を止めない。
     }
 
     if (!worksMap[entry.workNo]) {
@@ -388,6 +401,7 @@ function runFullAggregation_() {
     dailyBySite: dailyBySiteArray,
     works: works,
     warnings: warnings,
+    nameMismatches: nameMismatches,
   };
 }
 
