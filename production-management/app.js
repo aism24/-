@@ -476,7 +476,7 @@ function renderChart() {
     if (target > 0) {
       datasets.push({
         type: 'line', label: site + ' 目標日産量(t)', data: dates.map(function () { return target; }),
-        borderColor: color, borderWidth: 1, borderDash: [8, 3, 1, 3], pointRadius: 0,
+        borderColor: color, borderWidth: 1, borderDash: [16, 6, 2, 6], pointRadius: 0,
         yAxisID: 'yDaily', xAxisID: 'xLine', order: 4,
       });
     }
