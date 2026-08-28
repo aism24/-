@@ -2,6 +2,7 @@
 const GAS_API_URL = "https://script.google.com/macros/s/AKfycbya0wgwbTuBN1laM8tWFGTJhJw--pTAOBAYVyrsOoXbrOXZgs9q3ZsErTSQZwJFT2c2/exec";
 
 Chart.defaults.color = '#e7ebf3'; // 軸目盛り・タイトル・ツールチップ本文の既定色(グレーは見にくいため白系に)
+Chart.register(ChartDataLabels); // 累積実績の折れ線上に数値を出すためのプラグイン(グラフ全体の既定はplugins.datalabels.display:falseにし、累積実績データセットだけで個別に有効化する)
 
 const SITES = ['本社', '夢前', '鳥取'];
 const SITE_CLASS = { 本社: 'honsha', 夢前: 'yumesaki', 鳥取: 'tottori' };
@@ -502,6 +503,9 @@ function renderChart() {
     const dailyMap = {};
     (data.dailyBySite[site] || []).forEach(function (r) { dailyMap[r.date] = r.weight; });
     const color = SITE_COLOR[site];
+    // PDF印刷時は、拠点ごとの色分けではなくグラフ(棒・折れ線)を黒一色にする指定のため、
+    // データセットの色はこちらを使う(cumStats・上部カードの色は従来通りcolorのまま)。
+    const chartColor = pdfCaptureMode ? '#000000' : color;
 
     const dailyValues = dates.map(function (d) { return dailyMap[d] || 0; });
 
@@ -523,18 +527,25 @@ function renderChart() {
 
     datasets.push({
       type: 'bar', label: site + ' 日次実績(t)', data: dailyValues,
-      backgroundColor: color, borderColor: color, yAxisID: 'yDaily', order: 3,
+      backgroundColor: chartColor, borderColor: chartColor, yAxisID: 'yDaily', order: 3,
       tooltipLabel: site + '本日', // ツールチップ表示専用の短い名前(凡例フィルタ等ではlabelを使うため別に持つ)
     });
     datasets.push({
       type: 'line', label: site + '(t)', data: cumActual,
-      borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0,
+      borderColor: chartColor, backgroundColor: chartColor, borderWidth: 2, pointRadius: 0,
       yAxisID: 'yCum', order: 1,
       tooltipLabel: site + '累積',
+      // 累積実績の数値をグラフ上にも直接表示する(アプリ画面・PDFの両方)。他のデータセット
+      // (棒・目標ライン・目標日産量)には出さないよう、チャート全体の既定はdisplay:falseにし、
+      // ここだけ個別にtrueで上書きする。
+      datalabels: {
+        display: true, color: chartColor, align: 'top', anchor: 'end',
+        font: { size: 9 }, formatter: function (v) { return v.toFixed(1); },
+      },
     });
     datasets.push({
       type: 'line', label: site + ' 目標ライン(t)', data: cumTargetArr,
-      borderColor: color, borderDash: [4, 3], borderWidth: 1, pointRadius: 0,
+      borderColor: chartColor, borderDash: [4, 3], borderWidth: 1, pointRadius: 0,
       yAxisID: 'yCum', order: 2,
     });
     // 日次の実績棒がこの目標日産量を上回っているかどうかをひと目で分かるように、
@@ -545,7 +556,7 @@ function renderChart() {
     if (target > 0) {
       datasets.push({
         type: 'line', label: site + ' 目標日産量(t)', data: dates.map(function () { return target; }),
-        borderColor: color, borderWidth: 1, borderDash: [16, 6, 2, 6], pointRadius: 0,
+        borderColor: chartColor, borderWidth: 1, borderDash: [16, 6, 2, 6], pointRadius: 0,
         yAxisID: 'yDaily', xAxisID: 'xLine', order: 4,
       });
     }
@@ -583,6 +594,9 @@ function renderChart() {
         xLine: { type: 'category', display: false, offset: false },
       },
       plugins: {
+        // chartjs-plugin-datalabelsの既定はここでオフにし、累積実績のデータセットだけ
+        // dataset.datalabels.display:trueで個別に上書きする(棒・目標系には出さない)。
+        datalabels: { display: false },
         legend: {
           // colorを指定せずChart.defaults.colorに委ねる。PDF出力時はここを一時的に
           // 濃い色へ切り替えるため、固定色にすると凡例だけ反映されず薄いままになる。
