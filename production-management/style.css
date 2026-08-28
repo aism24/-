@@ -475,3 +475,16 @@ body.pdf-export table.schedule-table th:not(.work-name-col):not(.part-label) {
    読みにくいため、他のPDF用ボタンと同じ濃紺に切り替える(ダウンロードするダイアログ自体は
    #dayDetailContentのみをキャプチャするので、PDF出力/閉じるボタンの見た目は無関係)。 */
 body.pdf-export .day-detail-modal .mismatch-title { color: #0b3fae; }
+/* html2canvasはvar(--text)のようなCSSカスタムプロパティを、ネストが深い要素では
+   正しく解決できずグレーのまま描画してしまうことがある(工程表本体のPDF化でも同じ理由で
+   色をハードコードしている)。工事名見出し・製品明細テーブルの文字色も直接指定する。 */
+body.pdf-export .day-detail-body,
+body.pdf-export .day-detail-work-title,
+body.pdf-export .day-detail-table th,
+body.pdf-export .day-detail-table td {
+  color: #111111 !important;
+}
+body.pdf-export .day-detail-table th,
+body.pdf-export .day-detail-table td {
+  border-color: #999999 !important;
+}

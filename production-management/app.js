@@ -908,11 +908,17 @@ async function downloadDayDetailPdf() {
     const maxH = doc.internal.pageSize.getHeight() - margin * 2;
 
     const canvas = await html2canvas(document.getElementById('dayDetailContent'), { scale: 2, backgroundColor: '#ffffff' });
-    let w = maxW;
-    let h = (canvas.height / canvas.width) * w;
-    if (h > maxH) { // 縦に長すぎる場合は、幅・高さとも同じ比率で縮小して必ず1ページに収める。
-      w = w * (maxH / h);
-      h = maxH;
+    // 常にページ幅いっぱいに引き伸ばすと、明細が短い日でも文字だけ不自然に巨大化して
+    // かえって見づらくなる。html2canvasはscale:2でCSS px の2倍の解像度で描いているため、
+    // canvas.width/2 が元のCSS px幅。それをpt換算(96dpi→72dpi=0.75倍)した「画面表示と
+    // 同じ等倍サイズ」を基準にし、ページに収まらない場合だけ縮小する(拡大はしない)。
+    const naturalW = canvas.width * 0.375; // canvas.width/2(CSS px) * 0.75(px→pt)
+    const naturalH = canvas.height * 0.375;
+    let w = naturalW, h = naturalH;
+    if (w > maxW || h > maxH) {
+      const scale = Math.min(maxW / w, maxH / h);
+      w *= scale;
+      h *= scale;
     }
     const x = margin + (maxW - w) / 2;
     doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', x, margin, w, h);
