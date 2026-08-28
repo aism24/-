@@ -100,6 +100,7 @@ select {
   padding: 6px 10px;
 }
 select option { background: #372a52; color: var(--text); }
+select option.prev-fy { color: var(--tottori); }
 
 .workday-badge {
   background: #b39ddb;
