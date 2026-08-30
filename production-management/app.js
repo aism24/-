@@ -566,9 +566,10 @@ function renderChart() {
     const dailyMap = {};
     (data.dailyBySite[site] || []).forEach(function (r) { dailyMap[r.date] = r.weight; });
     const color = SITE_COLOR[site];
-    // 「工場別PDF」(拠点1つだけ)は、拠点ごとの色分けをする意味が無いためグラフ
-    // (棒・折れ線)を黒一色にする。「3工場PDF」は複数拠点が並ぶため、どの線がどの拠点か
-    // 区別できるよう拠点色のまま出力する(cumStats・上部カードは従来通りcolorのまま)。
+    // 「工場別PDF」(拠点1つだけ)は棒グラフ(日次実績)だけ黒一色にする。1拠点しか
+    // 出力しないため色分けする意味が無く、白背景のPDF上でも濃く見やすいことを優先した。
+    // 折れ線(累積実績・目標ライン・目標日産量)は、他の帳票(工程表の色付きドット等)と
+    // 見た目を揃えるため、通常表示・3工場PDFと同じく拠点色のまま出力する。
     const chartColor = isSitePdfExport ? '#000000' : color;
 
     const dailyValues = dates.map(function (d) { return dailyMap[d] || 0; });
@@ -604,7 +605,7 @@ function renderChart() {
     });
     datasets.push({
       type: 'line', label: site + '(t)', data: cumActual,
-      borderColor: chartColor, backgroundColor: chartColor, borderWidth: 2, pointRadius: 0,
+      borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0,
       yAxisID: 'yCum', order: 1,
       tooltipLabel: site + '累積',
       // 累積実績の数値をグラフ上にも直接表示する(アプリ画面・PDFの両方)。他のデータセット
@@ -616,7 +617,7 @@ function renderChart() {
         // 読めなくなるため、拠点ごとに線を挟んで上下交互に、かつ少しずつ離す位置へずらす
         // (siteIndex: 0番目は線の上、1番目は線の下、2番目は0番目よりさらに上)。
         display: function (ctx) { return ctx.dataIndex === ctx.dataset.data.length - 1; },
-        color: chartColor,
+        color: color,
         align: siteIndex % 2 === 0 ? 'top' : 'bottom',
         anchor: 'end',
         offset: 6 + Math.floor(siteIndex / 2) * 16,
@@ -630,7 +631,7 @@ function renderChart() {
     });
     datasets.push({
       type: 'line', label: site + ' 目標ライン(t)', data: cumTargetArr,
-      borderColor: chartColor, borderDash: [4, 3], borderWidth: 1, pointRadius: 0,
+      borderColor: color, borderDash: [4, 3], borderWidth: 1, pointRadius: 0,
       yAxisID: 'yCum', order: 2,
     });
     // 日次の実績棒がこの目標日産量を上回っているかどうかをひと目で分かるように、
@@ -641,7 +642,7 @@ function renderChart() {
     if (target > 0) {
       datasets.push({
         type: 'line', label: site + ' 目標日産量(t)', data: dates.map(function () { return target; }),
-        borderColor: chartColor, borderWidth: 1, borderDash: [16, 6, 2, 6], pointRadius: 0,
+        borderColor: color, borderWidth: 1, borderDash: [16, 6, 2, 6], pointRadius: 0,
         yAxisID: 'yDaily', xAxisID: 'xLine', order: 4,
       });
     }
