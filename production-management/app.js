@@ -602,8 +602,8 @@ function renderChart() {
       datalabels: {
         display: function (ctx) { return (isSitePdfExport || selected.length === 1) && ctx.dataset.data[ctx.dataIndex] > 0; },
         color: isSitePdfExport ? chartColor : '#ffffff', align: 'top', anchor: 'end',
-        font: { size: 9, weight: isSitePdfExport ? 'normal' : 'bold' },
-        formatter: function (v) { return v.toFixed(1) + 't'; },
+        font: { size: 13, weight: isSitePdfExport ? 'normal' : 'bold' },
+        formatter: function (v) { return v.toFixed(1); },
       },
     });
     datasets.push({
