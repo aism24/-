@@ -20,9 +20,10 @@
   <button class="home-btn home-btn-hot" onclick="showScreen('hot')">🔥 Hotタイマー起動</button>
 </div>
 <div id="gender-select-screen">
-  <div class="gender-select-title">どっち見るだぁ？</div>
+  <div class="gender-select-title">どれ見るだぁ？</div>
   <button class="gender-btn gender-btn-male" onclick="showResults('男')">🔵 男子</button>
   <button class="gender-btn gender-btn-female" onclick="showResults('女')">🌸 女子</button>
+  <button class="gender-btn gender-btn-mixed" onclick="showResults('混合')">🔀 混合</button>
   <button style="background:none;border:none;color:#90caf9;font-size:30px;cursor:pointer;margin-top:10px;" onclick="showScreen('home')">← トップに戻る</button>
 </div>
 <div id="result-screen">
@@ -85,13 +86,16 @@
   <div class="section" id="sec-top">
     <div class="top-row">
       <div class="top-row-half">
-        <div class="field-label" id="lbl-gender">男 / 女</div>
+        <div class="field-label" id="lbl-gender">区分</div>
         <div class="radio-group" id="radio-group">
           <label id="label-male" class="selected" onclick="selectGender('男')">
             <input type="radio" name="gender" value="男" checked><span>男</span>
           </label>
           <label id="label-female" onclick="selectGender('女')">
             <input type="radio" name="gender" value="女"><span>女</span>
+          </label>
+          <label id="label-mixed" onclick="selectGender('混合')">
+            <input type="radio" name="gender" value="混合"><span>混合</span>
           </label>
         </div>
       </div>
@@ -193,7 +197,7 @@
   <div class="complete-card">
     <div class="complete-icon">🏆</div>
     <div class="complete-title">保存できたみたいだで！</div>
-    <div class="complete-row"><span class="complete-label">男/女</span><span class="complete-val" id="res-gender"></span></div>
+    <div class="complete-row"><span class="complete-label">区分</span><span class="complete-val" id="res-gender"></span></div>
     <div class="complete-row"><span class="complete-label">日付</span><span class="complete-val" id="res-date"></span></div>
     <div class="complete-row"><span class="complete-label">対戦相手</span><span class="complete-val" id="res-opponent"></span></div>
     <div class="complete-row"><span class="complete-label">得点</span><span class="complete-val" id="res-score"></span></div>

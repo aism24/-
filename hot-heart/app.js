@@ -87,29 +87,31 @@ function closeSavingPopup() {
   document.getElementById('saving-overlay').classList.remove('show');
   document.getElementById('save-btn').disabled = false;
 }
-function applyGenderTheme(isFemale) {
-  const f = isFemale;
-  document.getElementById('record-header').classList.toggle('female', f);
-  document.getElementById('scoreboard').classList.toggle('female', f);
-  ['sec-top','sec-opponent','sec-score','sec-photo'].forEach(id => {
-    document.getElementById(id).classList.toggle('female', f);
-  });
-  ['lbl-gender','lbl-date','lbl-opponent','lbl-sh','lbl-st','lbl-su','lbl-ch','lbl-ct','lbl-cu','lbl-photo'].forEach(id => {
-    document.getElementById(id).classList.toggle('female', f);
-  });
-  document.getElementById('date-label').classList.toggle('female', f);
-  document.getElementById('opponent-select').classList.toggle('female', f);
-  document.getElementById('new-opponent').classList.toggle('female', f);
+// gender: '男' | '女' | '混合'。CSS側は '.female' と '.mixed' の2つの
+// モディファイアクラスで男(デフォルト)/女/混合の3配色を切り替える。
+function applyGenderTheme(gender) {
+  const f = gender === '女';
+  const m = gender === '混合';
+  function toggle(id) {
+    const el = document.getElementById(id);
+    el.classList.toggle('female', f);
+    el.classList.toggle('mixed', m);
+  }
+  toggle('record-header');
+  toggle('scoreboard');
+  ['sec-top','sec-opponent','sec-score','sec-photo'].forEach(toggle);
+  ['lbl-gender','lbl-date','lbl-opponent','lbl-sh','lbl-st','lbl-su','lbl-ch','lbl-ct','lbl-cu','lbl-photo'].forEach(toggle);
+  toggle('date-label');
+  toggle('opponent-select');
+  toggle('new-opponent');
   ['btn-sh-p','btn-st-p','btn-st-m','btn-su-p','btn-su-m',
-   'btn-ch-p','btn-ct-p','btn-ct-m','btn-cu-p','btn-cu-m'].forEach(id => {
-    document.getElementById(id).classList.toggle('female', f);
-  });
-  document.getElementById('score-row-concede').classList.toggle('female', f);
-  document.getElementById('btn-camera').classList.toggle('female', f);
-  document.getElementById('btn-gallery').classList.toggle('female', f);
+   'btn-ch-p','btn-ct-p','btn-ct-m','btn-cu-p','btn-cu-m'].forEach(toggle);
+  toggle('score-row-concede');
+  toggle('btn-camera');
+  toggle('btn-gallery');
   ['score-h','concede-h'].forEach(id => {
     const el = document.getElementById(id);
-    if (el.classList.contains('zero')) el.classList.toggle('female', f);
+    if (el.classList.contains('zero')) { el.classList.toggle('female', f); el.classList.toggle('mixed', m); }
   });
 }
 // デフォルトのチーム写真2枚は常に固定でスライドショーに含める(選択解除できない)
@@ -206,14 +208,16 @@ function showResults(gender) {
   currentResultsGender = gender;
   showScreen('result');
   const isFemale = gender === '女';
+  const isMixed = gender === '混合';
   const header = document.getElementById('result-header');
   const summaryCard = document.getElementById('summary-card');
   const resultList = document.getElementById('result-list');
   const headerTitle = document.getElementById('result-header-title');
-  header.className = isFemale ? 'result-header-female' : 'result-header-male';
-  summaryCard.className = 'summary-card ' + (isFemale ? 'summary-card-female' : 'summary-card-male');
+  header.className = isFemale ? 'result-header-female' : (isMixed ? 'result-header-mixed' : 'result-header-male');
+  summaryCard.className = 'summary-card ' + (isFemale ? 'summary-card-female' : (isMixed ? 'summary-card-mixed' : 'summary-card-male'));
   document.getElementById('sum-score').classList.toggle('female', isFemale);
-  headerTitle.textContent = isFemale ? '🌸 女子一覧' : '🔵 男子一覧';
+  document.getElementById('sum-score').classList.toggle('mixed', isMixed);
+  headerTitle.textContent = isFemale ? '🌸 女子一覧' : (isMixed ? '🔀 混合一覧' : '🔵 男子一覧');
   resultList.innerHTML = '<div class="result-loading">読み込み中だで...</div>';
   apiGet('getResults', { gender: gender })
     .then(rows => renderResults(rows, gender))
@@ -223,6 +227,7 @@ function showResults(gender) {
 }
 function renderResults(rows, gender) {
   const isFemale = gender === '女';
+  const isMixed = gender === '混合';
   let wins = 0, loses = 0, draws = 0;
   let totalScore = 0, totalConcede = 0;
   rows.forEach(r => {
@@ -249,7 +254,7 @@ function renderResults(rows, gender) {
     else if (r.result === '負け') { badgeClass = 'badge-lose'; badgeText = '負'; }
     let rowClass = 'result-row ';
     if (isWin) { rowClass += 'result-row-win'; }
-    else { rowClass += isFemale ? 'result-row-female' : 'result-row-male'; }
+    else { rowClass += isFemale ? 'result-row-female' : (isMixed ? 'result-row-mixed' : 'result-row-male'); }
     const photoBtn = r.photoUrl
       ? '<button class="result-photo-btn" onclick="event.stopPropagation();window.open(\'' + escapeHtml(String(r.photoUrl)) + '\',\'_blank\')">📷</button>'
       : '';
@@ -363,10 +368,11 @@ function onSelectChange() {
   if (val !== '__new__') document.getElementById('new-opponent').value = '';
 }
 function selectGender(gender) {
-  document.querySelector('input[name=gender][value=' + gender + ']').checked = true;
+  document.querySelector('input[name=gender][value="' + gender + '"]').checked = true;
   document.getElementById('label-male').classList.toggle('selected', gender === '男');
   document.getElementById('label-female').classList.toggle('selected', gender === '女');
-  applyGenderTheme(gender === '女');
+  document.getElementById('label-mixed').classList.toggle('selected', gender === '混合');
+  applyGenderTheme(gender);
 }
 function changeDigit(field, pos, delta) {
   const isHundreds = pos === 'h';
@@ -381,9 +387,11 @@ function updateScoreUI(field) {
   const hEl = document.getElementById(field + '-h');
   const tEl = document.getElementById(field + '-t');
   const uEl = document.getElementById(field + '-u');
-  const isFemale = document.querySelector('input[name=gender]:checked').value === '女';
+  const checkedGender = document.querySelector('input[name=gender]:checked').value;
+  const isFemale = checkedGender === '女';
+  const isMixed = checkedGender === '混合';
   hEl.textContent = d.h === 0 ? ' ' : String(d.h);
-  hEl.className = 'digit-val' + (d.h === 0 ? ' zero' + (isFemale ? ' female' : '') : '');
+  hEl.className = 'digit-val' + (d.h === 0 ? ' zero' + (isFemale ? ' female' : (isMixed ? ' mixed' : '')) : '');
   tEl.textContent = String(d.t);
   tEl.className = 'digit-val';
   uEl.textContent = String(d.u);
@@ -490,10 +498,11 @@ function resetAll() {
   document.getElementById('date-input').value =
     d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   updateDateLabel();
-  document.querySelector('input[name=gender][value=男]').checked = true;
+  document.querySelector('input[name=gender][value="男"]').checked = true;
   document.getElementById('label-male').classList.add('selected');
   document.getElementById('label-female').classList.remove('selected');
-  applyGenderTheme(false);
+  document.getElementById('label-mixed').classList.remove('selected');
+  applyGenderTheme('男');
   recordInited = false;
   showScreen('home');
 }
