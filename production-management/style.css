@@ -61,6 +61,23 @@ body {
    ポップアップで案内する)。 */
 .btn-pdf-print.soft-disabled { opacity: 0.4; }
 
+.btn-manual {
+  display: inline-flex;
+  align-items: center;
+  background: #b3ecff;
+  color: #000000;
+  border: 1px solid #8fdcf5;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-manual:hover { transform: translateY(-2px); box-shadow: 0 0 8px 2px rgba(77, 163, 255, 0.5); }
+.btn-manual .blink-text { animation: blink-slow 2.6s ease-in-out infinite; }
+
 .btn-refresh-header {
   background: #ffd400;
   color: #0b3fae;
@@ -70,15 +87,10 @@ body {
   padding: 9px 18px;
   font-size: 0.95rem;
   cursor: pointer;
-  animation: glow-pulse 1.8s ease-in-out infinite;
   transition: transform 0.15s ease;
 }
 .btn-refresh-header:hover:not(:disabled) { transform: translateY(-2px); }
-.btn-refresh-header:disabled { opacity: 0.6; animation: none; box-shadow: none; cursor: default; }
-@keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 6px 2px rgba(255, 212, 0, 0.55), 0 0 14px 4px rgba(255, 212, 0, 0.25); }
-  50% { box-shadow: 0 0 10px 4px rgba(255, 212, 0, 0.9), 0 0 24px 9px rgba(255, 212, 0, 0.5); }
-}
+.btn-refresh-header:disabled { opacity: 0.6; cursor: default; }
 
 .toolbar {
   display: flex;
@@ -408,7 +420,7 @@ footer.warnings { color: var(--warn); font-size: 0.8rem; margin-top: 10px; white
     --text: #111111;
     --muted: #444444;
   }
-  .btn-pdf-print, .btn-refresh-header, .refresh-note, .msg { display: none !important; }
+  .btn-pdf-print, .btn-manual, .btn-refresh-header, .refresh-note, .msg { display: none !important; }
   .app-header, .toolbar { position: static; }
   .table-scroll, .chart-scroll { overflow: visible !important; }
   .schedule-site-block { break-inside: avoid; }
@@ -426,6 +438,7 @@ body.pdf-export {
   background: #ffffff;
 }
 body.pdf-export .btn-pdf-print,
+body.pdf-export .btn-manual,
 body.pdf-export .btn-refresh-header,
 body.pdf-export .refresh-note,
 body.pdf-export .period-nav-btn,
