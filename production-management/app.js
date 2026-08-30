@@ -594,13 +594,16 @@ function renderChart() {
       type: 'bar', label: site + ' 日次実績(t)', data: dailyValues,
       backgroundColor: chartColor, borderColor: chartColor, yAxisID: 'yDaily', order: 3,
       tooltipLabel: site + '本日', // ツールチップ表示専用の短い名前(凡例フィルタ等ではlabelを使うため別に持つ)
-      // 「工場別PDF」ダウンロード時だけ、各棒の上にその日の生産重量を数値で入れる
-      // (アプリ画面上・3工場PDFでは出さない。拠点数×日数ぶん並ぶと逆に見にくくなるため)。
-      // 実績0の日は表示しない。
+      // 「工場別PDF」ダウンロード時、および通常のアプリ画面でも拠点を1つだけに絞っている
+      // 時は、各棒の上にその日の生産重量を数値で入れる(複数拠点表示だと拠点数×日数ぶん
+      // 並んで見にくくなるため、1拠点表示に絞っている時だけ)。実績0の日は表示しない。
+      // 画面表示は暗い背景・拠点色の棒の上でも読めるよう白の太字、PDF出力時は白背景・
+      // 黒一色の棒に合わせてchartColor(黒)のまま。
       datalabels: {
-        display: function (ctx) { return isSitePdfExport && ctx.dataset.data[ctx.dataIndex] > 0; },
-        color: chartColor, align: 'top', anchor: 'end',
-        font: { size: 9 }, formatter: function (v) { return v.toFixed(1) + 't'; },
+        display: function (ctx) { return (isSitePdfExport || selected.length === 1) && ctx.dataset.data[ctx.dataIndex] > 0; },
+        color: isSitePdfExport ? chartColor : '#ffffff', align: 'top', anchor: 'end',
+        font: { size: 9, weight: isSitePdfExport ? 'normal' : 'bold' },
+        formatter: function (v) { return v.toFixed(1) + 't'; },
       },
     });
     datasets.push({
