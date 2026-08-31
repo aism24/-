@@ -1053,6 +1053,23 @@ function apiJsonOk_(data) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+/* logFactorySelection()(既存・無改変)の呼び出しをLockService.getScriptLock()で
+   排他制御する。appendRowは「最終行を調べて次に書く」処理を内部でロックなしに
+   行っており、複数人がほぼ同時にログインすると記録シートに空行ができたり
+   行がズレたりする不具合が実データで確認されたため追加(ユーザー報告)。
+   LockService.getScriptLock()はスクリプトプロジェクト単位でロックするため、
+   新API(doPost)経由の同時アクセス同士を正しく直列化できる。既存の
+   logFactorySelection()自体は無改変のまま。 */
+function logFactorySelectionLocked_(factory) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    return logFactorySelection(factory);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function apiJsonErr_(message) {
   return ContentService
     .createTextOutput(JSON.stringify({ status: 'error', message: message }))
@@ -1077,11 +1094,7 @@ function doPost(e) {
     if (action === 'generateReport2') return apiJsonOk_(generateReport2(params));
     if (action === 'generateReport3') return apiJsonOk_(generateReport3(params));
     if (action === 'generateReport4') return apiJsonOk_(generateReport4(params));
-    if (action === 'logFactorySelection') return apiJsonOk_({ row: logFactorySelection(params.factory) });
-    if (action === 'updateSessionDuration') {
-      updateSessionDuration(params.rowNumber, params.minutes);
-      return apiJsonOk_({});
-    }
+    if (action === 'logFactorySelection') return apiJsonOk_({ row: logFactorySelectionLocked_(params.factory) });
     return apiJsonErr_('不明なaction: ' + action);
   } catch (err) {
     return apiJsonErr_(String(err && err.message || err));
