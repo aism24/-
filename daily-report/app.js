@@ -909,8 +909,30 @@ function buildMonthPicker(containerId, prefix){
   const optionsHtml = months.map((mo, i) =>
     `<option value="${mo.year}-${mo.month}"${i === 0 ? ' selected' : ''}>${mo.year}年${mo.month}月20日締め</option>`
   ).join('');
-  el.innerHTML = `<select id="${prefix}-monthSelect">${optionsHtml}</select>`;
-  document.getElementById(`${prefix}-monthSelect`).addEventListener('change', () => triggerRecompute(prefix));
+  el.innerHTML =
+    `<button type="button" class="monthNavBtn" id="${prefix}-monthPrev" aria-label="前の月">◀</button>` +
+    `<select id="${prefix}-monthSelect">${optionsHtml}</select>` +
+    `<button type="button" class="monthNavBtn" id="${prefix}-monthNext" aria-label="次の月">▶</button>`;
+
+  const sel = document.getElementById(`${prefix}-monthSelect`);
+  const prevBtn = document.getElementById(`${prefix}-monthPrev`);
+  const nextBtn = document.getElementById(`${prefix}-monthNext`);
+
+  const updateNavButtons = () => {
+    // options配列は先頭(index 0)が最新月、末尾が最古月の順
+    nextBtn.disabled = sel.selectedIndex <= 0;
+    prevBtn.disabled = sel.selectedIndex >= sel.options.length - 1;
+  };
+  const step = delta => {
+    sel.selectedIndex += delta;
+    updateNavButtons();
+    triggerRecompute(prefix);
+  };
+
+  sel.addEventListener('change', () => { updateNavButtons(); triggerRecompute(prefix); });
+  prevBtn.addEventListener('click', () => step(1));
+  nextBtn.addEventListener('click', () => step(-1));
+  updateNavButtons();
 }
 
 function getR4Month(){
