@@ -512,35 +512,20 @@ function applyDefaultFactoryToAllScreens_(){
   applyDefaultFactoryFilter_('r4');
 }
 
-/* ログイン(工場選択)時の滞在ログ用。logFactorySelectionが返した行番号を
-   覚えておき、ブラウザを閉じる際にupdateSessionDurationへ渡す(ベストエフォート)。 */
-let sessionLogRow = null;
-let sessionStartedAt = null;
-
+/* ログイン(工場選択)時の記録。日時・工場だけを記録すれば十分なため、
+   滞在時間(C列)の追記は行わない(ユーザー指定。同時ログイン時の行ズレの
+   原因を減らす意味もある)。 */
 async function selectFactory(loc){
   sessionStorage.setItem('defaultFactory', loc);
   updateHeaderFactoryLabels_();
   showScreen('home');
-  sessionStartedAt = Date.now();
   try {
-    const res = await apiPost('logFactorySelection', { factory: loc });
-    sessionLogRow = res && res.row;
+    await apiPost('logFactorySelection', { factory: loc });
   } catch (e) {
     // ログイン記録に失敗しても本体機能には影響させない(ベストエフォート)
-    sessionLogRow = null;
   }
   initSyncPopup();
 }
-
-/* ブラウザを閉じる際、滞在時間をベストエフォートで記録する。
-   fetchは離脱時に信頼できないため、navigator.sendBeaconを使う
-   (文字列を渡すとContent-Typeがtext/plainになりCORSプリフライトも発生しない)。 */
-window.addEventListener('beforeunload', () => {
-  if(!sessionLogRow || !sessionStartedAt) return;
-  const minutes = Math.round((Date.now() - sessionStartedAt) / 60000);
-  const payload = JSON.stringify({ action: 'updateSessionDuration', params: { rowNumber: sessionLogRow, minutes: minutes } });
-  if(navigator.sendBeacon) navigator.sendBeacon(GAS_API_URL, payload);
-});
 
 function checkedSummary(specName, groupId){
   const specVal = document.querySelector(`input[name="${specName}"]:checked`).value;
