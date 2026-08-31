@@ -516,8 +516,9 @@ function resetAll() {
   recordInited = false;
   showScreen('home');
 }
-function showModal(message) {
+function showModal(message, title) {
   return new Promise(resolve => {
+    document.getElementById('modal-title').textContent = title || '⚠️ 同じファイル名があります';
     document.getElementById('modal-body').innerHTML = message.replace(/\n/g,'<br>');
     document.getElementById('modal').classList.add('show');
     modalResolve = resolve;
@@ -673,14 +674,55 @@ function hotSwitchBackground() {
 }
 window.addEventListener('resize', hotInitPosition);
 
+let bgCustomSavedState = null; // 直近の保存状態のスナップショット([{url, selected, processed}])。未保存の変更判定・破棄時の復元に使う
 function openBgCustomScreen() {
   document.getElementById('bg-custom-list').innerHTML = '<div class="bg-custom-loading">読み込み中だで...</div>';
+  document.getElementById('bg-custom-save-btn').style.visibility = 'hidden';
+  bgCustomSavedState = null;
   apiGet('getHomeBgImages').then(function(list) {
     customHomeBgImages = list || [];
+    snapshotBgCustomState_();
     renderBgCustomList();
   }).catch(function(err) {
     document.getElementById('bg-custom-list').innerHTML = '<div class="bg-custom-loading">読み込みに失敗しただ: ' + err.message + '</div>';
   });
+}
+function snapshotBgCustomState_() {
+  bgCustomSavedState = customHomeBgImages.map(function(img) {
+    return { url: img.url, selected: !!img.selected, processed: img.processed !== false };
+  });
+}
+// 写真追加・チェックボックス・画像処理ON/OFFのいずれかが、直近の保存状態から
+// 変わっているか(まだ「保存」していないか)を判定する
+function isBgCustomDirty_() {
+  if (!bgCustomSavedState) return false;
+  if (customHomeBgImages.some(function(img) { return !!img.pendingUpload; })) return true;
+  if (customHomeBgImages.length !== bgCustomSavedState.length) return true;
+  for (let i = 0; i < customHomeBgImages.length; i++) {
+    const cur = customHomeBgImages[i];
+    const saved = bgCustomSavedState[i];
+    if (!saved || cur.url !== saved.url || !!cur.selected !== saved.selected || (cur.processed !== false) !== saved.processed) {
+      return true;
+    }
+  }
+  return false;
+}
+function updateBgCustomDirty_() {
+  document.getElementById('bg-custom-save-btn').style.visibility = isBgCustomDirty_() ? 'visible' : 'hidden';
+}
+// 保存せずに画面を離れる場合に、未アップロードの追加写真を取り除き、
+// チェックボックス・画像処理の状態を直近の保存状態に戻す
+function revertBgCustomChanges_() {
+  if (!bgCustomSavedState) return;
+  const savedByUrl = {};
+  bgCustomSavedState.forEach(function(item) { savedByUrl[item.url] = item; });
+  customHomeBgImages = customHomeBgImages
+    .filter(function(img) { return !img.pendingUpload; })
+    .map(function(img) {
+      const saved = savedByUrl[img.url];
+      if (saved) { img.selected = saved.selected; img.processed = saved.processed; }
+      return img;
+    });
 }
 function renderBgCustomList() {
   const wrap = document.getElementById('bg-custom-list');
@@ -699,27 +741,20 @@ function renderBgCustomList() {
       '</div>';
   }).join('');
 }
+// チェックボックス・画像処理ON/OFFは、ここではローカルの状態を更新するだけに
+// とどめ、実際の保存(サーバーへの反映)は「保存」ボタンが押されたときに行う。
 function onBgCustomToggle(index, selected) {
   const img = customHomeBgImages[index];
   if (!img) return;
   img.selected = selected;
-  apiPost('toggleHomeBgImage', { url: img.url, selected: selected }).catch(function(err) {
-    img.selected = !selected;
-    renderBgCustomList();
-    alert('更新に失敗しただ: ' + err.message);
-  });
+  updateBgCustomDirty_();
 }
 function onBgCustomProcessedToggle(index, processed) {
   const img = customHomeBgImages[index];
   if (!img) return;
-  const prev = img.processed;
   img.processed = processed;
   renderBgCustomList();
-  apiPost('toggleHomeBgProcessed', { url: img.url, processed: processed }).catch(function(err) {
-    img.processed = prev;
-    renderBgCustomList();
-    alert('更新に失敗しただ: ' + err.message);
-  });
+  updateBgCustomDirty_();
 }
 let bgCustomSelectedFile = null;
 function onBgCustomPhotoSelected(event) {
@@ -765,32 +800,29 @@ function resizeImageForUpload_(file, maxDim, quality) {
     reader.readAsDataURL(file);
   });
 }
+// 「この写真を追加する」は、この時点ではサーバーにアップロードせず、
+// 一覧にローカルの候補として追加するだけにとどめる(未保存扱い)。
+// 実際のアップロードは「保存」が押されたときにまとめて行う。
 function onBgCustomConfirm() {
   if (!bgCustomSelectedFile) return;
   document.getElementById('bg-custom-confirm-btn').disabled = true;
-  showSavingPopup();
-  document.getElementById('saving-message').textContent = '写真を追加中だで...';
-  document.getElementById('saving-sub').textContent = 'しばらく待っとってごしない';
-  resizeImageForUpload_(bgCustomSelectedFile, 1600, 0.85).then(async function(resized) {
-    try {
-      const data = await apiPost('addHomeBgImage', {
+  resizeImageForUpload_(bgCustomSelectedFile, 1600, 0.85).then(function(resized) {
+    customHomeBgImages.push({
+      url: null,
+      selected: true,
+      processed: true,
+      dataUrl: 'data:' + resized.mimeType + ';base64,' + resized.base64,
+      pendingUpload: {
         base64: resized.base64,
         mimeType: resized.mimeType,
         fileName: 'home_bg_' + Date.now() + '.jpg'
-      });
-      customHomeBgImages.push({ url: data.url, selected: true });
-      renderBgCustomList();
-      completeSavingPopup();
-      setTimeout(function() {
-        document.getElementById('saving-overlay').classList.remove('show');
-        resetBgCustomForm();
-      }, 400);
-    } catch (err) {
-      errorSavingPopup(err.message);
-      document.getElementById('bg-custom-confirm-btn').disabled = false;
-    }
+      }
+    });
+    renderBgCustomList();
+    updateBgCustomDirty_();
+    resetBgCustomForm();
   }).catch(function(err) {
-    errorSavingPopup(err.message);
+    alert('画像の準備に失敗しただ: ' + err.message);
     document.getElementById('bg-custom-confirm-btn').disabled = false;
   });
 }
@@ -802,8 +834,59 @@ function resetBgCustomForm() {
   document.getElementById('bg-custom-thumb-img').src = '';
   document.getElementById('bg-custom-confirm-btn').disabled = true;
 }
-function leaveBgCustom() {
+// 未保存の変更(写真追加・チェックボックス・画像処理ON/OFF)をまとめてサーバーへ反映する
+async function saveBgCustomChanges_() {
+  const savedByUrl = {};
+  (bgCustomSavedState || []).forEach(function(item) { savedByUrl[item.url] = item; });
+  for (let i = 0; i < customHomeBgImages.length; i++) {
+    const img = customHomeBgImages[i];
+    if (img.pendingUpload) {
+      const data = await apiPost('addHomeBgImage', img.pendingUpload);
+      img.url = data.url;
+      delete img.pendingUpload;
+      // 追加直後の既定値(選択=ON・画像処理=ON)から、保存前に変更していれば反映する
+      if (!img.selected) await apiPost('toggleHomeBgImage', { url: img.url, selected: false });
+      if (img.processed === false) await apiPost('toggleHomeBgProcessed', { url: img.url, processed: false });
+      continue;
+    }
+    const saved = savedByUrl[img.url];
+    if (!saved) continue;
+    if (!!img.selected !== saved.selected) {
+      await apiPost('toggleHomeBgImage', { url: img.url, selected: !!img.selected });
+    }
+    if ((img.processed !== false) !== saved.processed) {
+      await apiPost('toggleHomeBgProcessed', { url: img.url, processed: img.processed !== false });
+    }
+  }
+}
+function onBgCustomSave() {
+  const btn = document.getElementById('bg-custom-save-btn');
+  btn.disabled = true;
+  showSavingPopup();
+  document.getElementById('saving-message').textContent = '保存中だで...';
+  document.getElementById('saving-sub').textContent = 'しばらく待っとってごしない';
+  saveBgCustomChanges_().then(function() {
+    snapshotBgCustomState_();
+    renderBgCustomList();
+    updateBgCustomDirty_();
+    completeSavingPopup();
+    setTimeout(function() {
+      document.getElementById('saving-overlay').classList.remove('show');
+      btn.disabled = false;
+    }, 400);
+  }).catch(function(err) {
+    errorSavingPopup(err.message);
+    btn.disabled = false;
+  });
+}
+async function leaveBgCustom() {
+  if (isBgCustomDirty_()) {
+    const discard = await showModal('編集内容が破棄されますがよろしいですか？', '⚠️ 編集内容の破棄');
+    if (!discard) return;
+    revertBgCustomChanges_();
+  }
   resetBgCustomForm();
+  bgCustomSavedState = null;
   showScreen('home');
 }
 

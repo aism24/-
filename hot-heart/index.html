@@ -209,7 +209,7 @@
 </div>
 <div class="modal-overlay" id="modal">
   <div class="modal">
-    <div class="modal-title">⚠️ 同じファイル名があります</div>
+    <div class="modal-title" id="modal-title">⚠️ 同じファイル名があります</div>
     <div class="modal-body" id="modal-body"></div>
     <div class="modal-btns">
       <button class="modal-btn yes" onclick="modalYes()">YES</button>
@@ -271,7 +271,7 @@
   <header id="bg-custom-header">
     <button class="header-back-btn" onclick="leaveBgCustom()">← 戻る</button>
     <div class="header-title">🖼 背景の管理</div>
-    <div class="header-spacer"></div>
+    <button class="header-save-btn" id="bg-custom-save-btn" onclick="onBgCustomSave()" style="visibility:hidden;">保存</button>
   </header>
   <div class="section" id="bg-custom-list-section">
     <div class="field-label">背景に使う写真</div>

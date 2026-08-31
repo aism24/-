@@ -236,9 +236,12 @@ function getHomeBgImages_() {
     if (!isHttp && !isFixedImagePath) return; // 見出し行など、URLでも画像パスでもない文字列は無視する
     const selected = row[1] === true || String(row[1]).toUpperCase() === "TRUE";
     // J列が空欄(既存行でまだ設定されていない)の場合は、これまで通り常に
-    // 画像処理ONだったものとして扱う
-    const processedRaw = String(row[2] || "").trim();
-    const processed = processedRaw === "" ? true : (row[2] === true || processedRaw.toUpperCase() === "TRUE");
+    // 画像処理ONだったものとして扱う。
+    // 注意: row[2]が真偽値のfalseの場合、`row[2] || ""`は""になってしまい
+    // 「空欄」と誤判定してしまう(falseがfalsy値のため)。そのため、空欄かどうかは
+    // row[2]自体を直接判定してから文字列化する。
+    const isBlank = row[2] === "" || row[2] === null || row[2] === undefined;
+    const processed = isBlank ? true : (row[2] === true || String(row[2]).trim().toUpperCase() === "TRUE");
     list.push({ url: url, selected: selected, processed: processed });
   });
   return list;
