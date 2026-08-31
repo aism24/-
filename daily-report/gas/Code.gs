@@ -996,6 +996,24 @@ function getAllDailyReportRowsMerged_() {
   });
 }
 
+/* getMasterData()の複数ファイル対応版フロントエンド向け拡張。既存のgetMasterData()は
+   無改変のまま残し、新API(doPost)からはこちらを使う。社員マスタの「Reportcheck」列
+   (row[8])は実データ上「在職中」「退職済」「休職中」以外に役職名(「専務」等)が
+   入るケースがあることが分かったため、日報入力チェック(④)で「在職中のみ表示する」
+   判定に使えるよう、真偽値active(row[8]==='在職中')を追加で持たせる。 */
+function getMasterDataWithStatus_() {
+  const master = getMasterData();
+  const ss = SpreadsheetApp.openById(getDailyReportSsId_());
+  const opRows = ss.getSheetByName(SHEET_NAMES.OPERATOR).getDataRange().getValues();
+  const activeByNo = {};
+  for (let i = 1; i < opRows.length; i++) {
+    if (!opRows[i][0]) continue;
+    activeByNo[String(opRows[i][0])] = opRows[i][8] === '在職中';
+  }
+  master.operators.forEach(function (o) { o.active = !!activeByNo[o.no]; });
+  return master;
+}
+
 /* ===================== JSON API(GitHub Pages版フロントエンド用) ===================== */
 /* CORSプリフライト(OPTIONS)はGASが対応していないため、フロントエンド側は
    必ず Content-Type: text/plain でPOSTすること(hot-heart等、他アプリと同じ方式)。
@@ -1024,7 +1042,7 @@ function doPost(e) {
     const action = body.action;
     const params = body.params || {};
 
-    if (action === 'getMasterData') return apiJsonOk_(getMasterData());
+    if (action === 'getMasterData') return apiJsonOk_(getMasterDataWithStatus_());
     if (action === 'getAllDailyReportRows') return apiJsonOk_(getAllDailyReportRowsMerged_());
     if (action === 'getCompanyCalendarData') return apiJsonOk_(getCompanyCalendarData());
     if (action === 'getAbsenteeismData') return apiJsonOk_(getAbsenteeismData());
