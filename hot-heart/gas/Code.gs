@@ -72,9 +72,10 @@ function getImageIds() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const bgSheet = ss.getSheetByName(BG_SHEET_NAME);
   if (!bgSheet) return [];
+  ensureBgSheetHeaderRow_(bgSheet);
   const lastRow = bgSheet.getLastRow();
-  if (lastRow === 0) return [];
-  const values = bgSheet.getRange(1, 1, lastRow, 1).getValues();
+  if (lastRow < BG_DATA_START_ROW) return [];
+  const values = bgSheet.getRange(BG_DATA_START_ROW, 1, lastRow - BG_DATA_START_ROW + 1, 1).getValues();
   return values.map(row => row[0]).filter(id => id !== "");
 }
 
@@ -191,13 +192,50 @@ function replacePhoto(payload) {
 // I列=スライドショーに含めるか(TRUE/FALSE)、
 // J列=画像処理(ぼかし等)を適用するか(TRUE=処理する/FALSE=そのまま使用)。
 // A列は既存のHotタイマー用画像ID一覧(getImageIds)が使っているため、別の列を使う。
+// 1行目は見出し行、実データは2行目(BG_DATA_START_ROW)以降。
 const HOME_BG_COL_URL = 8;       // H列
 const HOME_BG_COL_SEL = 9;       // I列
 const HOME_BG_COL_PROCESSED = 10; // J列
+const BG_DATA_START_ROW = 2;
+
+/**
+ * 背景写真シートの1行目を見出し行に統一する一度きりの移行処理。
+ * 以前は見出しが無く、実データがいきなり1行目から始まっていて分かりにくかった
+ * ため、1行目に見出し行を挿入して実データを2行目以降にずらす。
+ * H1が見出しになっていれば移行済みとみなし、何もしない。
+ * 見出し導入前に紛れ込んでいた「画像URL」「true/false」等の説明書き
+ * (URLでも画像パスでもない文字列)は、実データと誤認しないよう空欄にする。
+ */
+function ensureBgSheetHeaderRow_(sheet) {
+  const HEADER_URL = "背景写真URL";
+  if (String(sheet.getRange(1, HOME_BG_COL_URL).getValue() || "").trim() === HEADER_URL) return;
+
+  sheet.insertRowBefore(1);
+  sheet.getRange(1, 1).setValue("画像ID(Hotタイマー背景用)");
+  sheet.getRange(1, HOME_BG_COL_URL, 1, 3).setValues([[
+    HEADER_URL, "スライドショーに含める", "画像処理(ぼかし)"
+  ]]);
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < BG_DATA_START_ROW) return;
+  const range = sheet.getRange(BG_DATA_START_ROW, HOME_BG_COL_URL, lastRow - BG_DATA_START_ROW + 1, 3);
+  const values = range.getValues();
+  let changed = false;
+  for (let i = 0; i < values.length; i++) {
+    const url = String(values[i][0] || "").trim();
+    const isHttp = url.indexOf("http") === 0;
+    const isFixedImagePath = /\.(jpe?g|png|gif|webp)$/i.test(url);
+    if (url !== "" && !isHttp && !isFixedImagePath) {
+      values[i][0] = ""; values[i][1] = ""; values[i][2] = "";
+      changed = true;
+    }
+  }
+  if (changed) range.setValues(values);
+}
 
 // デフォルトのチーム写真2枚(リポジトリ同梱の静的ファイル。Driveには保存されていない)。
 // 以前は常時固定表示で選択解除できなかったが、追加した写真と同列に選択できるよう、
-// 背景写真シートの先頭行に選択可能な項目として自動登録する。
+// 背景写真シートの先頭(見出しの直後)に選択可能な項目として自動登録する。
 const FIXED_HOME_BG_URLS = [
   "images/home-bg/team-photo-1.jpg",
   "images/home-bg/team-photo-2.jpg"
@@ -205,17 +243,17 @@ const FIXED_HOME_BG_URLS = [
 
 /**
  * デフォルトのチーム写真2枚が背景写真シートにまだ登録されていなければ、
- * 先頭行に選択済み(TRUE)として自動追加する。既に登録済みなら何もしない。
+ * 見出しの直後に選択済み(TRUE)として自動追加する。既に登録済みなら何もしない。
  */
 function ensureFixedHomeBgRows_(sheet) {
   const lastRow = sheet.getLastRow();
-  const existing = lastRow > 0
-    ? sheet.getRange(1, HOME_BG_COL_URL, lastRow, 1).getValues().map(function(row) { return String(row[0] || "").trim(); })
+  const existing = lastRow >= BG_DATA_START_ROW
+    ? sheet.getRange(BG_DATA_START_ROW, HOME_BG_COL_URL, lastRow - BG_DATA_START_ROW + 1, 1).getValues().map(function(row) { return String(row[0] || "").trim(); })
     : [];
   const missing = FIXED_HOME_BG_URLS.filter(function(url) { return existing.indexOf(url) === -1; });
   if (missing.length === 0) return;
-  sheet.insertRowsBefore(1, missing.length);
-  sheet.getRange(1, HOME_BG_COL_URL, missing.length, 3).setValues(
+  sheet.insertRowsBefore(BG_DATA_START_ROW, missing.length);
+  sheet.getRange(BG_DATA_START_ROW, HOME_BG_COL_URL, missing.length, 3).setValues(
     missing.map(function(url) { return [url, true, true]; })
   );
 }
@@ -224,10 +262,11 @@ function getHomeBgImages_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(BG_SHEET_NAME);
   if (!sheet) return [];
+  ensureBgSheetHeaderRow_(sheet);
   ensureFixedHomeBgRows_(sheet);
   const lastRow = sheet.getLastRow();
-  if (lastRow === 0) return [];
-  const values = sheet.getRange(1, HOME_BG_COL_URL, lastRow, 3).getValues();
+  if (lastRow < BG_DATA_START_ROW) return [];
+  const values = sheet.getRange(BG_DATA_START_ROW, HOME_BG_COL_URL, lastRow - BG_DATA_START_ROW + 1, 3).getValues();
   const list = [];
   values.forEach(function(row) {
     const url = String(row[0] || "").trim();
@@ -301,11 +340,14 @@ function addHomeBgImage(payload) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(BG_SHEET_NAME);
   if (!sheet) throw new Error("背景写真シートが見つかりません");
+  ensureBgSheetHeaderRow_(sheet);
   const lastRow = sheet.getLastRow();
-  const urlValues = lastRow > 0 ? sheet.getRange(1, HOME_BG_COL_URL, lastRow, 1).getValues() : [];
+  const urlValues = lastRow >= BG_DATA_START_ROW
+    ? sheet.getRange(BG_DATA_START_ROW, HOME_BG_COL_URL, lastRow - BG_DATA_START_ROW + 1, 1).getValues()
+    : [];
   let writeRow = lastRow + 1;
   for (let i = 0; i < urlValues.length; i++) {
-    if (String(urlValues[i][0] || "").trim() === "") { writeRow = i + 1; break; }
+    if (String(urlValues[i][0] || "").trim() === "") { writeRow = i + BG_DATA_START_ROW; break; }
   }
   sheet.getRange(writeRow, HOME_BG_COL_URL, 1, 3).setValues([[url, true, true]]);
   return { url: url };
@@ -317,10 +359,10 @@ function addHomeBgImage(payload) {
  */
 function findHomeBgRow_(sheet, url) {
   const lastRow = sheet.getLastRow();
-  if (lastRow === 0) return -1;
-  const urlValues = sheet.getRange(1, HOME_BG_COL_URL, lastRow, 1).getValues();
+  if (lastRow < BG_DATA_START_ROW) return -1;
+  const urlValues = sheet.getRange(BG_DATA_START_ROW, HOME_BG_COL_URL, lastRow - BG_DATA_START_ROW + 1, 1).getValues();
   for (let i = 0; i < urlValues.length; i++) {
-    if (String(urlValues[i][0] || "").trim() === String(url || "").trim()) return i + 1;
+    if (String(urlValues[i][0] || "").trim() === String(url || "").trim()) return i + BG_DATA_START_ROW;
   }
   return -1;
 }
