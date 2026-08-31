@@ -989,10 +989,11 @@ function computeR4Grid(){
 
   const locs = checkedValues('r4-locations');
   const depts = checkedValues('r4-depts');
-  /* 退職済・休職中はMASTER.operatorsのフラグで判定する。休職中は「途中から
-     休職」等の名前付記の対象とするため、この時点では除外せず後段で判定する。 */
+  /* 日報入力チェックは在職中の社員のみ表示する(ユーザー指定)。退職済・休職中はもちろん、
+     社員マスタの「Reportcheck」列に役職名(「専務」等)が入っているなど「在職中」以外の
+     値を持つ社員も対象外になる(MASTER.operators[].activeで判定)。 */
   const operators = MASTER.operators
-    .filter(o => !o.retired && locs.indexOf(o.factory) !== -1 && depts.indexOf(o.dept) !== -1)
+    .filter(o => o.active && locs.indexOf(o.factory) !== -1 && depts.indexOf(o.dept) !== -1)
     .slice()
     .sort((a, b) => Number(a.no) - Number(b.no));
 
@@ -1023,22 +1024,12 @@ function computeR4Grid(){
     });
     const total = cells.reduce((s, c) => s + (c.value || 0), 0);
 
-    /* 休職中の社員: 対象期間の出勤日が全て未提出(missing)なら「その月は全休職期間中」として非表示。
-       一部でも実績等があれば「途中から休職」として氏名に(休職中)を付けて表示する。 */
-    let name = op.name;
-    if(op.onLeave){
-      const workdayCells = cells.filter((c, i) => dateHeaders[i].isPast && !dateHeaders[i].holiday);
-      const allMissing = workdayCells.length > 0 && workdayCells.every(c => c.flag === 'missing');
-      if(allMissing) return null;
-      if(workdayCells.some(c => c.flag !== 'missing')) name = op.name + '(休職中)';
-    }
-
     return {
-      no: op.no, name: name, factory: op.factory, dept: op.dept,
+      no: op.no, name: op.name, factory: op.factory, dept: op.dept,
       cells: cells, total: total,
       hasNg: cells.some(c => c.flag === 'missing' || c.flag === 'duplicate' || c.flag === 'long')
     };
-  }).filter(Boolean);
+  });
 
   return { dateHeaders: dateHeaders, allRows: allRows };
 }
