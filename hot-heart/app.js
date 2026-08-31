@@ -118,7 +118,7 @@ function applyGenderTheme(gender) {
 // 選択管理される(デフォルトのチーム写真2枚も選択・解除できる)ため、
 // 正常時はこの配列を使わない。
 const FIXED_HOME_BG_IMAGES = ['images/home-bg/team-photo-1.jpg', 'images/home-bg/team-photo-2.jpg'];
-let customHomeBgImages = []; // [{url, selected, dataUrl}] 背景に使う写真(チェックで含める/外せる)。デフォルトの2枚も含む
+let customHomeBgImages = []; // [{url, selected, processed, dataUrl}] 背景に使う写真(チェックで含める/外せる)。デフォルトの2枚も含む
 let homeBgActiveLayer = 0;
 let homeBgCurrentIndex = -1;
 let homeBgInterval = null;
@@ -126,9 +126,7 @@ let homeBgImagesReady = false; // getHomeBgImagesの初回取得が完了した�
 function getActiveHomeBgImages() {
   // Driveへの外部リンクを<img>から直接読み込ませると失敗することがあるため、
   // GAS側で読み込み済みのdata URL(dataUrl)を表示に使う。
-  return customHomeBgImages
-    .filter(function(img) { return img.selected && img.dataUrl; })
-    .map(function(img) { return img.dataUrl; });
+  return customHomeBgImages.filter(function(img) { return img.selected && img.dataUrl; });
 }
 function homeBgSwitch() {
   const images = getActiveHomeBgImages();
@@ -138,7 +136,10 @@ function homeBgSwitch() {
   const currentLayer = layers[homeBgActiveLayer];
   const nextIndex = (homeBgCurrentIndex + 1) % images.length;
   homeBgCurrentIndex = nextIndex;
-  nextLayer.src = images[nextIndex];
+  const img = images[nextIndex];
+  nextLayer.src = img.dataUrl;
+  // processed=falseの写真は、ぼかし等の加工をかけずそのまま表示する
+  nextLayer.classList.toggle('raw', img.processed === false);
   nextLayer.classList.add('visible');
   currentLayer.classList.remove('visible');
   homeBgActiveLayer = 1 - homeBgActiveLayer;
@@ -168,7 +169,7 @@ function loadHomeBgImages() {
   }).catch(function() {
     // スプレッドシート側の選択状態を取得できないため、以前と同じ既定2枚のみ表示する。
     customHomeBgImages = FIXED_HOME_BG_IMAGES.map(function(url) {
-      return { url: url, selected: true, dataUrl: url };
+      return { url: url, selected: true, processed: true, dataUrl: url };
     });
   }).then(function() {
     homeBgImagesReady = true;
@@ -688,10 +689,13 @@ function renderBgCustomList() {
     return;
   }
   wrap.innerHTML = customHomeBgImages.map(function(img, i) {
+    const processed = img.processed !== false;
     return '<div class="bg-custom-item">' +
       '<img src="' + (img.dataUrl || '') + '" alt="">' +
       '<label><input type="checkbox" ' + (img.selected ? 'checked' : '') +
       ' onchange="onBgCustomToggle(' + i + ', this.checked)"> スライドショーに含める</label>' +
+      '<button type="button" class="bg-processed-btn ' + (processed ? 'on' : 'off') + '" ' +
+      'onclick="onBgCustomProcessedToggle(' + i + ', ' + !processed + ')">画像処理: ' + (processed ? 'ON' : 'OFF') + '</button>' +
       '</div>';
   }).join('');
 }
@@ -701,6 +705,18 @@ function onBgCustomToggle(index, selected) {
   img.selected = selected;
   apiPost('toggleHomeBgImage', { url: img.url, selected: selected }).catch(function(err) {
     img.selected = !selected;
+    renderBgCustomList();
+    alert('更新に失敗しただ: ' + err.message);
+  });
+}
+function onBgCustomProcessedToggle(index, processed) {
+  const img = customHomeBgImages[index];
+  if (!img) return;
+  const prev = img.processed;
+  img.processed = processed;
+  renderBgCustomList();
+  apiPost('toggleHomeBgProcessed', { url: img.url, processed: processed }).catch(function(err) {
+    img.processed = prev;
     renderBgCustomList();
     alert('更新に失敗しただ: ' + err.message);
   });

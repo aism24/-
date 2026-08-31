@@ -61,6 +61,7 @@ function doPost(e) {
     if (action === "replacePhoto") return ok_(replacePhoto(body));
     if (action === "addHomeBgImage") return ok_(addHomeBgImage(body));
     if (action === "toggleHomeBgImage") return ok_(toggleHomeBgImage(body));
+    if (action === "toggleHomeBgProcessed") return ok_(toggleHomeBgProcessed(body));
     return errRes_("不明なaction: " + action);
   } catch (err) {
     return errRes_(err.message);
@@ -187,10 +188,12 @@ function replacePhoto(payload) {
 }
 
 // 背景写真シートのH列=背景写真のURL(またはリポジトリ同梱の固定写真の相対パス)、
-// I列=スライドショーに含めるか(TRUE/FALSE)。
+// I列=スライドショーに含めるか(TRUE/FALSE)、
+// J列=画像処理(ぼかし等)を適用するか(TRUE=処理する/FALSE=そのまま使用)。
 // A列は既存のHotタイマー用画像ID一覧(getImageIds)が使っているため、別の列を使う。
-const HOME_BG_COL_URL = 8;  // H列
-const HOME_BG_COL_SEL = 9;  // I列
+const HOME_BG_COL_URL = 8;       // H列
+const HOME_BG_COL_SEL = 9;       // I列
+const HOME_BG_COL_PROCESSED = 10; // J列
 
 // デフォルトのチーム写真2枚(リポジトリ同梱の静的ファイル。Driveには保存されていない)。
 // 以前は常時固定表示で選択解除できなかったが、追加した写真と同列に選択できるよう、
@@ -212,8 +215,8 @@ function ensureFixedHomeBgRows_(sheet) {
   const missing = FIXED_HOME_BG_URLS.filter(function(url) { return existing.indexOf(url) === -1; });
   if (missing.length === 0) return;
   sheet.insertRowsBefore(1, missing.length);
-  sheet.getRange(1, HOME_BG_COL_URL, missing.length, 2).setValues(
-    missing.map(function(url) { return [url, true]; })
+  sheet.getRange(1, HOME_BG_COL_URL, missing.length, 3).setValues(
+    missing.map(function(url) { return [url, true, true]; })
   );
 }
 
@@ -224,21 +227,27 @@ function getHomeBgImages_() {
   ensureFixedHomeBgRows_(sheet);
   const lastRow = sheet.getLastRow();
   if (lastRow === 0) return [];
-  const values = sheet.getRange(1, HOME_BG_COL_URL, lastRow, 2).getValues();
+  const values = sheet.getRange(1, HOME_BG_COL_URL, lastRow, 3).getValues();
   const list = [];
   values.forEach(function(row) {
     const url = String(row[0] || "").trim();
     const isHttp = url.indexOf("http") === 0;
     const isFixedImagePath = /\.(jpe?g|png|gif|webp)$/i.test(url);
     if (!isHttp && !isFixedImagePath) return; // 見出し行など、URLでも画像パスでもない文字列は無視する
-    list.push({ url: url, selected: row[1] === true || String(row[1]).toUpperCase() === "TRUE" });
+    const selected = row[1] === true || String(row[1]).toUpperCase() === "TRUE";
+    // J列が空欄(既存行でまだ設定されていない)の場合は、これまで通り常に
+    // 画像処理ONだったものとして扱う
+    const processedRaw = String(row[2] || "").trim();
+    const processed = processedRaw === "" ? true : (row[2] === true || processedRaw.toUpperCase() === "TRUE");
+    list.push({ url: url, selected: selected, processed: processed });
   });
   return list;
 }
 
 /**
- * 背景写真の一覧(URL・選択状態・画像本体のdata URL)を返す。デフォルトの
- * チーム写真2枚も、追加した写真も同列に含まれ、どちらも選択・解除できる。
+ * 背景写真の一覧(URL・選択状態・画像処理の有無・画像本体のdata URL)を返す。
+ * デフォルトのチーム写真2枚も、追加した写真も同列に含まれ、どちらも
+ * 選択・解除、画像処理のON/OFFができる。
  *
  * Driveの外部リンク(uc?export=view)をブラウザから直接読み込ませる方式は、
  * 端末やタイミングによって読み込みに失敗することがあるため、GAS側で
@@ -250,7 +259,12 @@ function getHomeBgImages_() {
 function getHomeBgImages() {
   return getHomeBgImages_().map(function(item) {
     const isHttp = item.url.indexOf("http") === 0;
-    return { url: item.url, selected: item.selected, dataUrl: isHttp ? homeBgUrlToDataUrl_(item.url) : item.url };
+    return {
+      url: item.url,
+      selected: item.selected,
+      processed: item.processed,
+      dataUrl: isHttp ? homeBgUrlToDataUrl_(item.url) : item.url
+    };
   });
 }
 
@@ -267,8 +281,9 @@ function homeBgUrlToDataUrl_(url) {
 
 /**
  * ホーム画面の背景候補として写真を追加する。Driveに保存し、背景写真シートの
- * H/I列に新しい行として記録する(初期状態はスライドショーに含める=TRUE)。
- * 全員が同じ候補を見るよう、端末側ではなくスプレッドシート側で共有管理する。
+ * H/I/J列に新しい行として記録する(初期状態はスライドショーに含める=TRUE、
+ * 画像処理も=TRUE)。全員が同じ候補を見るよう、端末側ではなくスプレッドシート
+ * 側で共有管理する。
  */
 function addHomeBgImage(payload) {
   const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
@@ -289,8 +304,22 @@ function addHomeBgImage(payload) {
   for (let i = 0; i < urlValues.length; i++) {
     if (String(urlValues[i][0] || "").trim() === "") { writeRow = i + 1; break; }
   }
-  sheet.getRange(writeRow, HOME_BG_COL_URL, 1, 2).setValues([[url, true]]);
+  sheet.getRange(writeRow, HOME_BG_COL_URL, 1, 3).setValues([[url, true, true]]);
   return { url: url };
+}
+
+/**
+ * 背景写真シート内で、指定のURLと一致する行番号(1始まり)を返す。
+ * 見つからない場合は-1を返す。
+ */
+function findHomeBgRow_(sheet, url) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow === 0) return -1;
+  const urlValues = sheet.getRange(1, HOME_BG_COL_URL, lastRow, 1).getValues();
+  for (let i = 0; i < urlValues.length; i++) {
+    if (String(urlValues[i][0] || "").trim() === String(url || "").trim()) return i + 1;
+  }
+  return -1;
 }
 
 /**
@@ -300,16 +329,24 @@ function toggleHomeBgImage(payload) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(BG_SHEET_NAME);
   if (!sheet) throw new Error("背景写真シートが見つかりません");
-  const lastRow = sheet.getLastRow();
-  if (lastRow === 0) throw new Error("該当する写真が見つかりません");
-  const urlValues = sheet.getRange(1, HOME_BG_COL_URL, lastRow, 1).getValues();
-  for (let i = 0; i < urlValues.length; i++) {
-    if (String(urlValues[i][0] || "").trim() === String(payload.url || "").trim()) {
-      sheet.getRange(i + 1, HOME_BG_COL_SEL).setValue(!!payload.selected);
-      return { success: true };
-    }
-  }
-  throw new Error("該当する写真が見つかりません");
+  const row = findHomeBgRow_(sheet, payload.url);
+  if (row === -1) throw new Error("該当する写真が見つかりません");
+  sheet.getRange(row, HOME_BG_COL_SEL).setValue(!!payload.selected);
+  return { success: true };
+}
+
+/**
+ * 背景写真1枚ごとの画像処理(ぼかし等)ON/OFFを切り替える。
+ * OFFにすると、その写真はスライドショーで加工なし(そのまま)で表示される。
+ */
+function toggleHomeBgProcessed(payload) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(BG_SHEET_NAME);
+  if (!sheet) throw new Error("背景写真シートが見つかりません");
+  const row = findHomeBgRow_(sheet, payload.url);
+  if (row === -1) throw new Error("該当する写真が見つかりません");
+  sheet.getRange(row, HOME_BG_COL_PROCESSED).setValue(!!payload.processed);
+  return { success: true };
 }
 
 function getResults(gender) {
