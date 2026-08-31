@@ -872,7 +872,13 @@ function classifyInfoFiles_() {
 
 /* 指定したスプレッドシートIDのDailyReportシートを読み込む(loadDailyReportRows_の
    複数ファイル対応版。既存のloadDailyReportRows_は無改変のため、ここでは
-   同じロジックをssId引数付きで別関数として持つ)。 */
+   同じロジックをssId引数付きで別関数として持つ)。
+   【重要】workDateはこの時点で'yyyy/MM/dd'の文字列に正規化しておく(Dateオブジェクトの
+   ままにしない)。アーカイブ側はloadArchiveRowsCached_でJSONキャッシュに保存されるが、
+   JSON.stringifyはDateオブジェクトをISO文字列(例: '2024-11-21T00:00:00.000Z')に
+   変換してしまい、キャッシュ読み込み後にtoDate_で正しく再解釈できず日付がNaNになる
+   不具合があったため(実データで確認済み)。読み込み時点で文字列化しておけば、
+   新規読み込み・キャッシュ経由のどちらでも同じ形式になり、この問題が起きない。 */
 function loadDailyReportRowsFromSs_(ssId) {
   const ss = SpreadsheetApp.openById(ssId);
   const values = ss.getSheetByName(SHEET_NAMES.DAILY_REPORT).getDataRange().getValues();
@@ -880,7 +886,10 @@ function loadDailyReportRowsFromSs_(ssId) {
   for (let i = 1; i < values.length; i++) {
     const r = values[i];
     if (!r[0]) continue;
-    const factory = r[1], dept = r[2], operatorNo = String(r[4]), workDate = r[5];
+    const factory = r[1], dept = r[2], operatorNo = String(r[4]);
+    const workDateObj = toDate_(r[5]);
+    if (!workDateObj) continue;
+    const workDate = formatDate_(workDateObj);
     for (let slot = 0; slot < 5; slot++) {
       const off = 6 + slot * 4;
       const constructionId = r[off];
@@ -910,6 +919,11 @@ function loadDailyReportRowsFromSs_(ssId) {
    使えないため)。 */
 
 const ARCHIVE_CACHE_FILE_NAME_ = '_daily_report_archive_cache.json';
+/* キャッシュの中身の形式が変わった場合に、保存済みの古い形式のキャッシュを
+   自動的に無効化するためのバージョン番号。2: workDateを文字列正規化する
+   修正を入れた際に、それ以前(バージョン番号なし)に書き込まれた壊れたキャッシュ
+   (日付がJSON化でISO文字列になり読み戻せなくなっていたもの)を破棄するために導入。 */
+const ARCHIVE_CACHE_VERSION_ = 2;
 
 function getContainerFolder_() {
   return DriveApp.getFileById(SpreadsheetApp.getActive().getId()).getParents().next();
@@ -926,9 +940,11 @@ function readArchiveCache_() {
   try {
     const file = getOrCreateArchiveCacheFile_();
     const text = file.getBlob().getDataAsString();
-    return JSON.parse(text || '{}');
+    const parsed = JSON.parse(text || '{}');
+    if (parsed.version !== ARCHIVE_CACHE_VERSION_) return { version: ARCHIVE_CACHE_VERSION_, files: {} };
+    return parsed;
   } catch (e) {
-    return {};
+    return { version: ARCHIVE_CACHE_VERSION_, files: {} };
   }
 }
 
@@ -941,12 +957,12 @@ function writeArchiveCache_(cache) {
 function loadArchiveRowsCached_(fileId) {
   const cache = readArchiveCache_();
   const modifiedTime = DriveApp.getFileById(fileId).getLastUpdated().getTime();
-  const cached = cache[fileId];
+  const cached = cache.files[fileId];
   if (cached && cached.modifiedTime === modifiedTime) {
     return cached.rows;
   }
   const rows = loadDailyReportRowsFromSs_(fileId);
-  cache[fileId] = { modifiedTime: modifiedTime, rows: rows };
+  cache.files[fileId] = { modifiedTime: modifiedTime, rows: rows };
   writeArchiveCache_(cache);
   return rows;
 }
