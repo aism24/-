@@ -30,7 +30,7 @@ const LOGO_DATA_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy5
 document.querySelectorAll('[data-logo]').forEach(img => img.src = LOGO_DATA_URI);
 
 /* ===================== サーバーから取得するデータ(初期値は空) ===================== */
-let MASTER = { constructions: [], workItems: [], operators: [] };
+let MASTER = { constructions: [], workItems: [], operators: [], earliestArchiveYear: null };
 let ALL_ROWS = []; // getAllDailyReportRows(複数ファイル横断・重複排除済み)の結果 + _date付与
 let CALENDAR_MAP = {}; // 'yyyy/MM/dd' -> '出勤'|'休日'
 let ABSENTEEISM = []; // {operatorNo, from, to, type}
@@ -354,6 +354,8 @@ async function loadAllData(){
   populateMasterUi_();
   applyDefaultFactoryToAllScreens_();
   updateHeaderFactoryLabels_();
+  // MASTER.earliestArchiveYearが判明したので、締め月選択リストの下限を反映して作り直す
+  buildMonthPicker('r4-month', 'r4');
 
   recomputeScreen('r1');
   recomputeScreen('r2');
@@ -898,33 +900,39 @@ function checkedValues(groupId){
   return Array.from(document.querySelectorAll(`#${groupId} input[type=checkbox]:checked`)).map(i=>i.value);
 }
 
-/* 締め月ラジオボタン(本日を含む進行中の締め期間+過去4ヶ月の計5つ・単一選択) */
-function buildMonthRadioPicker(containerId, prefix){
+/* 締め月選択(ドロップダウン、単一選択)。本日を含む進行中の締め期間から、
+   実際に登録されているアーカイブのうち最も古いもの(MASTER.earliestArchiveYear、
+   例: 2024)の開始日(年/11/21)を含む締め月(その年の12月20日締め)までを選択肢にする。
+   下限をハードコードせず、GAS側で「情報」シートから都度求めた値を使うため、
+   将来アーカイブが入れ替わっても選択範囲が自動的に追従する。 */
+function buildMonthPicker(containerId, prefix){
   const el = document.getElementById(containerId);
   const def = currentClosingMonth_();
+  const earliestYear = MASTER.earliestArchiveYear != null ? MASTER.earliestArchiveYear : def.year;
+
   const months = [];
   let y = def.year, m = def.month;
-  for(let i = 0; i < 5; i++){
+  const MAX_MONTHS = 600; // 50年分。異常なMASTER値による無限ループを防ぐ安全策
+  for(let i = 0; i < MAX_MONTHS; i++){
     months.push({ year: y, month: m });
+    if(y === earliestYear && m === 12) break;
     m -= 1;
     if(m === 0){ m = 12; y -= 1; }
+    if(y < earliestYear) break;
   }
-  el.innerHTML = months.map((mo, i) =>
-    `<button type="button" class="checkBtn monthBtn${i === 0 ? ' checked' : ''}" data-year="${mo.year}" data-month="${mo.month}">${mo.month}月20日締め</button>`
+
+  const optionsHtml = months.map((mo, i) =>
+    `<option value="${mo.year}-${mo.month}"${i === 0 ? ' selected' : ''}>${mo.year}年${mo.month}月20日締め</option>`
   ).join('');
-  el.querySelectorAll('.monthBtn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      el.querySelectorAll('.monthBtn').forEach(b => b.classList.remove('checked'));
-      btn.classList.add('checked');
-      triggerRecompute(prefix);
-    });
-  });
+  el.innerHTML = `<select id="${prefix}-monthSelect">${optionsHtml}</select>`;
+  document.getElementById(`${prefix}-monthSelect`).addEventListener('change', () => triggerRecompute(prefix));
 }
 
 function getR4Month(){
-  const btn = document.querySelector('#r4-month .monthBtn.checked');
-  if(!btn) return currentClosingMonth_();
-  return { year: Number(btn.dataset.year), month: Number(btn.dataset.month) };
+  const sel = document.getElementById('r4-monthSelect');
+  if(!sel || !sel.value) return currentClosingMonth_();
+  const [y, m] = sel.value.split('-').map(Number);
+  return { year: y, month: m };
 }
 
 /* 拠点・部署の並び順(数字が小さいほど優先) */
@@ -1370,7 +1378,7 @@ function resetScreen(prefix){
     });
     r4NgOnly = false;
     document.getElementById('r4-ngonly-btn').classList.remove('active');
-    buildMonthRadioPicker('r4-month', 'r4'); // 締め月を最新(先頭)に戻す
+    buildMonthPicker('r4-month', 'r4'); // 締め月を最新(先頭)に戻す
     withRecalcPopup(renderR4Preview);
   }
 }
@@ -1547,7 +1555,7 @@ document.addEventListener('click', e => {
 buildPeriodPicker('r1-period','r1');
 buildPeriodPicker('r2-period','r2');
 buildClosingOnlyPicker('r3-period','r3');
-buildMonthRadioPicker('r4-month','r4');
+buildMonthPicker('r4-month','r4');
 
 // ブラウザを閉じずに再読み込みした場合、ロック解除・工場選択済みならホーム画面へ直行する
 if(sessionStorage.getItem('unlocked') === '1' && getDefaultFactory_()){

@@ -1000,7 +1000,11 @@ function getAllDailyReportRowsMerged_() {
    無改変のまま残し、新API(doPost)からはこちらを使う。社員マスタの「Reportcheck」列
    (row[8])は実データ上「在職中」「退職済」「休職中」以外に役職名(「専務」等)が
    入るケースがあることが分かったため、日報入力チェック(④)で「在職中のみ表示する」
-   判定に使えるよう、真偽値active(row[8]==='在職中')を追加で持たせる。 */
+   判定に使えるよう、真偽値active(row[8]==='在職中')を追加で持たせる。
+   また、日報入力チェックの締め月選択リストの下限を決めるため、現在登録されている
+   アーカイブのうち最も開始年が古いもの(earliestArchiveYear)も返す。ハードコードせず
+   「情報」シートの実際の登録内容から都度求めることで、将来アーカイブが入れ替わっても
+   自動的に選択範囲が追従する。 */
 function getMasterDataWithStatus_() {
   const master = getMasterData();
   const ss = SpreadsheetApp.openById(getDailyReportSsId_());
@@ -1011,6 +1015,13 @@ function getMasterDataWithStatus_() {
     activeByNo[String(opRows[i][0])] = opRows[i][8] === '在職中';
   }
   master.operators.forEach(function (o) { o.active = !!activeByNo[o.no]; });
+
+  const info = classifyInfoFiles_();
+  let earliestArchiveYear = null;
+  info.archives.forEach(function (a) {
+    if (earliestArchiveYear === null || a.startYear < earliestArchiveYear) earliestArchiveYear = a.startYear;
+  });
+  master.earliestArchiveYear = earliestArchiveYear;
   return master;
 }
 
