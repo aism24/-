@@ -114,22 +114,25 @@ function applyGenderTheme(gender) {
     if (el.classList.contains('zero')) { el.classList.toggle('female', f); el.classList.toggle('mixed', m); }
   });
 }
-// デフォルトのチーム写真2枚は常に固定でスライドショーに含める(選択解除できない)
+// GAS APIに到達できない場合のフォールバック専用。通常はスプレッドシート側で
+// 選択管理される(デフォルトのチーム写真2枚も選択・解除できる)ため、
+// 正常時はこの配列を使わない。
 const FIXED_HOME_BG_IMAGES = ['images/home-bg/team-photo-1.jpg', 'images/home-bg/team-photo-2.jpg'];
-let customHomeBgImages = []; // [{url, selected, dataUrl}] 追加した写真(チェックで含める/外せる)
+let customHomeBgImages = []; // [{url, selected, dataUrl}] 背景に使う写真(チェックで含める/外せる)。デフォルトの2枚も含む
 let homeBgActiveLayer = 0;
 let homeBgCurrentIndex = -1;
 let homeBgInterval = null;
+let homeBgImagesReady = false; // getHomeBgImagesの初回取得が完了したか
 function getActiveHomeBgImages() {
   // Driveへの外部リンクを<img>から直接読み込ませると失敗することがあるため、
   // GAS側で読み込み済みのdata URL(dataUrl)を表示に使う。
-  const selected = customHomeBgImages
+  return customHomeBgImages
     .filter(function(img) { return img.selected && img.dataUrl; })
     .map(function(img) { return img.dataUrl; });
-  return FIXED_HOME_BG_IMAGES.concat(selected);
 }
 function homeBgSwitch() {
   const images = getActiveHomeBgImages();
+  if (images.length === 0) return;
   const layers = [document.getElementById('home-bg-img-a'), document.getElementById('home-bg-img-b')];
   const nextLayer = layers[1 - homeBgActiveLayer];
   const currentLayer = layers[homeBgActiveLayer];
@@ -151,26 +154,31 @@ function homeBgStopSlideshow() {
   clearInterval(homeBgInterval);
   homeBgInterval = null;
 }
-// 万一画像の読み込みに失敗しても真っ暗のまま止まらないよう、通常の
-// 3秒間隔のタイマーを仕切り直して切り替える(通常間隔と二重に動いて
-// 切り替えが早まってしまわないよう、独立したタイマーは追加しない)。
+// 読み込みに失敗した写真は非表示にするだけにとどめ、スライドショー自体は
+// 再起動しない(以前は全体を再起動していたため、通常の3秒間隔と重なって
+// 本来より早く切り替わって見えることがあった)。
 function homeBgHandleLoadError_(event) {
   event.target.classList.remove('visible');
-  if (getActiveHomeBgImages().length > 1) homeBgStartSlideshow();
 }
 document.getElementById('home-bg-img-a').addEventListener('error', homeBgHandleLoadError_);
 document.getElementById('home-bg-img-b').addEventListener('error', homeBgHandleLoadError_);
 function loadHomeBgImages() {
   apiGet('getHomeBgImages').then(function(list) {
     customHomeBgImages = list || [];
-    // スライドショーが既に動いている場合はここで開始し直さない。開始し直すと
-    // インデックスとタイマーがリセットされ、GAS APIの応答が返ってくるタイミング
-    // (回線状況で毎回変わる)で1〜2枚目の切り替えが早まって見えてしまうため。
-    // 取得した写真は次回以降の切り替え(homeBgSwitch)から自動的に反映される。
+  }).catch(function() {
+    // スプレッドシート側の選択状態を取得できないため、以前と同じ既定2枚のみ表示する。
+    customHomeBgImages = FIXED_HOME_BG_IMAGES.map(function(url) {
+      return { url: url, selected: true, dataUrl: url };
+    });
+  }).then(function() {
+    homeBgImagesReady = true;
+    // 取得が完了した時点でホーム画面が表示中なら、ここで初めてスライドショーを
+    // 開始する。取得前に既定の写真だけで先に始めてしまうと、追加写真の取得が
+    // 遅れた分だけ既定の写真を余分にループしてしまうため、取得完了を待つ。
     if (document.getElementById('home-screen').style.display !== 'none' && !homeBgInterval) {
       homeBgStartSlideshow();
     }
-  }).catch(() => {});
+  });
 }
 function showScreen(screen) {
   document.getElementById('home-screen').style.display = 'none';
@@ -183,7 +191,8 @@ function showScreen(screen) {
   document.getElementById('bg-custom-screen').style.display = 'none';
   if (screen === 'home') {
     document.getElementById('home-screen').style.display = 'flex';
-    homeBgStartSlideshow();
+    // 初回取得がまだなら、loadHomeBgImages()の完了時に開始する
+    if (homeBgImagesReady) homeBgStartSlideshow();
   } else if (screen === 'gender-select') {
     document.getElementById('gender-select-screen').style.display = 'flex';
   } else if (screen === 'result') {

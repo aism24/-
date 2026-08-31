@@ -326,8 +326,6 @@
     .draw { color: #e0e0e0; }
     .reset-btn { width: 100%; margin-top: 28px; padding: 28px; background: linear-gradient(135deg, #1565c0, #0d47a1); color: white; border: 2px solid #64b5f6; border-radius: 16px; font-size: 40px; font-weight: bold; cursor: pointer; }
     .reset-btn:active { opacity: 0.8; }
-    .bg-thumb-row { display: flex; gap: 14px; flex-wrap: wrap; }
-    .bg-thumb-fixed { width: 140px; height: 90px; object-fit: cover; border-radius: 12px; border: 2px solid #555; opacity: 0.85; }
     .bg-custom-loading { color: #90caf9; font-size: 28px; padding: 10px 0; }
     .bg-custom-item { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid #1e2a6e; flex-wrap: wrap; }
     .bg-custom-item:last-child { border-bottom: none; }
@@ -433,7 +431,6 @@
     .result-badge { font-size: clamp(13px, 3.5vw, 18px); padding: 5px 10px; }
     .result-loading { font-size: clamp(18px, 5vw, 26px); }
     .result-photo-btn { font-size: clamp(13px, 3.5vw, 18px); padding: 6px 12px; }
-    .bg-thumb-fixed { width: clamp(100px, 30vw, 140px); height: clamp(66px, 20vw, 90px); }
     .bg-custom-loading { font-size: clamp(16px, 4.5vw, 22px); }
     .bg-custom-item img { width: clamp(90px, 26vw, 120px); height: clamp(60px, 18vw, 80px); }
     .bg-custom-item label { font-size: clamp(15px, 4.2vw, 20px); min-width: 140px; }
