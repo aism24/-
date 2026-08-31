@@ -188,14 +188,14 @@ function replacePhoto(payload) {
   return { success: true, photoUrl: newUrl };
 }
 
-// 背景写真シートのH列=背景写真のURL(またはリポジトリ同梱の固定写真の相対パス)、
-// I列=スライドショーに含めるか(TRUE/FALSE)、
-// J列=画像処理(ぼかし等)を適用するか(TRUE=処理する/FALSE=そのまま使用)。
+// 背景写真シートのB列=背景写真のURL(またはリポジトリ同梱の固定写真の相対パス)、
+// C列=スライドショーに含めるか(TRUE/FALSE)、
+// D列=画像処理(ぼかし等)を適用するか(TRUE=処理する/FALSE=そのまま使用)。
 // A列は既存のHotタイマー用画像ID一覧(getImageIds)が使っているため、別の列を使う。
 // 1行目は見出し行、実データは2行目(BG_DATA_START_ROW)以降。
-const HOME_BG_COL_URL = 8;       // H列
-const HOME_BG_COL_SEL = 9;       // I列
-const HOME_BG_COL_PROCESSED = 10; // J列
+const HOME_BG_COL_URL = 2;       // B列
+const HOME_BG_COL_SEL = 3;       // C列
+const HOME_BG_COL_PROCESSED = 4; // D列
 const BG_DATA_START_ROW = 2;
 
 /**
