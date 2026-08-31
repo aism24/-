@@ -7,10 +7,8 @@
  * ===================================================================== */
 
 // デプロイ済みGAS Webアプリの新規デプロイURL(/exec で終わるURL)。
-// 【重要】このURLはまだ存在しない。gas/Code.gsをApps Scriptエディタに反映後、
-// 「デプロイを管理」から追加デプロイ(executeAs: USER_DEPLOYING)を新規作成し、
-// 発行されたURLをここに設定すること(既存デプロイのURLとは別物)。
-const GAS_API_URL = "PASTE_NEW_DEPLOYMENT_URL_HERE";
+// 既存のGAS Webアプリ(google.script.run方式)のデプロイとは別物。
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyiocXgXi_YEMUUq5BJPe7CUi2V-LJIBvLwceextYV-82hEArRKRaHQ5peVj5oMfTsW/exec";
 
 // GAS APIへのPOSTリクエスト共通処理。
 // Content-Type は "text/plain" にすることでCORSプリフライト(OPTIONS)を回避している
