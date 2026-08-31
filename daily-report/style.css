@@ -1,0 +1,341 @@
+:root{ --border:#333; }
+*{box-sizing:border-box;}
+body{
+  font-family:"MS PGothic","Meiryo","Yu Gothic",sans-serif;
+  margin:0;
+  background:#eef0f2;
+  color:#222;
+}
+button{ font-family:inherit; cursor:pointer; }
+
+/* ===== ホーム画面 ===== */
+/* #screen-home はID+active クラスで指定し、.screen{display:none}をID優先度で確実に上書きする */
+#screen-home.active{ min-height:100vh; display:flex; align-items:center; justify-content:center; }
+.homeWrap{ text-align:center; }
+.appTitle{ font-size:28px; font-weight:700; margin-bottom:36px; display:flex; align-items:center; justify-content:center; gap:14px; }
+.appTitle .homeLogo{ width:56px; height:56px; cursor:pointer; }
+.homeFactoryLabel{ font-size:13px; color:#888; margin:-24px 0 24px; }
+.homeButtons{ display:flex; flex-direction:column; gap:24px; align-items:center; }
+
+/* ===== ロック画面・工場選択画面(ログイン) ===== */
+#screen-lock.active, #screen-factory.active{ min-height:100vh; display:flex; align-items:center; justify-content:center; }
+.lockBox{ margin-top:8px; display:flex; flex-direction:column; align-items:center; gap:14px; }
+.lockLabel{ font-size:13px; color:#666; }
+.lockInput{
+  width:120px; padding:12px; font-size:22px; text-align:center; letter-spacing:4px;
+  border:1px solid #bbb; border-radius:6px; font-family:inherit;
+}
+.lockSubmitBtn{ width:160px; padding:12px 0; font-size:14px; }
+.lockPasswordPopup{
+  position:fixed; top:32%; left:50%; transform:translate(-50%,-50%);
+  background:#333; color:#fff; font-size:44px; font-weight:700;
+  padding:22px 40px; border-radius:14px; opacity:0; pointer-events:none;
+  transition:opacity .2s ease; z-index:300;
+}
+.lockPasswordPopup.show{ opacity:1; }
+/* 工場選択画面(初回ログイン時)のみの配色。他の画面の工場チップ等には適用しない。
+   .homeBtnとの詳細度を揃えて確実に上書きするため2クラス指定にしている */
+.homeBtn.factoryBtnYumesaki{ background:#e67e22; }
+.homeBtn.factoryBtnTottori{ background:#2a9d5c; }
+.homeBtn{
+  font-size:17px; font-weight:700; padding:20px 40px; border:none; border-radius:10px;
+  background:#2a6fd6; color:#fff; box-shadow:0 2px 8px rgba(0,0,0,.2);
+  width:320px; position:relative; transition:transform .15s ease, background .15s ease, color .15s ease;
+}
+.homeBtn:hover{
+  background:#d9f2df; color:#e5322d; transform:scale(2); z-index:10;
+  animation:homeBtnGlow 1s ease-in-out infinite;
+}
+.homeBtn:disabled{ opacity:.55; cursor:not-allowed; }
+.homeBtn:disabled:hover{
+  background:#2a6fd6; color:#fff; transform:none; animation:none;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);
+}
+.homeBtn.homeBtnCheck{ background:#f4d03f; color:#3a2a00; }
+.homeBtn.homeBtnCheck:disabled:hover{
+  background:#f4d03f; color:#3a2a00; transform:none; animation:none;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);
+}
+@keyframes homeBtnGlow{
+  0%,100%{ box-shadow:0 0 8px 2px rgba(76,175,80,.7), 0 4px 20px rgba(0,0,0,.3); }
+  50%{ box-shadow:0 0 20px 6px rgba(76,175,80,1), 0 4px 20px rgba(0,0,0,.3); }
+}
+.homeBtn .sub{ display:block; font-size:12px; font-weight:400; margin-top:4px; opacity:.9; }
+
+/* ===== 共通ヘッダー ===== */
+.appHeader{
+  position:fixed; top:0; left:0; right:0; z-index:100; height:64px;
+  background:#fff; border-bottom:1px solid #ddd; box-shadow:0 1px 4px rgba(0,0,0,.08);
+  display:flex; align-items:center; justify-content:center; padding:0 20px;
+}
+.headerLeft{
+  position:absolute; left:20px; top:50%; transform:translateY(-50%);
+  display:flex; align-items:center; gap:8px;
+}
+.backBtn{
+  padding:6px 14px; font-size:13px; border:1px solid #2a9d5c;
+  border-radius:16px; background:#2a9d5c; color:#fff;
+}
+.backBtn:hover{ background:#207a46; }
+.resetBtn{
+  padding:6px 14px; font-size:13px; border:1px solid #999;
+  border-radius:16px; background:#fff; color:#666;
+}
+.resetBtn:hover{ background:#eee; }
+.appHeaderBrand{ display:flex; align-items:center; gap:10px; }
+.appHeaderBrand .appLogo{ width:40px; height:40px; flex-shrink:0; }
+.appHeaderBrand .brandName{ font-size:18px; font-weight:700; }
+.appHeaderBrand .pageDivider{ color:#ccc; font-weight:400; }
+.appHeaderBrand .pageTitle{ font-size:13px; color:#666; font-weight:400; }
+.appHeaderBrand .headerFactoryLabel{ font-size:13px; color:#666; font-weight:400; }
+.headerDownloadBtn{
+  position:absolute; right:20px; top:50%; transform:translateY(-50%);
+  padding:7px 16px; font-size:13px; font-weight:700; border:none;
+  border-radius:16px; background:#1f8a4c; color:#fff;
+}
+.headerDownloadBtn:hover{ background:#166f3c; }
+
+/* ===== ①日報入力チェック専用 ===== */
+/* .checkBtnと高さ(padding)を揃え、他の項目(拠点・部署等)のボタン行と統一している */
+.ngOnlyBtn{
+  padding:6px 14px; font-size:13px; font-weight:700; border:1px solid #c33;
+  border-radius:16px; background:#fff; color:#c33;
+}
+.ngOnlyBtn:hover{ background:#fdeaea; }
+.ngOnlyBtn.active{ background:#c33; color:#fff; }
+table.dataTable.r4Table{ table-layout:auto; width:auto; border-collapse:separate; border-spacing:0; }
+.r4Table .r4NameCol{ white-space:nowrap; position:sticky; left:0; z-index:2; background:#fff; }
+/* 3文字(例:「前有給」)まで1行で収まる幅に統一(均等割り付け) */
+.r4Table .r4DateCell{ width:60px; min-width:60px; max-width:60px; }
+table.dataTable th.r4DateCell{ text-align:center; }
+/* 未来日の届出略称(例:「前有給」)だけは数値と違い中央揃えにする */
+table.dataTable.r4Table td.r4LeaveText{ text-align:center; }
+.r4Table th{ position:sticky; top:0; z-index:3; }
+table.dataTable.r4Table th.r4NameCol{ z-index:4; background:#f5f7fa; }
+.r4HolidayCol{ background:#f4cccc; }
+.r4Missing{ background:#ff0000; color:#fff; }
+.r4Duplicate{ background:#f9cb9c; }
+.r4Long{ background:#ffff00; color:#ff0000; font-weight:700; }
+.r4Leave{ background:#fff9c4; }
+.r4TotalCol{ background:#f5f5f5; font-weight:700; }
+tr.r4LocHead td{ font-weight:700; background:#eaf1ff; color:#2a6fd6; }
+tr.r4DeptHead td{ font-weight:700; background:#f5f7fa; color:#555; }
+tr.r4SubtotalOffice td{ background:#bfe6c9; font-weight:700; }
+tr.r4SubtotalFactory td{ background:#bfe0f7; font-weight:700; }
+tr.r4LocTotal td{ background:#f7f9fc; font-weight:700; border-top:2px solid #999; }
+tr.r4GrandTotal td{ background:#eee; font-weight:700; border-top:2px solid #999; }
+/* 休日の列は、拠点/部署見出し・小計・合計・総合計の行でも休日色を優先する
+   (それぞれの行の背景色より詳細度を上げて上書きする) */
+tr.r4LocHead td.r4HolidayCol,
+tr.r4DeptHead td.r4HolidayCol,
+tr.r4SubtotalOffice td.r4HolidayCol,
+tr.r4SubtotalFactory td.r4HolidayCol,
+tr.r4LocTotal td.r4HolidayCol,
+tr.r4GrandTotal td.r4HolidayCol{ background:#f4cccc; }
+/* 氏名・日付(曜日)の項目行(th)は table.dataTable th{background:#f5f7fa}
+   の方が詳細度が高く.r4HolidayColが負けて休日色が出ていなかったため、
+   詳細度を上げて明示的に上書きする */
+table.dataTable.r4Table th.r4HolidayCol{ background:#f4cccc; }
+tr.r4LocHead .r4NameCol{ background:#eaf1ff; }
+tr.r4DeptHead .r4NameCol{ background:#f5f7fa; }
+tr.r4SubtotalOffice .r4NameCol{ background:#bfe6c9; }
+tr.r4SubtotalFactory .r4NameCol{ background:#bfe0f7; }
+tr.r4LocTotal .r4NameCol{ background:#f7f9fc; }
+tr.r4GrandTotal .r4NameCol{ background:#eee; }
+
+/* セルクリックで選んだ行を二重線で囲う(常に1行だけ)。
+   セル1つ1つを囲むのではなく行全体の外枠だけにするため、
+   上下は全セルのborder-top/bottomで(border-collapseにより連続した
+   1本の線になる)、左右は先頭・末尾セルのborder-left/rightだけを
+   変更し、セル同士の内側の区切り線は通常のまま変えない。 */
+table.dataTable tr.r4RowSelected td{ border-top:3px double #2a6fd6; border-bottom:3px double #2a6fd6; }
+table.dataTable tr.r4RowSelected td:first-child{ border-left:3px double #2a6fd6; }
+table.dataTable tr.r4RowSelected td:last-child{ border-right:3px double #2a6fd6; }
+
+/* ===== レポート画面共通レイアウト(上:条件 / 下:プレビュー) ===== */
+.app{ display:flex; flex-direction:column; margin-top:64px; height:calc(100vh - 64px); }
+.panel{
+  width:100%; background:#fffbcc; padding:8px 20px;
+  border-bottom:1px solid #ccc;
+  position:sticky; top:64px; z-index:50;
+}
+/* ①日報入力チェックのみ、集計条件パネルを.main(スクロール領域)の内側に置き、
+   氏名行・ファイル名/見出しと同じ一続きのsticky積み重ねにする。
+   縦(top)方向はCSSのstickyに任せる。横方向はここではleftを指定せず、
+   JS(adjustR4StickyOffset_ / updateR4HStuckState_)側でmargin相殺と
+   transform:translateXにより画面左端に揃える(ネイティブのsticky(left)
+   だとスクロール範囲の途中で位置がズレる不具合があったため)。
+   top位置は集計条件パネルの実測高さがフィルタの折り返しで変わるため、
+   adjustR4StickyOffset_内でJSから都度設定する。 */
+.panel.r4StickyPanel{ position:sticky; top:0; z-index:60; }
+/* 集計条件パネル・ファイル名見出し・氏名/日付行を合わせた高さぶんを
+   薄黄色(.mainと同じ色)で覆う背景板。z-indexはパネル(60)・ファイル名
+   見出し(55)より下、表本体より上に置くことで、3要素の継ぎ目に多少の
+   実測誤差があっても、そこには表のセルではなく背景板の色が見えるだけに
+   なる。表本体の氏名列(.r4NameCol)は横スクロール追従のためz-index:2を
+   持つので、それより確実に上(theadのth同様のz-index:3)にする。DOM順で
+   背景板が先に来るため、theadと重なっても表示はtheadが優先される。
+   高さ・横位置はadjustR4StickyOffset_内でJSから設定する。 */
+.r4HeaderBackdrop{ position:sticky; top:0; z-index:3; background:#fffbcc; pointer-events:none; }
+.panelFields{ display:flex; flex-wrap:wrap; gap:12px 16px; align-items:flex-start; }
+.panelFields > .field{
+  flex:1 1 240px; min-width:220px; max-width:340px; margin-bottom:0;
+  border:1px solid #ddd; border-radius:6px; background:#fff; padding:10px 12px;
+}
+.main{ flex:1; min-height:0; padding:8px 20px 12px; overflow:auto; background:#fffbcc; }
+.screenTitle{ font-size:15px; font-weight:700; margin:0 0 8px; }
+.field{ margin-bottom:14px; }
+.field label{ display:block; font-size:12px; color:#555; margin-bottom:4px; font-weight:700; }
+.field select, .field input[type=date], .field input[type=number]{
+  width:100%; padding:6px 8px; font-size:13px; border:1px solid #bbb; border-radius:4px; font-family:inherit;
+}
+.radioGroup{ display:flex; gap:6px; flex-wrap:wrap; }
+.radioBtn{
+  padding:5px 12px; font-size:12px; border:1px solid #999; border-radius:14px;
+  background:#f5f5f5; user-select:none;
+}
+.radioBtn input{ display:none; }
+.radioBtn.checked{ background:#2a6fd6; color:#fff; border-color:#2a6fd6; }
+.dateRangeRow{ display:flex; align-items:center; gap:6px; }
+.dateRangeRow span{ font-size:12px; color:#777; }
+.rangePreview{
+  margin-top:8px; font-size:12px; color:#333; background:#fff; border:1px solid #ddd;
+  border-radius:4px; padding:6px 8px;
+}
+.checkGroup{ display:flex; flex-wrap:wrap; gap:8px; }
+.checkBtn{
+  padding:6px 14px; font-size:13px; border:1px solid #999; border-radius:16px; background:#f5f5f5;
+}
+.checkBtn input{ display:none; }
+.checkBtn.checked{ background:#2a6fd6; color:#fff; border-color:#2a6fd6; }
+.checkBtn.retired{ color:#c33; }
+.checkBtn.retired.checked{ color:#fff; }
+/* .fieldの上padding(10px)と合わせて上下の余白を揃えるため、上マージンは
+   持たせない(常に.fieldの先頭で使われており、上に何か別の要素が
+   続くケースはない)。 */
+.checkGroupLabel{ font-size:11px; color:#888; margin:0 0 4px; }
+.filterHead{ display:flex; justify-content:flex-start; align-items:center; gap:8px; margin-bottom:4px; }
+.filterHead span{ font-size:12px; color:#555; font-weight:700; }
+.specToggle{ display:flex; align-items:center; gap:4px; }
+.specLabel{ font-size:11px; color:#888; font-weight:400 !important; }
+.specBtn{ padding:2px 10px; font-size:11px; border:1px solid #999; border-radius:12px; background:#f5f5f5; }
+.specBtn.checked{ background:#2a6fd6; color:#fff; border-color:#2a6fd6; }
+.specBtn input{ display:none; }
+.specBody{ display:none; margin-top:6px; }
+.specBody.open{ display:block; }
+.chipSearch{
+  width:100%; padding:5px 8px; font-size:12px; border:1px solid #bbb; border-radius:4px;
+  margin-bottom:6px; font-family:inherit;
+}
+.scrollGroup{
+  max-height:150px; overflow-y:auto; border:1px solid #eee; border-radius:6px;
+  padding:8px; background:#fff;
+}
+.fileNamePreview{
+  margin-bottom:10px; font-size:11px; color:#777; word-break:break-all;
+}
+
+.r4FileHeader{
+  background:#fff; padding:8px 16px 10px; margin-bottom:8px;
+  border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.1);
+  /* 集計条件パネルの直下に積み重なるsticky要素。topは集計条件パネルの
+     実測高さに応じてadjustR4StickyOffset_内でJSから設定する。横方向は
+     .r4StickyPanelと同じ理由でleft未指定、JS側でtransformにより揃える。 */
+  position:sticky; z-index:55;
+}
+.previewPanel{
+  background:#fff; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.1); padding:10px 16px; margin-bottom:16px;
+}
+/* ①日報入力チェックの表は日数分だけ横に伸びるため、白い背景の箱を
+   JSで測った幅に後から合わせる方式(ズレの原因だった)をやめ、
+   常に中身(表)の実際の幅ちょうどになるCSSだけの指定にする。 */
+.previewPanel.r4PreviewPanel{ width:fit-content; min-width:100%; }
+.previewPanel h3{ font-size:13px; margin:0 0 10px; color:#444; }
+.filterSummary{ font-size:11px; color:#777; margin:0 0 12px; padding:6px 8px; background:#f7f9fc; border-radius:4px; }
+.previewEmpty{ color:#999; font-size:13px; text-align:center; padding:40px 0; }
+table.dataTable td.previewEmptyCell{ color:#999; text-align:center; padding:14px 0; }
+table.dataTable{ width:100%; table-layout:fixed; border-collapse:collapse; font-size:13px; }
+table.dataTable th{
+  text-align:left; font-size:11px; color:#777; font-weight:700;
+  padding:6px 8px; border:1px solid #ccc; background:#f5f7fa;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+table.dataTable td{
+  padding:6px 8px; border:1px solid #ddd;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+table.dataTable td.num{ text-align:right; }
+table.dataTable tr.totalRow td{ font-weight:700; background:#f7f9fc; border-top:2px solid #999; }
+table.dataTable tr.sheetHeadRow td{ font-weight:700; background:#eaf1ff; color:#2a6fd6; }
+
+/* 20日〆集計: 工場工数(薄水色)/事務工数(薄緑色)/総合計 の列色分け */
+table.dataTable .colFactory{ background:#dceefc; }
+table.dataTable .colFactoryTotal{ background:#bfe0f7; font-weight:700; }
+table.dataTable .colOffice{ background:#e1f5e6; }
+table.dataTable .colOfficeTotal{ background:#bfe6c9; font-weight:700; }
+table.dataTable .colGrand{ background:#eee; font-weight:700; }
+table.dataTable tr.totalRow .colFactory{ background:#bfe0f7; }
+table.dataTable tr.totalRow .colFactoryTotal{ background:#9fd0f2; }
+table.dataTable tr.totalRow .colOffice{ background:#bfe6c9; }
+table.dataTable tr.totalRow .colOfficeTotal{ background:#9fdcb0; }
+table.dataTable tr.totalRow .colGrand{ background:#ddd; }
+
+/* 工事別集計: 拠点シート内で工場(薄水色)/事務(薄緑色)を行単位で色分け */
+table.dataTable tr.rowFactory td{ background:#dceefc; }
+table.dataTable tr.rowFactoryTotal td{ background:#bfe0f7; font-weight:700; }
+table.dataTable tr.rowOffice td{ background:#e1f5e6; }
+table.dataTable tr.rowOfficeTotal td{ background:#bfe6c9; font-weight:700; }
+
+.toast{
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  background:#333; color:#fff; padding:10px 20px; border-radius:20px; font-size:13px;
+  opacity:0; pointer-events:none; transition:opacity .25s ease;
+}
+.toast.show{ opacity:1; }
+
+/* 「情報収集中」進捗ポップアップ */
+.fakeProgressOverlay{
+  position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.35);
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none; transition:opacity .2s ease;
+}
+.fakeProgressOverlay.show{ opacity:1; pointer-events:auto; }
+.fakeProgressCard{
+  background:#fff; border-radius:10px; padding:28px 36px; width:300px;
+  box-shadow:0 4px 20px rgba(0,0,0,.25); text-align:center;
+}
+.fakeProgressLabel{ font-size:14px; font-weight:700; color:#333; margin-bottom:14px; }
+.fakeProgressTrack{ width:220px; height:10px; border-radius:5px; background:#e6e9ee; overflow:hidden; margin:0 auto; }
+.fakeProgressFill{ width:0%; height:100%; background:#2a6fd6; border-radius:5px; transition:width .15s linear; }
+.fakeProgressWarning{
+  display:none; margin-top:12px; font-size:12px; font-weight:700; color:#d32f2f;
+  animation:fakeProgressBlink 1s step-start infinite;
+}
+@keyframes fakeProgressBlink{ 50%{ opacity:0; } }
+
+/* ①日報入力チェックの再計算中ポップアップ。演出用の最低表示時間は持たず、
+   実際の再計算(重い同期処理)が終わった瞬間に消える */
+.recalcOverlay{
+  position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.15);
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none; transition:opacity .1s ease;
+}
+.recalcOverlay.show{ opacity:1; pointer-events:auto; }
+.recalcCard{
+  background:#fff; border-radius:10px; padding:16px 32px;
+  font-size:14px; font-weight:700; color:#333;
+  box-shadow:0 4px 20px rgba(0,0,0,.25);
+}
+
+/* プレビュー表のはみ出したセルをクリックした時に、そのセルの右上に表示する全文ポップアップ */
+.cellTextPopup{
+  position:fixed; z-index:250; max-width:320px;
+  background:#333; color:#fff; font-size:12px; line-height:1.4;
+  padding:6px 10px; border-radius:6px; word-break:break-all;
+  box-shadow:0 2px 8px rgba(0,0,0,.3);
+  opacity:0; pointer-events:none; transition:opacity .15s ease;
+}
+.cellTextPopup.show{ opacity:1; }
+
+.screen{ display:none; }
+.screen.active{ display:block; }
