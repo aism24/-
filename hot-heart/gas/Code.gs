@@ -186,40 +186,71 @@ function replacePhoto(payload) {
   return { success: true, photoUrl: newUrl };
 }
 
-// 背景写真シートのH列=追加した背景写真のURL、I列=スライドショーに含めるか(TRUE/FALSE)。
+// 背景写真シートのH列=背景写真のURL(またはリポジトリ同梱の固定写真の相対パス)、
+// I列=スライドショーに含めるか(TRUE/FALSE)。
 // A列は既存のHotタイマー用画像ID一覧(getImageIds)が使っているため、別の列を使う。
 const HOME_BG_COL_URL = 8;  // H列
 const HOME_BG_COL_SEL = 9;  // I列
+
+// デフォルトのチーム写真2枚(リポジトリ同梱の静的ファイル。Driveには保存されていない)。
+// 以前は常時固定表示で選択解除できなかったが、追加した写真と同列に選択できるよう、
+// 背景写真シートの先頭行に選択可能な項目として自動登録する。
+const FIXED_HOME_BG_URLS = [
+  "images/home-bg/team-photo-1.jpg",
+  "images/home-bg/team-photo-2.jpg"
+];
+
+/**
+ * デフォルトのチーム写真2枚が背景写真シートにまだ登録されていなければ、
+ * 先頭行に選択済み(TRUE)として自動追加する。既に登録済みなら何もしない。
+ */
+function ensureFixedHomeBgRows_(sheet) {
+  const lastRow = sheet.getLastRow();
+  const existing = lastRow > 0
+    ? sheet.getRange(1, HOME_BG_COL_URL, lastRow, 1).getValues().map(function(row) { return String(row[0] || "").trim(); })
+    : [];
+  const missing = FIXED_HOME_BG_URLS.filter(function(url) { return existing.indexOf(url) === -1; });
+  if (missing.length === 0) return;
+  sheet.insertRowsBefore(1, missing.length);
+  sheet.getRange(1, HOME_BG_COL_URL, missing.length, 2).setValues(
+    missing.map(function(url) { return [url, true]; })
+  );
+}
 
 function getHomeBgImages_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName(BG_SHEET_NAME);
   if (!sheet) return [];
+  ensureFixedHomeBgRows_(sheet);
   const lastRow = sheet.getLastRow();
   if (lastRow === 0) return [];
   const values = sheet.getRange(1, HOME_BG_COL_URL, lastRow, 2).getValues();
   const list = [];
   values.forEach(function(row) {
     const url = String(row[0] || "").trim();
-    if (url.indexOf("http") !== 0) return; // 見出し行など、URL以外の文字列は無視する
+    const isHttp = url.indexOf("http") === 0;
+    const isFixedImagePath = /\.(jpe?g|png|gif|webp)$/i.test(url);
+    if (!isHttp && !isFixedImagePath) return; // 見出し行など、URLでも画像パスでもない文字列は無視する
     list.push({ url: url, selected: row[1] === true || String(row[1]).toUpperCase() === "TRUE" });
   });
   return list;
 }
 
 /**
- * 追加した背景写真の一覧(URL・選択状態・画像本体のdata URL)を返す。
- * デフォルトのチーム写真2枚はフロントエンド側に固定で持たせているため、
- * ここには含まない。
+ * 背景写真の一覧(URL・選択状態・画像本体のdata URL)を返す。デフォルトの
+ * チーム写真2枚も、追加した写真も同列に含まれ、どちらも選択・解除できる。
  *
  * Driveの外部リンク(uc?export=view)をブラウザから直接読み込ませる方式は、
  * 端末やタイミングによって読み込みに失敗することがあるため、GAS側で
  * 画像本体を読み込んでbase64のdata URLとしてAPIレスポンスに含める
  * (ブラウザがDriveへ別リクエストを送る必要がなくなり、確実に表示できる)。
+ * デフォルトのチーム写真2枚はDriveではなくリポジトリ同梱の静的ファイルのため、
+ * この変換は行わず、相対パスをそのままdataUrlとして返す。
  */
 function getHomeBgImages() {
   return getHomeBgImages_().map(function(item) {
-    return { url: item.url, selected: item.selected, dataUrl: homeBgUrlToDataUrl_(item.url) };
+    const isHttp = item.url.indexOf("http") === 0;
+    return { url: item.url, selected: item.selected, dataUrl: isHttp ? homeBgUrlToDataUrl_(item.url) : item.url };
   });
 }
 
