@@ -248,8 +248,12 @@ table.dataTable tr.r4RowSelected td:last-child{ border-right:3px double #2a6fd6;
 }
 /* ①日報入力チェックの表は日数分だけ横に伸びるため、白い背景の箱を
    JSで測った幅に後から合わせる方式(ズレの原因だった)をやめ、
-   常に中身(表)の実際の幅ちょうどになるCSSだけの指定にする。 */
-.previewPanel.r4PreviewPanel{ width:fit-content; min-width:100%; }
+   常に中身(表)の実際の幅ちょうどになるCSSだけの指定にする。
+   min-width:100%を付けると、表の実幅が.mainの表示幅より狭い場合(選択期間が
+   短い等)に、白いカードだけが画面いっぱいに間延びして表示されてしまう
+   (実データで確認)。背景を透明にするのではなく、カード自体を表の実幅に
+   ぴったり合わせることで、この間延びを解消する。 */
+.previewPanel.r4PreviewPanel{ width:fit-content; }
 .previewPanel h3{ font-size:13px; margin:0 0 10px; color:#444; }
 .filterSummary{ font-size:11px; color:#777; margin:0 0 12px; padding:6px 8px; background:#f7f9fc; border-radius:4px; }
 .previewEmpty{ color:#999; font-size:13px; text-align:center; padding:40px 0; }
