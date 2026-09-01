@@ -29,10 +29,11 @@
       margin: 0;
       color: #fff;
     }
-    /* 行ごとにスタッキングコンテキストを持たせ、ホバー中の行だけz-indexを
-       上げることで、拡大したカードが次の行の内容の下に隠れて枠が欠けて
-       見える問題を避ける(カード単体のz-indexだけでは祖先が持つ既定の
-       描画順に負けて後続の行の下に隠れることがあるため、行単位で上げる)。 */
+    /* 行ごとにスタッキングコンテキストを持たせ、ホバー中/タップでactiveな行だけ
+       z-indexを上げることで、拡大したカードが同じ行の後続ボタンや次の行の内容の
+       下に隠れて枠が欠けたり、逆に後続ボタンが拡大パネルの上に浮いて見えたり
+       する問題を避ける(カード単体のz-indexだけでは祖先が持つ既定の描画順に
+       負けて後続の行・ボタンの下に隠れることがあるため、行単位で上げる)。 */
     .category-row {
       position: relative;
       z-index: 0;
@@ -49,7 +50,8 @@
       padding-bottom: 12px;
       border-bottom: 1px solid #2a2a2a;
     }
-    .category-row:hover {
+    .category-row:hover,
+    .category-row:has(.card.active) {
       z-index: 10;
     }
     .category-row:first-of-type {
@@ -86,7 +88,8 @@
       cursor: pointer;
       width: fit-content;
     }
-    .card:hover {
+    .card:hover,
+    .card.active {
       z-index: 10;
     }
     .card .icon {
