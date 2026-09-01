@@ -34,8 +34,24 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+// 分類ラベルの表示用HTMLを組み立てる。分類名にアンダースコアが2つ以上ある
+// (例:「Excel_マスタ_実寸法師」)場合、最後のアンダースコアの位置で改行して
+// 2行に収める(左の固定幅列「★★調整中★★」基準の幅に収まるようにするため)。
+// それ以外はそのまま1行で表示する。
+function categoryLabelHtml(text) {
+  const parts = String(text).split('_');
+  if (parts.length >= 3) {
+    const last = parts.pop();
+    return escapeHtml(parts.join('_')) + '<br>' + escapeHtml(last);
+  }
+  return escapeHtml(text);
+}
+
 // GAS側のgetAppGroups()がすでに分類ごとにグループ化し、カードの色(color)と
-// アイコン文字(initial)も計算済みで返すため、ここでは受け取った通りに描画するだけ。
+// ボタンに表示する文字(initial)も計算済みで返すため、ここでは受け取った通りに
+// 描画するだけ。カードはロゴボタンそのもの(枠なしの色付きボタン)。
+// アプリ名・説明はボタン自体には表示せず、native titleツールチップとして
+// hoverで見られるようにする(枠付きの独自パネルは表示位置がズレる問題があった)。
 function renderGroups(groups) {
   const root = document.getElementById('groups');
   root.innerHTML = '';
@@ -51,7 +67,7 @@ function renderGroups(groups) {
 
     const h2 = document.createElement('h2');
     h2.className = 'category';
-    h2.textContent = group.category;
+    h2.innerHTML = categoryLabelHtml(group.category);
     row.appendChild(h2);
 
     const grid = document.createElement('div');
@@ -61,12 +77,9 @@ function renderGroups(groups) {
       const card = document.createElement('div');
       card.className = 'card';
       card.style.setProperty('--accent', app.color);
-      card.innerHTML =
-        '<div class="icon">' + escapeHtml(app.initial) + '</div>' +
-        '<div class="details">' +
-          '<div class="name">' + escapeHtml(app.name) + '</div>' +
-          (app.description ? '<div class="desc">' + escapeHtml(app.description) + '</div>' : '') +
-        '</div>';
+      card.style.background = app.color;
+      card.textContent = app.initial;
+      card.title = app.description ? app.name + '：' + app.description : app.name;
       card.addEventListener('click', function () {
         window.open(app.url, '_blank');
         // クリックログの送信は失敗してもアプリ起動自体は妨げない(ベストエフォート)。
