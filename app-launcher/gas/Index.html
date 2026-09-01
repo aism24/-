@@ -29,9 +29,15 @@
       margin: 0;
       color: #fff;
     }
+    /* 行ごとにスタッキングコンテキストを持たせ、ホバー中の行だけz-indexを
+       上げることで、拡大したカードが次の行の内容の下に隠れて枠が欠けて
+       見える問題を避ける(カード単体のz-indexだけでは祖先が持つ既定の
+       描画順に負けて後続の行の下に隠れることがあるため、行単位で上げる)。 */
     .category-row {
+      position: relative;
+      z-index: 0;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 16px;
       width: 100%;
       max-width: 900px;
@@ -39,6 +45,9 @@
       margin: 12px 0;
       padding-bottom: 12px;
       border-bottom: 1px solid #2a2a2a;
+    }
+    .category-row:hover {
+      z-index: 10;
     }
     .category-row:first-of-type {
       margin-top: 0;
@@ -49,6 +58,7 @@
        アンダースコアの位置に改行を入れて2行に収める。 */
     h2.category {
       flex: 0 0 116px;
+      padding-top: 8px;
       font-size: 13px;
       font-weight: 700;
       color: #999;
@@ -60,19 +70,34 @@
       display: flex;
       flex-wrap: wrap;
       justify-content: flex-start;
-      align-items: center;
-      gap: 12px;
+      gap: 16px;
       flex: 1;
       min-width: 0;
     }
-    /* カードはロゴボタンそのもの(枠なし)。ホバー時は自分自身が拡大・発光するだけなので、
-       以前の「枠付きカード+ホバーで詳細パネル展開」構成のような、拡大時に次のセクションの
-       内容と重なって外枠が欠けて見える問題は発生しない。 */
     .card {
       position: relative;
-      min-height: 36px;
-      padding: 0 14px;
+      background: #161616;
+      border-radius: 12px;
+      border: 4px solid #cfcfcf;
+      padding: 18px;
+      cursor: pointer;
+      width: fit-content;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .card:hover {
+      transform: scale(2);
+      transform-origin: top left;
+      border-color: var(--accent);
+      border-radius: 12px 12px 0 0;
+      box-shadow: 0 0 16px var(--accent), 0 6px 16px rgba(0, 0, 0, 0.5);
+    }
+    .card .icon {
+      min-width: 36px;
+      height: 36px;
+      padding: 0 8px;
       border-radius: 8px;
+      background: var(--accent);
       color: #fff;
       font-weight: bold;
       font-size: 14px;
@@ -80,13 +105,45 @@
       align-items: center;
       justify-content: center;
       white-space: nowrap;
-      cursor: pointer;
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
-    .card:hover {
-      transform: scale(1.08);
-      box-shadow: 0 0 16px var(--accent), 0 6px 16px rgba(0, 0, 0, 0.5);
-      z-index: 2;
+    .card:hover .icon {
+      margin-bottom: 12px;
+    }
+    /* アイコンの下端にぴったり接続し、境界線もアイコン側と繋げることで、
+       アイコン+名前+説明がひとつながりの枠に見えるようにする。
+       position:absoluteの基準はカードの「パディング内側」であり、外枠の
+       ボーダー(4px)の分だけ内側にずれるため、その分を補正して外側に
+       押し出している(top/leftとwidthの+4px)。 */
+    .card .details {
+      display: none;
+      position: absolute;
+      top: calc(100% + 4px);
+      left: -4px;
+      box-sizing: border-box;
+      min-width: calc(100% + 8px);
+      background: #161616;
+      border: 4px solid var(--accent);
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      padding: 12px 16px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+    }
+    .card:hover .details {
+      display: block;
+    }
+    .card .name {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.4;
+      margin-bottom: 4px;
+      color: #f5f5f5;
+      white-space: nowrap;
+    }
+    .card .desc {
+      font-size: 12px;
+      color: #999;
+      line-height: 1.4;
+      white-space: nowrap;
     }
     .empty {
       color: #888;
@@ -131,15 +188,19 @@
         <? for (var i = 0; i < apps.length; i++) { ?>
           <?
             var app_ = apps[i];
-            var titleText_ = app_.description ? (app_.name + '：' + app_.description) : app_.name;
           ?>
-          <!-- カードはロゴボタンそのもの(枠なし)。アプリ名・説明はボタンには表示せず、
-               native titleツールチップとしてhoverで見られるようにする。 -->
           <div class="card"
-               style="--accent: <?!= app_.color ?>; background: <?!= app_.color ?>"
+               style="--accent: <?!= app_.color ?>"
                data-url="<?= app_.url ?>"
-               data-name="<?= app_.name ?>"
-               title="<?= titleText_ ?>"><?= app_.initial ?></div>
+               data-name="<?= app_.name ?>">
+            <div class="icon"><?= app_.initial ?></div>
+            <div class="details">
+              <div class="name"><?= app_.name ?></div>
+              <? if (app_.description) { ?>
+                <div class="desc"><?= app_.description ?></div>
+              <? } ?>
+            </div>
+          </div>
         <? } ?>
       </div>
     </div>
