@@ -48,10 +48,9 @@ function categoryLabelHtml(text) {
 }
 
 // GAS側のgetAppGroups()がすでに分類ごとにグループ化し、カードの色(color)と
-// ボタンに表示する文字(initial)も計算済みで返すため、ここでは受け取った通りに
-// 描画するだけ。カードはロゴボタンそのもの(枠なしの色付きボタン)。
-// アプリ名・説明はボタン自体には表示せず、native titleツールチップとして
-// hoverで見られるようにする(枠付きの独自パネルは表示位置がズレる問題があった)。
+// アイコン文字(initial)も計算済みで返すため、ここでは受け取った通りに描画する
+// だけ。カードは通常時はロゴアイコンのみのボタンで、ホバー時にアイコンの
+// 下へ名前・説明を含む枠を繋げて2倍サイズで展開する。
 function renderGroups(groups) {
   const root = document.getElementById('groups');
   root.innerHTML = '';
@@ -77,9 +76,12 @@ function renderGroups(groups) {
       const card = document.createElement('div');
       card.className = 'card';
       card.style.setProperty('--accent', app.color);
-      card.style.background = app.color;
-      card.textContent = app.initial;
-      card.title = app.description ? app.name + '：' + app.description : app.name;
+      card.innerHTML =
+        '<div class="icon">' + escapeHtml(app.initial) + '</div>' +
+        '<div class="details">' +
+          '<div class="name">' + escapeHtml(app.name) + '</div>' +
+          (app.description ? '<div class="desc">' + escapeHtml(app.description) + '</div>' : '') +
+        '</div>';
       card.addEventListener('click', function () {
         window.open(app.url, '_blank');
         // クリックログの送信は失敗してもアプリ起動自体は妨げない(ベストエフォート)。
