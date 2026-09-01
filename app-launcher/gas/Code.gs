@@ -21,8 +21,12 @@ const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
 const SHEET_NAME = '情報';
 const LOG_SHEET_NAME = '記録';
 
-// カードごとのアクセントカラー(情報シートの並び順で順番に割り当てる。分類をまたいでも継続する)
-const CARD_COLORS = ['#4285F4', '#EA4335', '#FBBC05', '#34A853', '#9C27B0', '#FF7043'];
+// カードごとのアクセントカラーを、黄金角(137.508°)で色相をずらしながら生成する。
+// 固定パレットの巡回と違い何番目でも重複しない(似た色にはなり得るが完全同色にはならない)。
+function cardColorForIndex_(index) {
+  const hue = Math.round((index * 137.508) % 360);
+  return 'hsl(' + hue + ', 65%, 55%)';
+}
 
 function doGet() {
   const template = HtmlService.createTemplateFromFile('Index');
@@ -58,7 +62,7 @@ function getAppGroups() {
       name: name,
       url: url,
       description: description || '',
-      color: CARD_COLORS[colorIndex % CARD_COLORS.length],
+      color: cardColorForIndex_(colorIndex),
       initial: logo || String(name).charAt(0)
     });
     colorIndex++;

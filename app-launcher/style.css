@@ -74,9 +74,12 @@ h2.category:first-of-type {
   align-items: center;
   justify-content: center;
   white-space: nowrap;
+}
+.card:hover .icon {
   margin-bottom: 12px;
 }
 .card .name {
+  display: none;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.4;
@@ -84,10 +87,17 @@ h2.category:first-of-type {
   color: #f5f5f5;
   white-space: nowrap;
 }
+.card:hover .name {
+  display: block;
+}
 .card .desc {
+  display: none;
   font-size: 12px;
   color: #999;
   line-height: 1.4;
+}
+.card:hover .desc {
+  display: block;
 }
 .empty {
   color: #888;
