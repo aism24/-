@@ -46,10 +46,13 @@ function renderGroups(groups) {
   }
 
   groups.forEach(function (group) {
+    const row = document.createElement('div');
+    row.className = 'category-row';
+
     const h2 = document.createElement('h2');
     h2.className = 'category';
     h2.textContent = group.category;
-    root.appendChild(h2);
+    row.appendChild(h2);
 
     const grid = document.createElement('div');
     grid.className = 'grid';
@@ -72,7 +75,8 @@ function renderGroups(groups) {
       grid.appendChild(card);
     });
 
-    root.appendChild(grid);
+    row.appendChild(grid);
+    root.appendChild(row);
   });
 }
 
