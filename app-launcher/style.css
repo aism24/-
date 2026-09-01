@@ -61,31 +61,25 @@ h2.category {
   line-height: 1.4;
   margin: 0;
 }
+/* ボタン同士の間隔。ここが狭いと、境目にマウスがある時に隣接ボタンの
+   ホバーが交互に切り替わってちらつく原因になるため、ある程度の余白を持たせる
+   (広すぎるとレイアウトが間延びするので最小限の調整に留める)。 */
 .grid {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-start;
-  gap: 16px;
+  gap: 24px;
   flex: 1;
   min-width: 0;
 }
 .card {
   position: relative;
-  background: #161616;
-  border-radius: 12px;
-  border: 4px solid #cfcfcf;
-  padding: 18px;
+  z-index: 1;
   cursor: pointer;
   width: fit-content;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 .card:hover {
-  transform: scale(2);
-  transform-origin: top left;
-  border-color: var(--accent);
-  border-radius: 12px 12px 0 0;
-  box-shadow: 0 0 16px var(--accent), 0 6px 16px rgba(0, 0, 0, 0.5);
+  z-index: 10;
 }
 .card .icon {
   min-width: 36px;
@@ -101,30 +95,31 @@ h2.category {
   justify-content: center;
   white-space: nowrap;
 }
-.card:hover .icon {
-  margin-bottom: 12px;
-}
-/* アイコンの下端にぴったり接続し、境界線もアイコン側と繋げることで、
-   アイコン+名前+説明がひとつながりの枠に見えるようにする。
-   position:absoluteの基準はカードの「パディング内側」であり、外枠の
-   ボーダー(4px)の分だけ内側にずれるため、その分を補正して外側に
-   押し出している(top/leftとwidthの+4px)。 */
+/* 通常時は上のicon(枠なし・ボタンそのもの)だけが見えている。ホバー時は
+   このdetailsパネルが、アイコンを内側に複製した状態で1つの枠として
+   表示され、元のアイコンを覆い隠す(=ロゴボタン+名前+説明がひとつの
+   外枠に収まって見える)。初期表示では枠は一切出ない。 */
 .card .details {
   display: none;
-  position: absolute;
-  top: calc(100% + 4px);
-  left: -4px;
-  box-sizing: border-box;
-  min-width: calc(100% + 8px);
-  background: #161616;
-  border: 4px solid var(--accent);
-  border-top: none;
-  border-radius: 0 0 12px 12px;
-  padding: 12px 16px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
 }
 .card:hover .details {
   display: block;
+  position: absolute;
+  top: -14px;
+  left: -14px;
+  z-index: 1;
+  box-sizing: border-box;
+  min-width: calc(100% + 28px);
+  transform: scale(2);
+  transform-origin: top left;
+  background: #161616;
+  border: 4px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 0 16px var(--accent), 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+.card:hover .details .icon {
+  margin-bottom: 12px;
 }
 .card .name {
   font-size: 14px;
