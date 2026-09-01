@@ -87,7 +87,7 @@ h2.category {
   padding: 0 8px;
   border-radius: 8px;
   background: var(--accent);
-  color: #fff;
+  color: var(--text, #fff);
   font-weight: bold;
   font-size: 14px;
   display: inline-flex;
@@ -95,14 +95,17 @@ h2.category {
   justify-content: center;
   white-space: nowrap;
 }
-/* 通常時は上のicon(枠なし・ボタンそのもの)だけが見えている。ホバー時は
-   このdetailsパネルが、アイコンを内側に複製した状態で1つの枠として
-   表示され、元のアイコンを覆い隠す(=ロゴボタン+名前+説明がひとつの
-   外枠に収まって見える)。初期表示では枠は一切出ない。 */
+/* 通常時は上のicon(枠なし・ボタンそのもの)だけが見えている。ホバー時(PC)/
+   タップ時(タッチ)は、このdetailsパネルが、アイコンを内側に複製した状態で
+   1つの枠として表示され、元のアイコンを覆い隠す(=ロゴボタン+名前+説明が
+   ひとつの外枠に収まって見える)。初期表示では枠は一切出ない。
+   タッチ環境ではJS側で付与する.activeクラスでも同じ表示にする(1タップ目で
+   ホバー相当の表示、同じカードへの2タップ目で起動する2段階タップのため)。 */
 .card .details {
   display: none;
 }
-.card:hover .details {
+.card:hover .details,
+.card.active .details {
   display: block;
   position: absolute;
   top: -14px;
@@ -117,6 +120,18 @@ h2.category {
   border-radius: 12px;
   padding: 14px;
   box-shadow: 0 0 16px var(--accent), 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+/* マウス操作環境限定で、拡大表示中のdetailsをマウスイベントに対して
+   透過させる。これにより「ホバーが継続する当たり判定」は常に元の
+   アイコンボタンの実サイズ範囲のままになり(見た目だけ2倍)、拡大表示が
+   隣のボタンの上に覆いかぶさっていても、実際にマウスが隣のボタンの
+   実サイズ範囲に入った時点ですぐそちらのホバーに切り替わる。
+   タッチ環境(hover:none)には適用しない。ここで透過させると.activeを
+   トグルするタップ判定自体が効かなくなり、2段階タップが機能しなくなるため。 */
+@media (hover: hover) {
+  .card:hover .details {
+    pointer-events: none;
+  }
 }
 .card:hover .details .icon {
   margin-bottom: 12px;

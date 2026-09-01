@@ -47,10 +47,85 @@ function categoryLabelHtml(text) {
   return escapeHtml(text);
 }
 
-// GAS側のgetAppGroups()がすでに分類ごとにグループ化し、カードの色(color)と
-// アイコン文字(initial)も計算済みで返すため、ここでは受け取った通りに描画する
-// だけ。カードは通常時はロゴアイコンのみのボタンで、ホバー時にアイコンの
-// 下へ名前・説明を含む枠を繋げて2倍サイズで展開する。
+// マウスホバーに対応する環境か(PC等)。タッチ専用環境(iPad等)ではfalseになる。
+// falseの場合、タップを「1回目=ホバー相当の表示」「同じカードへの2回目=
+// 起動」という2段階の挙動に切り替える(通常のタップは長押ししないと:hoverが
+// 有効にならず、かつタップ即起動してしまうため、ホバー時の名前・説明の表示を
+// 確認する間がない、また別カードへの切り替えもしにくい問題への対応)。
+const supportsHover = window.matchMedia('(hover: hover)').matches;
+
+// タッチ環境向け: カードDOM要素 -> アプリ情報。タップ時の起動・ログ送信に使う。
+const cardApps = new WeakMap();
+
+function openApp(card) {
+  const app = cardApps.get(card);
+  if (!app) return;
+  window.open(app.url, '_blank');
+  // クリックログの送信は失敗してもアプリ起動自体は妨げない(ベストエフォート)。
+  apiPost('logAppOpen', { appName: app.name }).catch(function () {});
+}
+
+// カード外側のタップで、開いたままの.active表示をすべて閉じる。
+document.addEventListener('click', function (e) {
+  if (!e.target.closest('.card')) {
+    document.querySelectorAll('.card.active').forEach(function (c) {
+      c.classList.remove('active');
+    });
+  }
+});
+
+if (!supportsHover) {
+  // タッチ環境: タップの当たり判定を「拡大表示された見た目」ではなく、常に
+  // 各カードの実サイズのアイコン範囲を基準に判定し直す。ホバー中(active)の
+  // カードの拡大パネルが隣の本来のボタン位置に視覚的に重なっていても、実際に
+  // 押した座標がどのカードの実サイズ範囲に入っているかで対象を決めるため、
+  // 別のボタンへ1タップで直接切り替えられる(拡大パネルの見た目の重なり順に
+  // 引きずられて、覆われた奥のカードが誤って開いてしまうことがない)。
+  // キャプチャフェーズで先取りし、通常のクリック伝播(カード自身のリスナーや
+  // 外側クリックでの解除)より先に判定・処理する。
+  document.addEventListener('click', function (e) {
+    const icons = document.querySelectorAll('.card > .icon');
+    let hitCard = null;
+    for (let i = 0; i < icons.length; i++) {
+      const r = icons[i].getBoundingClientRect();
+      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+        hitCard = icons[i].parentElement;
+        break;
+      }
+    }
+
+    // 実サイズのアイコン範囲に当たらなくても、タップ位置がすでにactiveな
+    // カードの拡大パネル(名前・説明を含む)の内側であれば、そのカードへの
+    // タップとして扱う(2回目のタップで開く操作は、拡大表示のどこを押しても
+    // 反応してよいため)。
+    if (!hitCard) {
+      const activeAncestor = e.target.closest('.card.active');
+      if (activeAncestor) hitCard = activeAncestor;
+    }
+
+    if (!hitCard) return; // 本当に何もない背景 → 外側クリック扱いのまま
+
+    e.stopPropagation();
+    e.preventDefault();
+
+    const wasActive = hitCard.classList.contains('active');
+    document.querySelectorAll('.card.active').forEach(function (c) {
+      if (c !== hitCard) c.classList.remove('active');
+    });
+
+    if (wasActive) {
+      openApp(hitCard);
+      hitCard.classList.remove('active');
+    } else {
+      hitCard.classList.add('active');
+    }
+  }, true);
+}
+
+// GAS側のgetAppGroups()がすでに分類ごとにグループ化し、カードの色(color)・
+// 文字色(textColor)・アイコン文字(initial)も計算済みで返すため、ここでは
+// 受け取った通りに描画するだけ。カードは通常時はロゴアイコンのみのボタンで、
+// ホバー時にアイコンの下へ名前・説明を含む枠を繋げて2倍サイズで展開する。
 function renderGroups(groups) {
   const root = document.getElementById('groups');
   root.innerHTML = '';
@@ -76,6 +151,7 @@ function renderGroups(groups) {
       const card = document.createElement('div');
       card.className = 'card';
       card.style.setProperty('--accent', app.color);
+      card.style.setProperty('--text', app.textColor || '#fff');
       card.innerHTML =
         '<div class="icon">' + escapeHtml(app.initial) + '</div>' +
         '<div class="details">' +
@@ -83,11 +159,14 @@ function renderGroups(groups) {
           '<div class="name">' + escapeHtml(app.name) + '</div>' +
           (app.description ? '<div class="desc">' + escapeHtml(app.description) + '</div>' : '') +
         '</div>';
-      card.addEventListener('click', function () {
-        window.open(app.url, '_blank');
-        // クリックログの送信は失敗してもアプリ起動自体は妨げない(ベストエフォート)。
-        apiPost('logAppOpen', { appName: app.name }).catch(function () {});
-      });
+      cardApps.set(card, app);
+      if (supportsHover) {
+        // マウス環境: ホバーで詳細が見えるので、クリックはそのまま即起動でよい
+        // (タッチ環境の2段階タップ処理は上のdocument委譲リスナーが担当する)。
+        card.addEventListener('click', function () {
+          openApp(card);
+        });
+      }
       grid.appendChild(card);
     });
 
