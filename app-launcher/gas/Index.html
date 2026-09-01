@@ -92,7 +92,7 @@
       padding: 0 8px;
       border-radius: 8px;
       background: var(--accent);
-      color: #fff;
+      color: var(--text, #fff);
       font-weight: bold;
       font-size: 14px;
       display: inline-flex;
@@ -100,14 +100,17 @@
       justify-content: center;
       white-space: nowrap;
     }
-    /* 通常時は上のicon(枠なし・ボタンそのもの)だけが見えている。ホバー時は
-       このdetailsパネルが、アイコンを内側に複製した状態で1つの枠として
-       表示され、元のアイコンを覆い隠す(=ロゴボタン+名前+説明がひとつの
-       外枠に収まって見える)。初期表示では枠は一切出ない。 */
+    /* 通常時は上のicon(枠なし・ボタンそのもの)だけが見えている。ホバー時(PC)/
+       タップ時(タッチ)は、このdetailsパネルが、アイコンを内側に複製した状態で
+       1つの枠として表示され、元のアイコンを覆い隠す(=ロゴボタン+名前+説明が
+       ひとつの外枠に収まって見える)。初期表示では枠は一切出ない。
+       タッチ環境ではJS側で付与する.activeクラスでも同じ表示にする(1タップ目で
+       ホバー相当の表示、同じカードへの2タップ目で起動する2段階タップのため)。 */
     .card .details {
       display: none;
     }
-    .card:hover .details {
+    .card:hover .details,
+    .card.active .details {
       display: block;
       position: absolute;
       top: -14px;
@@ -122,6 +125,18 @@
       border-radius: 12px;
       padding: 14px;
       box-shadow: 0 0 16px var(--accent), 0 6px 16px rgba(0, 0, 0, 0.5);
+    }
+    /* マウス操作環境限定で、拡大表示中のdetailsをマウスイベントに対して
+       透過させる。これにより「ホバーが継続する当たり判定」は常に元の
+       アイコンボタンの実サイズ範囲のままになり(見た目だけ2倍)、拡大表示が
+       隣のボタンの上に覆いかぶさっていても、実際にマウスが隣のボタンの
+       実サイズ範囲に入った時点ですぐそちらのホバーに切り替わる。
+       タッチ環境(hover:none)には適用しない。ここで透過させると.activeを
+       トグルするタップ判定自体が効かなくなり、2段階タップが機能しなくなるため。 */
+    @media (hover: hover) {
+      .card:hover .details {
+        pointer-events: none;
+      }
     }
     .card:hover .details .icon {
       margin-bottom: 12px;
@@ -185,7 +200,7 @@
             var app_ = apps[i];
           ?>
           <div class="card"
-               style="--accent: <?!= app_.color ?>"
+               style="--accent: <?!= app_.color ?>; --text: <?!= app_.textColor ?>"
                data-url="<?= app_.url ?>"
                data-name="<?= app_.name ?>">
             <div class="icon"><?= app_.initial ?></div>
@@ -203,14 +218,81 @@
   <? } ?>
 
   <script>
-    document.querySelectorAll('.card').forEach(function (card) {
-      card.addEventListener('click', function () {
-        var url = card.getAttribute('data-url');
-        var name = card.getAttribute('data-name');
-        window.open(url, '_blank');
-        google.script.run.logAppOpen(name);
-      });
+    // マウスホバーに対応する環境か(PC等)。タッチ専用環境(iPad等)ではfalseになる。
+    // falseの場合、タップを「1回目=ホバー相当の表示」「同じカードへの2回目=
+    // 起動」という2段階の挙動に切り替える(GitHub Pages版のapp.jsと同じ対応)。
+    var supportsHover = window.matchMedia('(hover: hover)').matches;
+
+    function openCard(card) {
+      var url = card.getAttribute('data-url');
+      var name = card.getAttribute('data-name');
+      window.open(url, '_blank');
+      google.script.run.logAppOpen(name);
+    }
+
+    // カード外側のタップで、開いたままの.active表示をすべて閉じる。
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('.card')) {
+        document.querySelectorAll('.card.active').forEach(function (c) {
+          c.classList.remove('active');
+        });
+      }
     });
+
+    if (supportsHover) {
+      // マウス環境: ホバーで詳細が見えるので、クリックはそのまま即起動でよい
+      // (タッチ環境の2段階タップ処理は下のdocument委譲リスナーが担当する)。
+      document.querySelectorAll('.card').forEach(function (card) {
+        card.addEventListener('click', function () {
+          openCard(card);
+        });
+      });
+    } else {
+      // タッチ環境: タップの当たり判定を「拡大表示された見た目」ではなく、常に
+      // 各カードの実サイズのアイコン範囲を基準に判定し直す。ホバー中(active)の
+      // カードの拡大パネルが隣の本来のボタン位置に視覚的に重なっていても、実際
+      // に押した座標がどのカードの実サイズ範囲に入っているかで対象を決めるため、
+      // 別のボタンへ1タップで直接切り替えられる(拡大パネルの見た目の重なり順に
+      // 引きずられて、覆われた奥のカードが誤って開いてしまうことがない)。
+      // キャプチャフェーズで先取りし、通常のクリック伝播より先に判定・処理する。
+      document.addEventListener('click', function (e) {
+        var icons = document.querySelectorAll('.card > .icon');
+        var hitCard = null;
+        for (var i = 0; i < icons.length; i++) {
+          var r = icons[i].getBoundingClientRect();
+          if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+            hitCard = icons[i].parentElement;
+            break;
+          }
+        }
+
+        // 実サイズのアイコン範囲に当たらなくても、タップ位置がすでにactiveな
+        // カードの拡大パネル(名前・説明を含む)の内側であれば、そのカードへの
+        // タップとして扱う(2回目のタップで開く操作は、拡大表示のどこを押しても
+        // 反応してよいため)。
+        if (!hitCard) {
+          var activeAncestor = e.target.closest('.card.active');
+          if (activeAncestor) hitCard = activeAncestor;
+        }
+
+        if (!hitCard) return; // 本当に何もない背景 → 外側クリック扱いのまま
+
+        e.stopPropagation();
+        e.preventDefault();
+
+        var wasActive = hitCard.classList.contains('active');
+        document.querySelectorAll('.card.active').forEach(function (c) {
+          if (c !== hitCard) c.classList.remove('active');
+        });
+
+        if (wasActive) {
+          openCard(hitCard);
+          hitCard.classList.remove('active');
+        } else {
+          hitCard.classList.add('active');
+        }
+      }, true);
+    }
   </script>
 </body>
 </html>

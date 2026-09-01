@@ -21,11 +21,47 @@ const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
 const SHEET_NAME = '情報';
 const LOG_SHEET_NAME = '記録';
 
-// カードごとのアクセントカラーを、黄金角(137.508°)で色相をずらしながら生成する。
-// 固定パレットの巡回と違い何番目でも重複しない(似た色にはなり得るが完全同色にはならない)。
-function cardColorForIndex_(index) {
+// HSL(0-360, 0-100, 0-100)をRGB(0-255)に変換する。
+function hslToRgb_(h, s, l) {
+  s /= 100;
+  l /= 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r, g, b;
+  if (h < 60) { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = c; g = 0; b = x; }
+  else { r = x; g = 0; b = c; }
+  return [
+    Math.round((r + m) * 255),
+    Math.round((g + m) * 255),
+    Math.round((b + m) * 255)
+  ];
+}
+
+// 背景色(RGB)の知覚輝度(YIQ)から、読みやすい文字色(黒/白)を選ぶ。
+// 色相だけを黄金角でずらしているため、明度が同じ(55%)でも黄色系は明るく、
+// 青系は暗く見える(知覚輝度が大きく異なる)。単純な明度値ではなく実際の
+// RGBから輝度を計算しないと、背景が薄い/濃いの判定を誤る。
+function textColorForRgb_(r, g, b) {
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 128 ? '#000' : '#fff';
+}
+
+// カードごとのアクセントカラーと、それに合う文字色を、黄金角(137.508°)で
+// 色相をずらしながら生成する。固定パレットの巡回と違い何番目でも重複しない
+// (似た色にはなり得るが完全同色にはならない)。
+function cardStyleForIndex_(index) {
   const hue = Math.round((index * 137.508) % 360);
-  return 'hsl(' + hue + ', 65%, 55%)';
+  const sat = 65, light = 55;
+  const rgb = hslToRgb_(hue, sat, light);
+  return {
+    color: 'hsl(' + hue + ', ' + sat + '%, ' + light + '%)',
+    textColor: textColorForRgb_(rgb[0], rgb[1], rgb[2])
+  };
 }
 
 function doGet() {
@@ -57,12 +93,14 @@ function getAppGroups() {
       order.push(cat);
     }
 
+    const style = cardStyleForIndex_(colorIndex);
     groupsMap[cat].push({
       id: id,
       name: name,
       url: url,
       description: description || '',
-      color: cardColorForIndex_(colorIndex),
+      color: style.color,
+      textColor: style.textColor,
       initial: logo || String(name).charAt(0)
     });
     colorIndex++;
