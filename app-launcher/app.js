@@ -79,6 +79,7 @@ function renderGroups(groups) {
       card.innerHTML =
         '<div class="icon">' + escapeHtml(app.initial) + '</div>' +
         '<div class="details">' +
+          '<div class="icon">' + escapeHtml(app.initial) + '</div>' +
           '<div class="name">' + escapeHtml(app.name) + '</div>' +
           (app.description ? '<div class="desc">' + escapeHtml(app.description) + '</div>' : '') +
         '</div>';
