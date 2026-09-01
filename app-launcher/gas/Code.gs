@@ -14,7 +14,7 @@
 // ロゴ(F列)はカード左上のアイコンに表示する文字(例:正光/阪和。未入力ならアプリ名の頭文字を使う)
 //
 // 【記録シートの想定列】
-// A:日時  B:アプリ名  (1行目はヘッダー、2行目以降に追記していく)
+// A:日時  B:アプリ名  (1行目はヘッダー。2行目に最新の記録を挿入していく=新しい順)
 // ============================================================
 
 const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
@@ -112,11 +112,13 @@ function getAppGroups() {
 }
 
 // アプリ起動時にクライアント側(Index.html)から呼び出される。
-// 「記録」シートの最終行の下に [日時, アプリ名] を追記する。
+// 「記録」シートの2行目(ヘッダーの直下)に [日時, アプリ名] を挿入する。
+// 既存の記録は下に押し出されるため、常に最新の記録が上から並ぶ。
 function logAppOpen(appName) {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(LOG_SHEET_NAME);
   if (!sheet) return;
-  sheet.appendRow([new Date(), appName]);
+  sheet.insertRowBefore(2);
+  sheet.getRange(2, 1, 1, 2).setValues([[new Date(), appName]]);
 }
 
 /* =====================================================================
