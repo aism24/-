@@ -20,10 +20,11 @@
 ## 構成
 
 ```
-app-launcher/index.html   … フロントエンドのHTML（画面構造のみ）
-app-launcher/style.css    … スタイル（既存の見た目をそのまま流用）
-app-launcher/app.js       … 画面ロジック + GAS APIとの通信処理（fetchでPOST）
-app-launcher/gas/Code.gs  … 既存のCode.gs + 新規追加分（丸ごと貼り替え用）
+app-launcher/index.html    … フロントエンドのHTML（画面構造のみ）
+app-launcher/style.css     … スタイル（既存の見た目をそのまま流用）
+app-launcher/app.js        … 画面ロジック + GAS APIとの通信処理（fetchでPOST）
+app-launcher/gas/Code.gs   … 既存のCode.gs + 新規追加分（丸ごと貼り替え用）
+app-launcher/gas/Index.html … 既存のIndex.html（丸ごと貼り替え用。doGet()が参照するHTML）
 ```
 
 見た目・機能は、既存のGAS Webアプリ（分類ごとのカード一覧、クリックで別タブオープン＋
@@ -43,8 +44,8 @@ app-launcher/gas/Code.gs  … 既存のCode.gs + 新規追加分（丸ごと貼�
 1. 管理用スプレッドシート（「アプリ一覧Launcher」）を開き、拡張機能 → Apps Script を開きます。
 2. `app-launcher/gas/Code.gs` の内容を、既存の `Code.gs` の中身と**まるごと置き換えます**
    （既存部分は完全に同一の内容なので、置き換えても既存の挙動は変わりません）。
-   - 既存の `Index.html`（HTMLファイル）は`doGet()`が引き続き参照するため、**削除しないで
-     ください**。
+   - `app-launcher/gas/Index.html` の内容も、既存の `Index.html`（HTMLファイル）と**まるごと
+     置き換えます**（`doGet()`が引き続き参照するファイルなので、削除しないでください）。
 3. 保存後、右上の **「デプロイ」→「新しいデプロイ」** を選択します
    （既存デプロイの「編集」ではなく、必ず「新しいデプロイ」を選んでください）。
 4. 種類を **「ウェブアプリ」** にし、以下を指定します。
