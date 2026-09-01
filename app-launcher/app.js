@@ -60,8 +60,10 @@ function renderGroups(groups) {
       card.style.setProperty('--accent', app.color);
       card.innerHTML =
         '<div class="icon">' + escapeHtml(app.initial) + '</div>' +
-        '<div class="name">' + escapeHtml(app.name) + '</div>' +
-        (app.description ? '<div class="desc">' + escapeHtml(app.description) + '</div>' : '');
+        '<div class="details">' +
+          '<div class="name">' + escapeHtml(app.name) + '</div>' +
+          (app.description ? '<div class="desc">' + escapeHtml(app.description) + '</div>' : '') +
+        '</div>';
       card.addEventListener('click', function () {
         window.open(app.url, '_blank');
         // クリックログの送信は失敗してもアプリ起動自体は妨げない(ベストエフォート)。

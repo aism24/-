@@ -42,11 +42,12 @@ h2.category:first-of-type {
 .grid {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 16px;
   max-width: 900px;
 }
 .card {
+  position: relative;
   background: #161616;
   border-radius: 12px;
   border: 4px solid #cfcfcf;
@@ -57,7 +58,9 @@ h2.category:first-of-type {
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 .card:hover {
-  transform: scale(1.06);
+  transform: scale(2);
+  transform-origin: top left;
+  z-index: 10;
   border-color: var(--accent);
   box-shadow: 0 0 16px var(--accent), 0 6px 16px rgba(0, 0, 0, 0.5);
 }
@@ -75,11 +78,20 @@ h2.category:first-of-type {
   justify-content: center;
   white-space: nowrap;
 }
-.card:hover .icon {
-  margin-bottom: 12px;
+/* name/descはabsolute配置にして、通常時のカード自身のサイズ(=グリッドの
+   レイアウト)には一切影響させない。ホバー時に見えるのはカード全体への
+   transform:scaleのみのため、他のボタン・行の位置は変わらない。 */
+.card .details {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 12px;
+}
+.card:hover .details {
+  display: block;
 }
 .card .name {
-  display: none;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.4;
@@ -87,17 +99,11 @@ h2.category:first-of-type {
   color: #f5f5f5;
   white-space: nowrap;
 }
-.card:hover .name {
-  display: block;
-}
 .card .desc {
-  display: none;
   font-size: 12px;
   color: #999;
   line-height: 1.4;
-}
-.card:hover .desc {
-  display: block;
+  white-space: nowrap;
 }
 .empty {
   color: #888;
