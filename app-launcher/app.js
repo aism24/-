@@ -74,13 +74,47 @@ function renderGroups(groups) {
   });
 }
 
+// アプリ一覧はGAS Web Appの起動オーバーヘッドで毎回2〜3秒程度かかるため、
+// 直近の取得結果をブラウザに保存しておき、次回以降は先にそれを表示しつつ
+// 裏で最新データを取りに行く(stale-while-revalidate)。データが変わって
+// いれば取得完了時に静かに差し替える。GAS側(Code.gs)の変更は不要。
+const GROUPS_CACHE_KEY = 'appLauncherGroupsCache_v1';
+
+function loadCachedGroups() {
+  try {
+    const raw = localStorage.getItem(GROUPS_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveCachedGroups(groups) {
+  try {
+    localStorage.setItem(GROUPS_CACHE_KEY, JSON.stringify(groups));
+  } catch (e) {}
+}
+
 function loadGroups() {
   const root = document.getElementById('groups');
-  root.innerHTML = '<div class="empty">読み込み中...</div>';
+  const cached = loadCachedGroups();
+
+  if (cached) {
+    renderGroups(cached);
+  } else {
+    root.innerHTML = '<div class="empty">読み込み中...</div>';
+  }
+
   apiPost('getAppGroups')
-    .then(renderGroups)
+    .then(function (groups) {
+      saveCachedGroups(groups);
+      renderGroups(groups);
+    })
     .catch(function (err) {
-      root.innerHTML = '<div class="empty">読み込みに失敗しました: ' + escapeHtml(err.message) + '</div>';
+      // キャッシュを表示できている場合は、裏の更新が失敗しても画面はそのまま維持する。
+      if (!cached) {
+        root.innerHTML = '<div class="empty">読み込みに失敗しました: ' + escapeHtml(err.message) + '</div>';
+      }
     });
 }
 
