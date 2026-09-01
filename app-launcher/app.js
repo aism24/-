@@ -9,7 +9,7 @@
 
 // デプロイ済みGAS Webアプリの新規デプロイURL(/exec で終わるURL)。
 // 既存のGAS Webアプリ(doGet方式)のデプロイとは別物。
-const GAS_API_URL = "PASTE_NEW_DEPLOYMENT_URL_HERE";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyxMghWMRPE7ZSSV0-1RHn9YuzodsjvBFIRDTlYMPvkO3Li6ejDGUE9IXDi5uqJFAdOkA/exec";
 
 // GAS APIへのPOSTリクエスト共通処理。
 // Content-Type は "text/plain" にすることでCORSプリフライト(OPTIONS)を回避している
