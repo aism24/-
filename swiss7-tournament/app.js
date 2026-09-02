@@ -116,6 +116,7 @@ function deleteTournament(prefix) {
 
 function openTournament(prefix) {
   currentPrefix = prefix;
+  editingRows = { day1: new Set(), day2: new Set() };
   document.getElementById('homeScreen').style.display = 'none';
   document.getElementById('tournamentApp').style.display = 'block';
   document.getElementById('tournamentTitle').innerText = '読み込み中…';
@@ -205,7 +206,14 @@ function renderDayTab(day) {
     return;
   }
 
-  const rows = dayData.matches.map(m => renderMatchRow(day, m)).join('');
+  // 未記録の試合は、それより前がすべて記録済みでない限り新規入力させない（順番に記録させるため）
+  let priorAllRecorded = true;
+  const rows = dayData.matches.map(m => {
+    const recorded = m.lightScore !== '' && m.lightScore !== null && m.darkScore !== '' && m.darkScore !== null;
+    const row = renderMatchRow(day, m, recorded, priorAllRecorded);
+    if (!recorded) priorAllRecorded = false;
+    return row;
+  }).join('');
   let html = `<table>
     <tr><th>#</th><th>淡チーム</th><th>淡得点</th><th>濃得点</th><th>濃チーム</th><th></th></tr>
     ${rows}
@@ -229,21 +237,49 @@ function renderDayTab(day) {
   container.innerHTML = html;
 }
 
-function renderMatchRow(day, m) {
-  const recorded = m.lightScore !== '' && m.lightScore !== null && m.darkScore !== '' && m.darkScore !== null;
-  let lightWins = false, darkWins = false;
-  if (recorded) {
+// 試合ごとの「再編集」状態（保存済みの試合を再度入力可能にしたもの）。day1/day2で別管理。
+let editingRows = { day1: new Set(), day2: new Set() };
+
+function renderMatchRow(day, m, recorded, allowedToEnter) {
+  const editing = recorded ? editingRows[day].has(m.index) : true;
+
+  if (recorded && !editing) {
+    let lightWins = false, darkWins = false;
     const ls = Number(m.lightScore), ds = Number(m.darkScore);
     if (!isNaN(ls) && !isNaN(ds) && ls !== ds) { lightWins = ls > ds; darkWins = ds > ls; }
+    return `<tr>
+      <td>${m.index + 1}</td>
+      <td class="${lightWins ? 'winCell' : ''}">${m.light}</td>
+      <td class="${lightWins ? 'winCell' : ''}">${m.lightScore}</td>
+      <td class="${darkWins ? 'winCell' : ''}">${m.darkScore}</td>
+      <td class="${darkWins ? 'winCell' : ''}">${m.dark}</td>
+      <td><button type="button" onclick="reeditMatchRow('${day}', ${m.index})">再編集</button></td>
+    </tr>`;
   }
+
+  if (!recorded && !allowedToEnter) {
+    return `<tr>
+      <td>${m.index + 1}</td>
+      <td>${m.light}</td>
+      <td colspan="2" class="hint">前の試合を先に記録してください</td>
+      <td>${m.dark}</td>
+      <td></td>
+    </tr>`;
+  }
+
   return `<tr>
     <td>${m.index + 1}</td>
-    <td class="${lightWins ? 'winCell' : ''}">${m.light}</td>
-    <td class="${lightWins ? 'winCell' : ''}"><input type="number" id="${day}-l-${m.index}" value="${m.lightScore === '' || m.lightScore === null ? '' : m.lightScore}"></td>
-    <td class="${darkWins ? 'winCell' : ''}"><input type="number" id="${day}-d-${m.index}" value="${m.darkScore === '' || m.darkScore === null ? '' : m.darkScore}"></td>
-    <td class="${darkWins ? 'winCell' : ''}">${m.dark}</td>
+    <td>${m.light}</td>
+    <td><input type="number" id="${day}-l-${m.index}" value="${m.lightScore === '' || m.lightScore === null ? '' : m.lightScore}"></td>
+    <td><input type="number" id="${day}-d-${m.index}" value="${m.darkScore === '' || m.darkScore === null ? '' : m.darkScore}"></td>
+    <td>${m.dark}</td>
     <td><button type="button" onclick="submitMatchScore('${day}', ${m.index})">保存</button></td>
   </tr>`;
+}
+
+function reeditMatchRow(day, index) {
+  editingRows[day].add(index);
+  renderCurrentTab();
 }
 
 function submitMatchScore(day, index) {
@@ -254,6 +290,7 @@ function submitMatchScore(day, index) {
   apiPost('submitScore', { prefix: currentPrefix, day: day, matchIndex: index, lightScore: lightScore, darkScore: darkScore }).then(msg => {
     hideLoading();
     showStatus(msg);
+    editingRows[day].delete(index);
     loadTournament();
   }).catch(e => { hideLoading(); showStatus('エラー: ' + e.message); });
 }

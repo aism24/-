@@ -175,17 +175,24 @@ function setTeams(prefix, teams) {
 /* ============ 対戦カード計算（共通） ============ */
 
 // 循環対戦パターン: 試合i(0始まり)の淡=teams[2i mod 7], 濃=teams[(2i+1) mod 7]
+// TO・審判1=teams[(2i+2) mod 7]（同一チーム）, 審判2=teams[(2i+3) mod 7]
+// （引継ぎ書に記載のオフセット: 淡=0, 濃=1, TO・審判1=2, 審判2=3 をそのまま踏襲）
 function buildMatches_(teams, lightScores, darkScores) {
   const matches = [];
   for (let i = 0; i < NUM_MATCHES; i++) {
     const li = (2 * i) % NUM_TEAMS;
     const di = (2 * i + 1) % NUM_TEAMS;
+    const toi = (2 * i + 2) % NUM_TEAMS;
+    const r2i = (2 * i + 3) % NUM_TEAMS;
     matches.push({
       index: i,
       light: teams[li] || '',
       dark: teams[di] || '',
       lightScore: lightScores[i],
       darkScore: darkScores[i],
+      to: teams[toi] || '',
+      referee1: teams[toi] || '',
+      referee2: teams[r2i] || '',
     });
   }
   return matches;
@@ -238,6 +245,19 @@ function submitScore(prefix, day, matchIndex, lightScore, darkScore) {
     throw new Error('得点を両方入力してください');
   }
   const sheet = getSheetOrThrow_(sheetNameFor_(prefix, day));
+
+  const existingLight = sheet.getRange(FIRST_MATCH_ROW, LIGHT_SCORE_COL, NUM_MATCHES, 1).getValues().map((r) => r[0]);
+  const existingDark = sheet.getRange(FIRST_MATCH_ROW, DARK_SCORE_COL, NUM_MATCHES, 1).getValues().map((r) => r[0]);
+  const isRecorded = (i) => existingLight[i] !== '' && existingLight[i] !== null && existingDark[i] !== '' && existingDark[i] !== null;
+
+  // 新規入力（まだ未記録の試合）は、それより前の試合がすべて記録済みでないと登録できない。
+  // 既に記録済みの試合を修正する場合（再編集）は、この順序チェックの対象外。
+  if (!isRecorded(idx)) {
+    for (let i = 0; i < idx; i++) {
+      if (!isRecorded(i)) throw new Error((i + 1) + '試合目がまだ未記入です。試合は順番に記録してください');
+    }
+  }
+
   const row = FIRST_MATCH_ROW + idx;
   sheet.getRange(row, LIGHT_SCORE_COL).setValue(Number(lightScore));
   sheet.getRange(row, DARK_SCORE_COL).setValue(Number(darkScore));
@@ -320,17 +340,89 @@ function deleteTournament(prefix) {
 
 /* ============ 速報PDF ============ */
 
+const PDF_NUM_COLS = 8;
+const PDF_HEADERS = ['試合', '淡チーム', '淡得点', '濃得点', '濃チーム', 'TO', '審判１', '審判２'];
+
+// 大会名・対戦結果・順位・TO/審判まで全てを1枚に大きく中央揃えでまとめた、印刷用の一時シートを作る。
+// テンプレートのシートをそのまま書き出すのではなく、この専用レイアウトを都度組み立てて破棄する。
+function buildPdfSheet_(prefix, day, tournamentName, dayData) {
+  const ss = getSs();
+  const tmp = ss.insertSheet('_pdf_tmp_' + Utilities.getUuid());
+  const dayLabel = day === 'day1' ? '1日目' : '2日目';
+
+  let row = 1;
+  tmp.getRange(row, 1, 1, PDF_NUM_COLS).merge()
+    .setValue(tournamentName + '　' + dayLabel)
+    .setFontSize(26).setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
+  tmp.setRowHeight(row, 56);
+  row += 2;
+
+  tmp.getRange(row, 1, 1, PDF_HEADERS.length).setValues([PDF_HEADERS])
+    .setFontSize(14).setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground('#e8e8e8').setBorder(true, true, true, true, true, true);
+  tmp.setRowHeight(row, 34);
+  row++;
+
+  dayData.matches.forEach((m) => {
+    const values = [[
+      m.index + 1, m.light,
+      m.lightScore === '' || m.lightScore === null ? '' : m.lightScore,
+      m.darkScore === '' || m.darkScore === null ? '' : m.darkScore,
+      m.dark, m.to, m.referee1, m.referee2,
+    ]];
+    tmp.getRange(row, 1, 1, PDF_NUM_COLS).setValues(values)
+      .setFontSize(16).setHorizontalAlignment('center').setVerticalAlignment('middle')
+      .setBorder(true, true, true, true, true, true);
+    tmp.setRowHeight(row, 32);
+    row++;
+  });
+  row += 1;
+
+  tmp.getRange(row, 1, 1, PDF_NUM_COLS).merge()
+    .setValue('順位').setFontSize(18).setFontWeight('bold').setHorizontalAlignment('center');
+  tmp.setRowHeight(row, 34);
+  row++;
+
+  dayData.rank.forEach((team, i) => {
+    if (!team) return;
+    tmp.getRange(row, 1, 1, 3).merge()
+      .setValue((i + 1) + '位').setFontSize(16).setFontWeight('bold')
+      .setHorizontalAlignment('center').setVerticalAlignment('middle').setBorder(true, true, true, true, true, true);
+    tmp.getRange(row, 4, 1, PDF_NUM_COLS - 3).merge()
+      .setValue(team).setFontSize(16)
+      .setHorizontalAlignment('center').setVerticalAlignment('middle').setBorder(true, true, true, true, true, true);
+    tmp.setRowHeight(row, 30);
+    row++;
+  });
+
+  tmp.setColumnWidths(1, PDF_NUM_COLS, 95);
+  tmp.setHiddenGridlines(true);
+  return tmp;
+}
+
 // Driveに保存せず、PDFのバイト列をそのままBase64でフロントエンドに返す方式。
 // DriveApp（フォルダへのアクセス権限）が一切不要になるため、追加の権限承認は発生しない。
 function exportPdf(prefix, day) {
   const sheetName = sheetNameFor_(prefix, day);
   const sheet = getSheetOrThrow_(sheetName);
+  const dayData = readDaySheet_(sheet);
+  const day1Name = sheetNameFor_(prefix, 'day1');
+  const tournamentName = getTournamentName_(day1Name) || prefix;
+
   const ss = getSs();
-  const token = ScriptApp.getOAuthToken();
-  const url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export' +
-    '?format=pdf&gid=' + sheet.getSheetId() +
-    '&size=A4&portrait=false&fitw=true&gridlines=false&printtitle=false&sheetnames=false&attachment=false';
-  const response = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token } });
-  const blob = response.getBlob();
-  return { fileName: sheetName + '.pdf', base64: Utilities.base64Encode(blob.getBytes()) };
+  const tmp = buildPdfSheet_(prefix, day, tournamentName, dayData);
+  SpreadsheetApp.flush();
+  try {
+    const token = ScriptApp.getOAuthToken();
+    const url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export' +
+      '?format=pdf&gid=' + tmp.getSheetId() +
+      '&size=A4&portrait=true&fitw=true&gridlines=false&printtitle=false&sheetnames=false&attachment=false' +
+      '&top_margin=0.4&bottom_margin=0.4&left_margin=0.4&right_margin=0.4' +
+      '&horizontal_alignment=CENTER&vertical_alignment=TOP';
+    const response = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+    const blob = response.getBlob();
+    return { fileName: sheetName + '.pdf', base64: Utilities.base64Encode(blob.getBytes()) };
+  } finally {
+    ss.deleteSheet(tmp);
+  }
 }
