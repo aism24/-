@@ -1065,6 +1065,13 @@ function getAbsenteeismDetail_() {
   return result;
 }
 
+/* (A)「日報アプリより集計」のIndex.html(google.script.run方式)からの呼び出し用。
+   getAbsenteeismDetail_()自体はdoPost経由でも使うため、名称は変えずこちらを
+   薄いラッパーとして追加する。 */
+function getAbsenteeismDetailForClient() {
+  return getAbsenteeismDetail_();
+}
+
 /* クライアント側で日付による絞り込み・氏名突合・拠点別グルーピングまで済ませた
    内容をそのまま受け取り、拠点(本社/夢前/鳥取)ごとに別シートでExcel化するだけ
    (既存のgenerateReport1〜4と同じ設計方針)。拠点・部署による絞り込みは行わない
