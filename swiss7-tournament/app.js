@@ -66,7 +66,7 @@ function loadTournamentList() {
       return;
     }
     container.innerHTML = list.map(t =>
-      `<div class="tournamentListItem"><span>${t.prefix}</span><span>
+      `<div class="tournamentListItem"><span>${t.name}（${t.prefix}）</span><span>
         <button type="button" onclick="openTournament('${t.prefix}')">開く</button>
         <button type="button" onclick="deleteTournament('${t.prefix}')">削除</button>
       </span></div>`
@@ -74,16 +74,31 @@ function loadTournamentList() {
   }).catch(e => { container.innerText = 'エラー: ' + e.message; });
 }
 
+// 大会名を入力すると、略称欄がユーザーに手で編集されるまでは頭2文字を自動追従する
+let prefixManuallyEdited = false;
+document.getElementById('newTournamentName').addEventListener('input', (e) => {
+  if (prefixManuallyEdited) return;
+  document.getElementById('newTournamentPrefix').value = e.target.value.trim().substring(0, 2);
+});
+document.getElementById('newTournamentPrefix').addEventListener('input', () => {
+  prefixManuallyEdited = true;
+});
+
 function createTournament() {
   const nameEl = document.getElementById('newTournamentName');
+  const prefixEl = document.getElementById('newTournamentPrefix');
   const errorEl = document.getElementById('createError');
   errorEl.innerText = '';
   const name = nameEl.value.trim();
+  const prefix = prefixEl.value.trim();
   if (!name) { errorEl.innerText = '大会名を入力してください'; return; }
+  if (prefix.length > 4) { errorEl.innerText = '略称は4文字以内にしてください'; return; }
   showLoading('作成中…');
-  apiPost('createTournament', { name: name }).then(data => {
+  apiPost('createTournament', { name: name, prefix: prefix }).then(data => {
     hideLoading();
     nameEl.value = '';
+    prefixEl.value = '';
+    prefixManuallyEdited = false;
     openTournament(data.prefix);
   }).catch(e => { hideLoading(); errorEl.innerText = 'エラー: ' + e.message; });
 }
@@ -103,7 +118,7 @@ function openTournament(prefix) {
   currentPrefix = prefix;
   document.getElementById('homeScreen').style.display = 'none';
   document.getElementById('tournamentApp').style.display = 'block';
-  document.getElementById('tournamentTitle').innerText = '大会: ' + prefix;
+  document.getElementById('tournamentTitle').innerText = '読み込み中…';
   loadTournament(() => showTab(currentTournament.day1.teamsFilled ? 'day1' : 'teams'));
 }
 
@@ -112,6 +127,7 @@ function loadTournament(afterLoad) {
   apiGet('getTournament', { prefix: currentPrefix }).then(data => {
     hideLoading();
     currentTournament = data;
+    document.getElementById('tournamentTitle').innerText = data.name;
     if (afterLoad) afterLoad();
     else renderCurrentTab();
   }).catch(e => { hideLoading(); showStatus('エラー: ' + e.message); });

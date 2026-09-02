@@ -67,7 +67,7 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     const action = body.action;
-    if (action === 'createTournament') return ok_(createTournament(body.name));
+    if (action === 'createTournament') return ok_(createTournament(body.name, body.prefix));
     if (action === 'setTeams') return ok_(setTeams(body.prefix, body.teams));
     if (action === 'submitScore') {
       return ok_(submitScore(body.prefix, body.day, body.matchIndex, body.lightScore, body.darkScore));
@@ -98,6 +98,7 @@ function listTournaments() {
     const day2Name = sheetNameFor_(prefix, 'day2');
     list.push({
       prefix: prefix,
+      name: getTournamentName_(name) || prefix,
       day1Sheet: name,
       day2Sheet: day2Name,
       day2Exists: !!ss.getSheetByName(day2Name),
@@ -106,17 +107,36 @@ function listTournaments() {
   return list;
 }
 
+/* ============ 大会名（略称=シート名の頭文字とは別に、大会のフルネームを保持） ============ */
+
+// 大会名（フルネーム）は、シート名の頭文字（略称）だけでは表現しきれないため、
+// day1シート名をキーにドキュメントプロパティへ保存する（taikai-uneiのday2VenueName_と同じ手法）。
+function tournamentNameProp_(day1SheetName) {
+  return 'TOURNAMENT_NAME::' + day1SheetName;
+}
+function getTournamentName_(day1SheetName) {
+  return PropertiesService.getDocumentProperties().getProperty(tournamentNameProp_(day1SheetName)) || '';
+}
+function setTournamentName_(day1SheetName, name) {
+  PropertiesService.getDocumentProperties().setProperty(tournamentNameProp_(day1SheetName), name || '');
+}
+
 /* ============ 大会作成 ============ */
 
-function createTournament(name) {
-  const trimmed = (name || '').trim();
-  if (!trimmed) throw new Error('大会名を入力してください');
-  const prefix = trimmed.substring(0, 2);
+const PREFIX_MAX_LENGTH = 4;
+
+function createTournament(name, prefixInput) {
+  const trimmedName = (name || '').trim();
+  if (!trimmedName) throw new Error('大会名を入力してください');
+  let prefix = (prefixInput || '').trim();
+  if (!prefix) prefix = trimmedName.substring(0, 2);
+  if (prefix.length > PREFIX_MAX_LENGTH) throw new Error('略称は' + PREFIX_MAX_LENGTH + '文字以内にしてください');
+
   const day1Name = sheetNameFor_(prefix, 'day1');
   const day2Name = sheetNameFor_(prefix, 'day2');
   const ss = getSs();
   if (ss.getSheetByName(day1Name) || ss.getSheetByName(day2Name)) {
-    throw new Error('同じ頭文字（' + prefix + '）の大会が既に存在します。別の大会名にしてください');
+    throw new Error('同じ略称（' + prefix + '）の大会が既に存在します。別の略称にしてください');
   }
   const tpl1 = ss.getSheetByName(TEMPLATE_DAY1);
   const tpl2 = ss.getSheetByName(TEMPLATE_DAY2);
@@ -134,7 +154,9 @@ function createTournament(name) {
     sheet.getRange(FIRST_MATCH_ROW, DARK_SCORE_COL, NUM_MATCHES, 1).clearContent();
   });
 
-  return { prefix: prefix, day1Sheet: day1Name, day2Sheet: day2Name };
+  setTournamentName_(day1Name, trimmedName);
+
+  return { prefix: prefix, name: trimmedName, day1Sheet: day1Name, day2Sheet: day2Name };
 }
 
 /* ============ チーム登録 ============ */
@@ -198,6 +220,7 @@ function getTournament(prefix) {
 
   return {
     prefix: prefix,
+    name: getTournamentName_(day1Name) || prefix,
     day1Sheet: day1Name,
     day2Sheet: day2Name,
     day1: day1,
@@ -285,11 +308,13 @@ function createDay2(prefix) {
 function deleteTournament(prefix) {
   if (!prefix) throw new Error('大会を指定してください');
   const ss = getSs();
-  const s1 = ss.getSheetByName(sheetNameFor_(prefix, 'day1'));
+  const day1Name = sheetNameFor_(prefix, 'day1');
+  const s1 = ss.getSheetByName(day1Name);
   const s2 = ss.getSheetByName(sheetNameFor_(prefix, 'day2'));
   if (!s1 && !s2) throw new Error('大会が見つかりません: ' + prefix);
   if (s1) ss.deleteSheet(s1);
   if (s2) ss.deleteSheet(s2);
+  PropertiesService.getDocumentProperties().deleteProperty(tournamentNameProp_(day1Name));
   return '大会を削除しました';
 }
 
