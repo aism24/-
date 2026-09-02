@@ -117,6 +117,7 @@ function deleteTournament(prefix) {
 function openTournament(prefix) {
   currentPrefix = prefix;
   editingRows = { day1: new Set(), day2: new Set() };
+  scoreDigitsState = {};
   document.getElementById('homeScreen').style.display = 'none';
   document.getElementById('tournamentApp').style.display = 'block';
   document.getElementById('tournamentTitle').innerText = '読み込み中…';
@@ -215,7 +216,7 @@ function renderDayTab(day) {
     return row;
   }).join('');
   let html = `<table>
-    <tr><th>#</th><th>淡チーム</th><th>淡得点</th><th>濃得点</th><th>濃チーム</th><th></th></tr>
+    <tr><th>#</th><th>淡チーム</th><th>得点（淡-濃）</th><th>濃チーム</th><th></th></tr>
     ${rows}
   </table>`;
 
@@ -240,6 +241,75 @@ function renderDayTab(day) {
 // 試合ごとの「再編集」状態（保存済みの試合を再度入力可能にしたもの）。day1/day2で別管理。
 let editingRows = { day1: new Set(), day2: new Set() };
 
+/* ---- 得点入力：百/十/一の位をボタンで選ぶ3桁ピッカー（□□□-□□□） ---- */
+
+let scoreDigitsState = {}; // "day-index-side" -> {h,t,o}
+let activeDigitPicker = null; // {day,index,side,place}
+
+function scoreKey(day, index, side) { return `${day}-${index}-${side}`; }
+
+function digitsFromScore(score) {
+  const n = (score === '' || score === null || score === undefined) ? 0 : Number(score);
+  const clamped = Math.max(0, Math.min(199, Math.floor(n) || 0));
+  return { h: Math.floor(clamped / 100), t: Math.floor((clamped % 100) / 10), o: clamped % 10 };
+}
+
+function padScore(v) {
+  const n = (v === '' || v === null || v === undefined) ? 0 : Number(v);
+  return String(Math.max(0, Math.min(199, Math.floor(n) || 0))).padStart(3, '0');
+}
+
+function scoreFromDigits(day, index, side) {
+  const d = scoreDigitsState[scoreKey(day, index, side)] || { h: 0, t: 0, o: 0 };
+  return d.h * 100 + d.t * 10 + d.o;
+}
+
+function renderDigitScore(day, index, side, currentScore) {
+  const key = scoreKey(day, index, side);
+  if (!(key in scoreDigitsState)) scoreDigitsState[key] = digitsFromScore(currentScore);
+  const d = scoreDigitsState[key];
+  return `<span class="digitScore" data-key="${key}">` +
+    `<button type="button" class="digitBox" onclick="openDigitPicker('${day}', ${index}, '${side}', 'h')">${d.h}</button>` +
+    `<button type="button" class="digitBox" onclick="openDigitPicker('${day}', ${index}, '${side}', 't')">${d.t}</button>` +
+    `<button type="button" class="digitBox" onclick="openDigitPicker('${day}', ${index}, '${side}', 'o')">${d.o}</button>` +
+    `</span>`;
+}
+
+function openDigitPicker(day, index, side, place) {
+  activeDigitPicker = { day, index, side, place };
+  const choices = place === 'h' ? [0, 1] : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+  const placeLabel = place === 'h' ? '百の位' : place === 't' ? '十の位' : '一の位';
+  document.getElementById('digitPickerTitle').innerText = (side === 'light' ? '淡' : '濃') + '得点 ' + placeLabel;
+  document.getElementById('digitPickerButtons').innerHTML = choices.map(c =>
+    `<button type="button" class="digitChoice" onclick="chooseDigit(${c})">${c}</button>`
+  ).join('');
+  document.getElementById('digitPickerOverlay').classList.add('active');
+}
+
+function chooseDigit(value) {
+  if (!activeDigitPicker) return;
+  const { day, index, side, place } = activeDigitPicker;
+  const key = scoreKey(day, index, side);
+  const d = scoreDigitsState[key] || { h: 0, t: 0, o: 0 };
+  d[place] = value;
+  scoreDigitsState[key] = d;
+  const span = document.querySelector(`.digitScore[data-key="${key}"]`);
+  if (span) {
+    const boxes = span.querySelectorAll('.digitBox');
+    boxes[0].textContent = d.h;
+    boxes[1].textContent = d.t;
+    boxes[2].textContent = d.o;
+  }
+  closeDigitPicker();
+}
+
+function closeDigitPicker() {
+  activeDigitPicker = null;
+  document.getElementById('digitPickerOverlay').classList.remove('active');
+}
+
+/* ---- 対戦行の描画 ---- */
+
 function renderMatchRow(day, m, recorded, allowedToEnter) {
   const editing = recorded ? editingRows[day].has(m.index) : true;
 
@@ -250,8 +320,7 @@ function renderMatchRow(day, m, recorded, allowedToEnter) {
     return `<tr>
       <td>${m.index + 1}</td>
       <td class="${lightWins ? 'winCell' : ''}">${m.light}</td>
-      <td class="${lightWins ? 'winCell' : ''}">${m.lightScore}</td>
-      <td class="${darkWins ? 'winCell' : ''}">${m.darkScore}</td>
+      <td class="scoreCell">${padScore(m.lightScore)}<span class="scoreDash">-</span>${padScore(m.darkScore)}</td>
       <td class="${darkWins ? 'winCell' : ''}">${m.dark}</td>
       <td><button type="button" onclick="reeditMatchRow('${day}', ${m.index})">再編集</button></td>
     </tr>`;
@@ -261,7 +330,7 @@ function renderMatchRow(day, m, recorded, allowedToEnter) {
     return `<tr>
       <td>${m.index + 1}</td>
       <td>${m.light}</td>
-      <td colspan="2" class="hint">前の試合を先に記録してください</td>
+      <td class="hint">前の試合を先に</td>
       <td>${m.dark}</td>
       <td></td>
     </tr>`;
@@ -270,8 +339,7 @@ function renderMatchRow(day, m, recorded, allowedToEnter) {
   return `<tr>
     <td>${m.index + 1}</td>
     <td>${m.light}</td>
-    <td><input type="number" id="${day}-l-${m.index}" value="${m.lightScore === '' || m.lightScore === null ? '' : m.lightScore}"></td>
-    <td><input type="number" id="${day}-d-${m.index}" value="${m.darkScore === '' || m.darkScore === null ? '' : m.darkScore}"></td>
+    <td class="scoreCell">${renderDigitScore(day, m.index, 'light', m.lightScore)}<span class="scoreDash">-</span>${renderDigitScore(day, m.index, 'dark', m.darkScore)}</td>
     <td>${m.dark}</td>
     <td><button type="button" onclick="submitMatchScore('${day}', ${m.index})">保存</button></td>
   </tr>`;
@@ -279,18 +347,21 @@ function renderMatchRow(day, m, recorded, allowedToEnter) {
 
 function reeditMatchRow(day, index) {
   editingRows[day].add(index);
+  delete scoreDigitsState[scoreKey(day, index, 'light')];
+  delete scoreDigitsState[scoreKey(day, index, 'dark')];
   renderCurrentTab();
 }
 
 function submitMatchScore(day, index) {
-  const lightScore = document.getElementById(`${day}-l-${index}`).value;
-  const darkScore = document.getElementById(`${day}-d-${index}`).value;
-  if (lightScore === '' || darkScore === '') { showStatus('得点を両方入力してください'); return; }
+  const lightScore = scoreFromDigits(day, index, 'light');
+  const darkScore = scoreFromDigits(day, index, 'dark');
   showLoading('保存中…');
   apiPost('submitScore', { prefix: currentPrefix, day: day, matchIndex: index, lightScore: lightScore, darkScore: darkScore }).then(msg => {
     hideLoading();
     showStatus(msg);
     editingRows[day].delete(index);
+    delete scoreDigitsState[scoreKey(day, index, 'light')];
+    delete scoreDigitsState[scoreKey(day, index, 'dark')];
     loadTournament();
   }).catch(e => { hideLoading(); showStatus('エラー: ' + e.message); });
 }
