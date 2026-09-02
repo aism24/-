@@ -1,0 +1,52 @@
+body { font-family: sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background:#000; color:#eee; }
+h1 { font-size: 18px; }
+h2 { font-size: 15px; margin-top: 0; color:#eee; }
+label { display: block; margin-top: 10px; font-size: 14px; }
+input, button { padding: 8px; margin-top: 4px; font-size: 16px; box-sizing: border-box; background:#222; color:#eee; border:1px solid #555; border-radius:4px; }
+input { width: 100%; }
+button { margin-top: 14px; cursor: pointer; min-height: 44px; touch-action: manipulation; }
+.card { margin-top: 18px; padding: 14px; border: 1px solid #444; border-radius: 8px; }
+.hint { font-size: 12px; color: #aaa; margin-top: 6px; }
+.errorText { color: #ff6666; font-weight: bold; min-height: 1.2em; margin-top: 10px; }
+#status { margin: 10px 0; font-weight: bold; min-height: 1.2em; color:#fff; }
+
+.backBtn { background: none; border: none; color: #8ab4f8; padding: 0; margin: 0 0 10px 0; text-decoration: underline; font-size: 13px; display: inline-block; min-height: auto; }
+
+.tabs { display: flex; gap: 6px; position: sticky; top: 0; background: #000; padding-bottom: 8px; }
+.tabs button { flex: 1; margin-top: 0; padding: 10px; border: 1px solid #555; background: #222; color: #eee; border-radius: 6px; }
+.tabs button.active { outline: 3px solid #fff; outline-offset: -3px; }
+.panel { display: none; }
+.panel.active { display: block; }
+
+table { border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 13px; background: #fff; border: 3px double #555; }
+th, td { border-top: 1px solid #999; border-bottom: 1px solid #999; border-left: 1px dashed #ccc; border-right: 1px dashed #ccc; padding: 4px 6px; text-align: center; color: #000; }
+th { background: #ddd; }
+table input { width: 56px; padding: 4px; margin: 0; font-size: 13px; min-height: auto; }
+table button { margin: 0; padding: 5px 10px; font-size: 12px; min-height: auto; }
+td.winCell { background: #ffd700; color: #000; font-weight: bold; }
+
+.teamRow { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.teamRow span { flex: 0 0 auto; font-size: 14px; white-space: nowrap; }
+.teamRow input { flex: 1; margin-top: 0; }
+
+.tournamentListItem { display: flex; align-items: center; justify-content: space-between; padding: 10px; margin-top: 8px; border: 1px solid #444; border-radius: 6px; }
+.tournamentListItem button { margin-top: 0; }
+
+#day2Bar { margin: 10px 0; padding: 12px; background: #4a3b00; border: 1px solid #ffc107; border-radius: 6px; }
+#day2Bar p { margin: 0 0 8px 0; font-size: 13px; color: #ffe9a8; }
+#day2Bar button { margin-top: 0; background: #e67700; color: #fff; border: none; border-radius: 6px; }
+
+.rankTable { max-width: 320px; }
+
+.pdfBtn { display: inline-block; margin-top: 8px; padding: 10px 22px; background: #ffd700; color: #000; font-weight: bold; text-decoration: none; border-radius: 6px; border: 2px solid #ffd700; }
+
+#loadingOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; z-index: 1000; }
+#loadingOverlay.active { display: flex; }
+.loadingBox { background: #222; color: #eee; padding: 20px 28px; border-radius: 8px; text-align: center; min-width: 200px; }
+.loadingBar { width: 100%; height: 6px; background: #444; border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
+.loadingBarInner { width: 40%; height: 100%; background: #3366cc; border-radius: 3px; animation: loadingMove 1s infinite linear; }
+@keyframes loadingMove {
+  0% { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}
+#loadingText { font-size: 14px; color: #eee; }
