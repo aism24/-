@@ -1041,6 +1041,64 @@ function getMasterDataWithStatus_() {
   return master;
 }
 
+/* ===================== ②有給等届けの確認 ===================== */
+
+/* 全種類の申請(有給・半日有給・遅早等、種別を問わず)を、氏名突合・拠点・部署・
+   事由の表示に必要な列も含めて返す。既存のgetAbsenteeismData()(①日報入力チェック用、
+   operatorNo/from/to/typeのみ)は無改変のまま残し、こちらは新規の別関数として持つ。
+   アーカイブ横断は不要(Absenteeismシートには過去全期間の記録がそのまま残っている、
+   ヒアリングで確認済み)。 */
+function getAbsenteeismDetail_() {
+  const ss = SpreadsheetApp.openById(getDailyReportSsId_());
+  const sheet = ss.getSheetByName(SHEET_NAMES.ABSENTEEISM);
+  if (!sheet) return [];
+  const rows = sheet.getDataRange().getValues();
+  const result = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const type = String(r[8] || '').trim();
+    if (!type) continue;
+    const from = toDate_(r[5]);
+    const to = toDate_(r[6]) || from;
+    if (!from) continue;
+    result.push({
+      operatorNo: String(r[4]),
+      factory: r[1],
+      dept: r[2],
+      from: formatDate_(from),
+      to: formatDate_(to),
+      type: type,
+      reason: r[7] || ''
+    });
+  }
+  return result;
+}
+
+/* クライアント側で日付・拠点・部署による絞り込み・氏名突合まで済ませた行を
+   そのまま受け取り、Excel化するだけ(既存のgenerateReport1〜4と同じ設計方針)。 */
+function generateReportLeave(params) {
+  const t0 = new Date();
+  const rows = params.rows || [];
+  const dateStr = params.date || '';
+  const fileName = '有給等届け確認_' + dateStr.split('/').join('-') + '_' + today_() + '.xlsx';
+
+  const ss = SpreadsheetApp.create('tmp_' + fileName);
+  const sheet = ss.getSheets()[0];
+  sheet.setName('届出一覧');
+
+  const header = ['氏名', '拠点', '部署', '申請項目', '自', '至', '事由'];
+  const dataRows = rows.map(function (r) {
+    return [r.name, r.factory, r.dept, r.type, r.from, r.to, r.reason || ''];
+  });
+
+  sheet.getRange(1, 1, 1, header.length).setValues([header]);
+  if (dataRows.length) sheet.getRange(2, 1, dataRows.length, header.length).setValues(dataRows);
+  styleSimpleTable_(sheet, header.length, dataRows.length);
+
+  Logger.log('generateReportLeave: シート作成・書き込み完了 ' + (new Date() - t0) + 'ms');
+  return exportAndCleanup_(ss, fileName, t0);
+}
+
 /* ===================== JSON API(GitHub Pages版フロントエンド用) ===================== */
 /* CORSプリフライト(OPTIONS)はGASが対応していないため、フロントエンド側は
    必ず Content-Type: text/plain でPOSTすること(hot-heart等、他アプリと同じ方式)。
@@ -1090,10 +1148,12 @@ function doPost(e) {
     if (action === 'getAllDailyReportRows') return apiJsonOk_(getAllDailyReportRowsMerged_());
     if (action === 'getCompanyCalendarData') return apiJsonOk_(getCompanyCalendarData());
     if (action === 'getAbsenteeismData') return apiJsonOk_(getAbsenteeismData());
+    if (action === 'getAbsenteeismDetail') return apiJsonOk_(getAbsenteeismDetail_());
     if (action === 'generateReport1') return apiJsonOk_(generateReport1(params));
     if (action === 'generateReport2') return apiJsonOk_(generateReport2(params));
     if (action === 'generateReport3') return apiJsonOk_(generateReport3(params));
     if (action === 'generateReport4') return apiJsonOk_(generateReport4(params));
+    if (action === 'generateReportLeave') return apiJsonOk_(generateReportLeave(params));
     if (action === 'logFactorySelection') return apiJsonOk_({ row: logFactorySelectionLocked_(params.factory) });
     return apiJsonErr_('不明なaction: ' + action);
   } catch (err) {

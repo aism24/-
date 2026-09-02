@@ -205,6 +205,8 @@ table.dataTable tr.r4RowSelected td:last-child{ border-right:3px double #2a6fd6;
 .checkGroup{ display:flex; flex-wrap:wrap; gap:8px; }
 #r4-month{ align-items:center; flex-wrap:nowrap; }
 #r4-month select{ width:auto; flex:1; min-width:0; }
+#r5-date{ align-items:center; flex-wrap:nowrap; }
+#r5-date input[type=date]{ width:auto; flex:1; min-width:0; }
 .monthNavBtn{
   flex:0 0 auto; width:28px; height:28px; padding:0; font-size:12px;
   border:1px solid #999; border-radius:4px; background:#f5f5f5;

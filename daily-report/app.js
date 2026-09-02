@@ -34,19 +34,22 @@ let MASTER = { constructions: [], workItems: [], operators: [], earliestArchiveY
 let ALL_ROWS = []; // getAllDailyReportRows(複数ファイル横断・重複排除済み)の結果 + _date付与
 let CALENDAR_MAP = {}; // 'yyyy/MM/dd' -> '出勤'|'休日'
 let ABSENTEEISM = []; // {operatorNo, from, to, type}
+let ABSENTEEISM_DETAIL = []; // ②有給等届けの確認用: {operatorNo, factory, dept, from, to, type, reason}
 
 // MASTER取得後に組み立てるルックアップマップ
 let WORK_DEPT = {};   // workCode -> '工場'|'設計管理'
 let WORK_META = {};   // workCode -> 名称
 let CONSTRUCTION_LABEL = {}; // constructionId -> 工事名
 let CONSTRUCTION_NO = {};    // constructionId -> 工事No(並び替え用)
+let OPERATOR_NAME = {}; // operatorNo -> 氏名
 
 const FACTORY_ORDER = ['本社', '夢前', '鳥取'];
 
 function buildMasterDependentMaps_() {
-  WORK_DEPT = {}; WORK_META = {}; CONSTRUCTION_LABEL = {}; CONSTRUCTION_NO = {};
+  WORK_DEPT = {}; WORK_META = {}; CONSTRUCTION_LABEL = {}; CONSTRUCTION_NO = {}; OPERATOR_NAME = {};
   MASTER.workItems.forEach(w => { WORK_DEPT[w.code] = w.dept; WORK_META[w.code] = w.name; });
   MASTER.constructions.forEach(c => { CONSTRUCTION_LABEL[c.id] = c.name; CONSTRUCTION_NO[c.id] = c.no; });
+  MASTER.operators.forEach(o => { OPERATOR_NAME[o.no] = o.name; });
 }
 
 /* ===================== 締め月ロジック(21日始まり・20日締め) ===================== */
@@ -235,6 +238,7 @@ function fieldContainerScreenKey(el){
   if(el.closest('#screen-report2')) return 'r2';
   if(el.closest('#screen-report3')) return 'r3';
   if(el.closest('#screen-report4')) return 'r4';
+  if(el.closest('#screen-report5')) return 'r5';
   return null;
 }
 
@@ -242,6 +246,7 @@ function triggerRecompute(screenKey){
   if(screenKey === 'r1' || screenKey === 'r2') recomputeScreen(screenKey);
   else if(screenKey === 'r3') renderR3Preview();
   else if(screenKey === 'r4') withRecalcPopup(renderR4Preview);
+  else if(screenKey === 'r5') renderR5Preview();
 }
 
 /* checkBtn(チェックボックス)へのイベント配線は、動的に生成される
@@ -339,16 +344,18 @@ async function initSyncPopup(){
 }
 
 async function loadAllData(){
-  const [master, rows, calendar, absenteeism] = await Promise.all([
+  const [master, rows, calendar, absenteeism, absenteeismDetail] = await Promise.all([
     apiPost('getMasterData'),
     apiPost('getAllDailyReportRows'),
     apiPost('getCompanyCalendarData'),
     apiPost('getAbsenteeismData'),
+    apiPost('getAbsenteeismDetail'),
   ]);
   MASTER = master;
   ALL_ROWS = rows.map(r => Object.assign({}, r, { _date: new Date(r.workDate.split('/').join('-')) }));
   CALENDAR_MAP = calendar;
   ABSENTEEISM = absenteeism;
+  ABSENTEEISM_DETAIL = absenteeismDetail;
 
   buildMasterDependentMaps_();
   populateMasterUi_();
@@ -361,6 +368,7 @@ async function loadAllData(){
   recomputeScreen('r2');
   renderR3Preview();
   renderR4Preview();
+  renderR5Preview();
 }
 
 function showScreen(name){
@@ -502,6 +510,12 @@ function applyDefaultFactoryFilter_(prefix){
       cb.checked = match;
       cb.closest('.checkBtn').classList.toggle('checked', match);
     });
+  } else if(prefix === 'r5'){
+    document.querySelectorAll('#r5-locations input[type=checkbox]').forEach(cb=>{
+      const match = cb.value === factory;
+      cb.checked = match;
+      cb.closest('.checkBtn').classList.toggle('checked', match);
+    });
   }
 }
 
@@ -510,6 +524,7 @@ function applyDefaultFactoryToAllScreens_(){
   applyDefaultFactoryFilter_('r2');
   applyDefaultFactoryFilter_('r3');
   applyDefaultFactoryFilter_('r4');
+  applyDefaultFactoryFilter_('r5');
 }
 
 /* ログイン(工場選択)時の記録。日時・工場だけを記録すれば十分なため、
@@ -1334,6 +1349,116 @@ function updateR4HStuckState_(mainEl){
   if(backdropEl) backdropEl.style.transform = 'translateX(' + tx + ')';
 }
 
+/* ===================== ②有給等届けの確認 ===================== */
+
+function tomorrowDateStr_(){
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+/* 日付選択(カレンダー入力+前後日への◀▶ボタン)。初期値は翌日。 */
+function buildDayPicker(containerId, prefix){
+  const el = document.getElementById(containerId);
+  el.innerHTML =
+    `<button type="button" class="monthNavBtn" id="${prefix}-dayPrev" aria-label="前の日">◀</button>` +
+    `<input type="date" id="${prefix}-dateInput" value="${tomorrowDateStr_()}">` +
+    `<button type="button" class="monthNavBtn" id="${prefix}-dayNext" aria-label="次の日">▶</button>`;
+
+  const input = document.getElementById(`${prefix}-dateInput`);
+  const prevBtn = document.getElementById(`${prefix}-dayPrev`);
+  const nextBtn = document.getElementById(`${prefix}-dayNext`);
+
+  const step = delta => {
+    const d = new Date(input.value);
+    d.setDate(d.getDate() + delta);
+    input.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    triggerRecompute(prefix);
+  };
+
+  input.addEventListener('change', () => triggerRecompute(prefix));
+  prevBtn.addEventListener('click', () => step(-1));
+  nextBtn.addEventListener('click', () => step(1));
+}
+
+function getR5Date(){
+  const input = document.getElementById('r5-dateInput');
+  if(!input || !input.value) return null;
+  return input.value.split('-').join('/'); // 'yyyy/MM/dd'
+}
+
+/* 選択中の日付・拠点・部署で絞り込み、氏名突合・拠点順ソートまで済ませた行を返す。
+   プレビュー描画・ダウンロードの両方から呼ぶ(既存①〜④と同じ「クライアント側で
+   絞り込み済みの行をそのままExcel化する」設計方針)。 */
+function computeR5Rows_(){
+  const dateStr = getR5Date();
+  const locs = checkedValues('r5-locations');
+  const depts = checkedValues('r5-depts');
+  if(!dateStr || locs.length === 0 || depts.length === 0) return { dateStr: dateStr, rows: [] };
+
+  const rows = ABSENTEEISM_DETAIL
+    .filter(a => dateStr >= a.from && dateStr <= a.to && locs.indexOf(a.factory) !== -1 && depts.indexOf(a.dept) !== -1)
+    .map(a => ({
+      operatorNo: a.operatorNo,
+      name: OPERATOR_NAME[a.operatorNo] || a.operatorNo,
+      factory: a.factory,
+      dept: DEPT_LABEL[a.dept] || a.dept,
+      type: a.type,
+      from: a.from,
+      to: a.to,
+      reason: a.reason || ''
+    }))
+    .sort((a, b) => {
+      const lo = FACTORY_ORDER.indexOf(a.factory) - FACTORY_ORDER.indexOf(b.factory);
+      if(lo !== 0) return lo;
+      return Number(a.operatorNo) - Number(b.operatorNo);
+    });
+
+  return { dateStr: dateStr, rows: rows };
+}
+
+function renderR5Preview(){
+  const previewEl = document.getElementById('r5-preview');
+  const { dateStr, rows } = computeR5Rows_();
+
+  if(!dateStr){
+    previewEl.innerHTML = `<h3>プレビュー(指定日の有給等届出一覧)</h3><div class="previewEmpty">日付を選択してください</div>`;
+    return;
+  }
+  const fileName = `有給等届け確認_${dateStr.split('/').join('-')}_${today_()}.xlsx`;
+
+  const locs = checkedValues('r5-locations');
+  const depts = checkedValues('r5-depts');
+  if(locs.length === 0 || depts.length === 0){
+    previewEl.innerHTML = `
+      <div class="fileNamePreview">ファイル名: ${fileName}</div>
+      <h3>プレビュー(指定日の有給等届出一覧) — ${dateStr}</h3>
+      <div class="previewEmpty">拠点・部署を1つ以上選択してください</div>`;
+    return;
+  }
+  if(rows.length === 0){
+    previewEl.innerHTML = `
+      <div class="fileNamePreview">ファイル名: ${fileName}</div>
+      <h3>プレビュー(指定日の有給等届出一覧) — ${dateStr}</h3>
+      <div class="previewEmpty">該当する届出がありません</div>`;
+    return;
+  }
+
+  const bodyRows = rows.map(r => {
+    const period = r.from === r.to ? r.from : `${r.from}〜${r.to}`;
+    return `<tr><td>${r.name}</td><td>${r.factory}</td><td>${r.dept}</td><td>${r.type}</td><td>${period}</td><td>${r.reason}</td></tr>`;
+  }).join('');
+
+  previewEl.innerHTML = `
+    <div class="fileNamePreview">ファイル名: ${fileName}</div>
+    <h3>プレビュー(指定日の有給等届出一覧) — ${dateStr}(${rows.length}件)</h3>
+    <table class="dataTable">
+      <tr><th>氏名</th><th>拠点</th><th>部署</th><th>申請項目</th><th>期間</th><th>事由</th></tr>
+      ${bodyRows}
+    </table>`;
+  applyCellTooltips(previewEl.querySelector('.dataTable'));
+}
+
 /* ===================== リセットボタン ===================== */
 
 /* 「指定:しない/する」トグルを「しない」に戻す(chipSearch/checkGroupのリセットとは別) */
@@ -1387,6 +1512,14 @@ function resetScreen(prefix){
     document.getElementById('r4-ngonly-btn').classList.remove('active');
     buildMonthPicker('r4-month', 'r4'); // 締め月を最新(先頭)に戻す
     withRecalcPopup(renderR4Preview);
+  } else if(prefix === 'r5'){
+    applyDefaultFactoryFilter_('r5'); // ログイン時に選択した工場のみチェックに戻す(全拠点チェックには戻さない)
+    document.querySelectorAll('#r5-depts input[type=checkbox]').forEach(cb => {
+      cb.checked = true;
+      cb.closest('.checkBtn').classList.add('checked');
+    });
+    buildDayPicker('r5-date', 'r5'); // 日付を初期値(翌日)に戻す
+    renderR5Preview();
   }
 }
 
@@ -1447,6 +1580,10 @@ function buildReportParams_(kind){
     const rangeToken = `${range.start.split('/').join('-')}-${range.end.split('/').join('-')}`;
     return { dateHeaders: grid.dateHeaders, rows: rows, rangeToken: rangeToken };
   }
+  if(kind === 'r5'){
+    const { dateStr, rows } = computeR5Rows_();
+    return { rows: rows, date: dateStr };
+  }
   return null;
 }
 
@@ -1465,7 +1602,7 @@ function downloadFileBase64_(base64, fileName, mimeType) {
   URL.revokeObjectURL(url);
 }
 
-const REPORT_ACTION = { r1: 'generateReport1', r2: 'generateReport2', r3: 'generateReport3', r4: 'generateReport4' };
+const REPORT_ACTION = { r1: 'generateReport1', r2: 'generateReport2', r3: 'generateReport3', r4: 'generateReport4', r5: 'generateReportLeave' };
 
 async function downloadReport(kind){
   if(kind === 'r1' && !document.getElementById('r1-construction').value){ showToast('工事を選択してください'); return; }
@@ -1476,6 +1613,7 @@ async function downloadReport(kind){
     const rows = r4NgOnly ? grid.allRows.filter(r => r.hasNg) : grid.allRows;
     if(rows.length === 0){ showToast('該当する社員がいません'); return; }
   }
+  if(kind === 'r5' && computeR5Rows_().rows.length === 0){ showToast('該当する届出がありません'); return; }
 
   const params = buildReportParams_(kind);
   const startedAt = showFakeProgress('情報収集中', FAKE_PROGRESS_DURATION_MS, false);
@@ -1563,6 +1701,7 @@ buildPeriodPicker('r1-period','r1');
 buildPeriodPicker('r2-period','r2');
 buildClosingOnlyPicker('r3-period','r3');
 buildMonthPicker('r4-month','r4');
+buildDayPicker('r5-date','r5');
 
 // ブラウザを閉じずに再読み込みした場合、ロック解除・工場選択済みならホーム画面へ直行する
 if(sessionStorage.getItem('unlocked') === '1' && getDefaultFactory_()){
