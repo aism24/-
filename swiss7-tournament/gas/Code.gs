@@ -78,6 +78,7 @@ function doPost(e) {
     }
     if (action === 'createDay2') return ok_(createDay2(body.prefix));
     if (action === 'exportPdf') return ok_(exportPdf(body.prefix, body.day));
+    if (action === 'deleteTournament') return ok_(deleteTournament(body.prefix));
     return errRes_('不明なaction: ' + action);
   } catch (err) {
     return errRes_(err.message);
@@ -281,6 +282,19 @@ function createDay2(prefix) {
 
   s2.getRange(TEAM_RANGE).setValues(best.map((t) => [t]));
   return '2日目の対戦カードを作成しました';
+}
+
+/* ============ 大会削除（作成し直したい・テストデータの削除など） ============ */
+
+function deleteTournament(prefix) {
+  if (!prefix) throw new Error('大会を指定してください');
+  const ss = getSs();
+  const s1 = ss.getSheetByName(sheetNameFor_(prefix, 'day1'));
+  const s2 = ss.getSheetByName(sheetNameFor_(prefix, 'day2'));
+  if (!s1 && !s2) throw new Error('大会が見つかりません: ' + prefix);
+  if (s1) ss.deleteSheet(s1);
+  if (s2) ss.deleteSheet(s2);
+  return '大会を削除しました';
 }
 
 /* ============ 速報PDF ============ */

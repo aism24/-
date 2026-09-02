@@ -31,6 +31,7 @@ td.winCell { background: #ffd700; color: #000; font-weight: bold; }
 
 .tournamentListItem { display: flex; align-items: center; justify-content: space-between; padding: 10px; margin-top: 8px; border: 1px solid #444; border-radius: 6px; }
 .tournamentListItem button { margin-top: 0; }
+.tournamentListItem > span:last-child { display: flex; gap: 8px; }
 
 #day2Bar { margin: 10px 0; padding: 12px; background: #4a3b00; border: 1px solid #ffc107; border-radius: 6px; }
 #day2Bar p { margin: 0 0 8px 0; font-size: 13px; color: #ffe9a8; }
