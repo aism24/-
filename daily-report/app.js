@@ -1419,7 +1419,7 @@ function r5ColumnHtml_(loc, rows){
     `<tr><td>${r.name}</td><td>${r.type}</td><td>${r.reason}</td><td>${r5PeriodText_(r)}</td></tr>`
   ).join('');
   const tableHtml = rows.length
-    ? `<table class="dataTable r5Table"><tr><th>氏名</th><th>申請項目</th><th>事由</th><th>日付</th></tr>${bodyRows}</table>`
+    ? `<table class="dataTable r5Table"><thead><tr><th>氏名</th><th>申請項目</th><th>事由</th><th>日付</th></tr></thead><tbody>${bodyRows}</tbody></table>`
     : `<div class="previewEmpty">該当する届出がありません</div>`;
   return `<div class="r5Col ${R5_FACTORY_CLASS[loc]}"><h4>${loc}(${rows.length}件)</h4>${tableHtml}</div>`;
 }
