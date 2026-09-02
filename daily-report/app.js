@@ -1377,7 +1377,7 @@ function r4CellDetailHtml_(no, dateStr){
     html += `<div class="detailRow"><span class="detailLabel">作業内容${n}</span><span>${WORK_META[r.workCode] || r.workCode}</span></div>`;
     html += `<div class="detailRow"><span class="detailLabel">作業時間${n}</span><span>${r.hours}</span></div>`;
   });
-  html += `<div class="detailRow"><span class="detailLabel">合計時間</span><span>${total}</span></div>`;
+  html += `<div class="detailRow detailRowTotal"><span class="detailLabel">合計時間</span><span>${total}</span></div>`;
   return html;
 }
 

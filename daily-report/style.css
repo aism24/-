@@ -253,6 +253,7 @@ table.dataTable.r5Table tbody tr{ cursor:pointer; }
   padding:8px 0; border-bottom:1px solid #eee; font-size:13px;
 }
 .detailRow:last-of-type{ border-bottom:none; }
+.detailRow.detailRowTotal{ font-size:15px; font-weight:700; }
 .detailLabel{ color:#777; font-weight:700; flex-shrink:0; min-width:64px; text-align:right; }
 .detailOkBtn{
   margin-top:14px; width:100%; padding:8px 0; font-size:13px; font-weight:700;
