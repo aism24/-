@@ -1119,9 +1119,9 @@ function r4FlagClass(flag, holiday){
 
 function r4EmployeeRowHtml(r, dateHeaders){
   const tds = r.cells.map((c, i) =>
-    `<td class="num r4DateCell ${c.text ? 'r4LeaveText' : ''} ${r4FlagClass(c.flag, dateHeaders[i].holiday)}">${c.text ? c.text : (c.value === null ? '' : c.value)}</td>`
+    `<td class="num r4DateCell ${c.text ? 'r4LeaveText' : ''} ${r4FlagClass(c.flag, dateHeaders[i].holiday)}" data-date="${dateHeaders[i].date}">${c.text ? c.text : (c.value === null ? '' : c.value)}</td>`
   ).join('');
-  return `<tr><td class="r4NameCol">${r.name}</td>${tds}<td class="num r4TotalCol">${r.total ? r.total : ''}</td></tr>`;
+  return `<tr data-no="${r.no}"><td class="r4NameCol">${r.name}</td>${tds}<td class="num r4TotalCol">${r.total ? r.total : ''}</td></tr>`;
 }
 
 /* dateHeadersを渡し、休日の列だけr4HolidayColを付けて日付ごとに色分けする
@@ -1347,6 +1347,41 @@ function updateR4HStuckState_(mainEl){
   if(panelEl) panelEl.style.transform = 'translateX(' + tx + ')';
   if(fileHeaderEl) fileHeaderEl.style.transform = 'translateX(' + tx + ')';
   if(backdropEl) backdropEl.style.transform = 'translateX(' + tx + ')';
+}
+
+/* 指定した社員No・日付の、届出(申請項目・事由。あれば)と工事内訳(工事名・作業内容・
+   作業時間を最大5組)・合計時間をまとめたポップアップ本文を組み立てる */
+function r4CellDetailHtml_(no, dateStr){
+  const name = OPERATOR_NAME[no] || no;
+  const leave = ABSENTEEISM_DETAIL.find(a => a.operatorNo === no && dateStr >= a.from && dateStr <= a.to);
+  const workRows = ALL_ROWS.filter(r => r.operatorNo === no && r.workDate === dateStr);
+  const total = workRows.reduce((s, r) => s + r.hours, 0);
+
+  let html = `<div class="detailRow"><span class="detailLabel">日付</span><span>${dateStr}</span></div>`;
+  html += `<div class="detailRow"><span class="detailLabel">氏名</span><span>${name}</span></div>`;
+  if(leave){
+    html += `<div class="detailRow"><span class="detailLabel">申請項目</span><span>${leave.type}</span></div>`;
+    if(leave.reason){
+      html += `<div class="detailRow"><span class="detailLabel">事由</span><span>${leave.reason}</span></div>`;
+    }
+  }
+  workRows.forEach((r, i) => {
+    const n = i + 1;
+    html += `<div class="detailRow"><span class="detailLabel">工事名${n}</span><span>${CONSTRUCTION_LABEL[r.constructionId] || r.constructionId}</span></div>`;
+    html += `<div class="detailRow"><span class="detailLabel">作業内容${n}</span><span>${WORK_META[r.workCode] || r.workCode}</span></div>`;
+    html += `<div class="detailRow"><span class="detailLabel">作業時間${n}</span><span>${r.hours}</span></div>`;
+  });
+  html += `<div class="detailRow"><span class="detailLabel">合計時間</span><span>${total}</span></div>`;
+  return html;
+}
+
+function openR4Detail_(no, dateStr){
+  document.getElementById('r4DetailBody').innerHTML = r4CellDetailHtml_(no, dateStr);
+  document.getElementById('r4DetailOverlay').classList.add('show');
+}
+
+function closeR4Detail(){
+  document.getElementById('r4DetailOverlay').classList.remove('show');
 }
 
 /* ===================== ②有給等届けの確認 ===================== */
@@ -1733,6 +1768,12 @@ document.addEventListener('click', e => {
       cell.closest('tr').classList.add('r4RowSelected');
     }
 
+    // ①日報入力チェックのみ: 社員の日付セル(data-date付き)クリックで指定日の詳細ポップアップを表示
+    if(r4Table && cell.tagName === 'TD' && cell.dataset.date){
+      const empRow = cell.closest('tr[data-no]');
+      if(empRow) openR4Detail_(empRow.dataset.no, cell.dataset.date);
+    }
+
     // ②有給等届けの確認のみ: 行クリックで詳細ポップアップを表示
     const r5Row = cell.closest('table.r5Table tbody tr[data-r5idx]');
     if(r5Row){
@@ -1742,7 +1783,10 @@ document.addEventListener('click', e => {
   }
 });
 
-// ②詳細ポップアップ: 背景(カード範囲外)をクリックしたら閉じる
+// ①②詳細ポップアップ: 背景(カード範囲外)をクリックしたら閉じる
+document.getElementById('r4DetailOverlay').addEventListener('click', e => {
+  if(e.target.id === 'r4DetailOverlay') closeR4Detail();
+});
 document.getElementById('r5DetailOverlay').addEventListener('click', e => {
   if(e.target.id === 'r5DetailOverlay') closeR5Detail();
 });
