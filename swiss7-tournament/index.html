@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>スイス7 大会運営アプリ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="homeScreen">
+  <h1>スイス7 大会運営アプリ</h1>
+
+  <div class="card">
+    <h2>新しい大会を作成</h2>
+    <label>大会名
+      <input type="text" id="newTournamentName" placeholder="例: 春季大会">
+    </label>
+    <p class="hint">大会名の頭文字2文字で「〇〇＿１日目」「〇〇２日目」のシートが作成されます。</p>
+    <button onclick="createTournament()">作成</button>
+    <div id="createError" class="errorText"></div>
+  </div>
+
+  <div class="card">
+    <h2>大会一覧</h2>
+    <div id="tournamentList">読み込み中…</div>
+  </div>
+</div>
+
+<div id="loadingOverlay">
+  <div class="loadingBox">
+    <div class="loadingBar"><div class="loadingBarInner"></div></div>
+    <div id="loadingText">読み取り中…</div>
+  </div>
+</div>
+
+<div id="tournamentApp" style="display:none">
+  <button type="button" class="backBtn" onclick="showHome()">← 大会一覧に戻る</button>
+  <h1 id="tournamentTitle">大会</h1>
+  <div class="tabs">
+    <button id="tabBtn-teams" onclick="showTab('teams')">チーム登録</button>
+    <button id="tabBtn-day1" onclick="showTab('day1')">1日目</button>
+    <button id="tabBtn-day2" onclick="showTab('day2')">2日目</button>
+  </div>
+  <div id="status"></div>
+
+  <!-- ============ チーム登録 ============ -->
+  <div id="panel-teams" class="panel">
+    <p class="hint">1日目の対戦順になります。7チーム分すべて入力してください。</p>
+    <div id="teamInputs"></div>
+    <div id="teamsError" class="errorText"></div>
+    <button onclick="saveTeams()">保存</button>
+  </div>
+
+  <!-- ============ 1日目 ============ -->
+  <div id="panel-day1" class="panel">
+    <div id="day1Content"></div>
+  </div>
+
+  <!-- ============ 2日目 ============ -->
+  <div id="panel-day2" class="panel">
+    <div id="day2Content"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
