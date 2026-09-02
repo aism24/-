@@ -14,9 +14,8 @@
  * 通信します（doGet/doPostがaction名でリクエストを振り分ける。taikai-unei等と同じ方式）。
  */
 
-// 速報PDFの保存先Driveフォルダ（ここに書き出す）。運用するGoogleアカウントの
-// 任意のフォルダIDに書き換えてください。
-const EXPORT_FOLDER_ID = 'REPLACE_WITH_YOUR_DRIVE_FOLDER_ID';
+// 速報PDFの保存先Driveフォルダ（「ファイトハイヤー」フォルダ）。
+const EXPORT_FOLDER_ID = '1GlqnNiZ3VI1l6EY_hkrph9FX-mPELmqS';
 
 const TEMPLATE_DAY1 = '１日目';
 const TEMPLATE_DAY2 = '２日目';
