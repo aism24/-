@@ -86,4 +86,14 @@ B2:B8=チーム名、C12:C18・E12:E18=得点入力、K2:K8=順位（数式で�
 - **一覧が読み込めない/保存できない**: `GAS_API_URL` が正しいか、GASデプロイの「アクセスできるユーザー」が「全員」になっているかを確認してください。
 - **大会作成でエラーになる**: テンプレートシート「１日目」「２日目」が削除・改名されていないか確認してください。
 - **PDF作成でエラーになる**: `gas/Code.gs` 内の `EXPORT_FOLDER_ID` が正しいか、GASの初回承認でDriveへの権限を許可したかを確認してください。
+  - `You do not have permission to call UrlFetchApp.fetch` というエラーが出る場合は、承認したスコープにPDF出力に必要な権限が含まれていません。Apps Scriptエディタの左メニュー「プロジェクトの設定」→「"appsscript.json"マニフェスト ファイルをエディタで表示する」にチェックを入れ、`appsscript.json` を開いて `oauthScopes` に以下を追加してください（既存の行があれば残したまま追記）。
+    ```json
+    "oauthScopes": [
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/drive",
+      "https://www.googleapis.com/auth/script.external_request"
+    ]
+    ```
+    保存後、エディタ上部の関数選択で `exportPdf` 以外の適当な関数（例: `listTournaments`）を一度「実行」して新しい権限の承認ダイアログを通し、その後「デプロイ」→「デプロイを管理」→ 既存のデプロイを編集 →「新バージョン」で更新してください（URLは変わりません）。
 - **2日目作成でエラーになる**: 1日目の7試合すべての得点が入力されているか確認してください（順位（K列）が1つでも空だと実行できません）。
+- **大会を削除したい**: トップ画面の大会一覧の「削除」ボタンから、1日目・2日目のシートごと削除できます（元に戻せないので注意してください）。
