@@ -84,10 +84,10 @@ function doPost(e) {
 /* ============ 大会一覧 ============ */
 
 // テンプレート自体（'１日目'／'２日目'）は一覧に含めない。
-// シート名が「(1〜2文字)＿１日目」の形式のものを大会として拾う。
+// シート名が「(1〜PREFIX_MAX_LENGTH文字)＿１日目」の形式のものを大会として拾う。
 function listTournaments() {
   const ss = getSs();
-  const day1Re = /^(.{1,2})＿１日目$/;
+  const day1Re = new RegExp('^(.{1,' + PREFIX_MAX_LENGTH + '})＿１日目$');
   const list = [];
   ss.getSheets().forEach((sh) => {
     const name = sh.getName();
