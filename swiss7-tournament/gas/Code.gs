@@ -14,9 +14,6 @@
  * 通信します（doGet/doPostがaction名でリクエストを振り分ける。taikai-unei等と同じ方式）。
  */
 
-// 速報PDFの保存先Driveフォルダ（「ファイトハイヤー」フォルダ）。
-const EXPORT_FOLDER_ID = '1GlqnNiZ3VI1l6EY_hkrph9FX-mPELmqS';
-
 const TEMPLATE_DAY1 = '１日目';
 const TEMPLATE_DAY2 = '２日目';
 const TEAM_RANGE = 'B2:B8';
@@ -298,6 +295,8 @@ function deleteTournament(prefix) {
 
 /* ============ 速報PDF ============ */
 
+// Driveに保存せず、PDFのバイト列をそのままBase64でフロントエンドに返す方式。
+// DriveApp（フォルダへのアクセス権限）が一切不要になるため、追加の権限承認は発生しない。
 function exportPdf(prefix, day) {
   const sheetName = sheetNameFor_(prefix, day);
   const sheet = getSheetOrThrow_(sheetName);
@@ -307,9 +306,6 @@ function exportPdf(prefix, day) {
     '?format=pdf&gid=' + sheet.getSheetId() +
     '&size=A4&portrait=false&fitw=true&gridlines=false&printtitle=false&sheetnames=false&attachment=false';
   const response = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token } });
-  const blob = response.getBlob().setName(sheetName + '.pdf');
-  const folder = DriveApp.getFolderById(EXPORT_FOLDER_ID);
-  const file = folder.createFile(blob);
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  return file.getUrl();
+  const blob = response.getBlob();
+  return { fileName: sheetName + '.pdf', base64: Utilities.base64Encode(blob.getBytes()) };
 }
