@@ -1,0 +1,2411 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>日報集計アプリ</title>
+<style>
+  :root{ --border:#333; }
+  *{box-sizing:border-box;}
+  body{
+    font-family:"MS PGothic","Meiryo","Yu Gothic",sans-serif;
+    margin:0;
+    background:#eef0f2;
+    color:#222;
+  }
+  button{ font-family:inherit; cursor:pointer; }
+
+  /* ===== ホーム画面 ===== */
+  /* #screen-home はID+active クラスで指定し、.screen{display:none}をID優先度で確実に上書きする */
+  #screen-home.active{ min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  .homeWrap{ text-align:center; }
+  .appTitle{ font-size:28px; font-weight:700; margin-bottom:36px; display:flex; align-items:center; justify-content:center; gap:14px; }
+  .appTitle .homeLogo{ width:56px; height:56px; cursor:pointer; }
+  .homeFactoryLabel{ font-size:13px; color:#888; margin:-24px 0 24px; }
+  .homeButtons{ display:flex; flex-direction:column; gap:24px; align-items:center; }
+
+  /* ===== ロック画面・工場選択画面(ログイン) ===== */
+  #screen-lock.active, #screen-factory.active{ min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  .lockBox{ margin-top:8px; display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .lockLabel{ font-size:13px; color:#666; }
+  .lockInput{
+    width:120px; padding:12px; font-size:22px; text-align:center; letter-spacing:4px;
+    border:1px solid #bbb; border-radius:6px; font-family:inherit;
+  }
+  .lockSubmitBtn{ width:160px; padding:12px 0; font-size:14px; }
+  .lockPasswordPopup{
+    position:fixed; top:32%; left:50%; transform:translate(-50%,-50%);
+    background:#333; color:#fff; font-size:44px; font-weight:700;
+    padding:22px 40px; border-radius:14px; opacity:0; pointer-events:none;
+    transition:opacity .2s ease; z-index:300;
+  }
+  .lockPasswordPopup.show{ opacity:1; }
+  /* 工場選択画面(初回ログイン時)のみの配色。他の画面の工場チップ等には適用しない。
+     .homeBtnとの詳細度を揃えて確実に上書きするため2クラス指定にしている */
+  .homeBtn.factoryBtnYumesaki{ background:#e67e22; }
+  .homeBtn.factoryBtnTottori{ background:#2a9d5c; }
+  .homeBtn{
+    font-size:17px; font-weight:700; padding:20px 40px; border:none; border-radius:10px;
+    background:#2a6fd6; color:#fff; box-shadow:0 2px 8px rgba(0,0,0,.2);
+    width:320px; position:relative; transition:transform .15s ease, background .15s ease, color .15s ease;
+  }
+  .homeBtn:hover{
+    background:#d9f2df; color:#e5322d; transform:scale(2); z-index:10;
+    animation:homeBtnGlow 1s ease-in-out infinite;
+  }
+  .homeBtn:disabled{ opacity:.55; cursor:not-allowed; }
+  .homeBtn:disabled:hover{
+    background:#2a6fd6; color:#fff; transform:none; animation:none;
+    box-shadow:0 2px 8px rgba(0,0,0,.2);
+  }
+  .homeBtn.homeBtnCheck{ background:#f4d03f; color:#3a2a00; }
+  .homeBtn.homeBtnCheck:disabled:hover{
+    background:#f4d03f; color:#3a2a00; transform:none; animation:none;
+    box-shadow:0 2px 8px rgba(0,0,0,.2);
+  }
+  @keyframes homeBtnGlow{
+    0%,100%{ box-shadow:0 0 8px 2px rgba(76,175,80,.7), 0 4px 20px rgba(0,0,0,.3); }
+    50%{ box-shadow:0 0 20px 6px rgba(76,175,80,1), 0 4px 20px rgba(0,0,0,.3); }
+  }
+  .homeBtn .sub{ display:block; font-size:12px; font-weight:400; margin-top:4px; opacity:.9; }
+
+  /* ===== 共通ヘッダー ===== */
+  .appHeader{
+    position:fixed; top:0; left:0; right:0; z-index:100; height:64px;
+    background:#fff; border-bottom:1px solid #ddd; box-shadow:0 1px 4px rgba(0,0,0,.08);
+    display:flex; align-items:center; justify-content:center; padding:0 20px;
+  }
+  .headerLeft{
+    position:absolute; left:20px; top:50%; transform:translateY(-50%);
+    display:flex; align-items:center; gap:8px;
+  }
+  .backBtn{
+    padding:6px 14px; font-size:13px; border:1px solid #2a9d5c;
+    border-radius:16px; background:#2a9d5c; color:#fff;
+  }
+  .backBtn:hover{ background:#207a46; }
+  .resetBtn{
+    padding:6px 14px; font-size:13px; border:1px solid #999;
+    border-radius:16px; background:#fff; color:#666;
+  }
+  .resetBtn:hover{ background:#eee; }
+  .appHeaderBrand{ display:flex; align-items:center; gap:10px; }
+  .appHeaderBrand .appLogo{ width:40px; height:40px; flex-shrink:0; }
+  .appHeaderBrand .brandName{ font-size:18px; font-weight:700; }
+  .appHeaderBrand .pageDivider{ color:#ccc; font-weight:400; }
+  .appHeaderBrand .pageTitle{ font-size:13px; color:#666; font-weight:400; }
+  .appHeaderBrand .headerFactoryLabel{ font-size:13px; color:#666; font-weight:400; }
+  .headerDownloadBtn{
+    position:absolute; right:20px; top:50%; transform:translateY(-50%);
+    padding:7px 16px; font-size:13px; font-weight:700; border:none;
+    border-radius:16px; background:#1f8a4c; color:#fff;
+  }
+  .headerDownloadBtn:hover{ background:#166f3c; }
+  .headerDownloadBtn:disabled{ background:#bbb; cursor:not-allowed; }
+
+  /* ===== ①日報入力チェック専用 ===== */
+  /* .checkBtnと高さ(padding)を揃え、他の項目(拠点・部署等)のボタン行と統一している */
+  .ngOnlyBtn{
+    padding:6px 14px; font-size:13px; font-weight:700; border:1px solid #c33;
+    border-radius:16px; background:#fff; color:#c33;
+  }
+  .ngOnlyBtn:hover{ background:#fdeaea; }
+  .ngOnlyBtn.active{ background:#c33; color:#fff; }
+  table.dataTable.r4Table{ table-layout:auto; width:auto; border-collapse:separate; border-spacing:0; }
+  .r4Table .r4NameCol{ white-space:nowrap; position:sticky; left:0; z-index:2; background:#fff; }
+  /* 3文字(例:「前有給」)まで1行で収まる幅に統一(均等割り付け)。
+     table-layout:autoは宣言したwidthを厳密には守らないため、
+     min-width/max-widthも同じ値にして確実に全列同じ幅にしている。 */
+  .r4Table .r4DateCell{ width:60px; min-width:60px; max-width:60px; }
+  table.dataTable th.r4DateCell{ text-align:center; }
+  /* 未来日の届出略称(例:「前有給」)だけは数値と違い中央揃えにする */
+  table.dataTable.r4Table td.r4LeaveText{ text-align:center; }
+  .r4Table th{ position:sticky; top:0; z-index:3; }
+  table.dataTable.r4Table th.r4NameCol{ z-index:4; background:#f5f7fa; }
+  .r4HolidayCol{ background:#f4cccc; }
+  .r4Missing{ background:#ff0000; color:#fff; }
+  .r4Duplicate{ background:#f9cb9c; }
+  .r4Long{ background:#ffff00; color:#ff0000; font-weight:700; }
+  .r4Leave{ background:#fff9c4; }
+  .r4TotalCol{ background:#f5f5f5; font-weight:700; }
+  tr.r4LocHead td{ font-weight:700; background:#eaf1ff; color:#2a6fd6; }
+  tr.r4DeptHead td{ font-weight:700; background:#f5f7fa; color:#555; }
+  tr.r4SubtotalOffice td{ background:#bfe6c9; font-weight:700; }
+  tr.r4SubtotalFactory td{ background:#bfe0f7; font-weight:700; }
+  tr.r4LocTotal td{ background:#f7f9fc; font-weight:700; border-top:2px solid #999; }
+  tr.r4GrandTotal td{ background:#eee; font-weight:700; border-top:2px solid #999; }
+  /* 休日の列は、拠点/部署見出し・小計・合計・総合計の行でも休日色を優先する
+     (それぞれの行の背景色より詳細度を上げて上書きする) */
+  tr.r4LocHead td.r4HolidayCol,
+  tr.r4DeptHead td.r4HolidayCol,
+  tr.r4SubtotalOffice td.r4HolidayCol,
+  tr.r4SubtotalFactory td.r4HolidayCol,
+  tr.r4LocTotal td.r4HolidayCol,
+  tr.r4GrandTotal td.r4HolidayCol{ background:#f4cccc; }
+  /* 氏名・日付(曜日)の項目行(th)は table.dataTable th{background:#f5f7fa}
+     の方が詳細度が高く.r4HolidayColが負けて休日色が出ていなかったため、
+     詳細度を上げて明示的に上書きする */
+  table.dataTable.r4Table th.r4HolidayCol{ background:#f4cccc; }
+  tr.r4LocHead .r4NameCol{ background:#eaf1ff; }
+  tr.r4DeptHead .r4NameCol{ background:#f5f7fa; }
+  tr.r4SubtotalOffice .r4NameCol{ background:#bfe6c9; }
+  tr.r4SubtotalFactory .r4NameCol{ background:#bfe0f7; }
+  tr.r4LocTotal .r4NameCol{ background:#f7f9fc; }
+  tr.r4GrandTotal .r4NameCol{ background:#eee; }
+
+  /* セルクリックで選んだ行を二重線で囲う(常に1行だけ)。
+     セル1つ1つを囲むのではなく行全体の外枠だけにするため、
+     上下は全セルのborder-top/bottomで(border-collapseにより連続した
+     1本の線になる)、左右は先頭・末尾セルのborder-left/rightだけを
+     変更し、セル同士の内側の区切り線は通常のまま変えない。 */
+  table.dataTable tr.r4RowSelected td{ border-top:3px double #2a6fd6; border-bottom:3px double #2a6fd6; }
+  table.dataTable tr.r4RowSelected td:first-child{ border-left:3px double #2a6fd6; }
+  table.dataTable tr.r4RowSelected td:last-child{ border-right:3px double #2a6fd6; }
+
+  /* ===== レポート画面共通レイアウト(上:条件 / 下:プレビュー) ===== */
+  .app{ display:flex; flex-direction:column; margin-top:64px; height:calc(100vh - 64px); }
+  .panel{
+    width:100%; background:#fffbcc; padding:8px 20px;
+    border-bottom:1px solid #ccc;
+    position:sticky; top:64px; z-index:50;
+  }
+  /* ①日報入力チェックのみ、集計条件パネルを.main(スクロール領域)の内側に置き、
+     氏名行・ファイル名/見出しと同じ一続きのsticky積み重ねにする。
+     縦(top)方向はCSSのstickyに任せる。横方向はここではleftを指定せず、
+     JS(adjustR4StickyOffset_ / updateR4HStuckState_)側でmargin相殺と
+     transform:translateXにより画面左端に揃える(ネイティブのsticky(left)
+     だとスクロール範囲の途中で位置がズレる不具合があったため)。
+     top位置は集計条件パネルの実測高さがフィルタの折り返しで変わるため、
+     adjustR4StickyOffset_内でJSから都度設定する。 */
+  .panel.r4StickyPanel{ position:sticky; top:0; z-index:60; }
+  /* 集計条件パネル・ファイル名見出し・氏名/日付行を合わせた高さぶんを
+     薄黄色(.mainと同じ色)で覆う背景板。z-indexはパネル(60)・ファイル名
+     見出し(55)より下、表本体より上に置くことで、3要素の継ぎ目に多少の
+     実測誤差があっても、そこには表のセルではなく背景板の色が見えるだけに
+     なる。表本体の氏名列(.r4NameCol)は横スクロール追従のためz-index:2を
+     持つので、それより確実に上(theadのth同様のz-index:3)にする。DOM順で
+     背景板が先に来るため、theadと重なっても表示はtheadが優先される。
+     高さ・横位置はadjustR4StickyOffset_内でJSから設定する。 */
+  .r4HeaderBackdrop{ position:sticky; top:0; z-index:3; background:#fffbcc; pointer-events:none; }
+  .panelFields{ display:flex; flex-wrap:wrap; gap:12px 16px; align-items:flex-start; }
+  .panelFields > .field{
+    flex:1 1 240px; min-width:220px; max-width:340px; margin-bottom:0;
+    border:1px solid #ddd; border-radius:6px; background:#fff; padding:10px 12px;
+  }
+  .main{ flex:1; min-height:0; padding:8px 20px 12px; overflow:auto; background:#fffbcc; }
+  .screenTitle{ font-size:15px; font-weight:700; margin:0 0 8px; }
+  .field{ margin-bottom:14px; }
+  .field label{ display:block; font-size:12px; color:#555; margin-bottom:4px; font-weight:700; }
+  .field select, .field input[type=date], .field input[type=number]{
+    width:100%; padding:6px 8px; font-size:13px; border:1px solid #bbb; border-radius:4px; font-family:inherit;
+  }
+  .radioGroup{ display:flex; gap:6px; flex-wrap:wrap; }
+  .radioBtn{
+    padding:5px 12px; font-size:12px; border:1px solid #999; border-radius:14px;
+    background:#f5f5f5; user-select:none;
+  }
+  .radioBtn input{ display:none; }
+  .radioBtn.checked{ background:#2a6fd6; color:#fff; border-color:#2a6fd6; }
+  .dateRangeRow{ display:flex; align-items:center; gap:6px; }
+  .dateRangeRow span{ font-size:12px; color:#777; }
+  .rangePreview{
+    margin-top:8px; font-size:12px; color:#333; background:#fff; border:1px solid #ddd;
+    border-radius:4px; padding:6px 8px;
+  }
+  .checkGroup{ display:flex; flex-wrap:wrap; gap:8px; }
+  .checkBtn{
+    padding:6px 14px; font-size:13px; border:1px solid #999; border-radius:16px; background:#f5f5f5;
+  }
+  .checkBtn input{ display:none; }
+  .checkBtn.checked{ background:#2a6fd6; color:#fff; border-color:#2a6fd6; }
+  .checkBtn.retired{ color:#c33; }
+  .checkBtn.retired.checked{ color:#fff; }
+  /* .fieldの上padding(10px)と合わせて上下の余白を揃えるため、上マージンは
+     持たせない(常に.fieldの先頭で使われており、上に何か別の要素が
+     続くケースはない)。 */
+  .checkGroupLabel{ font-size:11px; color:#888; margin:0 0 4px; }
+  .filterHead{ display:flex; justify-content:flex-start; align-items:center; gap:8px; margin-bottom:4px; }
+  .filterHead span{ font-size:12px; color:#555; font-weight:700; }
+  .specToggle{ display:flex; align-items:center; gap:4px; }
+  .specLabel{ font-size:11px; color:#888; font-weight:400 !important; }
+  .specBtn{ padding:2px 10px; font-size:11px; border:1px solid #999; border-radius:12px; background:#f5f5f5; }
+  .specBtn.checked{ background:#2a6fd6; color:#fff; border-color:#2a6fd6; }
+  .specBtn input{ display:none; }
+  .specBody{ display:none; margin-top:6px; }
+  .specBody.open{ display:block; }
+  .chipSearch{
+    width:100%; padding:5px 8px; font-size:12px; border:1px solid #bbb; border-radius:4px;
+    margin-bottom:6px; font-family:inherit;
+  }
+  .scrollGroup{
+    max-height:150px; overflow-y:auto; border:1px solid #eee; border-radius:6px;
+    padding:8px; background:#fff;
+  }
+  .fileNamePreview{
+    margin-bottom:10px; font-size:11px; color:#777; word-break:break-all;
+  }
+
+  .r4FileHeader{
+    background:#fff; padding:8px 16px 10px; margin-bottom:8px;
+    border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.1);
+    /* 集計条件パネルの直下に積み重なるsticky要素。topは集計条件パネルの
+       実測高さに応じてadjustR4StickyOffset_内でJSから設定する。横方向は
+       .r4StickyPanelと同じ理由でleft未指定、JS側でtransformにより揃える。 */
+    position:sticky; z-index:55;
+  }
+  .previewPanel{
+    background:#fff; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.1); padding:10px 16px; margin-bottom:16px;
+  }
+  /* ①日報入力チェックの表は日数分だけ横に伸びるため、白い背景の箱を
+     JSで測った幅に後から合わせる方式(ズレの原因だった)をやめ、
+     常に中身(表)の実際の幅ちょうどになるCSSだけの指定にする。 */
+  .previewPanel.r4PreviewPanel{ width:fit-content; min-width:100%; }
+  .previewPanel h3{ font-size:13px; margin:0 0 10px; color:#444; }
+  .filterSummary{ font-size:11px; color:#777; margin:0 0 12px; padding:6px 8px; background:#f7f9fc; border-radius:4px; }
+  .previewEmpty{ color:#999; font-size:13px; text-align:center; padding:40px 0; }
+  table.dataTable{ width:100%; table-layout:fixed; border-collapse:collapse; font-size:13px; }
+  table.dataTable th{
+    text-align:left; font-size:11px; color:#777; font-weight:700;
+    padding:6px 8px; border:1px solid #ccc; background:#f5f7fa;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  table.dataTable td{
+    padding:6px 8px; border:1px solid #ddd;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  table.dataTable td.num{ text-align:right; }
+  table.dataTable tr.totalRow td{ font-weight:700; background:#f7f9fc; border-top:2px solid #999; }
+  table.dataTable tr.sheetHeadRow td{ font-weight:700; background:#eaf1ff; color:#2a6fd6; }
+  table.dataTable td.previewEmptyCell{ color:#999; text-align:center; padding:14px 0; }
+
+  /* 20日〆集計: 工場工数(薄水色)/事務工数(薄緑色)/総合計 の列色分け */
+  table.dataTable .colFactory{ background:#dceefc; }
+  table.dataTable .colFactoryTotal{ background:#bfe0f7; font-weight:700; }
+  table.dataTable .colOffice{ background:#e1f5e6; }
+  table.dataTable .colOfficeTotal{ background:#bfe6c9; font-weight:700; }
+  table.dataTable .colGrand{ background:#eee; font-weight:700; }
+  table.dataTable tr.totalRow .colFactory{ background:#bfe0f7; }
+  table.dataTable tr.totalRow .colFactoryTotal{ background:#9fd0f2; }
+  table.dataTable tr.totalRow .colOffice{ background:#bfe6c9; }
+  table.dataTable tr.totalRow .colOfficeTotal{ background:#9fdcb0; }
+  table.dataTable tr.totalRow .colGrand{ background:#ddd; }
+
+  /* 工事別集計: 拠点シート内で工場(薄水色)/設計管理(薄緑色)を行単位で色分け */
+  table.dataTable tr.rowFactory td{ background:#dceefc; }
+  table.dataTable tr.rowFactoryTotal td{ background:#bfe0f7; font-weight:700; }
+  table.dataTable tr.rowOffice td{ background:#e1f5e6; }
+  table.dataTable tr.rowOfficeTotal td{ background:#bfe6c9; font-weight:700; }
+
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background:#333; color:#fff; padding:10px 20px; border-radius:20px; font-size:13px;
+    opacity:0; pointer-events:none; transition:opacity .25s ease;
+  }
+  .toast.show{ opacity:1; }
+
+  /* ダミーの「情報収集中」進捗ポップアップ */
+  .fakeProgressOverlay{
+    position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.35);
+    display:flex; align-items:center; justify-content:center;
+    opacity:0; pointer-events:none; transition:opacity .2s ease;
+  }
+  .fakeProgressOverlay.show{ opacity:1; pointer-events:auto; }
+  .fakeProgressCard{
+    background:#fff; border-radius:10px; padding:28px 36px; width:300px;
+    box-shadow:0 4px 20px rgba(0,0,0,.25); text-align:center;
+  }
+  .fakeProgressLabel{ font-size:14px; font-weight:700; color:#333; margin-bottom:14px; }
+  .fakeProgressTrack{ width:220px; height:10px; border-radius:5px; background:#e6e9ee; overflow:hidden; margin:0 auto; }
+  .fakeProgressFill{ width:0%; height:100%; background:#2a6fd6; border-radius:5px; transition:width .15s linear; }
+  .fakeProgressWarning{
+    display:none; margin-top:12px; font-size:12px; font-weight:700; color:#d32f2f;
+    animation:fakeProgressBlink 1s step-start infinite;
+  }
+  @keyframes fakeProgressBlink{ 50%{ opacity:0; } }
+
+  /* ①日報入力チェックの再計算中ポップアップ。演出用の最低表示時間は持たず、
+     実際の再計算(重い同期処理)が終わった瞬間に消える */
+  .recalcOverlay{
+    position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.15);
+    display:flex; align-items:center; justify-content:center;
+    opacity:0; pointer-events:none; transition:opacity .1s ease;
+  }
+  .recalcOverlay.show{ opacity:1; pointer-events:auto; }
+  .recalcCard{
+    background:#fff; border-radius:10px; padding:16px 32px;
+    font-size:14px; font-weight:700; color:#333;
+    box-shadow:0 4px 20px rgba(0,0,0,.25);
+  }
+
+  /* プレビュー表のはみ出したセルをクリックした時に、そのセルの右上に表示する全文ポップアップ */
+  .cellTextPopup{
+    position:fixed; z-index:250; max-width:320px;
+    background:#333; color:#fff; font-size:12px; line-height:1.4;
+    padding:6px 10px; border-radius:6px; word-break:break-all;
+    box-shadow:0 2px 8px rgba(0,0,0,.3);
+    opacity:0; pointer-events:none; transition:opacity .15s ease;
+  }
+  .cellTextPopup.show{ opacity:1; }
+
+  .screen{ display:none; }
+  .screen.active{ display:block; }
+</style>
+</head>
+<body>
+
+<!-- ロック画面(パスワード) -->
+<div id="screen-lock" class="screen active">
+  <div class="homeWrap">
+    <div class="appTitle"><img class="homeLogo" src="" data-logo onclick="handleLockLogoTap()">日報アプリより集計</div>
+    <div class="lockBox">
+      <div class="lockLabel">パスワードを入力してください</div>
+      <input type="password" id="lock-input" class="lockInput" inputmode="numeric" maxlength="1" autocomplete="off" onkeydown="if(event.key==='Enter') submitLockPassword()">
+      <button class="homeBtn lockSubmitBtn" onclick="submitLockPassword()">解除</button>
+    </div>
+  </div>
+  <div class="lockPasswordPopup" id="lockPasswordPopup"></div>
+</div>
+
+<!-- 工場選択画面 -->
+<div id="screen-factory" class="screen">
+  <div class="homeWrap">
+    <div class="appTitle"><img class="homeLogo" src="" data-logo>日報アプリより集計</div>
+    <div class="homeButtons">
+      <button class="homeBtn" onclick="selectFactory('本社')">本社</button>
+      <button class="homeBtn factoryBtnYumesaki" onclick="selectFactory('夢前')">夢前</button>
+      <button class="homeBtn factoryBtnTottori" onclick="selectFactory('鳥取')">鳥取</button>
+    </div>
+  </div>
+</div>
+
+<!-- ホーム画面 -->
+<div id="screen-home" class="screen">
+  <div class="homeWrap">
+    <div class="appTitle"><img class="homeLogo" src="" data-logo>日報アプリより集計</div>
+    <div class="homeFactoryLabel" id="homeFactoryLabel"></div>
+    <div class="homeButtons">
+      <button class="homeBtn homeBtnCheck" disabled onclick="showScreen('report4')">① 日報入力チェック<span class="sub">未提出・重複・長時間勤務のチェック</span></button>
+      <button class="homeBtn" disabled onclick="showScreen('report1')">② 工事別 作業内容集計<span class="sub">1つの工事の作業別時間数を集計</span></button>
+      <button class="homeBtn" disabled onclick="showScreen('report2')">③ 個人別 作業内容集計<span class="sub">1人の社員の期間別・作業内容明細</span></button>
+      <button class="homeBtn" disabled onclick="showScreen('report3')">④ 20日〆集計<span class="sub">拠点別・工事×作業内容のクロス集計</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- 集計1: 工事別 -->
+<div id="screen-report1" class="screen">
+  <div class="appHeader">
+    <div class="headerLeft">
+      <button class="backBtn" onclick="showScreen('home')">← ホーム</button>
+      <button class="resetBtn" onclick="resetScreen('r1')">リセット</button>
+    </div>
+    <div class="appHeaderBrand">
+      <img class="appLogo" src="" data-logo>
+      <span class="brandName">日報アプリより集計</span>
+      <span class="pageDivider">｜</span>
+      <span class="pageTitle">② 工事別 作業内容集計</span>
+      <span class="pageDivider">｜</span>
+      <span class="headerFactoryLabel" id="r1-headerFactory"></span>
+    </div>
+    <button class="headerDownloadBtn" id="r1-downloadBtn" onclick="runReport1()">Excelでダウンロード</button>
+  </div>
+  <div class="app">
+    <div class="panel">
+      <div class="screenTitle">集計条件</div>
+      <div class="panelFields">
+
+      <div class="field">
+        <label>工事を選択</label>
+        <select id="r1-construction">
+          <option value="">-- 選択してください --</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <div class="filterHead">
+          <span>工場(拠点)</span>
+          <div class="specToggle">
+            <span class="specLabel">指定:</span>
+            <label class="specBtn checked"><input type="radio" name="r1-loc-spec" value="no" checked>しない</label>
+            <label class="specBtn"><input type="radio" name="r1-loc-spec" value="yes">する</label>
+          </div>
+        </div>
+        <div class="specBody" id="r1-loc-body">
+          <div class="checkGroup" id="r1-loc">
+            <label class="checkBtn"><input type="checkbox" value="本社">本社</label>
+            <label class="checkBtn"><input type="checkbox" value="夢前">夢前</label>
+            <label class="checkBtn"><input type="checkbox" value="鳥取">鳥取</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="filterHead">
+          <span>部署</span>
+          <div class="specToggle">
+            <span class="specLabel">指定:</span>
+            <label class="specBtn checked"><input type="radio" name="r1-dept-spec" value="no" checked>しない</label>
+            <label class="specBtn"><input type="radio" name="r1-dept-spec" value="yes">する</label>
+          </div>
+        </div>
+        <div class="specBody" id="r1-dept-body">
+          <div class="checkGroup" id="r1-dept">
+            <label class="checkBtn"><input type="checkbox" value="工場">工場</label>
+            <label class="checkBtn"><input type="checkbox" value="設計管理">事務</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="filterHead">
+          <span>氏名</span>
+          <div class="specToggle">
+            <span class="specLabel">指定:</span>
+            <label class="specBtn checked"><input type="radio" name="r1-name-spec" value="no" checked>しない</label>
+            <label class="specBtn"><input type="radio" name="r1-name-spec" value="yes">する</label>
+          </div>
+        </div>
+        <div class="specBody" id="r1-name-body">
+          <input type="text" class="chipSearch" placeholder="氏名で検索..." oninput="filterChips('r1-name', this.value)">
+          <div class="checkGroup scrollGroup" id="r1-name"></div>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="filterHead">
+          <span>作業内容</span>
+          <div class="specToggle">
+            <span class="specLabel">指定:</span>
+            <label class="specBtn checked"><input type="radio" name="r1-work-spec" value="no" checked>しない</label>
+            <label class="specBtn"><input type="radio" name="r1-work-spec" value="yes">する</label>
+          </div>
+        </div>
+        <div class="specBody" id="r1-work-body">
+          <input type="text" class="chipSearch" placeholder="作業内容で検索..." oninput="filterChips('r1-work', this.value)">
+          <div class="checkGroup scrollGroup" id="r1-work"></div>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="filterHead">
+          <span>期間</span>
+          <div class="specToggle">
+            <span class="specLabel">指定:</span>
+            <label class="specBtn checked"><input type="radio" name="r1-period-spec" value="no" checked>しない</label>
+            <label class="specBtn"><input type="radio" name="r1-period-spec" value="yes">する</label>
+          </div>
+        </div>
+        <div class="specBody" id="r1-period-body">
+          <div id="r1-period"></div>
+        </div>
+      </div>
+
+      </div>
+    </div>
+    <div class="main">
+      <div class="previewPanel" id="r1-preview">
+        <h3>プレビュー(作業内容別 合計時間)</h3>
+        <div class="previewEmpty">工事を選択して「Excelでダウンロード」を押すと、ここに結果が表示されます</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 集計2: 個人別 -->
+<div id="screen-report2" class="screen">
+  <div class="appHeader">
+    <div class="headerLeft">
+      <button class="backBtn" onclick="showScreen('home')">← ホーム</button>
+      <button class="resetBtn" onclick="resetScreen('r2')">リセット</button>
+    </div>
+    <div class="appHeaderBrand">
+      <img class="appLogo" src="" data-logo>
+      <span class="brandName">日報アプリより集計</span>
+      <span class="pageDivider">｜</span>
+      <span class="pageTitle">③ 個人別 作業内容集計</span>
+      <span class="pageDivider">｜</span>
+      <span class="headerFactoryLabel" id="r2-headerFactory"></span>
+    </div>
+    <button class="headerDownloadBtn" id="r2-downloadBtn" onclick="runReport2()">Excelでダウンロード</button>
+  </div>
+  <div class="app">
+    <div class="panel">
+      <div class="screenTitle">集計条件</div>
+      <div class="panelFields">
+
+      <div class="field">
+        <label>社員を選択</label>
+        <select id="r2-operator">
+          <option value="">-- 選択してください --</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <div class="filterHead">
+          <span>工場(拠点)</span>
+          <div class="specToggle">
+            <span class="specLabel">指定:</span>
+            <label class="specBtn checked"><input type="radio" name="r2-loc-spec" value="no" checked>しない</label>
+            <label class="specBtn"><input type="radio" name="r2-loc-spec" value="yes">する</label>
+          </div>
+        </div>
+        <div class="specBody" id="r2-loc-body">
+          <div class="checkGroup" id="r2-loc">
+            <label class="checkBtn"><input type="checkbox" value="本社">本社</label>
+            <label class="checkBtn"><input type="checkbox" value="夢前">夢前</label>
+            <label class="checkBtn"><input type="checkbox" value="鳥取">鳥取</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="filterHead">
+          <span>部署</span>
+          <div class="specToggle">
+            <span class="specLabel">指定:</span>
+            <label class="specBtn checked"><input type="radio" name="r2-dept-spec" value="no" checked>しない</label>
+            <label class="specBtn"><input type="radio" name="r2-dept-spec" value="yes">する</label>
+          </div>
+        </div>
+        <div class="specBody" id="r2-dept-body">
+          <div class="checkGroup" id="r2-dept">
+            <label class="checkBtn"><input type="checkbox" value="工場">工場</label>
+            <label class="checkBtn"><input type="checkbox" value="設計管理">事務</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="filterHead">
+          <span>工事</span>
+          <div class="specToggle">
+            <span class="specLabel">指定:</span>
+            <label class="specBtn checked"><input type="radio" name="r2-construction-spec" value="no" checked>しない</label>
+            <label class="specBtn"><input type="radio" name="r2-construction-spec" value="yes">する</label>
+          </div>
+        </div>
+        <div class="specBody" id="r2-construction-body">
+          <input type="text" class="chipSearch" placeholder="工事で検索..." oninput="filterChips('r2-construction', this.value)">
+          <div class="checkGroup scrollGroup" id="r2-construction"></div>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="filterHead">
+          <span>作業内容</span>
+          <div class="specToggle">
+            <span class="specLabel">指定:</span>
+            <label class="specBtn checked"><input type="radio" name="r2-work-spec" value="no" checked>しない</label>
+            <label class="specBtn"><input type="radio" name="r2-work-spec" value="yes">する</label>
+          </div>
+        </div>
+        <div class="specBody" id="r2-work-body">
+          <input type="text" class="chipSearch" placeholder="作業内容で検索..." oninput="filterChips('r2-work', this.value)">
+          <div class="checkGroup scrollGroup" id="r2-work"></div>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="filterHead">
+          <span>期間</span>
+          <div class="specToggle">
+            <span class="specLabel">指定:</span>
+            <label class="specBtn checked"><input type="radio" name="r2-period-spec" value="no" checked>しない</label>
+            <label class="specBtn"><input type="radio" name="r2-period-spec" value="yes">する</label>
+          </div>
+        </div>
+        <div class="specBody" id="r2-period-body">
+          <div id="r2-period"></div>
+        </div>
+      </div>
+
+      </div>
+    </div>
+    <div class="main">
+      <div class="previewPanel" id="r2-preview">
+        <h3>プレビュー(日付別 明細)</h3>
+        <div class="previewEmpty">社員を選択して「Excelでダウンロード」を押すと、ここに結果が表示されます</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 集計3: 20日〆集計 -->
+<div id="screen-report3" class="screen">
+  <div class="appHeader">
+    <div class="headerLeft">
+      <button class="backBtn" onclick="showScreen('home')">← ホーム</button>
+      <button class="resetBtn" onclick="resetScreen('r3')">リセット</button>
+    </div>
+    <div class="appHeaderBrand">
+      <img class="appLogo" src="" data-logo>
+      <span class="brandName">日報アプリより集計</span>
+      <span class="pageDivider">｜</span>
+      <span class="pageTitle">④ 20日〆集計</span>
+      <span class="pageDivider">｜</span>
+      <span class="headerFactoryLabel" id="r3-headerFactory"></span>
+    </div>
+    <button class="headerDownloadBtn" id="r3-downloadBtn" onclick="runReport3()">Excelでダウンロード</button>
+  </div>
+  <div class="app">
+    <div class="panel">
+      <div class="screenTitle">集計条件</div>
+      <div class="panelFields">
+
+      <div class="field">
+        <div class="checkGroupLabel">拠点(複数選択可)</div>
+        <div class="checkGroup" id="r3-locations">
+          <label class="checkBtn checked"><input type="checkbox" value="本社" checked>本社</label>
+          <label class="checkBtn checked"><input type="checkbox" value="夢前" checked>夢前</label>
+          <label class="checkBtn checked"><input type="checkbox" value="鳥取" checked>鳥取</label>
+        </div>
+      </div>
+
+      <div class="field">
+        <div id="r3-period"></div>
+      </div>
+
+      </div>
+    </div>
+    <div class="main">
+      <div class="previewPanel" id="r3-preview">
+        <h3>プレビュー(工事×作業内容 クロス集計・拠点ごとに別シート)</h3>
+        <div class="previewEmpty">拠点と締め月を選択して「Excelでダウンロード」を押すと、ここに結果が表示されます</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 集計4: 日報入力チェック -->
+<div id="screen-report4" class="screen">
+  <div class="appHeader">
+    <div class="headerLeft">
+      <button class="backBtn" onclick="showScreen('home')">← ホーム</button>
+      <button class="resetBtn" onclick="resetScreen('r4')">リセット</button>
+    </div>
+    <div class="appHeaderBrand">
+      <img class="appLogo" src="" data-logo>
+      <span class="brandName">日報アプリより集計</span>
+      <span class="pageDivider">｜</span>
+      <span class="pageTitle">① 日報入力チェック</span>
+    </div>
+    <button class="headerDownloadBtn" id="r4-downloadBtn" onclick="runReport4()">Excelでダウンロード</button>
+  </div>
+  <div class="app">
+    <div class="main">
+      <div class="r4HeaderBackdrop"></div>
+      <div class="panel r4StickyPanel">
+        <div class="screenTitle">集計条件</div>
+        <div class="panelFields">
+
+        <div class="field">
+          <div class="checkGroupLabel">締め月(単一選択)</div>
+          <div class="checkGroup" id="r4-month"></div>
+        </div>
+
+        <div class="field">
+          <div class="checkGroupLabel">拠点(複数選択可)</div>
+          <div class="checkGroup" id="r4-locations">
+            <label class="checkBtn"><input type="checkbox" value="本社">本社</label>
+            <label class="checkBtn"><input type="checkbox" value="夢前">夢前</label>
+            <label class="checkBtn"><input type="checkbox" value="鳥取">鳥取</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="checkGroupLabel">部署(複数選択可)</div>
+          <div class="checkGroup" id="r4-depts">
+            <label class="checkBtn checked"><input type="checkbox" value="工場" checked>工場</label>
+            <label class="checkBtn checked"><input type="checkbox" value="設計管理" checked>事務</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="checkGroupLabel">入力可否</div>
+          <div class="checkGroup">
+            <button type="button" class="ngOnlyBtn" id="r4-ngonly-btn" onclick="toggleR4NgOnly()">NGだけ表示</button>
+          </div>
+        </div>
+
+        </div>
+      </div>
+      <div class="previewPanel r4PreviewPanel" id="r4-preview">
+        <h3>プレビュー(社員別 提出チェック)</h3>
+        <div class="previewEmpty">読み込み中です…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ダミーの「情報収集中」進捗ポップアップ(実際の待ち時間とは連動しない演出用) -->
+<div class="fakeProgressOverlay" id="fakeProgressOverlay">
+  <div class="fakeProgressCard">
+    <div class="fakeProgressLabel" id="fakeProgressLabel">情報収集中</div>
+    <div class="fakeProgressTrack"><div class="fakeProgressFill" id="fakeProgressFill"></div></div>
+    <div class="fakeProgressWarning" id="fakeProgressWarning">入力中などであれば、時間がかかるときがあります</div>
+  </div>
+</div>
+
+<!-- ①日報入力チェックの再計算中ポップアップ(実際の計算完了と同時に消える。演出用の最低表示時間はない) -->
+<div class="recalcOverlay" id="recalcOverlay">
+  <div class="recalcCard">再計算中…</div>
+</div>
+
+<!-- プレビュー表ではみ出したセルをクリックした時、そのセルの右上に全文を表示する -->
+<div class="cellTextPopup" id="cellTextPopup"></div>
+
+<script>
+const FACTORY_ORDER = ['本社','夢前','鳥取'];
+let masterData = { constructions: [], workItems: [], operators: [] };
+let ALL_ROWS = [];
+let CONSTRUCTION_LABEL = {};
+let CONSTRUCTION_NO = {};
+let WORK_META = {};
+let WORK_DEPT = {};
+let masterDataLoaded = false;
+let rowsLoaded = false;
+let CALENDAR_MAP = {};
+let ABSENTEEISM = [];
+let calendarLoaded = false;
+let absenteeismLoaded = false;
+let r4NgOnly = false;
+
+/* ===== 会社ロゴ ===== */
+const LOGO_DATA_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0NjQgNTE0IiB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIj4KICA8IS0tIOato+WFiSAobWFzYW1peikgTG9nbyBNYXJrIC0tPgogIDxwYXRoIGQ9Ik0gMzk4IDE1OCBMIDM5NiAxNTkgTCAzOTIgMTYxIEwgMzg3IDE2NSBMIDM4MCAxNjggTCAzNzMgMTczIEwgMzcxIDE3MyBMIDM2OCAxNzUgTCAzNzAgMTc5IEwgMzczIDE5MCBMIDM3NCAxOTUgTCAzNzUgMjAxIEwgMzc2IDIwNyBMIDM3NyAyMjAgTCAzNzYgMjQwIEwgMzc1IDI0NiBMIDM3NCAyNTIgTCAzNzMgMjU3IEwgMzcxIDI2NCBMIDM2NyAyNzYgTCAzNjMgMjg1IEwgMzYyIDI4NyBMIDM2MCAyODkgTCAzNjAgMjkxIEwgMzU3IDI5NiBMIDM0OSAzMDggTCAzNDYgMzEyIEwgMzQwIDMxOSBMIDMyOCAzMzEgTCAzMjIgMzM2IEwgMzE4IDMzOSBMIDMxNCAzNDIgTCAzMTEgMzQ0IEwgMzA2IDM0NyBMIDMwMSAzNTAgTCAyOTMgMzU0IEwgMjg2IDM1NyBMIDI4MSAzNTkgTCAyNzggMzYwIEwgMjcxIDM2MSBMIDI2OCAzNjMgTCAyNjMgMzY0IEwgMjU3IDM2NSBMIDI1MiAzNjYgTCAyNDkgMzY1IEwgMjUwIDMxMSBMIDI1MyAzMTAgTCAyNTcgMzEwIEwgMjYxIDMwOSBMIDI2OSAzMDYgTCAyNzEgMzA1IEwgMjczIDMwMyBMIDI3NSAzMDMgTCAyODAgMzAwIEwgMjg2IDI5NSBMIDI4OCAyOTUgTCAyOTMgMjg5IEwgMjk0IDI4OCBMIDI5NyAyODcgTCAzMDUgMjc4IEwgMzA3IDI3NSBMIDMwNyAyNzMgTCAzMDQgMjcxIEwgMjk0IDI2NiBMIDI5MCAyNjMgTCAyODggMjYzIEwgMjg2IDI2NSBMIDI3NiAyNzYgTCAyNzIgMjc5IEwgMjY5IDI4MSBMIDI2NCAyODQgTCAyNTcgMjg3IEwgMjU0IDI4OCBMIDI1MSAyODkgTCAyNDEgMjg5IEwgMjQwIDI5MSBMIDIyOCAyOTAgTCAyMTggMjg5IEwgMjE0IDI4OCBMIDIxMSAyODcgTCAyMDkgMjg1IEwgMTk5IDI4MSBMIDE5NSAyNzggTCAxOTEgMjc1IEwgMTkwIDI3NCBMIDE4OCAyNzIgTCAxODcgMjcxIEwgMTgxIDI2MyBMIDE3OCAyNjUgTCAxNjEgMjc0IEwgMTYyIDI3NiBMIDE2NSAyODAgTCAxNzQgMjg4IEwgMTc1IDI4OSBMIDE3NSAyOTAgTCAxNzcgMjkyIEwgMTgxIDI5NSBMIDE4NSAyOTggTCAxODggMzAwIEwgMTkzIDMwMyBMIDE5NSAzMDQgTCAxOTcgMzA0IEwgMTk5IDMwNiBMIDIwMiAzMDcgTCAyMTEgMzEwIEwgMjE1IDMxMSBMIDIyMCAzMTIgTCAyMjAgNDAwIEwgMjMxIDQwMSBMIDIzMyA0MDEgTCAyMzggNDAxIEwgMjU0IDQwMCBMIDI2NiAzOTggTCAyNzIgMzk3IEwgMjgzIDM5NCBMIDI5NSAzOTAgTCAzMDAgMzg4IEwgMzA3IDM4NSBMIDMwOSAzODMgTCAzMjEgMzc4IEwgMzI2IDM3NSBMIDMyOSAzNzMgTCAzMzIgMzcwIEwgMzM1IDM2OSBMIDMzOSAzNjYgTCAzNDQgMzYxIEwgMzQ3IDM2MCBMIDM0OCAzNTkgTCAzNDggMzU4IEwgMzQ5IDM1NyBMIDM2OCAzMzkgTCAzNzIgMzM0IEwgMzc3IDMyOCBMIDM3OSAzMjUgTCAzODYgMzE0IEwgMzg5IDMwOSBMIDM5MiAzMDMgTCAzOTIgMzAxIEwgMzk0IDI5OSBMIDM5NSAyOTQgTCAzOTggMjkwIEwgNDAxIDI4MiBMIDQwNCAyNzIgTCA0MDcgMjYxIEwgNDA4IDI1NCBMIDQwOSAyNDggTCA0MTAgMjQxIEwgNDEwIDIwNiBMIDQwOSAxOTkgTCA0MDggMTkzIEwgNDA3IDE4NyBMIDQwNCAxNzQgTCA0MDIgMTcxIEwgNDAyIDE2OCBMIDQwMSAxNjUgTCAzOTkgMTYyIFogTSA4OSAxMjQgTCA4NyAxMjYgTCA4NSAxMjkgTCA4MyAxMzIgTCA3NyAxNDMgTCA3NyAxNDUgTCA3NSAxNDcgTCA3MCAxNTkgTCA2OCAxNjQgTCA2NSAxNzQgTCA2MiAxODUgTCA2MiAxOTEgTCA1OSAyMDIgTCA1OCAyMTUgTCA1OSAyMTggTCA1OCAyMzIgTCA1OSAyNDQgTCA2MSAyNTYgTCA2MiAyNjIgTCA2NCAyNjYgTCA2NCAyNzAgTCA2NyAyODAgTCA2OCAyODMgTCA3MSAyOTEgTCA3MyAyOTMgTCA3NSAzMDAgTCA3NyAzMDIgTCA3NyAzMDQgTCA4MyAzMTUgTCA4NyAzMjEgTCA5MiAzMjcgTCA5MyAzMzAgTCA5NiAzMzQgTCA5OCAzMzYgTCAxMDIgMzQxIEwgMTA1IDM0MyBMIDExOCAzNTcgTCAxMjQgMzYyIEwgMTM1IDM3MCBMIDEzOCAzNzIgTCAxNDEgMzc0IEwgMTQ2IDM3NyBMIDE1MyAzODEgTCAxNTUgMzgyIEwgMTU3IDM4MiBMIDE1OSAzODQgTCAxNjEgMzg1IEwgMTY4IDM4OCBMIDE3NiAzOTEgTCAxODkgMzk1IEwgMTkzIDM5NSBMIDE5NyAzOTcgTCAyMDIgMzk4IEwgMjA4IDM5OSBMIDIwOSAzNjQgTCAyMDYgMzY0IEwgMjA1IDM2MyBMIDIwMSAzNjMgTCAxOTEgMzYwIEwgMTg3IDM1OSBMIDE4NSAzNTcgTCAxODAgMzU2IEwgMTczIDM1MyBMIDE3MSAzNTEgTCAxNjkgMzUxIEwgMTYyIDM0NyBMIDE1MyAzNDEgTCAxNDkgMzM4IEwgMTQ0IDMzNCBMIDEzNyAzMjggTCAxMzYgMzI3IEwgMTM1IDMyNiBMIDEzMyAzMjQgTCAxMjQgMzE0IEwgMTIwIDMwOSBMIDExNyAzMDUgTCAxMTUgMzAyIEwgMTEyIDI5NyBMIDEwOCAyOTAgTCAxMDcgMjg4IEwgMTAxIDI3NCBMIDk4IDI2NiBMIDk4IDI2MiBMIDk1IDI1NSBMIDk0IDI0OSBMIDkzIDI0NCBMIDkyIDIzMyBMIDkyIDIxNCBMIDkzIDIwNCBMIDk0IDE5OCBMIDk1IDE5MiBMIDk4IDE4MiBMIDEwMSAxNzMgTCAxMDUgMTY2IEwgMTA3IDE2NyBMIDExMSAxNjkgTCAxMTggMTczIEwgMTI1IDE3OCBMIDEzMiAxODEgTCAxMzkgMTg1IEwgMTQ5IDE5MSBMIDE1MSAxOTQgTCAxNDkgMTk3IEwgMTQ4IDIwMiBMIDE0NyAyMDYgTCAxNDYgMjExIEwgMTQ2IDIzNiBMIDE0OCAyNDEgTCAxNDggMjQ2IEwgMTUyIDI1OCBMIDE1NCAyNjIgTCAxNTYgMjYyIEwgMTYwIDI1OSBMIDE2OCAyNTUgTCAxNzMgMjUyIEwgMTczIDI0OSBMIDE3MSAyNDYgTCAxNjkgMjM5IEwgMTY4IDIzNCBMIDE2OCAyMTMgTCAxNzAgMjA1IEwgMTcxIDIwMSBMIDE3NCAxOTQgTCAxNzcgMTg5IEwgMTc5IDE4NiBMIDE4MSAxODMgTCAxODYgMTc3IEwgMTg4IDE3NSBMIDE5NCAxNzAgTCAxOTcgMTY4IEwgMjAwIDE2NiBMIDIwNSAxNjMgTCAyMDcgMTYyIEwgMjEyIDE2MCBMIDIxNSAxNTkgTCAyMjIgMTU3IEwgMjI4IDE1NiBMIDIyNyAxMzUgTCAyMjAgMTM1IEwgMjExIDEzNyBMIDIwMiAxNDAgTCAxOTkgMTQxIEwgMTkzIDE0NCBMIDE4OCAxNDcgTCAxODUgMTQ5IEwgMTgyIDE1MSBMIDE3OCAxNTQgTCAxNjUgMTY3IEwgMTYzIDE2NiBMIDE2MSAxNjQgTCAxNTUgMTYxIEwgMTM5IDE1MSBMIDEzMiAxNDcgTCAxMjggMTQ2IEwgMTIzIDE0MiBMIDExMSAxMzUgTCAxMDQgMTMxIEwgOTUgMTI2IEwgOTEgMTI0IFogTSAyMTkgNDYgTCAyMTAgNDcgTCAxOTkgNDkgTCAxOTQgNTAgTCAxODMgNTMgTCAxODAgNTUgTCAxNzcgNTUgTCAxNzQgNTYgTCAxNjYgNTkgTCAxNjQgNjEgTCAxNDggNjggTCAxNDMgNzEgTCAxMzcgNzUgTCAxMzQgNzcgTCAxMzIgNzkgTCAxMzIgODAgTCAxMzEgODEgTCAxMjcgODMgTCAxMjIgODcgTCAxMTYgOTIgTCAxMDcgMTAyIEwgMTA1IDEwMyBMIDEwNCAxMDQgTCA5OSAxMTEgTCA5NiAxMTMgTCA5NyAxMTUgTCAxMDAgMTE2IEwgMTEyIDEyNCBMIDEyMSAxMjkgTCAxMjMgMTI5IEwgMTI1IDEzMSBMIDEyNyAxMzEgTCAxNDMgMTE0IEwgMTQ5IDEwOSBMIDE1NiAxMDQgTCAxNjEgMTAxIEwgMTY2IDk4IEwgMTcwIDk2IEwgMTc2IDkzIEwgMTgzIDkwIEwgMTg4IDg4IEwgMTk4IDg1IEwgMjAyIDg0IEwgMjExIDgyIEwgMjE5IDgxIEwgMjUwIDgxIEwgMjU4IDgyIEwgMjY3IDg0IEwgMjcxIDg1IEwgMjc4IDg3IEwgMjgxIDg4IEwgMjg5IDkxIEwgMjkxIDkzIEwgMzAzIDk4IEwgMzEwIDEwMiBMIDMxMyAxMDQgTCAzMTYgMTA2IEwgMzIwIDEwOSBMIDMyNSAxMTMgTCAzNDMgMTMxIEwgMzQ3IDEzNiBMIDM0OCAxNDEgTCAzNDYgMTQxIEwgMzQxIDE0NCBMIDMyOSAxNTEgTCAzMTcgMTU5IEwgMzEyIDE2MiBMIDMwOCAxNjMgTCAzMDUgMTY1IEwgMzAzIDE2NyBMIDMwMSAxNjUgTCAyOTIgMTU1IEwgMjg3IDE1MSBMIDI3OSAxNDYgTCAyNzUgMTQ0IEwgMjY5IDE0MSBMIDI2MSAxMzggTCAyNTcgMTM3IEwgMjQ5IDEzNSBMIDI0MSAxMzUgTCAyNDEgMTU3IEwgMjQ3IDE1NyBMIDI1NCAxNTkgTCAyNTcgMTYwIEwgMjY0IDE2MyBMIDI2OSAxNjYgTCAyNzIgMTY4IEwgMjc2IDE3MSBMIDI4OCAxODMgTCAyOTAgMTg2IEwgMjkzIDE5MSBMIDI5NiAxOTcgTCAyOTggMjAyIEwgMjk5IDIwNiBMIDMwMCAyMTAgTCAzMDEgMjE1IEwgMzAxIDIzMSBMIDMwMCAyMzcgTCAyOTggMjQ0IEwgMjk2IDI0NyBMIDI5NSAyNTAgTCAyOTggMjUzIEwgMzAzIDI1NiBMIDMxMiAyNjAgTCAzMTUgMjYyIEwgMzE3IDI1NyBMIDMyMCAyNDkgTCAzMjEgMjQ0IEwgMzIxIDIzOSBMIDMyMyAyMzYgTCAzMjMgMjEzIEwgMzIxIDIwMiBMIDMyMCAxOTggTCAzMTggMTk1IEwgMzE5IDE5MSBMIDMyMiAxOTAgTCAzMzEgMTg0IEwgMzQ0IDE3NiBMIDM1MSAxNzIgTCAzNTggMTY4IEwgMzYwIDE2OCBMIDM2NSAxNjUgTCAzODkgMTUwIEwgMzkwIDE1MCBMIDM5MiAxNDkgTCAzOTMgMTQ2IEwgMzg5IDE0MCBMIDM4OSAxMzggTCAzODggMTM2IEwgMzgzIDEyOCBMIDM3NyAxMTkgTCAzNzQgMTE1IEwgMzcwIDExMCBMIDM2NSAxMDQgTCAzNTUgOTQgTCAzNTQgOTMgTCAzNDggODggTCAzNDcgODggTCAzNDEgODMgTCAzMzggNzkgTCAzMjYgNzEgTCAzMjEgNjggTCAzMDcgNjEgTCAyOTUgNTYgTCAyODYgNTMgTCAyNzUgNTAgTCAyNzAgNDkgTCAyNjUgNDkgTCAyNjAgNDcgTCAyNDkgNDYgWiIgZmlsbD0iI0U3NDE1NSIgZmlsbC1ydWxlPSJldmVub2RkIiAvPgogIAogIDwhLS0gbWFzYW1peiBUZXh0IC0tPgogIDxwYXRoIGQ9Ik0gMzYzIDQzOCBMIDM2NCA0NTAgTCAzNzAgNDUwIEwgMzc2IDQ1MCBMIDM4NSA0NTAgTCAzOTEgNDUwIEwgMzg4IDQ1MiBMIDM4MSA0NTUgTCAzNzQgNDYwIEwgMzY1IDQ2NCBMIDM2MyA0NjYgTCAzNjQgNDg1IEwgNDIxIDQ4NSBMIDQyMSA0NzMgTCAzODkgNDcyIEwgMzkyIDQ3MCBMIDM5NyA0NjcgTCA0MDEgNDY2IEwgNDA2IDQ2MyBMIDQxNSA0NTcgTCA0MTggNDU2IEwgNDIwIDQ1NSBMIDQyMSA0MzcgWiBNIDI5OCA0MzYgTCAyOTggNDg1IEwgMzE2IDQ4NSBMIDMxNyA0NDggTCAzMjAgNDQ5IEwgMzIwIDQ4NSBMIDMzOCA0ODQgTCAzMzkgNDQ4IEwgMzQzIDQ0OCBMIDM0OSA0NTMgTCAzNDIgNDU1IEwgMzQyIDQ3MSBMIDM0MyA0ODUgTCAzNjAgNDg1IEwgMzYwIDQ1NCBMIDM1MyA0NTMgTCAzNTggNDQ5IEwgMzU5IDQ0NyBMIDM1OSA0NDIgTCAzNTcgNDM4IEwgMzU2IDQzOCBMIDM1NCA0MzYgTCAzNDggNDM2IEwgMzQ2IDQzNyBMIDM0NCA0MzkgTCAzNDMgNDQxIEwgMzQyIDQzNiBaIE0gMjM2IDQzNiBMIDIzNiA0NTAgTCAyNDUgNDUwIEwgMjQ4IDQ0OSBMIDI1MSA0NTAgTCAyNjAgNDUwIEwgMjc5IDQ1MCBMIDI3OCA0NTUgTCAyNDEgNDU1IEwgMjM5IDQ1NiBMIDIzNyA0NTggTCAyMzYgNDYwIEwgMjM2IDQ4NSBMIDI5NSA0ODUgTCAyOTUgNDQzIEwgMjk0IDQ0MSBMIDI5MyA0MzkgTCAyOTIgNDM4IEwgMjkxIDQzOCBMIDI4OSA0MzYgWiBNIDI1MyA0NjcgTCAyNzkgNDY4IEwgMjc4IDQ3MiBMIDI1MyA0NzMgWiBNIDE3OCA0MzYgTCAxNzUgNDM3IEwgMTcyIDQ0MCBMIDE3MSA0NDcgTCAxNzEgNDQ5IEwgMTcxIDQ1NCBMIDE3MyA0NTggTCAxNzUgNDU4IEwgMTc3IDQ2MCBMIDE3OSA0NjEgTCAxODEgNDYxIEwgMTgzIDQ2MyBMIDE5NCA0NjcgTCAxOTYgNDY5IEwgMjAzIDQ3MiBMIDE3MiA0NzMgTCAxNzEgNDc1IEwgMTcyIDQ4NSBMIDIyOCA0ODUgTCAyMzAgNDg0IEwgMjMxIDQ4MyBMIDIzMiA0ODEgTCAyMzIgNDY2IEwgMjI5IDQ2NCBMIDIyNCA0NjIgTCAyMTggNDYwIEwgMjE2IDQ1OCBMIDIxMCA0NTUgTCAyMDMgNDUzIEwgMjAxIDQ1MSBMIDE5OCA0NTAgTCAyMzIgNDQ5IEwgMjMyIDQzNiBaIE0gMTEwIDQzNiBMIDEwOSA0NTAgTCAxNTIgNDUxIEwgMTUxIDQ1NSBMIDExNyA0NTUgTCAxMTQgNDU2IEwgMTEyIDQ1NyBMIDExMCA0NTkgTCAxMDkgNDYxIEwgMTA5IDQ4NSBMIDE2OCA0ODUgTCAxNjggNDQyIEwgMTY3IDQ0MCBMIDE2NSA0MzggTCAxNjMgNDM3IEwgMTYwIDQzNiBMIDEzMyA0MzcgTCAxMTUgNDM3IFogTSAxMjcgNDY3IEwgMTUyIDQ2OCBMIDE1MSA0NzMgTCAxMjYgNDcyIFogTSA0NCA0MzYgTCA0MyA0NzQgTCA0NSA0ODYgTCA2MyA0ODUgTCA2NCA0NDggTCA2OCA0NDkgTCA2OCA0ODYgTCA3MyA0ODYgTCA4NCA0ODUgTCA4NSA0NDggTCA4OSA0NDkgTCA4OSA0ODUgTCAxMDYgNDg1IEwgMTA2IDQ0NSBMIDEwNSA0NDEgTCAxMDQgNDM5IEwgMTAzIDQzOCBMIDEwMSA0MzcgTCA5OSA0MzYgWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1ydWxlPSJldmVub2RkIiAvPgo8L3N2Zz4=";
+document.querySelectorAll('[data-logo]').forEach(img => img.src = LOGO_DATA_URI);
+
+/* ===== 締め月ルール: 21日始まり・20日締め ===== */
+function closingRangeDates(year, month){
+  let endY=year, endM=month, endD=20, startY=year, startM=month-1, startD=21;
+  if(startM === 0){ startM = 12; startY = year - 1; }
+  return { start: new Date(startY, startM-1, startD, 0,0,0), end: new Date(endY, endM-1, endD, 23,59,59) };
+}
+function closingRange(year, month){
+  const r = closingRangeDates(year, month);
+  const fmt = d => `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+  return { start: fmt(r.start), end: fmt(r.end) };
+}
+function today_(){
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+}
+
+/* 締め月のデフォルト値: 21〜末日は当月の20日〆(直近で締まった期間)、1〜20日も当月の20日〆(進行中の期間) */
+function defaultClosingYearMonth_(){
+  const s = today_();
+  return { year: Number(s.slice(0,4)), month: Number(s.slice(4,6)) };
+}
+
+/* ①日報入力チェック専用: 「本日の日付」が含まれる締め期間(進行中の場合を含む)を返す。
+   1〜20日はdefaultClosingYearMonth_と同じ値になるが、21〜31日は+1ヶ月になる点が異なる
+   (defaultClosingYearMonth_はその場合「直近で締まった期間」を返す設計のため)。 */
+function currentClosingMonth_(){
+  const day = Number(today_().slice(6,8));
+  const def = defaultClosingYearMonth_();
+  if(day <= 20) return def;
+  let m = def.month + 1, y = def.year;
+  if(m === 13){ m = 1; y += 1; }
+  return { year: y, month: m };
+}
+
+function buildPeriodPicker(containerId, prefix){
+  const el = document.getElementById(containerId);
+  const def = defaultClosingYearMonth_();
+  const years = [def.year-2, def.year-1, def.year, def.year+1];
+  const yearOpts = years.map(y=>`<option value="${y}" ${y===def.year?'selected':''}>${y}年</option>`).join('');
+  const monthOpts = Array.from({length:12},(_,i)=>i+1)
+    .map(m=>`<option value="${m}" ${m===def.month?'selected':''}>${m}月20日締め</option>`).join('');
+  const defRange = closingRange(def.year, def.month);
+
+  el.innerHTML = `
+    <div class="field">
+      <label>期間の指定方法</label>
+      <div class="radioGroup" id="${prefix}-mode">
+        <label class="radioBtn checked"><input type="radio" name="${prefix}mode" value="closing" checked>締め月で選択</label>
+        <label class="radioBtn"><input type="radio" name="${prefix}mode" value="free">自由日付で選択</label>
+      </div>
+    </div>
+    <div class="field" id="${prefix}-closingFields">
+      <label>締め月</label>
+      <div style="display:flex; gap:6px;">
+        <select id="${prefix}-year">${yearOpts}</select>
+        <select id="${prefix}-month">${monthOpts}</select>
+      </div>
+      <div class="rangePreview" id="${prefix}-rangePreview"></div>
+    </div>
+    <div class="field" id="${prefix}-freeFields" style="display:none;">
+      <label>期間(自由日付)</label>
+      <div class="dateRangeRow">
+        <input type="date" id="${prefix}-from" value="${defRange.start.split('/').join('-')}">
+        <span>〜</span>
+        <input type="date" id="${prefix}-to" value="${defRange.end.split('/').join('-')}">
+      </div>
+    </div>
+  `;
+
+  const recomputeTrigger = () => triggerRecompute(prefix);
+
+  const modeRadios = el.querySelectorAll(`input[name="${prefix}mode"]`);
+  modeRadios.forEach(r => r.addEventListener('change', () => {
+    el.querySelectorAll(`#${prefix}-mode .radioBtn`).forEach(b=>b.classList.remove('checked'));
+    r.closest('.radioBtn').classList.add('checked');
+    const isClosing = r.value === 'closing';
+    el.querySelector(`#${prefix}-closingFields`).style.display = isClosing ? '' : 'none';
+    el.querySelector(`#${prefix}-freeFields`).style.display = isClosing ? 'none' : '';
+    recomputeTrigger();
+  }));
+
+  const updatePreview = () => {
+    const y = Number(el.querySelector(`#${prefix}-year`).value);
+    const m = Number(el.querySelector(`#${prefix}-month`).value);
+    const r = closingRange(y,m);
+    el.querySelector(`#${prefix}-rangePreview`).textContent = `対象期間: ${r.start} 〜 ${r.end}`;
+    recomputeTrigger();
+  };
+  el.querySelector(`#${prefix}-year`).addEventListener('change', updatePreview);
+  el.querySelector(`#${prefix}-month`).addEventListener('change', updatePreview);
+  el.querySelector(`#${prefix}-from`).addEventListener('change', recomputeTrigger);
+  el.querySelector(`#${prefix}-to`).addEventListener('change', recomputeTrigger);
+  updatePreview();
+}
+
+/* 締め月選択のみ(自由日付トグルなし)。20日〆集計専用 */
+function buildClosingOnlyPicker(containerId, prefix){
+  const el = document.getElementById(containerId);
+  const def = defaultClosingYearMonth_();
+  const years = [def.year-2, def.year-1, def.year, def.year+1];
+  const yearOpts = years.map(y=>`<option value="${y}" ${y===def.year?'selected':''}>${y}年</option>`).join('');
+  const monthOpts = Array.from({length:12},(_,i)=>i+1)
+    .map(m=>`<option value="${m}" ${m===def.month?'selected':''}>${m}月20日締め</option>`).join('');
+
+  el.innerHTML = `
+    <div class="field">
+      <label>締め月</label>
+      <div style="display:flex; gap:6px;">
+        <select id="${prefix}-year">${yearOpts}</select>
+        <select id="${prefix}-month">${monthOpts}</select>
+      </div>
+      <div class="rangePreview" id="${prefix}-rangePreview"></div>
+    </div>
+  `;
+
+  const updatePreview = () => {
+    const y = Number(el.querySelector(`#${prefix}-year`).value);
+    const m = Number(el.querySelector(`#${prefix}-month`).value);
+    const r = closingRange(y,m);
+    el.querySelector(`#${prefix}-rangePreview`).textContent = `対象期間: ${r.start} 〜 ${r.end}`;
+    renderR3Preview();
+  };
+  el.querySelector(`#${prefix}-year`).addEventListener('change', updatePreview);
+  el.querySelector(`#${prefix}-month`).addEventListener('change', updatePreview);
+  updatePreview();
+}
+
+function getPeriodLabel(prefix, specName){
+  const specVal = document.querySelector(`input[name="${specName}"]:checked`).value;
+  if(specVal !== 'yes') return { label: '全期間', range: 'ALL' };
+  const mode = document.querySelector(`input[name="${prefix}mode"]:checked`).value;
+  if(mode === 'closing'){
+    const y = document.getElementById(`${prefix}-year`).value;
+    const m = document.getElementById(`${prefix}-month`).value;
+    const r = closingRange(Number(y), Number(m));
+    return { label: `${y}年${m}月20日締め`, range: `${r.start}-${r.end}` };
+  }
+  const from = document.getElementById(`${prefix}-from`).value;
+  const to = document.getElementById(`${prefix}-to`).value;
+  return { label: `${from}〜${to}`, range: `${from}_${to}` };
+}
+
+function getClosingPeriodLabel(prefix){
+  const y = document.getElementById(`${prefix}-year`).value;
+  const m = document.getElementById(`${prefix}-month`).value;
+  const r = closingRange(Number(y), Number(m));
+  return { label: `${y}年${m}月20日締め`, range: `${r.start}-${r.end}` };
+}
+
+/* ===== チップ・スペックトグル共通挙動 ===== */
+
+/* チップを全て選択したら「指定:する」を自動で「しない」に戻す(全選択=フィルタなしと同じ意味のため) */
+function maybeAutoSwitchToNo(fieldEl){
+  const checkGroup = fieldEl.querySelector('.checkGroup');
+  if(!checkGroup) return;
+  const boxes = Array.from(checkGroup.querySelectorAll('input[type=checkbox]'))
+    .filter(b => b.closest('.checkBtn').style.display !== 'none');
+  if(boxes.length === 0 || !boxes.every(b=>b.checked)) return;
+  const noRadio = fieldEl.querySelector('.specToggle input[value="no"]');
+  if(!noRadio || noRadio.checked) return;
+  noRadio.checked = true;
+  noRadio.dispatchEvent(new Event('change'));
+}
+
+const searchQueries = {}; // groupId -> 現在の検索文字列
+
+function applyChipVisibility(groupId){
+  const q = (searchQueries[groupId] || '').trim();
+  document.querySelectorAll(`#${groupId} .checkBtn`).forEach(label=>{
+    const matchesSearch = !q || label.textContent.includes(q);
+    const available = label.dataset.available !== 'false';
+    label.style.display = (matchesSearch && available) ? '' : 'none';
+  });
+}
+
+function filterChips(groupId, query){
+  searchQueries[groupId] = query;
+  applyChipVisibility(groupId);
+}
+
+function fieldContainerScreenKey(el){
+  if(el.closest('#screen-report1')) return 'r1';
+  if(el.closest('#screen-report2')) return 'r2';
+  if(el.closest('#screen-report3')) return 'r3';
+  if(el.closest('#screen-report4')) return 'r4';
+  return null;
+}
+
+function triggerRecompute(screenKey){
+  if(!masterDataLoaded || !rowsLoaded) return;
+  if(screenKey === 'r1' || screenKey === 'r2') recomputeScreen(screenKey);
+  else if(screenKey === 'r3') renderR3Preview();
+  else if(screenKey === 'r4') withRecalcPopup(renderR4Preview);
+}
+
+function wireCheckboxes(container){
+  container.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      cb.closest('.checkBtn').classList.toggle('checked', cb.checked);
+      const field = cb.closest('.field');
+      if(field) maybeAutoSwitchToNo(field);
+      triggerRecompute(fieldContainerScreenKey(cb));
+    });
+  });
+}
+
+function wireSpecToggles(){
+  document.querySelectorAll('.specToggle').forEach(toggle=>{
+    const radios = toggle.querySelectorAll('input[type=radio]');
+    const body = toggle.closest('.field').querySelector('.specBody');
+    radios.forEach(r=>{
+      r.addEventListener('change', ()=>{
+        toggle.querySelectorAll('.specBtn').forEach(b=>b.classList.remove('checked'));
+        r.closest('.specBtn').classList.add('checked');
+        if(body) body.classList.toggle('open', r.value === 'yes');
+        triggerRecompute(fieldContainerScreenKey(r));
+      });
+    });
+  });
+}
+
+let pendingInitialLoadPopup = false;
+
+/* アプリ起動時の同期ポップアップ専用の目安時間(15秒)。ダウンロード時のFAKE_PROGRESS_DURATION_MSと揃えた */
+const INITIAL_LOAD_PROGRESS_DURATION_MS = 15000;
+
+function setHomeButtonsEnabled(enabled){
+  document.querySelectorAll('.homeBtn').forEach(b => { b.disabled = !enabled; });
+}
+
+/* アプリ起動時、ホーム画面表示と同時に同期ポップアップを出し、①②③を押せない状態にする。
+   実データ(masterData/DailyReport)取得が完了したら即100%にして閉じる(maybeInitCascade側)。 */
+function initSyncPopup(){
+  showFakeProgress('日報アプリと同期しています', INITIAL_LOAD_PROGRESS_DURATION_MS, true);
+  if(masterDataLoaded && rowsLoaded){
+    hideFakeProgressNow(() => setHomeButtonsEnabled(true));
+  } else {
+    pendingInitialLoadPopup = true;
+  }
+}
+
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+  window.scrollTo(0,0);
+  /* ①日報入力チェックのsticky積み重ね(集計条件パネル/ファイル名見出し/th)は
+     実測した高さをtopに使うため、画面がdisplay:noneの間に描画されると
+     高さが0として計算されてしまう。この画面を表示した直後に測り直す。 */
+  if(name === 'report4') adjustR4StickyOffset_();
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* プレビュー表のセルクリック時、全文をそのセルの右上に表示する。
+   位置決めのため一旦テキストをセットしてレイアウトさせてから
+   getBoundingClientRectでサイズを測り、最終位置を計算する。 */
+let cellTextPopupTimer = null;
+function showCellTextPopup(cell){
+  const popup = document.getElementById('cellTextPopup');
+  const rect = cell.getBoundingClientRect();
+  popup.textContent = cell.textContent.trim();
+  popup.classList.add('show');
+  const popupRect = popup.getBoundingClientRect();
+  let left = rect.right - popupRect.width;
+  let top = rect.top - popupRect.height - 6;
+  left = Math.max(4, Math.min(left, window.innerWidth - popupRect.width - 4));
+  if(top < 4) top = rect.bottom + 6; // 一番上の行など、上に出す余白がなければ下に表示
+  popup.style.left = left + 'px';
+  popup.style.top = top + 'px';
+  if(cellTextPopupTimer) clearTimeout(cellTextPopupTimer);
+  cellTextPopupTimer = setTimeout(() => popup.classList.remove('show'), 2200);
+}
+
+/* ①日報入力チェック専用: 範囲が広く重い同期処理(fn)の前後で「再計算中」
+   ポップアップを出す。setTimeoutで1tick遅らせてからfnを実行することで、
+   ポップアップが実際に描画されてから重い処理を始められるようにしている
+   (先にfnを同期実行すると、ポップアップを表示する前にブラウザが固まる)。
+   fn完了と同時に消える(最低表示時間などの演出はない)。 */
+function withRecalcPopup(fn){
+  const overlay = document.getElementById('recalcOverlay');
+  overlay.classList.add('show');
+  setTimeout(() => {
+    fn();
+    overlay.classList.remove('show');
+  }, 0);
+}
+
+/* ===================== ロック画面(パスワード) ===================== */
+/* パスワードはアプリを開いた日の「日(day)」の一の位の数字。ロゴを2秒以内に
+   5回連続タップ(クリック)すると3秒間だけポップアップ表示される。 */
+const LOCK_TAP_TARGET = 5;
+const LOCK_TAP_WINDOW_MS = 2000;
+const LOCK_POPUP_DURATION_MS = 3000;
+let lockTapCount = 0;
+let lockTapLastAt = 0;
+
+function todayPasswordDigit_(){
+  const day = parseInt(today_().slice(6, 8), 10);
+  return String(day % 10);
+}
+
+function handleLockLogoTap(){
+  const now = Date.now();
+  if(now - lockTapLastAt > LOCK_TAP_WINDOW_MS) lockTapCount = 0;
+  lockTapLastAt = now;
+  lockTapCount++;
+  if(lockTapCount >= LOCK_TAP_TARGET){
+    lockTapCount = 0;
+    showLockPasswordPopup();
+  }
+}
+
+function showLockPasswordPopup(){
+  const popup = document.getElementById('lockPasswordPopup');
+  popup.textContent = todayPasswordDigit_();
+  popup.classList.add('show');
+  setTimeout(() => popup.classList.remove('show'), LOCK_POPUP_DURATION_MS);
+}
+
+function submitLockPassword(){
+  const input = document.getElementById('lock-input');
+  const val = input.value.trim();
+  input.value = '';
+  input.focus();
+  if(val === todayPasswordDigit_()){
+    sessionStorage.setItem('unlocked', '1');
+    showScreen('factory');
+  } else {
+    showToast('パスワードが違います');
+  }
+}
+
+/* ===================== 工場選択画面(ログイン後のデフォルト工場) ===================== */
+function getDefaultFactory_(){
+  return sessionStorage.getItem('defaultFactory') || '';
+}
+
+function updateHeaderFactoryLabels_(){
+  const loc = getDefaultFactory_();
+  document.querySelectorAll('.headerFactoryLabel').forEach(el => { el.textContent = loc; });
+  const homeLabel = document.getElementById('homeFactoryLabel');
+  if(homeLabel) homeLabel.textContent = loc ? `(工場: ${loc})` : '';
+}
+
+/* r1/r2は「指定:する」+選択工場のみチェック、r3は選択工場のみチェックにする。
+   すでにログイン済みで各画面を開き直した時、およびリセット時の両方で使う。
+   工場チェックボックス自体はマスタデータ取得を待たずDOMに静的に存在するため、
+   マスタデータ未取得の段階(ログイン直後)で呼んでも問題ない。 */
+function applyDefaultFactoryFilter_(prefix){
+  const factory = getDefaultFactory_();
+  if(!factory) return;
+  if(prefix === 'r1' || prefix === 'r2'){
+    const specName = prefix + '-loc-spec';
+    const groupId = prefix + '-loc';
+    document.querySelectorAll(`input[name="${specName}"]`).forEach(r => r.closest('.specBtn').classList.remove('checked'));
+    const yesRadio = document.querySelector(`input[name="${specName}"][value="yes"]`);
+    yesRadio.checked = true;
+    yesRadio.closest('.specBtn').classList.add('checked');
+    const body = yesRadio.closest('.field').querySelector('.specBody');
+    if(body) body.classList.add('open');
+    document.querySelectorAll(`#${groupId} input[type=checkbox]`).forEach(cb=>{
+      const match = cb.value === factory;
+      cb.checked = match;
+      cb.closest('.checkBtn').classList.toggle('checked', match);
+    });
+  } else if(prefix === 'r3'){
+    document.querySelectorAll('#r3-locations input[type=checkbox]').forEach(cb=>{
+      const match = cb.value === factory;
+      cb.checked = match;
+      cb.closest('.checkBtn').classList.toggle('checked', match);
+    });
+  } else if(prefix === 'r4'){
+    document.querySelectorAll('#r4-locations input[type=checkbox]').forEach(cb=>{
+      const match = cb.value === factory;
+      cb.checked = match;
+      cb.closest('.checkBtn').classList.toggle('checked', match);
+    });
+  }
+}
+
+/* recomputeScreen/renderR3Previewはマスタデータ未取得なら内部で早期returnするだけなので、
+   ここで呼んでも安全(データ到着後はmaybeInitCascade側のreveal()で改めて呼ばれる)。 */
+function applyDefaultFactoryToAllScreens_(){
+  applyDefaultFactoryFilter_('r1'); recomputeScreen('r1');
+  applyDefaultFactoryFilter_('r2'); recomputeScreen('r2');
+  applyDefaultFactoryFilter_('r3'); renderR3Preview();
+  applyDefaultFactoryFilter_('r4'); renderR4Preview();
+}
+
+function selectFactory(loc){
+  sessionStorage.setItem('defaultFactory', loc);
+  applyDefaultFactoryToAllScreens_();
+  updateHeaderFactoryLabels_();
+  showScreen('home');
+  initSyncPopup();
+  recordFactorySelection_(loc);
+}
+
+/* ===================== 「記録」シートへのログイン・滞在時間ログ ===================== */
+/* 工場選択の時点で1行追記し、返ってきた行番号をsessionStorageに覚えておく。
+   ブラウザを閉じる際にattemptRecordSessionDuration_でその行のC列(滞在時間)を
+   ベストエフォートで埋める。間に合わなくてもC列が空欄のままになるだけでよい。 */
+function recordFactorySelection_(loc){
+  sessionStorage.setItem('recordLoginAt', String(Date.now()));
+  google.script.run
+    .withSuccessHandler(rowNumber => {
+      if(rowNumber) sessionStorage.setItem('recordRowNumber', String(rowNumber));
+    })
+    .withFailureHandler(() => {})
+    .logFactorySelection(loc);
+}
+
+function attemptRecordSessionDuration_(){
+  const loginAt = Number(sessionStorage.getItem('recordLoginAt'));
+  const rowNumber = Number(sessionStorage.getItem('recordRowNumber'));
+  if(!loginAt || !rowNumber) return;
+  const minutes = Math.max(0, Math.round((Date.now() - loginAt) / 60000));
+  google.script.run.updateSessionDuration(rowNumber, minutes);
+}
+window.addEventListener('pagehide', attemptRecordSessionDuration_);
+window.addEventListener('beforeunload', attemptRecordSessionDuration_);
+
+/* ===================== ダミーの「情報収集中」進捗ポップアップ ===================== */
+/* 実際の待ち時間とは連動しない演出用。show時刻を返し、hide側で最低10秒(10000ms)を保証する。
+   実際の処理がそれより長くかかった場合は、実際に終わるまでポップアップを表示し続ける。 */
+const FAKE_PROGRESS_DURATION_MS = 15000;
+let fakeProgressTimer = null;
+
+function showFakeProgress(label, durationMs, showWarning){
+  const overlay = document.getElementById('fakeProgressOverlay');
+  const fill = document.getElementById('fakeProgressFill');
+  const warning = document.getElementById('fakeProgressWarning');
+  document.getElementById('fakeProgressLabel').textContent = label || '情報収集中';
+  warning.style.display = showWarning ? 'block' : 'none';
+  if(fakeProgressTimer) clearInterval(fakeProgressTimer);
+  fill.style.width = '0%';
+  overlay.classList.add('show');
+  const startedAt = Date.now();
+  const duration = durationMs || FAKE_PROGRESS_DURATION_MS;
+  fakeProgressTimer = setInterval(() => {
+    const pct = Math.min(100, ((Date.now() - startedAt) / duration) * 100);
+    fill.style.width = pct + '%';
+    if(pct >= 100 && fakeProgressTimer){ clearInterval(fakeProgressTimer); fakeProgressTimer = null; }
+  }, 100);
+  return startedAt;
+}
+
+function hideFakeProgress(startedAt, callback){
+  const remaining = Math.max(0, FAKE_PROGRESS_DURATION_MS - (Date.now() - startedAt));
+  setTimeout(() => {
+    document.getElementById('fakeProgressOverlay').classList.remove('show');
+    if(fakeProgressTimer){ clearInterval(fakeProgressTimer); fakeProgressTimer = null; }
+    if(callback) callback();
+  }, remaining);
+}
+
+/* 初回押下時専用: 実データ取得が完了した時点でバーを即100%にしてポップアップを閉じる(最低表示時間を待たない) */
+function hideFakeProgressNow(callback){
+  const fill = document.getElementById('fakeProgressFill');
+  fill.style.width = '100%';
+  if(fakeProgressTimer){ clearInterval(fakeProgressTimer); fakeProgressTimer = null; }
+  setTimeout(() => {
+    document.getElementById('fakeProgressOverlay').classList.remove('show');
+    if(callback) callback();
+  }, 300);
+}
+
+function specValue(name){
+  const el = document.querySelector(`input[name="${name}"]:checked`);
+  return el ? el.value : 'no';
+}
+function checkedValues(groupId){
+  return Array.from(document.querySelectorAll(`#${groupId} input[type=checkbox]:checked`)).map(i=>i.value);
+}
+function periodModeOf(prefix){
+  const el = document.querySelector(`input[name="${prefix}mode"]:checked`);
+  return el ? el.value : 'closing';
+}
+
+function checkedSummary(specName, groupId){
+  const specVal = specValue(specName);
+  if(specVal === 'no') return '全て';
+  const boxes = Array.from(document.querySelectorAll(`#${groupId} input[type=checkbox]`));
+  const checked = boxes.filter(b=>b.checked);
+  if(checked.length === 0) return '(未選択)';
+  return checked.map(b=>b.closest('.checkBtn').textContent.trim()).join(', ');
+}
+
+/* ===== 初期データ読み込み(工事・社員・作業内容) ===== */
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function populateSelect(selectId, list, valueKey, labelKey){
+  const sel = document.getElementById(selectId);
+  list.forEach(item=>{
+    const opt = document.createElement('option');
+    opt.value = item[valueKey];
+    opt.textContent = item[labelKey];
+    sel.appendChild(opt);
+  });
+}
+
+function populateChipGroup(groupId, list, valueKey, labelFn, classFn){
+  const el = document.getElementById(groupId);
+  const html = list.map(item=>{
+    const cls = 'checkBtn' + (classFn && classFn(item) ? ' ' + classFn(item) : '');
+    return `<label class="${cls}"><input type="checkbox" value="${escapeHtml(item[valueKey])}">${escapeHtml(labelFn(item))}</label>`;
+  }).join('');
+  el.insertAdjacentHTML('beforeend', html);
+  wireCheckboxes(el);
+}
+
+function buildLookupsFromMasterData(){
+  CONSTRUCTION_LABEL = {}; CONSTRUCTION_NO = {};
+  masterData.constructions.forEach(c => { CONSTRUCTION_LABEL[c.id] = c.name; CONSTRUCTION_NO[c.id] = c.no; });
+  WORK_META = {}; WORK_DEPT = {};
+  masterData.workItems.forEach(w => { WORK_META[w.code] = w.name; WORK_DEPT[w.code] = w.dept; });
+}
+
+function maybeInitCascade(){
+  if(!masterDataLoaded || !rowsLoaded || !calendarLoaded || !absenteeismLoaded) return;
+  const reveal = () => {
+    buildLookupsFromMasterData();
+    // ログインが先に完了していれば工場デフォルトを反映(未ログインならここは何もしない。
+    // 後でselectFactory()側から改めて呼ばれる)
+    applyDefaultFactoryFilter_('r1');
+    applyDefaultFactoryFilter_('r2');
+    applyDefaultFactoryFilter_('r3');
+    applyDefaultFactoryFilter_('r4');
+    recomputeScreen('r1');
+    recomputeScreen('r2');
+    renderR3Preview();
+    renderR4Preview();
+  };
+  if(pendingInitialLoadPopup){
+    pendingInitialLoadPopup = false;
+    hideFakeProgressNow(() => { setHomeButtonsEnabled(true); reveal(); });
+  } else {
+    reveal();
+  }
+}
+
+function onMasterData(data){
+  masterData = data;
+
+  populateSelect('r1-construction', data.constructions, 'id', 'name');
+  populateChipGroup('r2-construction', data.constructions, 'id', c => c.name);
+
+  populateChipGroup('r1-name', data.operators, 'no', o => o.factory + ' ' + o.name, o => o.retired ? 'retired' : '');
+  populateSelect('r2-operator', data.operators.map(o => ({
+    no: o.no,
+    label: o.name + '(' + o.factory + '/' + (o.dept === '設計管理' ? '事務' : o.dept) + (o.retired ? '・退職済' : '') + ')'
+  })), 'no', 'label');
+
+  populateChipGroup('r1-work', data.workItems, 'code', w => w.code + ' ' + w.name);
+  populateChipGroup('r2-work', data.workItems, 'code', w => w.code + ' ' + w.name);
+
+  masterDataLoaded = true;
+  maybeInitCascade();
+}
+
+function onMasterDataError(err){
+  showToast('マスタデータの取得に失敗しました: ' + (err && err.message ? err.message : err));
+}
+
+function onRowsData(rows){
+  ALL_ROWS = rows.map(r => Object.assign({}, r, { _date: new Date(String(r.workDate).split('/').join('-')) }));
+  rowsLoaded = true;
+  maybeInitCascade();
+}
+
+function onRowsError(err){
+  showToast('日報データの取得に失敗しました: ' + (err && err.message ? err.message : err));
+}
+
+function onCalendarData(data){
+  CALENDAR_MAP = data || {};
+  calendarLoaded = true;
+  maybeInitCascade();
+}
+
+function onCalendarError(err){
+  showToast('稼働日カレンダーの取得に失敗しました: ' + (err && err.message ? err.message : err));
+}
+
+function onAbsenteeismData(rows){
+  ABSENTEEISM = rows || [];
+  absenteeismLoaded = true;
+  maybeInitCascade();
+}
+
+function onAbsenteeismError(err){
+  showToast('欠勤・休暇データの取得に失敗しました: ' + (err && err.message ? err.message : err));
+}
+
+/* ===================== ①②のカスケード絞り込みエンジン ===================== */
+
+const SCREEN_CONFIG = {
+  r1: {
+    primary: { id:'r1-construction', field:'constructionId' },
+    dims: [
+      { key:'loc',  specName:'r1-loc-spec',  groupId:'r1-loc',  field:'factory' },
+      { key:'dept', specName:'r1-dept-spec', groupId:'r1-dept', field:'dept' },
+      { key:'name', specName:'r1-name-spec', groupId:'r1-name', field:'operatorNo' },
+      { key:'work', specName:'r1-work-spec', groupId:'r1-work', field:'workCode' }
+    ],
+    periodPrefix:'r1', periodSpecName:'r1-period-spec'
+  },
+  r2: {
+    primary: { id:'r2-operator', field:'operatorNo' },
+    dims: [
+      { key:'loc',  specName:'r2-loc-spec',  groupId:'r2-loc',  field:'factory' },
+      { key:'dept', specName:'r2-dept-spec', groupId:'r2-dept', field:'dept' },
+      { key:'construction', specName:'r2-construction-spec', groupId:'r2-construction', field:'constructionId' },
+      { key:'work', specName:'r2-work-spec', groupId:'r2-work', field:'workCode' }
+    ],
+    periodPrefix:'r2', periodSpecName:'r2-period-spec'
+  }
+};
+
+function dimSelectedValues(dim){
+  const specVal = document.querySelector(`input[name="${dim.specName}"]:checked`).value;
+  if(specVal !== 'yes') return null;
+  const vals = Array.from(document.querySelectorAll(`#${dim.groupId} input[type=checkbox]:checked`)).map(i=>i.value);
+  return vals.length ? vals : null;
+}
+
+function periodRestriction(prefix, specName){
+  const specVal = document.querySelector(`input[name="${specName}"]:checked`).value;
+  if(specVal !== 'yes') return null;
+  const mode = document.querySelector(`input[name="${prefix}mode"]:checked`).value;
+  if(mode === 'closing'){
+    const y = Number(document.getElementById(`${prefix}-year`).value);
+    const m = Number(document.getElementById(`${prefix}-month`).value);
+    return closingRangeDates(y, m);
+  }
+  const from = document.getElementById(`${prefix}-from`).value;
+  const to = document.getElementById(`${prefix}-to`).value;
+  if(!from || !to) return null;
+  const end = new Date(to); end.setHours(23,59,59);
+  return { start: new Date(from), end: end };
+}
+
+function buildPredicate(cfg, excludeKey){
+  const checks = [];
+  if(excludeKey !== 'primary'){
+    const sel = document.getElementById(cfg.primary.id);
+    const pv = sel.value;
+    if(pv) checks.push(r => String(r[cfg.primary.field]) === pv);
+  }
+  cfg.dims.forEach(dim=>{
+    if(dim.key === excludeKey) return;
+    const vals = dimSelectedValues(dim);
+    if(vals) checks.push(r => vals.indexOf(String(r[dim.field])) !== -1);
+  });
+  if(excludeKey !== 'period'){
+    const range = periodRestriction(cfg.periodPrefix, cfg.periodSpecName);
+    if(range) checks.push(r => r._date >= range.start && r._date <= range.end);
+  }
+  return row => checks.every(fn => fn(row));
+}
+
+function filteredRows(cfg, excludeKey){
+  const pred = buildPredicate(cfg, excludeKey);
+  return ALL_ROWS.filter(pred);
+}
+
+function updateDimAvailability(cfg){
+  cfg.dims.forEach(dim=>{
+    const rowsExcl = filteredRows(cfg, dim.key);
+    const available = new Set(rowsExcl.map(r => String(r[dim.field])));
+    document.querySelectorAll(`#${dim.groupId} input[type=checkbox]`).forEach(cb=>{
+      const label = cb.closest('.checkBtn');
+      const isAvailable = available.has(cb.value);
+      label.dataset.available = isAvailable ? 'true' : 'false';
+      if(!isAvailable && cb.checked){
+        cb.checked = false;
+        label.classList.remove('checked');
+      }
+    });
+    applyChipVisibility(dim.groupId);
+  });
+}
+
+function updatePrimaryAvailability(cfg){
+  const rowsExclPrimary = filteredRows(cfg, 'primary');
+  const available = new Set(rowsExclPrimary.map(r => String(r[cfg.primary.field])));
+  const sel = document.getElementById(cfg.primary.id);
+  Array.from(sel.options).forEach(opt=>{
+    if(!opt.value) return;
+    const ok = available.has(opt.value);
+    opt.disabled = !ok;
+    opt.style.display = ok ? '' : 'none';
+  });
+  if(sel.value && !available.has(sel.value)) sel.value = '';
+}
+
+function recomputeScreen(screenKey){
+  if(!masterDataLoaded || !rowsLoaded) return;
+  const cfg = SCREEN_CONFIG[screenKey];
+  updateDimAvailability(cfg);
+  updateDimAvailability(cfg); // 相互カスケードを収束させるため2回実施
+  updatePrimaryAvailability(cfg);
+  if(screenKey === 'r1') renderR1Preview();
+  if(screenKey === 'r2') renderR2Preview();
+}
+
+/* ===================== プレビュー描画 ===================== */
+
+/* テーブルセルが省略(ellipsis)されている場合、ホバーで全文が見えるようtitle属性を付与 */
+function applyCellTooltips(tableEl){
+  if(!tableEl) return;
+  tableEl.querySelectorAll('td, th').forEach(cell=>{
+    if(cell.scrollWidth > cell.clientWidth) cell.title = cell.textContent.trim();
+  });
+}
+
+function renderR1Preview(){
+  const previewEl = document.getElementById('r1-preview');
+  const sel = document.getElementById('r1-construction');
+  const constructionId = sel.value;
+  if(!constructionId){
+    previewEl.innerHTML = `<h3>プレビュー(作業内容別 合計時間)</h3><div class="previewEmpty">工事を選択すると、ここに集計結果がリアルタイムで表示されます</div>`;
+    return;
+  }
+  const cName = sel.options[sel.selectedIndex].text;
+  const allRows = filteredRows(SCREEN_CONFIG.r1, null);
+  const period = getPeriodLabel('r1','r1-period-spec');
+  const locSummary = checkedSummary('r1-loc-spec','r1-loc');
+  const deptSummary = checkedSummary('r1-dept-spec','r1-dept');
+  const nameSummary = checkedSummary('r1-name-spec','r1-name');
+  const workSummary = checkedSummary('r1-work-spec','r1-work');
+  const fileName = `工事別集計_${cName.replace(/[\s　]/g,'')}_${period.range}_${today_()}.xlsx`;
+  const summaryHtml = `<div class="filterSummary">工場: ${locSummary} ／ 部署: ${deptSummary} ／ 氏名: ${nameSummary} ／ 作業内容: ${workSummary}</div>`;
+
+  const locSpecVal = document.querySelector('input[name="r1-loc-spec"]:checked').value;
+  const locs = locSpecVal === 'yes'
+    ? Array.from(document.querySelectorAll('#r1-loc input[type=checkbox]:checked')).map(cb=>cb.value)
+    : FACTORY_ORDER.filter(f => allRows.some(r=>r.factory===f));
+
+  if(locs.length === 0){
+    previewEl.innerHTML = `
+      <div class="fileNamePreview">ファイル名: ${escapeHtml(fileName)}</div>
+      <h3>プレビュー(作業内容別 合計時間) — ${escapeHtml(cName)} / ${period.label}</h3>
+      ${summaryHtml}
+      <div class="previewEmpty">該当するデータがありません</div>`;
+    return;
+  }
+
+  let blocksHtml = '';
+  locs.forEach(loc=>{
+    const locRows = allRows.filter(r => r.factory === loc);
+    const sums = {};
+    locRows.forEach(r=>{ sums[r.workCode] = (sums[r.workCode]||0) + r.hours; });
+    const codes = Object.keys(sums).sort();
+    const factoryCodes = codes.filter(c => WORK_DEPT[c] === '工場');
+    const officeCodes = codes.filter(c => WORK_DEPT[c] !== '工場');
+
+    blocksHtml += `<tr class="sheetHeadRow"><td colspan="2">シート: ${escapeHtml(loc)}</td></tr>`;
+    if(codes.length === 0){
+      blocksHtml += `<tr><td colspan="2" class="previewEmptyCell">該当するデータがありません</td></tr>`;
+      return;
+    }
+
+    let grand = 0;
+    if(factoryCodes.length){
+      let fTotal = 0;
+      factoryCodes.forEach(code=>{
+        fTotal += sums[code];
+        blocksHtml += `<tr class="rowFactory"><td>${escapeHtml(WORK_META[code]||code)}</td><td class="num">${sums[code].toFixed(1)}</td></tr>`;
+      });
+      blocksHtml += `<tr class="rowFactoryTotal"><td>工場 小計</td><td class="num">${fTotal.toFixed(1)}</td></tr>`;
+      grand += fTotal;
+    }
+    if(officeCodes.length){
+      let oTotal = 0;
+      officeCodes.forEach(code=>{
+        oTotal += sums[code];
+        blocksHtml += `<tr class="rowOffice"><td>${escapeHtml(WORK_META[code]||code)}</td><td class="num">${sums[code].toFixed(1)}</td></tr>`;
+      });
+      blocksHtml += `<tr class="rowOfficeTotal"><td>事務 小計</td><td class="num">${oTotal.toFixed(1)}</td></tr>`;
+      grand += oTotal;
+    }
+    blocksHtml += `<tr class="totalRow"><td>総合計</td><td class="num">${grand.toFixed(1)}</td></tr>`;
+  });
+
+  previewEl.innerHTML = `
+    <div class="fileNamePreview">ファイル名: ${escapeHtml(fileName)}</div>
+    <h3>プレビュー(作業内容別 合計時間) — ${escapeHtml(cName)} / ${period.label}</h3>
+    ${summaryHtml}
+    <table class="dataTable">
+      <tr><th>作業内容</th><th>合計時間</th></tr>
+      ${blocksHtml}
+    </table>`;
+  applyCellTooltips(previewEl.querySelector('.dataTable'));
+}
+
+function renderR2Preview(){
+  const previewEl = document.getElementById('r2-preview');
+  const sel = document.getElementById('r2-operator');
+  const operatorNo = sel.value;
+  if(!operatorNo){
+    previewEl.innerHTML = `<h3>プレビュー(日付別 明細)</h3><div class="previewEmpty">社員を選択すると、ここに集計結果がリアルタイムで表示されます</div>`;
+    return;
+  }
+  const opText = sel.options[sel.selectedIndex].text;
+  const rows = filteredRows(SCREEN_CONFIG.r2, null).slice().sort((a,b)=> a._date - b._date);
+  const period = getPeriodLabel('r2','r2-period-spec');
+  const locSummary = checkedSummary('r2-loc-spec','r2-loc');
+  const deptSummary = checkedSummary('r2-dept-spec','r2-dept');
+  const constructionSummary = checkedSummary('r2-construction-spec','r2-construction');
+  const workSummary = checkedSummary('r2-work-spec','r2-work');
+  const fileName = `個人集計_${opText.replace(/[\s　]/g,'')}_${period.range}_${today_()}.xlsx`;
+  const summaryHtml = `<div class="filterSummary">工場: ${locSummary} ／ 部署: ${deptSummary} ／ 工事: ${constructionSummary} ／ 作業内容: ${workSummary}</div>`;
+
+  if(rows.length === 0){
+    previewEl.innerHTML = `
+      <div class="fileNamePreview">ファイル名: ${escapeHtml(fileName)}</div>
+      <h3>プレビュー(日付別明細) — ${escapeHtml(opText)} / ${period.label}</h3>
+      ${summaryHtml}
+      <div class="previewEmpty">該当するデータがありません</div>`;
+    return;
+  }
+
+  let total = 0;
+  const bodyRows = rows.map(r=>{
+    total += r.hours;
+    return `<tr><td>${escapeHtml(r.workDate)}</td><td>${escapeHtml(CONSTRUCTION_LABEL[r.constructionId]||r.constructionId)}</td><td>${escapeHtml(WORK_META[r.workCode]||r.workCode)}</td><td class="num">${r.hours.toFixed(1)}</td></tr>`;
+  }).join('');
+
+  previewEl.innerHTML = `
+    <div class="fileNamePreview">ファイル名: ${escapeHtml(fileName)}</div>
+    <h3>プレビュー(日付別明細) — ${escapeHtml(opText)} / ${period.label}</h3>
+    ${summaryHtml}
+    <table class="dataTable">
+      <tr><th>作業日</th><th>工事</th><th>作業内容</th><th>時間</th></tr>
+      ${bodyRows}
+      <tr class="totalRow"><td colspan="3">合計</td><td class="num">${total.toFixed(1)}</td></tr>
+    </table>`;
+  applyCellTooltips(previewEl.querySelector('.dataTable'));
+}
+
+function renderR3Preview(){
+  const previewEl = document.getElementById('r3-preview');
+  const locs = Array.from(document.querySelectorAll('#r3-locations input:checked')).map(i=>i.value);
+  if(locs.length === 0){
+    previewEl.innerHTML = `<h3>プレビュー(工事×作業内容 クロス集計・拠点ごとに別シート)</h3><div class="previewEmpty">拠点を選択すると、ここに集計結果がリアルタイムで表示されます</div>`;
+    return;
+  }
+  if(!masterDataLoaded || !rowsLoaded) return;
+  const year = Number(document.getElementById('r3-year').value);
+  const month = Number(document.getElementById('r3-month').value);
+  const range = closingRangeDates(year, month);
+  const period = getClosingPeriodLabel('r3');
+  const fileName = `20日締め集計_${locs.join('+')}_${period.range}_${today_()}.xlsx`;
+  const periodRows = ALL_ROWS.filter(r => r._date >= range.start && r._date <= range.end);
+
+  let rowsHtml = '';
+  locs.forEach(loc=>{
+    const locRows = periodRows.filter(r => r.factory === loc);
+    const byConstruction = {};
+    const order = [];
+    locRows.forEach(r=>{
+      if(!byConstruction[r.constructionId]){
+        byConstruction[r.constructionId] = { name: CONSTRUCTION_LABEL[r.constructionId] || r.constructionId, codes:{} };
+        order.push(r.constructionId);
+      }
+      byConstruction[r.constructionId].codes[r.workCode] = (byConstruction[r.constructionId].codes[r.workCode]||0) + r.hours;
+    });
+    order.sort((a,b) => String(CONSTRUCTION_NO[a]||'').localeCompare(String(CONSTRUCTION_NO[b]||''), 'ja', {numeric:true}));
+
+    const usedCodes = {};
+    order.forEach(cid => Object.keys(byConstruction[cid].codes).forEach(c => usedCodes[c] = true));
+    const factoryCodes = [], officeCodes = [];
+    Object.keys(usedCodes).sort().forEach(code=>{
+      (WORK_DEPT[code] === '工場' ? factoryCodes : officeCodes).push(code);
+    });
+
+    if(order.length === 0){
+      rowsHtml += `<tr class="sheetHeadRow"><td colspan="4">シート: ${escapeHtml(loc)}(該当データなし)</td></tr>`;
+      return;
+    }
+
+    rowsHtml += `<tr class="sheetHeadRow"><td colspan="${1+factoryCodes.length+1+officeCodes.length+1+1}">シート: ${escapeHtml(loc)}</td></tr>`;
+    rowsHtml += `<tr>
+      <th rowspan="2">工事</th>
+      ${factoryCodes.length ? `<th colspan="${factoryCodes.length+1}" class="colFactory">工場</th>` : `<th class="colFactoryTotal">工場合計</th>`}
+      ${officeCodes.length ? `<th colspan="${officeCodes.length+1}" class="colOffice">事務</th>` : `<th class="colOfficeTotal">事務合計</th>`}
+      <th rowspan="2" class="colGrand">総合計</th>
+    </tr>`;
+    rowsHtml += `<tr>
+      ${factoryCodes.map(c=>`<th class="colFactory">${escapeHtml(WORK_META[c]||c)}</th>`).join('')}
+      <th class="colFactoryTotal">工場合計</th>
+      ${officeCodes.map(c=>`<th class="colOffice">${escapeHtml(WORK_META[c]||c)}</th>`).join('')}
+      <th class="colOfficeTotal">事務合計</th>
+    </tr>`;
+
+    const colTotals = {};
+    factoryCodes.concat(officeCodes).forEach(c => colTotals[c] = 0);
+    let grandFactoryTotal = 0, grandOfficeTotal = 0;
+
+    order.forEach(cid=>{
+      const c = byConstruction[cid];
+      let fTotal = 0, oTotal = 0;
+      const factoryCells = factoryCodes.map(code=>{
+        const v = c.codes[code] || 0; fTotal += v; colTotals[code] += v;
+        return `<td class="num colFactory">${v.toFixed(1)}</td>`;
+      }).join('');
+      const officeCells = officeCodes.map(code=>{
+        const v = c.codes[code] || 0; oTotal += v; colTotals[code] += v;
+        return `<td class="num colOffice">${v.toFixed(1)}</td>`;
+      }).join('');
+      grandFactoryTotal += fTotal; grandOfficeTotal += oTotal;
+      rowsHtml += `<tr>
+        <td>${escapeHtml(c.name)}</td>
+        ${factoryCells}<td class="num colFactoryTotal">${fTotal.toFixed(1)}</td>
+        ${officeCells}<td class="num colOfficeTotal">${oTotal.toFixed(1)}</td>
+        <td class="num colGrand">${(fTotal+oTotal).toFixed(1)}</td>
+      </tr>`;
+    });
+
+    rowsHtml += `<tr class="totalRow">
+      <td>合計</td>
+      ${factoryCodes.map(code=>`<td class="num colFactory">${colTotals[code].toFixed(1)}</td>`).join('')}
+      <td class="num colFactoryTotal">${grandFactoryTotal.toFixed(1)}</td>
+      ${officeCodes.map(code=>`<td class="num colOffice">${colTotals[code].toFixed(1)}</td>`).join('')}
+      <td class="num colOfficeTotal">${grandOfficeTotal.toFixed(1)}</td>
+      <td class="num colGrand">${(grandFactoryTotal+grandOfficeTotal).toFixed(1)}</td>
+    </tr>`;
+  });
+
+  previewEl.innerHTML = `
+    <div class="fileNamePreview">ファイル名: ${escapeHtml(fileName)}</div>
+    <h3>プレビュー(拠点ごとに別シート) / ${period.label}</h3>
+    <table class="dataTable">${rowsHtml}</table>`;
+  applyCellTooltips(previewEl.querySelector('.dataTable'));
+}
+
+/* ===== ダウンロード ===== */
+function downloadBlob(base64, mimeType, fileName){
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fileName;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+function setBusy(prefix, busy){
+  document.getElementById(prefix + '-downloadBtn').disabled = busy;
+}
+
+const downloadPopupStart = {};
+
+function onDownloadReady(prefix, result){
+  setBusy(prefix, false);
+  const reveal = () => {
+    downloadBlob(result.base64, result.mimeType, result.fileName);
+    showToast('Excelファイルをダウンロードしました');
+    if(prefix === 'r1') renderR1Preview();
+    if(prefix === 'r2') renderR2Preview();
+    if(prefix === 'r3') renderR3Preview();
+    if(prefix === 'r4') renderR4Preview();
+  };
+  const startedAt = downloadPopupStart[prefix];
+  delete downloadPopupStart[prefix];
+  if(startedAt !== undefined) hideFakeProgress(startedAt, reveal); else reveal();
+}
+
+function onServerError(prefix, err){
+  setBusy(prefix, false);
+  const reveal = () => showToast('エラーが発生しました: ' + (err && err.message ? err.message : err));
+  const startedAt = downloadPopupStart[prefix];
+  delete downloadPopupStart[prefix];
+  if(startedAt !== undefined) hideFakeProgress(startedAt, reveal); else reveal();
+}
+
+/* ===================== ①日報入力チェック ===================== */
+
+const R4_WEEKDAY_NAMES = ['日','月','火','水','木','金','土'];
+
+/* 締め月ラジオボタン(本日を含む進行中の締め期間+過去4ヶ月の計5つ・単一選択) */
+function buildMonthRadioPicker(containerId, prefix){
+  const el = document.getElementById(containerId);
+  const def = currentClosingMonth_();
+  const months = [];
+  let y = def.year, m = def.month;
+  for(let i = 0; i < 5; i++){
+    months.push({ year: y, month: m });
+    m -= 1;
+    if(m === 0){ m = 12; y -= 1; }
+  }
+  el.innerHTML = months.map((mo, i) =>
+    `<button type="button" class="checkBtn monthBtn${i === 0 ? ' checked' : ''}" data-year="${mo.year}" data-month="${mo.month}">${mo.month}月20日締め</button>`
+  ).join('');
+  el.querySelectorAll('.monthBtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      el.querySelectorAll('.monthBtn').forEach(b => b.classList.remove('checked'));
+      btn.classList.add('checked');
+      triggerRecompute(prefix);
+    });
+  });
+}
+
+function getR4Month(){
+  const btn = document.querySelector('#r4-month .monthBtn.checked');
+  if(!btn) return currentClosingMonth_();
+  return { year: Number(btn.dataset.year), month: Number(btn.dataset.month) };
+}
+
+/* 役員のため入力不要・表示対象外とする社員No */
+const R4_EXCLUDE_OPERATORS = ['801', '77'];
+/* 拠点・部署の並び順(数字が小さいほど優先) */
+const R4_FACTORY_RANK = { '本社': 0, '夢前': 1, '鳥取': 2 };
+const R4_DEPT_RANK = { '設計管理': 0, '工場': 1 }; /* 事務(内部値は設計管理)を優先 */
+
+/* 指定日が終日「有給」または「欠勤」の対象かどうか(半日有給・遅早等は対象外) */
+function fullDayLeaveType(operatorNo, dateStr){
+  for(let i = 0; i < ABSENTEEISM.length; i++){
+    const a = ABSENTEEISM[i];
+    if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to &&
+       (a.type === '有給' || a.type === '欠勤')) return a.type;
+  }
+  return null;
+}
+
+/* 指定日にAbsenteeismの届出(種別問わず)があるかどうか */
+function hasAnyLeave(operatorNo, dateStr){
+  return ABSENTEEISM.some(a => a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to);
+}
+
+/* 指定日のAbsenteeism届出(種別問わず)の種別テキストを返す(未来日の表示用)。なければnull */
+function anyLeaveTypeText(operatorNo, dateStr){
+  for(let i = 0; i < ABSENTEEISM.length; i++){
+    const a = ABSENTEEISM[i];
+    if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to) return a.type;
+  }
+  return null;
+}
+
+/* 未来日セル表示用の略称(2〜3文字)。一覧にない種別は先頭2文字にフォールバックする */
+const R4_LEAVE_TYPE_ABBR = {
+  '有給': '有給', '欠勤': '欠勤',
+  '午前有給': '前有給', '午後有給': '後有給',
+  '午前欠勤': '前欠勤', '午後欠勤': '後欠勤',
+  '代休': '代休'
+};
+function r4LeaveAbbr_(type){
+  return R4_LEAVE_TYPE_ABBR[type] || type.slice(0, 2);
+}
+
+function computeR4Grid(){
+  const month = getR4Month();
+  const range = closingRangeDates(month.year, month.month);
+  const dates = [];
+  for(let d = new Date(range.start); d <= range.end; d.setDate(d.getDate() + 1)){
+    dates.push(new Date(d));
+  }
+  const todayMidnight = new Date();
+  todayMidnight.setHours(0, 0, 0, 0);
+
+  const dateHeaders = dates.map(d => {
+    const ds = `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+    return {
+      date: ds,
+      shortDate: `${d.getMonth()+1}/${d.getDate()}`,
+      weekday: R4_WEEKDAY_NAMES[d.getDay()],
+      holiday: CALENDAR_MAP[ds] === '休日',
+      isPast: d < todayMidnight
+    };
+  });
+
+  const locs = checkedValues('r4-locations');
+  const depts = checkedValues('r4-depts');
+  const operators = masterData.operators
+    .filter(o => !o.retired && R4_EXCLUDE_OPERATORS.indexOf(o.no) === -1 &&
+      locs.indexOf(o.factory) !== -1 && depts.indexOf(o.dept) !== -1)
+    .slice()
+    .sort((a, b) => Number(a.no) - Number(b.no));
+
+  const totals = {};
+  ALL_ROWS.forEach(r => {
+    const key = r.operatorNo + '|' + r.workDate;
+    totals[key] = (totals[key] || 0) + r.hours;
+  });
+
+  const allRows = operators.map(op => {
+    const cells = dateHeaders.map(dh => {
+      if(!dh.isPast){
+        /* 未来日は未提出でもNG(missing)にはしない。ただし既にAbsenteeismの届出が
+           あれば、種別を略称でそのセルに表示し、既存の「leave」配色(薄黄色)を
+           流用して何の届が出ているか分かるようにする。 */
+        const futureLeave = anyLeaveTypeText(op.no, dh.date);
+        if(futureLeave) return { value: null, text: r4LeaveAbbr_(futureLeave), flag: 'leave' };
+        return { value: null, flag: '' };
+      }
+      const hours = totals[op.no + '|' + dh.date] || 0;
+      const leave = fullDayLeaveType(op.no, dh.date);
+      let flag = '';
+      if(leave && hours > 0) flag = 'duplicate';
+      else if(hours >= 16) flag = 'long';
+      else if(!dh.holiday && !leave && hours === 0) flag = 'missing';
+      else if(!dh.holiday && hasAnyLeave(op.no, dh.date)) flag = 'leave';
+      return { value: hours > 0 ? hours : null, flag: flag };
+    });
+    const total = cells.reduce((s, c) => s + (c.value || 0), 0);
+
+    /* 休職中の社員: 対象期間の出勤日が全て未提出(missing)なら「その月は全休職期間中」として非表示。
+       一部でも実績等があれば「途中から休職」として氏名に(休職中)を付けて表示する。 */
+    let name = op.name;
+    if(op.onLeave){
+      const workdayCells = cells.filter((c, i) => dateHeaders[i].isPast && !dateHeaders[i].holiday);
+      const allMissing = workdayCells.length > 0 && workdayCells.every(c => c.flag === 'missing');
+      if(allMissing) return null;
+      if(workdayCells.some(c => c.flag !== 'missing')) name = op.name + '(休職中)';
+    }
+
+    return {
+      no: op.no, name: name, factory: op.factory, dept: op.dept,
+      cells: cells, total: total,
+      hasNg: cells.some(c => c.flag === 'missing' || c.flag === 'duplicate' || c.flag === 'long')
+    };
+  }).filter(Boolean);
+
+  return { dateHeaders: dateHeaders, allRows: allRows };
+}
+
+/* 空セル配列(dateHeaders分)を作る */
+function r4ZeroCells(n){
+  return Array.from({length: n}, () => 0);
+}
+
+/* allRows(NGだけ表示フィルタ適用済み)を 拠点→部署(事務/工場) の階層にまとめ、
+   各グループの見出し・小計、拠点合計、総合計を計算する */
+function buildR4Groups(dateHeaders, filteredRows){
+  const n = dateHeaders.length;
+  const locGroups = [];
+  let grandCells = r4ZeroCells(n);
+  let grandTotal = 0;
+
+  FACTORY_ORDER.forEach(loc => {
+    const locRows = filteredRows.filter(r => r.factory === loc);
+    if(locRows.length === 0) return;
+
+    const deptGroups = [];
+    [{ key: '設計管理', label: '事務' }, { key: '工場', label: '工場' }].forEach(d => {
+      const rows = locRows.filter(r => r.dept === d.key);
+      if(rows.length === 0) return;
+      const subtotalCells = r4ZeroCells(n);
+      rows.forEach(r => r.cells.forEach((c, i) => { subtotalCells[i] += (c.value || 0); }));
+      const subtotalTotal = subtotalCells.reduce((s, v) => s + v, 0);
+      deptGroups.push({ deptLabel: d.label, deptKey: d.key, rows: rows, subtotalCells: subtotalCells, subtotalTotal: subtotalTotal });
+    });
+    if(deptGroups.length === 0) return;
+
+    const locCells = r4ZeroCells(n);
+    deptGroups.forEach(g => g.subtotalCells.forEach((v, i) => { locCells[i] += v; }));
+    const locTotal = locCells.reduce((s, v) => s + v, 0);
+    locCells.forEach((v, i) => { grandCells[i] += v; });
+    grandTotal += locTotal;
+
+    locGroups.push({ location: loc, deptGroups: deptGroups, totalCells: locCells, total: locTotal });
+  });
+
+  return { locGroups: locGroups, grandCells: grandCells, grandTotal: grandTotal };
+}
+
+function toggleR4NgOnly(){
+  r4NgOnly = !r4NgOnly;
+  document.getElementById('r4-ngonly-btn').classList.toggle('active', r4NgOnly);
+  withRecalcPopup(renderR4Preview);
+}
+
+function r4FlagClass(flag, holiday){
+  if(flag) return 'r4' + flag.charAt(0).toUpperCase() + flag.slice(1);
+  return holiday ? 'r4HolidayCol' : '';
+}
+
+function r4EmployeeRowHtml(r, dateHeaders){
+  const tds = r.cells.map((c, i) =>
+    `<td class="num r4DateCell ${c.text ? 'r4LeaveText' : ''} ${r4FlagClass(c.flag, dateHeaders[i].holiday)}">${c.text ? escapeHtml(c.text) : (c.value === null ? '' : c.value)}</td>`
+  ).join('');
+  return `<tr><td class="r4NameCol">${escapeHtml(r.name)}</td>${tds}<td class="num r4TotalCol">${r.total ? r.total : ''}</td></tr>`;
+}
+
+/* dateHeadersを渡し、休日の列だけr4HolidayColを付けて日付ごとに色分けする
+   (合計・小計・拠点合計・総合計の行でも、その日が休日なら休日色にするため) */
+function r4AggregateRowHtml(label, cells, total, rowClass, dateHeaders){
+  const tds = cells.map((v, i) =>
+    `<td class="num r4DateCell ${dateHeaders[i].holiday ? 'r4HolidayCol' : ''}">${v ? v : ''}</td>`
+  ).join('');
+  return `<tr class="${rowClass}"><td class="r4NameCol">${escapeHtml(label)}</td>${tds}<td class="num r4TotalCol">${total ? total : ''}</td></tr>`;
+}
+
+/* 拠点(本社/夢前/鳥取)・部署(工場/事務)の見出し行。以前はcolspanで1つの
+   セルにまとめていたが、休日の列だけ休日色にするため日付ごとの
+   セルに分割した(見た目上はrowClass側の背景色で今まで通り1色の帯に見える。
+   氏名列と同じr4NameColクラスを付けたことで、横スクロール時にラベルも
+   左端に固定されるようになる副次効果もある)。 */
+function r4HeadRowHtml(label, dateHeaders, rowClass){
+  const dateTds = dateHeaders.map(dh =>
+    `<td class="r4DateCell ${dh.holiday ? 'r4HolidayCol' : ''}"></td>`
+  ).join('');
+  return `<tr class="${rowClass}"><td class="r4NameCol">${escapeHtml(label)}</td>${dateTds}<td class="r4TotalCol"></td></tr>`;
+}
+
+function r4BuildTableHtml(dateHeaders, groups){
+  const headHtml = '<tr><th class="r4NameCol">氏名</th>' + dateHeaders.map(dh =>
+    `<th class="r4DateCell ${dh.holiday ? 'r4HolidayCol' : ''}">${dh.shortDate}<br>${dh.weekday}</th>`
+  ).join('') + '<th class="r4TotalCol">合計</th></tr>';
+
+  let bodyHtml = '';
+  groups.locGroups.forEach(loc => {
+    bodyHtml += r4HeadRowHtml(loc.location, dateHeaders, 'r4LocHead');
+    loc.deptGroups.forEach(dg => {
+      bodyHtml += r4HeadRowHtml(dg.deptLabel, dateHeaders, 'r4DeptHead');
+      dg.rows.forEach(r => { bodyHtml += r4EmployeeRowHtml(r, dateHeaders); });
+      const subRowClass = dg.deptKey === '設計管理' ? 'r4SubtotalOffice' : 'r4SubtotalFactory';
+      bodyHtml += r4AggregateRowHtml(dg.deptLabel + ' 小計', dg.subtotalCells, dg.subtotalTotal, subRowClass, dateHeaders);
+    });
+    bodyHtml += r4AggregateRowHtml(loc.location + ' 合計', loc.totalCells, loc.total, 'r4LocTotal', dateHeaders);
+  });
+  bodyHtml += r4AggregateRowHtml('総合計', groups.grandCells, groups.grandTotal, 'r4GrandTotal', dateHeaders);
+
+  return `<table class="dataTable r4Table">${headHtml}${bodyHtml}</table>`;
+}
+
+function renderR4Preview(){
+  const previewEl = document.getElementById('r4-preview');
+  if(!masterDataLoaded || !rowsLoaded || !calendarLoaded || !absenteeismLoaded) return;
+  const grid = computeR4Grid();
+  const rows = r4NgOnly ? grid.allRows.filter(r => r.hasNg) : grid.allRows;
+  const month = getR4Month();
+
+  if(rows.length === 0){
+    previewEl.innerHTML = `<h3>プレビュー(社員別 提出チェック)</h3><div class="previewEmpty">該当する社員がいません</div>`;
+    return;
+  }
+
+  const groups = buildR4Groups(grid.dateHeaders, rows);
+  const range = closingRange(month.year, month.month);
+  const fileName = `日報入力チェック_${range.start.split('/').join('-')}-${range.end.split('/').join('-')}_${today_()}.xlsx`;
+
+  // ファイル名・見出しは previewEl の外（集計条件パネル直下のsticky要素）として作成
+  const screenEl = document.querySelector('#screen-report4 .main');
+  if(screenEl){
+    let fileHeader = screenEl.querySelector('.r4FileHeader');
+    if(!fileHeader){
+      fileHeader = document.createElement('div');
+      fileHeader.className = 'r4FileHeader';
+      screenEl.insertBefore(fileHeader, previewEl);
+    }
+    fileHeader.innerHTML = `
+      <div class="fileNamePreview">ファイル名: ${fileName}</div>
+      <h3>プレビュー(社員別 提出チェック) — ${month.year}年${month.month}月20日締め</h3>`;
+  }
+
+  // previewEl には表だけを入れる
+  previewEl.innerHTML = r4BuildTableHtml(grid.dateHeaders, groups);
+  applyCellTooltips(previewEl.querySelector('.dataTable'));
+  adjustR4StickyOffset_();
+}
+
+/* 集計条件パネル・ファイル名/見出し・表のth・氏名列(left固定)を、
+   すべて.main(スクロール領域)の内側で一続きのsticky積み重ねにするための
+   位置合わせ。集計条件パネルとファイル名/見出しの高さはフィルタの折り返し等で
+   変わりうるため、都度実測してtopを設定する(ハードコードしない)。 */
+function adjustR4StickyOffset_(){
+  const table = document.querySelector('#r4-preview table.r4Table');
+  const mainEl = table ? table.closest('.main') : null;
+  if(!table || !mainEl) return;
+
+  const mainPaddingLeft = parseFloat(getComputedStyle(mainEl).paddingLeft) || 0;
+  const mainPaddingRight = parseFloat(getComputedStyle(mainEl).paddingRight) || 0;
+  const mainPaddingTop = parseFloat(getComputedStyle(mainEl).paddingTop) || 0;
+
+  /* 氏名列（left固定）のオフセット設定。
+     横スクロール時に左に隙間ができないよう、mainのpadding-left分だけ
+     leftを負の値で設定する。 */
+  table.querySelectorAll('.r4NameCol').forEach(cell => {
+    cell.style.left = (-mainPaddingLeft) + 'px';
+  });
+
+  /* updateR4HStuckState_内で参照するため、データ属性に保存。 */
+  table.dataset.mainPaddingLeft = mainPaddingLeft;
+
+  /* 集計条件パネル・ファイル名/見出しは、mainのpadding-left/rightを
+     margin相殺(負のmargin)+width:autoで打ち消し、常に.mainの見えている
+     横幅ぴったりまで広げる(表の幅がいくつでも計算し直さずに済む)。
+     横スクロールへの追従はCSSのsticky(left)には任せない。要素の幅が
+     .mainの内側(padding抜き)の幅よりはみ出す関係で、ネイティブのsticky(left)
+     はスクロール範囲の途中〜終端にかけて中途半端な位置で止まってしまう
+     不具合があったため、代わりにupdateR4HStuckState_内でスクロール量を
+     transform:translateXで直接打ち消し、常に画面左端に揃える(氏名列と
+     同じ結果になるよう実測して確認済み)。 */
+  const panelEl = mainEl.querySelector('.r4StickyPanel');
+  const fileHeaderEl = mainEl.querySelector('.r4FileHeader');
+  const backdropEl = mainEl.querySelector('.r4HeaderBackdrop');
+  /* 右端は実測値ぴったりだと誤差で表のセルが覗くことがあるため、
+     少し多めに覆う方向にバッファを持たせる(白い箱がほんの数px
+     余分に大きくなるだけで見た目には影響しない)。 */
+  const R4_STICKY_H_BUFFER = 4;
+  [panelEl, fileHeaderEl, backdropEl].forEach(el => {
+    if(!el) return;
+    el.style.marginLeft = (-mainPaddingLeft) + 'px';
+    el.style.marginRight = (-(mainPaddingRight + R4_STICKY_H_BUFFER)) + 'px';
+    el.style.width = 'auto';
+  });
+
+  /* 集計条件パネル(top:0)の直下にファイル名/見出しを、さらにその直下に
+     表のth(氏名・日付行)を積み重ねる。それぞれの実測高さを積算してtopに
+     設定することで、フィルタの折り返し行数が変わっても正しく追従する。
+     端数px(サブピクセル)のまま設定すると、ズーム率等によっては丸め誤差で
+     1px未満の継ぎ目ができうるため、切り上げて整数pxにする(覆う側が
+     わずかに広くなる方向に丸めることで、隙間ではなく重なりにする)。 */
+  const panelHeight = panelEl ? Math.ceil(panelEl.getBoundingClientRect().height) : 0;
+  if(fileHeaderEl) fileHeaderEl.style.top = panelHeight + 'px';
+  const fileHeaderHeight = fileHeaderEl ? Math.ceil(fileHeaderEl.getBoundingClientRect().height) : 0;
+
+  const theadTop = panelHeight + fileHeaderHeight;
+  const firstThRow = table.querySelector('tr');
+  if(firstThRow) {
+    firstThRow.querySelectorAll('th').forEach(th => {
+      th.style.top = theadTop + 'px';
+    });
+  }
+  const theadHeight = firstThRow ? Math.ceil(firstThRow.getBoundingClientRect().height) : 0;
+
+  /* 背景板(r4HeaderBackdrop)は集計条件パネル・ファイル名見出し・氏名/日付行を
+     合わせた高さぶん、薄黄色(.mainと同じ色)で覆う。3要素の継ぎ目に多少の
+     実測誤差があっても、そこには表のセルではなく背景板の色が見えるだけになり、
+     表のセルが上に覗くことはなくなる。
+     さらに、.mainのpadding-top(appHeaderの下端と背景板/パネルの間にできる
+     隙間の原因)分も覆うよう、sticky要素の実際の固定位置を決める"top"
+     プロパティ自体を負の値にして食い込ませる(margin-topではsticky時の
+     固定位置は動かない。stickyの固定位置は常にtopプロパティで決まり、
+     marginは通常フロー上の占有スペースにのみ影響するため)。
+     topオフセット自体は通常フロー上の占有スペースに影響しないため、
+     増えた高さ(mainPaddingTop分)だけをmargin-bottomで相殺すればよい。 */
+  if(backdropEl){
+    const restHeight = panelHeight + fileHeaderHeight + theadHeight;
+    const backdropHeight = mainPaddingTop + restHeight;
+    backdropEl.style.top = (-mainPaddingTop) + 'px';
+    backdropEl.style.height = backdropHeight + 'px';
+    backdropEl.style.marginBottom = (-backdropHeight) + 'px';
+  }
+
+  /* 氏名列の横スクロール時の背景隙間対策（box-shadow）。 */
+  updateR4HStuckState_(mainEl);
+
+  /* スクロールリスナー（1回だけ登録）。 */
+  if(!mainEl._r4StuckListenerAttached){
+    mainEl._r4StuckListenerAttached = true;
+    mainEl.addEventListener('scroll', () => {
+      updateR4HStuckState_(mainEl);
+    });
+  }
+
+  /* 集計条件パネル・ファイル名見出し・氏名/日付行の高さは、フォント読み込み
+     完了等のタイミングによって実測後に変わることがある。ResizeObserverで
+     実際の高さの変化を監視し、変わるたびにこの関数を再実行して背景板の高さ・
+     th/ファイル名見出しのtop位置を自動で追従させる(測定タイミングのズレに
+     左右されないようにするため)。表は再描画のたびに要素が作り直されるため、
+     firstThRowは毎回observeし直す(既にobserve済みの要素への再呼び出しは
+     何も起きない安全な操作)。 */
+  if(!mainEl._r4ResizeObserver){
+    mainEl._r4ResizeObserver = new ResizeObserver(() => adjustR4StickyOffset_());
+  }
+  if(panelEl) mainEl._r4ResizeObserver.observe(panelEl);
+  if(fileHeaderEl) mainEl._r4ResizeObserver.observe(fileHeaderEl);
+  if(firstThRow) mainEl._r4ResizeObserver.observe(firstThRow);
+}
+
+/* 氏名列(.r4NameCol)が実際に横方向へ貼り付いている(stuck)かどうかを
+   ヘッダーセル(th.r4NameCol)の現在位置から判定する。
+   【重要】table-cell要素はCSS仕様上marginを無視するため、当初試した
+   「margin-leftで箱を広げてpadding-leftで押し戻す」方式は機能しなかった
+   (marginが無視され、padding-leftによる拡張分だけセル自体が実際に
+   ワイダーになってしまい、氏名列全体の幅が変わって以降の列がズレる・
+   表全体の幅が変わってしまうという不具合を起こした)。
+   代わりにbox-shadow(レイアウトに一切影響しない純粋な描画effect)を使い、
+   隙間の位置に「そのセルの実際の背景色と同じ色の帯」を描画するだけに
+   している。box-shadowはセル自身の幅・位置を一切変えないため、表の
+   横幅や以降の列の位置には影響しない。 */
+function updateR4HStuckState_(mainEl){
+  const table = document.querySelector('#r4-preview table.r4Table');
+  if(!table) return;
+  const mainPaddingLeft = parseFloat(table.dataset.mainPaddingLeft || '0');
+  const headerCell = table.querySelector('th.r4NameCol');
+  if(!headerCell) return;
+  const mainLeft = mainEl.getBoundingClientRect().left;
+  const cellLeft = headerCell.getBoundingClientRect().left;
+  const stuck = cellLeft <= (mainLeft + 1);
+  table.querySelectorAll('.r4NameCol').forEach(cell => {
+    if(stuck){
+      const bg = getComputedStyle(cell).backgroundColor;
+      cell.style.boxShadow = (-mainPaddingLeft) + 'px 0 0 0 ' + bg;
+    } else {
+      cell.style.boxShadow = '';
+    }
+  });
+
+  /* 集計条件パネル・ファイル名見出し・背景板は、.mainの横スクロール量を
+     そのままtransform:translateXで打ち消して常に画面左端に揃える(氏名列と
+     同じ見え方になるよう実測して確認済み)。 */
+  const tx = mainEl.scrollLeft + 'px';
+  const panelEl = mainEl.querySelector('.r4StickyPanel');
+  const fileHeaderEl = mainEl.querySelector('.r4FileHeader');
+  const backdropEl = mainEl.querySelector('.r4HeaderBackdrop');
+  if(panelEl) panelEl.style.transform = 'translateX(' + tx + ')';
+  if(fileHeaderEl) fileHeaderEl.style.transform = 'translateX(' + tx + ')';
+  if(backdropEl) backdropEl.style.transform = 'translateX(' + tx + ')';
+}
+
+function runReport4(){
+  const grid = computeR4Grid();
+  const rows = r4NgOnly ? grid.allRows.filter(r => r.hasNg) : grid.allRows;
+  if(rows.length === 0){ showToast('該当する社員がいません'); return; }
+  const month = getR4Month();
+  const range = closingRange(month.year, month.month);
+  const params = {
+    rangeToken: range.start.split('/').join('-') + '-' + range.end.split('/').join('-'),
+    dateHeaders: grid.dateHeaders.map(dh => ({ shortDate: dh.shortDate, weekday: dh.weekday, holiday: dh.holiday })),
+    rows: rows.map(r => ({ no: r.no, name: r.name, factory: r.factory, dept: r.dept, total: r.total, cells: r.cells.map(c => ({ value: c.value, text: c.text || '', flag: c.flag })) }))
+  };
+  setBusy('r4', true);
+  downloadPopupStart.r4 = showFakeProgress('情報収集中');
+  google.script.run
+    .withSuccessHandler(r => onDownloadReady('r4', r))
+    .withFailureHandler(e => onServerError('r4', e))
+    .generateReport4(params);
+}
+
+/* ===================== リセットボタン ===================== */
+
+/* 「指定:しない/する」トグルを「しない」に戻す(chipSearch/checkGroupのリセットとは別) */
+function resetSpecToggle(specName){
+  const radios = document.querySelectorAll(`input[name="${specName}"]`);
+  radios.forEach(r => r.closest('.specBtn').classList.remove('checked'));
+  const noRadio = document.querySelector(`input[name="${specName}"][value="no"]`);
+  noRadio.checked = true;
+  noRadio.closest('.specBtn').classList.add('checked');
+  const body = noRadio.closest('.field').querySelector('.specBody');
+  if(body) body.classList.remove('open');
+}
+
+/* チップ選択と検索欄をクリア */
+function resetCheckGroup(groupId){
+  const groupEl = document.getElementById(groupId);
+  groupEl.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+    cb.checked = false;
+    cb.closest('.checkBtn').classList.remove('checked');
+  });
+  const searchInput = groupEl.closest('.field').querySelector('.chipSearch');
+  if(searchInput){
+    searchInput.value = '';
+    searchQueries[groupId] = '';
+    applyChipVisibility(groupId);
+  }
+}
+
+function resetScreen(prefix){
+  if(prefix === 'r1' || prefix === 'r2'){
+    const cfg = SCREEN_CONFIG[prefix];
+    document.getElementById(cfg.primary.id).value = '';
+    cfg.dims.forEach(dim=>{
+      resetSpecToggle(dim.specName);
+      resetCheckGroup(dim.groupId);
+    });
+    resetSpecToggle(cfg.periodSpecName);
+    buildPeriodPicker(`${prefix}-period`, prefix); // 年/月/モード/自由日付を初期値に再構築(内部でrecomputeも走る)
+    applyDefaultFactoryFilter_(prefix); // 工場フィルタはログイン時に選択した工場に戻す(「しない」には戻さない)
+    recomputeScreen(prefix);
+  } else if(prefix === 'r3'){
+    applyDefaultFactoryFilter_('r3'); // ログイン時に選択した工場のみチェックに戻す(全拠点チェックには戻さない)
+    buildClosingOnlyPicker('r3-period', 'r3'); // 締め年/月を初期値に再構築(内部でrenderR3Previewも走る)
+  } else if(prefix === 'r4'){
+    applyDefaultFactoryFilter_('r4'); // ログイン時に選択した工場のみチェックに戻す(全拠点チェックには戻さない)
+    document.querySelectorAll('#r4-depts input[type=checkbox]').forEach(cb => {
+      cb.checked = true;
+      cb.closest('.checkBtn').classList.add('checked');
+    });
+    r4NgOnly = false;
+    document.getElementById('r4-ngonly-btn').classList.remove('active');
+    buildMonthRadioPicker('r4-month', 'r4'); // 締め月を最新(先頭)に戻す(内部でrenderR4Previewも走る)
+    withRecalcPopup(renderR4Preview);
+  }
+}
+
+function runReport1(){
+  const constructionId = document.getElementById('r1-construction').value;
+  if(!constructionId){ showToast('工事を選択してください'); return; }
+  const params = {
+    constructionId: constructionId,
+    locSpec: specValue('r1-loc-spec'), locs: checkedValues('r1-loc'),
+    deptSpec: specValue('r1-dept-spec'), depts: checkedValues('r1-dept'),
+    nameSpec: specValue('r1-name-spec'), names: checkedValues('r1-name'),
+    workSpec: specValue('r1-work-spec'), works: checkedValues('r1-work'),
+    periodSpec: specValue('r1-period-spec'),
+    periodMode: periodModeOf('r1'),
+    year: document.getElementById('r1-year').value,
+    month: document.getElementById('r1-month').value,
+    from: document.getElementById('r1-from') ? document.getElementById('r1-from').value : null,
+    to: document.getElementById('r1-to') ? document.getElementById('r1-to').value : null,
+    rows: filteredRows(SCREEN_CONFIG.r1, null).map(r => ({ factory: r.factory, workCode: r.workCode, hours: r.hours }))
+  };
+  setBusy('r1', true);
+  downloadPopupStart.r1 = showFakeProgress('情報収集中');
+  google.script.run
+    .withSuccessHandler(r => onDownloadReady('r1', r))
+    .withFailureHandler(e => onServerError('r1', e))
+    .generateReport1(params);
+}
+
+function runReport2(){
+  const operatorNo = document.getElementById('r2-operator').value;
+  if(!operatorNo){ showToast('社員を選択してください'); return; }
+  const params = {
+    operatorNo: operatorNo,
+    locSpec: specValue('r2-loc-spec'), locs: checkedValues('r2-loc'),
+    deptSpec: specValue('r2-dept-spec'), depts: checkedValues('r2-dept'),
+    constructionSpec: specValue('r2-construction-spec'), constructions: checkedValues('r2-construction'),
+    workSpec: specValue('r2-work-spec'), works: checkedValues('r2-work'),
+    periodSpec: specValue('r2-period-spec'),
+    periodMode: periodModeOf('r2'),
+    year: document.getElementById('r2-year').value,
+    month: document.getElementById('r2-month').value,
+    from: document.getElementById('r2-from') ? document.getElementById('r2-from').value : null,
+    to: document.getElementById('r2-to') ? document.getElementById('r2-to').value : null,
+    rows: filteredRows(SCREEN_CONFIG.r2, null).map(r => ({ workDate: r.workDate, constructionId: r.constructionId, workCode: r.workCode, hours: r.hours }))
+  };
+  setBusy('r2', true);
+  downloadPopupStart.r2 = showFakeProgress('情報収集中');
+  google.script.run
+    .withSuccessHandler(r => onDownloadReady('r2', r))
+    .withFailureHandler(e => onServerError('r2', e))
+    .generateReport2(params);
+}
+
+function runReport3(){
+  const locs = checkedValues('r3-locations');
+  if(locs.length === 0){ showToast('拠点を1つ以上選択してください'); return; }
+  const year = Number(document.getElementById('r3-year').value);
+  const month = Number(document.getElementById('r3-month').value);
+  const range = closingRangeDates(year, month);
+  const periodRows = ALL_ROWS.filter(r => r._date >= range.start && r._date <= range.end);
+  const params = {
+    locs: locs,
+    year: year,
+    month: month,
+    rows: periodRows.map(r => ({ factory: r.factory, constructionId: r.constructionId, workCode: r.workCode, hours: r.hours }))
+  };
+  setBusy('r3', true);
+  downloadPopupStart.r3 = showFakeProgress('情報収集中');
+  google.script.run
+    .withSuccessHandler(r => onDownloadReady('r3', r))
+    .withFailureHandler(e => onServerError('r3', e))
+    .generateReport3(params);
+}
+
+/* ===== 初期化 ===== */
+buildPeriodPicker('r1-period','r1');
+buildPeriodPicker('r2-period','r2');
+buildClosingOnlyPicker('r3-period','r3');
+wireSpecToggles();
+document.querySelectorAll('.checkBtn input[type=checkbox]').forEach(cb=>{
+  cb.addEventListener('change', ()=>{
+    cb.closest('.checkBtn').classList.toggle('checked', cb.checked);
+    const field = cb.closest('.field');
+    if(field) maybeAutoSwitchToNo(field);
+    triggerRecompute(fieldContainerScreenKey(cb));
+  });
+});
+document.getElementById('r1-construction').addEventListener('change', () => recomputeScreen('r1'));
+document.getElementById('r2-operator').addEventListener('change', () => recomputeScreen('r2'));
+
+// プレビュー表(①②③④共通)のセルクリック(タップ)で、はみ出した全文を
+// クリックしたセルの右上にポップアップ表示する。
+// 個別セルへのリスナーだと再描画のたびに失われるため、documentに1つだけ委譲で登録する。
+document.addEventListener('click', e => {
+  const cell = e.target.closest('table.dataTable td, table.dataTable th');
+  if(!cell) return;
+  if(cell.scrollWidth > cell.clientWidth) showCellTextPopup(cell);
+
+  // ①日報入力チェックのみ: クリックした行を二重線でハイライトする(常に1行だけ)
+  const r4Table = cell.closest('table.r4Table');
+  if(r4Table && cell.tagName === 'TD'){
+    r4Table.querySelectorAll('tr.r4RowSelected').forEach(tr => tr.classList.remove('r4RowSelected'));
+    cell.closest('tr').classList.add('r4RowSelected');
+  }
+});
+
+google.script.run
+  .withSuccessHandler(onMasterData)
+  .withFailureHandler(onMasterDataError)
+  .getMasterData();
+
+google.script.run
+  .withSuccessHandler(onRowsData)
+  .withFailureHandler(onRowsError)
+  .getAllDailyReportRows();
+
+google.script.run
+  .withSuccessHandler(onCalendarData)
+  .withFailureHandler(onCalendarError)
+  .getCompanyCalendarData();
+
+google.script.run
+  .withSuccessHandler(onAbsenteeismData)
+  .withFailureHandler(onAbsenteeismError)
+  .getAbsenteeismData();
+
+buildMonthRadioPicker('r4-month', 'r4');
+
+// ブラウザを閉じずに再読み込みした場合、ロック解除・工場選択済みならホーム画面へ直行する
+if(sessionStorage.getItem('unlocked') === '1' && getDefaultFactory_()){
+  applyDefaultFactoryToAllScreens_();
+  updateHeaderFactoryLabels_();
+  showScreen('home');
+  initSyncPopup();
+}
+</script>
+</body>
+</html>
