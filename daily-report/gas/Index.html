@@ -348,6 +348,73 @@
 
   .screen{ display:none; }
   .screen.active{ display:block; }
+
+  /* ②有給等届けの確認: ホームボタン(淡い水色・黒文字) */
+  .homeBtn.homeBtnLeave{ background:#b3e0f0; color:#000; }
+  .homeBtn.homeBtnLeave:disabled:hover{
+    background:#b3e0f0; color:#000; transform:none; animation:none;
+    box-shadow:0 2px 8px rgba(0,0,0,.2);
+  }
+  .monthNavBtn{
+    flex:0 0 auto; width:28px; height:28px; padding:0; font-size:12px;
+    border:1px solid #999; border-radius:4px; background:#f5f5f5;
+  }
+  .monthNavBtn:disabled{ opacity:0.4; cursor:default; }
+  #r5-date{ align-items:center; flex-wrap:nowrap; }
+  #r5-date input[type=date]{ width:auto; flex:1; min-width:0; }
+
+  /* ②有給等届けの確認: 拠点ごとに別テーブルを左(本社)/中(夢前)/右(鳥取)で並べ、
+     拠点色(本社=青/夢前=オレンジ/鳥取=緑)で見出しを色分けする */
+  .r5Columns{ display:flex; gap:16px; align-items:flex-start; }
+  /* 拠点(本社/夢前/鳥取)ごとに見出し〜表の最終行までを1つの外枠(拠点色)で囲う */
+  .r5Col{ flex:1 1 0; min-width:0; border:2px solid transparent; border-radius:6px; padding:10px; }
+  .r5Col h4{ margin:0 0 6px; font-size:13px; }
+  .r5Col.r5Honsha{ border-color:#2a6fd6; }
+  .r5Col.r5Yumesaki{ border-color:#e67e22; }
+  .r5Col.r5Tottori{ border-color:#2a9d5c; }
+  .r5Col.r5Honsha h4{ color:#2a6fd6; }
+  .r5Col.r5Yumesaki h4{ color:#e67e22; }
+  .r5Col.r5Tottori h4{ color:#2a9d5c; }
+  .r5Col.r5Honsha table.dataTable th{ background:#2a6fd6; color:#fff; }
+  .r5Col.r5Yumesaki table.dataTable th{ background:#e67e22; color:#fff; }
+  .r5Col.r5Tottori table.dataTable th{ background:#2a9d5c; color:#fff; }
+  /* データ行(項目行=thは上記の拠点色のまま)は、奇数行=やや薄い拠点色、偶数行=さらに薄い拠点色 */
+  .r5Col.r5Honsha table.dataTable tbody tr:nth-child(odd) td{ background:rgba(42,111,214,.18); }
+  .r5Col.r5Honsha table.dataTable tbody tr:nth-child(even) td{ background:rgba(42,111,214,.08); }
+  .r5Col.r5Yumesaki table.dataTable tbody tr:nth-child(odd) td{ background:rgba(230,126,34,.18); }
+  .r5Col.r5Yumesaki table.dataTable tbody tr:nth-child(even) td{ background:rgba(230,126,34,.08); }
+  .r5Col.r5Tottori table.dataTable tbody tr:nth-child(odd) td{ background:rgba(42,157,92,.18); }
+  .r5Col.r5Tottori table.dataTable tbody tr:nth-child(even) td{ background:rgba(42,157,92,.08); }
+  table.dataTable.r5Table tbody tr{ cursor:pointer; }
+
+  /* ①②共通: セルクリック(タップ)の詳細ポップアップ */
+  .detailOverlay{
+    position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.35);
+    display:flex; align-items:center; justify-content:center;
+    opacity:0; pointer-events:none; transition:opacity .15s ease;
+  }
+  .detailOverlay.show{ opacity:1; pointer-events:auto; }
+  .detailCard{
+    background:#fff; border-radius:10px; padding:20px 24px; width:280px;
+    box-shadow:0 4px 20px rgba(0,0,0,.25);
+  }
+  .detailRow{
+    display:flex; justify-content:center; align-items:baseline; gap:12px;
+    padding:8px 0; border-bottom:1px solid #eee; font-size:13px;
+  }
+  .detailRow:last-of-type{ border-bottom:none; }
+  .detailRow.detailRowTotal{ font-size:15px; font-weight:700; }
+  /* 項目(ラベル)は左寄せ、内容(値)はその列内で中央揃え */
+  .detailLabel{ color:#777; font-weight:700; flex-shrink:0; width:78px; text-align:left; }
+  .detailRow > span:last-child{ flex-shrink:0; width:120px; text-align:center; }
+  .detailOkBtn{
+    margin-top:14px; width:100%; padding:8px 0; font-size:13px; font-weight:700;
+    border:none; border-radius:16px; background:#2a6fd6; color:#fff;
+  }
+  .detailOkBtn:hover{ background:#1f5bb8; }
+
+  /* ①②詳細ポップアップ表示中、どのセルの内容かひと目でわかるよう該当セルを緑色にする */
+  td.cellPopupActive{ background:#4caf50 !important; color:#fff !important; }
 </style>
 </head>
 <body>
@@ -384,9 +451,10 @@
     <div class="homeFactoryLabel" id="homeFactoryLabel"></div>
     <div class="homeButtons">
       <button class="homeBtn homeBtnCheck" disabled onclick="showScreen('report4')">① 日報入力チェック<span class="sub">未提出・重複・長時間勤務のチェック</span></button>
-      <button class="homeBtn" disabled onclick="showScreen('report1')">② 工事別 作業内容集計<span class="sub">1つの工事の作業別時間数を集計</span></button>
-      <button class="homeBtn" disabled onclick="showScreen('report2')">③ 個人別 作業内容集計<span class="sub">1人の社員の期間別・作業内容明細</span></button>
-      <button class="homeBtn" disabled onclick="showScreen('report3')">④ 20日〆集計<span class="sub">拠点別・工事×作業内容のクロス集計</span></button>
+      <button class="homeBtn homeBtnLeave" disabled onclick="showScreen('report5')">② 有給等届けの確認<span class="sub">指定日の届出の確認</span></button>
+      <button class="homeBtn" disabled onclick="showScreen('report1')">③ 工事別 作業内容集計<span class="sub">1つの工事の作業別時間数を集計</span></button>
+      <button class="homeBtn" disabled onclick="showScreen('report2')">④ 個人別 作業内容集計<span class="sub">1人の社員の期間別・作業内容明細</span></button>
+      <button class="homeBtn" disabled onclick="showScreen('report3')">⑤ 20日〆集計<span class="sub">拠点別・工事×作業内容のクロス集計</span></button>
     </div>
   </div>
 </div>
@@ -402,7 +470,7 @@
       <img class="appLogo" src="" data-logo>
       <span class="brandName">日報アプリより集計</span>
       <span class="pageDivider">｜</span>
-      <span class="pageTitle">② 工事別 作業内容集計</span>
+      <span class="pageTitle">③ 工事別 作業内容集計</span>
       <span class="pageDivider">｜</span>
       <span class="headerFactoryLabel" id="r1-headerFactory"></span>
     </div>
@@ -521,7 +589,7 @@
       <img class="appLogo" src="" data-logo>
       <span class="brandName">日報アプリより集計</span>
       <span class="pageDivider">｜</span>
-      <span class="pageTitle">③ 個人別 作業内容集計</span>
+      <span class="pageTitle">④ 個人別 作業内容集計</span>
       <span class="pageDivider">｜</span>
       <span class="headerFactoryLabel" id="r2-headerFactory"></span>
     </div>
@@ -640,7 +708,7 @@
       <img class="appLogo" src="" data-logo>
       <span class="brandName">日報アプリより集計</span>
       <span class="pageDivider">｜</span>
-      <span class="pageTitle">④ 20日〆集計</span>
+      <span class="pageTitle">⑤ 20日〆集計</span>
       <span class="pageDivider">｜</span>
       <span class="headerFactoryLabel" id="r3-headerFactory"></span>
     </div>
@@ -736,6 +804,42 @@
   </div>
 </div>
 
+<!-- 集計5: 有給等届けの確認 -->
+<div id="screen-report5" class="screen">
+  <div class="appHeader">
+    <div class="headerLeft">
+      <button class="backBtn" onclick="showScreen('home')">← ホーム</button>
+      <button class="resetBtn" onclick="resetScreen('r5')">リセット</button>
+    </div>
+    <div class="appHeaderBrand">
+      <img class="appLogo" src="" data-logo>
+      <span class="brandName">日報アプリより集計</span>
+      <span class="pageDivider">｜</span>
+      <span class="pageTitle">② 有給等届けの確認</span>
+    </div>
+    <button class="headerDownloadBtn" id="r5-downloadBtn" onclick="runReport5()">Excelでダウンロード</button>
+  </div>
+  <div class="app">
+    <div class="panel">
+      <div class="screenTitle">集計条件</div>
+      <div class="panelFields">
+
+      <div class="field">
+        <label>確認する日付</label>
+        <div class="checkGroup" id="r5-date"></div>
+      </div>
+
+      </div>
+    </div>
+    <div class="main">
+      <div class="previewPanel" id="r5-preview">
+        <h3>プレビュー(指定日の有給等届出一覧)</h3>
+        <div class="previewEmpty">読み込み中です…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <!-- ダミーの「情報収集中」進捗ポップアップ(実際の待ち時間とは連動しない演出用) -->
@@ -755,6 +859,26 @@
 <!-- プレビュー表ではみ出したセルをクリックした時、そのセルの右上に全文を表示する -->
 <div class="cellTextPopup" id="cellTextPopup"></div>
 
+<!-- ②有給等届けの確認: 行クリックで詳細を表示するポップアップ -->
+<div class="detailOverlay" id="r5DetailOverlay">
+  <div class="detailCard">
+    <div class="detailRow"><span class="detailLabel">日付</span><span id="r5Detail-date"></span></div>
+    <div class="detailRow"><span class="detailLabel">氏名</span><span id="r5Detail-name"></span></div>
+    <div class="detailRow"><span class="detailLabel">申請項目</span><span id="r5Detail-type"></span></div>
+    <div class="detailRow"><span class="detailLabel">事由</span><span id="r5Detail-reason"></span></div>
+    <div class="detailRow"><span class="detailLabel">直属上司</span><span id="r5Detail-supervisor"></span></div>
+    <button type="button" class="detailOkBtn" onclick="closeR5Detail()">OK</button>
+  </div>
+</div>
+
+<!-- ①日報入力チェック: セルクリック(タップ)で指定日の詳細を表示するポップアップ -->
+<div class="detailOverlay" id="r4DetailOverlay">
+  <div class="detailCard">
+    <div id="r4DetailBody"></div>
+    <button type="button" class="detailOkBtn" onclick="closeR4Detail()">OK</button>
+  </div>
+</div>
+
 <script>
 const FACTORY_ORDER = ['本社','夢前','鳥取'];
 let masterData = { constructions: [], workItems: [], operators: [] };
@@ -769,6 +893,9 @@ let CALENDAR_MAP = {};
 let ABSENTEEISM = [];
 let calendarLoaded = false;
 let absenteeismLoaded = false;
+let ABSENTEEISM_DETAIL = []; // ②有給等届けの確認用: {operatorNo, factory, dept, from, to, type, reason, supervisorNo}
+let OPERATOR_NAME = {}; // operatorNo -> 氏名
+let absenteeismDetailLoaded = false;
 let r4NgOnly = false;
 
 /* ===== 会社ロゴ ===== */
@@ -968,6 +1095,7 @@ function triggerRecompute(screenKey){
   if(screenKey === 'r1' || screenKey === 'r2') recomputeScreen(screenKey);
   else if(screenKey === 'r3') renderR3Preview();
   else if(screenKey === 'r4') withRecalcPopup(renderR4Preview);
+  else if(screenKey === 'r5') renderR5Preview();
 }
 
 function wireCheckboxes(container){
@@ -1178,29 +1306,13 @@ function selectFactory(loc){
   recordFactorySelection_(loc);
 }
 
-/* ===================== 「記録」シートへのログイン・滞在時間ログ ===================== */
-/* 工場選択の時点で1行追記し、返ってきた行番号をsessionStorageに覚えておく。
-   ブラウザを閉じる際にattemptRecordSessionDuration_でその行のC列(滞在時間)を
-   ベストエフォートで埋める。間に合わなくてもC列が空欄のままになるだけでよい。 */
+/* ===================== 「記録」シートへのログイン記録 ===================== */
+/* 工場選択の時点で1行記録する(日時・工場のみ。滞在時間(旧C列)の記録は廃止済み)。 */
 function recordFactorySelection_(loc){
-  sessionStorage.setItem('recordLoginAt', String(Date.now()));
   google.script.run
-    .withSuccessHandler(rowNumber => {
-      if(rowNumber) sessionStorage.setItem('recordRowNumber', String(rowNumber));
-    })
     .withFailureHandler(() => {})
     .logFactorySelection(loc);
 }
-
-function attemptRecordSessionDuration_(){
-  const loginAt = Number(sessionStorage.getItem('recordLoginAt'));
-  const rowNumber = Number(sessionStorage.getItem('recordRowNumber'));
-  if(!loginAt || !rowNumber) return;
-  const minutes = Math.max(0, Math.round((Date.now() - loginAt) / 60000));
-  google.script.run.updateSessionDuration(rowNumber, minutes);
-}
-window.addEventListener('pagehide', attemptRecordSessionDuration_);
-window.addEventListener('beforeunload', attemptRecordSessionDuration_);
 
 /* ===================== ダミーの「情報収集中」進捗ポップアップ ===================== */
 /* 実際の待ち時間とは連動しない演出用。show時刻を返し、hide側で最低10秒(10000ms)を保証する。
@@ -1298,10 +1410,12 @@ function buildLookupsFromMasterData(){
   masterData.constructions.forEach(c => { CONSTRUCTION_LABEL[c.id] = c.name; CONSTRUCTION_NO[c.id] = c.no; });
   WORK_META = {}; WORK_DEPT = {};
   masterData.workItems.forEach(w => { WORK_META[w.code] = w.name; WORK_DEPT[w.code] = w.dept; });
+  OPERATOR_NAME = {};
+  masterData.operators.forEach(o => { OPERATOR_NAME[o.no] = o.name; });
 }
 
 function maybeInitCascade(){
-  if(!masterDataLoaded || !rowsLoaded || !calendarLoaded || !absenteeismLoaded) return;
+  if(!masterDataLoaded || !rowsLoaded || !calendarLoaded || !absenteeismLoaded || !absenteeismDetailLoaded) return;
   const reveal = () => {
     buildLookupsFromMasterData();
     // ログインが先に完了していれば工場デフォルトを反映(未ログインならここは何もしない。
@@ -1314,6 +1428,7 @@ function maybeInitCascade(){
     recomputeScreen('r2');
     renderR3Preview();
     renderR4Preview();
+    renderR5Preview();
   };
   if(pendingInitialLoadPopup){
     pendingInitialLoadPopup = false;
@@ -1374,6 +1489,16 @@ function onAbsenteeismData(rows){
 
 function onAbsenteeismError(err){
   showToast('欠勤・休暇データの取得に失敗しました: ' + (err && err.message ? err.message : err));
+}
+
+function onAbsenteeismDetailData(rows){
+  ABSENTEEISM_DETAIL = rows || [];
+  absenteeismDetailLoaded = true;
+  maybeInitCascade();
+}
+
+function onAbsenteeismDetailError(err){
+  showToast('有給等届出データの取得に失敗しました: ' + (err && err.message ? err.message : err));
 }
 
 /* ===================== ①②のカスケード絞り込みエンジン ===================== */
@@ -1748,6 +1873,7 @@ function onDownloadReady(prefix, result){
     if(prefix === 'r2') renderR2Preview();
     if(prefix === 'r3') renderR3Preview();
     if(prefix === 'r4') renderR4Preview();
+    if(prefix === 'r5') renderR5Preview();
   };
   const startedAt = downloadPopupStart[prefix];
   delete downloadPopupStart[prefix];
@@ -1965,9 +2091,9 @@ function r4FlagClass(flag, holiday){
 
 function r4EmployeeRowHtml(r, dateHeaders){
   const tds = r.cells.map((c, i) =>
-    `<td class="num r4DateCell ${c.text ? 'r4LeaveText' : ''} ${r4FlagClass(c.flag, dateHeaders[i].holiday)}">${c.text ? escapeHtml(c.text) : (c.value === null ? '' : c.value)}</td>`
+    `<td class="num r4DateCell ${c.text ? 'r4LeaveText' : ''} ${r4FlagClass(c.flag, dateHeaders[i].holiday)}" data-date="${dateHeaders[i].date}">${c.text ? escapeHtml(c.text) : (c.value === null ? '' : c.value)}</td>`
   ).join('');
-  return `<tr><td class="r4NameCol">${escapeHtml(r.name)}</td>${tds}<td class="num r4TotalCol">${r.total ? r.total : ''}</td></tr>`;
+  return `<tr data-no="${r.no}"><td class="r4NameCol">${escapeHtml(r.name)}</td>${tds}<td class="num r4TotalCol">${r.total ? r.total : ''}</td></tr>`;
 }
 
 /* dateHeadersを渡し、休日の列だけr4HolidayColを付けて日付ごとに色分けする
@@ -2218,6 +2344,208 @@ function runReport4(){
     .generateReport4(params);
 }
 
+/* ①②共通: ポップアップ表示中、どのセルの内容かひと目でわかるよう該当セルを緑色にする。
+   新しいセルを選ぶ・ポップアップを閉じるたびに前回分をクリアする(常に1つだけ)。 */
+function clearCellPopupActive_(){
+  document.querySelectorAll('.cellPopupActive').forEach(el => el.classList.remove('cellPopupActive'));
+}
+
+/* 指定した社員No・日付の、届出(申請項目・事由。あれば)と工事内訳(工事名・作業内容・
+   作業時間を最大5組)・合計時間をまとめたポップアップ本文を組み立てる */
+function r4CellDetailHtml_(no, dateStr){
+  const name = OPERATOR_NAME[no] || no;
+  const leave = ABSENTEEISM_DETAIL.find(a => a.operatorNo === no && dateStr >= a.from && dateStr <= a.to);
+  const workRows = ALL_ROWS.filter(r => r.operatorNo === no && r.workDate === dateStr);
+  const total = workRows.reduce((s, r) => s + r.hours, 0);
+
+  let html = `<div class="detailRow"><span class="detailLabel">日付</span><span>${escapeHtml(dateStr)}</span></div>`;
+  html += `<div class="detailRow"><span class="detailLabel">氏名</span><span>${escapeHtml(name)}</span></div>`;
+  if(leave){
+    html += `<div class="detailRow"><span class="detailLabel">申請項目</span><span>${escapeHtml(leave.type)}</span></div>`;
+    if(leave.reason){
+      html += `<div class="detailRow"><span class="detailLabel">事由</span><span>${escapeHtml(leave.reason)}</span></div>`;
+    }
+  }
+  workRows.forEach((r, i) => {
+    const n = i + 1;
+    html += `<div class="detailRow"><span class="detailLabel">工事名${n}</span><span>${escapeHtml(CONSTRUCTION_LABEL[r.constructionId] || r.constructionId)}</span></div>`;
+    html += `<div class="detailRow"><span class="detailLabel">作業内容${n}</span><span>${escapeHtml(WORK_META[r.workCode] || r.workCode)}</span></div>`;
+    html += `<div class="detailRow"><span class="detailLabel">作業時間${n}</span><span>${r.hours}</span></div>`;
+  });
+  html += `<div class="detailRow detailRowTotal"><span class="detailLabel">合計時間</span><span>${total}</span></div>`;
+  return html;
+}
+
+function openR4Detail_(no, dateStr){
+  document.getElementById('r4DetailBody').innerHTML = r4CellDetailHtml_(no, dateStr);
+  document.getElementById('r4DetailOverlay').classList.add('show');
+}
+
+function closeR4Detail(){
+  document.getElementById('r4DetailOverlay').classList.remove('show');
+  clearCellPopupActive_();
+}
+
+/* ===================== ②有給等届けの確認 ===================== */
+
+function r5DateKey_(d){
+  return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function r5InputValue_(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+/* 会社カレンダー(CALENDAR_MAP)で休日の日は選択できないようにする。指定方向(direction:
+   +1/-1)へ、出勤日に着くまで1日ずつ飛ばす。CALENDAR_MAP未取得(ログイン前)の間は
+   全日「出勤」扱いになり実質何もしない。 */
+function skipR5Holidays_(d, direction){
+  let guard = 0;
+  while(CALENDAR_MAP[r5DateKey_(d)] === '休日' && guard < 366){
+    d.setDate(d.getDate() + direction);
+    guard++;
+  }
+  return d;
+}
+
+function todayDateStr_(){
+  return r5InputValue_(skipR5Holidays_(new Date(), 1));
+}
+
+/* 日付選択(カレンダー入力+前後日への◀▶ボタン)。初期値は本日(休日なら翌営業日)。 */
+function buildDayPicker(containerId, prefix){
+  const el = document.getElementById(containerId);
+  el.innerHTML =
+    `<button type="button" class="monthNavBtn" id="${prefix}-dayPrev" aria-label="前の日">◀</button>` +
+    `<input type="date" id="${prefix}-dateInput" value="${todayDateStr_()}">` +
+    `<button type="button" class="monthNavBtn" id="${prefix}-dayNext" aria-label="次の日">▶</button>`;
+
+  const input = document.getElementById(`${prefix}-dateInput`);
+  const prevBtn = document.getElementById(`${prefix}-dayPrev`);
+  const nextBtn = document.getElementById(`${prefix}-dayNext`);
+
+  const step = delta => {
+    const d = new Date(input.value);
+    d.setDate(d.getDate() + delta);
+    skipR5Holidays_(d, delta);
+    input.value = r5InputValue_(d);
+    triggerRecompute(prefix);
+  };
+
+  /* カレンダーから直接休日を選んだ場合も、未来方向へ飛ばして最初の出勤日にする */
+  input.addEventListener('change', () => {
+    const d = new Date(input.value);
+    skipR5Holidays_(d, 1);
+    input.value = r5InputValue_(d);
+    triggerRecompute(prefix);
+  });
+  prevBtn.addEventListener('click', () => step(-1));
+  nextBtn.addEventListener('click', () => step(1));
+}
+
+function getR5Date(){
+  const input = document.getElementById('r5-dateInput');
+  if(!input || !input.value) return null;
+  return input.value.split('-').join('/'); // 'yyyy/MM/dd'
+}
+
+function r5PeriodText_(r){
+  return r.from === r.to ? r.from : `${r.from}〜${r.to}`;
+}
+
+/* 拠点(本社/夢前/鳥取)ごとに分けて表示・出力するための色分け定義 */
+const R5_FACTORY_CLASS = { '本社': 'r5Honsha', '夢前': 'r5Yumesaki', '鳥取': 'r5Tottori' };
+
+/* 選択中の日付に該当する届出を、拠点(本社/夢前/鳥取)ごとにグルーピングして返す。
+   拠点・部署による絞り込みはせず常に全件対象(ユーザー指定)。 */
+function computeR5Groups_(){
+  const dateStr = getR5Date();
+  const groups = {};
+  FACTORY_ORDER.forEach(loc => { groups[loc] = []; });
+  if(!dateStr) return { dateStr: dateStr, groups: groups };
+
+  ABSENTEEISM_DETAIL
+    .filter(a => dateStr >= a.from && dateStr <= a.to)
+    .forEach(a => {
+      if(!groups[a.factory]) return;
+      groups[a.factory].push({
+        operatorNo: a.operatorNo,
+        name: OPERATOR_NAME[a.operatorNo] || a.operatorNo,
+        type: a.type,
+        reason: a.reason || '',
+        from: a.from,
+        to: a.to,
+        supervisorName: OPERATOR_NAME[a.supervisorNo] || a.supervisorNo || ''
+      });
+    });
+  FACTORY_ORDER.forEach(loc => { groups[loc].sort((a, b) => Number(a.operatorNo) - Number(b.operatorNo)); });
+
+  return { dateStr: dateStr, groups: groups };
+}
+
+/* 行クリックでの詳細ポップアップ用に、直近の描画内容をindexで引けるようにしておく */
+let R5_ROW_DATA = [];
+
+function r5ColumnHtml_(loc, rows){
+  const bodyRows = rows.map(r => {
+    const idx = R5_ROW_DATA.length;
+    R5_ROW_DATA.push(r);
+    return `<tr data-r5idx="${idx}"><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.type)}</td><td>${escapeHtml(r.reason)}</td><td>${r5PeriodText_(r)}</td></tr>`;
+  }).join('');
+  const tableHtml = rows.length
+    ? `<table class="dataTable r5Table"><thead><tr><th>氏名</th><th>申請項目</th><th>事由</th><th>日付</th></tr></thead><tbody>${bodyRows}</tbody></table>`
+    : `<div class="previewEmpty">該当する届出がありません</div>`;
+  return `<div class="r5Col ${R5_FACTORY_CLASS[loc]}"><h4>${escapeHtml(loc)}(${rows.length}件)</h4>${tableHtml}</div>`;
+}
+
+function renderR5Preview(){
+  const previewEl = document.getElementById('r5-preview');
+  if(!masterDataLoaded || !absenteeismDetailLoaded) return;
+  const { dateStr, groups } = computeR5Groups_();
+  R5_ROW_DATA = [];
+
+  if(!dateStr){
+    previewEl.innerHTML = `<h3>プレビュー(指定日の有給等届出一覧)</h3><div class="previewEmpty">日付を選択してください</div>`;
+    return;
+  }
+  const fileName = `有給等届け確認_${dateStr.split('/').join('-')}_${today_()}.xlsx`;
+  const columnsHtml = FACTORY_ORDER.map(loc => r5ColumnHtml_(loc, groups[loc])).join('');
+
+  previewEl.innerHTML = `
+    <div class="fileNamePreview">ファイル名: ${escapeHtml(fileName)}</div>
+    <h3>プレビュー(指定日の有給等届出一覧) — ${dateStr}</h3>
+    <div class="r5Columns">${columnsHtml}</div>`;
+  previewEl.querySelectorAll('.dataTable').forEach(applyCellTooltips);
+}
+
+function openR5Detail_(r){
+  document.getElementById('r5Detail-date').textContent = r5PeriodText_(r);
+  document.getElementById('r5Detail-name').textContent = r.name;
+  document.getElementById('r5Detail-type').textContent = r.type;
+  document.getElementById('r5Detail-reason').textContent = r.reason;
+  document.getElementById('r5Detail-supervisor').textContent = r.supervisorName;
+  document.getElementById('r5DetailOverlay').classList.add('show');
+}
+
+function closeR5Detail(){
+  document.getElementById('r5DetailOverlay').classList.remove('show');
+  clearCellPopupActive_();
+}
+
+function runReport5(){
+  const { dateStr, groups } = computeR5Groups_();
+  if(!dateStr) return;
+  const total = FACTORY_ORDER.reduce((s, loc) => s + groups[loc].length, 0);
+  if(total === 0){ showToast('該当する届出がありません'); return; }
+  const params = { groups: groups, date: dateStr };
+  setBusy('r5', true);
+  downloadPopupStart.r5 = showFakeProgress('情報収集中');
+  google.script.run
+    .withSuccessHandler(r => onDownloadReady('r5', r))
+    .withFailureHandler(e => onServerError('r5', e))
+    .generateReportLeave(params);
+}
+
 /* ===================== リセットボタン ===================== */
 
 /* 「指定:しない/する」トグルを「しない」に戻す(chipSearch/checkGroupのリセットとは別) */
@@ -2271,6 +2599,9 @@ function resetScreen(prefix){
     document.getElementById('r4-ngonly-btn').classList.remove('active');
     buildMonthRadioPicker('r4-month', 'r4'); // 締め月を最新(先頭)に戻す(内部でrenderR4Previewも走る)
     withRecalcPopup(renderR4Preview);
+  } else if(prefix === 'r5'){
+    buildDayPicker('r5-date', 'r5'); // 日付を初期値(本日)に戻す
+    renderR5Preview();
   }
 }
 
@@ -2369,12 +2700,54 @@ document.addEventListener('click', e => {
   if(!cell) return;
   if(cell.scrollWidth > cell.clientWidth) showCellTextPopup(cell);
 
-  // ①日報入力チェックのみ: クリックした行を二重線でハイライトする(常に1行だけ)
+  // ①日報入力チェックのみ: クリックした行を二重線でハイライトする(常に1行だけ)。
+  // ただし未来日(本日含む)で届出も無い、何も表示されていないセルは反応させない。
   const r4Table = cell.closest('table.r4Table');
   if(r4Table && cell.tagName === 'TD'){
-    r4Table.querySelectorAll('tr.r4RowSelected').forEach(tr => tr.classList.remove('r4RowSelected'));
-    cell.closest('tr').classList.add('r4RowSelected');
+    let ignore = false;
+    if(cell.dataset.date){
+      const empRow = cell.closest('tr[data-no]');
+      if(empRow){
+        const todayMidnight = new Date();
+        todayMidnight.setHours(0, 0, 0, 0);
+        const isFutureCell = !(new Date(cell.dataset.date.split('/').join('-')) < todayMidnight);
+        if(isFutureCell && !hasAnyLeave(empRow.dataset.no, cell.dataset.date)) ignore = true;
+      }
+    }
+    if(!ignore){
+      r4Table.querySelectorAll('tr.r4RowSelected').forEach(tr => tr.classList.remove('r4RowSelected'));
+      cell.closest('tr').classList.add('r4RowSelected');
+
+      // 社員の日付セル(data-date付き)クリックで指定日の詳細ポップアップを表示
+      if(cell.dataset.date){
+        const empRow = cell.closest('tr[data-no]');
+        if(empRow){
+          clearCellPopupActive_();
+          cell.classList.add('cellPopupActive');
+          openR4Detail_(empRow.dataset.no, cell.dataset.date);
+        }
+      }
+    }
   }
+
+  // ②有給等届けの確認のみ: 行クリックで詳細ポップアップを表示
+  const r5Row = cell.closest('table.r5Table tbody tr[data-r5idx]');
+  if(r5Row){
+    const r = R5_ROW_DATA[Number(r5Row.dataset.r5idx)];
+    if(r){
+      clearCellPopupActive_();
+      cell.classList.add('cellPopupActive');
+      openR5Detail_(r);
+    }
+  }
+});
+
+// ①②詳細ポップアップ: 背景(カード範囲外)をクリックしたら閉じる
+document.getElementById('r4DetailOverlay').addEventListener('click', e => {
+  if(e.target.id === 'r4DetailOverlay') closeR4Detail();
+});
+document.getElementById('r5DetailOverlay').addEventListener('click', e => {
+  if(e.target.id === 'r5DetailOverlay') closeR5Detail();
 });
 
 google.script.run
@@ -2397,7 +2770,13 @@ google.script.run
   .withFailureHandler(onAbsenteeismError)
   .getAbsenteeismData();
 
+google.script.run
+  .withSuccessHandler(onAbsenteeismDetailData)
+  .withFailureHandler(onAbsenteeismDetailError)
+  .getAbsenteeismDetailForClient();
+
 buildMonthRadioPicker('r4-month', 'r4');
+buildDayPicker('r5-date', 'r5');
 
 // ブラウザを閉じずに再読み込みした場合、ロック解除・工場選択済みならホーム画面へ直行する
 if(sessionStorage.getItem('unlocked') === '1' && getDefaultFactory_()){
