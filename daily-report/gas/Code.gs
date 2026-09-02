@@ -9,13 +9,11 @@
  *   A1:ファイル名  B1:ファイルID
  *   2行目以降にデータ。A/B列(DailyReportファイル参照)。
  * 「記録」シート:
- *   A1:日時  B1:工場  C1:滞在時間(分)
- *   パスワード入力後、工場選択の時点で1行追記されるログ(ダウンロード時
- *   ではない)。アクセス制御はパスワード方式(Googleアカウントの照合は
- *   しない)のため個人の特定はできず、選択された工場名をB列に記録する。
- *   C列(滞在時間)はブラウザを閉じる際にベストエフォートで追記する。
- *   ブラウザの仕様上必ず書き込めるとは限らないため、空欄のままでもよい
- *   (A列・B列さえ記録されていればよい)。
+ *   A1:日時  B1:工場
+ *   パスワード入力後、工場選択の時点で2行目(ヘッダー直下)に挿入されるログ
+ *   (ダウンロード時ではない)。既存の記録は下に押し出されるため、常に
+ *   最新の記録が上から並ぶ。アクセス制御はパスワード方式(Googleアカウント
+ *   の照合はしない)のため個人の特定はできず、選択された工場名をB列に記録する。
  */
 
 const DAILY_REPORT_SS_ID_FALLBACK = '1t2-KPP3NEfC-xW4yl5IbcI4dVuGilDnMbGWZN3H_t1U';
@@ -58,25 +56,17 @@ function getDailyReportSsId_() {
   return DAILY_REPORT_SS_ID_FALLBACK;
 }
 
-/* ===================== 「記録」シート(ログイン・滞在時間ログ) ===================== */
+/* ===================== 「記録」シート(ログイン記録) ===================== */
 
 /* パスワード入力後、工場選択の時点でクライアントから呼ばれる。
-   追記した行番号を返し、クライアントはこれを覚えておいてブラウザを
-   閉じる際にupdateSessionDuration_の行指定に使う。 */
+   「記録」シートの2行目(ヘッダー直下)に[日時, 工場]を挿入する。
+   既存の記録は下に押し出されるため、常に最新の記録が上から並ぶ。 */
 function logFactorySelection(factory) {
   const sheet = SpreadsheetApp.getActive().getSheetByName(RECORD_SHEET_NAME);
   if (!sheet) return null;
-  sheet.appendRow([new Date(), factory || '不明', '']);
-  return sheet.getLastRow();
-}
-
-/* ブラウザを閉じる直前、ベストエフォートでクライアントから呼ばれる。
-   間に合わず呼ばれなかった場合はC列は空欄のままになるが、それでよい。 */
-function updateSessionDuration(rowNumber, minutes) {
-  if (!rowNumber) return;
-  const sheet = SpreadsheetApp.getActive().getSheetByName(RECORD_SHEET_NAME);
-  if (!sheet) return;
-  sheet.getRange(rowNumber, 3).setValue(minutes);
+  sheet.insertRowBefore(2);
+  sheet.getRange(2, 1, 1, 2).setValues([[new Date(), factory || '不明']]);
+  return 2;
 }
 
 /* ===================== マスタ取得(クライアント初期表示用) ===================== */
