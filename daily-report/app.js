@@ -1435,7 +1435,8 @@ function computeR5Groups_(){
         type: a.type,
         reason: a.reason || '',
         from: a.from,
-        to: a.to
+        to: a.to,
+        supervisorName: OPERATOR_NAME[a.supervisorNo] || a.supervisorNo || ''
       });
     });
   FACTORY_ORDER.forEach(loc => { groups[loc].sort((a, b) => Number(a.operatorNo) - Number(b.operatorNo)); });
@@ -1447,10 +1448,17 @@ function r5PeriodText_(r){
   return r.from === r.to ? r.from : `${r.from}〜${r.to}`;
 }
 
+/* 行クリックでの詳細ポップアップ用に、直近の描画内容をindexで引けるようにしておく
+   (行データを直接HTML属性へ埋め込むと事由等の自由記述にクォートが含まれた場合に
+   壊れるため、配列参照(data-r5idx)で持たせる) */
+let R5_ROW_DATA = [];
+
 function r5ColumnHtml_(loc, rows){
-  const bodyRows = rows.map(r =>
-    `<tr><td>${r.name}</td><td>${r.type}</td><td>${r.reason}</td><td>${r5PeriodText_(r)}</td></tr>`
-  ).join('');
+  const bodyRows = rows.map(r => {
+    const idx = R5_ROW_DATA.length;
+    R5_ROW_DATA.push(r);
+    return `<tr data-r5idx="${idx}"><td>${r.name}</td><td>${r.type}</td><td>${r.reason}</td><td>${r5PeriodText_(r)}</td></tr>`;
+  }).join('');
   const tableHtml = rows.length
     ? `<table class="dataTable r5Table"><thead><tr><th>氏名</th><th>申請項目</th><th>事由</th><th>日付</th></tr></thead><tbody>${bodyRows}</tbody></table>`
     : `<div class="previewEmpty">該当する届出がありません</div>`;
@@ -1460,6 +1468,7 @@ function r5ColumnHtml_(loc, rows){
 function renderR5Preview(){
   const previewEl = document.getElementById('r5-preview');
   const { dateStr, groups } = computeR5Groups_();
+  R5_ROW_DATA = [];
 
   if(!dateStr){
     previewEl.innerHTML = `<h3>プレビュー(指定日の有給等届出一覧)</h3><div class="previewEmpty">日付を選択してください</div>`;
@@ -1473,6 +1482,20 @@ function renderR5Preview(){
     <h3>プレビュー(指定日の有給等届出一覧) — ${dateStr}</h3>
     <div class="r5Columns">${columnsHtml}</div>`;
   previewEl.querySelectorAll('.dataTable').forEach(applyCellTooltips);
+}
+
+/* 行クリックで詳細(日付・氏名・申請項目・事由・直属上司)をポップアップ表示 */
+function openR5Detail_(r){
+  document.getElementById('r5Detail-date').textContent = r5PeriodText_(r);
+  document.getElementById('r5Detail-name').textContent = r.name;
+  document.getElementById('r5Detail-type').textContent = r.type;
+  document.getElementById('r5Detail-reason').textContent = r.reason;
+  document.getElementById('r5Detail-supervisor').textContent = r.supervisorName;
+  document.getElementById('r5DetailOverlay').classList.add('show');
+}
+
+function closeR5Detail(){
+  document.getElementById('r5DetailOverlay').classList.remove('show');
 }
 
 /* ===================== リセットボタン ===================== */
@@ -1709,7 +1732,19 @@ document.addEventListener('click', e => {
       r4Table.querySelectorAll('tr.r4RowSelected').forEach(tr => tr.classList.remove('r4RowSelected'));
       cell.closest('tr').classList.add('r4RowSelected');
     }
+
+    // ②有給等届けの確認のみ: 行クリックで詳細ポップアップを表示
+    const r5Row = cell.closest('table.r5Table tbody tr[data-r5idx]');
+    if(r5Row){
+      const r = R5_ROW_DATA[Number(r5Row.dataset.r5idx)];
+      if(r) openR5Detail_(r);
+    }
   }
+});
+
+// ②詳細ポップアップ: 背景(カード範囲外)をクリックしたら閉じる
+document.getElementById('r5DetailOverlay').addEventListener('click', e => {
+  if(e.target.id === 'r5DetailOverlay') closeR5Detail();
 });
 
 buildPeriodPicker('r1-period','r1');

@@ -448,6 +448,18 @@
 <!-- プレビュー表ではみ出したセルをクリックした時、そのセルの右上に全文を表示する -->
 <div class="cellTextPopup" id="cellTextPopup"></div>
 
+<!-- ②有給等届けの確認: 行クリックで詳細を表示するポップアップ -->
+<div class="r5DetailOverlay" id="r5DetailOverlay">
+  <div class="r5DetailCard">
+    <div class="r5DetailRow"><span class="r5DetailLabel">日付</span><span id="r5Detail-date"></span></div>
+    <div class="r5DetailRow"><span class="r5DetailLabel">氏名</span><span id="r5Detail-name"></span></div>
+    <div class="r5DetailRow"><span class="r5DetailLabel">申請項目</span><span id="r5Detail-type"></span></div>
+    <div class="r5DetailRow"><span class="r5DetailLabel">事由</span><span id="r5Detail-reason"></span></div>
+    <div class="r5DetailRow"><span class="r5DetailLabel">直属上司</span><span id="r5Detail-supervisor"></span></div>
+    <button type="button" class="r5DetailOkBtn" onclick="closeR5Detail()">OK</button>
+  </div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>
