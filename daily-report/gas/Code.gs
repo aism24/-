@@ -1074,26 +1074,36 @@ function getAbsenteeismDetail_() {
   return result;
 }
 
-/* クライアント側で日付・拠点・部署による絞り込み・氏名突合まで済ませた行を
-   そのまま受け取り、Excel化するだけ(既存のgenerateReport1〜4と同じ設計方針)。 */
+/* クライアント側で日付による絞り込み・氏名突合・拠点別グルーピングまで済ませた
+   内容をそのまま受け取り、拠点(本社/夢前/鳥取)ごとに別シートでExcel化するだけ
+   (既存のgenerateReport1〜4と同じ設計方針)。拠点・部署による絞り込みは行わない
+   (ユーザー指定により、常に全件が対象)。 */
 function generateReportLeave(params) {
   const t0 = new Date();
-  const rows = params.rows || [];
+  const groups = params.groups || {};
   const dateStr = params.date || '';
   const fileName = '有給等届け確認_' + dateStr.split('/').join('-') + '_' + today_() + '.xlsx';
 
   const ss = SpreadsheetApp.create('tmp_' + fileName);
-  const sheet = ss.getSheets()[0];
-  sheet.setName('届出一覧');
+  let firstSheet = true;
+  const header = ['氏名', '申請項目', '事由', '日付'];
 
-  const header = ['氏名', '拠点', '部署', '申請項目', '自', '至', '事由'];
-  const dataRows = rows.map(function (r) {
-    return [r.name, r.factory, r.dept, r.type, r.from, r.to, r.reason || ''];
+  Object.keys(LOCATION_ORDER).sort(function (a, b) {
+    return LOCATION_ORDER[a] - LOCATION_ORDER[b];
+  }).forEach(function (loc) {
+    const rows = groups[loc] || [];
+    const sheet = firstSheet ? ss.getSheets()[0] : ss.insertSheet();
+    firstSheet = false;
+    sheet.setName(loc);
+
+    const dataRows = rows.map(function (r) {
+      const period = r.from === r.to ? r.from : (r.from + '〜' + r.to);
+      return [r.name, r.type, r.reason || '', period];
+    });
+    sheet.getRange(1, 1, 1, header.length).setValues([header]);
+    if (dataRows.length) sheet.getRange(2, 1, dataRows.length, header.length).setValues(dataRows);
+    styleSimpleTable_(sheet, header.length, dataRows.length);
   });
-
-  sheet.getRange(1, 1, 1, header.length).setValues([header]);
-  if (dataRows.length) sheet.getRange(2, 1, dataRows.length, header.length).setValues(dataRows);
-  styleSimpleTable_(sheet, header.length, dataRows.length);
 
   Logger.log('generateReportLeave: シート作成・書き込み完了 ' + (new Date() - t0) + 'ms');
   return exportAndCleanup_(ss, fileName, t0);

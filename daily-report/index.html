@@ -40,7 +40,7 @@
     <div class="homeFactoryLabel" id="homeFactoryLabel"></div>
     <div class="homeButtons">
       <button class="homeBtn homeBtnCheck" disabled onclick="showScreen('report4')">① 日報入力チェック<span class="sub">未提出・重複・長時間勤務のチェック</span></button>
-      <button class="homeBtn" disabled onclick="showScreen('report5')">② 有給等届けの確認<span class="sub">指定した日に提出されている有給等の届出を確認</span></button>
+      <button class="homeBtn homeBtnLeave" disabled onclick="showScreen('report5')">② 有給等届けの確認<span class="sub">指定日の届出の確認</span></button>
       <button class="homeBtn" disabled onclick="showScreen('report1')">③ 工事別 作業内容集計<span class="sub">1つの工事の作業別時間数を集計</span></button>
       <button class="homeBtn" disabled onclick="showScreen('report2')">④ 個人別 作業内容集計<span class="sub">1人の社員の期間別・作業内容明細</span></button>
       <button class="homeBtn" disabled onclick="showScreen('report3')">⑤ 20日〆集計<span class="sub">拠点別・工事×作業内容のクロス集計</span></button>
@@ -405,8 +405,6 @@
       <span class="brandName">日報全期間集計</span>
       <span class="pageDivider">｜</span>
       <span class="pageTitle">② 有給等届けの確認</span>
-      <span class="pageDivider">｜</span>
-      <span class="headerFactoryLabel" id="r5-headerFactory"></span>
     </div>
     <button class="headerDownloadBtn" onclick="downloadReport('r5')">Excelでダウンロード</button>
   </div>
@@ -418,23 +416,6 @@
       <div class="field">
         <label>確認する日付</label>
         <div class="checkGroup" id="r5-date"></div>
-      </div>
-
-      <div class="field">
-        <div class="checkGroupLabel">拠点(複数選択可)</div>
-        <div class="checkGroup" id="r5-locations">
-          <label class="checkBtn"><input type="checkbox" value="本社">本社</label>
-          <label class="checkBtn"><input type="checkbox" value="夢前">夢前</label>
-          <label class="checkBtn"><input type="checkbox" value="鳥取">鳥取</label>
-        </div>
-      </div>
-
-      <div class="field">
-        <div class="checkGroupLabel">部署(複数選択可)</div>
-        <div class="checkGroup" id="r5-depts">
-          <label class="checkBtn checked"><input type="checkbox" value="工場" checked>工場</label>
-          <label class="checkBtn checked"><input type="checkbox" value="設計管理" checked>事務</label>
-        </div>
       </div>
 
       </div>
