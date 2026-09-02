@@ -128,9 +128,21 @@ function loadTournament(afterLoad) {
     hideLoading();
     currentTournament = data;
     document.getElementById('tournamentTitle').innerText = data.name;
+    updateTabVisibility();
     if (afterLoad) afterLoad();
-    else renderCurrentTab();
+    else showTab(currentTab);
   }).catch(e => { hideLoading(); showStatus('エラー: ' + e.message); });
+}
+
+// チーム登録が済むまで「1日目」タブ、1日目の結果が出揃うまで「2日目」タブを非表示にする。
+// 非表示になったタブが選択中だった場合は、表示できる最後のタブに戻す。
+function updateTabVisibility() {
+  const day1Ready = currentTournament.day1.teamsFilled;
+  const day2Ready = currentTournament.day1.scoresComplete;
+  document.getElementById('tabBtn-day1').style.display = day1Ready ? '' : 'none';
+  document.getElementById('tabBtn-day2').style.display = day2Ready ? '' : 'none';
+  if (currentTab === 'day1' && !day1Ready) currentTab = 'teams';
+  if (currentTab === 'day2' && !day2Ready) currentTab = day1Ready ? 'day1' : 'teams';
 }
 
 function showTab(name) {
