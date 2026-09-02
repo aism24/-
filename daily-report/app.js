@@ -1769,20 +1769,33 @@ document.addEventListener('click', e => {
   if(cell){
     if(cell.scrollWidth > cell.clientWidth) showCellTextPopup(cell);
 
-    // ①日報入力チェックのみ: クリックした行を二重線でハイライトする(常に1行だけ)
+    // ①日報入力チェックのみ: クリックした行を二重線でハイライトする(常に1行だけ)。
+    // ただし未来日(本日含む)で届出も無い、何も表示されていないセルは反応させない。
     const r4Table = cell.closest('table.r4Table');
     if(r4Table && cell.tagName === 'TD'){
-      r4Table.querySelectorAll('tr.r4RowSelected').forEach(tr => tr.classList.remove('r4RowSelected'));
-      cell.closest('tr').classList.add('r4RowSelected');
-    }
+      let ignore = false;
+      if(cell.dataset.date){
+        const empRow = cell.closest('tr[data-no]');
+        if(empRow){
+          const todayMidnight = new Date();
+          todayMidnight.setHours(0, 0, 0, 0);
+          const isFutureCell = !(new Date(cell.dataset.date.split('/').join('-')) < todayMidnight);
+          if(isFutureCell && !hasAnyLeave(empRow.dataset.no, cell.dataset.date)) ignore = true;
+        }
+      }
+      if(!ignore){
+        r4Table.querySelectorAll('tr.r4RowSelected').forEach(tr => tr.classList.remove('r4RowSelected'));
+        cell.closest('tr').classList.add('r4RowSelected');
 
-    // ①日報入力チェックのみ: 社員の日付セル(data-date付き)クリックで指定日の詳細ポップアップを表示
-    if(r4Table && cell.tagName === 'TD' && cell.dataset.date){
-      const empRow = cell.closest('tr[data-no]');
-      if(empRow){
-        clearCellPopupActive_();
-        cell.classList.add('cellPopupActive');
-        openR4Detail_(empRow.dataset.no, cell.dataset.date);
+        // 社員の日付セル(data-date付き)クリックで指定日の詳細ポップアップを表示
+        if(cell.dataset.date){
+          const empRow = cell.closest('tr[data-no]');
+          if(empRow){
+            clearCellPopupActive_();
+            cell.classList.add('cellPopupActive');
+            openR4Detail_(empRow.dataset.no, cell.dataset.date);
+          }
+        }
       }
     }
 
