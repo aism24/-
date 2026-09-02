@@ -363,6 +363,13 @@ async function loadAllData(){
   updateHeaderFactoryLabels_();
   // MASTER.earliestArchiveYearが判明したので、締め月選択リストの下限を反映して作り直す
   buildMonthPicker('r4-month', 'r4');
+  // CALENDAR_MAPがここで判明するため、ログイン前に設定した初期値(本日)が
+  // 実は休日だった場合に備えて再チェックし、休日なら翌営業日へ進める
+  const r5Input = document.getElementById('r5-dateInput');
+  if(r5Input){
+    const d = skipR5Holidays_(new Date(r5Input.value), 1);
+    r5Input.value = r5InputValue_(d);
+  }
 
   recomputeScreen('r1');
   recomputeScreen('r2');
@@ -1344,12 +1351,31 @@ function updateR4HStuckState_(mainEl){
 
 /* ===================== ②有給等届けの確認 ===================== */
 
-function todayDateStr_(){
-  const d = new Date();
+function r5DateKey_(d){
+  return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function r5InputValue_(d){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-/* 日付選択(カレンダー入力+前後日への◀▶ボタン)。初期値は本日。 */
+/* 会社カレンダー(CALENDAR_MAP)で休日の日は選択できないようにする。指定方向(direction:
+   +1/-1)へ、出勤日に着くまで1日ずつ飛ばす。CALENDAR_MAP未取得(ログイン前)の間は
+   全日「出勤」扱いになり実質何もしない。 */
+function skipR5Holidays_(d, direction){
+  let guard = 0;
+  while(CALENDAR_MAP[r5DateKey_(d)] === '休日' && guard < 366){
+    d.setDate(d.getDate() + direction);
+    guard++;
+  }
+  return d;
+}
+
+function todayDateStr_(){
+  return r5InputValue_(skipR5Holidays_(new Date(), 1));
+}
+
+/* 日付選択(カレンダー入力+前後日への◀▶ボタン)。初期値は本日(休日なら翌営業日)。 */
 function buildDayPicker(containerId, prefix){
   const el = document.getElementById(containerId);
   el.innerHTML =
@@ -1364,11 +1390,18 @@ function buildDayPicker(containerId, prefix){
   const step = delta => {
     const d = new Date(input.value);
     d.setDate(d.getDate() + delta);
-    input.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    skipR5Holidays_(d, delta);
+    input.value = r5InputValue_(d);
     triggerRecompute(prefix);
   };
 
-  input.addEventListener('change', () => triggerRecompute(prefix));
+  /* カレンダーから直接休日を選んだ場合も、未来方向へ飛ばして最初の出勤日にする */
+  input.addEventListener('change', () => {
+    const d = new Date(input.value);
+    skipR5Holidays_(d, 1);
+    input.value = r5InputValue_(d);
+    triggerRecompute(prefix);
+  });
   prevBtn.addEventListener('click', () => step(-1));
   nextBtn.addEventListener('click', () => step(1));
 }
