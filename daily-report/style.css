@@ -254,7 +254,10 @@ table.dataTable.r5Table tbody tr{ cursor:pointer; }
 }
 .detailRow:last-of-type{ border-bottom:none; }
 .detailRow.detailRowTotal{ font-size:15px; font-weight:700; }
-.detailLabel{ color:#777; font-weight:700; flex-shrink:0; min-width:64px; text-align:right; }
+/* 項目(ラベル)は左寄せ、内容(値)はその列内で中央揃え。両方とも列幅を固定し、
+   行(ラベル+値のペア)全体を.detailRowのjustify-content:centerでカード内中央に揃える */
+.detailLabel{ color:#777; font-weight:700; flex-shrink:0; width:78px; text-align:left; }
+.detailRow > span:last-child{ flex-shrink:0; width:120px; text-align:center; }
 .detailOkBtn{
   margin-top:14px; width:100%; padding:8px 0; font-size:13px; font-weight:700;
   border:none; border-radius:16px; background:#2a6fd6; color:#fff;
