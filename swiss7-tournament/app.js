@@ -99,7 +99,8 @@ function createTournament() {
     nameEl.value = '';
     prefixEl.value = '';
     prefixManuallyEdited = false;
-    openTournament(data.prefix);
+    // 作成応答に大会データが同梱されているので、改めてgetTournamentを呼ばずに開く
+    openTournamentWithData(data.prefix, data.tournament);
   }).catch(e => { hideLoading(); errorEl.innerText = 'エラー: ' + e.message; });
 }
 
@@ -114,23 +115,43 @@ function deleteTournament(prefix) {
 
 /* ---- 大会画面 ---- */
 
-function openTournament(prefix) {
-  currentPrefix = prefix;
+function resetEditingState() {
   editingRows = { day1: new Set(), day2: new Set() };
   scoreDigitsState = {};
+}
+
+// 取得済みの大会データをそのまま画面に反映する（getTournamentを呼び直さない版）
+function applyTournament(data) {
+  currentTournament = data;
+  document.getElementById('tournamentTitle').innerText = data.name;
+  updateTabVisibility();
+}
+
+function openTournament(prefix) {
+  currentPrefix = prefix;
+  resetEditingState();
   document.getElementById('homeScreen').style.display = 'none';
   document.getElementById('tournamentApp').style.display = 'block';
   document.getElementById('tournamentTitle').innerText = '読み込み中…';
   loadTournament(() => showTab(currentTournament.day1.teamsFilled ? 'day1' : 'teams'));
 }
 
+// createTournamentの応答にすでに大会データが含まれている場合、
+// getTournamentを呼び直さずにそのまま大会画面を開く（往復回数の削減）
+function openTournamentWithData(prefix, data) {
+  currentPrefix = prefix;
+  resetEditingState();
+  document.getElementById('homeScreen').style.display = 'none';
+  document.getElementById('tournamentApp').style.display = 'block';
+  applyTournament(data);
+  showTab(currentTournament.day1.teamsFilled ? 'day1' : 'teams');
+}
+
 function loadTournament(afterLoad) {
   showLoading('読み取り中…');
   apiGet('getTournament', { prefix: currentPrefix }).then(data => {
     hideLoading();
-    currentTournament = data;
-    document.getElementById('tournamentTitle').innerText = data.name;
-    updateTabVisibility();
+    applyTournament(data);
     if (afterLoad) afterLoad();
     else showTab(currentTab);
   }).catch(e => { hideLoading(); showStatus('エラー: ' + e.message); });
@@ -185,10 +206,11 @@ function saveTeams() {
     seen.add(t);
   }
   showLoading('保存中…');
-  apiPost('setTeams', { prefix: currentPrefix, teams: teams }).then(msg => {
+  apiPost('setTeams', { prefix: currentPrefix, teams: teams }).then(result => {
     hideLoading();
-    showStatus(msg);
-    loadTournament(() => showTab('day1'));
+    showStatus(result.message);
+    applyTournament(result.tournament);
+    showTab('day1');
   }).catch(e => { hideLoading(); errorEl.innerText = 'エラー: ' + e.message; });
 }
 
@@ -356,23 +378,25 @@ function submitMatchScore(day, index) {
   const lightScore = scoreFromDigits(day, index, 'light');
   const darkScore = scoreFromDigits(day, index, 'dark');
   showLoading('保存中…');
-  apiPost('submitScore', { prefix: currentPrefix, day: day, matchIndex: index, lightScore: lightScore, darkScore: darkScore }).then(msg => {
+  apiPost('submitScore', { prefix: currentPrefix, day: day, matchIndex: index, lightScore: lightScore, darkScore: darkScore }).then(result => {
     hideLoading();
-    showStatus(msg);
+    showStatus(result.message);
     editingRows[day].delete(index);
     delete scoreDigitsState[scoreKey(day, index, 'light')];
     delete scoreDigitsState[scoreKey(day, index, 'dark')];
-    loadTournament();
+    applyTournament(result.tournament);
+    showTab(currentTab);
   }).catch(e => { hideLoading(); showStatus('エラー: ' + e.message); });
 }
 
 function createDay2Action() {
   if (!confirm('2日目の組み合わせを作成します。よろしいですか？')) return;
   showLoading('作成中…');
-  apiPost('createDay2', { prefix: currentPrefix }).then(msg => {
+  apiPost('createDay2', { prefix: currentPrefix }).then(result => {
     hideLoading();
-    showStatus(msg);
-    loadTournament(() => showTab('day2'));
+    showStatus(result.message);
+    applyTournament(result.tournament);
+    showTab('day2');
   }).catch(e => { hideLoading(); showStatus('エラー: ' + e.message); });
 }
 

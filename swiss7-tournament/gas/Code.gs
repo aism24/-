@@ -156,7 +156,9 @@ function createTournament(name, prefixInput) {
 
   setTournamentName_(day1Name, trimmedName);
 
-  return { prefix: prefix, name: trimmedName, day1Sheet: day1Name, day2Sheet: day2Name };
+  // 作成直後、フロントエンドが改めてgetTournamentを呼ばなくて済むよう、
+  // 大会データ（空の状態）もこの応答に含める（往復回数の削減）。
+  return { prefix: prefix, name: trimmedName, day1Sheet: day1Name, day2Sheet: day2Name, tournament: getTournament(prefix) };
 }
 
 /* ============ チーム登録 ============ */
@@ -169,7 +171,8 @@ function setTeams(prefix, teams) {
 
   const sheet = getSheetOrThrow_(sheetNameFor_(prefix, 'day1'));
   sheet.getRange(TEAM_RANGE).setValues(trimmed.map((t) => [t]));
-  return 'チームを登録しました';
+  // 保存後にフロントエンドが別途getTournamentを呼ばなくて済むよう、更新後のデータを一緒に返す
+  return { message: 'チームを登録しました', tournament: getTournament(prefix) };
 }
 
 /* ============ 対戦カード計算（共通） ============ */
@@ -199,10 +202,14 @@ function buildMatches_(teams, lightScores, darkScores) {
 }
 
 function readDaySheet_(sheet) {
-  const teams = sheet.getRange(TEAM_RANGE).getValues().map((r) => r[0]);
-  const lightScores = sheet.getRange(FIRST_MATCH_ROW, LIGHT_SCORE_COL, NUM_MATCHES, 1).getValues().map((r) => r[0]);
-  const darkScores = sheet.getRange(FIRST_MATCH_ROW, DARK_SCORE_COL, NUM_MATCHES, 1).getValues().map((r) => r[0]);
-  const rank = sheet.getRange(RANK_RANGE).getValues().map((r) => r[0]);
+  // B2:K18相当（チーム名・得点・順位）を1回のgetValues()でまとめて読み込み、
+  // 以降はメモリ上の配列から切り出す（getRange呼び出しを4回→1回に削減）。
+  const bulk = sheet.getRange(2, 2, FIRST_MATCH_ROW - 2 + NUM_MATCHES, 10).getValues();
+  const scoreOffset = FIRST_MATCH_ROW - 2;
+  const teams = bulk.slice(0, NUM_TEAMS).map((r) => r[0]); // B2:B8
+  const lightScores = bulk.slice(scoreOffset, scoreOffset + NUM_MATCHES).map((r) => r[1]); // C12:C18
+  const darkScores = bulk.slice(scoreOffset, scoreOffset + NUM_MATCHES).map((r) => r[3]); // E12:E18
+  const rank = bulk.slice(0, NUM_TEAMS).map((r) => r[9]); // K2:K8
   const teamsFilled = teams.every((t) => t !== '' && t !== null);
   const scoresComplete = lightScores.concat(darkScores).every((v) => v !== '' && v !== null);
   return {
@@ -246,9 +253,13 @@ function submitScore(prefix, day, matchIndex, lightScore, darkScore) {
   }
   const sheet = getSheetOrThrow_(sheetNameFor_(prefix, day));
 
-  const existingLight = sheet.getRange(FIRST_MATCH_ROW, LIGHT_SCORE_COL, NUM_MATCHES, 1).getValues().map((r) => r[0]);
-  const existingDark = sheet.getRange(FIRST_MATCH_ROW, DARK_SCORE_COL, NUM_MATCHES, 1).getValues().map((r) => r[0]);
-  const isRecorded = (i) => existingLight[i] !== '' && existingLight[i] !== null && existingDark[i] !== '' && existingDark[i] !== null;
+  // C:E列（淡得点・区切り・濃得点）を1回のgetValues()でまとめて読み込む
+  const numCols = DARK_SCORE_COL - LIGHT_SCORE_COL + 1;
+  const existing = sheet.getRange(FIRST_MATCH_ROW, LIGHT_SCORE_COL, NUM_MATCHES, numCols).getValues();
+  const isRecorded = (i) => {
+    const v = existing[i];
+    return v[0] !== '' && v[0] !== null && v[numCols - 1] !== '' && v[numCols - 1] !== null;
+  };
 
   // 新規入力（まだ未記録の試合）は、それより前の試合がすべて記録済みでないと登録できない。
   // 既に記録済みの試合を修正する場合（再編集）は、この順序チェックの対象外。
@@ -259,10 +270,12 @@ function submitScore(prefix, day, matchIndex, lightScore, darkScore) {
   }
 
   const row = FIRST_MATCH_ROW + idx;
-  sheet.getRange(row, LIGHT_SCORE_COL).setValue(Number(lightScore));
-  sheet.getRange(row, DARK_SCORE_COL).setValue(Number(darkScore));
-  SpreadsheetApp.flush();
-  return '記録しました';
+  const rowValues = existing[idx].slice(); // 区切り列（D列）は現在の値のまま書き戻す
+  rowValues[0] = Number(lightScore);
+  rowValues[numCols - 1] = Number(darkScore);
+  sheet.getRange(row, LIGHT_SCORE_COL, 1, numCols).setValues([rowValues]);
+  // 保存後にフロントエンドが別途getTournamentを呼ばなくて済むよう、更新後のデータを一緒に返す
+  return { message: '記録しました', tournament: getTournament(prefix) };
 }
 
 /* ============ ２日目作成（１日目の結果から自動組み合わせ） ============ */
@@ -274,8 +287,10 @@ function createDay2(prefix) {
   const s1 = getSheetOrThrow_(day1Name);
   const s2 = getSheetOrThrow_(day2Name);
 
-  const day1Teams = s1.getRange(TEAM_RANGE).getValues().map((r) => r[0]);
-  const rankedTeams = s1.getRange(RANK_RANGE).getValues().map((r) => r[0]);
+  // B2:B8（チーム名）とK2:K8（順位）をまとめて1回のgetValues()で読み込む
+  const bulk = s1.getRange(2, 2, NUM_TEAMS, 10).getValues();
+  const day1Teams = bulk.map((r) => r[0]);
+  const rankedTeams = bulk.map((r) => r[9]);
   for (let x = 0; x < rankedTeams.length; x++) {
     if (!rankedTeams[x]) throw new Error('1日目の順位が未確定です。全試合の結果を入力してから実行してください');
   }
@@ -320,7 +335,8 @@ function createDay2(prefix) {
   if (!best) throw new Error('制約を満たす組み合わせが見つかりませんでした');
 
   s2.getRange(TEAM_RANGE).setValues(best.map((t) => [t]));
-  return '2日目の対戦カードを作成しました';
+  // 保存後にフロントエンドが別途getTournamentを呼ばなくて済むよう、更新後のデータを一緒に返す
+  return { message: '2日目の対戦カードを作成しました', tournament: getTournament(prefix) };
 }
 
 /* ============ 大会削除（作成し直したい・テストデータの削除など） ============ */
@@ -342,8 +358,45 @@ function deleteTournament(prefix) {
 
 const PDF_NUM_COLS = 8;
 const PDF_HEADERS = ['試合', '淡チーム', '淡得点', '濃得点', '濃チーム', 'TO', '審判１', '審判２'];
+const PDF_RANK_HEADERS = ['順位', 'チーム', '勝数', '得点', '失点', '得失点'];
+const WIN_COLOR = '#ffd700'; // アプリ画面の勝利ハイライト（winCell）と同じ色
 
-// 大会名・対戦結果・順位・TO/審判まで全てを1枚に大きく中央揃えでまとめた、印刷用の一時シートを作る。
+// 得点が両方入力済みの試合から、チームごとの勝数・得点・失点・得失点を集計する。
+// 1試合も入力されていなければ空配列を返す（＝PDFの順位表を丸ごと省略する合図）。
+// 順位は「勝数→得失点」の2項目が同じチームは同順位（引き分け扱い）とし、
+// スプレッドシート側のK列にある行番号タイブレークは使わない。
+function computePdfStandings_(teams, matches) {
+  const anyRecorded = matches.some((m) =>
+    m.lightScore !== '' && m.lightScore !== null && m.darkScore !== '' && m.darkScore !== null);
+  if (!anyRecorded) return [];
+
+  const stats = {};
+  teams.forEach((t) => { stats[t] = { wins: 0, points: 0, allowed: 0 }; });
+  matches.forEach((m) => {
+    if (m.lightScore === '' || m.lightScore === null || m.darkScore === '' || m.darkScore === null) return;
+    const ls = Number(m.lightScore), ds = Number(m.darkScore);
+    if (stats[m.light]) { stats[m.light].points += ls; stats[m.light].allowed += ds; }
+    if (stats[m.dark]) { stats[m.dark].points += ds; stats[m.dark].allowed += ls; }
+    if (ls > ds) { if (stats[m.light]) stats[m.light].wins++; }
+    else if (ds > ls) { if (stats[m.dark]) stats[m.dark].wins++; }
+  });
+
+  const list = teams.map((t) => {
+    const s = stats[t];
+    return { team: t, wins: s.wins, points: s.points, allowed: s.allowed, diff: s.points - s.allowed };
+  });
+  list.sort((a, b) => b.wins - a.wins || b.diff - a.diff);
+
+  let rank = 0;
+  list.forEach((s, i) => {
+    if (i === 0 || s.wins !== list[i - 1].wins || s.diff !== list[i - 1].diff) rank = i + 1;
+    s.rank = rank;
+  });
+  return list;
+}
+
+// 大会名・対戦結果(勝ったチームの色付き)・順位(勝数/得点/失点/得失点入り)・TO/審判まで
+// 全てを1枚に大きく中央揃えでまとめた、印刷用の一時シートを作る。
 // テンプレートのシートをそのまま書き出すのではなく、この専用レイアウトを都度組み立てて破棄する。
 function buildPdfSheet_(prefix, day, tournamentName, dayData) {
   const ss = getSs();
@@ -357,43 +410,52 @@ function buildPdfSheet_(prefix, day, tournamentName, dayData) {
   tmp.setRowHeight(row, 56);
   row += 2;
 
-  tmp.getRange(row, 1, 1, PDF_HEADERS.length).setValues([PDF_HEADERS])
-    .setFontSize(14).setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle')
-    .setBackground('#e8e8e8').setBorder(true, true, true, true, true, true);
-  tmp.setRowHeight(row, 34);
-  row++;
+  // 対戦表（ヘッダー＋各試合行）をまとめて1回のsetValues()で書き込み、
+  // 罫線・フォント等の共通スタイルも表全体へ一括適用する。
+  const matchHeaderRow = row;
+  const matchTable = [PDF_HEADERS].concat(dayData.matches.map((m) => [
+    m.index + 1, m.light,
+    m.lightScore === '' || m.lightScore === null ? '' : m.lightScore,
+    m.darkScore === '' || m.darkScore === null ? '' : m.darkScore,
+    m.dark, m.to, m.referee1, m.referee2,
+  ]));
+  tmp.getRange(matchHeaderRow, 1, matchTable.length, PDF_NUM_COLS).setValues(matchTable)
+    .setFontSize(16).setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBorder(true, true, true, true, true, true);
+  tmp.getRange(matchHeaderRow, 1, 1, PDF_NUM_COLS)
+    .setFontSize(14).setFontWeight('bold').setBackground('#e8e8e8');
+  for (let i = 0; i < matchTable.length; i++) tmp.setRowHeight(matchHeaderRow + i, i === 0 ? 34 : 32);
 
-  dayData.matches.forEach((m) => {
-    const values = [[
-      m.index + 1, m.light,
-      m.lightScore === '' || m.lightScore === null ? '' : m.lightScore,
-      m.darkScore === '' || m.darkScore === null ? '' : m.darkScore,
-      m.dark, m.to, m.referee1, m.referee2,
-    ]];
-    tmp.getRange(row, 1, 1, PDF_NUM_COLS).setValues(values)
+  // 勝ったチーム側（チーム名・得点セル）を、アプリ画面と同じ色でハイライトする
+  dayData.matches.forEach((m, i) => {
+    if (m.lightScore === '' || m.lightScore === null || m.darkScore === '' || m.darkScore === null) return;
+    const ls = Number(m.lightScore), ds = Number(m.darkScore);
+    if (ls === ds) return;
+    const r = matchHeaderRow + 1 + i;
+    if (ls > ds) tmp.getRange(r, 2, 1, 2).setBackground(WIN_COLOR);
+    else tmp.getRange(r, 4, 1, 2).setBackground(WIN_COLOR);
+  });
+  row = matchHeaderRow + matchTable.length + 1;
+
+  // 順位表：1試合も結果が入っていない（大会開始前）状態では、丸ごと出力しない
+  const standings = computePdfStandings_(dayData.teams, dayData.matches);
+  if (standings.length) {
+    tmp.getRange(row, 1, 1, PDF_NUM_COLS).merge()
+      .setValue('順位').setFontSize(18).setFontWeight('bold').setHorizontalAlignment('center');
+    tmp.setRowHeight(row, 34);
+    row++;
+
+    const rankHeaderRow = row;
+    const rankTable = [PDF_RANK_HEADERS].concat(standings.map((s) =>
+      [s.rank + '位', s.team, s.wins, s.points, s.allowed, s.diff]));
+    tmp.getRange(rankHeaderRow, 1, rankTable.length, PDF_RANK_HEADERS.length).setValues(rankTable)
       .setFontSize(16).setHorizontalAlignment('center').setVerticalAlignment('middle')
       .setBorder(true, true, true, true, true, true);
-    tmp.setRowHeight(row, 32);
-    row++;
-  });
-  row += 1;
-
-  tmp.getRange(row, 1, 1, PDF_NUM_COLS).merge()
-    .setValue('順位').setFontSize(18).setFontWeight('bold').setHorizontalAlignment('center');
-  tmp.setRowHeight(row, 34);
-  row++;
-
-  dayData.rank.forEach((team, i) => {
-    if (!team) return;
-    tmp.getRange(row, 1, 1, 3).merge()
-      .setValue((i + 1) + '位').setFontSize(16).setFontWeight('bold')
-      .setHorizontalAlignment('center').setVerticalAlignment('middle').setBorder(true, true, true, true, true, true);
-    tmp.getRange(row, 4, 1, PDF_NUM_COLS - 3).merge()
-      .setValue(team).setFontSize(16)
-      .setHorizontalAlignment('center').setVerticalAlignment('middle').setBorder(true, true, true, true, true, true);
-    tmp.setRowHeight(row, 30);
-    row++;
-  });
+    tmp.getRange(rankHeaderRow, 1, 1, PDF_RANK_HEADERS.length)
+      .setFontSize(14).setFontWeight('bold').setBackground('#e8e8e8');
+    for (let i = 0; i < rankTable.length; i++) tmp.setRowHeight(rankHeaderRow + i, i === 0 ? 34 : 32);
+    row += rankTable.length;
+  }
 
   tmp.setColumnWidths(1, PDF_NUM_COLS, 95);
   tmp.setHiddenGridlines(true);
