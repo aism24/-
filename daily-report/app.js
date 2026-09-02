@@ -1349,6 +1349,12 @@ function updateR4HStuckState_(mainEl){
   if(backdropEl) backdropEl.style.transform = 'translateX(' + tx + ')';
 }
 
+/* ①②共通: ポップアップ表示中、どのセルの内容かひと目でわかるよう該当セルを緑色にする。
+   新しいセルを選ぶ・ポップアップを閉じるたびに前回分をクリアする(常に1つだけ)。 */
+function clearCellPopupActive_(){
+  document.querySelectorAll('.cellPopupActive').forEach(el => el.classList.remove('cellPopupActive'));
+}
+
 /* 指定した社員No・日付の、届出(申請項目・事由。あれば)と工事内訳(工事名・作業内容・
    作業時間を最大5組)・合計時間をまとめたポップアップ本文を組み立てる */
 function r4CellDetailHtml_(no, dateStr){
@@ -1382,6 +1388,7 @@ function openR4Detail_(no, dateStr){
 
 function closeR4Detail(){
   document.getElementById('r4DetailOverlay').classList.remove('show');
+  clearCellPopupActive_();
 }
 
 /* ===================== ②有給等届けの確認 ===================== */
@@ -1531,6 +1538,7 @@ function openR5Detail_(r){
 
 function closeR5Detail(){
   document.getElementById('r5DetailOverlay').classList.remove('show');
+  clearCellPopupActive_();
 }
 
 /* ===================== リセットボタン ===================== */
@@ -1771,14 +1779,22 @@ document.addEventListener('click', e => {
     // ①日報入力チェックのみ: 社員の日付セル(data-date付き)クリックで指定日の詳細ポップアップを表示
     if(r4Table && cell.tagName === 'TD' && cell.dataset.date){
       const empRow = cell.closest('tr[data-no]');
-      if(empRow) openR4Detail_(empRow.dataset.no, cell.dataset.date);
+      if(empRow){
+        clearCellPopupActive_();
+        cell.classList.add('cellPopupActive');
+        openR4Detail_(empRow.dataset.no, cell.dataset.date);
+      }
     }
 
     // ②有給等届けの確認のみ: 行クリックで詳細ポップアップを表示
     const r5Row = cell.closest('table.r5Table tbody tr[data-r5idx]');
     if(r5Row){
       const r = R5_ROW_DATA[Number(r5Row.dataset.r5idx)];
-      if(r) openR5Detail_(r);
+      if(r){
+        clearCellPopupActive_();
+        cell.classList.add('cellPopupActive');
+        openR5Detail_(r);
+      }
     }
   }
 });
