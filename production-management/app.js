@@ -7,6 +7,9 @@ Chart.register(ChartDataLabels); // 累積実績の折れ線上に数値を出�
 const SITES = ['本社', '夢前', '鳥取'];
 const SITE_CLASS = { 本社: 'honsha', 夢前: 'yumesaki', 鳥取: 'tottori' };
 const SITE_COLOR = { 本社: '#4da3ff', 夢前: '#ffb454', 鳥取: '#35c98b' };
+// 拠点を1つだけ選択している時、累積実績(実線)が累積目標ライン(破線)を下回っている
+// 区間だけ色を変えて警告するための赤(拠点カードの「平均生産重量」警告表示と同じ色)。
+const BELOW_TARGET_LINE_COLOR = '#ff2b2b';
 const PARTS = ['柱', '大梁', '小梁', '他'];
 // カレンダーが1年前の分まで用意されたので、期間セレクトも当月を含む過去12ヶ月分(1年)を選べるようにする。
 const PERIOD_OFFSETS = Array.from({ length: 12 }, function (_, i) { return -i || 0; });
@@ -560,6 +563,12 @@ function renderChart() {
     ? workdays.filter(function (d) { return parseDateKey(d) < today; }).length
     : workdays.length;
 
+  // 累積実績が累積目標ラインを下回っている区間を赤く塗る判定(下記cumActualDataset.segment)
+  // で、まだ実績が出ていないだけの未来日を「目標未達」扱いにしないための日付ごとのフラグ。
+  // 未来日は実績がその日以降ずっと横ばいのまま、目標だけ積み上がり続けるため、
+  // 除外しないと期間後半が全部赤くなってしまう。
+  const isFutureDate = dates.map(function (d) { return parseDateKey(d) > today; });
+
   const datasets = [];
   const cumStats = [];
   selected.forEach(function (site, siteIndex) {
@@ -606,7 +615,7 @@ function renderChart() {
         formatter: function (v) { return v.toFixed(1); },
       },
     });
-    datasets.push({
+    const cumActualDataset = {
       type: 'line', label: site + '(t)', data: cumActual,
       borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0,
       yAxisID: 'yCum', order: 1,
@@ -631,7 +640,23 @@ function renderChart() {
         font: { size: 10, weight: 'bold' },
         formatter: function (v) { return site + '　' + v.toFixed(1) + 't'; },
       },
-    });
+    };
+    // 拠点を1つだけ選択している時だけ、累積実績が累積目標ラインを下回っている区間の
+    // 実線を赤くする(複数拠点表示だと拠点ごとの赤が重なって見分けづらくなるため)。
+    // Chart.jsのsegment.borderColorは区間の両端(p0/p1)の値を見て線分ごとに色を決められる
+    // ので、両端のどちらかが(未来日を除いて)目標を下回っていればその区間全体を赤にする。
+    if (selected.length === 1) {
+      const belowTargetFlags = dates.map(function (d, i) {
+        return !isFutureDate[i] && cumActual[i] < cumTargetArr[i];
+      });
+      cumActualDataset.segment = {
+        borderColor: function (ctx) {
+          const isBelow = belowTargetFlags[ctx.p0DataIndex] || belowTargetFlags[ctx.p1DataIndex];
+          return isBelow ? BELOW_TARGET_LINE_COLOR : undefined;
+        },
+      };
+    }
+    datasets.push(cumActualDataset);
     datasets.push({
       type: 'line', label: site + ' 目標ライン(t)', data: cumTargetArr,
       borderColor: color, borderDash: [4, 3], borderWidth: 1, pointRadius: 0,
