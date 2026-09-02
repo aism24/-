@@ -607,13 +607,13 @@ function renderChart() {
       // 時は、各棒の上にその日の生産重量を数値で入れる(複数拠点表示だと拠点数×日数ぶん
       // 並んで見にくくなるため、1拠点表示に絞っている時だけ)。実績0の日は表示しない。
       // 画面表示は暗い背景・拠点色の棒の上でも読めるよう白の太字、PDF出力時は白背景・
-      // 黒一色の棒に合わせてchartColor(黒)のまま。ただしその日の重量が目標日産量以下
+      // 黒一色の棒に合わせてchartColor(黒)のまま。ただしその日の重量が目標日産量未満
       // だった日は、未達をひと目で分かるよう(累積実績の赤区間と同じ色で)テキストを赤にする。
       datalabels: {
         display: function (ctx) { return (isSitePdfExport || selected.length === 1) && ctx.dataset.data[ctx.dataIndex] > 0; },
         color: function (ctx) {
           const v = ctx.dataset.data[ctx.dataIndex];
-          if (target > 0 && v <= target) return BELOW_TARGET_LINE_COLOR;
+          if (target > 0 && v < target) return BELOW_TARGET_LINE_COLOR;
           return isSitePdfExport ? chartColor : '#ffffff';
         },
         align: 'top', anchor: 'end',
