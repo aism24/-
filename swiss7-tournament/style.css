@@ -1,4 +1,30 @@
 body { font-family: sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background:#000; color:#eee; }
+
+/* 背景を左右に歩く筋肉隆々のパンダ */
+#bgAnimalTrack {
+  position: fixed;
+  bottom: 10px;
+  left: 0;
+  width: 100%;
+  height: 64px;
+  pointer-events: none;
+  z-index: 1;
+  animation: pandaWalk 9s ease-in-out infinite alternate;
+}
+#bgAnimal {
+  display: inline-block;
+  font-size: 44px;
+  filter: drop-shadow(0 3px 5px rgba(0,0,0,0.7));
+  animation: pandaFlex 0.5s ease-in-out infinite;
+}
+@keyframes pandaWalk {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(calc(100vw - 64px)); }
+}
+@keyframes pandaFlex {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.1, 0.92); }
+}
 h1 { font-size: 18px; }
 h2 { font-size: 15px; margin-top: 0; color:#eee; }
 label { display: block; margin-top: 10px; font-size: 14px; }
