@@ -1,4 +1,4 @@
-# スイス7 大会運営アプリ：GAS × GitHub Pages 分離構成
+# TSBL大会運営（７チームVer）：GAS × GitHub Pages 分離構成
 
 7チーム・2日間のスイス7風トーナメントを、**複数の大会を名前で作成しながら**運営できるアプリです。
 `taikai-unei/`（24チーム版バスケ大会アプリ）と同じ構成（**GitHub Pagesでフロントエンド配信 + Google Apps ScriptでJSON API + スプレッドシートをデータストア**）を採用しています。
