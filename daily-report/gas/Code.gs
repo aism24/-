@@ -1068,7 +1068,8 @@ function getAbsenteeismDetail_() {
       from: formatDate_(from),
       to: formatDate_(to),
       type: type,
-      reason: r[7] || ''
+      reason: r[7] || '',
+      supervisorNo: String(r[10] || '')
     });
   }
   return result;
