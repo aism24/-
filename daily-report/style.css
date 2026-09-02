@@ -216,14 +216,25 @@ table.dataTable tr.r4RowSelected td:last-child{ border-right:3px double #2a6fd6;
 /* ②有給等届けの確認: 拠点ごとに別テーブルを左(本社)/中(夢前)/右(鳥取)で並べ、
    拠点色(本社=青/夢前=オレンジ/鳥取=緑)で見出しを色分けする */
 .r5Columns{ display:flex; gap:16px; align-items:flex-start; }
-.r5Col{ flex:1 1 0; min-width:0; }
+/* 拠点(本社/夢前/鳥取)ごとに見出し〜表の最終行までを1つの外枠(拠点色)で囲う */
+.r5Col{ flex:1 1 0; min-width:0; border:2px solid transparent; border-radius:6px; padding:10px; }
 .r5Col h4{ margin:0 0 6px; font-size:13px; }
+.r5Col.r5Honsha{ border-color:#2a6fd6; }
+.r5Col.r5Yumesaki{ border-color:#e67e22; }
+.r5Col.r5Tottori{ border-color:#2a9d5c; }
 .r5Col.r5Honsha h4{ color:#2a6fd6; }
 .r5Col.r5Yumesaki h4{ color:#e67e22; }
 .r5Col.r5Tottori h4{ color:#2a9d5c; }
 .r5Col.r5Honsha table.dataTable th{ background:#2a6fd6; color:#fff; }
 .r5Col.r5Yumesaki table.dataTable th{ background:#e67e22; color:#fff; }
 .r5Col.r5Tottori table.dataTable th{ background:#2a9d5c; color:#fff; }
+/* データ行(項目行=thは上記の拠点色のまま)は、奇数行=やや薄い拠点色、偶数行=さらに薄い拠点色 */
+.r5Col.r5Honsha table.dataTable tbody tr:nth-child(odd) td{ background:rgba(42,111,214,.18); }
+.r5Col.r5Honsha table.dataTable tbody tr:nth-child(even) td{ background:rgba(42,111,214,.08); }
+.r5Col.r5Yumesaki table.dataTable tbody tr:nth-child(odd) td{ background:rgba(230,126,34,.18); }
+.r5Col.r5Yumesaki table.dataTable tbody tr:nth-child(even) td{ background:rgba(230,126,34,.08); }
+.r5Col.r5Tottori table.dataTable tbody tr:nth-child(odd) td{ background:rgba(42,157,92,.18); }
+.r5Col.r5Tottori table.dataTable tbody tr:nth-child(even) td{ background:rgba(42,157,92,.08); }
 .monthNavBtn{
   flex:0 0 auto; width:28px; height:28px; padding:0; font-size:12px;
   border:1px solid #999; border-radius:4px; background:#f5f5f5;
