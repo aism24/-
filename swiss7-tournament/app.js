@@ -242,9 +242,14 @@ function createDay2Action() {
 
 function downloadPdf(day) {
   showLoading('作成中…');
-  apiPost('exportPdf', { prefix: currentPrefix, day: day }).then(url => {
+  apiPost('exportPdf', { prefix: currentPrefix, day: day }).then(data => {
     hideLoading();
-    document.getElementById(day + 'PdfLink').innerHTML = `<a class="pdfBtn" href="${url}" target="_blank">PDF表示</a>`;
+    const byteChars = atob(data.base64);
+    const byteNumbers = new Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    document.getElementById(day + 'PdfLink').innerHTML = `<a class="pdfBtn" href="${url}" target="_blank" download="${data.fileName}">PDF表示・ダウンロード</a>`;
     showStatus('作成しました');
   }).catch(e => { hideLoading(); showStatus('エラー: ' + e.message); });
 }
