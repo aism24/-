@@ -27,10 +27,17 @@ button{ font-family:inherit; cursor:pointer; }
 }
 .lockSubmitBtn{ width:160px; padding:12px 0; font-size:14px; }
 .updateLogLinkBtn{
-  width:160px; padding:6px 0; font-size:12px; font-weight:700;
-  border:1px solid #bbb; border-radius:14px; background:#fff; color:#666;
+  display:inline-block; margin:0 0 20px; padding:10px 26px;
+  font-size:24px; font-weight:700;
+  border:1px solid #e6cf00; border-radius:16px;
+  background:#ffe600; color:#ff1493;
+  animation:updateLogGlow 2.5s ease-in-out infinite;
 }
-.updateLogLinkBtn:hover{ background:#f2f2f2; }
+.updateLogLinkBtn:hover{ background:#fff066; }
+@keyframes updateLogGlow{
+  0%,100%{ box-shadow:0 0 4px 1px rgba(255,214,0,.4); opacity:.85; }
+  50%{ box-shadow:0 0 20px 7px rgba(255,214,0,.9); opacity:1; }
+}
 .lockPasswordPopup{
   position:fixed; top:32%; left:50%; transform:translate(-50%,-50%);
   background:#333; color:#fff; font-size:44px; font-weight:700;
