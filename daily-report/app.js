@@ -474,6 +474,65 @@ function submitLockPassword(){
   }
 }
 
+/* ===================== 更新記録(ロック画面) ===================== */
+/* 「情報」シートに登録されたPDF一覧をアプリ起動時ではなくボタン押下時に取得する
+   (起動時の初期化処理には組み込まないため、既存の起動シーケンスに影響しない)。 */
+function escapeHtml(str){
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function formatUpdateLogDate_(yyyymmdd){
+  if(!yyyymmdd || yyyymmdd.length !== 8) return '';
+  return yyyymmdd.slice(0,4) + '/' + yyyymmdd.slice(4,6) + '/' + yyyymmdd.slice(6,8);
+}
+
+async function showUpdateLogList(){
+  const overlay = document.getElementById('updateLogOverlay');
+  const listEl = document.getElementById('updateLogList');
+  listEl.innerHTML = '<div class="updateLogEmpty">読み込み中です…</div>';
+  overlay.classList.add('show');
+  try{
+    const logs = await apiPost('getUpdateLogs');
+    if(!logs || logs.length === 0){
+      listEl.innerHTML = '<div class="updateLogEmpty">更新記録はまだありません</div>';
+      return;
+    }
+    listEl.innerHTML = logs.map((log, i) =>
+      `<button type="button" class="updateLogRow" onclick="openUpdateLogPdf(${i})">`
+      + escapeHtml(log.name)
+      + `<span class="updateLogRowDate">${formatUpdateLogDate_(log.date)}</span>`
+      + `</button>`
+    ).join('');
+    updateLogCache_ = logs;
+  }catch(err){
+    listEl.innerHTML = '<div class="updateLogEmpty">読み込みに失敗しました</div>';
+    showToast(String(err && err.message || err));
+  }
+}
+
+function closeUpdateLogList(){
+  document.getElementById('updateLogOverlay').classList.remove('show');
+}
+
+let updateLogCache_ = [];
+
+function openUpdateLogPdf(index){
+  const log = updateLogCache_[index];
+  if(!log) return;
+  document.getElementById('pdfViewerTitle').textContent = log.name;
+  document.getElementById('pdfViewerFrame').src = log.fileId
+    ? `https://drive.google.com/file/d/${log.fileId}/preview`
+    : log.url;
+  document.getElementById('pdfViewerOverlay').classList.add('show');
+}
+
+function closePdfViewer(){
+  document.getElementById('pdfViewerOverlay').classList.remove('show');
+  document.getElementById('pdfViewerFrame').src = 'about:blank';
+}
+
 /* ===================== 工場選択画面(ログイン後のデフォルト工場) ===================== */
 function getDefaultFactory_(){
   return sessionStorage.getItem('defaultFactory') || '';

@@ -56,6 +56,37 @@ function getDailyReportSsId_() {
   return DAILY_REPORT_SS_ID_FALLBACK;
 }
 
+/* ===================== 「情報」シート(更新記録PDF) ===================== */
+/* 「情報」シートのうち、B列がURL(httpで始まる)の行を更新記録PDFとして扱う。
+   A2:B4のDailyReportファイル参照行(ファイルID形式、httpで始まらない)とは
+   B列の形式で区別されるため、classifyInfoFiles_・getDailyReportSsId_等の
+   既存ロジックには影響しない。ファイル名は"任意の名前_YYYYMMDD_連番.pdf"を想定。 */
+const UPDATE_LOG_NAME_RE_ = /^(.+?)_(\d{8})_(\d+)\.pdf$/i;
+
+function getUpdateLogsForClient() {
+  const rows = getInfoRows_();
+  const logs = [];
+  for (let i = 1; i < rows.length; i++) {
+    const name = String(rows[i][0] || '').trim();
+    const url = String(rows[i][1] || '').trim();
+    if (!name || !/^https?:\/\//i.test(url)) continue;
+    const m = name.match(UPDATE_LOG_NAME_RE_);
+    const fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    logs.push({
+      name: name,
+      url: url,
+      fileId: fileIdMatch ? fileIdMatch[1] : '',
+      date: m ? m[2] : '',
+      seq: m ? Number(m[3]) : 0
+    });
+  }
+  logs.sort(function (a, b) {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1; // 日付降順
+    return a.seq - b.seq; // 同日は連番昇順
+  });
+  return logs;
+}
+
 /* ===================== 「記録」シート(ログイン記録) ===================== */
 
 /* パスワード入力後、工場選択の時点でクライアントから呼ばれる。
@@ -1163,6 +1194,7 @@ function doPost(e) {
     if (action === 'generateReport4') return apiJsonOk_(generateReport4(params));
     if (action === 'generateReportLeave') return apiJsonOk_(generateReportLeave(params));
     if (action === 'logFactorySelection') return apiJsonOk_({ row: logFactorySelectionLocked_(params.factory) });
+    if (action === 'getUpdateLogs') return apiJsonOk_(getUpdateLogsForClient());
     return apiJsonErr_('不明なaction: ' + action);
   } catch (err) {
     return apiJsonErr_(String(err && err.message || err));

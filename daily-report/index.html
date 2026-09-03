@@ -16,6 +16,7 @@
       <div class="lockLabel">パスワードを入力してください</div>
       <input type="password" id="lock-input" class="lockInput" inputmode="numeric" maxlength="1" autocomplete="off" onkeydown="if(event.key==='Enter') submitLockPassword()">
       <button class="homeBtn lockSubmitBtn" onclick="submitLockPassword()">解除</button>
+      <button class="updateLogLinkBtn" onclick="showUpdateLogList()">更新記録</button>
     </div>
   </div>
   <div class="lockPasswordPopup" id="lockPasswordPopup"></div>
@@ -465,6 +466,24 @@
   <div class="detailCard">
     <div id="r4DetailBody"></div>
     <button type="button" class="detailOkBtn" onclick="closeR4Detail()">OK</button>
+  </div>
+</div>
+
+<!-- 更新記録: PDF一覧ポップアップ -->
+<div class="updateLogOverlay" id="updateLogOverlay">
+  <div class="updateLogCard">
+    <h3>更新記録</h3>
+    <div id="updateLogList"></div>
+    <button type="button" class="updateLogCloseBtn" onclick="closeUpdateLogList()">閉じる</button>
+  </div>
+</div>
+
+<!-- 更新記録: PDF埋め込み表示ポップアップ -->
+<div class="pdfViewerOverlay" id="pdfViewerOverlay">
+  <div class="pdfViewerCard">
+    <div class="pdfViewerTitle" id="pdfViewerTitle"></div>
+    <iframe class="pdfViewerFrame" id="pdfViewerFrame" src="about:blank"></iframe>
+    <button type="button" class="pdfViewerCloseBtn" onclick="closePdfViewer()">閉じる</button>
   </div>
 </div>
 
