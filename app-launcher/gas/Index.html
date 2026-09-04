@@ -141,10 +141,18 @@
        ボタン側に寄ってしまうため、左下方向に展開させる(基準点をボタン右上に
        する)。両端以外のボタンは展開先が隣のボタンと重なって見づらいため、展開
        の基準点をボタン中央にし、真下方向へ左右対称に展開させる。
-       .detailsは元々left/min-widthにより.cardを中心に前後14pxずつ対称な範囲を
-       占めているため、transform-originを変えるだけで、位置(top/left)はそのまま
-       に拡大方向だけを切り替えられる。 */
+       【注意】名前・説明が長い場合、.detailsの実際の幅はテキスト量に応じて伸び
+       る。デフォルト(右下方向)はleftを固定して右方向に伸びる作りなので、
+       transform-origin: top left(自身の幅の0%地点=left固定位置と常に一致)は
+       テキスト量に関わらずボタン左上を基準点にできる。左端ボタンをその鏡像
+       (右下方向ではなく左下方向)にするには、同様にrightを固定して左方向に伸び
+       る作りに変え、transform-origin: top right(自身の幅の100%地点=right固定
+       位置と常に一致)にする必要がある。leftを固定したままtransform-origin:
+       top rightだけ変えると、テキストが長いほど基準点がボタンから離れて中央
+       寄りに見える不具合になる(実機で発生)。 */
     .card:first-child:not(:last-child).active .details {
+      left: auto;
+      right: -14px;
       transform-origin: top right;
     }
     .card:not(:first-child):not(:last-child).active .details {
@@ -174,6 +182,8 @@
         pointer-events: none;
       }
       .card:first-child:not(:last-child):hover .details {
+        left: auto;
+        right: -14px;
         transform-origin: top right;
       }
       .card:not(:first-child):not(:last-child):hover .details {
