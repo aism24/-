@@ -124,6 +124,7 @@ function deleteTournament(prefix) {
 function resetEditingState() {
   editingRows = { day1: new Set(), day2: new Set() };
   scoreDigitsState = {};
+  pdfLinks = { day1: null, day2: null };
 }
 
 // 取得済みの大会データをそのまま画面に反映する（getTournamentを呼び直さない版）
@@ -198,6 +199,7 @@ function renderTeamsTab() {
     `<label class="teamRow"><span>チーム${i + 1}</span><input type="text" class="teamNameInput" data-index="${i}" value="${t || ''}"></label>`
   ).join('');
   document.getElementById('teamsError').innerText = '';
+  renderPdfHeaderActions(null);
 }
 
 function saveTeams() {
@@ -228,10 +230,12 @@ function renderDayTab(day) {
 
   if (!currentTournament.day1.teamsFilled) {
     container.innerHTML = '<p class="hint">先に「チーム登録」タブでチームを登録してください。</p>';
+    renderPdfHeaderActions(null);
     return;
   }
   if (day === 'day2' && !dayData.teamsFilled) {
     container.innerHTML = '<p class="hint">1日目の結果が出揃うと、ここで「2日目作成」ができるようになります。</p>';
+    renderPdfHeaderActions(null);
     return;
   }
 
@@ -258,16 +262,24 @@ function renderDayTab(day) {
       <button type="button" onclick="createDay2Action()">2日目作成</button></div>`;
   }
 
-  html += `<h2 style="margin-top:20px">速報PDF</h2>
-    <p class="hint">現時点の結果を1枚のPDFでダウンロードします（途中経過でも可）。</p>
-    <button type="button" onclick="downloadPdf('${day}')">PDFダウンロード</button>
-    <div id="${day}PdfLink"></div>`;
-
   container.innerHTML = html;
+  renderPdfHeaderActions(day);
+}
+
+// 大会名と同じ行に、現在表示中の日の「PDFダウンロード」「PDF表示」ボタンを描画する
+function renderPdfHeaderActions(day) {
+  const el = document.getElementById('pdfHeaderActions');
+  if (!day) { el.innerHTML = ''; return; }
+  const link = pdfLinks[day];
+  el.innerHTML = `<button type="button" class="btnPdfDownload" onclick="downloadPdf('${day}')">PDFダウンロード</button>` +
+    (link ? `<a class="pdfBtn" href="${link.url}" target="_blank" download="${link.fileName}">PDF表示</a>` : '');
 }
 
 // 試合ごとの「再編集」状態（保存済みの試合を再度入力可能にしたもの）。day1/day2で別管理。
 let editingRows = { day1: new Set(), day2: new Set() };
+
+// 生成済みPDFのリンク（大会名と同じ行のヘッダーに表示）。day1/day2で別管理。
+let pdfLinks = { day1: null, day2: null };
 
 /* ---- 得点入力：百/十/一の位をボタンで選ぶ3桁ピッカー（□□□-□□□） ---- */
 
@@ -284,8 +296,7 @@ function digitsFromScore(score) {
 
 function padScore(v) {
   const n = (v === '' || v === null || v === undefined) ? 0 : Number(v);
-  const padded = String(Math.max(0, Math.min(199, Math.floor(n) || 0))).padStart(3, '0');
-  return padded[0] === '0' ? padded.slice(1) : padded;
+  return String(Math.max(0, Math.min(199, Math.floor(n) || 0)));
 }
 
 function scoreFromDigits(day, index, side) {
@@ -416,7 +427,8 @@ function downloadPdf(day) {
     for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
     const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
-    document.getElementById(day + 'PdfLink').innerHTML = `<a class="pdfBtn" href="${url}" target="_blank" download="${data.fileName}">PDF表示・ダウンロード</a>`;
+    pdfLinks[day] = { url: url, fileName: data.fileName };
+    renderPdfHeaderActions(day);
     showStatus('作成しました');
   }).catch(e => { hideLoading(); showStatus('エラー: ' + e.message); });
 }

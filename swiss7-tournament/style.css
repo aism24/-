@@ -1,4 +1,16 @@
-body { font-family: sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background:#000; color:#eee; }
+body {
+  font-family: sans-serif;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+  color: #eee;
+  background-color: #000;
+  background-image: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), url('assets/fight-higher-poster.jpg');
+  background-size: cover;
+  background-position: top center;
+  background-repeat: no-repeat;
+  min-height: 100vh;
+}
 
 /* 背景を左右に歩く筋肉隆々のパンダ */
 #bgAnimalTrack {
@@ -9,7 +21,7 @@ body { font-family: sans-serif; max-width: 720px; margin: 0 auto; padding: 16px;
   height: 64px;
   pointer-events: none;
   z-index: 1;
-  animation: pandaWalk 9s ease-in-out infinite alternate;
+  animation: pandaWalk 18s ease-in-out infinite;
 }
 #bgAnimal {
   display: inline-block;
@@ -17,28 +29,36 @@ body { font-family: sans-serif; max-width: 720px; margin: 0 auto; padding: 16px;
   filter: drop-shadow(0 3px 5px rgba(0,0,0,0.7));
   animation: pandaFlex 0.5s ease-in-out infinite;
 }
+/* 右端まで一周したら向きを反転して左へ一周、を交互に繰り返す */
 @keyframes pandaWalk {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(calc(100vw - 64px)); }
+  0%     { transform: translateX(0) scaleX(1); }
+  50%    { transform: translateX(calc(100vw - 64px)) scaleX(1); }
+  50.01% { transform: translateX(calc(100vw - 64px)) scaleX(-1); }
+  100%   { transform: translateX(0) scaleX(-1); }
 }
 @keyframes pandaFlex {
   0%, 100% { transform: scale(1, 1); }
   50% { transform: scale(1.1, 0.92); }
 }
 h1 { font-size: 18px; }
+.titleRow { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; }
+.titleRow h1 { margin: 0; }
+.pdfHeaderActions { display: flex; align-items: center; gap: 8px; }
+.pdfHeaderActions button, .pdfHeaderActions a { margin-top: 0; padding: 8px 14px; font-size: 13px; min-height: auto; }
+.btnPdfDownload { background: #d6336c; color: #fff; border-color: #d6336c; }
 h2 { font-size: 15px; margin-top: 0; color:#eee; }
 label { display: block; margin-top: 10px; font-size: 14px; }
 input, button { padding: 8px; margin-top: 4px; font-size: 16px; box-sizing: border-box; background:#222; color:#eee; border:1px solid #555; border-radius:4px; }
 input { width: 100%; }
 button { margin-top: 14px; cursor: pointer; min-height: 44px; touch-action: manipulation; }
-.card { margin-top: 18px; padding: 14px; border: 1px solid #444; border-radius: 8px; }
+.card { margin-top: 18px; padding: 14px; border: 1px solid #444; border-radius: 8px; background: rgba(0,0,0,0.55); backdrop-filter: blur(2px); }
 .hint { font-size: 12px; color: #aaa; margin-top: 6px; }
 .errorText { color: #ff6666; font-weight: bold; min-height: 1.2em; margin-top: 10px; }
 #status { margin: 10px 0; font-weight: bold; min-height: 1.2em; color:#fff; }
 
 .backBtn { background: none; border: none; color: #8ab4f8; padding: 0; margin: 0 0 10px 0; text-decoration: underline; font-size: 13px; display: inline-block; min-height: auto; }
 
-.tabs { display: flex; gap: 6px; position: sticky; top: 0; background: #000; padding-bottom: 8px; }
+.tabs { display: flex; gap: 6px; position: sticky; top: 0; background: rgba(0,0,0,0.85); padding-bottom: 8px; }
 .tabs button { flex: 1; margin-top: 0; padding: 10px; border: 1px solid #555; background: #222; color: #eee; border-radius: 6px; }
 .tabs button.active { outline: 3px solid #fff; outline-offset: -3px; }
 .panel { display: none; }
