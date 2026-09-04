@@ -526,12 +526,15 @@ if(window.pdfjsLib){
 let pdfViewerDoc_ = null;
 let pdfViewerPage_ = 1;
 let pdfViewerPageCount_ = 0;
-let pdfViewerRendering_ = false;
+let pdfViewerPageCanvases_ = []; // 全ページ分を事前描画したoffscreen canvasのキャッシュ
+let pdfViewerLoading_ = false;
 
 /* PDFの実体(GAS側でDriveApp経由で取得したbase64バイト列)を取得し、pdf.jsで
-   1ページずつcanvasに描画する。Google Drive等の外部ビューア(スクロール式・
-   ポップアウトボタン等の外部UI付き)は使わず、アプリ画面全体に自前の
-   前/次/閉じるボタンだけで操作できるようにするための実装。 */
+   全ページを事前にcanvasへ描画してキャッシュしておく。前/次ボタンは
+   キャッシュ済みcanvasを描画するだけなので、押すたびにPDFを読み直す
+   ことなく即座にページが切り替わる。Google Drive等の外部ビューア
+   (スクロール式・ポップアウトボタン等の外部UI付き)は使わず、
+   アプリ画面全体に自前の前/次/閉じるボタンだけで操作できるようにする。 */
 async function openUpdateLogPdf(index){
   const log = updateLogCache_[index];
   if(!log || !log.fileId) return;
@@ -541,6 +544,7 @@ async function openUpdateLogPdf(index){
   document.getElementById('pdfViewerPrevBtn').disabled = true;
   document.getElementById('pdfViewerNextBtn').disabled = true;
   document.getElementById('pdfViewerOverlay').classList.add('show');
+  pdfViewerLoading_ = true;
   try{
     const data = await apiPost('getUpdateLogPdf', { fileId: log.fileId });
     const binary = atob(data.base64);
@@ -549,42 +553,60 @@ async function openUpdateLogPdf(index){
     pdfViewerDoc_ = await pdfjsLib.getDocument({ data: bytes }).promise;
     pdfViewerPageCount_ = pdfViewerDoc_.numPages;
     pdfViewerPage_ = 1;
-    await renderPdfViewerPage_();
+    await prerenderAllPdfViewerPages_();
+    pdfViewerLoading_ = false;
+    showPdfViewerPage_();
   }catch(err){
+    pdfViewerLoading_ = false;
     document.getElementById('pdfViewerPageLabel').textContent = '';
     showToast('PDFの読み込みに失敗しました: ' + String(err && err.message || err));
   }
 }
 
-async function renderPdfViewerPage_(){
-  if(!pdfViewerDoc_) return;
-  pdfViewerRendering_ = true;
-  const page = await pdfViewerDoc_.getPage(pdfViewerPage_);
+async function prerenderAllPdfViewerPages_(){
   const body = document.getElementById('pdfViewerBody');
-  const baseViewport = page.getViewport({ scale: 1 });
   const availWidth = Math.max(body.clientWidth - 32, 100);
-  const scale = availWidth / baseViewport.width;
-  const viewport = page.getViewport({ scale: scale > 0 ? scale : 1 });
+  const availHeight = Math.max(body.clientHeight - 32, 100);
+  const canvases = [];
+  for(let n = 1; n <= pdfViewerPageCount_; n++){
+    const page = await pdfViewerDoc_.getPage(n);
+    const baseViewport = page.getViewport({ scale: 1 });
+    // 縦・横どちらも画面に収まるよう小さい方の倍率に合わせる(スクロール不要の
+    // 全画面表示にするため。スマホ・タブレットでは縮小表示になるが、
+    // 見づらい場合は端末側のピンチズームで拡大してもらう想定)
+    const scale = Math.min(availWidth / baseViewport.width, availHeight / baseViewport.height);
+    const viewport = page.getViewport({ scale: scale > 0 ? scale : 1 });
+    const offscreen = document.createElement('canvas');
+    offscreen.width = viewport.width;
+    offscreen.height = viewport.height;
+    await page.render({ canvasContext: offscreen.getContext('2d'), viewport: viewport }).promise;
+    canvases.push(offscreen);
+  }
+  pdfViewerPageCanvases_ = canvases;
+}
+
+function showPdfViewerPage_(){
+  const cached = pdfViewerPageCanvases_[pdfViewerPage_ - 1];
+  if(!cached) return;
   const canvas = document.getElementById('pdfViewerCanvas');
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
-  pdfViewerRendering_ = false;
+  canvas.width = cached.width;
+  canvas.height = cached.height;
+  canvas.getContext('2d').drawImage(cached, 0, 0);
   document.getElementById('pdfViewerPageLabel').textContent = pdfViewerPage_ + ' / ' + pdfViewerPageCount_;
   document.getElementById('pdfViewerPrevBtn').disabled = pdfViewerPage_ <= 1;
   document.getElementById('pdfViewerNextBtn').disabled = pdfViewerPage_ >= pdfViewerPageCount_;
 }
 
 function pdfViewerPrevPage(){
-  if(pdfViewerRendering_ || pdfViewerPage_ <= 1) return;
+  if(pdfViewerLoading_ || pdfViewerPage_ <= 1) return;
   pdfViewerPage_--;
-  renderPdfViewerPage_();
+  showPdfViewerPage_();
 }
 
 function pdfViewerNextPage(){
-  if(pdfViewerRendering_ || pdfViewerPage_ >= pdfViewerPageCount_) return;
+  if(pdfViewerLoading_ || pdfViewerPage_ >= pdfViewerPageCount_) return;
   pdfViewerPage_++;
-  renderPdfViewerPage_();
+  showPdfViewerPage_();
 }
 
 function closePdfViewer(){
@@ -592,7 +614,21 @@ function closePdfViewer(){
   pdfViewerDoc_ = null;
   pdfViewerPageCount_ = 0;
   pdfViewerPage_ = 1;
+  pdfViewerPageCanvases_ = [];
 }
+
+// 画面回転・リサイズ時は事前描画キャッシュを作り直して全画面に収まるようにする
+let pdfViewerResizeTimer_ = null;
+window.addEventListener('resize', function(){
+  if(!pdfViewerDoc_ || pdfViewerLoading_) return;
+  clearTimeout(pdfViewerResizeTimer_);
+  pdfViewerResizeTimer_ = setTimeout(async function(){
+    pdfViewerLoading_ = true;
+    await prerenderAllPdfViewerPages_();
+    pdfViewerLoading_ = false;
+    showPdfViewerPage_();
+  }, 200);
+});
 
 /* ===================== 工場選択画面(ログイン後のデフォルト工場) ===================== */
 function getDefaultFactory_(){
