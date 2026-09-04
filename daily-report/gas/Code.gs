@@ -987,18 +987,24 @@ function writeArchiveCache_(cache) {
   file.setContent(JSON.stringify(cache));
 }
 
-/* アーカイブ1ファイル分のDailyReport行を、最終更新日時ベースのキャッシュ経由で取得する。 */
-function loadArchiveRowsCached_(fileId) {
-  const cache = readArchiveCache_();
+/* アーカイブ1ファイル分のDailyReport行を、最終更新日時ベースのキャッシュ経由で取得する。
+   【重要・パフォーマンス】cacheは呼び出し側(getMergedDailyReportRows_)で1回だけ
+   readArchiveCache_()した結果を渡してもらう(引数で受け取る)。以前はこの関数が
+   呼ばれるたびに内部でreadArchiveCache_()していたため、アーカイブ数ぶん(現状2個)
+   だけ18MB超のキャッシュファイル全体を毎回読み直してJSON.parseしており、
+   実測でgetAllDailyReportRows系の応答が約15秒かかる主因になっていた
+   (軽量なアクションは2〜3秒程度)。書き込みも同様に、変更があったアーカイブの
+   ぶんだけ呼び出し側で1回にまとめてwriteArchiveCache_する(こちらは1本化しても
+   ファイルは1つなので書き込み内容自体は変わらない)。 */
+function loadArchiveRowsCached_(fileId, cache) {
   const modifiedTime = DriveApp.getFileById(fileId).getLastUpdated().getTime();
   const cached = cache.files[fileId];
   if (cached && cached.modifiedTime === modifiedTime) {
-    return cached.rows;
+    return { rows: cached.rows, changed: false };
   }
   const rows = loadDailyReportRowsFromSs_(fileId);
   cache.files[fileId] = { modifiedTime: modifiedTime, rows: rows };
-  writeArchiveCache_(cache);
-  return rows;
+  return { rows: rows, changed: true };
 }
 
 /* ===================== 複数ファイルのマージ・重複排除 ===================== */
@@ -1013,11 +1019,15 @@ function getMergedDailyReportRows_() {
   const archives = info.archives; // startYear昇順
   let merged = [];
 
+  const cache = readArchiveCache_(); // 巨大なキャッシュファイルはこの1回だけ読む
+  let cacheChanged = false;
+
   for (let i = 0; i < archives.length; i++) {
     const archive = archives[i];
     const nextStart = (i + 1 < archives.length) ? archives[i + 1].start : null;
-    const rows = loadArchiveRowsCached_(archive.id);
-    rows.forEach(function (r) {
+    const result = loadArchiveRowsCached_(archive.id, cache);
+    if (result.changed) cacheChanged = true;
+    result.rows.forEach(function (r) {
       const d = toDate_(r.workDate);
       if (!d) return;
       if (d < archive.start || d > archive.end) return; // 担当区間外は無視(安全策)
@@ -1025,6 +1035,8 @@ function getMergedDailyReportRows_() {
       merged.push(r);
     });
   }
+
+  if (cacheChanged) writeArchiveCache_(cache); // 変更があった場合のみ1回だけ書き戻す
 
   merged = merged.concat(loadDailyReportRowsFromSs_(info.current.id));
   return merged;
