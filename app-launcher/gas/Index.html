@@ -136,6 +136,20 @@
       padding: 14px;
       box-shadow: 0 0 16px var(--accent), 0 6px 16px rgba(0, 0, 0, 0.5);
     }
+    /* 1行に複数ボタンある場合、右端のボタンは上記の右下方向への展開のままでよい
+       が、左端のボタンは右下方向に展開すると画面左端の分類ラベルから離れて隣の
+       ボタン側に寄ってしまうため、左下方向に展開させる(基準点をボタン右上に
+       する)。両端以外のボタンは展開先が隣のボタンと重なって見づらいため、展開
+       の基準点をボタン中央にし、真下方向へ左右対称に展開させる。
+       .detailsは元々left/min-widthにより.cardを中心に前後14pxずつ対称な範囲を
+       占めているため、transform-originを変えるだけで、位置(top/left)はそのまま
+       に拡大方向だけを切り替えられる。 */
+    .card:first-child:not(:last-child).active .details {
+      transform-origin: top right;
+    }
+    .card:not(:first-child):not(:last-child).active .details {
+      transform-origin: top center;
+    }
     @media (hover: hover) {
       .card:hover .details {
         display: block;
@@ -158,6 +172,12 @@
            かぶさっていても、実際にマウスが隣のボタンの実サイズ範囲に入った
            時点ですぐそちらのホバーに切り替わる。 */
         pointer-events: none;
+      }
+      .card:first-child:not(:last-child):hover .details {
+        transform-origin: top right;
+      }
+      .card:not(:first-child):not(:last-child):hover .details {
+        transform-origin: top center;
       }
     }
     .card:hover .details .icon,
