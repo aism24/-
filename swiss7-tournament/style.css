@@ -1,15 +1,18 @@
+html {
+  min-height: 100%;
+  background-color: #000;
+  background-image: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), url('assets/fight-higher-poster.jpg');
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
 body {
   font-family: sans-serif;
   max-width: 720px;
   margin: 0 auto;
   padding: 16px;
   color: #eee;
-  background-color: #000;
-  background-image: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), url('assets/fight-higher-poster.jpg');
-  background-size: cover;
-  background-position: top center;
-  background-repeat: no-repeat;
-  min-height: 100vh;
 }
 
 /* 背景を左右に歩く筋肉隆々のパンダ */
@@ -21,7 +24,7 @@ body {
   height: 64px;
   pointer-events: none;
   z-index: 1;
-  animation: pandaWalk 18s ease-in-out infinite;
+  animation: pandaWalk 12s linear infinite;
 }
 #bgAnimal {
   display: inline-block;
@@ -29,12 +32,10 @@ body {
   filter: drop-shadow(0 3px 5px rgba(0,0,0,0.7));
   animation: pandaFlex 0.5s ease-in-out infinite;
 }
-/* 右端まで一周したら向きを反転して左へ一周、を交互に繰り返す */
+/* 画面左外から右外へ歩き抜け、そのまま反対側から再登場してぐるり一周を繰り返す */
 @keyframes pandaWalk {
-  0%     { transform: translateX(0) scaleX(1); }
-  50%    { transform: translateX(calc(100vw - 64px)) scaleX(1); }
-  50.01% { transform: translateX(calc(100vw - 64px)) scaleX(-1); }
-  100%   { transform: translateX(0) scaleX(-1); }
+  0%   { transform: translateX(-80px); }
+  100% { transform: translateX(calc(100vw + 20px)); }
 }
 @keyframes pandaFlex {
   0%, 100% { transform: scale(1, 1); }
