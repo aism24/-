@@ -415,6 +415,86 @@
 
   /* ①②詳細ポップアップ表示中、どのセルの内容かひと目でわかるよう該当セルを緑色にする */
   td.cellPopupActive{ background:#4caf50 !important; color:#fff !important; }
+
+  /* ===== 更新記録(ロック画面) ===== */
+  .updateLogLinkBtn{
+    display:inline-block; position:relative; margin:0 0 20px; padding:10px 26px;
+    font-size:24px; font-weight:700;
+    border:1px solid #e6cf00; border-radius:16px;
+    background:#ffe600; color:#ff1493;
+    animation:updateLogGlow 2.5s ease-in-out infinite;
+    transition:transform .15s ease, background .15s ease;
+  }
+  .updateLogLinkBtn:hover{ background:#fff066; transform:scale(2); z-index:10; }
+  @keyframes updateLogGlow{
+    0%,100%{ box-shadow:0 0 4px 1px rgba(255,214,0,.4); opacity:.85; }
+    50%{ box-shadow:0 0 20px 7px rgba(255,214,0,.9); opacity:1; }
+  }
+
+  /* 更新記録: PDF一覧ポップアップ */
+  .updateLogOverlay{
+    position:fixed; inset:0; z-index:250; background:rgba(0,0,0,.45);
+    display:flex; align-items:center; justify-content:center;
+    opacity:0; pointer-events:none; transition:opacity .15s ease;
+  }
+  .updateLogOverlay.show{ opacity:1; pointer-events:auto; }
+  .updateLogCard{
+    background:#fff; border-radius:10px; padding:20px 24px; width:360px; max-width:90vw;
+    max-height:80vh; overflow-y:auto; box-shadow:0 4px 20px rgba(0,0,0,.3);
+  }
+  .updateLogCard h3{ margin:0 0 12px; font-size:16px; }
+  .updateLogEmpty{ color:#999; font-size:13px; text-align:center; padding:12px 0; }
+  .updateLogRow{
+    display:block; width:100%; text-align:left; padding:10px 12px; margin-bottom:8px;
+    border:1px solid #ddd; border-radius:8px; background:#fafafa; font-size:13px;
+    color:#2a6fd6; font-weight:700; font-family:inherit;
+  }
+  .updateLogRow:hover{ background:#eef4ff; }
+  .updateLogRowDate{ display:block; font-size:11px; color:#888; font-weight:400; margin-top:2px; }
+  .updateLogCloseBtn{
+    margin-top:6px; width:100%; padding:8px 0; font-size:13px; font-weight:700;
+    border:none; border-radius:16px; background:#2a6fd6; color:#fff;
+  }
+  .updateLogCloseBtn:hover{ background:#1f5bb8; }
+
+  /* 更新記録: PDF埋め込みビューア(アプリ画面全体・ボタンでページめくり) */
+  .pdfViewerOverlay{
+    position:fixed; inset:0; z-index:260; background:#eef0f2;
+    display:flex; flex-direction:column;
+    opacity:0; pointer-events:none; transition:opacity .15s ease;
+  }
+  .pdfViewerOverlay.show{ opacity:1; pointer-events:auto; }
+  .pdfViewerHeader{
+    flex:0 0 auto; height:56px; background:#2a6fd6; color:#fff;
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:0 18px; box-shadow:0 1px 4px rgba(0,0,0,.2);
+  }
+  .pdfViewerTitle{
+    font-size:14px; font-weight:700; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; flex:1 1 auto; min-width:0;
+  }
+  .pdfViewerNav{ display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+  .pdfViewerPageLabel{ font-size:13px; min-width:56px; text-align:center; }
+  .pdfViewerNavBtn{
+    padding:7px 14px; font-size:13px; font-weight:700; border:none;
+    border-radius:16px; background:rgba(255,255,255,.2); color:#fff;
+  }
+  .pdfViewerNavBtn:hover{ background:rgba(255,255,255,.35); }
+  .pdfViewerNavBtn:disabled{ opacity:.4; cursor:default; }
+  .pdfViewerNavBtn:disabled:hover{ background:rgba(255,255,255,.2); }
+  .pdfViewerNavBtn.pdfViewerCloseBtn{ background:#fff; color:#2a6fd6; }
+  .pdfViewerNavBtn.pdfViewerCloseBtn:hover{ background:#eaf1ff; }
+  .pdfViewerBody{
+    flex:1; min-height:0; overflow:auto; position:relative; display:flex;
+    align-items:center; justify-content:center; padding:16px;
+  }
+  .pdfViewerBody canvas{ background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.25); max-width:100%; }
+  .pdfViewerBody canvas.pdfViewerCanvasHidden{ display:none; }
+  .pdfViewerLoading{
+    display:none; padding:18px 36px; background:#fff; border-radius:10px;
+    box-shadow:0 4px 24px rgba(0,0,0,.3); font-size:15px; font-weight:700; color:#2a6fd6;
+  }
+  .pdfViewerLoading.show{ display:block; }
 </style>
 </head>
 <body>
@@ -423,6 +503,7 @@
 <div id="screen-lock" class="screen active">
   <div class="homeWrap">
     <div class="appTitle"><img class="homeLogo" src="" data-logo onclick="handleLockLogoTap()">日報アプリより集計</div>
+    <button class="updateLogLinkBtn" onclick="showUpdateLogList()">アプリの更新記録を確認</button>
     <div class="lockBox">
       <div class="lockLabel">パスワードを入力してください</div>
       <input type="password" id="lock-input" class="lockInput" inputmode="numeric" maxlength="1" autocomplete="off" onkeydown="if(event.key==='Enter') submitLockPassword()">
@@ -879,6 +960,33 @@
   </div>
 </div>
 
+<!-- 更新記録: PDF一覧ポップアップ -->
+<div class="updateLogOverlay" id="updateLogOverlay">
+  <div class="updateLogCard">
+    <h3>更新記録</h3>
+    <div id="updateLogList"></div>
+    <button type="button" class="updateLogCloseBtn" onclick="closeUpdateLogList()">閉じる</button>
+  </div>
+</div>
+
+<!-- 更新記録: PDF埋め込み表示(アプリ画面全体・ボタンでページめくり) -->
+<div class="pdfViewerOverlay" id="pdfViewerOverlay">
+  <div class="pdfViewerHeader">
+    <span class="pdfViewerTitle" id="pdfViewerTitle"></span>
+    <div class="pdfViewerNav">
+      <button type="button" class="pdfViewerNavBtn" id="pdfViewerPrevBtn" onclick="pdfViewerPrevPage()">← 前</button>
+      <span class="pdfViewerPageLabel" id="pdfViewerPageLabel"></span>
+      <button type="button" class="pdfViewerNavBtn" id="pdfViewerNextBtn" onclick="pdfViewerNextPage()">次 →</button>
+      <button type="button" class="pdfViewerNavBtn pdfViewerCloseBtn" onclick="closePdfViewer()">閉じる</button>
+    </div>
+  </div>
+  <div class="pdfViewerBody" id="pdfViewerBody">
+    <canvas id="pdfViewerCanvas"></canvas>
+    <div class="pdfViewerLoading" id="pdfViewerLoading">読み込み中…</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
 const FACTORY_ORDER = ['本社','夢前','鳥取'];
 let masterData = { constructions: [], workItems: [], operators: [] };
@@ -1239,6 +1347,183 @@ function submitLockPassword(){
     showToast('パスワードが違います');
   }
 }
+
+/* ===================== 更新記録(ロック画面) ===================== */
+/* 「情報」シートに登録されたPDF一覧をアプリ起動時ではなくボタン押下時に取得する
+   (起動時のmaybeInitCascadeには組み込まないため、既存の起動シーケンスに影響しない)。
+   一覧取得・PDF本体取得ともgoogle.script.run経由でCode.gs(B側と共有)の
+   getUpdateLogsForClient()/getUpdateLogPdfForClient()を直接呼ぶ(専用ラッパー不要)。 */
+let updateLogCache_ = [];
+
+function formatUpdateLogDate_(yyyymmdd){
+  if(!yyyymmdd || yyyymmdd.length !== 8) return '';
+  return yyyymmdd.slice(0,4) + '/' + yyyymmdd.slice(4,6) + '/' + yyyymmdd.slice(6,8);
+}
+
+function showUpdateLogList(){
+  const overlay = document.getElementById('updateLogOverlay');
+  const listEl = document.getElementById('updateLogList');
+  listEl.innerHTML = '<div class="updateLogEmpty">読み込み中です…</div>';
+  overlay.classList.add('show');
+  google.script.run
+    .withSuccessHandler(logs => {
+      if(!logs || logs.length === 0){
+        listEl.innerHTML = '<div class="updateLogEmpty">更新記録はまだありません</div>';
+        return;
+      }
+      listEl.innerHTML = logs.map((log, i) =>
+        `<button type="button" class="updateLogRow" onclick="openUpdateLogPdf(${i})">`
+        + escapeHtml(log.name)
+        + `<span class="updateLogRowDate">${formatUpdateLogDate_(log.date)}</span>`
+        + `</button>`
+      ).join('');
+      updateLogCache_ = logs;
+    })
+    .withFailureHandler(err => {
+      listEl.innerHTML = '<div class="updateLogEmpty">読み込みに失敗しました</div>';
+      showToast(String(err && err.message || err));
+    })
+    .getUpdateLogsForClient();
+}
+
+function closeUpdateLogList(){
+  document.getElementById('updateLogOverlay').classList.remove('show');
+}
+
+if(window.pdfjsLib){
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+let pdfViewerDoc_ = null;
+let pdfViewerPage_ = 1;
+let pdfViewerPageCount_ = 0;
+let pdfViewerPageCanvases_ = []; // 全ページ分を事前描画したoffscreen canvasのキャッシュ
+let pdfViewerLoading_ = false;
+
+/* PDFの実体(GAS側でDriveApp経由で取得したbase64バイト列)を取得し、pdf.jsで
+   全ページを事前にcanvasへ描画してキャッシュしておく。前/次ボタンは
+   キャッシュ済みcanvasを描画するだけなので、押すたびにPDFを読み直す
+   ことなく即座にページが切り替わる。Google Drive等の外部ビューア
+   (スクロール式・ポップアウトボタン等の外部UI付き)は使わず、
+   アプリ画面全体に自前の前/次/閉じるボタンだけで操作できるようにする。 */
+function openUpdateLogPdf(index){
+  const log = updateLogCache_[index];
+  if(!log || !log.fileId) return;
+  closeUpdateLogList();
+  document.getElementById('pdfViewerTitle').textContent = log.name;
+  document.getElementById('pdfViewerPageLabel').textContent = '';
+  document.getElementById('pdfViewerPrevBtn').disabled = true;
+  document.getElementById('pdfViewerNextBtn').disabled = true;
+  // 前回表示していたPDFがそのまま見えて紛らわしくならないよう、読み込み中は
+  // canvasを隠して画面中央に大きくポップアップを出す
+  document.getElementById('pdfViewerCanvas').classList.add('pdfViewerCanvasHidden');
+  const loadingEl = document.getElementById('pdfViewerLoading');
+  loadingEl.textContent = '読み込み中…';
+  loadingEl.classList.add('show');
+  document.getElementById('pdfViewerOverlay').classList.add('show');
+  pdfViewerLoading_ = true;
+  google.script.run
+    .withSuccessHandler(data => {
+      const binary = atob(data.base64);
+      const bytes = new Uint8Array(binary.length);
+      for(let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      pdfjsLib.getDocument({ data: bytes }).promise.then(doc => {
+        pdfViewerDoc_ = doc;
+        pdfViewerPageCount_ = doc.numPages;
+        pdfViewerPage_ = 1;
+        return prerenderAllPdfViewerPages_();
+      }).then(() => {
+        pdfViewerLoading_ = false;
+        loadingEl.classList.remove('show');
+        document.getElementById('pdfViewerCanvas').classList.remove('pdfViewerCanvasHidden');
+        showPdfViewerPage_();
+      }).catch(err => {
+        pdfViewerLoading_ = false;
+        loadingEl.textContent = '読み込みに失敗しました';
+        showToast('PDFの読み込みに失敗しました: ' + String(err && err.message || err));
+      });
+    })
+    .withFailureHandler(err => {
+      pdfViewerLoading_ = false;
+      loadingEl.textContent = '読み込みに失敗しました';
+      showToast('PDFの読み込みに失敗しました: ' + String(err && err.message || err));
+    })
+    .getUpdateLogPdfForClient(log.fileId);
+}
+
+function prerenderAllPdfViewerPages_(){
+  const body = document.getElementById('pdfViewerBody');
+  const availWidth = Math.max(body.clientWidth - 32, 100);
+  const availHeight = Math.max(body.clientHeight - 32, 100);
+  const canvases = [];
+  let chain = Promise.resolve();
+  for(let n = 1; n <= pdfViewerPageCount_; n++){
+    chain = chain.then(() => pdfViewerDoc_.getPage(n)).then(page => {
+      const baseViewport = page.getViewport({ scale: 1 });
+      // 縦・横どちらも画面に収まるよう小さい方の倍率に合わせる(スクロール不要の
+      // 全画面表示にするため。スマホ・タブレットでは縮小表示になるが、
+      // 見づらい場合は端末側のピンチズームで拡大してもらう想定)
+      const scale = Math.min(availWidth / baseViewport.width, availHeight / baseViewport.height);
+      const viewport = page.getViewport({ scale: scale > 0 ? scale : 1 });
+      const offscreen = document.createElement('canvas');
+      offscreen.width = viewport.width;
+      offscreen.height = viewport.height;
+      return page.render({ canvasContext: offscreen.getContext('2d'), viewport: viewport }).promise.then(() => {
+        canvases.push(offscreen);
+      });
+    });
+  }
+  return chain.then(() => { pdfViewerPageCanvases_ = canvases; });
+}
+
+function showPdfViewerPage_(){
+  const cached = pdfViewerPageCanvases_[pdfViewerPage_ - 1];
+  if(!cached) return;
+  const canvas = document.getElementById('pdfViewerCanvas');
+  canvas.width = cached.width;
+  canvas.height = cached.height;
+  canvas.getContext('2d').drawImage(cached, 0, 0);
+  document.getElementById('pdfViewerPageLabel').textContent = pdfViewerPage_ + ' / ' + pdfViewerPageCount_;
+  document.getElementById('pdfViewerPrevBtn').disabled = pdfViewerPage_ <= 1;
+  document.getElementById('pdfViewerNextBtn').disabled = pdfViewerPage_ >= pdfViewerPageCount_;
+}
+
+function pdfViewerPrevPage(){
+  if(pdfViewerLoading_ || pdfViewerPage_ <= 1) return;
+  pdfViewerPage_--;
+  showPdfViewerPage_();
+}
+
+function pdfViewerNextPage(){
+  if(pdfViewerLoading_ || pdfViewerPage_ >= pdfViewerPageCount_) return;
+  pdfViewerPage_++;
+  showPdfViewerPage_();
+}
+
+function closePdfViewer(){
+  document.getElementById('pdfViewerOverlay').classList.remove('show');
+  pdfViewerDoc_ = null;
+  pdfViewerPageCount_ = 0;
+  pdfViewerPage_ = 1;
+  pdfViewerPageCanvases_ = [];
+  // PDF一覧選択画面に戻る(一覧はopenUpdateLogPdfで閉じただけで内容は残っている)
+  document.getElementById('updateLogOverlay').classList.add('show');
+}
+
+// 画面回転・リサイズ時は事前描画キャッシュを作り直して全画面に収まるようにする
+let pdfViewerResizeTimer_ = null;
+window.addEventListener('resize', function(){
+  if(!pdfViewerDoc_ || pdfViewerLoading_) return;
+  clearTimeout(pdfViewerResizeTimer_);
+  pdfViewerResizeTimer_ = setTimeout(function(){
+    pdfViewerLoading_ = true;
+    prerenderAllPdfViewerPages_().then(function(){
+      pdfViewerLoading_ = false;
+      showPdfViewerPage_();
+    });
+  }, 200);
+});
 
 /* ===================== 工場選択画面(ログイン後のデフォルト工場) ===================== */
 function getDefaultFactory_(){
