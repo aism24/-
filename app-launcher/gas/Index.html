@@ -136,27 +136,23 @@
       padding: 14px;
       box-shadow: 0 0 16px var(--accent), 0 6px 16px rgba(0, 0, 0, 0.5);
     }
-    /* 1行に複数ボタンある場合、右端のボタンは上記の右下方向への展開のままでよい
-       が、左端のボタンは右下方向に展開すると画面左端の分類ラベルから離れて隣の
-       ボタン側に寄ってしまうため、左下方向に展開させる(基準点をボタン右上に
-       する)。両端以外のボタンは展開先が隣のボタンと重なって見づらいため、展開
-       の基準点をボタン中央にし、真下方向へ左右対称に展開させる。
+    /* 1行に複数ボタンある場合、右端のボタンだけ上記の右下方向への展開のままで
+       よい。それ以外のボタン(単独ボタンの行・左端・両端以外の中央)は、右下方向
+       に展開すると画面左端の分類ラベルや隣のボタン側に寄ってしまい見づらいため、
+       左下方向に展開させる(基準点をボタン右上にする)。
        【注意】名前・説明が長い場合、.detailsの実際の幅はテキスト量に応じて伸び
        る。デフォルト(右下方向)はleftを固定して右方向に伸びる作りなので、
        transform-origin: top left(自身の幅の0%地点=left固定位置と常に一致)は
-       テキスト量に関わらずボタン左上を基準点にできる。左端ボタンをその鏡像
-       (右下方向ではなく左下方向)にするには、同様にrightを固定して左方向に伸び
-       る作りに変え、transform-origin: top right(自身の幅の100%地点=right固定
-       位置と常に一致)にする必要がある。leftを固定したままtransform-origin:
-       top rightだけ変えると、テキストが長いほど基準点がボタンから離れて中央
-       寄りに見える不具合になる(実機で発生)。 */
-    .card:first-child:not(:last-child).active .details {
+       テキスト量に関わらずボタン左上を基準点にできる。左下方向にする場合も同様
+       に、rightを固定して左方向に伸びる作りに変え、transform-origin: top right
+       (自身の幅の100%地点=right固定位置と常に一致)にする必要がある。leftを
+       固定したままtransform-origin: top rightだけ変えると、テキストが長いほど
+       基準点がボタンから離れて中央寄りに見える不具合になる(実機で発生)。 */
+    .card:first-child.active .details,
+    .card:not(:last-child).active .details {
       left: auto;
       right: -14px;
       transform-origin: top right;
-    }
-    .card:not(:first-child):not(:last-child).active .details {
-      transform-origin: top center;
     }
     @media (hover: hover) {
       .card:hover .details {
@@ -181,13 +177,11 @@
            時点ですぐそちらのホバーに切り替わる。 */
         pointer-events: none;
       }
-      .card:first-child:not(:last-child):hover .details {
+      .card:first-child:hover .details,
+      .card:not(:last-child):hover .details {
         left: auto;
         right: -14px;
         transform-origin: top right;
-      }
-      .card:not(:first-child):not(:last-child):hover .details {
-        transform-origin: top center;
       }
     }
     .card:hover .details .icon,
