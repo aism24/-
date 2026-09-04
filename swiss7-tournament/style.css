@@ -64,6 +64,10 @@ td.winCell { background: #ffd700; color: #000; font-weight: bold; }
 .tournamentListItem button { margin-top: 0; }
 .tournamentListItem > span:last-child { display: flex; gap: 8px; }
 
+.btnCreate { background: #2e7d32; color: #fff; border-color: #2e7d32; }
+.btnOpen { background: #1565c0; color: #fff; border-color: #1565c0; }
+.btnDelete { background: #c62828; color: #fff; border-color: #c62828; }
+
 #day2Bar { margin: 10px 0; padding: 12px; background: #4a3b00; border: 1px solid #ffc107; border-radius: 6px; }
 #day2Bar p { margin: 0 0 8px 0; font-size: 13px; color: #ffe9a8; }
 #day2Bar button { margin-top: 0; background: #e67700; color: #fff; border: none; border-radius: 6px; }
