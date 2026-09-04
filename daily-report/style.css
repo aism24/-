@@ -27,13 +27,14 @@ button{ font-family:inherit; cursor:pointer; }
 }
 .lockSubmitBtn{ width:160px; padding:12px 0; font-size:14px; }
 .updateLogLinkBtn{
-  display:inline-block; margin:0 0 20px; padding:10px 26px;
+  display:inline-block; position:relative; margin:0 0 20px; padding:10px 26px;
   font-size:24px; font-weight:700;
   border:1px solid #e6cf00; border-radius:16px;
   background:#ffe600; color:#ff1493;
   animation:updateLogGlow 2.5s ease-in-out infinite;
+  transition:transform .15s ease, background .15s ease;
 }
-.updateLogLinkBtn:hover{ background:#fff066; }
+.updateLogLinkBtn:hover{ background:#fff066; transform:scale(2); z-index:10; }
 @keyframes updateLogGlow{
   0%,100%{ box-shadow:0 0 4px 1px rgba(255,214,0,.4); opacity:.85; }
   50%{ box-shadow:0 0 20px 7px rgba(255,214,0,.9); opacity:1; }
