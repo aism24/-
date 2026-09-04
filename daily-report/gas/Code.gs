@@ -87,6 +87,19 @@ function getUpdateLogsForClient() {
   return logs;
 }
 
+/* 更新記録PDFの実体をbase64で返す(クライアントはpdf.jsでcanvas描画する)。
+   Google Driveの埋め込みビューア(スクロール式・外部の操作ボタン付き)を使わず、
+   アプリ画面全体・自前の前/次/閉じるボタンだけで操作できるようにするための実装。
+   DriveAppはスクリプト所有者のDrive全体にアクセスできてしまうため、
+   「情報」シートに登録済みの更新記録PDFのfileIdであることを必ず確認してから
+   読み込む(任意のファイルを取得できるプロキシにしないためのガード)。 */
+function getUpdateLogPdfForClient(fileId) {
+  const allowed = getUpdateLogsForClient().some(function (log) { return log.fileId === fileId; });
+  if (!allowed) throw new Error('許可されていないファイルです');
+  const blob = DriveApp.getFileById(fileId).getBlob();
+  return { base64: Utilities.base64Encode(blob.getBytes()) };
+}
+
 /* ===================== 「記録」シート(ログイン記録) ===================== */
 
 /* パスワード入力後、工場選択の時点でクライアントから呼ばれる。
@@ -1195,6 +1208,7 @@ function doPost(e) {
     if (action === 'generateReportLeave') return apiJsonOk_(generateReportLeave(params));
     if (action === 'logFactorySelection') return apiJsonOk_({ row: logFactorySelectionLocked_(params.factory) });
     if (action === 'getUpdateLogs') return apiJsonOk_(getUpdateLogsForClient());
+    if (action === 'getUpdateLogPdf') return apiJsonOk_(getUpdateLogPdfForClient(params.fileId));
     return apiJsonErr_('不明なaction: ' + action);
   } catch (err) {
     return apiJsonErr_(String(err && err.message || err));

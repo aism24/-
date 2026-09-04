@@ -478,15 +478,23 @@
   </div>
 </div>
 
-<!-- 更新記録: PDF埋め込み表示ポップアップ -->
+<!-- 更新記録: PDF埋め込み表示(アプリ画面全体・ボタンでページめくり) -->
 <div class="pdfViewerOverlay" id="pdfViewerOverlay">
-  <div class="pdfViewerCard">
-    <div class="pdfViewerTitle" id="pdfViewerTitle"></div>
-    <iframe class="pdfViewerFrame" id="pdfViewerFrame" src="about:blank"></iframe>
-    <button type="button" class="pdfViewerCloseBtn" onclick="closePdfViewer()">閉じる</button>
+  <div class="pdfViewerHeader">
+    <span class="pdfViewerTitle" id="pdfViewerTitle"></span>
+    <div class="pdfViewerNav">
+      <button type="button" class="pdfViewerNavBtn" id="pdfViewerPrevBtn" onclick="pdfViewerPrevPage()">← 前</button>
+      <span class="pdfViewerPageLabel" id="pdfViewerPageLabel"></span>
+      <button type="button" class="pdfViewerNavBtn" id="pdfViewerNextBtn" onclick="pdfViewerNextPage()">次 →</button>
+      <button type="button" class="pdfViewerNavBtn pdfViewerCloseBtn" onclick="closePdfViewer()">閉じる</button>
+    </div>
+  </div>
+  <div class="pdfViewerBody" id="pdfViewerBody">
+    <canvas id="pdfViewerCanvas"></canvas>
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

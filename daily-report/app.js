@@ -518,19 +518,80 @@ function closeUpdateLogList(){
 
 let updateLogCache_ = [];
 
-function openUpdateLogPdf(index){
+if(window.pdfjsLib){
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+let pdfViewerDoc_ = null;
+let pdfViewerPage_ = 1;
+let pdfViewerPageCount_ = 0;
+let pdfViewerRendering_ = false;
+
+/* PDFの実体(GAS側でDriveApp経由で取得したbase64バイト列)を取得し、pdf.jsで
+   1ページずつcanvasに描画する。Google Drive等の外部ビューア(スクロール式・
+   ポップアウトボタン等の外部UI付き)は使わず、アプリ画面全体に自前の
+   前/次/閉じるボタンだけで操作できるようにするための実装。 */
+async function openUpdateLogPdf(index){
   const log = updateLogCache_[index];
-  if(!log) return;
+  if(!log || !log.fileId) return;
+  closeUpdateLogList();
   document.getElementById('pdfViewerTitle').textContent = log.name;
-  document.getElementById('pdfViewerFrame').src = log.fileId
-    ? `https://drive.google.com/file/d/${log.fileId}/preview`
-    : log.url;
+  document.getElementById('pdfViewerPageLabel').textContent = '読み込み中…';
+  document.getElementById('pdfViewerPrevBtn').disabled = true;
+  document.getElementById('pdfViewerNextBtn').disabled = true;
   document.getElementById('pdfViewerOverlay').classList.add('show');
+  try{
+    const data = await apiPost('getUpdateLogPdf', { fileId: log.fileId });
+    const binary = atob(data.base64);
+    const bytes = new Uint8Array(binary.length);
+    for(let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    pdfViewerDoc_ = await pdfjsLib.getDocument({ data: bytes }).promise;
+    pdfViewerPageCount_ = pdfViewerDoc_.numPages;
+    pdfViewerPage_ = 1;
+    await renderPdfViewerPage_();
+  }catch(err){
+    document.getElementById('pdfViewerPageLabel').textContent = '';
+    showToast('PDFの読み込みに失敗しました: ' + String(err && err.message || err));
+  }
+}
+
+async function renderPdfViewerPage_(){
+  if(!pdfViewerDoc_) return;
+  pdfViewerRendering_ = true;
+  const page = await pdfViewerDoc_.getPage(pdfViewerPage_);
+  const body = document.getElementById('pdfViewerBody');
+  const baseViewport = page.getViewport({ scale: 1 });
+  const availWidth = Math.max(body.clientWidth - 32, 100);
+  const scale = availWidth / baseViewport.width;
+  const viewport = page.getViewport({ scale: scale > 0 ? scale : 1 });
+  const canvas = document.getElementById('pdfViewerCanvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+  pdfViewerRendering_ = false;
+  document.getElementById('pdfViewerPageLabel').textContent = pdfViewerPage_ + ' / ' + pdfViewerPageCount_;
+  document.getElementById('pdfViewerPrevBtn').disabled = pdfViewerPage_ <= 1;
+  document.getElementById('pdfViewerNextBtn').disabled = pdfViewerPage_ >= pdfViewerPageCount_;
+}
+
+function pdfViewerPrevPage(){
+  if(pdfViewerRendering_ || pdfViewerPage_ <= 1) return;
+  pdfViewerPage_--;
+  renderPdfViewerPage_();
+}
+
+function pdfViewerNextPage(){
+  if(pdfViewerRendering_ || pdfViewerPage_ >= pdfViewerPageCount_) return;
+  pdfViewerPage_++;
+  renderPdfViewerPage_();
 }
 
 function closePdfViewer(){
   document.getElementById('pdfViewerOverlay').classList.remove('show');
-  document.getElementById('pdfViewerFrame').src = 'about:blank';
+  pdfViewerDoc_ = null;
+  pdfViewerPageCount_ = 0;
+  pdfViewerPage_ = 1;
 }
 
 /* ===================== 工場選択画面(ログイン後のデフォルト工場) ===================== */
