@@ -82,7 +82,7 @@ function getUpdateLogsForClient() {
   }
   logs.sort(function (a, b) {
     if (a.date !== b.date) return a.date < b.date ? 1 : -1; // 日付降順
-    return a.seq - b.seq; // 同日は連番昇順
+    return b.seq - a.seq; // 同日は連番の大きい方(新しい方)を上に
   });
   return logs;
 }
