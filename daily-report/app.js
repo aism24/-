@@ -540,9 +540,15 @@ async function openUpdateLogPdf(index){
   if(!log || !log.fileId) return;
   closeUpdateLogList();
   document.getElementById('pdfViewerTitle').textContent = log.name;
-  document.getElementById('pdfViewerPageLabel').textContent = '読み込み中…';
+  document.getElementById('pdfViewerPageLabel').textContent = '';
   document.getElementById('pdfViewerPrevBtn').disabled = true;
   document.getElementById('pdfViewerNextBtn').disabled = true;
+  // 前回表示していたPDFがそのまま見えて紛らわしくならないよう、読み込み中は
+  // canvasを隠して画面中央に大きくポップアップを出す
+  document.getElementById('pdfViewerCanvas').classList.add('pdfViewerCanvasHidden');
+  const loadingEl = document.getElementById('pdfViewerLoading');
+  loadingEl.textContent = '読み込み中…';
+  loadingEl.classList.add('show');
   document.getElementById('pdfViewerOverlay').classList.add('show');
   pdfViewerLoading_ = true;
   try{
@@ -555,10 +561,12 @@ async function openUpdateLogPdf(index){
     pdfViewerPage_ = 1;
     await prerenderAllPdfViewerPages_();
     pdfViewerLoading_ = false;
+    loadingEl.classList.remove('show');
+    document.getElementById('pdfViewerCanvas').classList.remove('pdfViewerCanvasHidden');
     showPdfViewerPage_();
   }catch(err){
     pdfViewerLoading_ = false;
-    document.getElementById('pdfViewerPageLabel').textContent = '';
+    loadingEl.textContent = '読み込みに失敗しました';
     showToast('PDFの読み込みに失敗しました: ' + String(err && err.message || err));
   }
 }
@@ -615,6 +623,8 @@ function closePdfViewer(){
   pdfViewerPageCount_ = 0;
   pdfViewerPage_ = 1;
   pdfViewerPageCanvases_ = [];
+  // PDF一覧選択画面に戻る(一覧はopenUpdateLogPdfで閉じただけで内容は残っている)
+  document.getElementById('updateLogOverlay').classList.add('show');
 }
 
 // 画面回転・リサイズ時は事前描画キャッシュを作り直して全画面に収まるようにする
