@@ -14,16 +14,18 @@
   <h1>TSBL大会運営（７チームVer）</h1>
 
   <div class="card">
-    <h2>新しい大会を作成</h2>
-    <label>大会名
-      <input type="text" id="newTournamentName" placeholder="例: 春季大会">
-    </label>
-    <label>略称（シート名に使用・最大4文字）
-      <input type="text" id="newTournamentPrefix" maxlength="4" placeholder="例: 春季">
-    </label>
-    <p class="hint">略称は大会名の頭2文字が自動入力されます。編集して4文字まで変更できます。「(略称)＿１日目」「(略称)２日目」のシートが作成されます。</p>
-    <button onclick="createTournament()">作成</button>
-    <div id="createError" class="errorText"></div>
+    <button type="button" id="toggleCreateBtn" class="btnCreate" onclick="toggleCreateForm()">新しい大会を作成</button>
+    <div id="createFormBody" style="display:none">
+      <label>大会名
+        <input type="text" id="newTournamentName" placeholder="例: 春季大会">
+      </label>
+      <label>略称（シート名に使用・最大4文字）
+        <input type="text" id="newTournamentPrefix" maxlength="4" placeholder="例: 春季">
+      </label>
+      <p class="hint">略称は大会名の頭2文字が自動入力されます。編集して4文字まで変更できます。「(略称)＿１日目」「(略称)２日目」のシートが作成されます。</p>
+      <button class="btnCreate" onclick="createTournament()">作成</button>
+      <div id="createError" class="errorText"></div>
+    </div>
   </div>
 
   <div class="card">

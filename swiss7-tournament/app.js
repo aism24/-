@@ -54,7 +54,13 @@ function showHome() {
   currentTournament = null;
   document.getElementById('homeScreen').style.display = 'block';
   document.getElementById('tournamentApp').style.display = 'none';
+  document.getElementById('createFormBody').style.display = 'none';
   loadTournamentList();
+}
+
+function toggleCreateForm() {
+  const body = document.getElementById('createFormBody');
+  body.style.display = (body.style.display === 'none') ? 'block' : 'none';
 }
 
 function loadTournamentList() {
@@ -67,8 +73,8 @@ function loadTournamentList() {
     }
     container.innerHTML = list.map(t =>
       `<div class="tournamentListItem"><span>${t.name}（${t.prefix}）</span><span>
-        <button type="button" onclick="openTournament('${t.prefix}')">開く</button>
-        <button type="button" onclick="deleteTournament('${t.prefix}')">削除</button>
+        <button type="button" class="btnOpen" onclick="openTournament('${t.prefix}')">開く</button>
+        <button type="button" class="btnDelete" onclick="deleteTournament('${t.prefix}')">削除</button>
       </span></div>`
     ).join('');
   }).catch(e => { container.innerText = 'エラー: ' + e.message; });
@@ -278,7 +284,8 @@ function digitsFromScore(score) {
 
 function padScore(v) {
   const n = (v === '' || v === null || v === undefined) ? 0 : Number(v);
-  return String(Math.max(0, Math.min(199, Math.floor(n) || 0))).padStart(3, '0');
+  const padded = String(Math.max(0, Math.min(199, Math.floor(n) || 0))).padStart(3, '0');
+  return padded[0] === '0' ? padded.slice(1) : padded;
 }
 
 function scoreFromDigits(day, index, side) {
