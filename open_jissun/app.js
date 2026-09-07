@@ -1,5 +1,5 @@
 // デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。デプロイ後にここへ差し替えてください。
-const GAS_API_URL = "PASTE_YOUR_GAS_WEB_APP_URL_HERE";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyfWI3ZAvn_L7pdBvX1Sz9xAhJuPuxsZMbJxJW2fQnulLyLOMjf84A17f5cqUsLB1la/exec";
 
 const MAX_DISPLAY_ROWS = 500; // 一致件数がこれを超えたら、上位だけ表示して件数を案内する
 const NO_DRAWING_NOTE = '図面作成未完'; // 図番セルにCAD起動リンクが無い行の備考表示・クリック時ポップアップ
