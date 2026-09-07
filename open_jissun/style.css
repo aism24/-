@@ -43,18 +43,18 @@ body {
 .updated-at { color: var(--muted); font-size: 0.8rem; }
 
 /* 検索可能な工事一覧(「情報」シートH:I列)。ヘッダー内に置くことで、ロゴ・アプリ名・
-   最新化ボタンと一緒にページ上部へ固定される。 */
-.projects-panel { grid-column: 1 / -1; text-align: center; }
-.projects-title { color: var(--muted); font-size: 0.8rem; font-weight: 700; margin-bottom: 4px; }
-.projects-scroll { max-height: 130px; overflow-y: auto; display: inline-block; max-width: 100%; }
-table.projects-table { border-collapse: collapse; font-size: 0.8rem; margin: 0 auto; }
+   最新化ボタンと一緒にページ上部へ固定される。見出しを左、表を右に並べ、スクロールバー
+   無しで(最大10行程度を想定して)そのまま全件表示する。 */
+.projects-panel { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 18px; flex-wrap: wrap; }
+.projects-title { color: var(--muted); font-size: 0.8rem; font-weight: 700; line-height: 1.3; text-align: right; }
+table.projects-table { border-collapse: collapse; font-size: 0.8rem; }
 table.projects-table th, table.projects-table td {
   border-bottom: 1px solid var(--border);
   padding: 4px 14px;
   text-align: center;
   white-space: nowrap;
 }
-table.projects-table th { color: var(--muted); font-weight: 700; position: sticky; top: 0; background: var(--bg); }
+table.projects-table th { color: var(--muted); font-weight: 700; }
 
 .btn-refresh-header {
   background: #ffd400;

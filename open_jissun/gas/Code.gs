@@ -36,9 +36,12 @@
  * ■ 図番のハイパーリンク(CAD起動リンク)
  *   図番セルには、実寸法師(CAD)の図面ファイル(.tdf等)への絶対パス
  *   (例: file://192.168.1.2/share/.../EA1-0C-01　260619.tdf)がハイパーリンクとして
- *   設定されている行があります(全行には無く、図面が未作成の行は無し)。このリンクを
- *   getRichTextValues()で取得し、フロントエンドでクリックすると実寸法師が起動します。
- *   ハイパーリンクが無い行は、フロントエンド側で「図面未完」として案内されます。
+ *   設定されている行があります(全行には無く、図面が未作成の行は無し)。
+ *   xlsx→Googleスプレッドシート変換(Drive.Files.create)ではこのハイパーリンクが失われる
+ *   ことが確認されているため、変換後のシートからは取得せず、元のxlsxファイル(zip形式)を
+ *   Utilities.unzipで直接展開し、ワークシートXML内の<hyperlinks>要素と関係定義(.rels)から
+ *   セル参照(例:"F123")→URLの対応を抽出する(extractHyperlinks_)。ハイパーリンクが無い行は、
+ *   フロントエンド側で「図面作成未完」として案内されます。
  *
  * セットアップ手順は README.md を参照してください。
  */
@@ -49,7 +52,7 @@ const INFO_SHEET_NAME = '情報';
 const CACHE_FILE_NAME = '_cache_jissunpoushi.json';
 const RECORDS_CACHE_FILE_NAME = '_records_cache_jissunpoushi.json';
 // records(案件ごとの読み込み結果キャッシュ)の形式を変える際にインクリメントする。
-const RECORDS_CACHE_VERSION = 3;
+const RECORDS_CACHE_VERSION = 4;
 const WORK_COPY_PREFIX = '_作業用_実寸法師_';
 const TIMEZONE = 'Asia/Tokyo';
 
@@ -234,7 +237,7 @@ function readSearchableProjects_() {
 // 変換結果のスプレッドシートIDと、変換時点の元Excelファイルの最終更新日時をスクリプト
 // プロパティに記憶しておく。次回以降、元ファイルの最終更新日時が前回と変わっていなければ
 // 変換処理そのものをスキップし、前回変換済みのスプレッドシートをそのまま再利用する。
-function convertToSheet_(sourceFileId, label, folder, currentMtime, sourceFile) {
+function convertToSheet_(sourceFileId, label, folder, currentMtime, blob) {
   const props = PropertiesService.getScriptProperties();
   const propKey = 'conv_' + sourceFileId;
   const mtimeKey = 'mtime_' + sourceFileId;
@@ -250,7 +253,6 @@ function convertToSheet_(sourceFileId, label, folder, currentMtime, sourceFile) 
     }
   }
 
-  const blob = sourceFile.getBlob();
   if (existingId) {
     try {
       Drive.Files.update({}, existingId, blob);
@@ -293,21 +295,105 @@ function saveRecordsCache_(folder, cache) {
   }
 }
 
-// ========== マスターExcel(変換後)の解析 ==========
+// ========== xlsx内部のハイパーリンク抽出 ==========
+// xlsx→Googleスプレッドシート変換ではハイパーリンクが失われるため、元のxlsx(zip形式)を
+// 直接展開し、ワークシートXML内の<hyperlinks>要素と関係定義(.rels)からセル参照→URLの
+// 対応を取得する。
 
-// リッチテキスト値からハイパーリンクURLを取り出す。セル全体が1つのリンクである前提だが、
-// 念のためルーンごとのリンクも確認する(いずれも無ければ空文字。図面未作成の行はここが
-// 空になり、フロントエンドで「図面未完」として案内される)。
-function extractLinkUrl_(rtv) {
-  if (!rtv) return '';
-  const whole = rtv.getLinkUrl();
-  if (whole) return whole;
-  const runs = rtv.getRuns ? rtv.getRuns() : [];
-  for (let i = 0; i < runs.length; i++) {
-    const u = runs[i].getLinkUrl();
-    if (u) return u;
+// 列インデックス(0始まり)をExcelの列文字(A, B, ..., Z, AA, ...)に変換する。
+function columnIndexToLetter_(index0) {
+  let n = index0 + 1;
+  let letters = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    letters = String.fromCharCode(65 + rem) + letters;
+    n = Math.floor((n - 1) / 26);
   }
-  return '';
+  return letters;
+}
+
+// Relationshipの Target を実際のzipエントリ名(パッケージルートからのフルパス)に解決する。
+// OOXMLの仕様上、Targetが"/"始まりならパッケージルートからの絶対パス、それ以外は基準
+// パート(baseDir、末尾"/"付き)からの相対パスとして扱う必要がある
+// (実データで workbook.xml.rels の Target が "/xl/worksheets/sheet1.xml" という絶対パス
+// 形式になっているケースを確認済みのため、相対パスと決め打ちしない)。
+function resolveRelTarget_(target, baseDir) {
+  return target.charAt(0) === '/' ? target.slice(1) : baseDir + target;
+}
+
+// xl/workbook.xmlと関係定義(xl/_rels/workbook.xml.rels)から、1シート目の実体パートの
+// フルパス(例:"xl/worksheets/sheet2.xml"。シートの削除・並べ替えの履歴によっては
+// "sheet1.xml"と決め打ちできないため、正規の手順で解決する)を求める。
+function findFirstSheetPartName_(entriesByName) {
+  const workbookXml = entriesByName['xl/workbook.xml'];
+  const workbookRels = entriesByName['xl/_rels/workbook.xml.rels'];
+  if (!workbookXml || !workbookRels) return 'xl/worksheets/sheet1.xml'; // 想定外の構成へのフォールバック
+
+  const rNs = XmlService.getNamespace('r', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships');
+  const wbRoot = XmlService.parse(workbookXml.getDataAsString()).getRootElement();
+  const sheetsEl = wbRoot.getChild('sheets', wbRoot.getNamespace());
+  const firstSheet = sheetsEl && sheetsEl.getChildren('sheet', wbRoot.getNamespace())[0];
+  const ridAttr = firstSheet && firstSheet.getAttribute('id', rNs);
+  if (!ridAttr) return 'xl/worksheets/sheet1.xml';
+
+  const relsRoot = XmlService.parse(workbookRels.getDataAsString()).getRootElement();
+  let target = null;
+  relsRoot.getChildren('Relationship', relsRoot.getNamespace()).some(function (rel) {
+    if (rel.getAttribute('Id').getValue() === ridAttr.getValue()) {
+      target = rel.getAttribute('Target').getValue();
+      return true;
+    }
+    return false;
+  });
+  return target ? resolveRelTarget_(target, 'xl/') : 'xl/worksheets/sheet1.xml';
+}
+
+// xlsx(zip形式)を展開し、1シート目の外部ハイパーリンクを { "F123": "file://..." } の形式
+// (セル参照→URL)で返す。解析に失敗した場合は空のオブジェクトを返す(致命的にはしない。
+// 図面リンクが無い扱いになるだけ)。1つのリンクが複数セルにまたがる(ref="F3:F5"等)ケースは
+// 想定していない(このアプリのデータでは1行1リンクの前提)。
+function extractHyperlinks_(blob) {
+  try {
+    const entries = Utilities.unzip(blob);
+    const entriesByName = {};
+    entries.forEach(function (e) { entriesByName[e.getName()] = e; });
+
+    const sheetPath = findFirstSheetPartName_(entriesByName); // 例: "xl/worksheets/sheet1.xml"
+    const sheetXml = entriesByName[sheetPath];
+    if (!sheetXml) return {};
+
+    const relsPath = sheetPath.replace(/^(.*\/)?([^/]+)$/, function (_, dir, file) {
+      return (dir || '') + '_rels/' + file + '.rels';
+    });
+    const relsEntry = entriesByName[relsPath];
+    const relMap = {}; // rId -> 外部URL(TargetMode="External"のもののみ)
+    if (relsEntry) {
+      const relsRoot = XmlService.parse(relsEntry.getDataAsString()).getRootElement();
+      relsRoot.getChildren('Relationship', relsRoot.getNamespace()).forEach(function (rel) {
+        const modeAttr = rel.getAttribute('TargetMode');
+        if (modeAttr && modeAttr.getValue() === 'External') {
+          relMap[rel.getAttribute('Id').getValue()] = rel.getAttribute('Target').getValue();
+        }
+      });
+    }
+
+    const rNs = XmlService.getNamespace('r', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships');
+    const sheetRoot = XmlService.parse(sheetXml.getDataAsString()).getRootElement();
+    const hyperlinksEl = sheetRoot.getChild('hyperlinks', sheetRoot.getNamespace());
+    const map = {};
+    if (hyperlinksEl) {
+      hyperlinksEl.getChildren('hyperlink', sheetRoot.getNamespace()).forEach(function (h) {
+        const refAttr = h.getAttribute('ref');
+        const ridAttr = h.getAttribute('id', rNs);
+        if (!refAttr || !ridAttr) return; // location(シート内リンク)のみの行は対象外
+        const url = relMap[ridAttr.getValue()];
+        if (url) map[refAttr.getValue()] = url;
+      });
+    }
+    return map;
+  } catch (e) {
+    return {};
+  }
 }
 
 // 建方日・加工列は、実際の日付が入っているセルだけ和暦(令和)の「R○年○月○日」表記に
@@ -322,14 +408,21 @@ function formatEraDate_(rawValue, displayText) {
     const y = rawValue.getFullYear();
     return { text: 'R' + (y - 2018) + '年' + (rawValue.getMonth() + 1) + '月' + rawValue.getDate() + '日', isUnclear: false };
   }
+  // 日付シリアル値が0付近(未入力のまま日付書式だけが残っているセル)は、スプレッドシート上
+  // 西暦1899〜1900年頃の日付として表示される("12/30(土)"等、一見すると日付のように見える
+  // 紛らわしい文字列になる)。これは実質「未入力」なので、赤文字・備考の「日付不明」表示には
+  // せず、素直に空欄として扱う。
+  if (Object.prototype.toString.call(rawValue) === '[object Date]' && !isNaN(rawValue.getTime()) && rawValue.getFullYear() <= 1900) {
+    return { text: '', isUnclear: false };
+  }
   return { text: displayText, isUnclear: !!displayText };
 }
 
 // 見出し行の文字列で列位置を特定するため、ファイルごとの多少の列ズレを吸収できる。
-// セルは表示されている通りの文字列(getDisplayValues)として読み取り、図番列だけは
-// ハイパーリンク(CAD起動リンク)を、建方日・加工列だけは和暦変換用に実際の値(getValues)を
-// 別途取得する。
-function parseMasterSheet_(convertedSheetId, workNo, workName, masterLocation) {
+// セルは表示されている通りの文字列(getDisplayValues)として読み取り、図番のハイパーリンクは
+// hyperlinkMap(元のxlsxから抽出済み、セル参照→URL)から、建方日・加工列だけは和暦変換用に
+// 実際の値(getValues)を別途取得する。
+function parseMasterSheet_(convertedSheetId, workNo, workName, masterLocation, fileName, hyperlinkMap) {
   const ss = SpreadsheetApp.openById(convertedSheetId);
   const sh = ss.getSheets()[0];
   const values = sh.getDataRange().getDisplayValues();
@@ -340,10 +433,9 @@ function parseMasterSheet_(convertedSheetId, workNo, workName, masterLocation) {
   Object.keys(HEADERS).forEach(function (key) { col[key] = header.indexOf(HEADERS[key]); });
   if (col.mark < 0 || col.drawingNo < 0) return []; // 検索・CADリンクに必須の列が無いファイルは対象外
 
-  const lastRow = sh.getLastRow();
-  const richValues = sh.getRange(2, col.drawingNo + 1, lastRow - 1, 1).getRichTextValues();
-  const erectionRaw = col.erectionDate >= 0 ? sh.getRange(2, col.erectionDate + 1, lastRow - 1, 1).getValues() : null;
-  const processedRaw = col.processedDate >= 0 ? sh.getRange(2, col.processedDate + 1, lastRow - 1, 1).getValues() : null;
+  const drawingColLetter = columnIndexToLetter_(col.drawingNo);
+  const erectionRaw = col.erectionDate >= 0 ? sh.getRange(2, col.erectionDate + 1, sh.getLastRow() - 1, 1).getValues() : null;
+  const processedRaw = col.processedDate >= 0 ? sh.getRange(2, col.processedDate + 1, sh.getLastRow() - 1, 1).getValues() : null;
 
   const records = [];
   for (let i = 1; i < values.length; i++) {
@@ -351,7 +443,7 @@ function parseMasterSheet_(convertedSheetId, workNo, workName, masterLocation) {
     const mark = String(row[col.mark] || '').trim();
     if (!mark) continue; // 製品マークが空の行は除外
 
-    const rtv = richValues[i - 1] && richValues[i - 1][0];
+    const cellRef = drawingColLetter + (i + 1); // 元のxlsxでの行番号(見出し行=1行目を含む)
     const erectionDisplay = col.erectionDate >= 0 ? String(row[col.erectionDate] || '').trim() : '';
     const processedDisplay = col.processedDate >= 0 ? String(row[col.processedDate] || '').trim() : '';
     const erection = formatEraDate_(erectionRaw && erectionRaw[i - 1][0], erectionDisplay);
@@ -361,9 +453,10 @@ function parseMasterSheet_(convertedSheetId, workNo, workName, masterLocation) {
       workNo: workNo,
       workName: workName,
       masterLocation: masterLocation,
+      fileName: fileName,
       mark: mark,
       drawingNo: String(row[col.drawingNo] || '').trim(),
-      drawingLink: extractLinkUrl_(rtv),
+      drawingLink: hyperlinkMap[cellRef] || '',
       erectionDate: erection.text,
       erectionDateUnclear: erection.isUnclear,
       block: col.block >= 0 ? String(row[col.block] || '').trim() : '',
@@ -399,8 +492,10 @@ function buildData_(folder) {
       records = cached.records;
     } else {
       try {
-        const convertedId = convertToSheet_(entry.fileId, entry.fileName, folder, currentMtime, driveFile);
-        records = parseMasterSheet_(convertedId, entry.workNo, entry.workName, entry.masterLocation);
+        const blob = driveFile.getBlob();
+        const hyperlinkMap = extractHyperlinks_(blob);
+        const convertedId = convertToSheet_(entry.fileId, entry.fileName, folder, currentMtime, blob);
+        records = parseMasterSheet_(convertedId, entry.workNo, entry.workName, entry.masterLocation, entry.fileName, hyperlinkMap);
       } catch (err) {
         warnings.push('「' + entry.fileName + '」の読み込みに失敗しました: ' + err.message);
         return;
