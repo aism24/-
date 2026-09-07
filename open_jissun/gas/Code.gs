@@ -126,8 +126,7 @@ function refreshAndGetData_(folder) {
   lock.waitLock(120000);
   try {
     const targetFolder = folder || dataFolder_();
-    const data = buildData_(targetFolder);
-    saveCache_(targetFolder, data);
+    const data = buildData_(targetFolder); // 保存(何も変わっていなければスキップ)まで内部で完結する
     return data;
   } finally {
     lock.releaseLock();
@@ -143,10 +142,8 @@ function userRefresh_() {
   }
   try {
     const folder = dataFolder_();
-    const data = buildData_(folder);
+    const data = buildData_(folder); // 保存(何も変わっていなければスキップ)まで内部で完結する
     dbg_('buildData_ done');
-    saveCache_(folder, data);
-    dbg_('saveCache_ done');
     data.searchableProjects = readSearchableProjects_();
     dbg_('readSearchableProjects_ done');
     if (DEBUG_ON_) data._debugLog = DEBUG_LOG_;
@@ -508,6 +505,7 @@ function buildData_(folder) {
   dbg_('loadRecordsCache_ done');
   const newRecordsCache = {};
   const allRecords = [];
+  let anyFileChanged = false; // 1件でも変換・再解析が発生したか(全件キャッシュヒットならfalseのまま)
 
   fileIndex.forEach(function (entry) {
     const tag = '[' + entry.fileName + ']';
@@ -527,6 +525,7 @@ function buildData_(folder) {
       records = cached.records;
       dbg_(tag + ' cache hit, skip reprocessing');
     } else {
+      anyFileChanged = true;
       try {
         const blob = driveFile.getBlob();
         dbg_(tag + ' getBlob done (' + blob.getBytes().length + ' bytes)');
@@ -547,18 +546,35 @@ function buildData_(folder) {
     newRecordsCache[entry.fileId] = { mtime: currentMtime, v: RECORDS_CACHE_VERSION, records: records };
     allRecords.push.apply(allRecords, records);
   });
-  dbg_('all files processed (' + allRecords.length + '件合計)');
+  dbg_('all files processed (' + allRecords.length + '件合計, anyFileChanged=' + anyFileChanged + ')');
+
+  // 「情報」シートに載っているファイルの集合(追加/削除)も変わっていなければ、内容は前回と
+  // 完全に同じになるはずなので、キャッシュの書き戻し(saveRecordsCache_・saveCache_、
+  // どちらも数MB規模のJSONをDriveへ書き込む重い処理)自体を丸ごとスキップし、既存の
+  // _cache_jissunpoushi.jsonをそのまま返す(何も変わっていないのに毎回書き直す無駄を
+  // 無くすため)。既存キャッシュが無い(初回)場合は通常通り保存する。
+  const fileSetUnchanged = Object.keys(recordsCache).sort().join(',') === Object.keys(newRecordsCache).sort().join(',');
+  if (!anyFileChanged && fileSetUnchanged) {
+    const existing = loadCache_(folder);
+    if (existing) {
+      dbg_('no changes detected, reusing existing cache as-is (save skipped)');
+      return existing;
+    }
+  }
 
   // 「情報」シートから消えたファイルのキャッシュは持ち越さない(newRecordsCacheには今回
   // 処理したファイルのfileIdしか入っていないため、そのまま保存するだけで自然に整理される)。
   saveRecordsCache_(folder, newRecordsCache);
   dbg_('saveRecordsCache_ done');
 
-  return {
+  const data = {
     generatedAt: Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX"),
     records: allRecords,
     warnings: warnings,
   };
+  saveCache_(folder, data);
+  dbg_('saveCache_ done');
+  return data;
 }
 
 // ========== キャッシュの保存/読み込み(同じフォルダ内、毎回上書き) ==========
