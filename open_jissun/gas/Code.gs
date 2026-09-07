@@ -159,6 +159,17 @@ function checkSetup() {
   Logger.log('作業用ファイル・キャッシュの保存先フォルダ: ' + folder.getName() + ' (' + folder.getId() + ')');
 }
 
+// 「サービス」にDrive APIを追加しただけでは、そのサービスへのアクセス権(OAuth承認)が
+// まだ一度も許可されていないことがある(checkSetup等、Driveサービスを使わない関数を実行
+// しただけでは承認画面が出ないため)。この関数をApps Scriptエディタから手動で1回▶実行し、
+// 表示される「アクセスの承認」画面で許可してください(読み取り専用のDrive.About.get()を
+// 呼ぶだけで、データの変更は一切行いません)。これを行わないと、デプロイ済みのWebアプリから
+// Driveサービスを呼び出した際に「Drive is not defined」エラーになることがあります。
+function authorizeDriveService() {
+  const about = Drive.About.get();
+  Logger.log('Drive APIへのアクセスを確認しました。利用者: ' + about.user.displayName);
+}
+
 // ========== 「情報」シートの読み取り ==========
 
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
