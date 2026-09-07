@@ -22,7 +22,10 @@
  *   D列: 工事番号
  *   E列: 工事名
  *   F列: マスタ場所(例: 鳥取/姫路)
- *   (G列以降・L:M列等は他の用途の一覧のため、このアプリでは使用しない)
+ *   H列: 表示工事番号、I列: 表示工事名(=SORT(UNIQUE(FILTER(D2:E, D2:D<>"")))等の数式で、
+ *        案件マスターExcelがある工事番号・工事名の一覧を手動で用意したもの。フロントエンドの
+ *        「検索可能な工事一覧」表示にのみ使用する)
+ *   (G列・L:M列等、上記以外は他の用途の一覧のため、このアプリでは使用しない)
  *
  * ■ 案件マスターExcelファイルの列構成(各行=部材1つ。1行目が見出し):
  *   ﾏｽﾀｰﾃﾞｰﾀ ID, 建方日, ブロック, 部位, 加工先, 図番, 製品マーク, サイズ, 備考①, 備考②,
@@ -80,11 +83,16 @@ function errRes_(message) { return jsonResponse_({ status: 'error', message: mes
 function busyRes_(message) { return jsonResponse_({ status: 'busy', message: message }); }
 
 // キャッシュがあればそれを返し、無ければ初回のみ集計する。
+// searchableProjects(「情報」シートH:I列の一覧。ヘッダーの「検索可能な工事一覧」表示用)は
+// 集計キャッシュとは別に、呼び出しのたびに直接シートから読み直す(読み取りが軽く、シート編集
+// (SORT/UNIQUE数式の再計算含む)が即座に反映されてほしいため、Excel集計キャッシュの更新
+// タイミングとは連動させない)。
 function getData_() {
   const folder = dataFolder_();
   const cached = loadCache_(folder);
-  if (cached) return cached;
-  return refreshAndGetData_(folder);
+  const data = cached || refreshAndGetData_(folder);
+  data.searchableProjects = readSearchableProjects_();
+  return data;
 }
 
 // getData_(初回・キャッシュが無い場合のみ)、および毎日の自動トリガー(dailyRefresh)から
@@ -114,6 +122,7 @@ function userRefresh_() {
     const folder = dataFolder_();
     const data = buildData_(folder);
     saveCache_(folder, data);
+    data.searchableProjects = readSearchableProjects_();
     return ok_(data);
   } finally {
     lock.releaseLock();
@@ -144,6 +153,8 @@ function checkSetup() {
   if (files.length === 0) {
     Logger.log('警告: 「' + INFO_SHEET_NAME + '」シートに有効な行(ファイル名・URL列とも入力済み)が見つかりません。');
   }
+  const projects = readSearchableProjects_();
+  Logger.log('「検索可能な工事一覧」(H:I列): ' + projects.length + '件');
   const folder = dataFolder_();
   Logger.log('作業用ファイル・キャッシュの保存先フォルダ: ' + folder.getName() + ' (' + folder.getId() + ')');
 }
@@ -184,6 +195,25 @@ function readFileIndex_() {
     const fileId = extractFileIdFromUrl_(url);
     if (!fileId) return;
     list.push({ fileId: fileId, fileName: fileName, workNo: workNo, workName: workName, masterLocation: masterLocation });
+  });
+  return list;
+}
+
+// 「情報」シートのH:I列(表示工事番号/表示工事名。=SORT(UNIQUE(FILTER(D2:E, D2:D<>"")))で
+// 案件マスターExcelがある工事番号・工事名の一覧を手動で数式化したもの)を読む。
+// ヘッダーの「検索可能な工事一覧」表示にのみ使用する(検索・集計のロジックには使わない)。
+function readSearchableProjects_() {
+  const sh = ss_().getSheetByName(INFO_SHEET_NAME);
+  if (!sh) return [];
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return [];
+
+  const rows = sh.getRange(2, 8, lastRow - 1, 2).getValues(); // H:I
+  const list = [];
+  rows.forEach(function (row) {
+    const workNo = String(row[0] || '').trim();
+    const workName = String(row[1] || '').trim();
+    if (workNo || workName) list.push({ workNo: workNo, workName: workName });
   });
   return list;
 }
