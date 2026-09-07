@@ -46,7 +46,7 @@ const INFO_SHEET_NAME = '情報';
 const CACHE_FILE_NAME = '_cache_jissunpoushi.json';
 const RECORDS_CACHE_FILE_NAME = '_records_cache_jissunpoushi.json';
 // records(案件ごとの読み込み結果キャッシュ)の形式を変える際にインクリメントする。
-const RECORDS_CACHE_VERSION = 2;
+const RECORDS_CACHE_VERSION = 3;
 const WORK_COPY_PREFIX = '_作業用_実寸法師_';
 const TIMEZONE = 'Asia/Tokyo';
 
@@ -269,9 +269,25 @@ function extractLinkUrl_(rtv) {
   return '';
 }
 
+// 建方日・加工列は、実際の日付が入っているセルだけ和暦(令和)の「R○年○月○日」表記に
+// 変換する。日付になっていないセル(未加工を表す「*」や、一部ファイルにある0扱いの
+// 日付データ等)は、表示されている通りの文字列(displayText)をそのまま使い、isUnclearを
+// trueにする(フロントエンドで赤文字表示・備考への「日付不明」追記に使う)。
+function isValidEraDate_(rawValue) {
+  return Object.prototype.toString.call(rawValue) === '[object Date]' && !isNaN(rawValue.getTime()) && rawValue.getFullYear() >= 2019;
+}
+function formatEraDate_(rawValue, displayText) {
+  if (isValidEraDate_(rawValue)) {
+    const y = rawValue.getFullYear();
+    return { text: 'R' + (y - 2018) + '年' + (rawValue.getMonth() + 1) + '月' + rawValue.getDate() + '日', isUnclear: false };
+  }
+  return { text: displayText, isUnclear: !!displayText };
+}
+
 // 見出し行の文字列で列位置を特定するため、ファイルごとの多少の列ズレを吸収できる。
 // セルは表示されている通りの文字列(getDisplayValues)として読み取り、図番列だけは
-// ハイパーリンク(CAD起動リンク)を別途getRichTextValuesで取得する。
+// ハイパーリンク(CAD起動リンク)を、建方日・加工列だけは和暦変換用に実際の値(getValues)を
+// 別途取得する。
 function parseMasterSheet_(convertedSheetId, workNo, workName, masterLocation) {
   const ss = SpreadsheetApp.openById(convertedSheetId);
   const sh = ss.getSheets()[0];
@@ -285,6 +301,8 @@ function parseMasterSheet_(convertedSheetId, workNo, workName, masterLocation) {
 
   const lastRow = sh.getLastRow();
   const richValues = sh.getRange(2, col.drawingNo + 1, lastRow - 1, 1).getRichTextValues();
+  const erectionRaw = col.erectionDate >= 0 ? sh.getRange(2, col.erectionDate + 1, lastRow - 1, 1).getValues() : null;
+  const processedRaw = col.processedDate >= 0 ? sh.getRange(2, col.processedDate + 1, lastRow - 1, 1).getValues() : null;
 
   const records = [];
   for (let i = 1; i < values.length; i++) {
@@ -293,6 +311,11 @@ function parseMasterSheet_(convertedSheetId, workNo, workName, masterLocation) {
     if (!mark) continue; // 製品マークが空の行は除外
 
     const rtv = richValues[i - 1] && richValues[i - 1][0];
+    const erectionDisplay = col.erectionDate >= 0 ? String(row[col.erectionDate] || '').trim() : '';
+    const processedDisplay = col.processedDate >= 0 ? String(row[col.processedDate] || '').trim() : '';
+    const erection = formatEraDate_(erectionRaw && erectionRaw[i - 1][0], erectionDisplay);
+    const processed = formatEraDate_(processedRaw && processedRaw[i - 1][0], processedDisplay);
+
     records.push({
       workNo: workNo,
       workName: workName,
@@ -300,9 +323,11 @@ function parseMasterSheet_(convertedSheetId, workNo, workName, masterLocation) {
       mark: mark,
       drawingNo: String(row[col.drawingNo] || '').trim(),
       drawingLink: extractLinkUrl_(rtv),
-      erectionDate: col.erectionDate >= 0 ? String(row[col.erectionDate] || '').trim() : '',
+      erectionDate: erection.text,
+      erectionDateUnclear: erection.isUnclear,
       block: col.block >= 0 ? String(row[col.block] || '').trim() : '',
-      processedDate: col.processedDate >= 0 ? String(row[col.processedDate] || '').trim() : '',
+      processedDate: processed.text,
+      processedDateUnclear: processed.isUnclear,
     });
   }
   return records;
