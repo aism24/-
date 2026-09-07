@@ -60,6 +60,7 @@ async function loadData(forceRefresh) {
     const warnEl = document.getElementById('warningsArea');
     warnEl.textContent = (data.warnings && data.warnings.length) ? data.warnings.join('\n') : '';
 
+    renderProjectsList_(data.searchableProjects);
     renderResults();
   } catch (err) {
     console.error(err);
@@ -67,6 +68,29 @@ async function loadData(forceRefresh) {
   } finally {
     btn.disabled = false;
   }
+}
+
+// 「検索可能な工事一覧」(ヘッダー内)を描画する。
+function renderProjectsList_(projects) {
+  const body = document.getElementById('projectsBody');
+  body.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  (projects || []).forEach(function (p) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + escapeHtml_(p.workNo) + '</td><td>' + escapeHtml_(p.workName) + '</td>';
+    frag.appendChild(tr);
+  });
+  body.appendChild(frag);
+  syncHeaderHeight_();
+}
+
+// .search-panel(検索欄の行)をヘッダーのすぐ下に固定表示するため、ヘッダー(ロゴ・アプリ名・
+// 最新化ボタン・検索可能な工事一覧まで)の実際の高さをCSSカスタムプロパティに反映する
+// (style.css: .search-panelのtopで参照)。工事一覧の件数によって高さが変わるため、
+// 一覧を描画するたびに呼び直す。
+function syncHeaderHeight_() {
+  const header = document.querySelector('.app-header');
+  if (header) document.documentElement.style.setProperty('--app-header-height', header.offsetHeight + 'px');
 }
 
 function escapeHtml_(s) {
@@ -169,6 +193,8 @@ function onResultRowClick_(e) {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
+  syncHeaderHeight_();
+  window.addEventListener('resize', syncHeaderHeight_);
   document.getElementById('btnSearch').addEventListener('click', renderResults);
   document.getElementById('searchInput').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') renderResults();
