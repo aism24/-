@@ -1,5 +1,5 @@
 /**
- * 「実寸法師」(製品マーク検索→実寸法表示アプリ)のGAS APIバックエンド。
+ * 「実寸法師を開く」(製品マーク検索→CAD図面(実寸法師)起動アプリ)のGAS APIバックエンド。
  *
  * このスクリプトは、「マスタから実寸法師を開く」スプレッドシートの
  * 「拡張機能→Apps Script」から作成するコンテナバインド型スクリプトとして使う前提です。
@@ -7,7 +7,7 @@
  * SPREADSHEET_IDの設定は不要です。
  *
  * このアプリ本体(index.html / app.js)はフロントエンド(GitHub Pages)で、GASは
- * JSON APIのみを提供します(検索・表示はすべてブラウザ側で行います)。
+ * JSON APIのみを提供します(検索・表示・CAD起動リンクへの遷移はすべてブラウザ側で行います)。
  *
  * ■ 読み取り専用の原則
  *   案件ごとのマスターExcelファイルは常に「読み取り専用」で開きます。書き込みは一切行いません。
@@ -15,30 +15,38 @@
  *   作業用のスプレッドシートを作成(既存があれば内容だけ上書き)しますが、元のExcelファイル
  *   本体には一切触れません。
  *
- * ■ 前提となるフォルダ構成
- *   このスプレッドシートが置かれているGoogleドライブフォルダの直下に、案件ごとの
- *   マスターExcel(.xlsx)が並んでいる前提です(索引シートは不要。フォルダ内の.xlsxを
- *   自動的にすべて列挙します)。ファイル名は「(工事名)_マスタのまま.xlsx」形式を想定し、
- *   末尾の「_マスタのまま」を除いた部分を案件名として表示します。
+ * ■ 前提となる「情報」シートの構成(1行目が見出し。手動で用意されている想定):
+ *   A列: No(参考情報。アプリのロジックでは使用しない)
+ *   B列: ファイル名
+ *   C列: URL(案件マスターExcelファイルへのGoogleドライブ共有リンク)
+ *   D列: 工事番号
+ *   E列: 工事名
+ *   F列: マスタ場所(例: 鳥取/姫路)
+ *   (G列以降・L:M列等は他の用途の一覧のため、このアプリでは使用しない)
  *
  * ■ 案件マスターExcelファイルの列構成(各行=部材1つ。1行目が見出し):
  *   ﾏｽﾀｰﾃﾞｰﾀ ID, 建方日, ブロック, 部位, 加工先, 図番, 製品マーク, サイズ, 備考①, 備考②,
  *   長さ, 本数, 重量, 塗装, 形状, ... (以降は工程管理用の列で、このアプリでは使用しない)
  *   列の並び順はファイルによって多少ずれても、見出し文字列で自動判定します。
- *   セルの値は表示されている通りの文字列(getDisplayValues)としてそのまま読み取ります
- *   (日付・数値の書式や、日付になっていないセル("1/0(Sun)"等)もそのまま表示用に扱う)。
+ *   セルの値は表示されている通りの文字列(getDisplayValues)としてそのまま読み取ります。
+ *
+ * ■ 図番のハイパーリンク(CAD起動リンク)
+ *   図番セルには、実寸法師(CAD)の図面ファイル(.tdf等)への絶対パス
+ *   (例: file://192.168.1.2/share/.../EA1-0C-01　260619.tdf)がハイパーリンクとして
+ *   設定されている行があります(全行には無く、図面が未作成の行は無し)。このリンクを
+ *   getRichTextValues()で取得し、フロントエンドでクリックすると実寸法師が起動します。
+ *   ハイパーリンクが無い行は、フロントエンド側で「図面未完」として案内されます。
  *
  * セットアップ手順は README.md を参照してください。
  */
 
 // ========== 設定 ==========
 
-const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-const MASTER_FILE_SUFFIX_RE = /_?マスタのまま\.xlsx$/i;
+const INFO_SHEET_NAME = '情報';
 const CACHE_FILE_NAME = '_cache_jissunpoushi.json';
 const RECORDS_CACHE_FILE_NAME = '_records_cache_jissunpoushi.json';
 // records(案件ごとの読み込み結果キャッシュ)の形式を変える際にインクリメントする。
-const RECORDS_CACHE_VERSION = 1;
+const RECORDS_CACHE_VERSION = 2;
 const WORK_COPY_PREFIX = '_作業用_実寸法師_';
 const TIMEZONE = 'Asia/Tokyo';
 
@@ -46,16 +54,9 @@ const TIMEZONE = 'Asia/Tokyo';
 const HEADERS = {
   erectionDate: '建方日',
   block: 'ブロック',
-  part: '部位',
-  site: '加工先',
   drawingNo: '図番',
   mark: '製品マーク',
-  size: 'サイズ',
-  note1: '備考①',
-  note2: '備考②',
-  length: '長さ',
-  qty: '本数',
-  weight: '重量',
+  processedDate: '加工',
 };
 
 // ========== エントリーポイント(JSON API) ==========
@@ -133,43 +134,57 @@ function createDailyTrigger() {
   Logger.log('毎日5:00頃に自動更新するトリガーを設定しました。');
 }
 
-// Apps Scriptエディタから手動で実行して、フォルダ構成を確認する。
+// Apps Scriptエディタから手動で実行して、「情報」シートの構成を確認する。
 function checkSetup() {
-  const folder = dataFolder_();
-  Logger.log('データフォルダ: ' + folder.getName() + ' (' + folder.getId() + ')');
-  const files = listMasterFiles_(folder);
-  Logger.log('案件マスターExcelファイル: ' + files.length + '件');
-  files.forEach(function (f) { Logger.log('  - ' + f.project + ' (' + f.fileName + ')'); });
+  const files = readFileIndex_();
+  Logger.log('「' + INFO_SHEET_NAME + '」シートの案件マスターファイル: ' + files.length + '件');
+  files.forEach(function (f) {
+    Logger.log('  - [' + f.workNo + '] ' + f.workName + ' (' + f.fileName + ')');
+  });
   if (files.length === 0) {
-    Logger.log('警告: このスプレッドシートと同じフォルダに.xlsxファイルが見つかりません。');
+    Logger.log('警告: 「' + INFO_SHEET_NAME + '」シートに有効な行(ファイル名・URL列とも入力済み)が見つかりません。');
   }
+  const folder = dataFolder_();
+  Logger.log('作業用ファイル・キャッシュの保存先フォルダ: ' + folder.getName() + ' (' + folder.getId() + ')');
 }
 
-// ========== フォルダ・ファイル一覧 ==========
+// ========== 「情報」シートの読み取り ==========
 
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
 
-// このスプレッドシートが置かれているフォルダ(=案件マスターExcel・キャッシュの保存先)。
+// このスプレッドシートが置かれているフォルダ(=キャッシュ・作業用ファイルの保存先)。
 function dataFolder_() {
   const file = DriveApp.getFileById(ss_().getId());
   const parents = file.getParents();
   return parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
 }
 
-// フォルダ直下の案件マスターExcel(.xlsx)を列挙する。作業用の変換済みスプレッドシートや
-// JSONキャッシュファイルはxlsxではないため自動的に対象外になる。
-function listMasterFiles_(folder) {
+function extractFileIdFromUrl_(url) {
+  const m = String(url || '').match(/\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : '';
+}
+
+// 「情報」シートのA:F列(No/ファイル名/URL/工事番号/工事名/マスタ場所)を読む。
+// ファイル名またはURLが空の行(未入力の枠)は無視する。
+function readFileIndex_() {
+  const sh = ss_().getSheetByName(INFO_SHEET_NAME);
+  if (!sh) throw new Error('「' + INFO_SHEET_NAME + '」シートが見つかりません');
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return [];
+
+  const rows = sh.getRange(2, 1, lastRow - 1, 6).getValues(); // A:F
   const list = [];
-  const it = folder.getFilesByType(XLSX_MIME);
-  while (it.hasNext()) {
-    const f = it.next();
-    const fileName = f.getName();
-    list.push({
-      fileId: f.getId(),
-      fileName: fileName,
-      project: fileName.replace(MASTER_FILE_SUFFIX_RE, '').replace(/\.xlsx$/i, ''),
-    });
-  }
+  rows.forEach(function (row) {
+    const fileName = String(row[1] || '').trim();
+    const url = String(row[2] || '').trim();
+    const workNo = String(row[3] || '').trim();
+    const workName = String(row[4] || '').trim();
+    const masterLocation = String(row[5] || '').trim();
+    if (!fileName || !url) return;
+    const fileId = extractFileIdFromUrl_(url);
+    if (!fileId) return;
+    list.push({ fileId: fileId, fileName: fileName, workNo: workNo, workName: workName, masterLocation: masterLocation });
+  });
   return list;
 }
 
@@ -216,8 +231,7 @@ function convertToSheet_(sourceFileId, label, folder, currentMtime, sourceFile) 
 
 // ========== 案件ごとの集計結果(records)のキャッシュ ==========
 // ファイル更新日時が前回と変わっていなければ、変換だけでなく解析(parseMasterSheet_)自体を
-// 丸ごとスキップし、前回のrecordsをそのまま使い回す。更新されていない案件が増えるほど、
-// 更新のたびに積み重なる無駄なコストがかからなくなる。
+// 丸ごとスキップし、前回のrecordsをそのまま使い回す。
 function loadRecordsCache_(folder) {
   const files = folder.getFilesByName(RECORDS_CACHE_FILE_NAME);
   if (!files.hasNext()) return {};
@@ -240,10 +254,25 @@ function saveRecordsCache_(folder, cache) {
 
 // ========== マスターExcel(変換後)の解析 ==========
 
+// リッチテキスト値からハイパーリンクURLを取り出す。セル全体が1つのリンクである前提だが、
+// 念のためルーンごとのリンクも確認する(いずれも無ければ空文字。図面未作成の行はここが
+// 空になり、フロントエンドで「図面未完」として案内される)。
+function extractLinkUrl_(rtv) {
+  if (!rtv) return '';
+  const whole = rtv.getLinkUrl();
+  if (whole) return whole;
+  const runs = rtv.getRuns ? rtv.getRuns() : [];
+  for (let i = 0; i < runs.length; i++) {
+    const u = runs[i].getLinkUrl();
+    if (u) return u;
+  }
+  return '';
+}
+
 // 見出し行の文字列で列位置を特定するため、ファイルごとの多少の列ズレを吸収できる。
-// セルは表示されている通りの文字列(getDisplayValues)として読み取る(日付書式や、
-// "1/0(Sun)"のような日付になっていないセルもそのまま表示用の文字列として扱う)。
-function parseMasterSheet_(convertedSheetId, project) {
+// セルは表示されている通りの文字列(getDisplayValues)として読み取り、図番列だけは
+// ハイパーリンク(CAD起動リンク)を別途getRichTextValuesで取得する。
+function parseMasterSheet_(convertedSheetId, workNo, workName, masterLocation) {
   const ss = SpreadsheetApp.openById(convertedSheetId);
   const sh = ss.getSheets()[0];
   const values = sh.getDataRange().getDisplayValues();
@@ -252,20 +281,29 @@ function parseMasterSheet_(convertedSheetId, project) {
   const header = values[0].map(function (h) { return String(h || '').trim(); });
   const col = {};
   Object.keys(HEADERS).forEach(function (key) { col[key] = header.indexOf(HEADERS[key]); });
-  if (col.mark < 0) return []; // 製品マーク列が無いファイルは検索対象にできない
+  if (col.mark < 0 || col.drawingNo < 0) return []; // 検索・CADリンクに必須の列が無いファイルは対象外
+
+  const lastRow = sh.getLastRow();
+  const richValues = sh.getRange(2, col.drawingNo + 1, lastRow - 1, 1).getRichTextValues();
 
   const records = [];
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
-    const mark = col.mark >= 0 ? String(row[col.mark] || '').trim() : '';
-    if (!mark) continue; // 製品マークが空の行(見出し直下の空行等)は除外
+    const mark = String(row[col.mark] || '').trim();
+    if (!mark) continue; // 製品マークが空の行は除外
 
-    const rec = { project: project, mark: mark };
-    Object.keys(HEADERS).forEach(function (key) {
-      if (key === 'mark') return;
-      rec[key] = col[key] >= 0 ? String(row[col[key]] || '').trim() : '';
+    const rtv = richValues[i - 1] && richValues[i - 1][0];
+    records.push({
+      workNo: workNo,
+      workName: workName,
+      masterLocation: masterLocation,
+      mark: mark,
+      drawingNo: String(row[col.drawingNo] || '').trim(),
+      drawingLink: extractLinkUrl_(rtv),
+      erectionDate: col.erectionDate >= 0 ? String(row[col.erectionDate] || '').trim() : '',
+      block: col.block >= 0 ? String(row[col.block] || '').trim() : '',
+      processedDate: col.processedDate >= 0 ? String(row[col.processedDate] || '').trim() : '',
     });
-    records.push(rec);
   }
   return records;
 }
@@ -273,14 +311,13 @@ function parseMasterSheet_(convertedSheetId, project) {
 // ========== 集計本体 ==========
 
 function buildData_(folder) {
-  const files = listMasterFiles_(folder);
+  const fileIndex = readFileIndex_();
   const warnings = [];
   const recordsCache = loadRecordsCache_(folder);
   const newRecordsCache = {};
   const allRecords = [];
-  const projects = [];
 
-  files.forEach(function (entry) {
+  fileIndex.forEach(function (entry) {
     let driveFile;
     try {
       driveFile = DriveApp.getFileById(entry.fileId);
@@ -297,25 +334,22 @@ function buildData_(folder) {
     } else {
       try {
         const convertedId = convertToSheet_(entry.fileId, entry.fileName, folder, currentMtime, driveFile);
-        records = parseMasterSheet_(convertedId, entry.project);
+        records = parseMasterSheet_(convertedId, entry.workNo, entry.workName, entry.masterLocation);
       } catch (err) {
         warnings.push('「' + entry.fileName + '」の読み込みに失敗しました: ' + err.message);
         return;
       }
     }
     newRecordsCache[entry.fileId] = { mtime: currentMtime, v: RECORDS_CACHE_VERSION, records: records };
-
-    projects.push(entry.project);
     allRecords.push.apply(allRecords, records);
   });
 
-  // フォルダから消えたファイルのキャッシュは持ち越さない(newRecordsCacheには今回処理した
-  // ファイルのfileIdしか入っていないため、そのまま保存するだけで自然に整理される)。
+  // 「情報」シートから消えたファイルのキャッシュは持ち越さない(newRecordsCacheには今回
+  // 処理したファイルのfileIdしか入っていないため、そのまま保存するだけで自然に整理される)。
   saveRecordsCache_(folder, newRecordsCache);
 
   return {
     generatedAt: Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX"),
-    projects: projects,
     records: allRecords,
     warnings: warnings,
   };

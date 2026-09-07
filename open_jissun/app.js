@@ -2,6 +2,7 @@
 const GAS_API_URL = "PASTE_YOUR_GAS_WEB_APP_URL_HERE";
 
 const MAX_DISPLAY_ROWS = 500; // 一致件数がこれを超えたら、上位だけ表示して件数を案内する
+const NO_DRAWING_NOTE = '図面未完'; // 図番セルにCAD起動リンクが無い行の備考表示
 
 let state = {
   records: [],
@@ -83,10 +84,6 @@ function highlightMark_(mark, markNorm, queryNorm) {
   return escapeHtml_(mark.slice(0, idx)) + '<mark>' + escapeHtml_(mark.slice(idx, idx + queryNorm.length)) + '</mark>' + escapeHtml_(mark.slice(idx + queryNorm.length));
 }
 
-function joinNotes_(rec) {
-  return [rec.note1, rec.note2].filter(function (s) { return s; }).join(' / ');
-}
-
 function renderResults() {
   const query = document.getElementById('searchInput').value.trim();
   const queryNorm = normalize_(query);
@@ -98,7 +95,7 @@ function renderResults() {
 
   if (!queryNorm) {
     table.hidden = true;
-    emptyNote.textContent = '製品マークを入力すると、該当する部材の実寸法(長さ)が表示されます。';
+    emptyNote.textContent = '製品マークを入力して「検索」を押すと、該当する部材が一覧表示されます。行をクリックすると実寸法師(CAD)で図面が開きます。';
     emptyNote.hidden = false;
     countEl.textContent = '';
     return;
@@ -122,26 +119,44 @@ function renderResults() {
   const frag = document.createDocumentFragment();
   shown.forEach(function (r) {
     const tr = document.createElement('tr');
+    const hasLink = !!r.drawingLink;
+    tr.className = hasLink ? 'clickable' : 'no-drawing';
+    tr.dataset.link = r.drawingLink || '';
     tr.innerHTML =
-      '<td>' + escapeHtml_(r.project) + '</td>' +
+      '<td>' + escapeHtml_(r.masterLocation) + '</td>' +
+      '<td>' + escapeHtml_(r.workNo) + '</td>' +
+      '<td>' + escapeHtml_(r.workName) + '</td>' +
+      '<td class="col-drawing">' + escapeHtml_(r.drawingNo) + '</td>' +
       '<td class="col-mark">' + highlightMark_(r.mark, r.markNorm, queryNorm) + '</td>' +
-      '<td>' + escapeHtml_(r.drawingNo) + '</td>' +
-      '<td>' + escapeHtml_(r.size) + '</td>' +
-      '<td class="col-length">' + escapeHtml_(r.length) + '</td>' +
-      '<td>' + escapeHtml_(r.qty) + '</td>' +
-      '<td>' + escapeHtml_(r.weight) + '</td>' +
-      '<td>' + escapeHtml_(r.part) + '</td>' +
-      '<td>' + escapeHtml_(r.block) + '</td>' +
-      '<td>' + escapeHtml_(r.site) + '</td>' +
       '<td>' + escapeHtml_(r.erectionDate) + '</td>' +
-      '<td>' + escapeHtml_(joinNotes_(r)) + '</td>';
+      '<td>' + escapeHtml_(r.block) + '</td>' +
+      '<td>' + escapeHtml_(r.processedDate) + '</td>' +
+      '<td class="col-note">' + (hasLink ? '' : escapeHtml_(NO_DRAWING_NOTE)) + '</td>';
     frag.appendChild(tr);
   });
   body.appendChild(frag);
 }
 
+// 該当行のクリックで実寸法師(CAD)の図面ファイルを開く。図面が未作成(リンク無し)の行は
+// 案内メッセージだけ出す。file://(社内LANの共有フォルダ)へのリンクのため、社内ネットワーク
+// に接続され、かつ対象の拡張子(.tdf等)に実寸法師が関連付けられた端末でのみ開ける。
+function onResultRowClick_(e) {
+  const tr = e.target.closest('tr[data-link]');
+  if (!tr) return;
+  const link = tr.dataset.link;
+  if (!link) {
+    showMessage(NO_DRAWING_NOTE + 'のため、図面を開けません。', 'warn');
+    return;
+  }
+  window.location.href = link;
+}
+
 document.addEventListener('DOMContentLoaded', function () {
-  document.getElementById('searchInput').addEventListener('input', renderResults);
+  document.getElementById('btnSearch').addEventListener('click', renderResults);
+  document.getElementById('searchInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') renderResults();
+  });
+  document.getElementById('resultBody').addEventListener('click', onResultRowClick_);
   document.getElementById('btnRefresh').addEventListener('click', function () {
     loadData(true);
   });
