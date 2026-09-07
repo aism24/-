@@ -281,7 +281,13 @@
         // jissun://等の独自プロトコルは、ブラウザが実際にページ遷移するわけではなく
         // OSのハンドラーに引き渡すだけなので、_blankで新規タブを開くと空白タブが
         // 残ってしまう。同じタブでlocationを変更すればランチャー画面はそのまま残る。
-        window.location.href = url;
+        // 【GAS特有の注意点】このHTMLはscript.google.com上でgoogleusercontent.com
+        // ドメインのiframeとして埋め込まれて表示される。ブラウザは、埋め込みiframe
+        // (自分がトップレベルのフレームでない状態)からの外部プロトコルへの遷移を
+        // セキュリティ上ブロックすることがあるため、window.locationではなく
+        // window.top.locationを使い、トップレベルのフレーム(ブラウザのタブそのもの)
+        // に対して遷移させる。
+        window.top.location.href = url;
       }
       google.script.run.logAppOpen(name);
     }
