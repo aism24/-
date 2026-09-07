@@ -65,14 +65,31 @@ const HEADERS = {
   processedDate: '加工',
 };
 
+// ---------- 【診断用・一時コード】区間タイミング計測 ----------
+// URLに &debug=1 を付けたリクエストの時だけ動作する。パフォーマンス原因の特定が終わったら
+// 必ず削除すること(本番にデバッグ用のデッドコードを残さない)。
+let DEBUG_ON_ = false;
+let DEBUG_LOG_ = [];
+let DEBUG_T0_ = 0;
+function dbgReset_() { DEBUG_LOG_ = []; DEBUG_T0_ = Date.now(); }
+function dbg_(label) { if (DEBUG_ON_) DEBUG_LOG_.push(label + ': ' + (Date.now() - DEBUG_T0_) + 'ms'); }
+
 // ========== エントリーポイント(JSON API) ==========
 
 function doGet(e) {
+  const p = (e && e.parameter) || {};
+  DEBUG_ON_ = p.debug === '1';
+  dbgReset_();
   try {
-    const action = (e && e.parameter && e.parameter.action) || 'getData';
-    if (action === 'getData') return ok_(getData_());
-    if (action === 'refresh') return userRefresh_();
-    return errRes_('不明なaction: ' + action);
+    const action = p.action || 'getData';
+    dbg_('doGet start action=' + action);
+    let data;
+    if (action === 'getData') data = getData_();
+    else if (action === 'refresh') return userRefresh_(); // refreshは内部でok_を返すため別扱い
+    else return errRes_('不明なaction: ' + action);
+    dbg_('doGet dispatch done');
+    if (DEBUG_ON_) data._debugLog = DEBUG_LOG_;
+    return ok_(data);
   } catch (err) {
     return errRes_(err.message);
   }
@@ -92,9 +109,12 @@ function busyRes_(message) { return jsonResponse_({ status: 'busy', message: mes
 // タイミングとは連動させない)。
 function getData_() {
   const folder = dataFolder_();
+  dbg_('dataFolder_ done');
   const cached = loadCache_(folder);
+  dbg_('loadCache_ done (hit=' + (!!cached) + ')');
   const data = cached || refreshAndGetData_(folder);
   data.searchableProjects = readSearchableProjects_();
+  dbg_('readSearchableProjects_ done');
   return data;
 }
 
@@ -124,8 +144,12 @@ function userRefresh_() {
   try {
     const folder = dataFolder_();
     const data = buildData_(folder);
+    dbg_('buildData_ done');
     saveCache_(folder, data);
+    dbg_('saveCache_ done');
     data.searchableProjects = readSearchableProjects_();
+    dbg_('readSearchableProjects_ done');
+    if (DEBUG_ON_) data._debugLog = DEBUG_LOG_;
     return ok_(data);
   } finally {
     lock.releaseLock();
@@ -478,15 +502,19 @@ function parseMasterSheet_(convertedSheetId, workNo, workName, masterLocation, f
 
 function buildData_(folder) {
   const fileIndex = readFileIndex_();
+  dbg_('readFileIndex_ done (' + fileIndex.length + '件)');
   const warnings = [];
   const recordsCache = loadRecordsCache_(folder);
+  dbg_('loadRecordsCache_ done');
   const newRecordsCache = {};
   const allRecords = [];
 
   fileIndex.forEach(function (entry) {
+    const tag = '[' + entry.fileName + ']';
     let driveFile;
     try {
       driveFile = DriveApp.getFileById(entry.fileId);
+      dbg_(tag + ' getFileById done');
     } catch (err) {
       warnings.push('「' + entry.fileName + '」の読み込みに失敗しました: ' + err.message);
       return;
@@ -497,15 +525,20 @@ function buildData_(folder) {
     let records;
     if (cached && cached.mtime === currentMtime && cached.v === RECORDS_CACHE_VERSION) {
       records = cached.records;
+      dbg_(tag + ' cache hit, skip reprocessing');
     } else {
       try {
         const blob = driveFile.getBlob();
+        dbg_(tag + ' getBlob done (' + blob.getBytes().length + ' bytes)');
         const hyperlinkMap = extractHyperlinks_(blob);
+        dbg_(tag + ' extractHyperlinks_ done');
         if (hyperlinkMap.__error) {
           warnings.push('「' + entry.fileName + '」の図面リンク取得でエラー(検索・表示自体は続行します): ' + hyperlinkMap.__error);
         }
         const convertedId = convertToSheet_(entry.fileId, entry.fileName, folder, currentMtime, blob);
+        dbg_(tag + ' convertToSheet_ done');
         records = parseMasterSheet_(convertedId, entry.workNo, entry.workName, entry.masterLocation, entry.fileName, hyperlinkMap);
+        dbg_(tag + ' parseMasterSheet_ done (' + records.length + '件)');
       } catch (err) {
         warnings.push('「' + entry.fileName + '」の読み込みに失敗しました: ' + err.message);
         return;
@@ -514,10 +547,12 @@ function buildData_(folder) {
     newRecordsCache[entry.fileId] = { mtime: currentMtime, v: RECORDS_CACHE_VERSION, records: records };
     allRecords.push.apply(allRecords, records);
   });
+  dbg_('all files processed (' + allRecords.length + '件合計)');
 
   // 「情報」シートから消えたファイルのキャッシュは持ち越さない(newRecordsCacheには今回
   // 処理したファイルのfileIdしか入っていないため、そのまま保存するだけで自然に整理される)。
   saveRecordsCache_(folder, newRecordsCache);
+  dbg_('saveRecordsCache_ done');
 
   return {
     generatedAt: Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd'T'HH:mm:ssXXX"),
