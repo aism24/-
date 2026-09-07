@@ -52,7 +52,7 @@ const INFO_SHEET_NAME = '情報';
 const CACHE_FILE_NAME = '_cache_jissunpoushi.json';
 const RECORDS_CACHE_FILE_NAME = '_records_cache_jissunpoushi.json';
 // records(案件ごとの読み込み結果キャッシュ)の形式を変える際にインクリメントする。
-const RECORDS_CACHE_VERSION = 4;
+const RECORDS_CACHE_VERSION = 5;
 const WORK_COPY_PREFIX = '_作業用_実寸法師_';
 const TIMEZONE = 'Asia/Tokyo';
 
@@ -354,7 +354,12 @@ function findFirstSheetPartName_(entriesByName) {
 // 想定していない(このアプリのデータでは1行1リンクの前提)。
 function extractHyperlinks_(blob) {
   try {
-    const entries = Utilities.unzip(blob);
+    // xlsx自体はzip形式だが、blobのMIMEタイプがxlsxのままだとUtilities.unzipが
+    // 「zip形式として認識できない」旨のエラーを出すことがあるため、複製した上で
+    // 明示的にapplication/zipとして扱う(元のblobは他の用途(xlsx→スプレッドシート変換)
+    // にも使われるため、複製せず直接setContentTypeで書き換えない)。
+    const zipBlob = blob.copyBlob().setContentType('application/zip');
+    const entries = Utilities.unzip(zipBlob);
     const entriesByName = {};
     entries.forEach(function (e) { entriesByName[e.getName()] = e; });
 
@@ -392,7 +397,9 @@ function extractHyperlinks_(blob) {
     }
     return map;
   } catch (e) {
-    return {};
+    // 診断用: 呼び出し元(buildData_)で__errorキーを見つけたら警告に出す。実在のセル参照
+    // (例:"F123")と衝突しないキー名なので、通常のリンク検索には影響しない。
+    return { __error: String(e && e.message || e) };
   }
 }
 
@@ -494,6 +501,9 @@ function buildData_(folder) {
       try {
         const blob = driveFile.getBlob();
         const hyperlinkMap = extractHyperlinks_(blob);
+        if (hyperlinkMap.__error) {
+          warnings.push('「' + entry.fileName + '」の図面リンク取得でエラー(検索・表示自体は続行します): ' + hyperlinkMap.__error);
+        }
         const convertedId = convertToSheet_(entry.fileId, entry.fileName, folder, currentMtime, blob);
         records = parseMasterSheet_(convertedId, entry.workNo, entry.workName, entry.masterLocation, entry.fileName, hyperlinkMap);
       } catch (err) {
