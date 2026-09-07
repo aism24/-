@@ -135,7 +135,10 @@ table.projects-table th { color: var(--muted); font-weight: 700; }
   overflow: auto;
   max-height: calc(100vh - var(--above-table-height, 300px));
 }
-table#resultTable { width: 100%; border-collapse: collapse; font-size: 0.85rem; white-space: nowrap; }
+/* border-collapse:collapse だと、多くのブラウザでtheadのposition:stickyが正しく機能しない
+   (スクロールしても固定されず消えてしまう)既知の制約があるため、separateにする
+   (border-spacing:0にすることで見た目上の隙間は出ない)。 */
+table#resultTable { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.85rem; white-space: nowrap; }
 table#resultTable th, table#resultTable td {
   border-bottom: 1px solid var(--border);
   padding: 7px 10px;
@@ -158,6 +161,17 @@ table#resultTable tbody tr.clickable { cursor: pointer; }
 table#resultTable tbody tr.clickable:hover { background: var(--panel2); }
 table#resultTable tbody tr.clickable:hover td.col-drawing { text-decoration: underline; }
 table#resultTable tbody tr.no-drawing { opacity: 0.7; }
+/* 図番にCAD起動リンクがある行は、各セルの中身を実際の<a>タグで覆う(JSのlocation.href
+   による遷移はブラウザにブロックされることがあるため、ブラウザ標準のリンク遷移に
+   任せることで、社内共有フォルダ(file://)へのリンクをより確実に開けるようにする)。
+   色・太字等の見た目は親td側のルールを維持する(color:inheritで継承する)。 */
+table#resultTable td a.row-link {
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: inherit;
+  text-decoration: none;
+}
 
 .empty-note { color: var(--muted); padding: 20px 10px; text-align: center; }
 

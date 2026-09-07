@@ -104,7 +104,16 @@ function escapeHtml_(s) {
   return String(s)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// リンクがある場合、セルの中身を本物の<a>タグで包む(JSのlocation.hrefによる遷移は
+// ブラウザにブロックされることがあるため、ブラウザ標準のリンク遷移に任せることで、
+// 社内共有フォルダ(file://)へのリンクをより確実に開けるようにする)。
+function linkWrapCell_(innerHtml, link) {
+  if (!link) return innerHtml;
+  return '<a class="row-link" href="' + escapeHtml_(link) + '">' + innerHtml + '</a>';
 }
 
 // 一致した部分だけを<mark>で強調する(表示は元の文字列のまま、正規化後の位置で判定する)。
@@ -183,18 +192,19 @@ function renderResults() {
   shown.forEach(function (r) {
     const tr = document.createElement('tr');
     const hasLink = !!r.drawingLink;
+    const link = r.drawingLink || '';
     tr.className = hasLink ? 'clickable' : 'no-drawing';
-    tr.dataset.link = r.drawingLink || '';
+    tr.dataset.hasLink = hasLink ? '1' : '';
     tr.innerHTML =
-      '<td>' + escapeHtml_(r.masterLocation) + '</td>' +
-      '<td>' + escapeHtml_(r.workNo) + '</td>' +
-      '<td>' + escapeHtml_(r.workName) + '</td>' +
-      '<td class="col-drawing">' + escapeHtml_(r.drawingNo) + '</td>' +
-      '<td class="col-mark">' + highlightMark_(r.mark, r.markNorm, queryNorm) + '</td>' +
-      '<td class="col-date' + (r.erectionDateUnclear ? ' date-unclear' : '') + '">' + escapeHtml_(r.erectionDate) + '</td>' +
-      '<td>' + escapeHtml_(r.block) + '</td>' +
-      '<td class="col-date' + (r.processedDateUnclear ? ' date-unclear' : '') + '">' + escapeHtml_(r.processedDate) + '</td>' +
-      '<td class="col-note">' + escapeHtml_(buildNote_(r, hasLink)) + '</td>';
+      '<td>' + linkWrapCell_(escapeHtml_(r.masterLocation), link) + '</td>' +
+      '<td>' + linkWrapCell_(escapeHtml_(r.workNo), link) + '</td>' +
+      '<td>' + linkWrapCell_(escapeHtml_(r.workName), link) + '</td>' +
+      '<td class="col-drawing">' + linkWrapCell_(escapeHtml_(r.drawingNo), link) + '</td>' +
+      '<td class="col-mark">' + linkWrapCell_(highlightMark_(r.mark, r.markNorm, queryNorm), link) + '</td>' +
+      '<td class="col-date' + (r.erectionDateUnclear ? ' date-unclear' : '') + '">' + linkWrapCell_(escapeHtml_(r.erectionDate), link) + '</td>' +
+      '<td>' + linkWrapCell_(escapeHtml_(r.block), link) + '</td>' +
+      '<td class="col-date' + (r.processedDateUnclear ? ' date-unclear' : '') + '">' + linkWrapCell_(escapeHtml_(r.processedDate), link) + '</td>' +
+      '<td class="col-note">' + linkWrapCell_(escapeHtml_(buildNote_(r, hasLink)), link) + '</td>';
     frag.appendChild(tr);
   });
   body.appendChild(frag);
@@ -207,18 +217,14 @@ function hideNoDrawingPopup_() {
   document.getElementById('noDrawingOverlay').hidden = true;
 }
 
-// 該当行のクリックで実寸法師(CAD)の図面ファイルを開く。図面が未作成(リンク無し)の行は
-// ポップアップで案内する。file://(社内LANの共有フォルダ)へのリンクのため、社内ネットワーク
-// に接続され、かつ対象の拡張子(.tdf等)に実寸法師が関連付けられた端末でのみ開ける。
+// 図面が未作成(リンク無し)の行をクリックした時だけポップアップで案内する。リンクが
+// ある行は各セルが本物の<a href="file://...">で覆われているため、ブラウザ標準の
+// リンク遷移がそのまま働き(JSでの遷移操作は不要)、社内ネットワークに接続され、
+// かつ対象の拡張子(.tdf等)に実寸法師が関連付けられた端末でのみ開ける。
 function onResultRowClick_(e) {
-  const tr = e.target.closest('tr[data-link]');
-  if (!tr) return;
-  const link = tr.dataset.link;
-  if (!link) {
-    showNoDrawingPopup_();
-    return;
-  }
-  window.location.href = link;
+  const tr = e.target.closest('tr[data-has-link]');
+  if (!tr || tr.dataset.hasLink) return;
+  showNoDrawingPopup_();
 }
 
 document.addEventListener('DOMContentLoaded', function () {
