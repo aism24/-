@@ -275,7 +275,14 @@
     function openCard(card) {
       var url = card.getAttribute('data-url');
       var name = card.getAttribute('data-name');
-      window.open(url, '_blank');
+      if (/^https?:\/\//i.test(url)) {
+        window.open(url, '_blank');
+      } else {
+        // jissun://等の独自プロトコルは、ブラウザが実際にページ遷移するわけではなく
+        // OSのハンドラーに引き渡すだけなので、_blankで新規タブを開くと空白タブが
+        // 残ってしまう。同じタブでlocationを変更すればランチャー画面はそのまま残る。
+        window.location.href = url;
+      }
       google.script.run.logAppOpen(name);
     }
 
