@@ -219,64 +219,49 @@ function getAbsenteeismData() {
 }
 
 /* ===================== ①日報入力チェック「総務建築」拠点データ ===================== */
-/* 【重要】DailyReport建築は共有スプレッドシート(Code.gsの container)とは別のファイルで、
-   スプレッドシートごとに個別のタイムゾーン設定を持ちうる。SpreadsheetApp.openById()で
-   読んだ日時セルをDateのgetHours()/getDate()等でそのまま読むと、そのDateオブジェクトは
-   スクリプト側のタイムゾーンで解釈されてしまい、シート側のタイムゾーン設定と食い違って
-   いる場合に日付・時刻がずれる(実測で発覚: 8:00〜17:00の記録が丸ごと翌日・9時間扱いに
-   ずれていた)。この食い違いを正しく読み取るにはUtilities.formatDate()にKENCHIKU建築
-   シート自身のgetSpreadsheetTimeZone()を明示指定する必要があるが、これをDailyReport
-   建築の全行(27,000行超)についてループ内で行ごとに複数回呼ぶと、Utilities.*の
-   サービス呼び出しコストが積み上がり致命的に遅くなる(実測: 1行あたり2回・27,589行で
-   応答24〜42秒。gas-performance-diagnosisスキルで診断)。
-   対策: 対象タイムゾーンが夏時間(DST)を観測しない(=年間を通してUTCとのオフセットが
-   一定)場合に限り、最初に1回だけUtilities.formatDateでオフセット(分)を求め、以降は
-   全行についてエポック時刻+固定オフセットの純粋なJS計算(Utilities呼び出し無し)で
-   yyyy/MM/dd・HH:mmを求める。この置き換えがUtilities.formatDate版と完全に一致することは、
-   Node.js側でAsia/Tokyo等の非DST帯に対し20万件のランダム境界値(日付またぎ・昼休み境界を
-   含む)で検証済み。DSTを観測するタイムゾーンだった場合は、正しさを優先して
-   Utilities.formatDateを使う従来経路にフォールバックする(その場合は遅いまま)。 */
-function kenchikuTzOffsetMin_(tz) {
-  const winter = new Date(Date.UTC(2023, 0, 1, 0, 0, 0));
-  const summer = new Date(Date.UTC(2023, 6, 1, 0, 0, 0));
-  const off = function (d) {
-    const z = Utilities.formatDate(d, tz, 'Z'); // 例: "+0900"
-    const sign = z.charAt(0) === '-' ? -1 : 1;
-    return sign * (Number(z.substring(1, 3)) * 60 + Number(z.substring(3, 5)));
-  };
-  const w = off(winter), s = off(summer);
-  return w === s ? w : null; // 冬夏でオフセットが異なる=DSTあり→nullでフォールバックさせる
+/* 【重要】DailyReport建築は共有スプレッドシート(Code.gsのcontainer)とは別のファイルで、
+   スプレッドシートごとに個別のタイムゾーン設定を持ちうる(診断の結果、実際に
+   America/Los_Angelesであることが判明。スクリプト側=Asia/Tokyoとは異なり、かつ
+   夏時間[DST]を観測する)。SpreadsheetApp.openById()で読んだ日時セルをDateの
+   getHours()/getDate()等でそのまま読むと、スクリプト側のタイムゾーンで解釈されて
+   しまい日付・時刻がずれる(実測で発覚)。
+   正しく読み取るにはKENCHIKU建築シート自身のタイムゾーンを明示指定する必要があるが、
+   Utilities.formatDate()はGASのサービス呼び出しを伴うため、DailyReport建築の全行
+   (27,000行超)についてループ内で行ごとに複数回呼ぶと致命的に遅くなる
+   (実測: 24〜42秒。当初、夏時間を観測しないタイムゾーンに限定した高速化案を試したが、
+   実際のタイムゾーンはDSTありと判明したためフォールバック経路が常に使われ、かつ
+   呼び出し回数が増えた分だけ81〜114秒とさらに悪化した。gas-performance-diagnosis
+   スキルで診断)。
+   対策: V8ランタイムに組み込みのIntl.DateTimeFormat(ICU、Apps Scriptのサービス呼び出しを
+   伴わない純粋なJS処理)を使えば、DSTの有無によらず正しく高速にyyyy/MM/dd・HH:mmへ
+   変換できる(フォーマッタは1回だけ生成し、以降は全行についてformatToParts()のみを呼ぶ)。
+   Intlが使えない/タイムゾーン名が不正な場合のみ、正しさを優先してUtilities.formatDateの
+   経路にフォールバックする(その場合は遅いまま)。 */
+function kenchikuMakeFormatter_(tz) {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    });
+    fmt.formatToParts(new Date()); // 動作確認(不正なタイムゾーン名だとここで例外)
+    return fmt;
+  } catch (e) {
+    return null;
+  }
 }
 
-function kenchikuPad2_(n) { return (n < 10 ? '0' : '') + n; }
-
-/* 【診断用・一時コード】読み込み高速化が効いているか(offsetMinがnullでないか)を
-   直接確認するための関数。原因特定後は必ず削除する(gas-performance-diagnosisスキル
-   手順5)。 */
-function debugKenchikuTz_() {
-  const ssId = getKenchikuSsId_();
-  if (!ssId) return { error: 'no ssId' };
-  const ss = SpreadsheetApp.openById(ssId);
-  const tz = ss.getSpreadsheetTimeZone();
-  const winter = new Date(Date.UTC(2023, 0, 1, 0, 0, 0));
-  const summer = new Date(Date.UTC(2023, 6, 1, 0, 0, 0));
-  return {
-    tz: tz,
-    scriptTz: Session.getScriptTimeZone(),
-    zWinter: Utilities.formatDate(winter, tz, 'Z'),
-    zSummer: Utilities.formatDate(summer, tz, 'Z'),
-    offsetMin: kenchikuTzOffsetMin_(tz)
-  };
+function kenchikuParts_(fmt, d) {
+  const out = {};
+  fmt.formatToParts(d).forEach(function (p) { out[p.type] = p.value; });
+  return out;
 }
 
-/* offsetMinがnull(DSTあり)でない限りUtilities.formatDateを使わない高速版。 */
-function kenchikuYmdFast_(d, offsetMin) {
-  const t = new Date(d.getTime() + offsetMin * 60000);
-  return t.getUTCFullYear() + '/' + kenchikuPad2_(t.getUTCMonth() + 1) + '/' + kenchikuPad2_(t.getUTCDate());
-}
-
-function kenchikuYmd_(d, tz, offsetMin) {
-  return offsetMin !== null ? kenchikuYmdFast_(d, offsetMin) : Utilities.formatDate(d, tz, 'yyyy/MM/dd');
+function kenchikuYmd_(d, tz, fmt) {
+  if (fmt) {
+    const p = kenchikuParts_(fmt, d);
+    return p.year + '/' + p.month + '/' + p.day;
+  }
+  return Utilities.formatDate(d, tz, 'yyyy/MM/dd');
 }
 
 /* Operatorシート列: A社員No B氏名 C事業部 D部署 E電話番号 F E-Mail G現状。
@@ -311,11 +296,11 @@ function loadKenchikuOperators_(ssId) {
   return list;
 }
 
-/* HH:mm文字列(オフセット高速経路が使えない=DSTタイムゾーンの場合のみUtilities.formatDate)。 */
-function kenchikuHm_(d, tz, offsetMin) {
-  if (offsetMin !== null) {
-    const t = new Date(d.getTime() + offsetMin * 60000);
-    return kenchikuPad2_(t.getUTCHours()) + ':' + kenchikuPad2_(t.getUTCMinutes());
+/* HH:mm文字列。fmtがあればIntl(高速)、無ければUtilities.formatDateにフォールバック。 */
+function kenchikuHm_(d, tz, fmt) {
+  if (fmt) {
+    const p = kenchikuParts_(fmt, d);
+    return p.hour + ':' + p.minute;
   }
   return Utilities.formatDate(d, tz, 'HH:mm');
 }
@@ -324,14 +309,14 @@ function kenchikuHm_(d, tz, offsetMin) {
    (区間が昼休みに掛かっていなければ差し引かない)。例: 10:00〜15:30 → 5.5h - 1h = 4.5h。
    開始・終了が同日である前提。休憩分数(breakMin)は①のセル詳細ポップアップ
    (開始時間・終了時間・休憩時間・合計時間の表示、ユーザー指定)にも使う。 */
-function computeKenchikuHoursDetail_(start, end, tz, offsetMin) {
+function computeKenchikuHoursDetail_(start, end, tz, fmt) {
   if (!(start instanceof Date) || !(end instanceof Date)) return { hours: 0, breakMin: 0 };
   const diffMin = (end.getTime() - start.getTime()) / 60000;
   if (diffMin <= 0) return { hours: 0, breakMin: 0 };
   let startMin;
-  if (offsetMin !== null) {
-    const t = new Date(start.getTime() + offsetMin * 60000);
-    startMin = t.getUTCHours() * 60 + t.getUTCMinutes();
+  if (fmt) {
+    const p = kenchikuParts_(fmt, start);
+    startMin = Number(p.hour) * 60 + Number(p.minute);
   } else {
     const hm = Utilities.formatDate(start, tz, 'HH:mm').split(':');
     startMin = Number(hm[0]) * 60 + Number(hm[1]);
@@ -348,7 +333,7 @@ function computeKenchikuHoursDetail_(start, end, tz, offsetMin) {
 function loadKenchikuWorkRows_(ssId) {
   const ss = SpreadsheetApp.openById(ssId);
   const tz = ss.getSpreadsheetTimeZone();
-  const offsetMin = kenchikuTzOffsetMin_(tz);
+  const fmt = kenchikuMakeFormatter_(tz);
   const values = ss.getSheetByName(SHEET_NAMES.DAILY_REPORT).getDataRange().getValues();
   const rows = [];
   for (let i = 1; i < values.length; i++) {
@@ -356,15 +341,15 @@ function loadKenchikuWorkRows_(ssId) {
     if (!r[0]) continue;
     if (!(r[3] instanceof Date)) continue;
     const operatorNo = String(r[2]);
-    const workDate = kenchikuYmd_(r[3], tz, offsetMin);
-    const detail = computeKenchikuHoursDetail_(r[3], r[4], tz, offsetMin);
+    const workDate = kenchikuYmd_(r[3], tz, fmt);
+    const detail = computeKenchikuHoursDetail_(r[3], r[4], tz, fmt);
     if (detail.hours <= 0) continue;
     rows.push({
       operatorNo: operatorNo,
       workDate: workDate,
       hours: detail.hours,
-      start: kenchikuHm_(r[3], tz, offsetMin),
-      end: kenchikuHm_(r[4], tz, offsetMin),
+      start: kenchikuHm_(r[3], tz, fmt),
+      end: kenchikuHm_(r[4], tz, fmt),
       breakMin: detail.breakMin
     });
   }
@@ -376,7 +361,7 @@ function loadKenchikuWorkRows_(ssId) {
 function loadKenchikuAbsenteeism_(ssId) {
   const ss = SpreadsheetApp.openById(ssId);
   const tz = ss.getSpreadsheetTimeZone();
-  const offsetMin = kenchikuTzOffsetMin_(tz);
+  const fmt = kenchikuMakeFormatter_(tz);
   const sheet = ss.getSheetByName(SHEET_NAMES.ABSENTEEISM);
   if (!sheet) return [];
   const rows = sheet.getDataRange().getValues();
@@ -386,8 +371,8 @@ function loadKenchikuAbsenteeism_(ssId) {
     const type = String(r[6] || '').trim();
     if (!type) continue;
     if (!(r[3] instanceof Date)) continue;
-    const from = kenchikuYmd_(r[3], tz, offsetMin);
-    const to = (r[4] instanceof Date) ? kenchikuYmd_(r[4], tz, offsetMin) : from;
+    const from = kenchikuYmd_(r[3], tz, fmt);
+    const to = (r[4] instanceof Date) ? kenchikuYmd_(r[4], tz, fmt) : from;
     result.push({
       operatorNo: String(r[2]),
       from: from,
@@ -1446,7 +1431,6 @@ function doPost(e) {
     if (action === 'getUpdateLogs') return apiJsonOk_(getUpdateLogsForClient());
     if (action === 'getUpdateLogPdf') return apiJsonOk_(getUpdateLogPdfForClient(params.fileId));
     if (action === 'getKenchikuCheckData') return apiJsonOk_(getKenchikuCheckDataForClient());
-    if (action === 'debugKenchikuTz') return apiJsonOk_(debugKenchikuTz_()); // 【診断用・一時】原因特定後に削除する
     return apiJsonErr_('不明なaction: ' + action);
   } catch (err) {
     return apiJsonErr_(String(err && err.message || err));
