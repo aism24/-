@@ -1188,6 +1188,18 @@ async function ensureKenchikuData_(){
 
 /* 部署=総務部の社員はDailyReport建築に作業記録が存在しない(ユーザー確認済み)ため、
    未入力による赤色(missing)判定は行わず、届出(有給等)の確認だけを行う。 */
+/* 建築側は「有給・欠勤」に加えて「代休」も終日扱いとする(ユーザー指定: 代休の日は
+   未入力でも赤色にせず、届出ありの配色にする)。本社/夢前/鳥取側のfullDayLeaveType
+   (有給・欠勤のみ)は変更しない。 */
+function kenchikuFullDayLeaveType_(operatorNo, dateStr){
+  for(let i = 0; i < KENCHIKU_ABSENTEEISM.length; i++){
+    const a = KENCHIKU_ABSENTEEISM[i];
+    if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to &&
+       (a.type === '有給' || a.type === '欠勤' || a.type === '代休')) return a.type;
+  }
+  return null;
+}
+
 function kenchikuCell_(op, dh, hoursTotals){
   if(!dh.isPast){
     const futureLeave = anyLeaveTypeText(op.no, dh.date, KENCHIKU_ABSENTEEISM);
@@ -1196,7 +1208,7 @@ function kenchikuCell_(op, dh, hoursTotals){
   }
   const isSomu = op.dept === '総務部';
   const hours = hoursTotals[op.no + '|' + dh.date] || 0;
-  const leave = fullDayLeaveType(op.no, dh.date, KENCHIKU_ABSENTEEISM);
+  const leave = kenchikuFullDayLeaveType_(op.no, dh.date);
   let flag = '';
   if(leave && hours > 0) flag = 'duplicate';
   else if(hours >= 16) flag = 'long';
