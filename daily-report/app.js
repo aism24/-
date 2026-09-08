@@ -1642,14 +1642,15 @@ function clearCellPopupActive_(){
    isKenchiku=true(①日報入力チェックの「総務建築」拠点)の場合は、社員No体系が別のため
    OPERATOR_NAME/ABSENTEEISM_DETAIL/ALL_ROWS(本社/夢前/鳥取用)は参照せず、
    KENCHIKU_*(DailyReport建築専用)を使う。建築側は工事名・作業内容のマスタを
-   読み込んでいないため、内訳は出さず合計時間だけ表示する。 */
+   読み込んでいないため、その内訳の代わりに開始時間・終了時間・休憩時間・合計時間を
+   記録(最大5組)ごとに表示する(ユーザー指定)。 */
 function r4CellDetailHtml_(no, dateStr, isKenchiku){
   if(isKenchiku){
     const op = KENCHIKU_OPERATORS.find(o => o.no === no);
     const name = op ? op.name : no;
     const leave = KENCHIKU_ABSENTEEISM.find(a => a.operatorNo === no && dateStr >= a.from && dateStr <= a.to);
-    const total = KENCHIKU_ROWS.filter(r => r.operatorNo === no && r.workDate === dateStr)
-      .reduce((s, r) => s + r.hours, 0);
+    const workRows = KENCHIKU_ROWS.filter(r => r.operatorNo === no && r.workDate === dateStr);
+    const total = workRows.reduce((s, r) => s + r.hours, 0);
 
     let html = `<div class="detailRow"><span class="detailLabel">日付</span><span>${dateStr}</span></div>`;
     html += `<div class="detailRow"><span class="detailLabel">氏名</span><span>${name}</span></div>`;
@@ -1659,6 +1660,12 @@ function r4CellDetailHtml_(no, dateStr, isKenchiku){
         html += `<div class="detailRow"><span class="detailLabel">事由</span><span>${leave.reason}</span></div>`;
       }
     }
+    workRows.forEach((r, i) => {
+      const n = i + 1;
+      html += `<div class="detailRow"><span class="detailLabel">開始時間${n}</span><span>${r.start}</span></div>`;
+      html += `<div class="detailRow"><span class="detailLabel">終了時間${n}</span><span>${r.end}</span></div>`;
+      html += `<div class="detailRow"><span class="detailLabel">休憩時間${n}</span><span>${(r.breakMin || 0) / 60}</span></div>`;
+    });
     html += `<div class="detailRow detailRowTotal"><span class="detailLabel">合計時間</span><span>${total}</span></div>`;
     return html;
   }
