@@ -250,6 +250,25 @@ function kenchikuTzOffsetMin_(tz) {
 
 function kenchikuPad2_(n) { return (n < 10 ? '0' : '') + n; }
 
+/* 【診断用・一時コード】読み込み高速化が効いているか(offsetMinがnullでないか)を
+   直接確認するための関数。原因特定後は必ず削除する(gas-performance-diagnosisスキル
+   手順5)。 */
+function debugKenchikuTz_() {
+  const ssId = getKenchikuSsId_();
+  if (!ssId) return { error: 'no ssId' };
+  const ss = SpreadsheetApp.openById(ssId);
+  const tz = ss.getSpreadsheetTimeZone();
+  const winter = new Date(Date.UTC(2023, 0, 1, 0, 0, 0));
+  const summer = new Date(Date.UTC(2023, 6, 1, 0, 0, 0));
+  return {
+    tz: tz,
+    scriptTz: Session.getScriptTimeZone(),
+    zWinter: Utilities.formatDate(winter, tz, 'Z'),
+    zSummer: Utilities.formatDate(summer, tz, 'Z'),
+    offsetMin: kenchikuTzOffsetMin_(tz)
+  };
+}
+
 /* offsetMinがnull(DSTあり)でない限りUtilities.formatDateを使わない高速版。 */
 function kenchikuYmdFast_(d, offsetMin) {
   const t = new Date(d.getTime() + offsetMin * 60000);
@@ -1427,6 +1446,7 @@ function doPost(e) {
     if (action === 'getUpdateLogs') return apiJsonOk_(getUpdateLogsForClient());
     if (action === 'getUpdateLogPdf') return apiJsonOk_(getUpdateLogPdfForClient(params.fileId));
     if (action === 'getKenchikuCheckData') return apiJsonOk_(getKenchikuCheckDataForClient());
+    if (action === 'debugKenchikuTz') return apiJsonOk_(debugKenchikuTz_()); // 【診断用・一時】原因特定後に削除する
     return apiJsonErr_('不明なaction: ' + action);
   } catch (err) {
     return apiJsonErr_(String(err && err.message || err));
