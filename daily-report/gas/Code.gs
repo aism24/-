@@ -221,8 +221,11 @@ function getAbsenteeismData() {
 
 /* ===================== ①日報入力チェック「総務建築」拠点データ ===================== */
 /* Operatorシート列: A社員No B氏名 C事業部 D部署 E電話番号 F E-Mail G現状。
-   G列(現状)が「勤務」の行だけを対象にし、社員No=800(共有アカウント)は除外する。
-   表示順は「設計→営業→工事→総務部」の部署順、それぞれ社員No昇順(ユーザー指定)。 */
+   G列(現状)が「勤務」の行だけを対象にし、KENCHIKU_EXCLUDED_OPERATOR_NOS_の社員No
+   (800=共有アカウント、9=ユーザー指定)は除外する。表示順は「設計→営業→工事→総務部」の
+   部署順、それぞれ社員No昇順(ユーザー指定)。 */
+const KENCHIKU_EXCLUDED_OPERATOR_NOS_ = ['800', '9'];
+
 function loadKenchikuOperators_(ssId) {
   const ss = SpreadsheetApp.openById(ssId);
   const rows = ss.getSheetByName(SHEET_NAMES.OPERATOR).getDataRange().getValues();
@@ -231,7 +234,7 @@ function loadKenchikuOperators_(ssId) {
     const r = rows[i];
     if (!r[0]) continue;
     const no = String(r[0]);
-    if (no === '800') continue;
+    if (KENCHIKU_EXCLUDED_OPERATOR_NOS_.indexOf(no) !== -1) continue;
     if (String(r[6] || '').trim() !== '勤務') continue;
     list.push({ no: no, name: r[1], dept: r[3] });
   }
