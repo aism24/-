@@ -292,13 +292,23 @@ function loadKenchikuOperators_(ssId) {
   return list;
 }
 
+/* HH:mm文字列(オフセット高速経路が使えない=DSTタイムゾーンの場合のみUtilities.formatDate)。 */
+function kenchikuHm_(d, tz, offsetMin) {
+  if (offsetMin !== null) {
+    const t = new Date(d.getTime() + offsetMin * 60000);
+    return kenchikuPad2_(t.getUTCHours()) + ':' + kenchikuPad2_(t.getUTCMinutes());
+  }
+  return Utilities.formatDate(d, tz, 'HH:mm');
+}
+
 /* 休憩時間(12:00〜13:00の1時間固定)は、開始〜終了の区間と重なった分だけ差し引く
    (区間が昼休みに掛かっていなければ差し引かない)。例: 10:00〜15:30 → 5.5h - 1h = 4.5h。
-   開始・終了が同日である前提。 */
-function computeKenchikuHours_(start, end, tz, offsetMin) {
-  if (!(start instanceof Date) || !(end instanceof Date)) return 0;
+   開始・終了が同日である前提。休憩分数(breakMin)は①のセル詳細ポップアップ
+   (開始時間・終了時間・休憩時間・合計時間の表示、ユーザー指定)にも使う。 */
+function computeKenchikuHoursDetail_(start, end, tz, offsetMin) {
+  if (!(start instanceof Date) || !(end instanceof Date)) return { hours: 0, breakMin: 0 };
   const diffMin = (end.getTime() - start.getTime()) / 60000;
-  if (diffMin <= 0) return 0;
+  if (diffMin <= 0) return { hours: 0, breakMin: 0 };
   let startMin;
   if (offsetMin !== null) {
     const t = new Date(start.getTime() + offsetMin * 60000);
@@ -309,12 +319,13 @@ function computeKenchikuHours_(start, end, tz, offsetMin) {
   }
   const endMin = startMin + diffMin;
   const overlap = Math.max(0, Math.min(endMin, KENCHIKU_LUNCH_END_MIN_) - Math.max(startMin, KENCHIKU_LUNCH_START_MIN_));
-  return (diffMin - overlap) / 60;
+  return { hours: (diffMin - overlap) / 60, breakMin: overlap };
 }
 
 /* DailyReportシート列: A No B所属 C登録者(社員No) D開始時間 E終了時間 F工事No
-   G工事名(参照) H工事名 I作業内容 J備考 K TimeStamp。①日報入力チェックには
-   氏名×日付の時間合計しか使わないため、社員No・作業日・時間数だけを返す。 */
+   G工事名(参照) H工事名 I作業内容 J備考 K TimeStamp。①日報入力チェックのグリッド集計
+   (社員No・作業日・時間数)に加え、セル詳細ポップアップ用に開始時間・終了時間・
+   休憩分数も返す。 */
 function loadKenchikuWorkRows_(ssId) {
   const ss = SpreadsheetApp.openById(ssId);
   const tz = ss.getSpreadsheetTimeZone();
@@ -327,9 +338,16 @@ function loadKenchikuWorkRows_(ssId) {
     if (!(r[3] instanceof Date)) continue;
     const operatorNo = String(r[2]);
     const workDate = kenchikuYmd_(r[3], tz, offsetMin);
-    const hours = computeKenchikuHours_(r[3], r[4], tz, offsetMin);
-    if (hours <= 0) continue;
-    rows.push({ operatorNo: operatorNo, workDate: workDate, hours: hours });
+    const detail = computeKenchikuHoursDetail_(r[3], r[4], tz, offsetMin);
+    if (detail.hours <= 0) continue;
+    rows.push({
+      operatorNo: operatorNo,
+      workDate: workDate,
+      hours: detail.hours,
+      start: kenchikuHm_(r[3], tz, offsetMin),
+      end: kenchikuHm_(r[4], tz, offsetMin),
+      breakMin: detail.breakMin
+    });
   }
   return rows;
 }
