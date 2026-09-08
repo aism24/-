@@ -72,10 +72,7 @@ function loadTournamentList() {
       return;
     }
     container.innerHTML = list.map(t =>
-      `<div class="tournamentListItem"><span>${t.name}（${t.prefix}）</span><span>
-        <button type="button" class="btnOpen" onclick="openTournament('${t.prefix}')">開く</button>
-        <button type="button" class="btnDelete" onclick="deleteTournament('${t.prefix}')">削除</button>
-      </span></div>`
+      `<div class="tournamentListItem" onclick="openTournament('${t.prefix}')">${t.name}（${t.prefix}）</div>`
     ).join('');
   }).catch(e => { container.innerText = 'エラー: ' + e.message; });
 }
@@ -108,15 +105,6 @@ function createTournament() {
     // 作成応答に大会データが同梱されているので、改めてgetTournamentを呼ばずに開く
     openTournamentWithData(data.prefix, data.tournament);
   }).catch(e => { hideLoading(); errorEl.innerText = 'エラー: ' + e.message; });
-}
-
-function deleteTournament(prefix) {
-  if (!confirm(`大会「${prefix}」を削除します。1日目・2日目のシートごと削除され、元に戻せません。よろしいですか？`)) return;
-  showLoading('削除中…');
-  apiPost('deleteTournament', { prefix: prefix }).then(() => {
-    hideLoading();
-    loadTournamentList();
-  }).catch(e => { hideLoading(); showStatus('エラー: ' + e.message); });
 }
 
 /* ---- 大会画面 ---- */
