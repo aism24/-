@@ -135,6 +135,9 @@ table.dataTable.r4Table th.r4NameCol{ z-index:4; background:#f5f7fa; }
 .r4Missing{ background:#ff0000; color:#fff; }
 .r4Duplicate{ background:#f9cb9c; }
 .r4Long{ background:#ffff00; color:#ff0000; font-weight:700; }
+/* 総務建築: 届出あり+日報入力ありは、本社/夢前/鳥取のduplicate(オレンジ)とは区別し、
+   長時間勤務(r4Long)と同じ黄色背景・赤文字で注意喚起する(ユーザー指定)。 */
+.r4KenchikuDuplicate{ background:#ffff00; color:#ff0000; font-weight:700; }
 .r4Leave{ background:#fff9c4; }
 .r4TotalCol{ background:#f5f5f5; font-weight:700; }
 tr.r4LocHead td{ font-weight:700; background:#eaf1ff; color:#2a6fd6; }

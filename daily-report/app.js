@@ -1210,7 +1210,9 @@ function kenchikuCell_(op, dh, hoursTotals){
   const hours = hoursTotals[op.no + '|' + dh.date] || 0;
   const leave = kenchikuFullDayLeaveType_(op.no, dh.date);
   let flag = '';
-  if(leave && hours > 0) flag = 'duplicate';
+  /* 建築側は「届出あり+日報入力あり」を、本社/夢前/鳥取側のduplicate(オレンジ)とは
+     区別し、長時間勤務(long)と同じ黄色背景・赤文字で注意喚起する(ユーザー指定)。 */
+  if(leave && hours > 0) flag = 'kenchikuDuplicate';
   else if(hours >= 16) flag = 'long';
   else if(!isSomu && !dh.holiday && !leave && hours === 0) flag = 'missing';
   else if(!dh.holiday && hasAnyLeave(op.no, dh.date, KENCHIKU_ABSENTEEISM)) flag = 'leave';
@@ -1230,7 +1232,7 @@ function buildKenchikuR4Rows_(dateHeaders){
     return {
       no: op.no, name: op.name, factory: '総務建築', dept: op.dept,
       cells: cells, total: total,
-      hasNg: cells.some(c => c.flag === 'missing' || c.flag === 'duplicate' || c.flag === 'long')
+      hasNg: cells.some(c => c.flag === 'missing' || c.flag === 'kenchikuDuplicate' || c.flag === 'long')
     };
   });
 }

@@ -875,7 +875,7 @@ function writeReport4Sheet_(sheet, dateHeaders, deptGroups, locCells, locTotal) 
     const range = sheet.getRange(f.row, f.col, 1, 1);
     if (f.flag === 'missing') range.setBackground('#ff0000');
     else if (f.flag === 'duplicate') range.setBackground('#f9cb9c');
-    else if (f.flag === 'long') range.setBackground('#ffff00').setFontColor('#ff0000').setFontWeight('bold');
+    else if (f.flag === 'long' || f.flag === 'kenchikuDuplicate') range.setBackground('#ffff00').setFontColor('#ff0000').setFontWeight('bold');
     else if (f.flag === 'leave') range.setBackground('#fff9c4');
   });
 
