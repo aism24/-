@@ -266,12 +266,15 @@ function renderDayTab(day) {
   renderPdfHeaderActions(day);
 }
 
-// 大会名と同じ行に、現在表示中の日の「PDFダウンロード」「PDF表示」ボタンを描画する
+// 大会名と同じ行に、現在表示中の日の操作ボタンを描画する（PDFの左に「2日目を再編集」）
 function renderPdfHeaderActions(day) {
   const el = document.getElementById('pdfHeaderActions');
   if (!day) { el.innerHTML = ''; return; }
   const link = pdfLinks[day];
-  el.innerHTML = `<button type="button" class="btnPdfDownload" onclick="downloadPdf('${day}')">PDFダウンロード</button>` +
+  const redoBtn = (day === 'day1' && currentTournament.day1.scoresComplete)
+    ? `<button type="button" class="btnRedoDay2" onclick="createDay2Action()">2日目を再編集</button>` : '';
+  el.innerHTML = redoBtn +
+    `<button type="button" class="btnPdfDownload" onclick="downloadPdf('${day}')">PDFダウンロード</button>` +
     (link ? `<a class="pdfBtn" href="${link.url}" target="_blank" download="${link.fileName}">PDF表示</a>` : '');
 }
 
@@ -408,7 +411,10 @@ function submitMatchScore(day, index) {
 }
 
 function createDay2Action() {
-  if (!confirm('2日目の組み合わせを作成します。よろしいですか？')) return;
+  const msg = currentTournament.day2.teamsFilled
+    ? '1日目の最新結果で2日目の組み合わせを作り直します。現在の2日目の対戦・得点はリセットされます。よろしいですか？'
+    : '2日目の組み合わせを作成します。よろしいですか？';
+  if (!confirm(msg)) return;
   showLoading('作成中…');
   apiPost('createDay2', { prefix: currentPrefix }).then(result => {
     hideLoading();
