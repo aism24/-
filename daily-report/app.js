@@ -1208,6 +1208,19 @@ function kenchikuFullDayLeaveType_(operatorNo, dateStr){
   return null;
 }
 
+/* 半日有給・半日欠勤なのに、通常のフル勤務と同じくらいの時間が入っている場合
+   (どちらかの入力ミスの可能性が高い、ユーザー指定)を検出する。 */
+function kenchikuHalfDayLeaveType_(operatorNo, dateStr){
+  for(let i = 0; i < KENCHIKU_ABSENTEEISM.length; i++){
+    const a = KENCHIKU_ABSENTEEISM[i];
+    if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to &&
+       (a.type === '半日有給' || a.type === '半日欠勤')) return a.type;
+  }
+  return null;
+}
+/* 半日休みなのに、この時間数以上入っていたら「通常運転(フル勤務)」とみなし注意喚起する目安。 */
+const KENCHIKU_HALFDAY_ALERT_HOURS_ = 7;
+
 function kenchikuCell_(op, dh, hoursTotals){
   if(!dh.isPast){
     const futureLeave = anyLeaveTypeText(op.no, dh.date, KENCHIKU_ABSENTEEISM);
@@ -1217,10 +1230,13 @@ function kenchikuCell_(op, dh, hoursTotals){
   const isSomu = op.dept === '総務部';
   const hours = hoursTotals[op.no + '|' + dh.date] || 0;
   const leave = kenchikuFullDayLeaveType_(op.no, dh.date);
+  const halfLeave = kenchikuHalfDayLeaveType_(op.no, dh.date);
   let flag = '';
   /* 建築側は「届出あり+日報入力あり」を、本社/夢前/鳥取側のduplicate(オレンジ)とは
-     区別し、長時間勤務(long)と同じ黄色背景・赤文字で注意喚起する(ユーザー指定)。 */
+     区別し、長時間勤務(long)と同じ黄色背景・赤文字で注意喚起する(ユーザー指定)。
+     半日休みなのにフル勤務相当の時間が入っている場合も同様に注意喚起する。 */
   if(leave && hours > 0) flag = 'kenchikuDuplicate';
+  else if(halfLeave && hours >= KENCHIKU_HALFDAY_ALERT_HOURS_) flag = 'kenchikuDuplicate';
   else if(hours >= 16) flag = 'long';
   else if(!isSomu && !dh.holiday && !leave && hours === 0) flag = 'missing';
   else if(!dh.holiday && hasAnyLeave(op.no, dh.date, KENCHIKU_ABSENTEEISM)) flag = 'leave';
