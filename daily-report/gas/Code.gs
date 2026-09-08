@@ -31,6 +31,15 @@ const SHEET_NAMES = {
 
 const LOCATION_ORDER = { '本社': 0, '夢前': 1, '鳥取': 2 };
 
+/* ===================== ①日報入力チェック「総務建築」拠点(DailyReport建築) ===================== */
+/* DailyReport建築は既存の本社/夢前/鳥取とは別の管理スプレッドシート・別の社員No体系のため、
+   混在させず①日報入力チェック専用のデータとして扱う(ユーザー指定、他画面には反映しない)。
+   「情報」シートの行名で既存のDailyReportファイル参照(A2:B4)とは区別する。 */
+const KENCHIKU_INFO_NAME = 'DailyReport建築';
+const KENCHIKU_DEPT_ORDER_ = { '設計': 0, '営業': 1, '工事': 2, '総務部': 3 };
+const KENCHIKU_LUNCH_START_MIN_ = 12 * 60;
+const KENCHIKU_LUNCH_END_MIN_ = 13 * 60;
+
 /* ===================== エントリポイント ===================== */
 
 function doGet(e) {
@@ -54,6 +63,16 @@ function getDailyReportSsId_() {
     if (rows[i][1]) return String(rows[i][1]); // B列: ファイルID
   }
   return DAILY_REPORT_SS_ID_FALLBACK;
+}
+
+/* 「情報」シートから「DailyReport建築」行のファイルIDを取得する。フォールバックは
+   用意しない(未登録なら①日報入力チェックの「総務建築」は単に空データを返す)。 */
+function getKenchikuSsId_() {
+  const rows = getInfoRows_();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() === KENCHIKU_INFO_NAME) return String(rows[i][1] || '').trim();
+  }
+  return null;
 }
 
 /* ===================== 「情報」シート(更新記録PDF) ===================== */
@@ -198,6 +217,104 @@ function getAbsenteeismData() {
     });
   }
   return result;
+}
+
+/* ===================== ①日報入力チェック「総務建築」拠点データ ===================== */
+/* Operatorシート列: A社員No B氏名 C事業部 D部署 E電話番号 F E-Mail G現状。
+   G列(現状)が「勤務」の行だけを対象にし、社員No=800(共有アカウント)は除外する。
+   表示順は「設計→営業→工事→総務部」の部署順、それぞれ社員No昇順(ユーザー指定)。 */
+function loadKenchikuOperators_(ssId) {
+  const ss = SpreadsheetApp.openById(ssId);
+  const rows = ss.getSheetByName(SHEET_NAMES.OPERATOR).getDataRange().getValues();
+  const list = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[0]) continue;
+    const no = String(r[0]);
+    if (no === '800') continue;
+    if (String(r[6] || '').trim() !== '勤務') continue;
+    list.push({ no: no, name: r[1], dept: r[3] });
+  }
+  list.sort(function (a, b) {
+    const da = KENCHIKU_DEPT_ORDER_[a.dept] === undefined ? 99 : KENCHIKU_DEPT_ORDER_[a.dept];
+    const db = KENCHIKU_DEPT_ORDER_[b.dept] === undefined ? 99 : KENCHIKU_DEPT_ORDER_[b.dept];
+    if (da !== db) return da - db;
+    return Number(a.no) - Number(b.no);
+  });
+  return list;
+}
+
+/* 休憩時間(12:00〜13:00の1時間固定)は、開始〜終了の区間と重なった分だけ差し引く
+   (区間が昼休みに掛かっていなければ差し引かない)。例: 10:00〜15:30 → 5.5h - 1h = 4.5h。
+   開始・終了が同日である前提(日をまたぐ勤務は想定していない、実データ未確認のため
+   その場合は単純な時刻の分換算のみで計算される)。 */
+function computeKenchikuHours_(start, end) {
+  if (!(start instanceof Date) || !(end instanceof Date)) return 0;
+  const diffMin = (end.getTime() - start.getTime()) / 60000;
+  if (diffMin <= 0) return 0;
+  const startMin = start.getHours() * 60 + start.getMinutes();
+  const endMin = startMin + diffMin;
+  const overlap = Math.max(0, Math.min(endMin, KENCHIKU_LUNCH_END_MIN_) - Math.max(startMin, KENCHIKU_LUNCH_START_MIN_));
+  return (diffMin - overlap) / 60;
+}
+
+/* DailyReportシート列: A No B所属 C登録者(社員No) D開始時間 E終了時間 F工事No
+   G工事名(参照) H工事名 I作業内容 J備考 K TimeStamp。①日報入力チェックには
+   氏名×日付の時間合計しか使わないため、社員No・作業日・時間数だけを返す。 */
+function loadKenchikuWorkRows_(ssId) {
+  const ss = SpreadsheetApp.openById(ssId);
+  const values = ss.getSheetByName(SHEET_NAMES.DAILY_REPORT).getDataRange().getValues();
+  const rows = [];
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    if (!r[0]) continue;
+    const operatorNo = String(r[2]);
+    const workDateObj = toDate_(r[3]);
+    if (!workDateObj) continue;
+    const hours = computeKenchikuHours_(r[3], r[4]);
+    if (hours <= 0) continue;
+    rows.push({ operatorNo: operatorNo, workDate: formatDate_(workDateObj), hours: hours });
+  }
+  return rows;
+}
+
+/* Absenteeismシート列(建築側は本体のAbsenteeismと違い部署・生まれ月列がない):
+   A AbID B所属 C登録者(社員No) D自 E至 F事由 G申請項目 H振替日 I直属上司 J TimeStamp。 */
+function loadKenchikuAbsenteeism_(ssId) {
+  const ss = SpreadsheetApp.openById(ssId);
+  const sheet = ss.getSheetByName(SHEET_NAMES.ABSENTEEISM);
+  if (!sheet) return [];
+  const rows = sheet.getDataRange().getValues();
+  const result = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const type = String(r[6] || '').trim();
+    if (!type) continue;
+    const from = toDate_(r[3]);
+    const to = toDate_(r[4]) || from;
+    if (!from) continue;
+    result.push({
+      operatorNo: String(r[2]),
+      from: formatDate_(from),
+      to: formatDate_(to),
+      type: type,
+      reason: String(r[5] || '').trim()
+    });
+  }
+  return result;
+}
+
+/* ①日報入力チェックの「総務建築」拠点用。拠点チェックボックスが押されたときにだけ
+   クライアントから呼ばれる(起動時の初期化カスケードには組み込まない、■0-13の
+   全断リスクの対象外)。「情報」シートに未登録の場合は空データを返す。 */
+function getKenchikuCheckDataForClient() {
+  const ssId = getKenchikuSsId_();
+  if (!ssId) return { operators: [], rows: [], absenteeism: [] };
+  return {
+    operators: loadKenchikuOperators_(ssId),
+    rows: loadKenchikuWorkRows_(ssId),
+    absenteeism: loadKenchikuAbsenteeism_(ssId)
+  };
 }
 
 /* ===================== 締め日ロジック(21日始まり・20日締め) ===================== */
@@ -592,23 +709,35 @@ function generateReport4(params) {
   let firstSheet = true;
   const deptOrder = [{ key: '設計管理', label: '事務' }, { key: '工場', label: '工場' }];
 
-  Object.keys(LOCATION_ORDER).sort(function (a, b) {
+  const locOrder = Object.keys(LOCATION_ORDER).sort(function (a, b) {
     return LOCATION_ORDER[a] - LOCATION_ORDER[b];
-  }).forEach(function (loc) {
+  }).concat(['総務建築']);
+
+  locOrder.forEach(function (loc) {
     const locRows = rows.filter(function (r) { return r.factory === loc; });
     if (locRows.length === 0) return;
 
-    const deptGroups = [];
-    deptOrder.forEach(function (d) {
-      const dRows = locRows.filter(function (r) { return r.dept === d.key; });
-      if (dRows.length === 0) return;
-      const subtotalCells = zeroArray4_(n);
-      dRows.forEach(function (r) {
-        r.cells.forEach(function (c, i) { subtotalCells[i] += (c.value || 0); });
+    let deptGroups;
+    if (loc === '総務建築') {
+      /* 総務建築は既存の事務/工場のような部署区分を持たないため(ユーザー指定)、
+         部署見出しなしの単一グループとして1シートにまとめる。 */
+      const kCells = zeroArray4_(n);
+      locRows.forEach(function (r) { r.cells.forEach(function (c, i) { kCells[i] += (c.value || 0); }); });
+      const kTotal = kCells.reduce(function (s, v) { return s + v; }, 0);
+      deptGroups = [{ label: loc, key: 'kenchiku', rows: locRows, subtotalCells: kCells, subtotalTotal: kTotal }];
+    } else {
+      deptGroups = [];
+      deptOrder.forEach(function (d) {
+        const dRows = locRows.filter(function (r) { return r.dept === d.key; });
+        if (dRows.length === 0) return;
+        const subtotalCells = zeroArray4_(n);
+        dRows.forEach(function (r) {
+          r.cells.forEach(function (c, i) { subtotalCells[i] += (c.value || 0); });
+        });
+        const subtotalTotal = subtotalCells.reduce(function (s, v) { return s + v; }, 0);
+        deptGroups.push({ label: d.label, key: d.key, rows: dRows, subtotalCells: subtotalCells, subtotalTotal: subtotalTotal });
       });
-      const subtotalTotal = subtotalCells.reduce(function (s, v) { return s + v; }, 0);
-      deptGroups.push({ label: d.label, key: d.key, rows: dRows, subtotalCells: subtotalCells, subtotalTotal: subtotalTotal });
-    });
+    }
     if (deptGroups.length === 0) return;
 
     const locCells = zeroArray4_(n);
@@ -1221,6 +1350,7 @@ function doPost(e) {
     if (action === 'logFactorySelection') return apiJsonOk_({ row: logFactorySelectionLocked_(params.factory) });
     if (action === 'getUpdateLogs') return apiJsonOk_(getUpdateLogsForClient());
     if (action === 'getUpdateLogPdf') return apiJsonOk_(getUpdateLogPdfForClient(params.fileId));
+    if (action === 'getKenchikuCheckData') return apiJsonOk_(getKenchikuCheckDataForClient());
     return apiJsonErr_('不明なaction: ' + action);
   } catch (err) {
     return apiJsonErr_(String(err && err.message || err));

@@ -36,6 +36,14 @@ let CALENDAR_MAP = {}; // 'yyyy/MM/dd' -> '出勤'|'休日'
 let ABSENTEEISM = []; // {operatorNo, from, to, type}
 let ABSENTEEISM_DETAIL = []; // ②有給等届けの確認用: {operatorNo, factory, dept, from, to, type, reason}
 
+/* ①日報入力チェック「総務建築」拠点用(DailyReport建築、既存の本社/夢前/鳥取とは別の
+   社員No体系のため混在させない)。「総務建築」チェック時にだけ遅延取得してキャッシュする。 */
+let KENCHIKU_OPERATORS = []; // {no, name, dept}
+let KENCHIKU_ROWS = []; // {operatorNo, workDate, hours}
+let KENCHIKU_ABSENTEEISM = []; // {operatorNo, from, to, type}
+let KENCHIKU_LOADED = false;
+let KENCHIKU_LOADING = false;
+
 // MASTER取得後に組み立てるルックアップマップ
 let WORK_DEPT = {};   // workCode -> '工場'|'設計管理'
 let WORK_META = {};   // workCode -> 名称
@@ -1127,10 +1135,13 @@ function getR4Month(){
 const R4_FACTORY_RANK = { '本社': 0, '夢前': 1, '鳥取': 2 };
 const R4_DEPT_RANK = { '設計管理': 0, '工場': 1 }; /* 事務(内部値は設計管理)を優先 */
 
-/* 指定日が終日「有給」または「欠勤」の対象かどうか(半日有給・遅早等は対象外) */
-function fullDayLeaveType(operatorNo, dateStr){
-  for(let i = 0; i < ABSENTEEISM.length; i++){
-    const a = ABSENTEEISM[i];
+/* 指定日が終日「有給」または「欠勤」の対象かどうか(半日有給・遅早等は対象外)。
+   list省略時はABSENTEEISM(本社/夢前/鳥取)を見る。①日報入力チェックの「総務建築」
+   拠点はKENCHIKU_ABSENTEEISMを渡して呼ぶ(社員No体系が別のため混在させない)。 */
+function fullDayLeaveType(operatorNo, dateStr, list){
+  const arr = list || ABSENTEEISM;
+  for(let i = 0; i < arr.length; i++){
+    const a = arr[i];
     if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to &&
        (a.type === '有給' || a.type === '欠勤')) return a.type;
   }
@@ -1138,17 +1149,78 @@ function fullDayLeaveType(operatorNo, dateStr){
 }
 
 /* 指定日にAbsenteeismの届出(種別問わず)があるかどうか */
-function hasAnyLeave(operatorNo, dateStr){
-  return ABSENTEEISM.some(a => a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to);
+function hasAnyLeave(operatorNo, dateStr, list){
+  return (list || ABSENTEEISM).some(a => a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to);
 }
 
 /* 指定日のAbsenteeism届出(種別問わず)の種別テキストを返す(未来日の表示用)。なければnull */
-function anyLeaveTypeText(operatorNo, dateStr){
-  for(let i = 0; i < ABSENTEEISM.length; i++){
-    const a = ABSENTEEISM[i];
+function anyLeaveTypeText(operatorNo, dateStr, list){
+  const arr = list || ABSENTEEISM;
+  for(let i = 0; i < arr.length; i++){
+    const a = arr[i];
     if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to) return a.type;
   }
   return null;
+}
+
+/* ===================== ①日報入力チェック「総務建築」拠点(DailyReport建築) ===================== */
+
+/* 「総務建築」チェック時にだけ1回だけ取得する(起動時の初期化カスケードには含めない)。
+   取得完了後にプレビューを再計算して反映する。 */
+async function ensureKenchikuData_(){
+  if(KENCHIKU_LOADED || KENCHIKU_LOADING) return;
+  KENCHIKU_LOADING = true;
+  try{
+    const data = await apiPost('getKenchikuCheckData', {});
+    KENCHIKU_OPERATORS = data.operators || [];
+    KENCHIKU_ROWS = data.rows || [];
+    KENCHIKU_ABSENTEEISM = data.absenteeism || [];
+    KENCHIKU_LOADED = true;
+  } catch(e){
+    // 取得失敗時は「総務建築」の行を空のまま表示する(他拠点の表示には影響させない)
+  } finally {
+    KENCHIKU_LOADING = false;
+  }
+  if(document.getElementById('screen-report4').classList.contains('active')){
+    withRecalcPopup(renderR4Preview);
+  }
+}
+
+/* 部署=総務部の社員はDailyReport建築に作業記録が存在しない(ユーザー確認済み)ため、
+   未入力による赤色(missing)判定は行わず、届出(有給等)の確認だけを行う。 */
+function kenchikuCell_(op, dh, hoursTotals){
+  if(!dh.isPast){
+    const futureLeave = anyLeaveTypeText(op.no, dh.date, KENCHIKU_ABSENTEEISM);
+    if(futureLeave) return { value: null, text: r4LeaveAbbr_(futureLeave), flag: 'leave' };
+    return { value: null, flag: '' };
+  }
+  const isSomu = op.dept === '総務部';
+  const hours = hoursTotals[op.no + '|' + dh.date] || 0;
+  const leave = fullDayLeaveType(op.no, dh.date, KENCHIKU_ABSENTEEISM);
+  let flag = '';
+  if(leave && hours > 0) flag = 'duplicate';
+  else if(hours >= 16) flag = 'long';
+  else if(!isSomu && !dh.holiday && !leave && hours === 0) flag = 'missing';
+  else if(!dh.holiday && hasAnyLeave(op.no, dh.date, KENCHIKU_ABSENTEEISM)) flag = 'leave';
+  return { value: hours > 0 ? hours : null, flag: flag };
+}
+
+function buildKenchikuR4Rows_(dateHeaders){
+  if(!KENCHIKU_LOADED) return [];
+  const totals = {};
+  KENCHIKU_ROWS.forEach(r => {
+    const key = r.operatorNo + '|' + r.workDate;
+    totals[key] = (totals[key] || 0) + r.hours;
+  });
+  return KENCHIKU_OPERATORS.map(op => {
+    const cells = dateHeaders.map(dh => kenchikuCell_(op, dh, totals));
+    const total = cells.reduce((s, c) => s + (c.value || 0), 0);
+    return {
+      no: op.no, name: op.name, factory: '総務建築', dept: op.dept,
+      cells: cells, total: total,
+      hasNg: cells.some(c => c.flag === 'missing' || c.flag === 'duplicate' || c.flag === 'long')
+    };
+  });
 }
 
 /* 未来日セル表示用の略称(2〜3文字)。一覧にない種別は先頭2文字にフォールバックする */
@@ -1227,7 +1299,13 @@ function computeR4Grid(){
     };
   });
 
-  return { dateHeaders: dateHeaders, allRows: allRows };
+  let kenchikuRows = [];
+  if(locs.indexOf('総務建築') !== -1){
+    if(!KENCHIKU_LOADED) ensureKenchikuData_(); // 非同期取得。完了後に自動で再描画される
+    else kenchikuRows = buildKenchikuR4Rows_(dateHeaders);
+  }
+
+  return { dateHeaders: dateHeaders, allRows: allRows.concat(kenchikuRows) };
 }
 
 /* 空セル配列(dateHeaders分)を作る */
@@ -1267,6 +1345,23 @@ function buildR4Groups(dateHeaders, filteredRows){
     locGroups.push({ location: loc, deptGroups: deptGroups, totalCells: locCells, total: locTotal });
   });
 
+  /* 総務建築は既存の事務/工場のような部署区分を持たない(ユーザー指定)ため、
+     部署見出し・部署小計を出さないフラットな単一グループとして追加する。 */
+  const kenchikuRows = filteredRows.filter(r => r.factory === '総務建築');
+  if(kenchikuRows.length > 0){
+    const kCells = r4ZeroCells(n);
+    kenchikuRows.forEach(r => r.cells.forEach((c, i) => { kCells[i] += (c.value || 0); }));
+    const kTotal = kCells.reduce((s, v) => s + v, 0);
+    kCells.forEach((v, i) => { grandCells[i] += v; });
+    grandTotal += kTotal;
+
+    locGroups.push({
+      location: '総務建築',
+      deptGroups: [{ deptLabel: null, deptKey: 'kenchiku', rows: kenchikuRows, subtotalCells: kCells, subtotalTotal: kTotal }],
+      totalCells: kCells, total: kTotal
+    });
+  }
+
   return { locGroups: locGroups, grandCells: grandCells, grandTotal: grandTotal };
 }
 
@@ -1287,7 +1382,7 @@ function r4EmployeeRowHtml(r, dateHeaders){
   const tds = r.cells.map((c, i) =>
     `<td class="num r4DateCell ${c.text ? 'r4LeaveText' : ''} ${r4FlagClass(c.flag, dateHeaders[i].holiday)}" data-date="${dateHeaders[i].date}">${c.text ? c.text : (c.value === null ? '' : c.value)}</td>`
   ).join('');
-  return `<tr data-no="${r.no}"><td class="r4NameCol">${r.name}</td>${tds}<td class="num r4TotalCol">${r.total ? r.total : ''}</td></tr>`;
+  return `<tr data-no="${r.no}" data-factory="${r.factory}"><td class="r4NameCol">${r.name}</td>${tds}<td class="num r4TotalCol">${r.total ? r.total : ''}</td></tr>`;
 }
 
 /* dateHeadersを渡し、休日の列だけr4HolidayColを付けて日付ごとに色分けする
@@ -1317,10 +1412,15 @@ function r4BuildTableHtml(dateHeaders, groups){
   groups.locGroups.forEach(loc => {
     bodyHtml += r4HeadRowHtml(loc.location, dateHeaders, 'r4LocHead');
     loc.deptGroups.forEach(dg => {
-      bodyHtml += r4HeadRowHtml(dg.deptLabel, dateHeaders, 'r4DeptHead');
+      /* 総務建築(deptLabelなし)は部署見出し・部署小計を出さない(拠点合計のみ)。 */
+      if(dg.deptLabel){
+        bodyHtml += r4HeadRowHtml(dg.deptLabel, dateHeaders, 'r4DeptHead');
+      }
       dg.rows.forEach(r => { bodyHtml += r4EmployeeRowHtml(r, dateHeaders); });
-      const subRowClass = dg.deptKey === '設計管理' ? 'r4SubtotalOffice' : 'r4SubtotalFactory';
-      bodyHtml += r4AggregateRowHtml(dg.deptLabel + ' 小計', dg.subtotalCells, dg.subtotalTotal, subRowClass, dateHeaders);
+      if(dg.deptLabel){
+        const subRowClass = dg.deptKey === '設計管理' ? 'r4SubtotalOffice' : 'r4SubtotalFactory';
+        bodyHtml += r4AggregateRowHtml(dg.deptLabel + ' 小計', dg.subtotalCells, dg.subtotalTotal, subRowClass, dateHeaders);
+      }
     });
     bodyHtml += r4AggregateRowHtml(loc.location + ' 合計', loc.totalCells, loc.total, 'r4LocTotal', dateHeaders);
   });
@@ -1336,7 +1436,9 @@ function renderR4Preview(){
   const month = getR4Month();
 
   if(rows.length === 0){
-    previewEl.innerHTML = `<h3>プレビュー(社員別 提出チェック)</h3><div class="previewEmpty">該当する社員がいません</div>`;
+    const loadingKenchiku = KENCHIKU_LOADING && checkedValues('r4-locations').indexOf('総務建築') !== -1;
+    const emptyMsg = loadingKenchiku ? '総務建築のデータを読み込み中です…' : '該当する社員がいません';
+    previewEl.innerHTML = `<h3>プレビュー(社員別 提出チェック)</h3><div class="previewEmpty">${emptyMsg}</div>`;
     return;
   }
 
@@ -1522,8 +1624,31 @@ function clearCellPopupActive_(){
 }
 
 /* 指定した社員No・日付の、届出(申請項目・事由。あれば)と工事内訳(工事名・作業内容・
-   作業時間を最大5組)・合計時間をまとめたポップアップ本文を組み立てる */
-function r4CellDetailHtml_(no, dateStr){
+   作業時間を最大5組)・合計時間をまとめたポップアップ本文を組み立てる。
+   isKenchiku=true(①日報入力チェックの「総務建築」拠点)の場合は、社員No体系が別のため
+   OPERATOR_NAME/ABSENTEEISM_DETAIL/ALL_ROWS(本社/夢前/鳥取用)は参照せず、
+   KENCHIKU_*(DailyReport建築専用)を使う。建築側は工事名・作業内容のマスタを
+   読み込んでいないため、内訳は出さず合計時間だけ表示する。 */
+function r4CellDetailHtml_(no, dateStr, isKenchiku){
+  if(isKenchiku){
+    const op = KENCHIKU_OPERATORS.find(o => o.no === no);
+    const name = op ? op.name : no;
+    const leave = KENCHIKU_ABSENTEEISM.find(a => a.operatorNo === no && dateStr >= a.from && dateStr <= a.to);
+    const total = KENCHIKU_ROWS.filter(r => r.operatorNo === no && r.workDate === dateStr)
+      .reduce((s, r) => s + r.hours, 0);
+
+    let html = `<div class="detailRow"><span class="detailLabel">日付</span><span>${dateStr}</span></div>`;
+    html += `<div class="detailRow"><span class="detailLabel">氏名</span><span>${name}</span></div>`;
+    if(leave){
+      html += `<div class="detailRow"><span class="detailLabel">申請項目</span><span>${leave.type}</span></div>`;
+      if(leave.reason){
+        html += `<div class="detailRow"><span class="detailLabel">事由</span><span>${leave.reason}</span></div>`;
+      }
+    }
+    html += `<div class="detailRow detailRowTotal"><span class="detailLabel">合計時間</span><span>${total}</span></div>`;
+    return html;
+  }
+
   const name = OPERATOR_NAME[no] || no;
   const leave = ABSENTEEISM_DETAIL.find(a => a.operatorNo === no && dateStr >= a.from && dateStr <= a.to);
   const workRows = ALL_ROWS.filter(r => r.operatorNo === no && r.workDate === dateStr);
@@ -1547,8 +1672,8 @@ function r4CellDetailHtml_(no, dateStr){
   return html;
 }
 
-function openR4Detail_(no, dateStr){
-  document.getElementById('r4DetailBody').innerHTML = r4CellDetailHtml_(no, dateStr);
+function openR4Detail_(no, dateStr, isKenchiku){
+  document.getElementById('r4DetailBody').innerHTML = r4CellDetailHtml_(no, dateStr, isKenchiku);
   document.getElementById('r4DetailOverlay').classList.add('show');
 }
 
@@ -1943,10 +2068,12 @@ document.addEventListener('click', e => {
       if(cell.dataset.date){
         const empRow = cell.closest('tr[data-no]');
         if(empRow){
+          const isKenchiku = empRow.dataset.factory === '総務建築';
           const todayMidnight = new Date();
           todayMidnight.setHours(0, 0, 0, 0);
           const isFutureCell = !(new Date(cell.dataset.date.split('/').join('-')) < todayMidnight);
-          if(isFutureCell && !hasAnyLeave(empRow.dataset.no, cell.dataset.date)) ignore = true;
+          const leaveList = isKenchiku ? KENCHIKU_ABSENTEEISM : undefined;
+          if(isFutureCell && !hasAnyLeave(empRow.dataset.no, cell.dataset.date, leaveList)) ignore = true;
         }
       }
       if(!ignore){
@@ -1959,7 +2086,7 @@ document.addEventListener('click', e => {
           if(empRow){
             clearCellPopupActive_();
             cell.classList.add('cellPopupActive');
-            openR4Detail_(empRow.dataset.no, cell.dataset.date);
+            openR4Detail_(empRow.dataset.no, cell.dataset.date, empRow.dataset.factory === '総務建築');
           }
         }
       }
