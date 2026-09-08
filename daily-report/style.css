@@ -50,6 +50,7 @@ button{ font-family:inherit; cursor:pointer; }
    .homeBtnとの詳細度を揃えて確実に上書きするため2クラス指定にしている */
 .homeBtn.factoryBtnYumesaki{ background:#e67e22; }
 .homeBtn.factoryBtnTottori{ background:#2a9d5c; }
+.homeBtn.factoryBtnKenchiku{ background:#7b3fb5; }
 .homeBtn{
   font-size:17px; font-weight:700; padding:20px 40px; border:none; border-radius:10px;
   background:#2a6fd6; color:#fff; box-shadow:0 2px 8px rgba(0,0,0,.2);
@@ -354,10 +355,6 @@ table.dataTable.r5Table tbody tr{ cursor:pointer; }
 .checkBtn.checked{ background:#2a6fd6; color:#fff; border-color:#2a6fd6; }
 .checkBtn.retired{ color:#c33; }
 .checkBtn.retired.checked{ color:#fff; }
-/* ①日報入力チェックの「総務建築」ボタン(紫背景、ユーザー指定)。他の拠点ボタンと
-   区別が付くよう、未選択時から薄紫背景にしている(選択時はより濃い紫)。 */
-.checkBtn.checkBtnKenchiku{ background:#e8d9f5; border-color:#7b3fb5; color:#5b2d8a; }
-.checkBtn.checkBtnKenchiku.checked{ background:#7b3fb5; color:#fff; border-color:#7b3fb5; }
 /* .fieldの上padding(10px)と合わせて上下の余白を揃えるため、上マージンは
    持たせない(常に.fieldの先頭で使われており、上に何か別の要素が
    続くケースはない)。 */
