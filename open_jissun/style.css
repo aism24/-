@@ -1,0 +1,217 @@
+:root {
+  --bg: #0f1420;
+  --panel: #171d2c;
+  --panel2: #1d2436;
+  --border: #2a3348;
+  --text: #e7ebf3;
+  --muted: #93a0b8;
+  --accent: #4da3ff;
+  --ok: #35c98b;
+  --warn: #ffb454;
+  --err: #ff6b6b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Hiragino Sans", "Yu Gothic", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.page { max-width: 1400px; margin: 0 auto; padding: 20px 20px 60px; }
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 14px;
+  margin: 0 -20px 16px;
+  padding: 12px 20px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.header-side { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.header-side.header-right { flex-direction: column; align-items: flex-end; justify-self: end; gap: 4px; }
+.header-center { display: flex; align-items: center; gap: 10px; justify-self: center; }
+.app-header h1 { font-size: 1.4rem; margin: 0; white-space: nowrap; }
+.app-logo { height: 36px; }
+.updated-at { color: var(--muted); font-size: 0.8rem; }
+
+/* 検索可能な工事一覧(「情報」シートH:I列)。ヘッダー内に置くことで、ロゴ・アプリ名・
+   最新化ボタンと一緒にページ上部へ固定される。見出しを左、表を右に並べ、スクロールバー
+   無しで(最大10行程度を想定して)そのまま全件表示する。 */
+.projects-panel { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 18px; flex-wrap: wrap; }
+.projects-title { color: var(--muted); font-size: 0.8rem; font-weight: 700; line-height: 1.3; text-align: center; }
+table.projects-table { border-collapse: collapse; font-size: 0.8rem; }
+table.projects-table th, table.projects-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 4px 14px;
+  text-align: center;
+  white-space: nowrap;
+}
+table.projects-table th { color: var(--muted); font-weight: 700; }
+
+.btn-refresh-header {
+  background: #ffd400;
+  color: #0b3fae;
+  font-weight: 800;
+  border: 2px solid #fff1a8;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.btn-refresh-header:hover:not(:disabled) { transform: translateY(-2px); }
+.btn-refresh-header:disabled { opacity: 0.6; cursor: default; }
+
+.msg { min-height: 1.2em; font-size: 0.85rem; margin-bottom: 12px; }
+.msg.ok { color: var(--ok); }
+.msg.warn { color: var(--warn); }
+.msg.err { color: var(--err); }
+.msg.loading { color: var(--warn); font-weight: 700; animation: blink-slow 1.6s ease-in-out infinite; }
+@keyframes blink-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.search-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px 10px 0 0;
+  padding: 14px 16px;
+  margin-bottom: 0;
+  position: sticky;
+  top: var(--app-header-height, 65px);
+  z-index: 25;
+  text-align: center;
+}
+.search-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+#searchInput {
+  flex: 0 1 420px;
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 1rem;
+  text-align: center;
+}
+#searchInput:focus { outline: none; border-color: var(--accent); }
+.btn-search {
+  background: var(--accent);
+  color: #06111f;
+  font-weight: 800;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 22px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.btn-search:hover { transform: translateY(-2px); }
+.search-count { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+
+/* table-wrapに overflow-x:auto を付けると、それ自体がスクロールコンテナになり、内部の
+   theadのposition:stickyが「ページ全体のスクロール」ではなく「table-wrap自身のスクロール
+   (auto heightのため実質発生しない)」を基準にしてしまい機能しない。そのため、テーブル
+   領域自体の高さを残り画面高さに制限してoverflow:autoにし、その内部でtheadをtop:0の
+   position:stickyにする(該当件数が多い場合はこの領域内だけが縦スクロールする)。
+   --above-table-heightはapp.jsがヘッダー・検索欄の実際の高さから計算する。 */
+.table-wrap {
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--border);
+  border-radius: 0 0 10px 10px;
+  margin-top: 0;
+  padding: 10px;
+  overflow: auto;
+  max-height: calc(100vh - var(--above-table-height, 300px));
+}
+/* border-collapse:collapse だと、多くのブラウザでtheadのposition:stickyが正しく機能しない
+   (スクロールしても固定されず消えてしまう)既知の制約があるため、separateにする
+   (border-spacing:0にすることで見た目上の隙間は出ない)。 */
+table#resultTable { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.85rem; white-space: nowrap; }
+table#resultTable th, table#resultTable td {
+  border-bottom: 1px solid var(--border);
+  padding: 7px 10px;
+  text-align: center;
+}
+table#resultTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--panel);
+}
+table#resultTable th { color: var(--muted); font-weight: 700; font-size: 0.78rem; }
+table#resultTable td.col-mark { font-weight: 700; }
+table#resultTable td.col-drawing { color: var(--accent); }
+table#resultTable td.col-note { color: var(--warn); font-weight: 700; }
+table#resultTable th.col-date, table#resultTable td.col-date { min-width: 110px; }
+table#resultTable td.col-date.date-unclear { color: var(--err); font-weight: 700; }
+table#resultTable mark { background: #ffd400; color: #0b3fae; border-radius: 3px; padding: 0 2px; }
+table#resultTable tbody tr.clickable { cursor: pointer; }
+table#resultTable tbody tr.clickable:hover { background: var(--panel2); }
+table#resultTable tbody tr.clickable:hover td.col-drawing { text-decoration: underline; }
+table#resultTable tbody tr.no-drawing { opacity: 0.7; }
+/* 図番にCAD起動リンクがある行は、各セルの中身を実際の<a>タグで覆う(JSのlocation.href
+   による遷移はブラウザにブロックされることがあるため、ブラウザ標準のリンク遷移に
+   任せることで、社内共有フォルダ(file://)へのリンクをより確実に開けるようにする)。
+   色・太字等の見た目は親td側のルールを維持する(color:inheritで継承する)。 */
+table#resultTable td a.row-link {
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: inherit;
+  text-decoration: none;
+}
+
+.empty-note { color: var(--muted); padding: 20px 10px; text-align: center; }
+
+footer.warnings { color: var(--warn); font-size: 0.8rem; margin-top: 10px; white-space: pre-line; }
+
+/* 図番にCAD起動リンクが無い行をクリックした時の案内ポップアップ。 */
+.popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+.popup-overlay[hidden] { display: none; }
+.popup-modal {
+  background: var(--panel);
+  border: 2px solid var(--warn);
+  border-radius: 10px;
+  padding: 20px 24px;
+  max-width: 420px;
+  text-align: center;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+.popup-title { font-weight: 800; font-size: 1.1rem; color: var(--warn); margin-bottom: 10px; }
+.popup-body { font-size: 0.9rem; line-height: 1.7; color: var(--text); margin-bottom: 18px; }
+.popup-close {
+  background: var(--warn);
+  color: #3a1f00;
+  font-weight: 800;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 28px;
+  cursor: pointer;
+}
+
+@media (max-width: 700px) {
+  .app-header { grid-template-columns: 1fr; justify-items: center; gap: 8px; }
+  .header-side { display: none; }
+  .header-side.header-right { display: flex; flex-direction: row; align-items: center; justify-self: center; }
+}

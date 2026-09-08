@@ -60,7 +60,14 @@ const cardApps = new WeakMap();
 function openApp(card) {
   const app = cardApps.get(card);
   if (!app) return;
-  window.open(app.url, '_blank');
+  if (/^https?:\/\//i.test(app.url)) {
+    window.open(app.url, '_blank');
+  } else {
+    // jissun://等の独自プロトコルは、ブラウザが実際にページ遷移するわけではなく
+    // OSのハンドラーに引き渡すだけなので、_blankで新規タブを開くと空白タブが
+    // 残ってしまう。同じタブでlocationを変更すればランチャー画面はそのまま残る。
+    window.location.href = app.url;
+  }
   // クリックログの送信は失敗してもアプリ起動自体は妨げない(ベストエフォート)。
   apiPost('logAppOpen', { appName: app.name }).catch(function () {});
 }
