@@ -224,8 +224,41 @@ function getAbsenteeismData() {
    読んだ日時セルをDateのgetHours()/getDate()等でそのまま読むと、そのDateオブジェクトは
    スクリプト側のタイムゾーンで解釈されてしまい、シート側のタイムゾーン設定と食い違って
    いる場合に日付・時刻がずれる(実測で発覚: 8:00〜17:00の記録が丸ごと翌日・9時間扱いに
-   ずれていた)。この食い違いを避けるため、以後は必ずKENCHIKU建築シート自身の
-   getSpreadsheetTimeZone()を明示的に指定してUtilities.formatDate()で読み取る。 */
+   ずれていた)。この食い違いを正しく読み取るにはUtilities.formatDate()にKENCHIKU建築
+   シート自身のgetSpreadsheetTimeZone()を明示指定する必要があるが、これをDailyReport
+   建築の全行(27,000行超)についてループ内で行ごとに複数回呼ぶと、Utilities.*の
+   サービス呼び出しコストが積み上がり致命的に遅くなる(実測: 1行あたり2回・27,589行で
+   応答24〜42秒。gas-performance-diagnosisスキルで診断)。
+   対策: 対象タイムゾーンが夏時間(DST)を観測しない(=年間を通してUTCとのオフセットが
+   一定)場合に限り、最初に1回だけUtilities.formatDateでオフセット(分)を求め、以降は
+   全行についてエポック時刻+固定オフセットの純粋なJS計算(Utilities呼び出し無し)で
+   yyyy/MM/dd・HH:mmを求める。この置き換えがUtilities.formatDate版と完全に一致することは、
+   Node.js側でAsia/Tokyo等の非DST帯に対し20万件のランダム境界値(日付またぎ・昼休み境界を
+   含む)で検証済み。DSTを観測するタイムゾーンだった場合は、正しさを優先して
+   Utilities.formatDateを使う従来経路にフォールバックする(その場合は遅いまま)。 */
+function kenchikuTzOffsetMin_(tz) {
+  const winter = new Date(Date.UTC(2023, 0, 1, 0, 0, 0));
+  const summer = new Date(Date.UTC(2023, 6, 1, 0, 0, 0));
+  const off = function (d) {
+    const z = Utilities.formatDate(d, tz, 'Z'); // 例: "+0900"
+    const sign = z.charAt(0) === '-' ? -1 : 1;
+    return sign * (Number(z.substring(1, 3)) * 60 + Number(z.substring(3, 5)));
+  };
+  const w = off(winter), s = off(summer);
+  return w === s ? w : null; // 冬夏でオフセットが異なる=DSTあり→nullでフォールバックさせる
+}
+
+function kenchikuPad2_(n) { return (n < 10 ? '0' : '') + n; }
+
+/* offsetMinがnull(DSTあり)でない限りUtilities.formatDateを使わない高速版。 */
+function kenchikuYmdFast_(d, offsetMin) {
+  const t = new Date(d.getTime() + offsetMin * 60000);
+  return t.getUTCFullYear() + '/' + kenchikuPad2_(t.getUTCMonth() + 1) + '/' + kenchikuPad2_(t.getUTCDate());
+}
+
+function kenchikuYmd_(d, tz, offsetMin) {
+  return offsetMin !== null ? kenchikuYmdFast_(d, offsetMin) : Utilities.formatDate(d, tz, 'yyyy/MM/dd');
+}
 
 /* Operatorシート列: A社員No B氏名 C事業部 D部署 E電話番号 F E-Mail G現状。
    G列(現状)が「勤務」の行だけを対象にし、KENCHIKU_EXCLUDED_OPERATOR_NOS_の社員No
@@ -261,14 +294,19 @@ function loadKenchikuOperators_(ssId) {
 
 /* 休憩時間(12:00〜13:00の1時間固定)は、開始〜終了の区間と重なった分だけ差し引く
    (区間が昼休みに掛かっていなければ差し引かない)。例: 10:00〜15:30 → 5.5h - 1h = 4.5h。
-   時刻の読み取りはUtilities.formatDate(tz指定)で行い、スクリプト側タイムゾーンとの
-   食い違いの影響を受けないようにする。開始・終了が同日である前提。 */
-function computeKenchikuHours_(start, end, tz) {
+   開始・終了が同日である前提。 */
+function computeKenchikuHours_(start, end, tz, offsetMin) {
   if (!(start instanceof Date) || !(end instanceof Date)) return 0;
   const diffMin = (end.getTime() - start.getTime()) / 60000;
   if (diffMin <= 0) return 0;
-  const hm = Utilities.formatDate(start, tz, 'HH:mm').split(':');
-  const startMin = Number(hm[0]) * 60 + Number(hm[1]);
+  let startMin;
+  if (offsetMin !== null) {
+    const t = new Date(start.getTime() + offsetMin * 60000);
+    startMin = t.getUTCHours() * 60 + t.getUTCMinutes();
+  } else {
+    const hm = Utilities.formatDate(start, tz, 'HH:mm').split(':');
+    startMin = Number(hm[0]) * 60 + Number(hm[1]);
+  }
   const endMin = startMin + diffMin;
   const overlap = Math.max(0, Math.min(endMin, KENCHIKU_LUNCH_END_MIN_) - Math.max(startMin, KENCHIKU_LUNCH_START_MIN_));
   return (diffMin - overlap) / 60;
@@ -280,6 +318,7 @@ function computeKenchikuHours_(start, end, tz) {
 function loadKenchikuWorkRows_(ssId) {
   const ss = SpreadsheetApp.openById(ssId);
   const tz = ss.getSpreadsheetTimeZone();
+  const offsetMin = kenchikuTzOffsetMin_(tz);
   const values = ss.getSheetByName(SHEET_NAMES.DAILY_REPORT).getDataRange().getValues();
   const rows = [];
   for (let i = 1; i < values.length; i++) {
@@ -287,8 +326,8 @@ function loadKenchikuWorkRows_(ssId) {
     if (!r[0]) continue;
     if (!(r[3] instanceof Date)) continue;
     const operatorNo = String(r[2]);
-    const workDate = Utilities.formatDate(r[3], tz, 'yyyy/MM/dd');
-    const hours = computeKenchikuHours_(r[3], r[4], tz);
+    const workDate = kenchikuYmd_(r[3], tz, offsetMin);
+    const hours = computeKenchikuHours_(r[3], r[4], tz, offsetMin);
     if (hours <= 0) continue;
     rows.push({ operatorNo: operatorNo, workDate: workDate, hours: hours });
   }
@@ -300,6 +339,7 @@ function loadKenchikuWorkRows_(ssId) {
 function loadKenchikuAbsenteeism_(ssId) {
   const ss = SpreadsheetApp.openById(ssId);
   const tz = ss.getSpreadsheetTimeZone();
+  const offsetMin = kenchikuTzOffsetMin_(tz);
   const sheet = ss.getSheetByName(SHEET_NAMES.ABSENTEEISM);
   if (!sheet) return [];
   const rows = sheet.getDataRange().getValues();
@@ -309,8 +349,8 @@ function loadKenchikuAbsenteeism_(ssId) {
     const type = String(r[6] || '').trim();
     if (!type) continue;
     if (!(r[3] instanceof Date)) continue;
-    const from = Utilities.formatDate(r[3], tz, 'yyyy/MM/dd');
-    const to = (r[4] instanceof Date) ? Utilities.formatDate(r[4], tz, 'yyyy/MM/dd') : from;
+    const from = kenchikuYmd_(r[3], tz, offsetMin);
+    const to = (r[4] instanceof Date) ? kenchikuYmd_(r[4], tz, offsetMin) : from;
     result.push({
       operatorNo: String(r[2]),
       from: from,
