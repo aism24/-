@@ -36,7 +36,6 @@ const LOCATION_ORDER = { '本社': 0, '夢前': 1, '鳥取': 2 };
    混在させず①日報入力チェック専用のデータとして扱う(ユーザー指定、他画面には反映しない)。
    「情報」シートの行名で既存のDailyReportファイル参照(A2:B4)とは区別する。 */
 const KENCHIKU_INFO_NAME = 'DailyReport建築';
-const KENCHIKU_DEPT_ORDER_ = { '設計': 0, '営業': 1, '工事': 2, '総務部': 3 };
 const KENCHIKU_LUNCH_START_MIN_ = 12 * 60;
 const KENCHIKU_LUNCH_END_MIN_ = 13 * 60;
 
@@ -220,11 +219,23 @@ function getAbsenteeismData() {
 }
 
 /* ===================== ①日報入力チェック「総務建築」拠点データ ===================== */
+/* 【重要】DailyReport建築は共有スプレッドシート(Code.gsの container)とは別のファイルで、
+   スプレッドシートごとに個別のタイムゾーン設定を持ちうる。SpreadsheetApp.openById()で
+   読んだ日時セルをDateのgetHours()/getDate()等でそのまま読むと、そのDateオブジェクトは
+   スクリプト側のタイムゾーンで解釈されてしまい、シート側のタイムゾーン設定と食い違って
+   いる場合に日付・時刻がずれる(実測で発覚: 8:00〜17:00の記録が丸ごと翌日・9時間扱いに
+   ずれていた)。この食い違いを避けるため、以後は必ずKENCHIKU建築シート自身の
+   getSpreadsheetTimeZone()を明示的に指定してUtilities.formatDate()で読み取る。 */
+
 /* Operatorシート列: A社員No B氏名 C事業部 D部署 E電話番号 F E-Mail G現状。
    G列(現状)が「勤務」の行だけを対象にし、KENCHIKU_EXCLUDED_OPERATOR_NOS_の社員No
-   (800=共有アカウント、9=ユーザー指定)は除外する。表示順は「設計→営業→工事→総務部」の
-   部署順、それぞれ社員No昇順(ユーザー指定)。 */
+   (800=共有アカウント、9=ユーザー指定)は除外する。KENCHIKU_TREAT_AS_SOMU_NOS_の社員No
+   (27=ユーザー指定、実際の部署は設計だがWorkReportへの記録が無いため総務部と同様に扱う)は
+   部署を総務部として扱う(表示順・未入力赤色判定の両方に効く)。
+   表示順は「総務部以外→総務部」の2区分、それぞれ社員No昇順(ユーザー指定)。 */
 const KENCHIKU_EXCLUDED_OPERATOR_NOS_ = ['800', '9'];
+const KENCHIKU_SOMU_DEPT_ = '総務部';
+const KENCHIKU_TREAT_AS_SOMU_NOS_ = ['27'];
 
 function loadKenchikuOperators_(ssId) {
   const ss = SpreadsheetApp.openById(ssId);
@@ -236,12 +247,13 @@ function loadKenchikuOperators_(ssId) {
     const no = String(r[0]);
     if (KENCHIKU_EXCLUDED_OPERATOR_NOS_.indexOf(no) !== -1) continue;
     if (String(r[6] || '').trim() !== '勤務') continue;
-    list.push({ no: no, name: r[1], dept: r[3] });
+    const dept = KENCHIKU_TREAT_AS_SOMU_NOS_.indexOf(no) !== -1 ? KENCHIKU_SOMU_DEPT_ : r[3];
+    list.push({ no: no, name: r[1], dept: dept });
   }
   list.sort(function (a, b) {
-    const da = KENCHIKU_DEPT_ORDER_[a.dept] === undefined ? 99 : KENCHIKU_DEPT_ORDER_[a.dept];
-    const db = KENCHIKU_DEPT_ORDER_[b.dept] === undefined ? 99 : KENCHIKU_DEPT_ORDER_[b.dept];
-    if (da !== db) return da - db;
+    const sa = a.dept === KENCHIKU_SOMU_DEPT_ ? 1 : 0;
+    const sb = b.dept === KENCHIKU_SOMU_DEPT_ ? 1 : 0;
+    if (sa !== sb) return sa - sb;
     return Number(a.no) - Number(b.no);
   });
   return list;
@@ -249,13 +261,14 @@ function loadKenchikuOperators_(ssId) {
 
 /* 休憩時間(12:00〜13:00の1時間固定)は、開始〜終了の区間と重なった分だけ差し引く
    (区間が昼休みに掛かっていなければ差し引かない)。例: 10:00〜15:30 → 5.5h - 1h = 4.5h。
-   開始・終了が同日である前提(日をまたぐ勤務は想定していない、実データ未確認のため
-   その場合は単純な時刻の分換算のみで計算される)。 */
-function computeKenchikuHours_(start, end) {
+   時刻の読み取りはUtilities.formatDate(tz指定)で行い、スクリプト側タイムゾーンとの
+   食い違いの影響を受けないようにする。開始・終了が同日である前提。 */
+function computeKenchikuHours_(start, end, tz) {
   if (!(start instanceof Date) || !(end instanceof Date)) return 0;
   const diffMin = (end.getTime() - start.getTime()) / 60000;
   if (diffMin <= 0) return 0;
-  const startMin = start.getHours() * 60 + start.getMinutes();
+  const hm = Utilities.formatDate(start, tz, 'HH:mm').split(':');
+  const startMin = Number(hm[0]) * 60 + Number(hm[1]);
   const endMin = startMin + diffMin;
   const overlap = Math.max(0, Math.min(endMin, KENCHIKU_LUNCH_END_MIN_) - Math.max(startMin, KENCHIKU_LUNCH_START_MIN_));
   return (diffMin - overlap) / 60;
@@ -266,17 +279,18 @@ function computeKenchikuHours_(start, end) {
    氏名×日付の時間合計しか使わないため、社員No・作業日・時間数だけを返す。 */
 function loadKenchikuWorkRows_(ssId) {
   const ss = SpreadsheetApp.openById(ssId);
+  const tz = ss.getSpreadsheetTimeZone();
   const values = ss.getSheetByName(SHEET_NAMES.DAILY_REPORT).getDataRange().getValues();
   const rows = [];
   for (let i = 1; i < values.length; i++) {
     const r = values[i];
     if (!r[0]) continue;
+    if (!(r[3] instanceof Date)) continue;
     const operatorNo = String(r[2]);
-    const workDateObj = toDate_(r[3]);
-    if (!workDateObj) continue;
-    const hours = computeKenchikuHours_(r[3], r[4]);
+    const workDate = Utilities.formatDate(r[3], tz, 'yyyy/MM/dd');
+    const hours = computeKenchikuHours_(r[3], r[4], tz);
     if (hours <= 0) continue;
-    rows.push({ operatorNo: operatorNo, workDate: formatDate_(workDateObj), hours: hours });
+    rows.push({ operatorNo: operatorNo, workDate: workDate, hours: hours });
   }
   return rows;
 }
@@ -285,6 +299,7 @@ function loadKenchikuWorkRows_(ssId) {
    A AbID B所属 C登録者(社員No) D自 E至 F事由 G申請項目 H振替日 I直属上司 J TimeStamp。 */
 function loadKenchikuAbsenteeism_(ssId) {
   const ss = SpreadsheetApp.openById(ssId);
+  const tz = ss.getSpreadsheetTimeZone();
   const sheet = ss.getSheetByName(SHEET_NAMES.ABSENTEEISM);
   if (!sheet) return [];
   const rows = sheet.getDataRange().getValues();
@@ -293,13 +308,13 @@ function loadKenchikuAbsenteeism_(ssId) {
     const r = rows[i];
     const type = String(r[6] || '').trim();
     if (!type) continue;
-    const from = toDate_(r[3]);
-    const to = toDate_(r[4]) || from;
-    if (!from) continue;
+    if (!(r[3] instanceof Date)) continue;
+    const from = Utilities.formatDate(r[3], tz, 'yyyy/MM/dd');
+    const to = (r[4] instanceof Date) ? Utilities.formatDate(r[4], tz, 'yyyy/MM/dd') : from;
     result.push({
       operatorNo: String(r[2]),
-      from: formatDate_(from),
-      to: formatDate_(to),
+      from: from,
+      to: to,
       type: type,
       reason: String(r[5] || '').trim()
     });
