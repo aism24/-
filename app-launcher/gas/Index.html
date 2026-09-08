@@ -278,16 +278,14 @@
       if (/^https?:\/\//i.test(url)) {
         window.open(url, '_blank');
       } else {
-        // jissun://等の独自プロトコルは、ブラウザが実際にページ遷移するわけではなく
-        // OSのハンドラーに引き渡すだけなので、_blankで新規タブを開くと空白タブが
-        // 残ってしまう。同じタブでlocationを変更すればランチャー画面はそのまま残る。
-        // 【GAS特有の注意点】このHTMLはscript.google.com上でgoogleusercontent.com
-        // ドメインのiframeとして埋め込まれて表示される。ブラウザは、埋め込みiframe
-        // (自分がトップレベルのフレームでない状態)からの外部プロトコルへの遷移を
-        // セキュリティ上ブロックすることがあるため、window.locationではなく
-        // window.top.locationを使い、トップレベルのフレーム(ブラウザのタブそのもの)
-        // に対して遷移させる。
-        window.top.location.href = url;
+        // jissun://等の独自プロトコルは、このHTMLがscript.google.com上で
+        // googleusercontent.comドメインのiframeとして埋め込まれて表示される
+        // GAS Web Appからは起動できない(window.location・window.top.locationの
+        // どちらで試しても、Google側のサンドボックスが遷移を横取りしてしまい、
+        // 空白のパネルが開くだけで反応しない。実機で確認済み)。
+        // そのため、iframeに埋め込まれないGitHub Pages版のランチャーを新規タブで開き、
+        // そちらで改めてカードをクリックしてもらう。
+        window.open('https://aism24.github.io/-/app-launcher/', '_blank');
       }
       google.script.run.logAppOpen(name);
     }
