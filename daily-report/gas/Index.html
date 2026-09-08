@@ -43,6 +43,7 @@
      .homeBtnとの詳細度を揃えて確実に上書きするため2クラス指定にしている */
   .homeBtn.factoryBtnYumesaki{ background:#e67e22; }
   .homeBtn.factoryBtnTottori{ background:#2a9d5c; }
+  .homeBtn.factoryBtnKenchiku{ background:#7b3fb5; }
   .homeBtn{
     font-size:17px; font-weight:700; padding:20px 40px; border:none; border-radius:10px;
     background:#2a6fd6; color:#fff; box-shadow:0 2px 8px rgba(0,0,0,.2);
@@ -125,6 +126,7 @@
   .r4Missing{ background:#ff0000; color:#fff; }
   .r4Duplicate{ background:#f9cb9c; }
   .r4Long{ background:#ffff00; color:#ff0000; font-weight:700; }
+  .r4KenchikuDuplicate{ background:#ffff00; color:#ff0000; font-weight:700; }
   .r4Leave{ background:#fff9c4; }
   .r4TotalCol{ background:#f5f5f5; font-weight:700; }
   tr.r4LocHead td{ font-weight:700; background:#eaf1ff; color:#2a6fd6; }
@@ -521,6 +523,7 @@
       <button class="homeBtn" onclick="selectFactory('本社')">本社</button>
       <button class="homeBtn factoryBtnYumesaki" onclick="selectFactory('夢前')">夢前</button>
       <button class="homeBtn factoryBtnTottori" onclick="selectFactory('鳥取')">鳥取</button>
+      <button class="homeBtn factoryBtnKenchiku" onclick="selectFactory('総務建築')">総務建築</button>
     </div>
   </div>
 </div>
@@ -857,6 +860,7 @@
             <label class="checkBtn"><input type="checkbox" value="本社">本社</label>
             <label class="checkBtn"><input type="checkbox" value="夢前">夢前</label>
             <label class="checkBtn"><input type="checkbox" value="鳥取">鳥取</label>
+            <label class="checkBtn"><input type="checkbox" value="総務建築">総務建築</label>
           </div>
         </div>
 
@@ -1005,6 +1009,14 @@ let ABSENTEEISM_DETAIL = []; // ②有給等届けの確認用: {operatorNo, fac
 let OPERATOR_NAME = {}; // operatorNo -> 氏名
 let absenteeismDetailLoaded = false;
 let r4NgOnly = false;
+
+/* ①日報入力チェック「総務建築」拠点用(DailyReport建築、既存の本社/夢前/鳥取とは別の
+   社員No体系のため混在させない)。「総務建築」チェック時にだけ遅延取得してキャッシュする。 */
+let KENCHIKU_OPERATORS = []; // {no, name, dept}
+let KENCHIKU_ROWS = []; // {operatorNo, workDate, hours, start, end, breakMin}
+let KENCHIKU_ABSENTEEISM = []; // {operatorNo, from, to, type, reason}
+let KENCHIKU_LOADED = false;
+let KENCHIKU_LOADING = false;
 
 /* ===== 会社ロゴ ===== */
 const LOGO_DATA_URI = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0NjQgNTE0IiB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIj4KICA8IS0tIOato+WFiSAobWFzYW1peikgTG9nbyBNYXJrIC0tPgogIDxwYXRoIGQ9Ik0gMzk4IDE1OCBMIDM5NiAxNTkgTCAzOTIgMTYxIEwgMzg3IDE2NSBMIDM4MCAxNjggTCAzNzMgMTczIEwgMzcxIDE3MyBMIDM2OCAxNzUgTCAzNzAgMTc5IEwgMzczIDE5MCBMIDM3NCAxOTUgTCAzNzUgMjAxIEwgMzc2IDIwNyBMIDM3NyAyMjAgTCAzNzYgMjQwIEwgMzc1IDI0NiBMIDM3NCAyNTIgTCAzNzMgMjU3IEwgMzcxIDI2NCBMIDM2NyAyNzYgTCAzNjMgMjg1IEwgMzYyIDI4NyBMIDM2MCAyODkgTCAzNjAgMjkxIEwgMzU3IDI5NiBMIDM0OSAzMDggTCAzNDYgMzEyIEwgMzQwIDMxOSBMIDMyOCAzMzEgTCAzMjIgMzM2IEwgMzE4IDMzOSBMIDMxNCAzNDIgTCAzMTEgMzQ0IEwgMzA2IDM0NyBMIDMwMSAzNTAgTCAyOTMgMzU0IEwgMjg2IDM1NyBMIDI4MSAzNTkgTCAyNzggMzYwIEwgMjcxIDM2MSBMIDI2OCAzNjMgTCAyNjMgMzY0IEwgMjU3IDM2NSBMIDI1MiAzNjYgTCAyNDkgMzY1IEwgMjUwIDMxMSBMIDI1MyAzMTAgTCAyNTcgMzEwIEwgMjYxIDMwOSBMIDI2OSAzMDYgTCAyNzEgMzA1IEwgMjczIDMwMyBMIDI3NSAzMDMgTCAyODAgMzAwIEwgMjg2IDI5NSBMIDI4OCAyOTUgTCAyOTMgMjg5IEwgMjk0IDI4OCBMIDI5NyAyODcgTCAzMDUgMjc4IEwgMzA3IDI3NSBMIDMwNyAyNzMgTCAzMDQgMjcxIEwgMjk0IDI2NiBMIDI5MCAyNjMgTCAyODggMjYzIEwgMjg2IDI2NSBMIDI3NiAyNzYgTCAyNzIgMjc5IEwgMjY5IDI4MSBMIDI2NCAyODQgTCAyNTcgMjg3IEwgMjU0IDI4OCBMIDI1MSAyODkgTCAyNDEgMjg5IEwgMjQwIDI5MSBMIDIyOCAyOTAgTCAyMTggMjg5IEwgMjE0IDI4OCBMIDIxMSAyODcgTCAyMDkgMjg1IEwgMTk5IDI4MSBMIDE5NSAyNzggTCAxOTEgMjc1IEwgMTkwIDI3NCBMIDE4OCAyNzIgTCAxODcgMjcxIEwgMTgxIDI2MyBMIDE3OCAyNjUgTCAxNjEgMjc0IEwgMTYyIDI3NiBMIDE2NSAyODAgTCAxNzQgMjg4IEwgMTc1IDI4OSBMIDE3NSAyOTAgTCAxNzcgMjkyIEwgMTgxIDI5NSBMIDE4NSAyOTggTCAxODggMzAwIEwgMTkzIDMwMyBMIDE5NSAzMDQgTCAxOTcgMzA0IEwgMTk5IDMwNiBMIDIwMiAzMDcgTCAyMTEgMzEwIEwgMjE1IDMxMSBMIDIyMCAzMTIgTCAyMjAgNDAwIEwgMjMxIDQwMSBMIDIzMyA0MDEgTCAyMzggNDAxIEwgMjU0IDQwMCBMIDI2NiAzOTggTCAyNzIgMzk3IEwgMjgzIDM5NCBMIDI5NSAzOTAgTCAzMDAgMzg4IEwgMzA3IDM4NSBMIDMwOSAzODMgTCAzMjEgMzc4IEwgMzI2IDM3NSBMIDMyOSAzNzMgTCAzMzIgMzcwIEwgMzM1IDM2OSBMIDMzOSAzNjYgTCAzNDQgMzYxIEwgMzQ3IDM2MCBMIDM0OCAzNTkgTCAzNDggMzU4IEwgMzQ5IDM1NyBMIDM2OCAzMzkgTCAzNzIgMzM0IEwgMzc3IDMyOCBMIDM3OSAzMjUgTCAzODYgMzE0IEwgMzg5IDMwOSBMIDM5MiAzMDMgTCAzOTIgMzAxIEwgMzk0IDI5OSBMIDM5NSAyOTQgTCAzOTggMjkwIEwgNDAxIDI4MiBMIDQwNCAyNzIgTCA0MDcgMjYxIEwgNDA4IDI1NCBMIDQwOSAyNDggTCA0MTAgMjQxIEwgNDEwIDIwNiBMIDQwOSAxOTkgTCA0MDggMTkzIEwgNDA3IDE4NyBMIDQwNCAxNzQgTCA0MDIgMTcxIEwgNDAyIDE2OCBMIDQwMSAxNjUgTCAzOTkgMTYyIFogTSA4OSAxMjQgTCA4NyAxMjYgTCA4NSAxMjkgTCA4MyAxMzIgTCA3NyAxNDMgTCA3NyAxNDUgTCA3NSAxNDcgTCA3MCAxNTkgTCA2OCAxNjQgTCA2NSAxNzQgTCA2MiAxODUgTCA2MiAxOTEgTCA1OSAyMDIgTCA1OCAyMTUgTCA1OSAyMTggTCA1OCAyMzIgTCA1OSAyNDQgTCA2MSAyNTYgTCA2MiAyNjIgTCA2NCAyNjYgTCA2NCAyNzAgTCA2NyAyODAgTCA2OCAyODMgTCA3MSAyOTEgTCA3MyAyOTMgTCA3NSAzMDAgTCA3NyAzMDIgTCA3NyAzMDQgTCA4MyAzMTUgTCA4NyAzMjEgTCA5MiAzMjcgTCA5MyAzMzAgTCA5NiAzMzQgTCA5OCAzMzYgTCAxMDIgMzQxIEwgMTA1IDM0MyBMIDExOCAzNTcgTCAxMjQgMzYyIEwgMTM1IDM3MCBMIDEzOCAzNzIgTCAxNDEgMzc0IEwgMTQ2IDM3NyBMIDE1MyAzODEgTCAxNTUgMzgyIEwgMTU3IDM4MiBMIDE1OSAzODQgTCAxNjEgMzg1IEwgMTY4IDM4OCBMIDE3NiAzOTEgTCAxODkgMzk1IEwgMTkzIDM5NSBMIDE5NyAzOTcgTCAyMDIgMzk4IEwgMjA4IDM5OSBMIDIwOSAzNjQgTCAyMDYgMzY0IEwgMjA1IDM2MyBMIDIwMSAzNjMgTCAxOTEgMzYwIEwgMTg3IDM1OSBMIDE4NSAzNTcgTCAxODAgMzU2IEwgMTczIDM1MyBMIDE3MSAzNTEgTCAxNjkgMzUxIEwgMTYyIDM0NyBMIDE1MyAzNDEgTCAxNDkgMzM4IEwgMTQ0IDMzNCBMIDEzNyAzMjggTCAxMzYgMzI3IEwgMTM1IDMyNiBMIDEzMyAzMjQgTCAxMjQgMzE0IEwgMTIwIDMwOSBMIDExNyAzMDUgTCAxMTUgMzAyIEwgMTEyIDI5NyBMIDEwOCAyOTAgTCAxMDcgMjg4IEwgMTAxIDI3NCBMIDk4IDI2NiBMIDk4IDI2MiBMIDk1IDI1NSBMIDk0IDI0OSBMIDkzIDI0NCBMIDkyIDIzMyBMIDkyIDIxNCBMIDkzIDIwNCBMIDk0IDE5OCBMIDk1IDE5MiBMIDk4IDE4MiBMIDEwMSAxNzMgTCAxMDUgMTY2IEwgMTA3IDE2NyBMIDExMSAxNjkgTCAxMTggMTczIEwgMTI1IDE3OCBMIDEzMiAxODEgTCAxMzkgMTg1IEwgMTQ5IDE5MSBMIDE1MSAxOTQgTCAxNDkgMTk3IEwgMTQ4IDIwMiBMIDE0NyAyMDYgTCAxNDYgMjExIEwgMTQ2IDIzNiBMIDE0OCAyNDEgTCAxNDggMjQ2IEwgMTUyIDI1OCBMIDE1NCAyNjIgTCAxNTYgMjYyIEwgMTYwIDI1OSBMIDE2OCAyNTUgTCAxNzMgMjUyIEwgMTczIDI0OSBMIDE3MSAyNDYgTCAxNjkgMjM5IEwgMTY4IDIzNCBMIDE2OCAyMTMgTCAxNzAgMjA1IEwgMTcxIDIwMSBMIDE3NCAxOTQgTCAxNzcgMTg5IEwgMTc5IDE4NiBMIDE4MSAxODMgTCAxODYgMTc3IEwgMTg4IDE3NSBMIDE5NCAxNzAgTCAxOTcgMTY4IEwgMjAwIDE2NiBMIDIwNSAxNjMgTCAyMDcgMTYyIEwgMjEyIDE2MCBMIDIxNSAxNTkgTCAyMjIgMTU3IEwgMjI4IDE1NiBMIDIyNyAxMzUgTCAyMjAgMTM1IEwgMjExIDEzNyBMIDIwMiAxNDAgTCAxOTkgMTQxIEwgMTkzIDE0NCBMIDE4OCAxNDcgTCAxODUgMTQ5IEwgMTgyIDE1MSBMIDE3OCAxNTQgTCAxNjUgMTY3IEwgMTYzIDE2NiBMIDE2MSAxNjQgTCAxNTUgMTYxIEwgMTM5IDE1MSBMIDEzMiAxNDcgTCAxMjggMTQ2IEwgMTIzIDE0MiBMIDExMSAxMzUgTCAxMDQgMTMxIEwgOTUgMTI2IEwgOTEgMTI0IFogTSAyMTkgNDYgTCAyMTAgNDcgTCAxOTkgNDkgTCAxOTQgNTAgTCAxODMgNTMgTCAxODAgNTUgTCAxNzcgNTUgTCAxNzQgNTYgTCAxNjYgNTkgTCAxNjQgNjEgTCAxNDggNjggTCAxNDMgNzEgTCAxMzcgNzUgTCAxMzQgNzcgTCAxMzIgNzkgTCAxMzIgODAgTCAxMzEgODEgTCAxMjcgODMgTCAxMjIgODcgTCAxMTYgOTIgTCAxMDcgMTAyIEwgMTA1IDEwMyBMIDEwNCAxMDQgTCA5OSAxMTEgTCA5NiAxMTMgTCA5NyAxMTUgTCAxMDAgMTE2IEwgMTEyIDEyNCBMIDEyMSAxMjkgTCAxMjMgMTI5IEwgMTI1IDEzMSBMIDEyNyAxMzEgTCAxNDMgMTE0IEwgMTQ5IDEwOSBMIDE1NiAxMDQgTCAxNjEgMTAxIEwgMTY2IDk4IEwgMTcwIDk2IEwgMTc2IDkzIEwgMTgzIDkwIEwgMTg4IDg4IEwgMTk4IDg1IEwgMjAyIDg0IEwgMjExIDgyIEwgMjE5IDgxIEwgMjUwIDgxIEwgMjU4IDgyIEwgMjY3IDg0IEwgMjcxIDg1IEwgMjc4IDg3IEwgMjgxIDg4IEwgMjg5IDkxIEwgMjkxIDkzIEwgMzAzIDk4IEwgMzEwIDEwMiBMIDMxMyAxMDQgTCAzMTYgMTA2IEwgMzIwIDEwOSBMIDMyNSAxMTMgTCAzNDMgMTMxIEwgMzQ3IDEzNiBMIDM0OCAxNDEgTCAzNDYgMTQxIEwgMzQxIDE0NCBMIDMyOSAxNTEgTCAzMTcgMTU5IEwgMzEyIDE2MiBMIDMwOCAxNjMgTCAzMDUgMTY1IEwgMzAzIDE2NyBMIDMwMSAxNjUgTCAyOTIgMTU1IEwgMjg3IDE1MSBMIDI3OSAxNDYgTCAyNzUgMTQ0IEwgMjY5IDE0MSBMIDI2MSAxMzggTCAyNTcgMTM3IEwgMjQ5IDEzNSBMIDI0MSAxMzUgTCAyNDEgMTU3IEwgMjQ3IDE1NyBMIDI1NCAxNTkgTCAyNTcgMTYwIEwgMjY0IDE2MyBMIDI2OSAxNjYgTCAyNzIgMTY4IEwgMjc2IDE3MSBMIDI4OCAxODMgTCAyOTAgMTg2IEwgMjkzIDE5MSBMIDI5NiAxOTcgTCAyOTggMjAyIEwgMjk5IDIwNiBMIDMwMCAyMTAgTCAzMDEgMjE1IEwgMzAxIDIzMSBMIDMwMCAyMzcgTCAyOTggMjQ0IEwgMjk2IDI0NyBMIDI5NSAyNTAgTCAyOTggMjUzIEwgMzAzIDI1NiBMIDMxMiAyNjAgTCAzMTUgMjYyIEwgMzE3IDI1NyBMIDMyMCAyNDkgTCAzMjEgMjQ0IEwgMzIxIDIzOSBMIDMyMyAyMzYgTCAzMjMgMjEzIEwgMzIxIDIwMiBMIDMyMCAxOTggTCAzMTggMTk1IEwgMzE5IDE5MSBMIDMyMiAxOTAgTCAzMzEgMTg0IEwgMzQ0IDE3NiBMIDM1MSAxNzIgTCAzNTggMTY4IEwgMzYwIDE2OCBMIDM2NSAxNjUgTCAzODkgMTUwIEwgMzkwIDE1MCBMIDM5MiAxNDkgTCAzOTMgMTQ2IEwgMzg5IDE0MCBMIDM4OSAxMzggTCAzODggMTM2IEwgMzgzIDEyOCBMIDM3NyAxMTkgTCAzNzQgMTE1IEwgMzcwIDExMCBMIDM2NSAxMDQgTCAzNTUgOTQgTCAzNTQgOTMgTCAzNDggODggTCAzNDcgODggTCAzNDEgODMgTCAzMzggNzkgTCAzMjYgNzEgTCAzMjEgNjggTCAzMDcgNjEgTCAyOTUgNTYgTCAyODYgNTMgTCAyNzUgNTAgTCAyNzAgNDkgTCAyNjUgNDkgTCAyNjAgNDcgTCAyNDkgNDYgWiIgZmlsbD0iI0U3NDE1NSIgZmlsbC1ydWxlPSJldmVub2RkIiAvPgogIAogIDwhLS0gbWFzYW1peiBUZXh0IC0tPgogIDxwYXRoIGQ9Ik0gMzYzIDQzOCBMIDM2NCA0NTAgTCAzNzAgNDUwIEwgMzc2IDQ1MCBMIDM4NSA0NTAgTCAzOTEgNDUwIEwgMzg4IDQ1MiBMIDM4MSA0NTUgTCAzNzQgNDYwIEwgMzY1IDQ2NCBMIDM2MyA0NjYgTCAzNjQgNDg1IEwgNDIxIDQ4NSBMIDQyMSA0NzMgTCAzODkgNDcyIEwgMzkyIDQ3MCBMIDM5NyA0NjcgTCA0MDEgNDY2IEwgNDA2IDQ2MyBMIDQxNSA0NTcgTCA0MTggNDU2IEwgNDIwIDQ1NSBMIDQyMSA0MzcgWiBNIDI5OCA0MzYgTCAyOTggNDg1IEwgMzE2IDQ4NSBMIDMxNyA0NDggTCAzMjAgNDQ5IEwgMzIwIDQ4NSBMIDMzOCA0ODQgTCAzMzkgNDQ4IEwgMzQzIDQ0OCBMIDM0OSA0NTMgTCAzNDIgNDU1IEwgMzQyIDQ3MSBMIDM0MyA0ODUgTCAzNjAgNDg1IEwgMzYwIDQ1NCBMIDM1MyA0NTMgTCAzNTggNDQ5IEwgMzU5IDQ0NyBMIDM1OSA0NDIgTCAzNTcgNDM4IEwgMzU2IDQzOCBMIDM1NCA0MzYgTCAzNDggNDM2IEwgMzQ2IDQzNyBMIDM0NCA0MzkgTCAzNDMgNDQxIEwgMzQyIDQzNiBaIE0gMjM2IDQzNiBMIDIzNiA0NTAgTCAyNDUgNDUwIEwgMjQ4IDQ0OSBMIDI1MSA0NTAgTCAyNjAgNDUwIEwgMjc5IDQ1MCBMIDI3OCA0NTUgTCAyNDEgNDU1IEwgMjM5IDQ1NiBMIDIzNyA0NTggTCAyMzYgNDYwIEwgMjM2IDQ4NSBMIDI5NSA0ODUgTCAyOTUgNDQzIEwgMjk0IDQ0MSBMIDI5MyA0MzkgTCAyOTIgNDM4IEwgMjkxIDQzOCBMIDI4OSA0MzYgWiBNIDI1MyA0NjcgTCAyNzkgNDY4IEwgMjc4IDQ3MiBMIDI1MyA0NzMgWiBNIDE3OCA0MzYgTCAxNzUgNDM3IEwgMTcyIDQ0MCBMIDE3MSA0NDcgTCAxNzEgNDQ5IEwgMTcxIDQ1NCBMIDE3MyA0NTggTCAxNzUgNDU4IEwgMTc3IDQ2MCBMIDE3OSA0NjEgTCAxODEgNDYxIEwgMTgzIDQ2MyBMIDE5NCA0NjcgTCAxOTYgNDY5IEwgMjAzIDQ3MiBMIDE3MiA0NzMgTCAxNzEgNDc1IEwgMTcyIDQ4NSBMIDIyOCA0ODUgTCAyMzAgNDg0IEwgMjMxIDQ4MyBMIDIzMiA0ODEgTCAyMzIgNDY2IEwgMjI5IDQ2NCBMIDIyNCA0NjIgTCAyMTggNDYwIEwgMjE2IDQ1OCBMIDIxMCA0NTUgTCAyMDMgNDUzIEwgMjAxIDQ1MSBMIDE5OCA0NTAgTCAyMzIgNDQ5IEwgMjMyIDQzNiBaIE0gMTEwIDQzNiBMIDEwOSA0NTAgTCAxNTIgNDUxIEwgMTUxIDQ1NSBMIDExNyA0NTUgTCAxMTQgNDU2IEwgMTEyIDQ1NyBMIDExMCA0NTkgTCAxMDkgNDYxIEwgMTA5IDQ4NSBMIDE2OCA0ODUgTCAxNjggNDQyIEwgMTY3IDQ0MCBMIDE2NSA0MzggTCAxNjMgNDM3IEwgMTYwIDQzNiBMIDEzMyA0MzcgTCAxMTUgNDM3IFogTSAxMjcgNDY3IEwgMTUyIDQ2OCBMIDE1MSA0NzMgTCAxMjYgNDcyIFogTSA0NCA0MzYgTCA0MyA0NzQgTCA0NSA0ODYgTCA2MyA0ODUgTCA2NCA0NDggTCA2OCA0NDkgTCA2OCA0ODYgTCA3MyA0ODYgTCA4NCA0ODUgTCA4NSA0NDggTCA4OSA0NDkgTCA4OSA0ODUgTCAxMDYgNDg1IEwgMTA2IDQ0NSBMIDEwNSA0NDEgTCAxMDQgNDM5IEwgMTAzIDQzOCBMIDEwMSA0MzcgTCA5OSA0MzYgWiIgZmlsbD0iIzAwMDAwMCIgZmlsbC1ydWxlPSJldmVub2RkIiAvPgo8L3N2Zz4=";
@@ -1239,6 +1251,12 @@ const INITIAL_LOAD_PROGRESS_DURATION_MS = 15000;
 
 function setHomeButtonsEnabled(enabled){
   document.querySelectorAll('.homeBtn').forEach(b => { b.disabled = !enabled; });
+  /* 総務建築はDailyReport建築という別データのため、①日報入力チェックだけを対象とする
+     (ユーザー指定)。②〜⑤はこの拠点では意味を持たないためホーム画面から非表示にする。 */
+  const isKenchiku = getDefaultFactory_() === '総務建築';
+  document.querySelectorAll('#screen-home .homeButtons .homeBtn').forEach(b => {
+    b.hidden = isKenchiku && !b.classList.contains('homeBtnCheck');
+  });
 }
 
 /* アプリ起動時、ホーム画面表示と同時に同期ポップアップを出し、①②③を押せない状態にする。
@@ -1534,7 +1552,9 @@ function updateHeaderFactoryLabels_(){
   const loc = getDefaultFactory_();
   document.querySelectorAll('.headerFactoryLabel').forEach(el => { el.textContent = loc; });
   const homeLabel = document.getElementById('homeFactoryLabel');
-  if(homeLabel) homeLabel.textContent = loc ? `(工場: ${loc})` : '';
+  /* 総務建築は「工場」ではないため、他拠点の「(工場: xxx)」ではなく「(総務建築)」と
+     表示する(ユーザー指定)。 */
+  if(homeLabel) homeLabel.textContent = loc ? (loc === '総務建築' ? `(${loc})` : `(工場: ${loc})`) : '';
 }
 
 /* r1/r2は「指定:する」+選択工場のみチェック、r3は選択工場のみチェックにする。
@@ -2212,10 +2232,13 @@ const R4_EXCLUDE_OPERATORS = ['801', '77'];
 const R4_FACTORY_RANK = { '本社': 0, '夢前': 1, '鳥取': 2 };
 const R4_DEPT_RANK = { '設計管理': 0, '工場': 1 }; /* 事務(内部値は設計管理)を優先 */
 
-/* 指定日が終日「有給」または「欠勤」の対象かどうか(半日有給・遅早等は対象外) */
-function fullDayLeaveType(operatorNo, dateStr){
-  for(let i = 0; i < ABSENTEEISM.length; i++){
-    const a = ABSENTEEISM[i];
+/* 指定日が終日「有給」または「欠勤」の対象かどうか(半日有給・遅早等は対象外)。
+   list省略時はABSENTEEISM(本社/夢前/鳥取)を見る。①日報入力チェックの「総務建築」
+   拠点はKENCHIKU_ABSENTEEISMを渡して呼ぶ(社員No体系が別のため混在させない)。 */
+function fullDayLeaveType(operatorNo, dateStr, list){
+  const arr = list || ABSENTEEISM;
+  for(let i = 0; i < arr.length; i++){
+    const a = arr[i];
     if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to &&
        (a.type === '有給' || a.type === '欠勤')) return a.type;
   }
@@ -2223,17 +2246,111 @@ function fullDayLeaveType(operatorNo, dateStr){
 }
 
 /* 指定日にAbsenteeismの届出(種別問わず)があるかどうか */
-function hasAnyLeave(operatorNo, dateStr){
-  return ABSENTEEISM.some(a => a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to);
+function hasAnyLeave(operatorNo, dateStr, list){
+  return (list || ABSENTEEISM).some(a => a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to);
 }
 
 /* 指定日のAbsenteeism届出(種別問わず)の種別テキストを返す(未来日の表示用)。なければnull */
-function anyLeaveTypeText(operatorNo, dateStr){
-  for(let i = 0; i < ABSENTEEISM.length; i++){
-    const a = ABSENTEEISM[i];
+function anyLeaveTypeText(operatorNo, dateStr, list){
+  const arr = list || ABSENTEEISM;
+  for(let i = 0; i < arr.length; i++){
+    const a = arr[i];
     if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to) return a.type;
   }
   return null;
+}
+
+/* ===================== ①日報入力チェック「総務建築」拠点(DailyReport建築) ===================== */
+
+/* 「総務建築」チェック時にだけ1回だけ取得する(起動時の初期化カスケードには含めない)。
+   取得完了後にプレビューを再計算して反映する。google.script.run経由でCode.gs(B側と共有)の
+   getKenchikuCheckDataForClient()を直接呼ぶ(専用ラッパー不要)。 */
+function ensureKenchikuData_(){
+  if(KENCHIKU_LOADED || KENCHIKU_LOADING) return;
+  KENCHIKU_LOADING = true;
+  google.script.run
+    .withSuccessHandler(data => {
+      KENCHIKU_OPERATORS = (data && data.operators) || [];
+      KENCHIKU_ROWS = (data && data.rows) || [];
+      KENCHIKU_ABSENTEEISM = (data && data.absenteeism) || [];
+      KENCHIKU_LOADED = true;
+      KENCHIKU_LOADING = false;
+      if(document.getElementById('screen-report4').classList.contains('active')){
+        withRecalcPopup(renderR4Preview);
+      }
+    })
+    .withFailureHandler(() => {
+      // 取得失敗時は「総務建築」の行を空のまま表示する(他拠点の表示には影響させない)
+      KENCHIKU_LOADING = false;
+    })
+    .getKenchikuCheckDataForClient();
+}
+
+/* 部署=総務部の社員はDailyReport建築に作業記録が存在しない(ユーザー確認済み)ため、
+   未入力による赤色(missing)判定は行わず、届出(有給等)の確認だけを行う。 */
+/* 建築側は「有給・欠勤」に加えて「代休」も終日扱いとする(ユーザー指定: 代休の日は
+   未入力でも赤色にせず、届出ありの配色にする)。本社/夢前/鳥取側のfullDayLeaveType
+   (有給・欠勤のみ)は変更しない。 */
+function kenchikuFullDayLeaveType_(operatorNo, dateStr){
+  for(let i = 0; i < KENCHIKU_ABSENTEEISM.length; i++){
+    const a = KENCHIKU_ABSENTEEISM[i];
+    if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to &&
+       (a.type === '有給' || a.type === '欠勤' || a.type === '代休')) return a.type;
+  }
+  return null;
+}
+
+/* 半日有給・半日欠勤なのに、通常のフル勤務と同じくらいの時間が入っている場合
+   (どちらかの入力ミスの可能性が高い、ユーザー指定)を検出する。 */
+function kenchikuHalfDayLeaveType_(operatorNo, dateStr){
+  for(let i = 0; i < KENCHIKU_ABSENTEEISM.length; i++){
+    const a = KENCHIKU_ABSENTEEISM[i];
+    if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to &&
+       (a.type === '半日有給' || a.type === '半日欠勤')) return a.type;
+  }
+  return null;
+}
+/* 半日休みなのに、この時間数以上入っていたら「通常運転(フル勤務)」とみなし注意喚起する目安。 */
+const KENCHIKU_HALFDAY_ALERT_HOURS_ = 7;
+
+function kenchikuCell_(op, dh, hoursTotals){
+  if(!dh.isPast){
+    const futureLeave = anyLeaveTypeText(op.no, dh.date, KENCHIKU_ABSENTEEISM);
+    if(futureLeave) return { value: null, text: r4LeaveAbbr_(futureLeave), flag: 'leave' };
+    return { value: null, flag: '' };
+  }
+  const isSomu = op.dept === '総務部';
+  const hours = hoursTotals[op.no + '|' + dh.date] || 0;
+  const leave = kenchikuFullDayLeaveType_(op.no, dh.date);
+  const halfLeave = kenchikuHalfDayLeaveType_(op.no, dh.date);
+  let flag = '';
+  /* 建築側は「届出あり+日報入力あり」を、本社/夢前/鳥取側のduplicate(オレンジ)とは
+     区別し、長時間勤務(long)と同じ黄色背景・赤文字で注意喚起する(ユーザー指定)。
+     半日休みなのにフル勤務相当の時間が入っている場合も同様に注意喚起する。 */
+  if(leave && hours > 0) flag = 'kenchikuDuplicate';
+  else if(halfLeave && hours >= KENCHIKU_HALFDAY_ALERT_HOURS_) flag = 'kenchikuDuplicate';
+  else if(hours >= 16) flag = 'long';
+  else if(!isSomu && !dh.holiday && !leave && hours === 0) flag = 'missing';
+  else if(!dh.holiday && hasAnyLeave(op.no, dh.date, KENCHIKU_ABSENTEEISM)) flag = 'leave';
+  return { value: hours > 0 ? hours : null, flag: flag };
+}
+
+function buildKenchikuR4Rows_(dateHeaders){
+  if(!KENCHIKU_LOADED) return [];
+  const totals = {};
+  KENCHIKU_ROWS.forEach(r => {
+    const key = r.operatorNo + '|' + r.workDate;
+    totals[key] = (totals[key] || 0) + r.hours;
+  });
+  return KENCHIKU_OPERATORS.map(op => {
+    const cells = dateHeaders.map(dh => kenchikuCell_(op, dh, totals));
+    const total = cells.reduce((s, c) => s + (c.value || 0), 0);
+    return {
+      no: op.no, name: op.name, factory: '総務建築', dept: op.dept,
+      cells: cells, total: total,
+      hasNg: cells.some(c => c.flag === 'missing' || c.flag === 'kenchikuDuplicate' || c.flag === 'long')
+    };
+  });
 }
 
 /* 未来日セル表示用の略称(2〜3文字)。一覧にない種別は先頭2文字にフォールバックする */
@@ -2320,7 +2437,13 @@ function computeR4Grid(){
     };
   }).filter(Boolean);
 
-  return { dateHeaders: dateHeaders, allRows: allRows };
+  let kenchikuRows = [];
+  if(locs.indexOf('総務建築') !== -1){
+    if(!KENCHIKU_LOADED) ensureKenchikuData_(); // 非同期取得。完了後に自動で再描画される
+    else kenchikuRows = buildKenchikuR4Rows_(dateHeaders);
+  }
+
+  return { dateHeaders: dateHeaders, allRows: allRows.concat(kenchikuRows) };
 }
 
 /* 空セル配列(dateHeaders分)を作る */
@@ -2360,6 +2483,23 @@ function buildR4Groups(dateHeaders, filteredRows){
     locGroups.push({ location: loc, deptGroups: deptGroups, totalCells: locCells, total: locTotal });
   });
 
+  /* 総務建築は既存の事務/工場のような部署区分を持たない(ユーザー指定)ため、
+     部署見出し・部署小計を出さないフラットな単一グループとして追加する。 */
+  const kenchikuRows = filteredRows.filter(r => r.factory === '総務建築');
+  if(kenchikuRows.length > 0){
+    const kCells = r4ZeroCells(n);
+    kenchikuRows.forEach(r => r.cells.forEach((c, i) => { kCells[i] += (c.value || 0); }));
+    const kTotal = kCells.reduce((s, v) => s + v, 0);
+    kCells.forEach((v, i) => { grandCells[i] += v; });
+    grandTotal += kTotal;
+
+    locGroups.push({
+      location: '総務建築',
+      deptGroups: [{ deptLabel: null, deptKey: 'kenchiku', rows: kenchikuRows, subtotalCells: kCells, subtotalTotal: kTotal }],
+      totalCells: kCells, total: kTotal
+    });
+  }
+
   return { locGroups: locGroups, grandCells: grandCells, grandTotal: grandTotal };
 }
 
@@ -2378,7 +2518,7 @@ function r4EmployeeRowHtml(r, dateHeaders){
   const tds = r.cells.map((c, i) =>
     `<td class="num r4DateCell ${c.text ? 'r4LeaveText' : ''} ${r4FlagClass(c.flag, dateHeaders[i].holiday)}" data-date="${dateHeaders[i].date}">${c.text ? escapeHtml(c.text) : (c.value === null ? '' : c.value)}</td>`
   ).join('');
-  return `<tr data-no="${r.no}"><td class="r4NameCol">${escapeHtml(r.name)}</td>${tds}<td class="num r4TotalCol">${r.total ? r.total : ''}</td></tr>`;
+  return `<tr data-no="${r.no}" data-factory="${escapeHtml(r.factory)}"><td class="r4NameCol">${escapeHtml(r.name)}</td>${tds}<td class="num r4TotalCol">${r.total ? r.total : ''}</td></tr>`;
 }
 
 /* dateHeadersを渡し、休日の列だけr4HolidayColを付けて日付ごとに色分けする
@@ -2411,10 +2551,15 @@ function r4BuildTableHtml(dateHeaders, groups){
   groups.locGroups.forEach(loc => {
     bodyHtml += r4HeadRowHtml(loc.location, dateHeaders, 'r4LocHead');
     loc.deptGroups.forEach(dg => {
-      bodyHtml += r4HeadRowHtml(dg.deptLabel, dateHeaders, 'r4DeptHead');
+      /* 総務建築(deptLabelなし)は部署見出し・部署小計を出さない(拠点合計のみ)。 */
+      if(dg.deptLabel){
+        bodyHtml += r4HeadRowHtml(dg.deptLabel, dateHeaders, 'r4DeptHead');
+      }
       dg.rows.forEach(r => { bodyHtml += r4EmployeeRowHtml(r, dateHeaders); });
-      const subRowClass = dg.deptKey === '設計管理' ? 'r4SubtotalOffice' : 'r4SubtotalFactory';
-      bodyHtml += r4AggregateRowHtml(dg.deptLabel + ' 小計', dg.subtotalCells, dg.subtotalTotal, subRowClass, dateHeaders);
+      if(dg.deptLabel){
+        const subRowClass = dg.deptKey === '設計管理' ? 'r4SubtotalOffice' : 'r4SubtotalFactory';
+        bodyHtml += r4AggregateRowHtml(dg.deptLabel + ' 小計', dg.subtotalCells, dg.subtotalTotal, subRowClass, dateHeaders);
+      }
     });
     bodyHtml += r4AggregateRowHtml(loc.location + ' 合計', loc.totalCells, loc.total, 'r4LocTotal', dateHeaders);
   });
@@ -2431,7 +2576,9 @@ function renderR4Preview(){
   const month = getR4Month();
 
   if(rows.length === 0){
-    previewEl.innerHTML = `<h3>プレビュー(社員別 提出チェック)</h3><div class="previewEmpty">該当する社員がいません</div>`;
+    const loadingKenchiku = KENCHIKU_LOADING && checkedValues('r4-locations').indexOf('総務建築') !== -1;
+    const emptyMsg = loadingKenchiku ? '総務建築のデータを読み込み中です…' : '該当する社員がいません';
+    previewEl.innerHTML = `<h3>プレビュー(社員別 提出チェック)</h3><div class="previewEmpty">${emptyMsg}</div>`;
     return;
   }
 
@@ -2636,8 +2783,38 @@ function clearCellPopupActive_(){
 }
 
 /* 指定した社員No・日付の、届出(申請項目・事由。あれば)と工事内訳(工事名・作業内容・
-   作業時間を最大5組)・合計時間をまとめたポップアップ本文を組み立てる */
-function r4CellDetailHtml_(no, dateStr){
+   作業時間を最大5組)・合計時間をまとめたポップアップ本文を組み立てる。
+   isKenchiku=true(①日報入力チェックの「総務建築」拠点)の場合は、社員No体系が別のため
+   OPERATOR_NAME/ABSENTEEISM_DETAIL/ALL_ROWS(本社/夢前/鳥取用)は参照せず、
+   KENCHIKU_*(DailyReport建築専用)を使う。建築側は工事名・作業内容のマスタを
+   読み込んでいないため、その内訳の代わりに開始時間・終了時間・休憩時間・合計時間を
+   記録(最大5組)ごとに表示する(ユーザー指定)。 */
+function r4CellDetailHtml_(no, dateStr, isKenchiku){
+  if(isKenchiku){
+    const op = KENCHIKU_OPERATORS.find(o => o.no === no);
+    const name = op ? op.name : no;
+    const leave = KENCHIKU_ABSENTEEISM.find(a => a.operatorNo === no && dateStr >= a.from && dateStr <= a.to);
+    const workRows = KENCHIKU_ROWS.filter(r => r.operatorNo === no && r.workDate === dateStr);
+    const total = workRows.reduce((s, r) => s + r.hours, 0);
+
+    let html = `<div class="detailRow"><span class="detailLabel">日付</span><span>${escapeHtml(dateStr)}</span></div>`;
+    html += `<div class="detailRow"><span class="detailLabel">氏名</span><span>${escapeHtml(name)}</span></div>`;
+    if(leave){
+      html += `<div class="detailRow"><span class="detailLabel">申請項目</span><span>${escapeHtml(leave.type)}</span></div>`;
+      if(leave.reason){
+        html += `<div class="detailRow"><span class="detailLabel">事由</span><span>${escapeHtml(leave.reason)}</span></div>`;
+      }
+    }
+    workRows.forEach((r, i) => {
+      const n = workRows.length > 1 ? (i + 1) : '';
+      html += `<div class="detailRow"><span class="detailLabel">開始時間${n}</span><span>${escapeHtml(r.start)}</span></div>`;
+      html += `<div class="detailRow"><span class="detailLabel">終了時間${n}</span><span>${escapeHtml(r.end)}</span></div>`;
+      html += `<div class="detailRow"><span class="detailLabel">休憩時間${n}</span><span>${(r.breakMin || 0) / 60}時間</span></div>`;
+    });
+    html += `<div class="detailRow detailRowTotal"><span class="detailLabel">合計時間</span><span>${total}時間</span></div>`;
+    return html;
+  }
+
   const name = OPERATOR_NAME[no] || no;
   const leave = ABSENTEEISM_DETAIL.find(a => a.operatorNo === no && dateStr >= a.from && dateStr <= a.to);
   const workRows = ALL_ROWS.filter(r => r.operatorNo === no && r.workDate === dateStr);
@@ -2661,8 +2838,8 @@ function r4CellDetailHtml_(no, dateStr){
   return html;
 }
 
-function openR4Detail_(no, dateStr){
-  document.getElementById('r4DetailBody').innerHTML = r4CellDetailHtml_(no, dateStr);
+function openR4Detail_(no, dateStr, isKenchiku){
+  document.getElementById('r4DetailBody').innerHTML = r4CellDetailHtml_(no, dateStr, isKenchiku);
   document.getElementById('r4DetailOverlay').classList.add('show');
 }
 
@@ -2993,10 +3170,12 @@ document.addEventListener('click', e => {
     if(cell.dataset.date){
       const empRow = cell.closest('tr[data-no]');
       if(empRow){
+        const isKenchiku = empRow.dataset.factory === '総務建築';
         const todayMidnight = new Date();
         todayMidnight.setHours(0, 0, 0, 0);
         const isFutureCell = !(new Date(cell.dataset.date.split('/').join('-')) < todayMidnight);
-        if(isFutureCell && !hasAnyLeave(empRow.dataset.no, cell.dataset.date)) ignore = true;
+        const leaveList = isKenchiku ? KENCHIKU_ABSENTEEISM : undefined;
+        if(isFutureCell && !hasAnyLeave(empRow.dataset.no, cell.dataset.date, leaveList)) ignore = true;
       }
     }
     if(!ignore){
@@ -3009,7 +3188,7 @@ document.addEventListener('click', e => {
         if(empRow){
           clearCellPopupActive_();
           cell.classList.add('cellPopupActive');
-          openR4Detail_(empRow.dataset.no, cell.dataset.date);
+          openR4Detail_(empRow.dataset.no, cell.dataset.date, empRow.dataset.factory === '総務建築');
         }
       }
     }
