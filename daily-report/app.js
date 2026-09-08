@@ -335,6 +335,12 @@ const INITIAL_LOAD_PROGRESS_DURATION_MS = 15000;
 
 function setHomeButtonsEnabled(enabled){
   document.querySelectorAll('.homeBtn').forEach(b => { b.disabled = !enabled; });
+  /* 総務建築はDailyReport建築という別データのため、①日報入力チェックだけを対象とする
+     (ユーザー指定)。②〜⑤はこの拠点では意味を持たないためホーム画面から非表示にする。 */
+  const isKenchiku = getDefaultFactory_() === '総務建築';
+  document.querySelectorAll('#screen-home .homeButtons .homeBtn').forEach(b => {
+    b.hidden = isKenchiku && !b.classList.contains('homeBtnCheck');
+  });
 }
 
 /* アプリ起動時、ホーム画面表示と同時に同期ポップアップを出し、①②③④を押せない状態にする。
@@ -657,7 +663,9 @@ function updateHeaderFactoryLabels_(){
   const loc = getDefaultFactory_();
   document.querySelectorAll('.headerFactoryLabel').forEach(el => { el.textContent = loc; });
   const homeLabel = document.getElementById('homeFactoryLabel');
-  if(homeLabel) homeLabel.textContent = loc ? `(工場: ${loc})` : '';
+  /* 総務建築は「工場」ではないため、他拠点の「(工場: xxx)」ではなく「(総務建築)」と
+     表示する(ユーザー指定)。 */
+  if(homeLabel) homeLabel.textContent = loc ? (loc === '総務建築' ? `(${loc})` : `(工場: ${loc})`) : '';
 }
 
 /* r1/r2は「指定:する」+選択工場のみチェック、r3は選択工場のみチェックにする。
@@ -1661,12 +1669,12 @@ function r4CellDetailHtml_(no, dateStr, isKenchiku){
       }
     }
     workRows.forEach((r, i) => {
-      const n = i + 1;
+      const n = workRows.length > 1 ? (i + 1) : '';
       html += `<div class="detailRow"><span class="detailLabel">開始時間${n}</span><span>${r.start}</span></div>`;
       html += `<div class="detailRow"><span class="detailLabel">終了時間${n}</span><span>${r.end}</span></div>`;
-      html += `<div class="detailRow"><span class="detailLabel">休憩時間${n}</span><span>${(r.breakMin || 0) / 60}</span></div>`;
+      html += `<div class="detailRow"><span class="detailLabel">休憩時間${n}</span><span>${(r.breakMin || 0) / 60}時間</span></div>`;
     });
-    html += `<div class="detailRow detailRowTotal"><span class="detailLabel">合計時間</span><span>${total}</span></div>`;
+    html += `<div class="detailRow detailRowTotal"><span class="detailLabel">合計時間</span><span>${total}時間</span></div>`;
     return html;
   }
 
