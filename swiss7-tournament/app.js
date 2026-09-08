@@ -110,8 +110,7 @@ function createTournament() {
 /* ---- 大会画面 ---- */
 
 function resetEditingState() {
-  editingRows = { day1: new Set(), day2: new Set() };
-  scoreDigitsState = {};
+  scoreBuffer = {};
   pdfLinks = { day1: null, day2: null };
 }
 
@@ -267,97 +266,94 @@ function renderPdfHeaderActions(day) {
     (link ? `<a class="pdfBtn" href="${link.url}" target="_blank" download="${link.fileName}">PDF表示</a>` : '');
 }
 
-// 試合ごとの「再編集」状態（保存済みの試合を再度入力可能にしたもの）。day1/day2で別管理。
-let editingRows = { day1: new Set(), day2: new Set() };
-
 // 生成済みPDFのリンク（大会名と同じ行のヘッダーに表示）。day1/day2で別管理。
 let pdfLinks = { day1: null, day2: null };
 
-/* ---- 得点入力：百/十/一の位をボタンで選ぶ3桁ピッカー（□□□-□□□） ---- */
+/* ---- 得点入力：得点欄をタップすると0〜9ボタンで3桁まで入力できる（例: 1→2→3の順で押すと「123」）---- */
 
-let scoreDigitsState = {}; // "day-index-side" -> {h,t,o}
-let activeDigitPicker = null; // {day,index,side,place}
+// キーが存在しない = まだ一度もタップして入力していない（保存済みの得点をそのまま表示する）。
+// キーの値は「タップ後に押した数字をそのまま並べた文字列」で、保存済みの得点は含めない
+// （既存の得点に追記するのではなく、タップ後の最初の入力から新しい数字を打ち直す）。
+let scoreBuffer = {}; // "day-index-side" -> "" | "1" | "12" | "123" など
+let activeScoreEntry = null; // {day, index, side}
 
 function scoreKey(day, index, side) { return `${day}-${index}-${side}`; }
-
-function digitsFromScore(score) {
-  const n = (score === '' || score === null || score === undefined) ? 0 : Number(score);
-  const clamped = Math.max(0, Math.min(199, Math.floor(n) || 0));
-  return { h: Math.floor(clamped / 100), t: Math.floor((clamped % 100) / 10), o: clamped % 10 };
-}
 
 function padScore(v) {
   const n = (v === '' || v === null || v === undefined) ? 0 : Number(v);
   return String(Math.max(0, Math.min(199, Math.floor(n) || 0)));
 }
 
-function scoreFromDigits(day, index, side) {
-  const d = scoreDigitsState[scoreKey(day, index, side)] || { h: 0, t: 0, o: 0 };
-  return d.h * 100 + d.t * 10 + d.o;
-}
-
-function renderDigitScore(day, index, side, currentScore) {
+// 得点欄に表示する現在値。未入力ならsavedScore（保存済みの得点）をそのまま表示する
+function currentScoreStr(day, index, side, savedScore) {
   const key = scoreKey(day, index, side);
-  if (!(key in scoreDigitsState)) scoreDigitsState[key] = digitsFromScore(currentScore);
-  const d = scoreDigitsState[key];
-  return `<span class="digitScore" data-key="${key}">` +
-    `<button type="button" class="digitBox" onclick="openDigitPicker('${day}', ${index}, '${side}', 'h')">${d.h}</button>` +
-    `<button type="button" class="digitBox" onclick="openDigitPicker('${day}', ${index}, '${side}', 't')">${d.t}</button>` +
-    `<button type="button" class="digitBox" onclick="openDigitPicker('${day}', ${index}, '${side}', 'o')">${d.o}</button>` +
-    `</span>`;
+  return padScore((key in scoreBuffer) ? scoreBuffer[key] : savedScore);
 }
 
-function openDigitPicker(day, index, side, place) {
-  activeDigitPicker = { day, index, side, place };
-  const choices = place === 'h' ? [0, 1] : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-  const placeLabel = place === 'h' ? '百の位' : place === 't' ? '十の位' : '一の位';
-  document.getElementById('digitPickerTitle').innerText = (side === 'light' ? '淡' : '濃') + '得点 ' + placeLabel;
-  document.getElementById('digitPickerButtons').innerHTML = choices.map(c =>
-    `<button type="button" class="digitChoice" onclick="chooseDigit(${c})">${c}</button>`
+function scoreFromBuffer(day, index, side, savedScore) {
+  const key = scoreKey(day, index, side);
+  return Number(padScore((key in scoreBuffer) ? scoreBuffer[key] : savedScore));
+}
+
+function openDigitPicker(day, index, side, savedScore) {
+  activeScoreEntry = { day, index, side, savedScore };
+  document.getElementById('digitPickerTitle').innerText = (side === 'light' ? '淡' : '濃') + '得点';
+  document.getElementById('digitPickerButtons').innerHTML = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) =>
+    `<button type="button" class="digitChoice" onclick="pressDigit(${d})">${d}</button>`
   ).join('');
+  updateDigitPickerPreview();
   document.getElementById('digitPickerOverlay').classList.add('active');
 }
 
-function chooseDigit(value) {
-  if (!activeDigitPicker) return;
-  const { day, index, side, place } = activeDigitPicker;
+function updateDigitPickerPreview() {
+  if (!activeScoreEntry) return;
+  const { day, index, side, savedScore } = activeScoreEntry;
   const key = scoreKey(day, index, side);
-  const d = scoreDigitsState[key] || { h: 0, t: 0, o: 0 };
-  d[place] = value;
-  scoreDigitsState[key] = d;
-  const span = document.querySelector(`.digitScore[data-key="${key}"]`);
-  if (span) {
-    const boxes = span.querySelectorAll('.digitBox');
-    boxes[0].textContent = d.h;
-    boxes[1].textContent = d.t;
-    boxes[2].textContent = d.o;
-  }
-  closeDigitPicker();
+  const value = padScore((key in scoreBuffer) ? scoreBuffer[key] : savedScore);
+  document.getElementById('digitPickerPreview').innerText = value;
+  const tapBtn = document.querySelector(`.scoreTap[data-key="${key}"]`);
+  if (tapBtn) tapBtn.textContent = value;
+  updateSaveButtonState(day, index);
+}
+
+// 押すたびに末尾へ数字を追加していく（保存済みの得点には追記せず、タップ後の最初の入力から打ち直す）。
+// 3桁を超えたら先頭からあふれた分を捨てる（例: 1→2→3の順で押すと「123」）
+function pressDigit(d) {
+  if (!activeScoreEntry) return;
+  const key = scoreKey(activeScoreEntry.day, activeScoreEntry.index, activeScoreEntry.side);
+  const typed = (key in scoreBuffer) ? scoreBuffer[key] : '';
+  scoreBuffer[key] = (typed + String(d)).slice(-3);
+  updateDigitPickerPreview();
+}
+
+// 入力間違いのとき、この得点欄だけを0に戻す
+function clearDigitEntry() {
+  if (!activeScoreEntry) return;
+  const key = scoreKey(activeScoreEntry.day, activeScoreEntry.index, activeScoreEntry.side);
+  scoreBuffer[key] = '';
+  updateDigitPickerPreview();
 }
 
 function closeDigitPicker() {
-  activeDigitPicker = null;
+  activeScoreEntry = null;
   document.getElementById('digitPickerOverlay').classList.remove('active');
+}
+
+// 保存済みの得点から変更されていなければ「保存」ボタンをグレーアウトする
+function updateSaveButtonState(day, index) {
+  const m = currentTournament[day].matches.find((x) => x.index === index);
+  if (!m) return;
+  const recorded = m.lightScore !== '' && m.lightScore !== null && m.darkScore !== '' && m.darkScore !== null;
+  const changed = !recorded ||
+    scoreFromBuffer(day, index, 'light', m.lightScore) !== Number(m.lightScore) ||
+    scoreFromBuffer(day, index, 'dark', m.darkScore) !== Number(m.darkScore);
+  const btn = document.getElementById(`saveBtn-${day}-${index}`);
+  if (btn) btn.disabled = !changed;
 }
 
 /* ---- 対戦行の描画 ---- */
 
 function renderMatchRow(day, m, recorded, allowedToEnter) {
-  const editing = recorded ? editingRows[day].has(m.index) : true;
-
-  if (recorded && !editing) {
-    let lightWins = false, darkWins = false;
-    const ls = Number(m.lightScore), ds = Number(m.darkScore);
-    if (!isNaN(ls) && !isNaN(ds) && ls !== ds) { lightWins = ls > ds; darkWins = ds > ls; }
-    return `<tr>
-      <td>${m.index + 1}</td>
-      <td class="${lightWins ? 'winCell' : ''}">${m.light}</td>
-      <td class="scoreCell">${padScore(m.lightScore)}<span class="scoreDash">-</span>${padScore(m.darkScore)}</td>
-      <td class="${darkWins ? 'winCell' : ''}">${m.dark}</td>
-      <td><button type="button" onclick="reeditMatchRow('${day}', ${m.index})">再編集</button></td>
-    </tr>`;
-  }
-
   if (!recorded && !allowedToEnter) {
     return `<tr>
       <td>${m.index + 1}</td>
@@ -368,32 +364,40 @@ function renderMatchRow(day, m, recorded, allowedToEnter) {
     </tr>`;
   }
 
+  let lightWins = false, darkWins = false;
+  if (recorded) {
+    const ls = Number(m.lightScore), ds = Number(m.darkScore);
+    if (!isNaN(ls) && !isNaN(ds) && ls !== ds) { lightWins = ls > ds; darkWins = ds > ls; }
+  }
+
+  const lightVal = currentScoreStr(day, m.index, 'light', m.lightScore);
+  const darkVal = currentScoreStr(day, m.index, 'dark', m.darkScore);
+  const changed = !recorded || Number(lightVal) !== Number(m.lightScore) || Number(darkVal) !== Number(m.darkScore);
+
   return `<tr>
     <td>${m.index + 1}</td>
-    <td>${m.light}</td>
-    <td class="scoreCell">${renderDigitScore(day, m.index, 'light', m.lightScore)}<span class="scoreDash">-</span>${renderDigitScore(day, m.index, 'dark', m.darkScore)}</td>
-    <td>${m.dark}</td>
-    <td><button type="button" onclick="submitMatchScore('${day}', ${m.index})">保存</button></td>
+    <td class="${lightWins ? 'winCell' : ''}">${m.light}</td>
+    <td class="scoreCell">${renderScoreTap(day, m.index, 'light', lightVal, m.lightScore)}<span class="scoreDash">-</span>${renderScoreTap(day, m.index, 'dark', darkVal, m.darkScore)}</td>
+    <td class="${darkWins ? 'winCell' : ''}">${m.dark}</td>
+    <td><button type="button" id="saveBtn-${day}-${m.index}" ${changed ? '' : 'disabled'} onclick="submitMatchScore('${day}', ${m.index})">保存</button></td>
   </tr>`;
 }
 
-function reeditMatchRow(day, index) {
-  editingRows[day].add(index);
-  delete scoreDigitsState[scoreKey(day, index, 'light')];
-  delete scoreDigitsState[scoreKey(day, index, 'dark')];
-  renderCurrentTab();
+// タップすると数字ピッカーが開く、常に編集可能な得点欄（記録済み・未記録どちらも同じ見た目）
+function renderScoreTap(day, index, side, value, savedScore) {
+  const key = scoreKey(day, index, side);
+  const savedArg = (savedScore === '' || savedScore === null || savedScore === undefined) ? 'null' : Number(savedScore);
+  return `<button type="button" class="scoreTap" data-key="${key}" onclick="openDigitPicker('${day}', ${index}, '${side}', ${savedArg})">${value}</button>`;
 }
 
 function submitMatchScore(day, index) {
-  const lightScore = scoreFromDigits(day, index, 'light');
-  const darkScore = scoreFromDigits(day, index, 'dark');
+  const m = currentTournament[day].matches.find((x) => x.index === index);
+  const lightScore = scoreFromBuffer(day, index, 'light', m.lightScore);
+  const darkScore = scoreFromBuffer(day, index, 'dark', m.darkScore);
   showLoading('保存中…');
   apiPost('submitScore', { prefix: currentPrefix, day: day, matchIndex: index, lightScore: lightScore, darkScore: darkScore }).then(result => {
     hideLoading();
     showStatus(result.message);
-    editingRows[day].delete(index);
-    delete scoreDigitsState[scoreKey(day, index, 'light')];
-    delete scoreDigitsState[scoreKey(day, index, 'dark')];
     applyTournament(result.tournament);
     showTab(currentTab);
   }).catch(e => { hideLoading(); showStatus('エラー: ' + e.message); });
