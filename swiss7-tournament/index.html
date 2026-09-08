@@ -44,8 +44,12 @@
 <div id="digitPickerOverlay" class="digitPickerOverlay">
   <div class="digitPickerBox">
     <div id="digitPickerTitle" class="digitPickerTitle"></div>
+    <div id="digitPickerPreview" class="digitPickerPreview"></div>
     <div id="digitPickerButtons" class="digitPickerButtons"></div>
-    <button type="button" class="digitPickerClose" onclick="closeDigitPicker()">閉じる</button>
+    <div class="digitPickerActions">
+      <button type="button" class="digitPickerClear" onclick="clearDigitEntry()">クリア</button>
+      <button type="button" class="digitPickerClose" onclick="closeDigitPicker()">閉じる</button>
+    </div>
   </div>
 </div>
 
