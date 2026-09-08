@@ -254,7 +254,8 @@ function renderDayTab(day) {
 
   const rankRows = dayData.rank.map((team, i) => team ? `<tr><td>${i + 1}位</td><td>${team}</td></tr>` : '').join('');
   if (rankRows) {
-    html += `<h2 style="margin-top:20px">順位</h2><table class="rankTable"><tr><th>順位</th><th>チーム</th></tr>${rankRows}</table>`;
+    const rankTitle = day === 'day2' ? '総合順位（1・2日目合算）' : '順位';
+    html += `<h2 style="margin-top:20px">${rankTitle}</h2><table class="rankTable"><tr><th>順位</th><th>チーム</th></tr>${rankRows}</table>`;
   }
 
   if (day === 'day1' && dayData.scoresComplete && !currentTournament.day2.teamsFilled) {

@@ -232,6 +232,13 @@ function getTournament(prefix) {
   const s2 = ss.getSheetByName(day2Name);
   const day2 = s2 ? readDaySheet_(s2) : null;
 
+  // 2日目の「順位」は、2日目シート単独の順位ではなく、1日目・2日目を合算した最終順位にする
+  // （最終順位は1,2日の結果で決める、という運用に合わせるため）。
+  if (day2 && day2.teamsFilled) {
+    const overall = computeStandings_(day1.teams, day1.matches.concat(day2.matches));
+    if (overall.length) day2.rank = overall.map((s) => s.team);
+  }
+
   return {
     prefix: prefix,
     name: getTournamentName_(day1Name) || prefix,
@@ -307,21 +314,31 @@ function createDay2(prefix) {
     return d === 1 || d === n - 1;
   }
 
+  // 組み合わせの良さは「単純な順位差の合計」ではなく、
+  // まず①一番大きい順位差（最悪の1試合）を最小化し、次に②順位差の2乗和を最小化する、の順で評価する。
+  // ①だけだと、最初に試す並び（そのまま昇順）が「合計」では最小になりがちで、
+  // 円環の輪を閉じる1試合だけ1位×7位のような極端な差になってしまうため。
   const rest = rankedTeams.slice(1);
   let best = null;
+  let bestMaxGap = Infinity;
   let bestCost = Infinity;
 
   function permute(arr, l) {
     if (l === arr.length - 1) {
       const order = [rankedTeams[0]].concat(arr);
       let valid = true;
+      let maxGap = 0;
       let cost = 0;
       for (let k = 0; k < n; k++) {
         const a = order[k], b = order[(k + 1) % n];
         if (isDay1Opponent(a, b)) { valid = false; break; }
-        cost += Math.abs(rankOf[a] - rankOf[b]);
+        const gap = Math.abs(rankOf[a] - rankOf[b]);
+        if (gap > maxGap) maxGap = gap;
+        cost += gap * gap;
       }
-      if (valid && cost < bestCost) { bestCost = cost; best = order.slice(); }
+      if (valid && (maxGap < bestMaxGap || (maxGap === bestMaxGap && cost < bestCost))) {
+        bestMaxGap = maxGap; bestCost = cost; best = order.slice();
+      }
       return;
     }
     for (let j = l; j < arr.length; j++) {
@@ -362,10 +379,10 @@ const PDF_RANK_HEADERS = ['順位', 'チーム', '勝数', '得点', '失点', '
 const WIN_COLOR = '#ffd700'; // アプリ画面の勝利ハイライト（winCell）と同じ色
 
 // 得点が両方入力済みの試合から、チームごとの勝数・得点・失点・得失点を集計する。
-// 1試合も入力されていなければ空配列を返す（＝PDFの順位表を丸ごと省略する合図）。
-// 順位は「勝数→得失点」の2項目が同じチームは同順位（引き分け扱い）とし、
-// スプレッドシート側のK列にある行番号タイブレークは使わない。
-function computePdfStandings_(teams, matches) {
+// 1試合も入力されていなければ空配列を返す（＝PDFの順位表・2日目の順位を丸ごと省略する合図）。
+// 順位は「勝数→得失点→得点」の3項目が同じチームは同順位（引き分け扱い）とする。
+// matchesに1日目・2日目両方の試合を渡せば、両日を合算した最終順位が得られる。
+function computeStandings_(teams, matches) {
   const anyRecorded = matches.some((m) =>
     m.lightScore !== '' && m.lightScore !== null && m.darkScore !== '' && m.darkScore !== null);
   if (!anyRecorded) return [];
@@ -385,11 +402,11 @@ function computePdfStandings_(teams, matches) {
     const s = stats[t];
     return { team: t, wins: s.wins, points: s.points, allowed: s.allowed, diff: s.points - s.allowed };
   });
-  list.sort((a, b) => b.wins - a.wins || b.diff - a.diff);
+  list.sort((a, b) => b.wins - a.wins || b.diff - a.diff || b.points - a.points);
 
   let rank = 0;
   list.forEach((s, i) => {
-    if (i === 0 || s.wins !== list[i - 1].wins || s.diff !== list[i - 1].diff) rank = i + 1;
+    if (i === 0 || s.wins !== list[i - 1].wins || s.diff !== list[i - 1].diff || s.points !== list[i - 1].points) rank = i + 1;
     s.rank = rank;
   });
   return list;
@@ -398,10 +415,13 @@ function computePdfStandings_(teams, matches) {
 // 大会名・対戦結果(勝ったチームの色付き)・順位(勝数/得点/失点/得失点入り)・TO/審判まで
 // 全てを1枚に大きく中央揃えでまとめた、印刷用の一時シートを作る。
 // テンプレートのシートをそのまま書き出すのではなく、この専用レイアウトを都度組み立てて破棄する。
-function buildPdfSheet_(prefix, day, tournamentName, dayData) {
+// standingsMatches省略時はdayData.matches（その日単独）で順位表を作る。
+// 2日目は1日目・2日目を合算した試合配列を渡し、最終順位（総合順位）を掲載する。
+function buildPdfSheet_(prefix, day, tournamentName, dayData, standingsMatches) {
   const ss = getSs();
   const tmp = ss.insertSheet('_pdf_tmp_' + Utilities.getUuid());
   const dayLabel = day === 'day1' ? '1日目' : '2日目';
+  const rankTitle = day === 'day2' ? '総合順位（1・2日目合算）' : '順位';
 
   let row = 1;
   tmp.getRange(row, 1, 1, PDF_NUM_COLS).merge()
@@ -438,10 +458,10 @@ function buildPdfSheet_(prefix, day, tournamentName, dayData) {
   row = matchHeaderRow + matchTable.length + 1;
 
   // 順位表：1試合も結果が入っていない（大会開始前）状態では、丸ごと出力しない
-  const standings = computePdfStandings_(dayData.teams, dayData.matches);
+  const standings = computeStandings_(dayData.teams, standingsMatches || dayData.matches);
   if (standings.length) {
     tmp.getRange(row, 1, 1, PDF_NUM_COLS).merge()
-      .setValue('順位').setFontSize(18).setFontWeight('bold').setHorizontalAlignment('center');
+      .setValue(rankTitle).setFontSize(18).setFontWeight('bold').setHorizontalAlignment('center');
     tmp.setRowHeight(row, 34);
     row++;
 
@@ -471,8 +491,16 @@ function exportPdf(prefix, day) {
   const day1Name = sheetNameFor_(prefix, 'day1');
   const tournamentName = getTournamentName_(day1Name) || prefix;
 
+  // 2日目のPDFは、1日目の結果も合算した最終順位を掲載する
+  let standingsMatches = dayData.matches;
+  if (day === 'day2') {
+    const s1 = getSheetOrThrow_(day1Name);
+    const day1Data = readDaySheet_(s1);
+    standingsMatches = day1Data.matches.concat(dayData.matches);
+  }
+
   const ss = getSs();
-  const tmp = buildPdfSheet_(prefix, day, tournamentName, dayData);
+  const tmp = buildPdfSheet_(prefix, day, tournamentName, dayData, standingsMatches);
   SpreadsheetApp.flush();
   try {
     const token = ScriptApp.getOAuthToken();
