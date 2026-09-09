@@ -274,12 +274,12 @@ const KENCHIKU_EXCLUDED_OPERATOR_NOS_ = ['800', '9'];
 const KENCHIKU_SOMU_DEPT_ = '総務部';
 const KENCHIKU_TREAT_AS_SOMU_NOS_ = ['27'];
 
-function loadKenchikuOperators_(ssId) {
-  const ss = SpreadsheetApp.openById(ssId);
-  const rows = ss.getSheetByName(SHEET_NAMES.OPERATOR).getDataRange().getValues();
+/* operatorRowsはOperatorシートの生データ(getDataRange().getValues())。呼び出し元で
+   1回だけ読み込んだものを渡す(loadKenchikuOperatorNames_と重複読み込みしないため)。 */
+function loadKenchikuOperators_(operatorRows) {
   const list = [];
-  for (let i = 1; i < rows.length; i++) {
-    const r = rows[i];
+  for (let i = 1; i < operatorRows.length; i++) {
+    const r = operatorRows[i];
     if (!r[0]) continue;
     const no = String(r[0]);
     if (KENCHIKU_EXCLUDED_OPERATOR_NOS_.indexOf(no) !== -1) continue;
@@ -300,13 +300,14 @@ function loadKenchikuOperators_(ssId) {
    共有アカウントNo800)や「現状」列の勤務判定による除外を一切行わない全社員が対象。
    No9は①日報入力チェックの対象者(表示対象)からは除外されるが、他の社員の直属上司として
    届出に登場するため、氏名解決だけは除外せず行う必要がある(ユーザー報告により追加)。
-   ①のloadKenchikuOperators_(表示順・除外あり)とは目的が異なる別関数。 */
-function loadKenchikuOperatorNames_(ssId) {
-  const ss = SpreadsheetApp.openById(ssId);
-  const rows = ss.getSheetByName(SHEET_NAMES.OPERATOR).getDataRange().getValues();
+   ①のloadKenchikuOperators_(表示順・除外あり)とは目的が異なる別関数。
+   operatorRowsはloadKenchikuOperators_と同じ生データを呼び出し元から受け取り、
+   Operatorシートを2回読み込まないようにする(パフォーマンス改善、gas-performance-diagnosis
+   スキルで診断)。 */
+function loadKenchikuOperatorNames_(operatorRows) {
   const map = {};
-  for (let i = 1; i < rows.length; i++) {
-    const r = rows[i];
+  for (let i = 1; i < operatorRows.length; i++) {
+    const r = operatorRows[i];
     if (!r[0]) continue;
     map[String(r[0])] = r[1];
   }
@@ -347,8 +348,9 @@ function computeKenchikuHoursDetail_(start, end, tz, fmt) {
    G工事名(参照) H工事名 I作業内容 J備考 K TimeStamp。①日報入力チェックのグリッド集計
    (社員No・作業日・時間数)に加え、セル詳細ポップアップ用に開始時間・終了時間・
    休憩分数も返す。 */
-function loadKenchikuWorkRows_(ssId) {
-  const ss = SpreadsheetApp.openById(ssId);
+/* ssは呼び出し元で開いた(SpreadsheetApp.openById済みの)Spreadsheetオブジェクト。
+   同じ外部スプレッドシートを関数ごとにopenし直さないため(パフォーマンス改善)。 */
+function loadKenchikuWorkRows_(ss) {
   const tz = ss.getSpreadsheetTimeZone();
   const fmt = kenchikuMakeFormatter_(tz);
   const values = ss.getSheetByName(SHEET_NAMES.DAILY_REPORT).getDataRange().getValues();
@@ -375,9 +377,9 @@ function loadKenchikuWorkRows_(ssId) {
 
 /* Absenteeismシート列(建築側は本体のAbsenteeismと違い部署・生まれ月列がない):
    A AbID B所属 C登録者(社員No) D自 E至 F事由 G申請項目 H振替日 I直属上司 J TimeStamp。
-   supervisorNo(I列)は②有給等届けの確認の詳細ポップアップ(直属上司表示)用に追加。 */
-function loadKenchikuAbsenteeism_(ssId) {
-  const ss = SpreadsheetApp.openById(ssId);
+   supervisorNo(I列)は②有給等届けの確認の詳細ポップアップ(直属上司表示)用に追加。
+   ssは呼び出し元で開いた(SpreadsheetApp.openById済みの)Spreadsheetオブジェクト。 */
+function loadKenchikuAbsenteeism_(ss) {
   const tz = ss.getSpreadsheetTimeZone();
   const fmt = kenchikuMakeFormatter_(tz);
   const sheet = ss.getSheetByName(SHEET_NAMES.ABSENTEEISM);
@@ -405,15 +407,39 @@ function loadKenchikuAbsenteeism_(ssId) {
 
 /* ①日報入力チェックの「総務建築」拠点用。拠点チェックボックスが押されたときにだけ
    クライアントから呼ばれる(起動時の初期化カスケードには組み込まない、■0-13の
-   全断リスクの対象外)。「情報」シートに未登録の場合は空データを返す。 */
+   全断リスクの対象外)。「情報」シートに未登録の場合は空データを返す。
+   【パフォーマンス改善】以前はloadKenchikuOperators_/loadKenchikuWorkRows_/
+   loadKenchikuAbsenteeism_/loadKenchikuOperatorNames_がそれぞれ個別に
+   SpreadsheetApp.openById(ssId)を呼んでおり、同じ外部スプレッドシートを1リクエストの
+   中で4回開き直し、かつOperatorシートを2回読み込んでいた(gas-performance-diagnosis
+   スキルで診断、実測でも本社/夢前/鳥取のマスタ取得よりデータ量が少ないのに遅いことを確認)。
+   ここで1回だけopenし、Operatorシートも1回だけ読んで使い回す。 */
 function getKenchikuCheckDataForClient() {
   const ssId = getKenchikuSsId_();
   if (!ssId) return { operators: [], rows: [], absenteeism: [], operatorNames: {} };
+  const ss = SpreadsheetApp.openById(ssId);
+  const operatorRows = ss.getSheetByName(SHEET_NAMES.OPERATOR).getDataRange().getValues();
   return {
-    operators: loadKenchikuOperators_(ssId),
-    rows: loadKenchikuWorkRows_(ssId),
-    absenteeism: loadKenchikuAbsenteeism_(ssId),
-    operatorNames: loadKenchikuOperatorNames_(ssId)
+    operators: loadKenchikuOperators_(operatorRows),
+    rows: loadKenchikuWorkRows_(ss),
+    absenteeism: loadKenchikuAbsenteeism_(ss),
+    operatorNames: loadKenchikuOperatorNames_(operatorRows)
+  };
+}
+
+/* ②有給等届けの確認専用の軽量版。①のgetKenchikuCheckDataForClientと違い、
+   最も重い(約27,600行の走査を伴う)loadKenchikuWorkRows_は呼ばない。
+   ②が本来必要とするのはAbsenteeismとOperator名前解決だけであるため
+   (①を一度も開かないユーザーが②を見るためだけに①分のデータまで待たされる
+   ことを防ぐ、gas-performance-diagnosisスキルで診断)。 */
+function getKenchikuLeaveDataForClient() {
+  const ssId = getKenchikuSsId_();
+  if (!ssId) return { absenteeism: [], operatorNames: {} };
+  const ss = SpreadsheetApp.openById(ssId);
+  const operatorRows = ss.getSheetByName(SHEET_NAMES.OPERATOR).getDataRange().getValues();
+  return {
+    absenteeism: loadKenchikuAbsenteeism_(ss),
+    operatorNames: loadKenchikuOperatorNames_(operatorRows)
   };
 }
 
@@ -1457,6 +1483,7 @@ function doPost(e) {
     if (action === 'getUpdateLogs') return apiJsonOk_(getUpdateLogsForClient());
     if (action === 'getUpdateLogPdf') return apiJsonOk_(getUpdateLogPdfForClient(params.fileId));
     if (action === 'getKenchikuCheckData') return apiJsonOk_(getKenchikuCheckDataForClient());
+    if (action === 'getKenchikuLeaveData') return apiJsonOk_(getKenchikuLeaveDataForClient());
     return apiJsonErr_('不明なaction: ' + action);
   } catch (err) {
     return apiJsonErr_(String(err && err.message || err));
