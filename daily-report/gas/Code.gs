@@ -264,6 +264,22 @@ function kenchikuYmd_(d, tz, fmt) {
   return Utilities.formatDate(d, tz, 'yyyy/MM/dd');
 }
 
+/* d・tz・fmtから{year,month,day,hour,minute}を1回のフォーマット処理でまとめて取り出す。
+   同じ日時に対してkenchikuYmd_・kenchikuHm_・(旧)computeKenchikuHoursDetail_内部の
+   個別変換を別々に呼ぶと、その回数だけIntl(またはフォールバック時はUtilities.formatDate)の
+   呼び出しが重複してしまう(loadKenchikuWorkRows_で1行あたり開始時刻に3回・終了時刻に1回、
+   計4回呼んでいたことが判明。gas-performance-diagnosisスキルで診断)。日付・時刻の両方が
+   必要な箇所ではこちらを使い、同じ日時につき1回の変換で済ませる。 */
+function kenchikuDateParts_(d, tz, fmt) {
+  if (fmt) return kenchikuParts_(fmt, d);
+  const s = Utilities.formatDate(d, tz, 'yyyy/MM/dd HH:mm');
+  const datePart = s.split(' ')[0];
+  const timePart = s.split(' ')[1];
+  const ymd = datePart.split('/');
+  const hm = timePart.split(':');
+  return { year: ymd[0], month: ymd[1], day: ymd[2], hour: hm[0], minute: hm[1] };
+}
+
 /* Operatorシート列: A社員No B氏名 C事業部 D部署 E電話番号 F E-Mail G現状。
    G列(現状)が「勤務」の行だけを対象にし、KENCHIKU_EXCLUDED_OPERATOR_NOS_の社員No
    (800=共有アカウント、9=ユーザー指定)は除外する。KENCHIKU_TREAT_AS_SOMU_NOS_の社員No
@@ -326,19 +342,14 @@ function kenchikuHm_(d, tz, fmt) {
 /* 休憩時間(12:00〜13:00の1時間固定)は、開始〜終了の区間と重なった分だけ差し引く
    (区間が昼休みに掛かっていなければ差し引かない)。例: 10:00〜15:30 → 5.5h - 1h = 4.5h。
    開始・終了が同日である前提。休憩分数(breakMin)は①のセル詳細ポップアップ
-   (開始時間・終了時間・休憩時間・合計時間の表示、ユーザー指定)にも使う。 */
-function computeKenchikuHoursDetail_(start, end, tz, fmt) {
+   (開始時間・終了時間・休憩時間・合計時間の表示、ユーザー指定)にも使う。
+   startMinは呼び出し元(loadKenchikuWorkRows_)で既にkenchikuDateParts_から算出済みの
+   開始時刻(分)を受け取る(同じ開始時刻に対する日時変換処理の重複呼び出しを避けるため、
+   パフォーマンス改善)。 */
+function computeKenchikuHoursDetail_(start, end, startMin) {
   if (!(start instanceof Date) || !(end instanceof Date)) return { hours: 0, breakMin: 0 };
   const diffMin = (end.getTime() - start.getTime()) / 60000;
   if (diffMin <= 0) return { hours: 0, breakMin: 0 };
-  let startMin;
-  if (fmt) {
-    const p = kenchikuParts_(fmt, start);
-    startMin = Number(p.hour) * 60 + Number(p.minute);
-  } else {
-    const hm = Utilities.formatDate(start, tz, 'HH:mm').split(':');
-    startMin = Number(hm[0]) * 60 + Number(hm[1]);
-  }
   const endMin = startMin + diffMin;
   const overlap = Math.max(0, Math.min(endMin, KENCHIKU_LUNCH_END_MIN_) - Math.max(startMin, KENCHIKU_LUNCH_START_MIN_));
   return { hours: (diffMin - overlap) / 60, breakMin: overlap };
@@ -347,9 +358,13 @@ function computeKenchikuHoursDetail_(start, end, tz, fmt) {
 /* DailyReportシート列: A No B所属 C登録者(社員No) D開始時間 E終了時間 F工事No
    G工事名(参照) H工事名 I作業内容 J備考 K TimeStamp。①日報入力チェックのグリッド集計
    (社員No・作業日・時間数)に加え、セル詳細ポップアップ用に開始時間・終了時間・
-   休憩分数も返す。 */
-/* ssは呼び出し元で開いた(SpreadsheetApp.openById済みの)Spreadsheetオブジェクト。
-   同じ外部スプレッドシートを関数ごとにopenし直さないため(パフォーマンス改善)。 */
+   休憩分数も返す。
+   ssは呼び出し元で開いた(SpreadsheetApp.openById済みの)Spreadsheetオブジェクト。
+   同じ外部スプレッドシートを関数ごとにopenし直さないため(パフォーマンス改善)。
+   【パフォーマンス改善】以前は1行あたり開始時刻(r[3])の日時変換を
+   kenchikuYmd_・computeKenchikuHoursDetail_内部・kenchikuHm_の3箇所で別々に呼んでおり、
+   約27,600行に対して無駄なIntl呼び出しが積み重なっていた(gas-performance-diagnosis
+   スキルで診断)。開始・終了それぞれkenchikuDateParts_を1回だけ呼んで使い回す。 */
 function loadKenchikuWorkRows_(ss) {
   const tz = ss.getSpreadsheetTimeZone();
   const fmt = kenchikuMakeFormatter_(tz);
@@ -360,15 +375,18 @@ function loadKenchikuWorkRows_(ss) {
     if (!r[0]) continue;
     if (!(r[3] instanceof Date)) continue;
     const operatorNo = String(r[2]);
-    const workDate = kenchikuYmd_(r[3], tz, fmt);
-    const detail = computeKenchikuHoursDetail_(r[3], r[4], tz, fmt);
+    const startParts = kenchikuDateParts_(r[3], tz, fmt);
+    const workDate = startParts.year + '/' + startParts.month + '/' + startParts.day;
+    const startMin = Number(startParts.hour) * 60 + Number(startParts.minute);
+    const detail = computeKenchikuHoursDetail_(r[3], r[4], startMin);
     if (detail.hours <= 0) continue;
+    const endParts = kenchikuDateParts_(r[4], tz, fmt);
     rows.push({
       operatorNo: operatorNo,
       workDate: workDate,
       hours: detail.hours,
-      start: kenchikuHm_(r[3], tz, fmt),
-      end: kenchikuHm_(r[4], tz, fmt),
+      start: startParts.hour + ':' + startParts.minute,
+      end: endParts.hour + ':' + endParts.minute,
       breakMin: detail.breakMin
     });
   }
