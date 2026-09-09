@@ -6,6 +6,8 @@
   --text: #e7ebf3;
   --muted: #93a0b8;
   --accent: #4da3ff;
+  --hover-green: #1f9d55;
+  --hover-green-border: #2ecc71;
 }
 
 * { box-sizing: border-box; }
@@ -19,21 +21,19 @@ body {
 
 .page { max-width: 640px; margin: 0 auto; padding: 40px 20px 60px; }
 
-h1 { font-size: 1.4rem; margin: 0 0 10px; text-align: center; }
-
-.notice {
-  color: var(--muted);
-  font-size: 0.85rem;
-  text-align: center;
-  line-height: 1.6;
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
   margin: 0 0 28px;
 }
-.notice code {
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 6px;
-}
+/* ロゴマーク(赤色部分)は固定色のまま、「masamiz」文字部分だけcurrentColorにして
+   ページの文字色(--text)に追従させている(このページの背景は常に濃色のため、
+   結果として文字部分は白抜きになる)。 */
+.brand-logo { width: 40px; height: 44px; flex: none; color: var(--text); }
+
+h1 { font-size: 1.3rem; margin: 0; text-align: center; }
 
 .empty { color: var(--muted); text-align: center; padding: 20px; }
 
@@ -52,11 +52,12 @@ h1 { font-size: 1.4rem; margin: 0 0 10px; text-align: center; }
   padding: 18px 22px;
   text-decoration: none;
   color: var(--text);
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 .item-button:hover {
   transform: translateY(-2px);
-  border-color: var(--accent);
+  background: var(--hover-green);
+  border-color: var(--hover-green-border);
 }
 
 .item-button .step {
@@ -76,3 +77,4 @@ h1 { font-size: 1.4rem; margin: 0 0 10px; text-align: center; }
 .item-button .text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .item-button .name { font-weight: 700; font-size: 1.05rem; }
 .item-button .desc { color: var(--muted); font-size: 0.85rem; }
+.item-button:hover .desc { color: #eafff2; }
