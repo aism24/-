@@ -39,9 +39,12 @@ let ABSENTEEISM_DETAIL = []; // ②有給等届けの確認用: {operatorNo, fac
 /* ①日報入力チェック「総務建築」拠点・②有給等届けの確認「総務建築」列 共用
    (DailyReport建築、既存の本社/夢前/鳥取とは別の社員No体系のため混在させない)。
    ①「総務建築」チェック時、または②表示時に、どちらか早い方で遅延取得してキャッシュする。 */
-let KENCHIKU_OPERATORS = []; // {no, name, dept}
+let KENCHIKU_OPERATORS = []; // {no, name, dept}(①表示用。No9・800等の除外あり)
 let KENCHIKU_ROWS = []; // {operatorNo, workDate, hours}
 let KENCHIKU_ABSENTEEISM = []; // {operatorNo, from, to, type, reason, supervisorNo}
+/* ②有給等届けの確認用の氏名解決マップ(社員No→氏名)。KENCHIKU_OPERATORSと違い除外を
+   一切行わないため、①の表示対象外(No9等)でも直属上司としての氏名解決に使える。 */
+let KENCHIKU_OPERATOR_NAMES = {};
 let KENCHIKU_LOADED = false;
 let KENCHIKU_LOADING = false;
 
@@ -336,11 +339,12 @@ const INITIAL_LOAD_PROGRESS_DURATION_MS = 15000;
 
 function setHomeButtonsEnabled(enabled){
   document.querySelectorAll('.homeBtn').forEach(b => { b.disabled = !enabled; });
-  /* 総務建築はDailyReport建築という別データのため、①日報入力チェックだけを対象とする
-     (ユーザー指定)。②〜⑤はこの拠点では意味を持たないためホーム画面から非表示にする。 */
+  /* 総務建築はDailyReport建築という別データのため、①日報入力チェック・②有給等届けの
+     確認だけを対象とする(ユーザー指定)。③〜⑤はこの拠点では意味を持たないため
+     ホーム画面から非表示にする。 */
   const isKenchiku = getDefaultFactory_() === '総務建築';
   document.querySelectorAll('#screen-home .homeButtons .homeBtn').forEach(b => {
-    b.hidden = isKenchiku && !b.classList.contains('homeBtnCheck');
+    b.hidden = isKenchiku && !b.classList.contains('homeBtnCheck') && !b.classList.contains('homeBtnLeave');
   });
 }
 
@@ -1184,6 +1188,7 @@ async function ensureKenchikuData_(){
     KENCHIKU_OPERATORS = data.operators || [];
     KENCHIKU_ROWS = data.rows || [];
     KENCHIKU_ABSENTEEISM = data.absenteeism || [];
+    KENCHIKU_OPERATOR_NAMES = data.operatorNames || {};
     KENCHIKU_LOADED = true;
   } catch(e){
     // 取得失敗時は「総務建築」の行を空のまま表示する(他拠点の表示には影響させない)
@@ -1832,16 +1837,16 @@ function computeR5Groups_(){
   KENCHIKU_ABSENTEEISM
     .filter(a => dateStr >= a.from && dateStr <= a.to)
     .forEach(a => {
-      const op = KENCHIKU_OPERATORS.find(o => o.no === a.operatorNo);
-      const sup = KENCHIKU_OPERATORS.find(o => o.no === a.supervisorNo);
+      // KENCHIKU_OPERATOR_NAMESは①の表示対象外(No9等)も含めて解決するため、
+      // 直属上司が①非表示者であっても氏名を表示できる(KENCHIKU_OPERATORSは使わない)
       groups['総務建築'].push({
         operatorNo: a.operatorNo,
-        name: (op && op.name) || a.operatorNo,
+        name: KENCHIKU_OPERATOR_NAMES[a.operatorNo] || a.operatorNo,
         type: a.type,
         reason: a.reason || '',
         from: a.from,
         to: a.to,
-        supervisorName: (sup && sup.name) || a.supervisorNo || ''
+        supervisorName: KENCHIKU_OPERATOR_NAMES[a.supervisorNo] || a.supervisorNo || ''
       });
     });
   groups['総務建築'].sort((a, b) => Number(a.operatorNo) - Number(b.operatorNo));
