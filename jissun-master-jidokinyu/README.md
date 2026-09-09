@@ -515,7 +515,7 @@ GitHub PagesのURLを1件だけ登録する**方式を採用した。
 揃えた、番号付きボタン2つだけの単純なランチャーページ。
 
 ```
-jissun-kakoubi-jidokinyu/
+jissun-master-jidokinyu/
   README.md    … 本ファイル(構想サマリー + 本セクション)
   index.html   … フロントエンドのHTML(画面構造のみ)
   style.css    … スタイル(ダーク基調、①②の番号付きボタン)
@@ -553,7 +553,7 @@ jissun-kakoubi-jidokinyu/
 5. 発行されたウェブアプリのURL（`https://script.google.com/macros/s/xxxxx/exec`）を
    Claudeとのチャットに貼り付ける（`app.js`先頭の`GAS_API_URL`に反映してGitHubへpushする。
    現時点では`PASTE_NEW_DEPLOYMENT_URL_HERE`のプレースホルダーのまま未設定）
-6. `main`ブランチにマージ済みであれば、`https://aism24.github.io/-/jissun-kakoubi-jidokinyu/`
+6. `main`ブランチにマージ済みであれば、`https://aism24.github.io/-/jissun-master-jidokinyu/`
    で公開される
 7. 社内の「アプリ一覧Launcher」スプレッドシートの「情報」シートに、このURLを1行追加する
    （アプリ名は任意、例:「実寸法師 マスタ情報入力」。分類は既存の実寸法師関連の分類に揃える）
@@ -568,7 +568,7 @@ jissun-kakoubi-jidokinyu/
 
 実際にデプロイしたGAS WebアプリのURLで`getItems`・`logOpen`両アクションの応答を確認済み
 （`logOpen`は記録シートの2行目に正しく追記されることも確認済み）。`app.js`のGAS_API_URLに
-反映してPR #197としてmainへマージ、GitHub Pages（`https://aism24.github.io/-/jissun-kakoubi-jidokinyu/`）
+反映してPR #197としてmainへマージ、GitHub Pages（`https://aism24.github.io/-/jissun-master-jidokinyu/`）
 での公開も確認済み。実機での①②ボタンクリック（jissun://ハンドラーの起動）自体はユーザー側
 での確認待ち。
 
