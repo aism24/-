@@ -1,15 +1,15 @@
 /* =====================================================================
  * 実寸法師 マスタ情報入力 - 起動ランチャー フロントエンド(GitHub Pages版)
  *
- * 「情報」シートに並べた項目(①実寸法師インストール確認・②実寸法師アプリ本体への
- * jissun://リンク)を、番号付きの実際の<a href>ボタンとして描画する。
- * 項目を増減したい場合もこのファイルの変更は不要で、「情報」シートの行を
+ * スプレッドシート1枚目のシート(ボタン一覧)に並べた項目(①実寸法師インストール確認・
+ * ②実寸法師アプリ本体へのjissun://リンク)を、番号付きの実際の<a href>ボタンとして
+ * 描画する。項目を増減したい場合もこのファイルの変更は不要で、そのシートの行を
  * 追加・編集するだけでよい(他アプリ(open_jissun・production-management等)と
  * 同じGAS API + GitHub Pages構成)。
  * ===================================================================== */
 
-// デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。GAS側セットアップ後にここへ反映する。
-const GAS_API_URL = "PASTE_NEW_DEPLOYMENT_URL_HERE";
+// デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycby4NAU59n7EHzwri_gg6qdEm9Ly-QSHPqU8suCoG6xIuhWYJ43w_BW_YxZAwbD5xIgejg/exec";
 
 // GAS APIへのPOSTリクエスト共通処理。
 // Content-Type は "text/plain" にすることでCORSプリフライト(OPTIONS)を回避している
