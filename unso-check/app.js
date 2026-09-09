@@ -102,6 +102,328 @@ function cellToNumber(v) {
   return isNaN(n) ? 0 : n;
 }
 
+// ---------- 配車データキャッシュ(20日締めチェック・年度集計・工事別内訳・業者別内訳で共通) ----------
+// この4画面はいずれも同じ配車データ(gas/Code.gsのgetHaulingRawData)を業者・年度・月・物件で
+// 絞り込んで集計するだけなので、画面遷移・ボタン切り替えのたびにGASを呼び直すのではなく、
+// 最初に1回だけ取得してブラウザ内に保持し、以降の絞り込み・集計はこのキャッシュに対する
+// ローカル計算(このファイル内に移植した集計ロジック)で完結させる。これにより、GAS呼び出し
+// 1回あたり数秒規模かかる応答時間を、ボタンを押すたびに払わずに済む。
+// 配車データ・締め状態が変わる操作(Excel取込み・確定・確定済みデータ削除)の直後は、必ず
+// invalidateHaulingData()でキャッシュを破棄し、次にどれかの画面へ入ったタイミングで
+// 取り直す(すでにその操作自体が画面遷移・読み込み表示を伴うため、体感上の不自然さは無い)。
+let haulingDataCache = null;
+let haulingDataPromise = null;
+
+function invalidateHaulingData() {
+  haulingDataCache = null;
+  haulingDataPromise = null;
+}
+
+async function ensureHaulingData() {
+  if (haulingDataCache) return haulingDataCache;
+  if (!haulingDataPromise) {
+    haulingDataPromise = apiGet("getHaulingRawData").then(raw => {
+      const rows = raw.rows.map(arr => {
+        const obj = {};
+        raw.fields.forEach((f, i) => { obj[f] = arr[i]; });
+        return obj;
+      });
+      const statusRows = raw.statusRows.map(arr => {
+        const obj = {};
+        raw.statusFields.forEach((f, i) => { obj[f] = arr[i]; });
+        return obj;
+      });
+      haulingDataCache = {
+        rows: rows,
+        statusRows: statusRows,
+        companies: raw.companies,
+        currentFiscalYearEnd: raw.currentFiscalYearEnd,
+      };
+      return haulingDataCache;
+    });
+    haulingDataPromise.catch(() => { haulingDataPromise = null; });
+  }
+  return haulingDataPromise;
+}
+
+// 取得済み(キャッシュ済み)ならモーダルを出さずに即座に返す(体感上ほぼ瞬時)。
+// 未取得(初回、またはinvalidateHaulingData後の初回アクセス)の場合のみ読み込み中モーダルを出す。
+async function ensureHaulingDataWithModal() {
+  if (haulingDataCache) return haulingDataCache;
+  showLoadingModal();
+  try {
+    const data = await ensureHaulingData();
+    hideLoadingModal(true);
+    return data;
+  } catch (err) {
+    hideLoadingModal(false);
+    throw err;
+  }
+}
+
+// ---------- 集計ロジック(gas/Code.gsのclassifyFeeType_〜getCompanyDetailと同一ロジックのJS移植) ----------
+// ここから先はGAS側を都度呼び出す代わりに、ensureHaulingData()で取得済みのキャッシュに対して
+// ブラウザ内で同じ計算を行うための関数群。ロジックはgas/Code.gsと完全に一致させること
+// (集計結果は請求額に直結するため、ロジックを変更する場合は必ずgas/Code.gs側と両方直したうえで、
+// 本番データを使った突き合わせ確認を行うこと)。
+
+function classifyFeeType(block) {
+  const b = String(block || "");
+  if (b.indexOf("メッキ") !== -1) return "メッキ";
+  if (b.indexOf("横持ち1") !== -1) return "コラム横持";
+  if (b.indexOf("横持ち3") !== -1) return "製品等横持";
+  if (b.indexOf("横持ち2") !== -1 || b.indexOf("横持ち4") !== -1) return "その他横持";
+  return "現場搬入費用";
+}
+
+function toNum(v) { return Number(v) || 0; }
+
+function emptyFeeBucketLocal() {
+  return { コラム横持: 0, 製品等横持: 0, その他横持: 0, メッキ: 0, 現場搬入費用: 0, 重量: 0, 合計: 0 };
+}
+
+// 締め日文字列("YYYY/MM/DD")が属する会計年度(11月21日始まり、翌年11月20日決算)を返す
+function fiscalYearForClosing(closingStr) {
+  const parts = String(closingStr).split("/").map(Number);
+  return parts[1] === 12 ? parts[0] + 1 : parts[0];
+}
+
+// 会計年度(fiscalYearEnd)内の12回の締め月を昇順で返す
+function fiscalYearClosingMonthsLocal(fiscalYearEnd) {
+  const months = [(fiscalYearEnd - 1) + "/12/20"];
+  for (let m = 1; m <= 11; m++) months.push(fiscalYearEnd + "/" + pad2(m) + "/20");
+  return months;
+}
+
+// 配車データの全行から、実際に登録されている締め月の会計年度を重複排除・昇順で返す
+// (現在の会計年度は、データが無くても常に含める)
+function availableYearsFromRowsLocal(rows, currentFiscalYearEnd) {
+  const years = {};
+  years[currentFiscalYearEnd] = true;
+  rows.forEach(r => { if (r.締め月) years[fiscalYearForClosing(r.締め月)] = true; });
+  return Object.keys(years).map(Number).sort((a, b) => a - b);
+}
+
+function findStatusLocal(statusRows, company, closingMonth) {
+  return statusRows.find(r => r.業者 === company && r.締め月 === closingMonth) || null;
+}
+
+// 20日締めチェック(単一業者分): buildClosingCheckResult_のJS版
+function buildClosingCheckResultLocal(company, closingMonth, rows, statusRows) {
+  const byProject = {};
+  rows.forEach(r => {
+    const key = r.物件名 || "(物件名なし)";
+    if (!byProject[key]) byProject[key] = { 物件名: key, コラム横持: 0, 製品等横持: 0, その他横持: 0, メッキ: 0, 現場搬入費用: 0, 重量: 0 };
+    const feeType = classifyFeeType(r.ブロック);
+    byProject[key][feeType] = (byProject[key][feeType] || 0) + toNum(r.費用額);
+    if (feeType === "現場搬入費用") byProject[key].重量 += toNum(r.総重量);
+  });
+  const projects = Object.keys(byProject).map(k => {
+    const p = byProject[k];
+    p.請求額 = p.コラム横持 + p.製品等横持 + p.その他横持 + p.メッキ + p.現場搬入費用;
+    p.消費税 = Math.round(p.請求額 * 0.1);
+    p.合計請求額 = p.請求額 + p.消費税;
+    return p;
+  });
+  const total = projects.reduce((acc, p) => {
+    acc.コラム横持 += p.コラム横持; acc.製品等横持 += p.製品等横持; acc.その他横持 += p.その他横持;
+    acc.メッキ += p.メッキ; acc.現場搬入費用 += p.現場搬入費用;
+    acc.重量 += p.重量; acc.請求額 += p.請求額; acc.消費税 += p.消費税; acc.合計請求額 += p.合計請求額;
+    return acc;
+  }, { コラム横持: 0, 製品等横持: 0, その他横持: 0, メッキ: 0, 現場搬入費用: 0, 重量: 0, 請求額: 0, 消費税: 0, 合計請求額: 0 });
+  const status = findStatusLocal(statusRows, company, closingMonth);
+  return { company: company, closingMonth: closingMonth, status: status ? status.状態 : "未取込", projects: projects, total: total };
+}
+
+function getClosingCheckLocal(data, company, closingMonth) {
+  const rows = data.rows.filter(r => r.業者 === company && r.締め月 === closingMonth);
+  return buildClosingCheckResultLocal(company, closingMonth, rows, data.statusRows);
+}
+
+function getClosingCheckAllLocal(data, closingMonth) {
+  const byCompany = {};
+  data.rows.forEach(r => {
+    if (r.締め月 !== closingMonth) return;
+    if (!byCompany[r.業者]) byCompany[r.業者] = [];
+    byCompany[r.業者].push(r);
+  });
+  const companies = data.companies.map(company =>
+    buildClosingCheckResultLocal(company, closingMonth, byCompany[company] || [], data.statusRows)
+  );
+  return { closingMonth: closingMonth, companies: companies };
+}
+
+// 「年度全体集計」: 年度・工事別・業者別の合計、費用区分別の内訳、月別(締め月単位)の内訳を返す
+function getYearlySummaryLocal(data, fiscalYearEnd) {
+  const fye = fiscalYearEnd || data.currentFiscalYearEnd;
+  const closingMonths = fiscalYearClosingMonthsLocal(fye);
+  const closingSet = {};
+  closingMonths.forEach(c => { closingSet[c] = true; });
+  const rows = data.rows.filter(r => closingSet[r.締め月]);
+
+  const byProject = {};
+  const byCompany = {};
+  const byMonth = {};
+  closingMonths.forEach(c => { byMonth[c] = Object.assign({ 締め月: c }, emptyFeeBucketLocal()); });
+
+  rows.forEach(r => {
+    const amt = toNum(r.費用額);
+    const weight = toNum(r.総重量);
+    const feeType = classifyFeeType(r.ブロック);
+    const yardWeight = feeType === "現場搬入費用" ? weight : 0;
+
+    const pKey = r.物件名 || "(物件名なし)";
+    if (!byProject[pKey]) byProject[pKey] = Object.assign({ 物件名: pKey }, emptyFeeBucketLocal());
+    byProject[pKey][feeType] += amt;
+    byProject[pKey].重量 += yardWeight;
+    byProject[pKey].合計 += amt;
+
+    const cKey = r.業者 || "(業者不明)";
+    if (!byCompany[cKey]) byCompany[cKey] = Object.assign({ 業者: cKey }, emptyFeeBucketLocal());
+    byCompany[cKey][feeType] += amt;
+    byCompany[cKey].重量 += yardWeight;
+    byCompany[cKey].合計 += amt;
+
+    byMonth[r.締め月][feeType] += amt;
+    byMonth[r.締め月].重量 += yardWeight;
+    byMonth[r.締め月].合計 += amt;
+  });
+
+  const total = rows.reduce((acc, r) => acc + toNum(r.費用額), 0);
+  return {
+    fiscalYearEnd: fye,
+    合計請求額: total,
+    工事別: Object.keys(byProject).map(k => byProject[k]),
+    業者別: Object.keys(byCompany).map(k => byCompany[k]),
+    月別: closingMonths.map(c => byMonth[c]),
+  };
+}
+
+// 工事別内訳画面の物件ボタン用: 実際に登録されている物件名を、最後の締め月が属する年度ごとに
+// 区分けして返す(新しい年度が先頭、各年度内はアルファベット順)
+function listProjectsLocal(data) {
+  const latestClosingByProject = {};
+  data.rows.forEach(r => {
+    if (!r.物件名 || !r.締め月) return;
+    if (!latestClosingByProject[r.物件名] || r.締め月 > latestClosingByProject[r.物件名]) {
+      latestClosingByProject[r.物件名] = r.締め月;
+    }
+  });
+  const byYear = {};
+  Object.keys(latestClosingByProject).forEach(name => {
+    const year = fiscalYearForClosing(latestClosingByProject[name]);
+    if (!byYear[year]) byYear[year] = [];
+    byYear[year].push(name);
+  });
+  return Object.keys(byYear).map(Number).sort((a, b) => b - a).map(year => ({
+    year: year,
+    names: byYear[year].sort(),
+  }));
+}
+
+// 工事別内訳: 指定した物件名の配車データを業者ごと・締め月ごとに集計する
+function getProjectDetailLocal(data, projectName) {
+  const rows = data.rows.filter(r => r.物件名 === projectName);
+  let 開始日 = "", 終了日 = "";
+  rows.forEach(r => {
+    if (!r.降日) return;
+    if (!開始日 || r.降日 < 開始日) 開始日 = r.降日;
+    if (!終了日 || r.降日 > 終了日) 終了日 = r.降日;
+  });
+
+  const byCompany = {};
+  const byMonth = {};
+  rows.forEach(r => {
+    const amt = toNum(r.費用額);
+    const feeType = classifyFeeType(r.ブロック);
+    const yardWeight = feeType === "現場搬入費用" ? toNum(r.総重量) : 0;
+    const cKey = r.業者 || "(業者不明)";
+    if (!byCompany[cKey]) byCompany[cKey] = Object.assign({ 業者: cKey }, emptyFeeBucketLocal());
+    byCompany[cKey][feeType] += amt;
+    byCompany[cKey].重量 += yardWeight;
+    byCompany[cKey].合計 += amt;
+
+    const mKey = r.締め月 || "(締め月不明)";
+    if (!byMonth[mKey]) byMonth[mKey] = Object.assign({ 締め月: mKey }, emptyFeeBucketLocal());
+    byMonth[mKey][feeType] += amt;
+    byMonth[mKey].重量 += yardWeight;
+    byMonth[mKey].合計 += amt;
+  });
+
+  const companies = Object.keys(byCompany).map(k => byCompany[k]);
+  const months = Object.keys(byMonth).sort().map(k => byMonth[k]);
+  const total = companies.reduce((acc, c) => {
+    acc.コラム横持 += c.コラム横持; acc.製品等横持 += c.製品等横持; acc.その他横持 += c.その他横持;
+    acc.メッキ += c.メッキ; acc.現場搬入費用 += c.現場搬入費用;
+    acc.重量 += c.重量; acc.合計 += c.合計;
+    return acc;
+  }, emptyFeeBucketLocal());
+
+  return { 物件名: projectName, 開始日: 開始日, 終了日: 終了日, 業者別: companies, 締め月別: months, total: total };
+}
+
+// 業者別内訳: 指定した業者の配車データを締め月ごと・物件名ごとに集計する。
+// fiscalYearEndsArr: 選択中の会計年度末の配列(空配列なら全期間が対象)。
+function getCompanyDetailLocal(data, company, fiscalYearEndsArr) {
+  const allRows = data.rows.filter(r => (r.業者 || "(業者不明)") === company);
+  const selectedYears = fiscalYearEndsArr || [];
+  const yearsToSeed = selectedYears.length > 0 ? selectedYears : availableYearsFromRowsLocal(allRows, data.currentFiscalYearEnd);
+  const rows = selectedYears.length > 0
+    ? allRows.filter(r => selectedYears.indexOf(fiscalYearForClosing(r.締め月)) !== -1)
+    : allRows;
+
+  let 開始日 = "", 終了日 = "";
+  rows.forEach(r => {
+    if (!r.降日) return;
+    if (!開始日 || r.降日 < 開始日) 開始日 = r.降日;
+    if (!終了日 || r.降日 > 終了日) 終了日 = r.降日;
+  });
+
+  const byMonth = {};
+  yearsToSeed.forEach(fye => {
+    fiscalYearClosingMonthsLocal(fye).forEach(c => {
+      if (!byMonth[c]) byMonth[c] = Object.assign({ 締め月: c }, emptyFeeBucketLocal());
+    });
+  });
+
+  const byProject = {};
+  rows.forEach(r => {
+    const amt = toNum(r.費用額);
+    const feeType = classifyFeeType(r.ブロック);
+    const yardWeight = feeType === "現場搬入費用" ? toNum(r.総重量) : 0;
+
+    if (byMonth[r.締め月]) {
+      byMonth[r.締め月][feeType] += amt;
+      byMonth[r.締め月].重量 += yardWeight;
+      byMonth[r.締め月].合計 += amt;
+    }
+
+    const pKey = r.物件名 || "(物件名なし)";
+    if (!byProject[pKey]) byProject[pKey] = Object.assign({ 物件名: pKey }, emptyFeeBucketLocal());
+    byProject[pKey][feeType] += amt;
+    byProject[pKey].重量 += yardWeight;
+    byProject[pKey].合計 += amt;
+  });
+
+  const months = Object.keys(byMonth).sort().map(k => byMonth[k]);
+  const projects = Object.keys(byProject).map(k => byProject[k]);
+  const total = projects.reduce((acc, p) => {
+    acc.コラム横持 += p.コラム横持; acc.製品等横持 += p.製品等横持; acc.その他横持 += p.その他横持;
+    acc.メッキ += p.メッキ; acc.現場搬入費用 += p.現場搬入費用;
+    acc.重量 += p.重量; acc.合計 += p.合計;
+    return acc;
+  }, emptyFeeBucketLocal());
+
+  return {
+    業者: company,
+    開始日: 開始日, 終了日: 終了日,
+    年度一覧: availableYearsFromRowsLocal(allRows, data.currentFiscalYearEnd),
+    締め月別: months,
+    物件別: projects,
+    total: total,
+  };
+}
+
 // ---------- ファイル名からの業者・締め月の自動判定(GAS側と同じロジック) ----------
 
 function normalizeSaki(s) { return String(s || "").replace(/﨑/g, "崎"); }
@@ -387,10 +709,13 @@ async function submitImport(force) {
       statusEl.className = "import-status";
       document.getElementById("excluded-rows-container").innerHTML = "";
       resetImportSelection();
+      // 配車データが変わったため、キャッシュ済みの生データを破棄する。次にinitCheckScreenが
+      // ensureHaulingDataWithModal()を呼んだ際、今回取り込んだ内容を含む最新データを取り直す。
+      invalidateHaulingData();
       // 取込み成功後は「20日締めチェック」画面のこの業者+締め月の結果へ自動的に移動し、
       // その場で確定を促す(確定を忘れたまま次のファイルを選んでしまうことを防ぐため)。
       // 別のファイルを取り込みたい場合は、ホームから「Excelファイルを取り込む」をやり直す。
-      // (読み込み中ポップアップは、遷移先のinitCheckScreen→refreshCheckResultが閉じる)
+      // (読み込み中ポップアップは、遷移先のinitCheckScreen内のensureHaulingDataWithModal()が閉じる)
       await showScreen("check", { preselect: { company: result.company, closingMonth: result.closingMonth } });
     } else {
       hideLoadingModal(false);
@@ -465,17 +790,19 @@ async function initCheckScreen(preselect) {
   document.getElementById("check-confirm-slot").innerHTML = "";
   const resultEl = document.getElementById("check-result");
   const yearContainer = document.getElementById("check-year-buttons");
-  showLoadingModal();
 
-  let init;
+  let data;
   try {
-    init = await apiGet("getCheckScreenInit", preselect ? { company: preselect.company, closingMonth: preselect.closingMonth } : null);
+    data = await ensureHaulingDataWithModal();
   } catch (err) {
-    hideLoadingModal(false);
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
     yearContainer.innerHTML = "";
     return;
   }
+
+  const years = availableYearsFromRowsLocal(data.rows, data.currentFiscalYearEnd);
+  let latestClosing = null;
+  data.rows.forEach(r => { if (r.締め月 && (!latestClosing || r.締め月 > latestClosing)) latestClosing = r.締め月; });
 
   if (preselect) {
     const fm = closingToFiscalYearMonth_(preselect.closingMonth);
@@ -484,8 +811,8 @@ async function initCheckScreen(preselect) {
     checkState.month = fm.month;
   } else {
     checkState.company = CHECK_COMPANY_ALL;
-    if (init.latestClosing) {
-      const fm = closingToFiscalYearMonth_(init.latestClosing);
+    if (latestClosing) {
+      const fm = closingToFiscalYearMonth_(latestClosing);
       checkState.fiscalYear = fm.fiscalYear;
       checkState.month = fm.month;
     }
@@ -493,16 +820,15 @@ async function initCheckScreen(preselect) {
 
   renderCheckCompanyButtons();
   renderCheckMonthButtons();
-  renderCheckYearButtons(init.years);
+  renderCheckYearButtons(years);
 
   if (preselect) {
-    renderCheckResultData_(init.result);
-  } else if (init.result) {
-    renderCheckResultAll_(init.result);
+    renderCheckResultData_(getClosingCheckLocal(data, preselect.company, preselect.closingMonth));
+  } else if (latestClosing) {
+    renderCheckResultAll_(getClosingCheckAllLocal(data, latestClosing));
   } else {
     resultEl.innerHTML = "";
   }
-  hideLoadingModal(true);
 }
 
 function renderCheckCompanyButtons() {
@@ -621,18 +947,14 @@ async function refreshCheckResult() {
     return;
   }
   const closingMonth = fiscalMonthToClosing(checkState.fiscalYear, checkState.month);
-  showLoadingModal();
   try {
+    const data = await ensureHaulingDataWithModal();
     if (checkState.company === CHECK_COMPANY_ALL) {
-      const data = await apiGet("getClosingCheckAll", { closingMonth: closingMonth });
-      renderCheckResultAll_(data);
+      renderCheckResultAll_(getClosingCheckAllLocal(data, closingMonth));
     } else {
-      const data = await apiGet("getClosingCheck", { company: checkState.company, closingMonth: closingMonth });
-      renderCheckResultData_(data);
+      renderCheckResultData_(getClosingCheckLocal(data, checkState.company, closingMonth));
     }
-    hideLoadingModal(true);
   } catch (err) {
-    hideLoadingModal(false);
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
     confirmSlot.innerHTML = "";
     badgeEl.innerHTML = "";
@@ -645,6 +967,7 @@ async function confirmCurrentClosing() {
   showLoadingModal();
   try {
     await apiPost("confirmClosing", { company: company, closingMonth: closingMonth });
+    invalidateHaulingData(); // 締め状態が変わったため、キャッシュ済みの状態を破棄する
     hideLoadingModal(true);
     showConfirmDoneModal(company, closingMonth);
   } catch (err) {
@@ -702,19 +1025,17 @@ async function initYearlyScreen() {
 async function renderYearlyYearButtons() {
   const container = document.getElementById("yearly-year-buttons");
   const resultEl = document.getElementById("yearly-result");
-  showLoadingModal();
-  let init;
+  let data;
   try {
-    init = await apiGet("getYearlySummaryInit", {});
+    data = await ensureHaulingDataWithModal();
   } catch (err) {
-    hideLoadingModal(false);
     container.innerHTML = "";
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
     return;
   }
-  const data = init.summary;
-  yearlyState.fiscalYear = data.fiscalYearEnd;
-  container.innerHTML = init.years.slice().reverse().map(y =>
+  const years = availableYearsFromRowsLocal(data.rows, data.currentFiscalYearEnd);
+  yearlyState.fiscalYear = data.currentFiscalYearEnd;
+  container.innerHTML = years.slice().reverse().map(y =>
     "<div class=\"year-btn-item\"><button type=\"button\" class=\"btn" + (y === yearlyState.fiscalYear ? " btn-primary" : "") + "\" data-year=\"" + y + "\">" + y + "年</button>" +
     "<div class=\"year-period\">" + fiscalYearPeriodLabel(y) + "</div></div>"
   ).join("");
@@ -725,19 +1046,15 @@ async function renderYearlyYearButtons() {
       loadYearlySummary();
     };
   });
-  renderYearlyResult(data);
-  hideLoadingModal(true);
+  renderYearlyResult(getYearlySummaryLocal(data, yearlyState.fiscalYear));
 }
 
 async function loadYearlySummary() {
   const resultEl = document.getElementById("yearly-result");
-  showLoadingModal();
   try {
-    const data = await apiGet("getYearlySummary", { fiscalYearEnd: yearlyState.fiscalYear });
-    renderYearlyResult(data);
-    hideLoadingModal(true);
+    const data = await ensureHaulingDataWithModal();
+    renderYearlyResult(getYearlySummaryLocal(data, yearlyState.fiscalYear));
   } catch (err) {
-    hideLoadingModal(false);
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
   }
 }
@@ -787,18 +1104,16 @@ async function initProjectScreen() {
   document.getElementById("project-result").innerHTML = "";
   const container = document.getElementById("project-buttons");
   container.style.display = "";
-  showLoadingModal();
-  let yearGroups;
+  let data;
   try {
-    yearGroups = await apiGet("listProjects");
+    data = await ensureHaulingDataWithModal();
   } catch (err) {
-    hideLoadingModal(false);
     container.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
     return;
   }
+  const yearGroups = listProjectsLocal(data);
   if (yearGroups.length === 0) {
     container.innerHTML = "<span class=\"hint\">物件データがありません</span>";
-    hideLoadingModal(true);
     return;
   }
   container.innerHTML = yearGroups.map(g => {
@@ -817,7 +1132,6 @@ async function initProjectScreen() {
       loadProjectDetail();
     };
   });
-  hideLoadingModal(true);
 }
 
 // 「物件選択に戻る」: 選択状態を解除し、物件一覧のボタンのハイライトを外して再表示する
@@ -831,9 +1145,9 @@ function backToProjectSelection() {
 
 async function loadProjectDetail() {
   const resultEl = document.getElementById("project-result");
-  showLoadingModal();
   try {
-    const data = await apiGet("getProjectDetail", { projectName: projectState.name });
+    const cached = await ensureHaulingDataWithModal();
+    const data = getProjectDetailLocal(cached, projectState.name);
     let html = "<div class=\"check-title-row\"><h3>" + data.物件名 + "</h3>" +
       "<button type=\"button\" class=\"btn btn-back\" onclick=\"backToProjectSelection()\">← 物件選択に戻る</button></div>";
     html += "<p class=\"hint\">搬入期間: " + (data.開始日 && data.終了日 ? data.開始日 + " 〜 " + data.終了日 : "データがありません") + "</p>";
@@ -860,9 +1174,7 @@ async function loadProjectDetail() {
     html += "</tbody></table></div>";
 
     resultEl.innerHTML = html;
-    hideLoadingModal(true);
   } catch (err) {
-    hideLoadingModal(false);
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
   }
 }
@@ -876,9 +1188,14 @@ async function initCompanyScreen() {
   document.getElementById("company-result").innerHTML = "";
   const container = document.getElementById("company-buttons");
   container.style.display = "";
-  showLoadingModal();
-  const companies = await getCompanies();
-  hideLoadingModal(true);
+  let data;
+  try {
+    data = await ensureHaulingDataWithModal();
+  } catch (err) {
+    container.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
+    return;
+  }
+  const companies = data.companies;
   container.innerHTML = companies.map(c => "<button type=\"button\" class=\"btn\" data-name=\"" + c + "\">" + c + "</button>").join("");
   container.querySelectorAll("button").forEach(btn => {
     btn.onclick = () => {
@@ -917,9 +1234,9 @@ function toggleCompanyYear(fiscalYearEnd) {
 
 async function loadCompanyDetail() {
   const resultEl = document.getElementById("company-result");
-  showLoadingModal();
   try {
-    const data = await apiGet("getCompanyDetail", { company: companyState.name, fiscalYearEnds: companyState.years.join(",") });
+    const cached = await ensureHaulingDataWithModal();
+    const data = getCompanyDetailLocal(cached, companyState.name, companyState.years);
     let html = "<div class=\"check-title-row\"><h3>" + data.業者 + "</h3>" +
       "<button type=\"button\" class=\"btn btn-back\" onclick=\"backToCompanySelection()\">← 業者選択に戻る</button></div>";
 
@@ -956,9 +1273,7 @@ async function loadCompanyDetail() {
     html += "</tbody></table></div>";
 
     resultEl.innerHTML = html;
-    hideLoadingModal(true);
   } catch (err) {
-    hideLoadingModal(false);
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
   }
 }
@@ -976,17 +1291,14 @@ async function initDeleteScreen() {
   document.getElementById("delete-company-buttons").innerHTML = "";
   document.getElementById("delete-confirm-slot").innerHTML = "";
   const yearContainer = document.getElementById("delete-year-buttons");
-  showLoadingModal();
-  let init;
+  let data;
   try {
-    init = await apiGet("getCheckScreenInit");
-    hideLoadingModal(true);
+    data = await ensureHaulingDataWithModal();
   } catch (err) {
-    hideLoadingModal(false);
     yearContainer.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
     return;
   }
-  renderDeleteYearButtons(init.years);
+  renderDeleteYearButtons(availableYearsFromRowsLocal(data.rows, data.currentFiscalYearEnd));
   renderDeleteMonthButtons();
 }
 
@@ -1031,10 +1343,9 @@ async function refreshDeleteCompanies() {
     return;
   }
   const closingMonth = fiscalMonthToClosing(deleteState.fiscalYear, deleteState.month);
-  showLoadingModal();
   try {
-    const data = await apiGet("getClosingCheckAll", { closingMonth: closingMonth });
-    hideLoadingModal(true);
+    const cached = await ensureHaulingDataWithModal();
+    const data = getClosingCheckAllLocal(cached, closingMonth);
     const confirmed = data.companies.filter(c => c.status === "確定済み");
     if (confirmed.length === 0) {
       companyContainer.innerHTML = "<span class=\"hint\">この締め月(" + closingMonth + "〆)に確定済みのデータがありません</span>";
@@ -1057,7 +1368,6 @@ async function refreshDeleteCompanies() {
       };
     });
   } catch (err) {
-    hideLoadingModal(false);
     companyContainer.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
   }
 }
@@ -1078,6 +1388,7 @@ async function executeDelete() {
   showLoadingModal();
   try {
     await apiPost("deleteConfirmedMonth", { companies: companies, closingMonth: closingMonth });
+    invalidateHaulingData(); // 配車データ・締め状態が変わったため、キャッシュ済みの内容を破棄する
     hideLoadingModal(true);
     const month = Number(closingMonth.split("/")[1]);
     showDoneModal(companies.join("・") + "の" + month + "月20日〆の確定済みデータを削除しました");
