@@ -4,7 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>日報全期間集計</title>
-<link rel="stylesheet" href="style.css">
+<!-- app.js/style.cssはGitHub Pages配信の静的ファイルのため、ブラウザ/CDNにキャッシュされ
+     更新が反映されないことがある((A)のGAS版はdoGetで毎回動的生成されるためこの問題が
+     起きない、という違いがユーザー報告で判明)。app.js/style.cssを変更するたびに
+     ?v=の値を必ず変更してキャッシュを強制的に無効化すること。 -->
+<link rel="stylesheet" href="style.css?v=20260909a">
 </head>
 <body>
 
@@ -498,6 +502,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=20260909a"></script>
 </body>
 </html>
