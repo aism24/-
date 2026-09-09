@@ -11,6 +11,14 @@
 // デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。
 const GAS_API_URL = "https://script.google.com/macros/s/AKfycby4NAU59n7EHzwri_gg6qdEm9Ly-QSHPqU8suCoG6xIuhWYJ43w_BW_YxZAwbD5xIgejg/exec";
 
+// ①②ボタンの下に表示する説明文(並び順=index基準)。スプレッドシート側に説明列は
+// 無いため、ここに固定で持たせる(シート側にitem.descriptionを追加した場合はそちらを
+// 優先する)。
+const STEP_NOTES = [
+  '初めて利用する場合は、お使いのPCの実寸法師起動パスの確認をします。',
+  '①ボタン確認者と利用経験のある端末は直接こちらで実行可能です。'
+];
+
 // GAS APIへのPOSTリクエスト共通処理。
 // Content-Type は "text/plain" にすることでCORSプリフライト(OPTIONS)を回避している
 // (他アプリと同じ方式。GASはOPTIONSに対応していないため)。
@@ -51,11 +59,12 @@ function renderItems(items) {
     const a = document.createElement('a');
     a.className = 'item-button';
     a.href = item.url;
+    const desc = item.description || STEP_NOTES[index] || '';
     a.innerHTML =
       '<span class="step">' + (index + 1) + '</span>' +
       '<span class="text">' +
         '<span class="name">' + escapeHtml(item.name) + '</span>' +
-        (item.description ? '<span class="desc">' + escapeHtml(item.description) + '</span>' : '') +
+        (desc ? '<span class="desc">' + escapeHtml(desc) + '</span>' : '') +
       '</span>';
     // クリックログの送信はページ遷移を止めず、失敗してもボタンの動作自体は妨げない
     // (ベストエフォート)。
