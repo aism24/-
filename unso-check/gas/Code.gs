@@ -275,6 +275,7 @@ function doGet(e) {
     if (p.action === "listProjects") return ok_(listProjects());
     if (p.action === "getProjectDetail") return ok_(getProjectDetail(p.projectName));
     if (p.action === "getCompanyDetail") return ok_(getCompanyDetail(p.company, p.fiscalYearEnds));
+    if (p.action === "getHaulingRawData") return ok_(getHaulingRawData());
     return errRes_("不明なaction: " + p.action);
   } catch (err) {
     return errRes_(err.message);
@@ -1154,6 +1155,30 @@ function getCompanyDetail(company, fiscalYearEndsCsv) {
     締め月別: months,
     物件別: projects,
     total: total,
+  };
+}
+
+// クライアント側キャッシュ用: 20日締めチェック・年度集計・工事別内訳・業者別内訳の4画面が
+// 共通して必要とする最小限のデータ(集計に使う7列のみに絞った配車データ全行・締め状態・
+// 業者マスタ・現在の会計年度)を1回のリクエストでまとめて返す。
+// フロント側(app.js)はこれを画面遷移のたびに呼び直すのではなく、初回に1回だけ取得して
+// ブラウザ内にキャッシュし、業者・年度・月・物件の切り替えはこのキャッシュに対するローカル
+// 計算(GAS側と同じ集計ロジックをJS移植したもの)で完結させる。これにより、ボタン切り替え
+// のたびにGAS呼び出し(1回あたり数秒規模のオーバーヘッドがある)を発生させずに済む。
+// 積日・節・積荷・現場待機・車種・最大長さ・通常単価・エキストラ1・エキストラ2・取込日時・
+// 元ファイル名・IDは、いずれの集計画面でも使わないためペイロードから除外している。
+function getHaulingRawData() {
+  const fields = ["業者", "締め月", "物件名", "ブロック", "総重量", "費用額", "降日"];
+  const rows = haulingRows_().map(r => fields.map(f => r[f]));
+  const statusFields = ["業者", "締め月", "状態"];
+  const statusRows = statusRows_().map(r => statusFields.map(f => r[f]));
+  return {
+    fields: fields,
+    rows: rows,
+    statusFields: statusFields,
+    statusRows: statusRows,
+    companies: listCompanies(),
+    currentFiscalYearEnd: currentFiscalYearEnd_(),
   };
 }
 
