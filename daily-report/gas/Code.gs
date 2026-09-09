@@ -357,7 +357,8 @@ function loadKenchikuWorkRows_(ssId) {
 }
 
 /* Absenteeismシート列(建築側は本体のAbsenteeismと違い部署・生まれ月列がない):
-   A AbID B所属 C登録者(社員No) D自 E至 F事由 G申請項目 H振替日 I直属上司 J TimeStamp。 */
+   A AbID B所属 C登録者(社員No) D自 E至 F事由 G申請項目 H振替日 I直属上司 J TimeStamp。
+   supervisorNo(I列)は②有給等届けの確認の詳細ポップアップ(直属上司表示)用に追加。 */
 function loadKenchikuAbsenteeism_(ssId) {
   const ss = SpreadsheetApp.openById(ssId);
   const tz = ss.getSpreadsheetTimeZone();
@@ -378,7 +379,8 @@ function loadKenchikuAbsenteeism_(ssId) {
       from: from,
       to: to,
       type: type,
-      reason: String(r[5] || '').trim()
+      reason: String(r[5] || '').trim(),
+      supervisorNo: String(r[8] || '')
     });
   }
   return result;
@@ -1340,7 +1342,9 @@ function getAbsenteeismDetailForClient() {
 /* クライアント側で日付による絞り込み・氏名突合・拠点別グルーピングまで済ませた
    内容をそのまま受け取り、拠点(本社/夢前/鳥取)ごとに別シートでExcel化するだけ
    (既存のgenerateReport1〜4と同じ設計方針)。拠点・部署による絞り込みは行わない
-   (ユーザー指定により、常に全件が対象)。 */
+   (ユーザー指定により、常に全件が対象)。
+   総務建築は社員No体系が別のためLOCATION_ORDER(①③④⑤共通)には含めず、
+   このExcel化だけの独立処理として最後に1シート追加する。 */
 function generateReportLeave(params) {
   const t0 = new Date();
   const groups = params.groups || {};
@@ -1351,10 +1355,7 @@ function generateReportLeave(params) {
   let firstSheet = true;
   const header = ['氏名', '申請項目', '事由', '日付'];
 
-  Object.keys(LOCATION_ORDER).sort(function (a, b) {
-    return LOCATION_ORDER[a] - LOCATION_ORDER[b];
-  }).forEach(function (loc) {
-    const rows = groups[loc] || [];
+  const writeLeaveSheet = function (loc, rows) {
     const sheet = firstSheet ? ss.getSheets()[0] : ss.insertSheet();
     firstSheet = false;
     sheet.setName(loc);
@@ -1366,7 +1367,14 @@ function generateReportLeave(params) {
     sheet.getRange(1, 1, 1, header.length).setValues([header]);
     if (dataRows.length) sheet.getRange(2, 1, dataRows.length, header.length).setValues(dataRows);
     styleSimpleTable_(sheet, header.length, dataRows.length);
+  };
+
+  Object.keys(LOCATION_ORDER).sort(function (a, b) {
+    return LOCATION_ORDER[a] - LOCATION_ORDER[b];
+  }).forEach(function (loc) {
+    writeLeaveSheet(loc, groups[loc] || []);
   });
+  writeLeaveSheet('総務建築', groups['総務建築'] || []);
 
   Logger.log('generateReportLeave: シート作成・書き込み完了 ' + (new Date() - t0) + 'ms');
   return exportAndCleanup_(ss, fileName, t0);

@@ -36,11 +36,12 @@ let CALENDAR_MAP = {}; // 'yyyy/MM/dd' -> '出勤'|'休日'
 let ABSENTEEISM = []; // {operatorNo, from, to, type}
 let ABSENTEEISM_DETAIL = []; // ②有給等届けの確認用: {operatorNo, factory, dept, from, to, type, reason}
 
-/* ①日報入力チェック「総務建築」拠点用(DailyReport建築、既存の本社/夢前/鳥取とは別の
-   社員No体系のため混在させない)。「総務建築」チェック時にだけ遅延取得してキャッシュする。 */
+/* ①日報入力チェック「総務建築」拠点・②有給等届けの確認「総務建築」列 共用
+   (DailyReport建築、既存の本社/夢前/鳥取とは別の社員No体系のため混在させない)。
+   ①「総務建築」チェック時、または②表示時に、どちらか早い方で遅延取得してキャッシュする。 */
 let KENCHIKU_OPERATORS = []; // {no, name, dept}
 let KENCHIKU_ROWS = []; // {operatorNo, workDate, hours}
-let KENCHIKU_ABSENTEEISM = []; // {operatorNo, from, to, type}
+let KENCHIKU_ABSENTEEISM = []; // {operatorNo, from, to, type, reason, supervisorNo}
 let KENCHIKU_LOADED = false;
 let KENCHIKU_LOADING = false;
 
@@ -1192,6 +1193,8 @@ async function ensureKenchikuData_(){
   if(document.getElementById('screen-report4').classList.contains('active')){
     withRecalcPopup(renderR4Preview);
   }
+  // ②有給等届けの確認は総務建築を常時表示するため、画面の表示状態によらず再描画する
+  renderR5Preview();
 }
 
 /* 部署=総務部の社員はDailyReport建築に作業記録が存在しない(ユーザー確認済み)ため、
@@ -1790,17 +1793,23 @@ function getR5Date(){
   return input.value.split('-').join('/'); // 'yyyy/MM/dd'
 }
 
-/* 拠点(本社/夢前/鳥取)ごとに分けて表示・出力するための色分け定義 */
-const R5_FACTORY_CLASS = { '本社': 'r5Honsha', '夢前': 'r5Yumesaki', '鳥取': 'r5Tottori' };
+/* 拠点(本社/夢前/鳥取/総務建築)ごとに分けて表示・出力するための色分け定義 */
+const R5_FACTORY_CLASS = { '本社': 'r5Honsha', '夢前': 'r5Yumesaki', '鳥取': 'r5Tottori', '総務建築': 'r5Kenchiku' };
 
-/* 選択中の日付に該当する届出を、拠点(本社/夢前/鳥取)ごとにグルーピングして返す。
+/* ②の表示・出力順(本社/夢前/鳥取/総務建築)。FACTORY_ORDER自体は①③④⑤の絞り込みにも
+   使われる共有定数のため変更せず、②専用にこちらを使う。 */
+const R5_GROUP_ORDER = FACTORY_ORDER.concat(['総務建築']);
+
+/* 選択中の日付に該当する届出を、拠点(本社/夢前/鳥取/総務建築)ごとにグルーピングして返す。
    拠点・部署による絞り込みはせず常に全件対象(ユーザー指定)。
    プレビュー描画・ダウンロードの両方から呼ぶ(既存①〜④と同じ「クライアント側で
-   集計済みの内容をそのままExcel化する」設計方針)。 */
+   集計済みの内容をそのままExcel化する」設計方針)。
+   総務建築は社員No体系が本社/夢前/鳥取と別のため、KENCHIKU_ABSENTEEISM/KENCHIKU_OPERATORS
+   (①と同じ専用データ)から別枠で構築し、ABSENTEEISM_DETAIL/OPERATOR_NAMEとは混在させない。 */
 function computeR5Groups_(){
   const dateStr = getR5Date();
   const groups = {};
-  FACTORY_ORDER.forEach(loc => { groups[loc] = []; });
+  R5_GROUP_ORDER.forEach(loc => { groups[loc] = []; });
   if(!dateStr) return { dateStr: dateStr, groups: groups };
 
   ABSENTEEISM_DETAIL
@@ -1818,6 +1827,24 @@ function computeR5Groups_(){
       });
     });
   FACTORY_ORDER.forEach(loc => { groups[loc].sort((a, b) => Number(a.operatorNo) - Number(b.operatorNo)); });
+
+  if(!KENCHIKU_LOADED && !KENCHIKU_LOADING) ensureKenchikuData_(); // 非同期取得。完了後に自動で再描画される
+  KENCHIKU_ABSENTEEISM
+    .filter(a => dateStr >= a.from && dateStr <= a.to)
+    .forEach(a => {
+      const op = KENCHIKU_OPERATORS.find(o => o.no === a.operatorNo);
+      const sup = KENCHIKU_OPERATORS.find(o => o.no === a.supervisorNo);
+      groups['総務建築'].push({
+        operatorNo: a.operatorNo,
+        name: (op && op.name) || a.operatorNo,
+        type: a.type,
+        reason: a.reason || '',
+        from: a.from,
+        to: a.to,
+        supervisorName: (sup && sup.name) || a.supervisorNo || ''
+      });
+    });
+  groups['総務建築'].sort((a, b) => Number(a.operatorNo) - Number(b.operatorNo));
 
   return { dateStr: dateStr, groups: groups };
 }
@@ -1853,7 +1880,7 @@ function renderR5Preview(){
     return;
   }
   const fileName = `有給等届け確認_${dateStr.split('/').join('-')}_${today_()}.xlsx`;
-  const columnsHtml = FACTORY_ORDER.map(loc => r5ColumnHtml_(loc, groups[loc])).join('');
+  const columnsHtml = R5_GROUP_ORDER.map(loc => r5ColumnHtml_(loc, groups[loc])).join('');
 
   previewEl.innerHTML = `
     <div class="fileNamePreview">ファイル名: ${fileName}</div>
@@ -2028,7 +2055,7 @@ async function downloadReport(kind){
   }
   if(kind === 'r5'){
     const { groups } = computeR5Groups_();
-    const total = FACTORY_ORDER.reduce((s, loc) => s + groups[loc].length, 0);
+    const total = R5_GROUP_ORDER.reduce((s, loc) => s + groups[loc].length, 0);
     if(total === 0){ showToast('該当する届出がありません'); return; }
   }
 
