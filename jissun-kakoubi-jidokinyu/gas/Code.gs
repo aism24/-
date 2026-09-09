@@ -3,20 +3,25 @@
 // ============================================================
 //
 // このアプリ専用の新規スプレッドシートにコンテナバインドして使う。
-// 「情報」シートに掲載する項目(①実寸法師インストール確認・②実寸法師アプリ本体への
+// 1枚目のシートに掲載する項目(①実寸法師インストール確認・②実寸法師アプリ本体への
 // jissun://リンク)を並べておき、フロントエンド(GitHub Pages)が番号付きボタンとして
-// 描画する。項目を増やしたい場合もコードの変更は不要で、「情報」シートに行を
+// 描画する。項目を増やしたい場合もコードの変更は不要で、1枚目のシートに行を
 // 追加するだけでよい(表示順は行の並び順)。
 //
-// 【情報シートの想定列】
-// A:ID  B:名前  C:URL  D:説明  (1行目はヘッダー、2行目以降がデータ)
+// タブの名前(「情報」「記録」等)ではなく、スプレッドシート内の**シートの並び順**で
+// 参照する(1番目=ボタン一覧、2番目=記録)。実際に作成されたスプレッドシートの
+// タブ名がどうであっても動作するようにするため。
 //
-// 【記録シートの想定列】
-// A:日時  B:名前  (1行目はヘッダー。2行目に最新の記録を挿入していく=新しい順)
+// 【1番目のシート(ボタン一覧)の想定列】
+// A:ボタン(名前)  B:URL  (1行目はヘッダー、2行目以降がデータ)
+//
+// 【2番目のシート(記録)の想定列】
+// A:日時  B:ボタン(名前)  (1行目はヘッダー。2行目に最新の記録を挿入していく=新しい順、
+// 常に2行目が最新・以降のデータは下に伸びていく)
 //
 // 【セットアップ手順】
-// 1. 新規スプレッドシートを作成し、「情報」「記録」の2シートを用意する
-//    (「情報」シートにヘッダー行 + ①②の2行、「記録」シートにヘッダー行のみでよい)
+// 1. スプレッドシートに、1枚目=ボタン一覧(ボタン/URLの2列)、2枚目=記録(日時/ボタンの
+//    2列、ヘッダー行のみでよい)の2シートを用意する
 // 2. スプレッドシート上部の「拡張機能」→「Apps Script」を開く
 // 3. このCode.gsの内容をまるごとコピー&ペーストして保存する
 // 4. 右上の「デプロイ」→「新しいデプロイ」→種類「ウェブアプリ」を選択し、
@@ -26,8 +31,13 @@
 //    Claudeとのチャットに貼り付ける(app.js先頭のGAS_API_URLに反映してGitHubへpushする)
 // ============================================================
 
-const SHEET_NAME = '情報';
-const LOG_SHEET_NAME = '記録';
+// タブ名ではなくシートの並び順(0番目・1番目)で参照する。
+function getButtonSheet_() {
+  return SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+}
+function getLogSheet_() {
+  return SpreadsheetApp.getActiveSpreadsheet().getSheets()[1];
+}
 
 function apiJsonOk_(data) {
   return ContentService
@@ -41,25 +51,26 @@ function apiJsonErr_(message) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// 「情報」シートを読み、ボタンとして表示する項目一覧を返す(行の並び順を維持)。
+// 1番目のシート(ボタン一覧)を読み、ボタンとして表示する項目一覧を返す(行の並び順を維持)。
 function getItems() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const sheet = getButtonSheet_();
   if (!sheet) return [];
 
   const rows = sheet.getDataRange().getValues();
   const items = [];
   for (let i = 1; i < rows.length; i++) {
-    const [id, name, url, description] = rows[i];
+    const [name, url] = rows[i];
     if (!name || !url) continue;
-    items.push({ id: id, name: name, url: url, description: description || '' });
+    items.push({ name: name, url: url });
   }
   return items;
 }
 
 // ボタン押下時にクライアント側(app.js)から呼び出される。
-// 「記録」シートの2行目(ヘッダーの直下)に[日時, 名前]を挿入する。
+// 記録シートの2行目(ヘッダーの直下)に新しい行を挿入して[日時, ボタン名]を書き込む。
+// 既存の記録はすべて1行ずつ下に押し出されるため、常に2行目が最新の記録になる。
 function logOpen(name) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOG_SHEET_NAME);
+  const sheet = getLogSheet_();
   if (!sheet) return;
   sheet.insertRowBefore(2);
   sheet.getRange(2, 1, 1, 2).setValues([[new Date(), name]]);
