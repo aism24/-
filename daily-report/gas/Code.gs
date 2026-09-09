@@ -296,6 +296,23 @@ function loadKenchikuOperators_(ssId) {
   return list;
 }
 
+/* ②有給等届けの確認用: 社員No→氏名のマップ。KENCHIKU_EXCLUDED_OPERATOR_NOS_(役員No9・
+   共有アカウントNo800)や「現状」列の勤務判定による除外を一切行わない全社員が対象。
+   No9は①日報入力チェックの対象者(表示対象)からは除外されるが、他の社員の直属上司として
+   届出に登場するため、氏名解決だけは除外せず行う必要がある(ユーザー報告により追加)。
+   ①のloadKenchikuOperators_(表示順・除外あり)とは目的が異なる別関数。 */
+function loadKenchikuOperatorNames_(ssId) {
+  const ss = SpreadsheetApp.openById(ssId);
+  const rows = ss.getSheetByName(SHEET_NAMES.OPERATOR).getDataRange().getValues();
+  const map = {};
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[0]) continue;
+    map[String(r[0])] = r[1];
+  }
+  return map;
+}
+
 /* HH:mm文字列。fmtがあればIntl(高速)、無ければUtilities.formatDateにフォールバック。 */
 function kenchikuHm_(d, tz, fmt) {
   if (fmt) {
@@ -391,11 +408,12 @@ function loadKenchikuAbsenteeism_(ssId) {
    全断リスクの対象外)。「情報」シートに未登録の場合は空データを返す。 */
 function getKenchikuCheckDataForClient() {
   const ssId = getKenchikuSsId_();
-  if (!ssId) return { operators: [], rows: [], absenteeism: [] };
+  if (!ssId) return { operators: [], rows: [], absenteeism: [], operatorNames: {} };
   return {
     operators: loadKenchikuOperators_(ssId),
     rows: loadKenchikuWorkRows_(ssId),
-    absenteeism: loadKenchikuAbsenteeism_(ssId)
+    absenteeism: loadKenchikuAbsenteeism_(ssId),
+    operatorNames: loadKenchikuOperatorNames_(ssId)
   };
 }
 

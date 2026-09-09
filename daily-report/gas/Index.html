@@ -365,21 +365,24 @@
   #r5-date{ align-items:center; flex-wrap:nowrap; }
   #r5-date input[type=date]{ width:auto; flex:1; min-width:0; }
 
-  /* ②有給等届けの確認: 拠点ごとに別テーブルを左(本社)/中(夢前)/右(鳥取)で並べ、
-     拠点色(本社=青/夢前=オレンジ/鳥取=緑)で見出しを色分けする */
+  /* ②有給等届けの確認: 拠点ごとに別テーブルを本社/夢前/鳥取/総務建築の順で並べ、
+     拠点色(本社=青/夢前=オレンジ/鳥取=緑/総務建築=紫)で見出しを色分けする */
   .r5Columns{ display:flex; gap:16px; align-items:flex-start; }
-  /* 拠点(本社/夢前/鳥取)ごとに見出し〜表の最終行までを1つの外枠(拠点色)で囲う */
+  /* 拠点(本社/夢前/鳥取/総務建築)ごとに見出し〜表の最終行までを1つの外枠(拠点色)で囲う */
   .r5Col{ flex:1 1 0; min-width:0; border:2px solid transparent; border-radius:6px; padding:10px; }
   .r5Col h4{ margin:0 0 6px; font-size:13px; }
   .r5Col.r5Honsha{ border-color:#2a6fd6; }
   .r5Col.r5Yumesaki{ border-color:#e67e22; }
   .r5Col.r5Tottori{ border-color:#2a9d5c; }
+  .r5Col.r5Kenchiku{ border-color:#7b3fb5; }
   .r5Col.r5Honsha h4{ color:#2a6fd6; }
   .r5Col.r5Yumesaki h4{ color:#e67e22; }
   .r5Col.r5Tottori h4{ color:#2a9d5c; }
+  .r5Col.r5Kenchiku h4{ color:#7b3fb5; }
   .r5Col.r5Honsha table.dataTable th{ background:#2a6fd6; color:#fff; }
   .r5Col.r5Yumesaki table.dataTable th{ background:#e67e22; color:#fff; }
   .r5Col.r5Tottori table.dataTable th{ background:#2a9d5c; color:#fff; }
+  .r5Col.r5Kenchiku table.dataTable th{ background:#7b3fb5; color:#fff; }
   /* データ行(項目行=thは上記の拠点色のまま)は、奇数行=やや薄い拠点色、偶数行=さらに薄い拠点色 */
   .r5Col.r5Honsha table.dataTable tbody tr:nth-child(odd) td{ background:rgba(42,111,214,.18); }
   .r5Col.r5Honsha table.dataTable tbody tr:nth-child(even) td{ background:rgba(42,111,214,.08); }
@@ -387,7 +390,15 @@
   .r5Col.r5Yumesaki table.dataTable tbody tr:nth-child(even) td{ background:rgba(230,126,34,.08); }
   .r5Col.r5Tottori table.dataTable tbody tr:nth-child(odd) td{ background:rgba(42,157,92,.18); }
   .r5Col.r5Tottori table.dataTable tbody tr:nth-child(even) td{ background:rgba(42,157,92,.08); }
+  .r5Col.r5Kenchiku table.dataTable tbody tr:nth-child(odd) td{ background:rgba(123,63,181,.18); }
+  .r5Col.r5Kenchiku table.dataTable tbody tr:nth-child(even) td{ background:rgba(123,63,181,.08); }
   table.dataTable.r5Table tbody tr{ cursor:pointer; }
+  /* 列幅(ユーザー指定の比率): table-layout:fixedのため、100%を超える比率で
+     指定しても4列の相対配分として扱われる(氏名:申請項目:事由:日付 = 70:60:100:70) */
+  table.dataTable.r5Table th:nth-child(1), table.dataTable.r5Table td:nth-child(1){ width:70%; }
+  table.dataTable.r5Table th:nth-child(2), table.dataTable.r5Table td:nth-child(2){ width:60%; }
+  table.dataTable.r5Table th:nth-child(3), table.dataTable.r5Table td:nth-child(3){ width:100%; }
+  table.dataTable.r5Table th:nth-child(4), table.dataTable.r5Table td:nth-child(4){ width:70%; }
 
   /* ①②共通: セルクリック(タップ)の詳細ポップアップ */
   .detailOverlay{
@@ -1014,7 +1025,10 @@ let r4NgOnly = false;
    社員No体系のため混在させない)。「総務建築」チェック時にだけ遅延取得してキャッシュする。 */
 let KENCHIKU_OPERATORS = []; // {no, name, dept}
 let KENCHIKU_ROWS = []; // {operatorNo, workDate, hours, start, end, breakMin}
-let KENCHIKU_ABSENTEEISM = []; // {operatorNo, from, to, type, reason}
+let KENCHIKU_ABSENTEEISM = []; // {operatorNo, from, to, type, reason, supervisorNo}
+/* ②有給等届けの確認用の氏名解決マップ(社員No→氏名)。KENCHIKU_OPERATORSと違い除外を
+   一切行わないため、①の表示対象外(No9等)でも直属上司としての氏名解決に使える。 */
+let KENCHIKU_OPERATOR_NAMES = {};
 let KENCHIKU_LOADED = false;
 let KENCHIKU_LOADING = false;
 
@@ -1251,11 +1265,12 @@ const INITIAL_LOAD_PROGRESS_DURATION_MS = 15000;
 
 function setHomeButtonsEnabled(enabled){
   document.querySelectorAll('.homeBtn').forEach(b => { b.disabled = !enabled; });
-  /* 総務建築はDailyReport建築という別データのため、①日報入力チェックだけを対象とする
-     (ユーザー指定)。②〜⑤はこの拠点では意味を持たないためホーム画面から非表示にする。 */
+  /* 総務建築はDailyReport建築という別データのため、①日報入力チェック・②有給等届けの
+     確認だけを対象とする(ユーザー指定)。③〜⑤はこの拠点では意味を持たないため
+     ホーム画面から非表示にする。 */
   const isKenchiku = getDefaultFactory_() === '総務建築';
   document.querySelectorAll('#screen-home .homeButtons .homeBtn').forEach(b => {
-    b.hidden = isKenchiku && !b.classList.contains('homeBtnCheck');
+    b.hidden = isKenchiku && !b.classList.contains('homeBtnCheck') && !b.classList.contains('homeBtnLeave');
   });
 }
 
@@ -2273,11 +2288,14 @@ function ensureKenchikuData_(){
       KENCHIKU_OPERATORS = (data && data.operators) || [];
       KENCHIKU_ROWS = (data && data.rows) || [];
       KENCHIKU_ABSENTEEISM = (data && data.absenteeism) || [];
+      KENCHIKU_OPERATOR_NAMES = (data && data.operatorNames) || {};
       KENCHIKU_LOADED = true;
       KENCHIKU_LOADING = false;
       if(document.getElementById('screen-report4').classList.contains('active')){
         withRecalcPopup(renderR4Preview);
       }
+      // ②有給等届けの確認は総務建築を常時表示するため、画面の表示状態によらず再描画する
+      renderR5Preview();
     })
     .withFailureHandler(() => {
       // 取得失敗時は「総務建築」の行を空のまま表示する(他拠点の表示には影響させない)
@@ -2915,15 +2933,21 @@ function r5PeriodText_(r){
   return r.from === r.to ? r.from : `${r.from}〜${r.to}`;
 }
 
-/* 拠点(本社/夢前/鳥取)ごとに分けて表示・出力するための色分け定義 */
-const R5_FACTORY_CLASS = { '本社': 'r5Honsha', '夢前': 'r5Yumesaki', '鳥取': 'r5Tottori' };
+/* 拠点(本社/夢前/鳥取/総務建築)ごとに分けて表示・出力するための色分け定義 */
+const R5_FACTORY_CLASS = { '本社': 'r5Honsha', '夢前': 'r5Yumesaki', '鳥取': 'r5Tottori', '総務建築': 'r5Kenchiku' };
 
-/* 選択中の日付に該当する届出を、拠点(本社/夢前/鳥取)ごとにグルーピングして返す。
-   拠点・部署による絞り込みはせず常に全件対象(ユーザー指定)。 */
+/* ②の表示・出力順(本社/夢前/鳥取/総務建築)。FACTORY_ORDER自体は①③④⑤の絞り込みにも
+   使われる共有定数のため変更せず、②専用にこちらを使う。 */
+const R5_GROUP_ORDER = FACTORY_ORDER.concat(['総務建築']);
+
+/* 選択中の日付に該当する届出を、拠点(本社/夢前/鳥取/総務建築)ごとにグルーピングして返す。
+   拠点・部署による絞り込みはせず常に全件対象(ユーザー指定)。
+   総務建築は社員No体系が本社/夢前/鳥取と別のため、KENCHIKU_ABSENTEEISM/KENCHIKU_OPERATORS
+   (①と同じ専用データ)から別枠で構築し、ABSENTEEISM_DETAIL/OPERATOR_NAMEとは混在させない。 */
 function computeR5Groups_(){
   const dateStr = getR5Date();
   const groups = {};
-  FACTORY_ORDER.forEach(loc => { groups[loc] = []; });
+  R5_GROUP_ORDER.forEach(loc => { groups[loc] = []; });
   if(!dateStr) return { dateStr: dateStr, groups: groups };
 
   ABSENTEEISM_DETAIL
@@ -2941,6 +2965,24 @@ function computeR5Groups_(){
       });
     });
   FACTORY_ORDER.forEach(loc => { groups[loc].sort((a, b) => Number(a.operatorNo) - Number(b.operatorNo)); });
+
+  if(!KENCHIKU_LOADED && !KENCHIKU_LOADING) ensureKenchikuData_(); // 非同期取得。完了後に自動で再描画される
+  KENCHIKU_ABSENTEEISM
+    .filter(a => dateStr >= a.from && dateStr <= a.to)
+    .forEach(a => {
+      // KENCHIKU_OPERATOR_NAMESは①の表示対象外(No9等)も含めて解決するため、
+      // 直属上司が①非表示者であっても氏名を表示できる(KENCHIKU_OPERATORSは使わない)
+      groups['総務建築'].push({
+        operatorNo: a.operatorNo,
+        name: KENCHIKU_OPERATOR_NAMES[a.operatorNo] || a.operatorNo,
+        type: a.type,
+        reason: a.reason || '',
+        from: a.from,
+        to: a.to,
+        supervisorName: KENCHIKU_OPERATOR_NAMES[a.supervisorNo] || a.supervisorNo || ''
+      });
+    });
+  groups['総務建築'].sort((a, b) => Number(a.operatorNo) - Number(b.operatorNo));
 
   return { dateStr: dateStr, groups: groups };
 }
@@ -2971,7 +3013,7 @@ function renderR5Preview(){
     return;
   }
   const fileName = `有給等届け確認_${dateStr.split('/').join('-')}_${today_()}.xlsx`;
-  const columnsHtml = FACTORY_ORDER.map(loc => r5ColumnHtml_(loc, groups[loc])).join('');
+  const columnsHtml = R5_GROUP_ORDER.map(loc => r5ColumnHtml_(loc, groups[loc])).join('');
 
   previewEl.innerHTML = `
     <div class="fileNamePreview">ファイル名: ${escapeHtml(fileName)}</div>
@@ -2997,7 +3039,7 @@ function closeR5Detail(){
 function runReport5(){
   const { dateStr, groups } = computeR5Groups_();
   if(!dateStr) return;
-  const total = FACTORY_ORDER.reduce((s, loc) => s + groups[loc].length, 0);
+  const total = R5_GROUP_ORDER.reduce((s, loc) => s + groups[loc].length, 0);
   if(total === 0){ showToast('該当する届出がありません'); return; }
   const params = { groups: groups, date: dateStr };
   setBusy('r5', true);
