@@ -47,6 +47,11 @@ let KENCHIKU_ABSENTEEISM = []; // {operatorNo, from, to, type, reason, superviso
 let KENCHIKU_OPERATOR_NAMES = {};
 let KENCHIKU_LOADED = false;
 let KENCHIKU_LOADING = false;
+/* ②単独表示用の軽量フェッチ(Absenteeism+氏名のみ、①専用の重い作業記録は含まない)の
+   完了フラグ。KENCHIKU_LOADED(①のフル取得)が済んでいれば内容は上位互換のため、
+   このフラグは見ない(パフォーマンス改善、gas-performance-diagnosisスキルで診断)。 */
+let KENCHIKU_LEAVE_LOADED = false;
+let KENCHIKU_LEAVE_LOADING = false;
 
 // MASTER取得後に組み立てるルックアップマップ
 let WORK_DEPT = {};   // workCode -> '工場'|'設計管理'
@@ -1202,6 +1207,26 @@ async function ensureKenchikuData_(){
   renderR5Preview();
 }
 
+/* ②有給等届けの確認専用の軽量取得(Absenteeism+氏名解決のみ)。①用のensureKenchikuData_と
+   違い、最も重い作業記録(約27,600行)の取得を伴わない(gas-performance-diagnosisスキルで
+   診断: ②しか見ないユーザーが①分のデータまで毎回待たされていた問題を解消するため追加)。
+   ①のKENCHIKU_LOADED(フル取得)が既に済んでいれば内容は上位互換なので何もしない。 */
+async function ensureKenchikuLeaveData_(){
+  if(KENCHIKU_LOADED || KENCHIKU_LEAVE_LOADED || KENCHIKU_LEAVE_LOADING) return;
+  KENCHIKU_LEAVE_LOADING = true;
+  try{
+    const data = await apiPost('getKenchikuLeaveData', {});
+    KENCHIKU_ABSENTEEISM = data.absenteeism || [];
+    KENCHIKU_OPERATOR_NAMES = data.operatorNames || {};
+    KENCHIKU_LEAVE_LOADED = true;
+  } catch(e){
+    // 取得失敗時は「総務建築」の行を空のまま表示する(他拠点の表示には影響させない)
+  } finally {
+    KENCHIKU_LEAVE_LOADING = false;
+  }
+  renderR5Preview();
+}
+
 /* 部署=総務部の社員はDailyReport建築に作業記録が存在しない(ユーザー確認済み)ため、
    未入力による赤色(missing)判定は行わず、届出(有給等)の確認だけを行う。 */
 /* 建築側は「有給・欠勤」に加えて「代休」も終日扱いとする(ユーザー指定: 代休の日は
@@ -1833,7 +1858,8 @@ function computeR5Groups_(){
     });
   FACTORY_ORDER.forEach(loc => { groups[loc].sort((a, b) => Number(a.operatorNo) - Number(b.operatorNo)); });
 
-  if(!KENCHIKU_LOADED && !KENCHIKU_LOADING) ensureKenchikuData_(); // 非同期取得。完了後に自動で再描画される
+  // ②はAbsenteeism+氏名解決だけで足りるため軽量版を使う(①の重い作業記録取得は行わない)
+  if(!KENCHIKU_LOADED && !KENCHIKU_LEAVE_LOADED && !KENCHIKU_LEAVE_LOADING) ensureKenchikuLeaveData_();
   KENCHIKU_ABSENTEEISM
     .filter(a => dateStr >= a.from && dateStr <= a.to)
     .forEach(a => {
