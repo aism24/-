@@ -12,7 +12,7 @@
 // ブラウザの仕様上キャッシュを制御できないため何もしない。
 // 修正をpushするたびに、このAPP_VERSIONの値を更新すること。
 (function () {
-  var APP_VERSION = '2026-07-30.18';
+  var APP_VERSION = '2026-09-09.1';
   if (location.protocol === 'file:') return;
   try {
     var reloadedFor = sessionStorage.getItem('appVersionReloadedFor');
@@ -692,6 +692,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   var COL_WEIGHT = 13;
   var COL_KAKOU = 24;
   var HYPERLINK_COLOR_ARGB = 'FF0563C1';
+  // 既存/引き継ぎリンクの参照先ファイルが後から変わった（ファイル名変更等で
+  // ③再照合により自動更新された、または手動修正で上書きされた）図番セルに
+  // 一度でも付与したら恒久的に維持する黄色背景。
+  var LINK_CHANGED_FILL_ARGB = 'FFFFF200';
   // 出荷リスト（会社ロゴ5連続クリックで取り込む隠し機能）の列位置。
   // マスタ側の列位置(COL_*)とは全く別のレイアウトなので混同しないこと。
   var SHIP_COL_ERECTION_DATE = 1; // A列=建方日
@@ -1295,7 +1299,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
             matchedBasePath: '',
             hyperlinkUrl: hyperlinkUrl,
             candidates: [],
-            source: source
+            source: source,
+            linkChanged: false
           });
         }
 
@@ -1482,9 +1487,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
     el.folderStatus.textContent = accepted.length + '件取得（累計' + state.filePool.length + '件）';
 
-    runMatching();
+    var healedCount = runMatching();
     renderAll();
-    showToast(accepted.length + '件の.tdfファイルを取得しました');
+    var ingestMsg = accepted.length + '件の.tdfファイルを取得しました';
+    if (healedCount > 0) ingestMsg += '（既存/引き継ぎリンクのファイル名変更を検知し' + healedCount + '件更新しました）';
+    showToast(ingestMsg);
   }
 
   // File System Access API対応ブラウザ（Chrome/Edge）かつhttps://等の
@@ -1594,8 +1601,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       exactMap.get(f.baseName).push(f);
     });
 
+    var healedCount = 0;
+
     state.rows.forEach(function (row) {
-      if (row.status === '正常' || row.status === '対象外') return;
+      if (row.status === '対象外') return;
+      // 既存リンク('existing')・前回引き継ぎ('carryover')の行は、ファイル名変更等で
+      // 実際に新しいリンク先が見つかった場合にだけ再照合の対象にする。それ以外の
+      // このセッション内で確定済み('auto'/'auto-newest'/'manual')の行は従来通り
+      // ロックし、追加のフォルダ選択で上書きされないようにする。
+      var isSoftLocked = row.status === '正常' && (row.source === 'existing' || row.source === 'carryover');
+      if (row.status === '正常' && !isSoftLocked) return;
 
       var exact = exactMap.get(row.drawingNo) || [];
       var candidates;
@@ -1605,14 +1620,30 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         candidates = state.filePool.filter(function (f) { return f.baseName.indexOf(row.drawingNo) !== -1; });
       }
 
+      if (candidates.length === 0) {
+        // 既存/引き継ぎリンクは、対象フォルダをまだ選択していないだけの可能性が
+        // あるため、候補が見つからない場合は何もせず現状のリンクを維持する
+        // （ここで「未発見」に降格させると、まだ選んでいない別フォルダにある
+        // 正しいリンクまで見失ったかのように誤表示されてしまうため）。
+        if (isSoftLocked) return;
+        row.status = '未発見';
+        row.candidates = [];
+        return;
+      }
+
       if (candidates.length === 1) {
+        var singleUrl = buildFileUrl(candidates[0].basePath, candidates[0].fileName);
+        if (row.hyperlinkUrl && row.hyperlinkUrl !== singleUrl) {
+          row.linkChanged = true;
+          healedCount++;
+        }
         row.status = '正常';
         row.matchedFileName = candidates[0].fileName;
         row.matchedBasePath = candidates[0].basePath;
-        row.hyperlinkUrl = buildFileUrl(candidates[0].basePath, candidates[0].fileName);
+        row.hyperlinkUrl = singleUrl;
         row.candidates = [];
         row.source = 'auto';
-      } else if (candidates.length > 1) {
+      } else {
         // 同名ファイルが複数フォルダに存在する場合、更新日時(lastModified)が
         // 最も新しいものを自動採用する（ユーザー確定仕様。誤った方を採用する
         // リスクより、日付の新しい方が正しい図面である可能性が高いことを優先）。
@@ -1626,27 +1657,35 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           row.status = '重複';
           row.candidates = candidates;
         } else {
+          var newestUrl = buildFileUrl(newest.basePath, newest.fileName);
+          if (row.hyperlinkUrl && row.hyperlinkUrl !== newestUrl) {
+            row.linkChanged = true;
+            healedCount++;
+          }
           row.status = '正常';
           row.matchedFileName = newest.fileName;
           row.matchedBasePath = newest.basePath;
-          row.hyperlinkUrl = buildFileUrl(newest.basePath, newest.fileName);
+          row.hyperlinkUrl = newestUrl;
           row.candidates = [];
           row.source = 'auto-newest';
         }
-      } else {
-        row.status = '未発見';
-        row.candidates = [];
       }
     });
+
+    return healedCount;
   }
 
   // ---------- 手動修正 ----------
 
   function applyManualFix(row, chosen) {
+    var newUrl = buildFileUrl(chosen.basePath, chosen.fileName);
+    // 既に別のリンク（既存/自動一致/前回引き継ぎ等）を持っていた行を、手動で
+    // 別のファイルに選び直した場合も「変更があった」ことになるため記録する。
+    if (row.hyperlinkUrl && row.hyperlinkUrl !== newUrl) row.linkChanged = true;
     row.status = '正常';
     row.matchedFileName = chosen.fileName;
     row.matchedBasePath = chosen.basePath;
-    row.hyperlinkUrl = buildFileUrl(chosen.basePath, chosen.fileName);
+    row.hyperlinkUrl = newUrl;
     row.candidates = [];
     row.source = 'manual';
     renderAll();
@@ -1886,6 +1925,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           bold: true,
           underline: false
         });
+        // リンク先が変更された図番セルは黄色背景にする。以後この背景は
+        // fillを明示的に上書きしない限り毎回のディープコピーでそのまま
+        // 引き継がれるため、一度付けば恒久的に維持される
+        // （row.linkChangedが立っていない限りfillには一切触れない＝
+        // 過去に付いた黄色を消してしまうことはない）。
+        if (row.linkChanged) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LINK_CHANGED_FILL_ARGB } };
+        }
       });
 
       refreshViewerData(ws);
