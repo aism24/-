@@ -3309,6 +3309,15 @@ google.script.run
   .withFailureHandler(onAbsenteeismDetailError)
   .getAbsenteeismDetailForClient();
 
+/* ②有給等届けの確認は総務建築も本社/夢前/鳥取と同様に常時表示するため、他の起動時
+   リクエストと並行して総務建築分もこの時点で取得を開始しておく(①のensureKenchikuData_
+   完了時とはガードで二重取得しないため、ここで先に始めても①側と競合しない)。
+   maybeInitCascade(全項目揃うまで①②③④を押せない状態にする仕組み)には含めないため、
+   このリクエストが失敗・遅延してもアプリ全体の初期化がブロックされることはない
+   (■0-13の全断リスク対象外)。これにより②を開いたときに総務建築列だけ数秒遅れて
+   表示される体感を解消する。 */
+ensureKenchikuLeaveData_();
+
 buildMonthRadioPicker('r4-month', 'r4');
 buildDayPicker('r5-date', 'r5');
 

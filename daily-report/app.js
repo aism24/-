@@ -368,6 +368,13 @@ async function initSyncPopup(){
 }
 
 async function loadAllData(){
+  /* ②有給等届けの確認は総務建築も本社/夢前/鳥取と同様に常時表示するため、他の起動時
+     リクエストと並行して総務建築分もこの時点で取得を開始しておく(await せずfire-and-forget。
+     Promise.allには含めないため、このリクエストが失敗・遅延してもアプリ全体の初期化を
+     ブロックしない、■0-13の全断リスク対象外)。これにより②を開いたときに総務建築列だけ
+     数秒遅れて表示される体感を解消する。 */
+  ensureKenchikuLeaveData_();
+
   const [master, rows, calendar, absenteeism, absenteeismDetail] = await Promise.all([
     apiPost('getMasterData'),
     apiPost('getAllDailyReportRows'),
