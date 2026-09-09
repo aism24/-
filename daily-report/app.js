@@ -368,12 +368,17 @@ async function initSyncPopup(){
 }
 
 async function loadAllData(){
-  /* ②有給等届けの確認は総務建築も本社/夢前/鳥取と同様に常時表示するため、他の起動時
-     リクエストと並行して総務建築分もこの時点で取得を開始しておく(await せずfire-and-forget。
-     Promise.allには含めないため、このリクエストが失敗・遅延してもアプリ全体の初期化を
-     ブロックしない、■0-13の全断リスク対象外)。これにより②を開いたときに総務建築列だけ
-     数秒遅れて表示される体感を解消する。 */
-  ensureKenchikuLeaveData_();
+  /* 本社/夢前/鳥取は起動時にgetAllDailyReportRows等で全データを先読み済みのため、
+     ①のチェックボックスを押した瞬間はメモリ上のデータを表示するだけで済み速い。
+     総務建築だけ①のフルデータ(作業記録含む)をチェック時に遅延取得する方式のままだと、
+     チェックのたびに数秒〜10秒待たされ、3工場分と体感速度の差が生じる(ユーザー報告)。
+     ①②共用のフル取得(ensureKenchikuData_)を、他の起動時リクエストと並行してこの時点で
+     開始しておく(awaitせずfire-and-forget。Promise.allには含めないため、このリクエストが
+     失敗・遅延してもアプリ全体の初期化をブロックしない、■0-13の全断リスク対象外)。
+     ②専用の軽量版(ensureKenchikuLeaveData_)は、万一このフル取得が失敗した場合の
+     フォールバックとして②を開いたときに使われる(KENCHIKU_LOADING中は二重取得しないよう
+     computeR5Groups_側のガードで制御)。 */
+  ensureKenchikuData_();
 
   const [master, rows, calendar, absenteeism, absenteeismDetail] = await Promise.all([
     apiPost('getMasterData'),
@@ -1866,7 +1871,7 @@ function computeR5Groups_(){
   FACTORY_ORDER.forEach(loc => { groups[loc].sort((a, b) => Number(a.operatorNo) - Number(b.operatorNo)); });
 
   // ②はAbsenteeism+氏名解決だけで足りるため軽量版を使う(①の重い作業記録取得は行わない)
-  if(!KENCHIKU_LOADED && !KENCHIKU_LEAVE_LOADED && !KENCHIKU_LEAVE_LOADING) ensureKenchikuLeaveData_();
+  if(!KENCHIKU_LOADED && !KENCHIKU_LOADING && !KENCHIKU_LEAVE_LOADED && !KENCHIKU_LEAVE_LOADING) ensureKenchikuLeaveData_();
   KENCHIKU_ABSENTEEISM
     .filter(a => dateStr >= a.from && dateStr <= a.to)
     .forEach(a => {
