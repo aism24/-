@@ -374,10 +374,16 @@ function classifyPart_(part) {
 function parseMasterSheet_(convertedSheetId, calendarMinKey, calendarMaxKey) {
   const ss = SpreadsheetApp.openById(convertedSheetId);
   const sh = ss.getSheets()[0];
-  const values = sh.getDataRange().getValues();
-  if (values.length < 2) return [];
+  const lastRow = sh.getLastRow();
+  const lastCol = sh.getLastColumn();
+  if (lastRow < 2) return [];
 
-  const header = values[0].map(function (h) { return String(h || '').trim(); });
+  // 見出し行(1行だけ)を先に読んで、使う列の位置を特定する。実物の案件マスターは
+  // 60列超(建方日・図番・サイズ・塗装・各種検査項目等、集計に使わない列)を持つ一方、
+  // 実際に読むのは6列だけと確認済みのため、getDataRange()で全列・全行をまとめて
+  // 読むと使わない列の分だけ無駄にSpreadsheetApp側の転送量が増える。見出しから
+  // 特定した必要な列の右端までだけをデータ範囲として読むことで、これを減らす。
+  const header = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h || '').trim(); });
   const col = {
     part: header.indexOf('部位'),
     site: header.indexOf('加工先'),
@@ -388,8 +394,12 @@ function parseMasterSheet_(convertedSheetId, calendarMinKey, calendarMaxKey) {
   };
   if (col.part < 0 || col.site < 0 || col.workDate < 0) return [];
 
+  const neededCols = [col.part, col.site, col.workDate, col.qty, col.weight, col.mark].filter(function (c) { return c >= 0; });
+  const maxCol = Math.max.apply(null, neededCols) + 1; // 1-indexedの幅(必要な列の右端まで)
+  const values = sh.getRange(2, 1, lastRow - 1, maxCol).getValues();
+
   const records = [];
-  for (let i = 1; i < values.length; i++) {
+  for (let i = 0; i < values.length; i++) {
     const row = values[i];
     const site = String(row[col.site] || '').trim();
     const part = String(row[col.part] || '').trim();
