@@ -268,113 +268,6 @@ function readTargets_(rows) {
 
 // ========== Excel→Googleスプレッドシート変換(読み取り専用の元ファイルには触れない) ==========
 
-// 実物の案件マスターExcelを調査したところ、1ファイルに7シート前後あるが、実際に
-// 読むのは1シート目(部位・加工先等の実績データ)だけだった(内部データ量で見ると
-// 1シート目以外が半分近くを占めていた)。Drive APIのxlsx→スプレッドシート変換は
-// ワークブック全体(全シート・数式・書式)を対象に行われるため、変換前に1シート目
-// 以外を取り除いた軽量なxlsxを作ってからアップロードすることで、変換にかかる
-// コストを減らす。1シート目自体(セルの値)には一切手を加えない。
-// xlsxはzip形式なので、Utilities.unzip/XmlService/Utilities.zipで内部のXMLを
-// 直接編集する。想定外の構造(シートが1枚しかない・想定した要素が無い等)であれば、
-// 例外を投げずに元のblobをそのまま返す(=この最適化を諦めるだけで、変換や
-// データが壊れることが無いようにする)。
-function stripToFirstSheet_(blob) {
-  try {
-    const mainNs = XmlService.getNamespace('http://schemas.openxmlformats.org/spreadsheetml/2006/main');
-    const rNs = XmlService.getNamespace('r', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships');
-    const pkgRelNs = XmlService.getNamespace('http://schemas.openxmlformats.org/package/2006/relationships');
-    const ctNs = XmlService.getNamespace('http://schemas.openxmlformats.org/package/2006/content-types');
-
-    const parts = Utilities.unzip(blob);
-    const byName = {};
-    parts.forEach(function (p) { byName[p.getName()] = p; });
-
-    const workbookPart = byName['xl/workbook.xml'];
-    const relsPart = byName['xl/_rels/workbook.xml.rels'];
-    const ctPart = byName['[Content_Types].xml'];
-    if (!workbookPart || !relsPart || !ctPart) return blob;
-
-    // workbook.xml: <sheets>の先頭(=1番目のタブ)だけを残す。名前付き範囲は他シート
-    // 参照を含みうるため丸ごと削除する(値の読み取りには不要)。
-    const wbDoc = XmlService.parse(workbookPart.getDataAsString());
-    const wbRoot = wbDoc.getRootElement();
-    const sheetsEl = wbRoot.getChild('sheets', mainNs);
-    if (!sheetsEl) return blob;
-    const sheetEls = sheetsEl.getChildren('sheet', mainNs);
-    if (sheetEls.length <= 1) return blob; // 1シート以下なら変更不要
-    const keepRIdAttr = sheetEls[0].getAttribute('id', rNs);
-    if (!keepRIdAttr) return blob;
-    const keepRId = keepRIdAttr.getValue();
-    for (let i = sheetEls.length - 1; i >= 1; i--) sheetsEl.removeContent(sheetEls[i]);
-    const definedNamesEl = wbRoot.getChild('definedNames', mainNs);
-    if (definedNamesEl) wbRoot.removeContent(definedNamesEl);
-
-    // workbook.xml.rels: 残す1番目のシート(=keepRId)がどの実ファイル(sheetN.xml)を
-    // 指しているかを特定し、それ以外のworksheet関連付けと、複数シートの数式依存関係を
-    // 含みうるcalcChainの関連付けを削除する。
-    const relsDoc = XmlService.parse(relsPart.getDataAsString());
-    const relsRoot = relsDoc.getRootElement();
-    const relEls = relsRoot.getChildren('Relationship', pkgRelNs);
-    let keepTarget = null;
-    const removeSheetFiles = [];
-    const relsToRemove = [];
-    relEls.forEach(function (rel) {
-      const id = rel.getAttribute('Id').getValue();
-      const type = rel.getAttribute('Type').getValue();
-      const target = rel.getAttribute('Target').getValue();
-      if (type.indexOf('/worksheet') >= 0) {
-        if (id === keepRId) {
-          keepTarget = target;
-        } else {
-          removeSheetFiles.push('xl/' + target.replace(/^\.?\//, ''));
-          relsToRemove.push(rel);
-        }
-      } else if (type.indexOf('/calcChain') >= 0) {
-        relsToRemove.push(rel);
-      }
-    });
-    if (!keepTarget) return blob;
-    relsToRemove.forEach(function (rel) { relsRoot.removeContent(rel); });
-
-    // [Content_Types].xml: 除去したシート・calcChainへのOverrideを削除する。
-    const ctDoc = XmlService.parse(ctPart.getDataAsString());
-    const ctRoot = ctDoc.getRootElement();
-    const overrideEls = ctRoot.getChildren('Override', ctNs);
-    for (let i = overrideEls.length - 1; i >= 0; i--) {
-      const partName = overrideEls[i].getAttribute('PartName').getValue().replace(/^\//, '');
-      if (removeSheetFiles.indexOf(partName) >= 0 || partName === 'xl/calcChain.xml') {
-        ctRoot.removeContent(overrideEls[i]);
-      }
-    }
-
-    const format = XmlService.getRawFormat();
-    const newWorkbookBlob = Utilities.newBlob(format.format(wbDoc), 'application/xml', 'xl/workbook.xml');
-    const newRelsBlob = Utilities.newBlob(format.format(relsDoc), 'application/xml', 'xl/_rels/workbook.xml.rels');
-    const newCtBlob = Utilities.newBlob(format.format(ctDoc), 'application/xml', '[Content_Types].xml');
-
-    const removeSet = {};
-    removeSheetFiles.forEach(function (f) { removeSet[f] = true; });
-    // 除去したシートに対応する_relsファイル(印刷設定・ハイパーリンク等の関連付け)も一緒に除く。
-    parts.forEach(function (p) {
-      const m = p.getName().match(/^xl\/worksheets\/_rels\/(sheet[^.]+)\.xml\.rels$/);
-      if (m && removeSet['xl/worksheets/' + m[1] + '.xml']) removeSet[p.getName()] = true;
-    });
-
-    const keptParts = parts.filter(function (p) {
-      const name = p.getName();
-      if (removeSet[name]) return false;
-      if (name === 'xl/calcChain.xml') return false;
-      if (name === 'xl/workbook.xml' || name === 'xl/_rels/workbook.xml.rels' || name === '[Content_Types].xml') return false;
-      return true;
-    });
-    keptParts.push(newWorkbookBlob, newRelsBlob, newCtBlob);
-
-    return Utilities.zip(keptParts, blob.getName());
-  } catch (e) {
-    return blob; // 想定外の構造であれば、安全側に倒して元のblobをそのまま使う
-  }
-}
-
 // 変換結果のスプレッドシートIDと、変換時点の元Excelファイルの最終更新日時を
 // スクリプトプロパティに記憶しておく。次回以降、元ファイルの最終更新日時が
 // 前回と変わっていなければ(=誰も編集していなければ)ダウンロード・変換処理そのものを
@@ -400,7 +293,7 @@ function convertToSheet_(sourceFileId, label, folder, currentMtime, sourceFile) 
     }
   }
 
-  const blob = stripToFirstSheet_(sourceFile.getBlob());
+  const blob = sourceFile.getBlob();
   if (existingId) {
     try {
       Drive.Files.update({}, existingId, blob);
@@ -449,13 +342,7 @@ function saveRecordsCache_(folder, cache) {
   const content = JSON.stringify(cache);
   const files = folder.getFilesByName(RECORDS_CACHE_FILE_NAME);
   if (files.hasNext()) {
-    const file = files.next();
-    // 全案件が未更新(=前回と1バイトも変わらない)だった場合、数MB規模になりうる
-    // このファイルへの書き込み自体を省略する(_cache_dashboard.jsonと違い、この
-    // ファイルには「いつ生成したか」のような毎回変わる項目が無いため、内容比較で
-    // 安全に判定できる)。
-    if (file.getBlob().getDataAsString() === content) return;
-    file.setContent(content);
+    files.next().setContent(content);
   } else {
     folder.createFile(RECORDS_CACHE_FILE_NAME, content, MimeType.PLAIN_TEXT);
   }
@@ -487,16 +374,10 @@ function classifyPart_(part) {
 function parseMasterSheet_(convertedSheetId, calendarMinKey, calendarMaxKey) {
   const ss = SpreadsheetApp.openById(convertedSheetId);
   const sh = ss.getSheets()[0];
-  const lastRow = sh.getLastRow();
-  const lastCol = sh.getLastColumn();
-  if (lastRow < 2) return [];
+  const values = sh.getDataRange().getValues();
+  if (values.length < 2) return [];
 
-  // 見出し行(1行だけ)を先に読んで、使う列の位置を特定する。実物の案件マスターは
-  // 60列超(建方日・図番・サイズ・塗装・各種検査項目等、集計に使わない列)を持つ一方、
-  // 実際に読むのは6列だけと確認済みのため、getDataRange()で全列・全行をまとめて
-  // 読むと使わない列の分だけ無駄にSpreadsheetApp側の転送量が増える。見出しから
-  // 特定した必要な列の右端までだけをデータ範囲として読むことで、これを減らす。
-  const header = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h || '').trim(); });
+  const header = values[0].map(function (h) { return String(h || '').trim(); });
   const col = {
     part: header.indexOf('部位'),
     site: header.indexOf('加工先'),
@@ -507,12 +388,8 @@ function parseMasterSheet_(convertedSheetId, calendarMinKey, calendarMaxKey) {
   };
   if (col.part < 0 || col.site < 0 || col.workDate < 0) return [];
 
-  const neededCols = [col.part, col.site, col.workDate, col.qty, col.weight, col.mark].filter(function (c) { return c >= 0; });
-  const maxCol = Math.max.apply(null, neededCols) + 1; // 1-indexedの幅(必要な列の右端まで)
-  const values = sh.getRange(2, 1, lastRow - 1, maxCol).getValues();
-
   const records = [];
-  for (let i = 0; i < values.length; i++) {
+  for (let i = 1; i < values.length; i++) {
     const row = values[i];
     const site = String(row[col.site] || '').trim();
     const part = String(row[col.part] || '').trim();
@@ -536,43 +413,6 @@ function parseMasterSheet_(convertedSheetId, calendarMinKey, calendarMaxKey) {
   return records;
 }
 
-// 案件マスターファイルの「最終更新日時・実ファイル名」を、案件数ぶん1件ずつ
-// DriveApp.getFileById()を呼ぶ(=順番にDrive APIへ往復する)代わりに、UrlFetchApp.fetchAll()で
-// Drive API(v3) files.getをまとめて1回で問い合わせる。案件が更新されているかどうかの
-// 判定(recordsCacheのmtime比較)だけならこれで十分で、実際に中身を読み直す必要がある
-// (=更新されていた)案件だけ、呼び出し元がDriveApp.getFileById()で個別に取得し直す。
-// 案件数が増えるほど、この往復回数の削減が「現時点のデータを取得」の体感速度に効いてくる。
-// ※ UrlFetchApp呼び出しが増えるため、初回はApps Scriptエディタで一度手動実行して
-//   権限の再承認(external_requestスコープ)が必要になる場合がある。
-function fetchFileMetas_(fileIds) {
-  const metas = {};
-  if (!fileIds.length) return metas;
-  const token = ScriptApp.getOAuthToken();
-  const requests = fileIds.map(function (id) {
-    return {
-      url: 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id)
-        + '?fields=' + encodeURIComponent('name,modifiedTime,trashed') + '&supportsAllDrives=true',
-      headers: { Authorization: 'Bearer ' + token },
-      muteHttpExceptions: true,
-    };
-  });
-  const responses = UrlFetchApp.fetchAll(requests);
-  responses.forEach(function (res, i) {
-    const fileId = fileIds[i];
-    if (res.getResponseCode() !== 200) {
-      metas[fileId] = { error: 'HTTP ' + res.getResponseCode() };
-      return;
-    }
-    const json = JSON.parse(res.getContentText());
-    if (json.trashed) {
-      metas[fileId] = { error: 'ゴミ箱に入っています' };
-      return;
-    }
-    metas[fileId] = { name: json.name, mtime: String(new Date(json.modifiedTime).getTime()) };
-  });
-  return metas;
-}
-
 // ========== 集計本体 ==========
 
 // folder: getDataResponse_/refreshAndGetData_が既に取得済みのフォルダを渡してもらい、
@@ -594,20 +434,21 @@ function runFullAggregation_(folder) {
   const nameMismatches = [];
   const recordsCache = loadRecordsCache_(folder);
   const newRecordsCache = {};
-  const fileMetas = fetchFileMetas_(fileIndex.map(function (entry) { return entry.fileId; }));
 
   fileIndex.forEach(function (entry) {
-    const meta = fileMetas[entry.fileId];
-    if (!meta || meta.error) {
-      warnings.push('「' + entry.fileName + '」の読み込みに失敗しました: ' + ((meta && meta.error) || '不明なエラー'));
+    let driveFile;
+    try {
+      driveFile = DriveApp.getFileById(entry.fileId);
+    } catch (err) {
+      warnings.push('「' + entry.fileName + '」の読み込みに失敗しました: ' + err.message);
       return;
     }
-    const currentMtime = meta.mtime;
+    const currentMtime = String(driveFile.getLastUpdated().getTime());
 
     // 使い回しの枠(2〜18行目など)は、工事が切り替わった際に索引シートのD列(ファイル名)を
     // 更新し忘れると気づきにくいため、実際のドライブ上のファイル名と食い違っていないか
     // ここでチェックし、あればフロント側でポップアップ表示する。
-    const actualFileName = meta.name;
+    const actualFileName = driveFile.getName();
     if (actualFileName !== entry.fileName) {
       nameMismatches.push({ workNo: entry.workNo, indexFileName: entry.fileName, actualFileName: actualFileName });
     }
@@ -626,10 +467,6 @@ function runFullAggregation_(folder) {
       records = cached.records;
     } else {
       try {
-        // 更新されていた(=中身を読み直す必要がある)案件だけ、ここで初めて
-        // DriveApp.getFileById()を呼ぶ(コンテンツ取得にはDrive高度なサービスの
-        // 戻り値ではなくDriveAppのFileオブジェクトが必要なため)。
-        const driveFile = DriveApp.getFileById(entry.fileId);
         const convertedId = resolveSheetId_(entry, folder, currentMtime, driveFile);
         records = parseMasterSheet_(convertedId, calendarMinKey, calendarMaxKey);
       } catch (err) {
