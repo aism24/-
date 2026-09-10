@@ -44,10 +44,15 @@ let pdfCaptureMode = false;
 let isSitePdfExport = false;
 
 // ---------- GAS API ----------
-// GAS側(action=refresh)が、他の人の更新処理とロックが競合してすぐには実行できなかった
-// 場合に返すステータス。通常のエラーと区別し、呼び出し元(loadData)で専用のポップアップを
-// 出せるようにerr.busyを立てて投げる。
-function unwrapApiJson_(json) {
+async function apiGet(action) {
+  const url = new URL(GAS_API_URL);
+  url.searchParams.set('action', action);
+  const res = await fetch(url.toString(), { method: 'GET' });
+  if (!res.ok) throw new Error('サーバーエラー(HTTP ' + res.status + ')');
+  const json = await res.json();
+  // GAS側(action=refresh)が、他の人の更新処理とロックが競合してすぐには実行できなかった
+  // 場合に返すステータス。通常のエラーと区別し、呼び出し元(loadData)で専用のポップアップを
+  // 出せるようにerr.busyを立てて投げる。
   if (json.status === 'busy') {
     const busyErr = new Error(json.message || '他の人がデータを更新中です。しばらく待ってから再度お試しください。');
     busyErr.busy = true;
@@ -55,27 +60,6 @@ function unwrapApiJson_(json) {
   }
   if (json.status !== 'success') throw new Error(json.message || '取得に失敗しました');
   return json.data;
-}
-
-async function apiGet(action) {
-  const url = new URL(GAS_API_URL);
-  url.searchParams.set('action', action);
-  const res = await fetch(url.toString(), { method: 'GET' });
-  if (!res.ok) throw new Error('サーバーエラー(HTTP ' + res.status + ')');
-  const json = await res.json();
-  return unwrapApiJson_(json);
-}
-
-// 初回表示(loadData(false))専用。index.htmlの<head>で、CDNライブラリの読み込みより先に
-// 開始しておいたgetDataのPromise(window.__initialDataPromise)があればそれを使い回し、
-// 無ければ(2回目以降の呼び出し等)通常通りapiGetで取得し直す。
-async function initialApiGet_() {
-  if (window.__initialDataPromise) {
-    const promise = window.__initialDataPromise;
-    window.__initialDataPromise = null; // 初回だけ使う
-    return unwrapApiJson_(await promise);
-  }
-  return apiGet('getData');
 }
 
 // 現在の画面表示(ヘッダー・ツールバー・グラフ・拠点ごとの工程表)を、そのままPDFとして
@@ -498,7 +482,7 @@ async function loadData(forceRefresh) {
     if (GAS_API_URL.indexOf('PASTE_YOUR_GAS_WEB_APP_URL_HERE') >= 0) {
       throw new Error('app.js の GAS_API_URL がまだ設定されていません。');
     }
-    const data = forceRefresh ? await apiGet('refresh') : await initialApiGet_();
+    const data = await apiGet(forceRefresh ? 'refresh' : 'getData');
     state.data = data;
     SITES.forEach(function (site) {
       if (state.targets[site] === undefined) {
