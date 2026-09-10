@@ -108,9 +108,10 @@ function cellToNumber(v) {
 // 最初に1回だけ取得してブラウザ内に保持し、以降の絞り込み・集計はこのキャッシュに対する
 // ローカル計算(このファイル内に移植した集計ロジック)で完結させる。これにより、GAS呼び出し
 // 1回あたり数秒規模かかる応答時間を、ボタンを押すたびに払わずに済む。
-// 配車データ・締め状態が変わる操作(Excel取込み・確定・確定済みデータ削除)の直後は、必ず
-// invalidateHaulingData()でキャッシュを破棄し、次にどれかの画面へ入ったタイミングで
-// 取り直す(すでにその操作自体が画面遷移・読み込み表示を伴うため、体感上の不自然さは無い)。
+// アプリを開いた直後に1回だけ読み込み中モーダルを見せて先読みし(下記DOMContentLoaded参照)、
+// 以降はこのキャッシュだけで完結させる。配車データ・締め状態が変わる操作(Excel取込み・確定・
+// 確定済みデータ削除)の直後はrefreshHaulingDataInBackground()でキャッシュを破棄しつつ即座に
+// 裏で再取得するため、その後の画面遷移でも読み込み中モーダルが再び出ることは基本的に無い。
 let haulingDataCache = null;
 let haulingDataPromise = null;
 
@@ -160,6 +161,23 @@ async function ensureHaulingDataWithModal() {
     throw err;
   }
 }
+
+// 取込み・確定・削除でデータが変わった直後に呼ぶ。キャッシュを破棄したうえで、その場で
+// バックグラウンド再取得を開始しておく(呼び出し元は完了を待たない)。ホームへ戻ったあと
+// 次にどれかの画面を開いた時点では、多くの場合この再取得が既に完了しているため、
+// 読み込み中モーダルを再び表示せずに済む(アプリ起動時の1回だけモーダルを見せたい、という
+// 方針に合わせるため)。再取得中にユーザーが画面を開いた場合は、ensureHaulingDataWithModal()が
+// この進行中の取得を待つだけで、二重に取得が走ることはない。
+function refreshHaulingDataInBackground() {
+  invalidateHaulingData();
+  ensureHaulingData().catch(() => {});
+}
+
+// アプリを開いた直後に1回だけ、配車データを先読みしておく(以降の画面はキャッシュ済みの
+// データに対するローカル計算のみになるため、ボタンを押すたびに読み込み中を見せずに済む)。
+document.addEventListener("DOMContentLoaded", () => {
+  ensureHaulingDataWithModal().catch(() => {});
+});
 
 // ---------- 集計ロジック(gas/Code.gsのclassifyFeeType_〜getCompanyDetailと同一ロジックのJS移植) ----------
 // ここから先はGAS側を都度呼び出す代わりに、ensureHaulingData()で取得済みのキャッシュに対して
@@ -709,9 +727,8 @@ async function submitImport(force) {
       statusEl.className = "import-status";
       document.getElementById("excluded-rows-container").innerHTML = "";
       resetImportSelection();
-      // 配車データが変わったため、キャッシュ済みの生データを破棄する。次にinitCheckScreenが
-      // ensureHaulingDataWithModal()を呼んだ際、今回取り込んだ内容を含む最新データを取り直す。
-      invalidateHaulingData();
+      // 配車データが変わったため、キャッシュを破棄してその場で再取得を始めておく。
+      refreshHaulingDataInBackground();
       // 取込み成功後は「20日締めチェック」画面のこの業者+締め月の結果へ自動的に移動し、
       // その場で確定を促す(確定を忘れたまま次のファイルを選んでしまうことを防ぐため)。
       // 別のファイルを取り込みたい場合は、ホームから「Excelファイルを取り込む」をやり直す。
@@ -967,7 +984,7 @@ async function confirmCurrentClosing() {
   showLoadingModal();
   try {
     await apiPost("confirmClosing", { company: company, closingMonth: closingMonth });
-    invalidateHaulingData(); // 締め状態が変わったため、キャッシュ済みの状態を破棄する
+    refreshHaulingDataInBackground(); // 締め状態が変わったため、キャッシュを破棄して再取得を始めておく
     hideLoadingModal(true);
     showConfirmDoneModal(company, closingMonth);
   } catch (err) {
@@ -1388,7 +1405,7 @@ async function executeDelete() {
   showLoadingModal();
   try {
     await apiPost("deleteConfirmedMonth", { companies: companies, closingMonth: closingMonth });
-    invalidateHaulingData(); // 配車データ・締め状態が変わったため、キャッシュ済みの内容を破棄する
+    refreshHaulingDataInBackground(); // 配車データ・締め状態が変わったため、キャッシュを破棄して再取得を始めておく
     hideLoadingModal(true);
     const month = Number(closingMonth.split("/")[1]);
     showDoneModal(companies.join("・") + "の" + month + "月20日〆の確定済みデータを削除しました");
