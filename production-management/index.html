@@ -4,6 +4,24 @@
 <meta charset="UTF-8">
 <title>生産管理ダッシュボード</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+  // GASへの初回データ取得(action=getData)を、下のCDNライブラリ(chart.js等)の読み込みより
+  // 先に開始しておく。<script src>は読み込み+実行が終わるまで後続の処理をブロックするため、
+  // ここで先に発行しておかないと「4本のCDNスクリプトのダウンロード完了」→「DOMContentLoaded」
+  // →「ようやくGASへfetch開始」という直列待ちになり、体感の起動時間がその分そのまま延びてしまう。
+  // ここで得たPromiseはapp.js側のloadData(false)が初回だけ使い回す(app.js内のURLと
+  // 常に同じ値にすること)。
+  window.__initialDataPromise = fetch(
+    'https://script.google.com/macros/s/AKfycbya0wgwbTuBN1laM8tWFGTJhJw--pTAOBAYVyrsOoXbrOXZgs9q3ZsErTSQZwJFT2c2/exec?action=getData'
+  )
+    .then(function (res) {
+      if (!res.ok) throw new Error('サーバーエラー(HTTP ' + res.status + ')');
+      return res.json();
+    })
+    .catch(function (err) {
+      return { status: 'error', message: err.message };
+    });
+</script>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>

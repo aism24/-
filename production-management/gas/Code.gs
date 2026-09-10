@@ -58,7 +58,7 @@ const TIMEZONE = 'Asia/Tokyo';
 function doGet(e) {
   try {
     const action = (e && e.parameter && e.parameter.action) || 'getData';
-    if (action === 'getData') return ok_(getDashboardData_());
+    if (action === 'getData') return getDataResponse_();
     if (action === 'refresh') return userRefresh_();
     return errRes_('不明なaction: ' + action);
   } catch (err) {
@@ -73,15 +73,22 @@ function ok_(data) { return jsonResponse_({ status: 'success', data: data }); }
 function errRes_(message) { return jsonResponse_({ status: 'error', message: message }); }
 function busyRes_(message) { return jsonResponse_({ status: 'busy', message: message }); }
 
-// キャッシュがあればそれを返し、無ければ初回のみ集計する。
-function getDashboardData_() {
+// キャッシュがあれば、保存済みのJSON文字列をそのままレスポンスへ埋め込んで返す
+// (_cache_dashboard.jsonは数MB規模になるため、JSON.parseしてJSオブジェクトに復元した上で
+// ok_()が改めてJSON.stringifyし直す、という2度目のシリアライズを省略することで、
+// GAS側の処理時間を削減する。壊れていないかの確認だけはJSON.parseで行う)。
+// キャッシュが無ければ(初回のみ)集計する。
+function getDataResponse_() {
   const folder = getCacheFolder_();
-  const cached = loadCache_(folder);
-  if (cached) return cached;
-  return refreshAndGetData_(folder);
+  const cachedText = loadCacheText_(folder);
+  if (cachedText !== null) {
+    return ContentService.createTextOutput('{"status":"success","data":' + cachedText + '}')
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  return ok_(refreshAndGetData_(folder));
 }
 
-// getDashboardData_(初回・キャッシュが無い場合のみ)、および毎日の自動トリガー
+// getDataResponse_(初回・キャッシュが無い場合のみ)、および毎日の自動トリガー
 // (dailyRefresh)から呼ばれる本体処理。どちらも画面の前で人が待っているボタン操作では
 // ないため、先行する集計の完了を長めに待ってから実行してよい。
 // 「現時点のデータを取得」が短時間に連打されたり、自動トリガーと手動更新が重なったりすると、
@@ -89,7 +96,7 @@ function getDashboardData_() {
 // _records_cache.jsonの読み書きが競合して同名ファイルが重複作成されることがある。
 // スクリプトロックで直列化し、後発の呼び出しは先発の完了(=キャッシュ更新)を待ってから
 // 実行する。
-// folder: 呼び出し元(getDashboardData_)が既に取得済みのフォルダがあれば渡してもらい、
+// folder: 呼び出し元(getDataResponse_)が既に取得済みのフォルダがあれば渡してもらい、
 // DriveApp.getFileById(...).getParents()の呼び出し(ネットワーク往復)を1回省略する。
 // 未指定(dailyRefresh等からの呼び出し)ならここで1回だけ取得する。
 function refreshAndGetData_(folder) {
@@ -159,10 +166,26 @@ function checkSetup() {
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
 function indexSheet_() { return ss_().getSheets()[0]; }
 
+// 索引スプレッドシートの親フォルダ(キャッシュ・作業用ファイルの置き場所)を返す。
+// このフォルダは運用上変わらない前提のため、一度特定したフォルダIDをスクリプト
+// プロパティに保存しておき、次回以降はDriveApp.getFileById(...).getParents()という
+// 2回分のDrive API往復を省略してDriveApp.getFolderById(id)の1回で済ませる
+// (doGet(action=getData)のたびに毎回発生していた無駄な往復を減らすため)。
 function getCacheFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const cachedId = props.getProperty('CACHE_FOLDER_ID');
+  if (cachedId) {
+    try {
+      return DriveApp.getFolderById(cachedId);
+    } catch (e) {
+      // 保存済みIDが無効(フォルダ移動・共有解除等)になっていた場合は下の通常経路へフォールバック
+    }
+  }
   const file = DriveApp.getFileById(ss_().getId());
   const parents = file.getParents();
-  return parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+  const folder = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+  props.setProperty('CACHE_FOLDER_ID', folder.getId());
+  return folder;
 }
 
 function extractFileIdFromUrl_(url) {
@@ -392,7 +415,7 @@ function parseMasterSheet_(convertedSheetId, calendarMinKey, calendarMaxKey) {
 
 // ========== 集計本体 ==========
 
-// folder: getDashboardData_/refreshAndGetData_が既に取得済みのフォルダを渡してもらい、
+// folder: getDataResponse_/refreshAndGetData_が既に取得済みのフォルダを渡してもらい、
 // ここで改めてgetCacheFolder_()を呼び直さない(1リクエストあたりのDrive API往復を減らす)。
 function runFullAggregation_(folder) {
   const rows = readIndexRows_();
@@ -520,12 +543,17 @@ function saveCache_(folder, data) {
   }
 }
 
-function loadCache_(folder) {
+// キャッシュファイルの中身を、JSON.parseでJSオブジェクトへ復元せず生の文字列のまま返す
+// (getDataResponse_がレスポンス文字列へそのまま埋め込むため)。JSON.parseは内容が
+// 壊れていないかの検証のためだけに行い、パース結果自体は使い捨てる。
+function loadCacheText_(folder) {
   const files = folder.getFilesByName(CACHE_FILE_NAME);
   if (!files.hasNext()) return null;
+  const text = files.next().getBlob().getDataAsString();
   try {
-    return JSON.parse(files.next().getBlob().getDataAsString());
+    JSON.parse(text);
   } catch (e) {
     return null;
   }
+  return text;
 }
