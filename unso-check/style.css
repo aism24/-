@@ -125,6 +125,18 @@ body.drag-over::after {
   border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(0,0,0,0.04);
 }
 .section h2 { font-size: 18px; font-weight: 700; margin-bottom: 12px; color: var(--brand-strong); }
+
+/* 20日締めチェック・年度集計・業者別内訳: 業者/年度/月の選択ボタンや搬入期間・合計等の
+   要約情報を、下にスクロールしても常に見えるよう画面上部(固定ヘッダーの下)に貼り付ける。
+   工事別内訳のみ対象外(ユーザー指示)。.app-header(固定、高さ56px+3px罫線)の直下に
+   隙間なく吸着させるため、bodyのpadding-top(64px)に合わせてtopを揃えている。 */
+.sticky-header {
+  position: sticky; top: 64px; z-index: 10;
+  background: var(--surface);
+  padding-bottom: 8px; margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.yearly-total-line { font-weight: 700; margin: 4px 0 0; }
 h3 { font-size: 15px; font-weight: 700; color: var(--brand-strong); margin: 16px 0 8px; }
 .hint { color: var(--ink-muted); font-size: 13px; margin-bottom: 14px; line-height: 1.6; }
 

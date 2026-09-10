@@ -74,17 +74,19 @@
   <!-- 20日締めチェック画面 -->
   <section id="screen-check" class="screen" style="display:none;">
     <div class="section">
-      <div class="check-title-row">
-        <h2>20日締めチェック</h2>
-        <span id="check-confirm-slot"></span>
-      </div>
-      <div class="check-row">
-        <div class="button-group" id="check-company-buttons"></div>
-        <span id="check-status-badge"></span>
-      </div>
-      <div class="check-row">
-        <div class="button-group" id="check-year-buttons"></div>
-        <div class="button-group" id="check-month-buttons"></div>
+      <div class="sticky-header">
+        <div class="check-title-row">
+          <h2>20日締めチェック</h2>
+          <span id="check-confirm-slot"></span>
+        </div>
+        <div class="check-row">
+          <div class="button-group" id="check-company-buttons"></div>
+          <span id="check-status-badge"></span>
+        </div>
+        <div class="check-row">
+          <div class="button-group" id="check-year-buttons"></div>
+          <div class="button-group" id="check-month-buttons"></div>
+        </div>
       </div>
       <div id="check-result"></div>
     </div>
@@ -93,9 +95,12 @@
   <!-- 年度集計画面 -->
   <section id="screen-yearly" class="screen" style="display:none;">
     <div class="section">
-      <h2>年度集計</h2>
-      <div class="check-row">
-        <div class="button-group" id="yearly-year-buttons"></div>
+      <div class="sticky-header">
+        <h2>年度集計</h2>
+        <div class="check-row">
+          <div class="button-group" id="yearly-year-buttons"></div>
+        </div>
+        <p id="yearly-total-line" class="yearly-total-line"></p>
       </div>
       <div id="yearly-result"></div>
     </div>
@@ -118,9 +123,12 @@
   <!-- 業者別内訳画面 -->
   <section id="screen-company" class="screen" style="display:none;">
     <div class="section">
-      <h2>業者別内訳</h2>
-      <div class="check-row">
-        <div class="button-group" id="company-buttons"></div>
+      <div class="sticky-header">
+        <h2>業者別内訳</h2>
+        <div class="check-row">
+          <div class="button-group" id="company-buttons"></div>
+        </div>
+        <div id="company-detail-header"></div>
       </div>
       <div id="company-result"></div>
     </div>
@@ -147,7 +155,7 @@
 <!-- 読み込み中ポップアップ(GAS呼び出しを伴う全ての画面表示・更新で共通して使う) -->
 <div id="loading-progress-overlay" class="modal-overlay" style="display:none;">
   <div class="modal-box">
-    <p class="modal-loading-label">読み込み中です。しばらくお待ちください...</p>
+    <p class="modal-loading-label">最新記録を更新中...</p>
     <div class="progress-bar-track">
       <div id="loading-progress-bar" class="progress-bar-fill" style="width:0%;"></div>
     </div>
