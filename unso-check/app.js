@@ -1078,7 +1078,8 @@ async function loadYearlySummary() {
 
 function renderYearlyResult(data) {
   const resultEl = document.getElementById("yearly-result");
-  let html = "<p><strong>" + data.fiscalYearEnd + "年度 合計請求額: " + fmtYen(data.合計請求額) + "</strong></p>";
+  document.getElementById("yearly-total-line").textContent = data.fiscalYearEnd + "年度 合計請求額: " + fmtYen(data.合計請求額);
+  let html = "";
 
   html += "<h3>月別内訳</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>締め月</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>合計</th></tr></thead><tbody>";
   data.月別.forEach(m => {
@@ -1202,6 +1203,7 @@ let companyState = { name: null, years: [] };
 
 async function initCompanyScreen() {
   companyState = { name: null, years: [] };
+  document.getElementById("company-detail-header").innerHTML = "";
   document.getElementById("company-result").innerHTML = "";
   const container = document.getElementById("company-buttons");
   container.style.display = "";
@@ -1229,6 +1231,7 @@ async function initCompanyScreen() {
 function backToCompanySelection() {
   companyState.name = null;
   companyState.years = [];
+  document.getElementById("company-detail-header").innerHTML = "";
   document.getElementById("company-result").innerHTML = "";
   const container = document.getElementById("company-buttons");
   container.querySelectorAll("button").forEach(b => b.classList.remove("btn-primary"));
@@ -1250,30 +1253,32 @@ function toggleCompanyYear(fiscalYearEnd) {
 }
 
 async function loadCompanyDetail() {
+  const headerEl = document.getElementById("company-detail-header");
   const resultEl = document.getElementById("company-result");
   try {
     const cached = await ensureHaulingDataWithModal();
     const data = getCompanyDetailLocal(cached, companyState.name, companyState.years);
-    let html = "<div class=\"check-title-row\"><h3>" + data.業者 + "</h3>" +
+    let headerHtml = "<div class=\"check-title-row\"><h3>" + data.業者 + "</h3>" +
       "<button type=\"button\" class=\"btn btn-back\" onclick=\"backToCompanySelection()\">← 業者選択に戻る</button></div>";
 
     const allYearsActive = companyState.years.length === 0;
-    html += "<div class=\"button-group\">";
-    html += "<button type=\"button\" class=\"btn" + (allYearsActive ? " btn-primary" : "") + "\" onclick=\"toggleCompanyYear(null)\">全ての年度</button>";
+    headerHtml += "<div class=\"button-group\">";
+    headerHtml += "<button type=\"button\" class=\"btn" + (allYearsActive ? " btn-primary" : "") + "\" onclick=\"toggleCompanyYear(null)\">全ての年度</button>";
     data.年度一覧.slice().reverse().forEach(y => {
       const active = companyState.years.indexOf(y) !== -1;
-      html += "<button type=\"button\" class=\"btn" + (active ? " btn-primary" : "") + "\" onclick=\"toggleCompanyYear(" + y + ")\">" + y + "年度</button>";
+      headerHtml += "<button type=\"button\" class=\"btn" + (active ? " btn-primary" : "") + "\" onclick=\"toggleCompanyYear(" + y + ")\">" + y + "年度</button>";
     });
-    html += "</div>";
+    headerHtml += "</div>";
 
-    html += "<p class=\"hint\">搬入期間: " + (data.開始日 && data.終了日 ? data.開始日 + " 〜 " + data.終了日 : "データがありません") + "</p>";
+    headerHtml += "<p class=\"hint\">搬入期間: " + (data.開始日 && data.終了日 ? data.開始日 + " 〜 " + data.終了日 : "データがありません") + "</p>";
 
     const t = data.total;
     const perTonText = t.重量 > 0 ? fmtYen(t.合計 / t.重量) + "/t" : "現場搬入の重量が無いため算出不可";
-    html += "<p class=\"per-ton-summary\">合計重量: " + (t.重量 || 0).toFixed(1) + "t　総額: " + fmtYen(t.合計) +
+    headerHtml += "<p class=\"per-ton-summary\">合計重量: " + (t.重量 || 0).toFixed(1) + "t　総額: " + fmtYen(t.合計) +
       "　<strong>1トン当たりの金額: " + perTonText + "</strong></p>";
+    headerEl.innerHTML = headerHtml;
 
-    html += "<h3>締め月別</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>締め月</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>合計</th></tr></thead><tbody>";
+    let html = "<h3>締め月別</h3><div class=\"overflow-x\"><table class=\"data-table summary-table\"><thead><tr><th>締め月</th><th>コラム横持</th><th>製品等横持</th><th>その他横持</th><th>メッキ</th><th>現場搬入費用</th><th>現場搬入重量</th><th>合計</th></tr></thead><tbody>";
     data.締め月別.forEach(m => {
       html += "<tr><td>" + m.締め月 + "〆</td><td>" + fmtYen(m.コラム横持) + "</td><td>" + fmtYen(m.製品等横持) + "</td><td>" + fmtYen(m.その他横持) + "</td><td>" + fmtYen(m.メッキ) + "</td><td>" +
         fmtYen(m.現場搬入費用) + "</td><td>" + (m.重量 || 0).toFixed(1) + "t</td><td>" + fmtYen(m.合計) + "</td></tr>";
@@ -1291,6 +1296,7 @@ async function loadCompanyDetail() {
 
     resultEl.innerHTML = html;
   } catch (err) {
+    headerEl.innerHTML = "";
     resultEl.innerHTML = "<p class=\"import-status error\">エラー: " + err.message + "</p>";
   }
 }
