@@ -374,10 +374,16 @@ function classifyPart_(part) {
 function parseMasterSheet_(convertedSheetId, calendarMinKey, calendarMaxKey) {
   const ss = SpreadsheetApp.openById(convertedSheetId);
   const sh = ss.getSheets()[0];
-  const values = sh.getDataRange().getValues();
-  if (values.length < 2) return [];
+  const lastRow = sh.getLastRow();
+  const lastCol = sh.getLastColumn();
+  if (lastRow < 2) return [];
 
-  const header = values[0].map(function (h) { return String(h || '').trim(); });
+  // 見出し行(1行だけ)を先に読んで、使う列の位置を特定する。実物の案件マスターは
+  // 60列超(建方日・図番・サイズ・塗装・各種検査項目等、集計に使わない列)を持つ一方、
+  // 実際に読むのは6列だけと確認済みのため、getDataRange()で全列・全行をまとめて
+  // 読むと使わない列の分だけ無駄にSpreadsheetApp側の転送量が増える。見出しから
+  // 特定した必要な列の右端までだけをデータ範囲として読むことで、これを減らす。
+  const header = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h || '').trim(); });
   const col = {
     part: header.indexOf('部位'),
     site: header.indexOf('加工先'),
@@ -388,8 +394,12 @@ function parseMasterSheet_(convertedSheetId, calendarMinKey, calendarMaxKey) {
   };
   if (col.part < 0 || col.site < 0 || col.workDate < 0) return [];
 
+  const neededCols = [col.part, col.site, col.workDate, col.qty, col.weight, col.mark].filter(function (c) { return c >= 0; });
+  const maxCol = Math.max.apply(null, neededCols) + 1; // 1-indexedの幅(必要な列の右端まで)
+  const values = sh.getRange(2, 1, lastRow - 1, maxCol).getValues();
+
   const records = [];
-  for (let i = 1; i < values.length; i++) {
+  for (let i = 0; i < values.length; i++) {
     const row = values[i];
     const site = String(row[col.site] || '').trim();
     const part = String(row[col.part] || '').trim();
@@ -413,6 +423,43 @@ function parseMasterSheet_(convertedSheetId, calendarMinKey, calendarMaxKey) {
   return records;
 }
 
+// 案件マスターファイルの「最終更新日時・実ファイル名」を、案件数ぶん1件ずつ
+// DriveApp.getFileById()を呼ぶ(=順番にDrive APIへ往復する)代わりに、UrlFetchApp.fetchAll()で
+// Drive API(v3) files.getをまとめて1回で問い合わせる。案件が更新されているかどうかの
+// 判定(recordsCacheのmtime比較)だけならこれで十分で、実際に中身を読み直す必要がある
+// (=更新されていた)案件だけ、呼び出し元がDriveApp.getFileById()で個別に取得し直す。
+// 案件数が増えるほど、この往復回数の削減が「現時点のデータを取得」の体感速度に効いてくる。
+// ※ UrlFetchApp呼び出しが増えるため、初回はApps Scriptエディタで一度手動実行して
+//   権限の再承認(external_requestスコープ)が必要になる場合がある。
+function fetchFileMetas_(fileIds) {
+  const metas = {};
+  if (!fileIds.length) return metas;
+  const token = ScriptApp.getOAuthToken();
+  const requests = fileIds.map(function (id) {
+    return {
+      url: 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id)
+        + '?fields=' + encodeURIComponent('name,modifiedTime,trashed') + '&supportsAllDrives=true',
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true,
+    };
+  });
+  const responses = UrlFetchApp.fetchAll(requests);
+  responses.forEach(function (res, i) {
+    const fileId = fileIds[i];
+    if (res.getResponseCode() !== 200) {
+      metas[fileId] = { error: 'HTTP ' + res.getResponseCode() };
+      return;
+    }
+    const json = JSON.parse(res.getContentText());
+    if (json.trashed) {
+      metas[fileId] = { error: 'ゴミ箱に入っています' };
+      return;
+    }
+    metas[fileId] = { name: json.name, mtime: String(new Date(json.modifiedTime).getTime()) };
+  });
+  return metas;
+}
+
 // ========== 集計本体 ==========
 
 // folder: getDataResponse_/refreshAndGetData_が既に取得済みのフォルダを渡してもらい、
@@ -434,21 +481,20 @@ function runFullAggregation_(folder) {
   const nameMismatches = [];
   const recordsCache = loadRecordsCache_(folder);
   const newRecordsCache = {};
+  const fileMetas = fetchFileMetas_(fileIndex.map(function (entry) { return entry.fileId; }));
 
   fileIndex.forEach(function (entry) {
-    let driveFile;
-    try {
-      driveFile = DriveApp.getFileById(entry.fileId);
-    } catch (err) {
-      warnings.push('「' + entry.fileName + '」の読み込みに失敗しました: ' + err.message);
+    const meta = fileMetas[entry.fileId];
+    if (!meta || meta.error) {
+      warnings.push('「' + entry.fileName + '」の読み込みに失敗しました: ' + ((meta && meta.error) || '不明なエラー'));
       return;
     }
-    const currentMtime = String(driveFile.getLastUpdated().getTime());
+    const currentMtime = meta.mtime;
 
     // 使い回しの枠(2〜18行目など)は、工事が切り替わった際に索引シートのD列(ファイル名)を
     // 更新し忘れると気づきにくいため、実際のドライブ上のファイル名と食い違っていないか
     // ここでチェックし、あればフロント側でポップアップ表示する。
-    const actualFileName = driveFile.getName();
+    const actualFileName = meta.name;
     if (actualFileName !== entry.fileName) {
       nameMismatches.push({ workNo: entry.workNo, indexFileName: entry.fileName, actualFileName: actualFileName });
     }
@@ -467,6 +513,10 @@ function runFullAggregation_(folder) {
       records = cached.records;
     } else {
       try {
+        // 更新されていた(=中身を読み直す必要がある)案件だけ、ここで初めて
+        // DriveApp.getFileById()を呼ぶ(コンテンツ取得にはDrive高度なサービスの
+        // 戻り値ではなくDriveAppのFileオブジェクトが必要なため)。
+        const driveFile = DriveApp.getFileById(entry.fileId);
         const convertedId = resolveSheetId_(entry, folder, currentMtime, driveFile);
         records = parseMasterSheet_(convertedId, calendarMinKey, calendarMaxKey);
       } catch (err) {
