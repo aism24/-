@@ -181,7 +181,7 @@ h2.category {
   margin-bottom: 12px;
 }
 .card .name {
-  font-size: 22px;
+  font-size: 30px;
   font-weight: 700;
   line-height: 1.4;
   margin-bottom: 4px;
@@ -192,7 +192,7 @@ h2.category {
    表示する(white-space: pre-line)。改行を含まない説明は、これまで通り
    1行のまま折り返さずに表示される。 */
 .card .desc {
-  font-size: 16px;
+  font-size: 24px;
   color: #999;
   line-height: 1.4;
   white-space: pre-line;
