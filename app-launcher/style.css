@@ -102,10 +102,15 @@ h2.category {
   white-space: nowrap;
 }
 /* 通常時は上のicon(枠なし・ボタンそのもの)だけが見えている。ホバー時(PC)/
-   タップ時(タッチ)は、このdetailsパネルが、アイコンを内側に複製した状態で
-   1つの枠として表示され、元のアイコンを覆い隠す(=ロゴボタン+名前+説明が
-   ひとつの外枠に収まって見える)。初期表示では枠は一切出ない。
-   タッチ環境ではJS側で付与する.activeクラスだけを表示条件にする。
+   タップ時(タッチ)は、このdetailsパネルが、名前・説明を含む枠としてアイコンの
+   真下に表示される。初期表示では枠は一切出ない。タッチ環境ではJS側で付与する
+   .activeクラスだけを表示条件にする。
+   【重要】ボタン(アイコン)自体の大きさ・位置はホバー/タップ前後で一切変えない
+   こと。以前はdetailsをアイコンに重ねて2倍に拡大表示していたが、ボタンの
+   大きさ・配置が変わって分かりにくいとのフィードバックにより、ボタンは常に
+   同じ大きさ・同じ位置のまま、detailsパネルをボタンの真下に隙間なく追加
+   表示する方式に変更した(隙間を空けるとその間でマウスがどちらの要素にも
+   乗らずホバーが途切れて消えてしまうため、top: 100%で隙間なく接続する)。
    【重要】:hoverによる表示は@media(hover: hover)で必ずPC(マウス)環境限定に
    すること。iPad Safariには「一度触れた要素の:hoverが、別のボタンをタップ
    しても解除されずに残り続ける」既知の挙動があり、:hoverの表示条件をタッチ
@@ -118,65 +123,49 @@ h2.category {
 .card.active .details {
   display: block;
   position: absolute;
-  top: -14px;
-  left: -14px;
+  top: 100%;
+  left: 0;
   z-index: 1;
   box-sizing: border-box;
-  min-width: calc(100% + 28px);
-  transform: scale(2);
-  transform-origin: top left;
+  min-width: 100%;
   background: #161616;
   border: 4px solid var(--accent);
   border-radius: 12px;
   padding: 14px;
   box-shadow: 0 0 16px var(--accent), 0 6px 16px rgba(0, 0, 0, 0.5);
 }
-/* 1行に複数ボタンある場合、右端のボタンだけ上記の右下方向への展開のままでよい。
-   それ以外のボタン(単独ボタンの行・左端・両端以外の中央)は、右下方向に展開する
-   と画面左端の分類ラベルや隣のボタン側に寄ってしまい見づらいため、左下方向に
-   展開させる(基準点をボタン右上にする)。
-   【注意】名前・説明が長い場合、.detailsの実際の幅はテキスト量に応じて伸びる。
-   デフォルト(右下方向)はleftを固定して右方向に伸びる作りなので、
-   transform-origin: top left(自身の幅の0%地点=left固定位置と常に一致)は
-   テキスト量に関わらずボタン左上を基準点にできる。左下方向にする場合も同様に、
-   rightを固定して左方向に伸びる作りに変え、transform-origin: top right(自身の
-   幅の100%地点=right固定位置と常に一致)にする必要がある。leftを固定したまま
-   transform-origin: top rightだけ変えると、テキストが長いほど基準点がボタンから
-   離れて中央寄りに見える不具合になる(実機で発生)。 */
+/* 1行に複数ボタンある場合、右端のボタンだけ上記の左揃え(右方向)展開のままで
+   よい。それ以外のボタン(単独ボタンの行・左端・両端以外の中央)は、左揃えで
+   展開すると隣のボタンに重なって見づらいため、右揃え(左方向)に展開させる。 */
 .card:first-child.active .details,
 .card:not(:last-child).active .details {
   left: auto;
-  right: -14px;
-  transform-origin: top right;
+  right: 0;
 }
 @media (hover: hover) {
   .card:hover .details {
     display: block;
     position: absolute;
-    top: -14px;
-    left: -14px;
+    top: 100%;
+    left: 0;
     z-index: 1;
     box-sizing: border-box;
-    min-width: calc(100% + 28px);
-    transform: scale(2);
-    transform-origin: top left;
+    min-width: 100%;
     background: #161616;
     border: 4px solid var(--accent);
     border-radius: 12px;
     padding: 14px;
     box-shadow: 0 0 16px var(--accent), 0 6px 16px rgba(0, 0, 0, 0.5);
-    /* 拡大表示中のdetailsをマウスイベントに対して透過させる。これにより
+    /* 表示中のdetailsをマウスイベントに対して透過させる。これにより
        「ホバーが継続する当たり判定」は常に元のアイコンボタンの実サイズ範囲
-       のままになり(見た目だけ2倍)、拡大表示が隣のボタンの上に覆いかぶさって
-       いても、実際にマウスが隣のボタンの実サイズ範囲に入った時点ですぐ
-       そちらのホバーに切り替わる。 */
+       のままになり、detailsが隣のボタンの上に重なっていても、実際にマウスが
+       隣のボタンの実サイズ範囲に入った時点ですぐそちらのホバーに切り替わる。 */
     pointer-events: none;
   }
   .card:first-child:hover .details,
   .card:not(:last-child):hover .details {
     left: auto;
-    right: -14px;
-    transform-origin: top right;
+    right: 0;
   }
 }
 .card:hover .details .icon,
