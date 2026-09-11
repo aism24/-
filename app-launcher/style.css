@@ -110,20 +110,23 @@ h2.category {
    内側に複製したアイコン自体は、transform: scaleで拡大しない。これにより
    複製アイコンは常に元のボタンと同じ大きさ・ほぼ同じ画面位置になる(枠が
    name/descの分だけ縦横に大きくなるのは、拡大コピーではなく、単に枠の中に
-   通常サイズのアイコン+名前+説明が収まっているため)。以前はdetailsパネル
-   全体をtransform: scale(2)していたため、内側の複製アイコンも一緒に2倍の
-   大きさ・位置になってしまい、「ボタンと同じ大きさ・位置のものをホバー内に
-   配置してほしい」という要望に反していた。
-   起点は常にtop leftに固定し、右揃え(top right)には切り替えない(以前は
-   行内の位置に応じてtop left/top rightを切り替えていたが、名前・説明の
-   文字数でdetailsパネルの幅が変わるたびに内側の複製アイコンの画面上の位置が
-   ボタンごとにずれて見える不具合になった)。行の右端に近いボタンでは枠が
-   画面右端や隣の行にはみ出す場合があるが、ボタン位置の一貫性を優先する。 */
+   通常サイズのアイコン+名前+説明が収まっているため)。
+   【重要】1行に複数ボタンある場合、右端のボタンは左揃え(右方向に展開)、
+   それ以外(単独ボタンの行・左端・両端以外の中央)は右揃え(左方向に展開)にする
+   (画面右端や隣のボタンとの重なりを避けるため)。この時、内側のアイコン・
+   名前・説明をdisplay: flexのalign-items(flex-start/flex-end)で「枠の固定
+   されている側の辺」に揃えることで、名前・説明の文字数で枠の幅が変わっても、
+   複製アイコンは常に枠の固定辺(=実際のボタンの位置)にぴったり接した位置に
+   なり、画面上の位置がずれない(枠の可変側の辺だけがテキスト量に応じて伸び
+   縮みする)。以前、揃える辺を固定辺と逆にしていたときは、テキスト量に応じて
+   アイコンの位置がずれる不具合になった。 */
 .card .details {
   display: none;
 }
 .card.active .details {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   position: absolute;
   top: -14px;
   left: -14px;
@@ -136,9 +139,17 @@ h2.category {
   padding: 14px;
   box-shadow: 0 0 16px var(--accent), 0 6px 16px rgba(0, 0, 0, 0.5);
 }
+.card:first-child.active .details,
+.card:not(:last-child).active .details {
+  left: auto;
+  right: -14px;
+  align-items: flex-end;
+}
 @media (hover: hover) {
   .card:hover .details {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     position: absolute;
     top: -14px;
     left: -14px;
@@ -155,6 +166,12 @@ h2.category {
        のままになり、枠が隣のボタンの上に覆いかぶさっていても、実際にマウスが
        隣のボタンの実サイズ範囲に入った時点ですぐそちらのホバーに切り替わる。 */
     pointer-events: none;
+  }
+  .card:first-child:hover .details,
+  .card:not(:last-child):hover .details {
+    left: auto;
+    right: -14px;
+    align-items: flex-end;
   }
 }
 .card:hover .details .icon,
