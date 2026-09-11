@@ -179,7 +179,7 @@ h2.category {
   margin-bottom: 12px;
 }
 .card .name {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 700;
   line-height: 1.4;
   margin-bottom: 4px;
@@ -187,7 +187,7 @@ h2.category {
   white-space: nowrap;
 }
 .card .desc {
-  font-size: 12px;
+  font-size: 14px;
   color: #999;
   line-height: 1.4;
   white-space: nowrap;
