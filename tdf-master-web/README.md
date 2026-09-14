@@ -52,6 +52,14 @@
 6. 発行されたURLを開き、「大梁/小梁」「工事番号」を選択して.tdfファイルを
    選択(複数可)すると抽出が始まる
 
+## 更新履歴
+
+- 2026-09-15: `tdf-master-extract`側の大梁(1G系)継手判定ロジック更新
+  ([Fix large-beam joint detection to not rely on GJ prefix](https://github.com/masamizsumi-dotcom/tdf-master-extract/commit/c12c66623189a5571a60ab99b088d7b1d7493517)、
+  `extract_to_excel.py`の変更)を`tdf_app.py`の大梁側処理に反映。
+  `tdf_binary.py`/`tdf_master_extractor.py`/`tdf_master_extractor_multi.py`
+  自体は今回変更なし(無改変であることを確認済み)。
+
 ## 既知の制約・今後の課題
 
 - 大梁(1G系)・小梁(1B系)の判別は現状ユーザーが画面上で手動選択する方式

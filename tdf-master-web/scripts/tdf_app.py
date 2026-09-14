@@ -13,6 +13,8 @@ sort_rows / compute_tier_info の実装が微妙に異なる(小梁側にのみ
 """
 from __future__ import annotations
 
+import math
+
 import tdf_binary as tb
 import tdf_master_extractor as ex
 import tdf_master_extractor_multi as exm
@@ -73,6 +75,129 @@ def _compute_tier_info_large(rows: list) -> dict:
     return info
 
 
+# 継手判定(大梁専用)。2026-09-14当初は「GJで始まるテキストのみ継手候補」
+# だったが、WA2-3G-05でGJ以外の継手コード(GW100G)が見つかったため、小梁と
+# 同じ「長丸で囲まれたテキストは全て継手マークの一種」という前提に切り替えた
+# (masamizsumi-dotcom/tdf-master-extract の extract_to_excel.py と同一ロジック)。
+# 大梁の図面では長丸が柱マーク(P441等)も囲むことがあるため、その柱マークが
+# 近傍(1000mm以内)に円で囲まれていない形でも重複して描かれている場合は
+# 除外する(_has_nearby_duplicate)。
+NEARBY_DUP_RANGE = 1000.0
+
+
+def _has_nearby_duplicate(tdf: tb.TdfData, mx: float, my: float, text: str) -> bool:
+    for rec in tdf.texts:
+        if abs(rec.x - mx) < 3 and abs(rec.y - my) < 3:
+            continue  # 長丸内の自分自身は除く
+        if abs(rec.x - mx) > NEARBY_DUP_RANGE or abs(rec.y - my) > NEARBY_DUP_RANGE:
+            continue
+        other = tdf.resolve_text(rec)
+        if not other:
+            continue
+        if other.strip().isdigit():
+            continue  # 寸法値等の純粋な数値は比較対象外
+        if other == text or text in other or other in text:
+            return True
+    return False
+
+
+def _assign_joints_batch_large(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: dict) -> dict:
+    raw_groups: dict[tuple, list] = {}
+    for r in rows:
+        key = (round(r.x_mark, 1), round(r.x_next, 1))
+        raw_groups.setdefault(key, []).append(r)
+
+    groups: dict[tuple, list] = {}
+    for key, members in raw_groups.items():
+        members_by_y = sorted(members, key=lambda r: r.y)
+        clusters: list[list] = [[members_by_y[0]]]
+        for r in members_by_y[1:]:
+            if r.y - clusters[-1][-1].y > TIER_Y_GAP_THRESHOLD:
+                clusters.append([r])
+            else:
+                clusters[-1].append(r)
+        for i, cluster in enumerate(clusters):
+            groups[(key, i)] = cluster
+
+    centers = ex.find_stadium_centers(tdf)
+    candidates_raw = []
+    for mx, my, _r in centers:
+        near = [rec for rec in tdf.texts if abs(rec.x - mx) < 3 and abs(rec.y - my) < 3]
+        for rec in near:
+            t = tdf.resolve_text(rec)
+            if not t:
+                continue
+            if _has_nearby_duplicate(tdf, mx, my, t):
+                continue
+            candidates_raw.append((mx, my, t))
+
+    claims: dict[tuple, tuple] = {}
+    for key, members in groups.items():
+        member_lengths = [lengths[id(r)] for r in members if lengths.get(id(r)) is not None]
+        if not member_lengths:
+            continue
+        length_value = max(member_lengths)
+        main_axis_deg = 0.0
+        theta = -math.radians(main_axis_deg)
+
+        def rotate(x, y, theta=theta):
+            xr = x * math.cos(theta) - y * math.sin(theta)
+            yr = x * math.sin(theta) + y * math.cos(theta)
+            return xr, yr
+
+        threshold = max(length_value * 0.6, exm.JOINT_MIN_THRESHOLD)
+        for r in members:
+            _tier_label, y_max = tier_info.get(id(r), (None, None))
+            row_length = lengths.get(id(r))
+            line_endpoints = None
+            if row_length is not None:
+                line_endpoints = exm._find_reference_line_endpoints(
+                    tdf, r.x_mark, r.x_next, r.y, y_max, row_length,
+                )
+            if line_endpoints is not None:
+                (lx, ly), (rx, ry) = line_endpoints
+                left_ref, right_ref = (lx, ly), (rx, ry)
+                use_2d = True
+            else:
+                x_mark_r, _ = rotate(r.x_mark, r.y)
+                x_next_r, _ = rotate(r.x_next, r.y)
+                left_ref, right_ref = (x_mark_r, None), (x_next_r, None)
+                use_2d = False
+            for mx, my, t in candidates_raw:
+                if my <= r.y or (y_max is not None and my >= y_max):
+                    continue
+                xr, yr = rotate(mx, my)
+                for side, ref in (("left", left_ref), ("right", right_ref)):
+                    if use_2d:
+                        dist = math.hypot(mx - ref[0], my - ref[1])
+                    else:
+                        dist = abs(xr - ref[0])
+                    if dist > threshold:
+                        continue
+                    cand_key = (round(mx, 2), round(my, 2), t, side)
+                    cur = claims.get(cand_key)
+                    if cur is None or dist < cur[0]:
+                        claims[cand_key] = (dist, key)
+
+    best_per_group_side: dict[tuple, tuple] = {}
+    for (_mx, _my, t, side), (dist, key) in claims.items():
+        cur = best_per_group_side.get((key, side))
+        if cur is None or dist < cur[0]:
+            best_per_group_side[(key, side)] = (dist, t)
+
+    group_result: dict[tuple, list] = {}
+    for (key, side), (_dist, t) in best_per_group_side.items():
+        left_right = group_result.setdefault(key, [None, None])
+        left_right[0 if side == "left" else 1] = t
+
+    row_result = {}
+    for key, members in groups.items():
+        left, right = group_result.get(key, (None, None))
+        for r in members:
+            row_result[id(r)] = (left, right)
+    return row_result
+
+
 def _extract_large_beam(tdf: tb.TdfData) -> list[dict]:
     drawing_number = ex.find_drawing_number(tdf)
     rows = ex.find_product_rows(tdf)
@@ -81,9 +206,10 @@ def _extract_large_beam(tdf: tb.TdfData) -> list[dict]:
     _sort_rows_large(rows)
     tier_info = _compute_tier_info_large(rows)
 
-    out = []
+    lengths: dict[int, float | None] = {}
+    beam_types: dict[int, str | None] = {}
     for row in rows:
-        tier_label, tier_y_max = tier_info.get(id(row), (None, None))
+        _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
         if len(rows) == 1:
             x_min = row.x_mark - ex.RELAX_MARGIN
             x_max = row.x_next + ex.RELAX_MARGIN
@@ -91,18 +217,24 @@ def _extract_large_beam(tdf: tb.TdfData) -> list[dict]:
             x_min = row.x_mark
             x_max = row.x_next
         length_value, debug = ex.determine_length(tdf, x_min, x_max, row.y, y_max=tier_y_max)
-        left = right = None
-        if length_value is not None:
-            main_axis_deg = debug.get("main_axis_deg", 0.0)
-            left, right = ex.determine_joints(
-                tdf, row.x_mark, row.x_next, row.y, main_axis_deg, length_value,
-                y_max=tier_y_max,
-            )
-        beam_type = classify_beam_type(debug.get("main_axis_deg"))
+        lengths[id(row)] = length_value
+        beam_types[id(row)] = classify_beam_type(
+            debug.get("main_axis_deg") if length_value is not None else None
+        )
+
+    joints = _assign_joints_batch_large(tdf, rows, tier_info, lengths)
+
+    out = []
+    for row in rows:
+        tier_label, _tier_y_max = tier_info.get(id(row), (None, None))
+        length_value = lengths[id(row)]
+        left, right = joints.get(id(row), (None, None))
+        if length_value is None:
+            left = right = None
         out.append({
             "図番": drawing_number, "製品マーク": row.mark, "設計符号": row.design_code,
             "サイズ": row.size, "本数": row.count, "長さ": length_value, "重量": row.weight,
-            "左継手": left, "右継手": right, "種別": beam_type, "製品段": tier_label,
+            "左継手": left, "右継手": right, "種別": beam_types[id(row)], "製品段": tier_label,
         })
     return out
 
