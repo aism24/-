@@ -1,64 +1,132 @@
-# TDF製品情報抽出アプリ(GAS × Pyodide)
+# TDF製品情報抽出アプリ：GAS × GitHub Pages 分離構成
 
-実寸法師(.tdf)の鉄骨図面ファイルから製品マスタ情報を抽出し、Excelダウンロード
-とスプレッドシート記録までをブラウザ完結で行うWebアプリ。
+実寸法師(.tdf)の鉄骨図面ファイルから製品マスタ情報(図番・製品マーク・設計符号・サイズ・
+本数・長さ・重量・左継手・右継手・種別・製品段)を抽出し、Excelダウンロードとスプレッド
+シート記録までを行うWebアプリです。リポジトリ直下の他アプリ(`kozai-toriai/`、`hot-heart/`、
+`unso-check/`、`weld-heat-management/`、`taikai-unei/`)と同じ構成(**GitHub Pagesでフロント
+エンド配信 + Google Apps ScriptでJSON API + スプレッドシートをデータストア**)を採用してい
+ます。
 
-## アーキテクチャ
+抽出処理そのものは**Pyodide**(ブラウザ内でPythonをそのまま実行するWASM)で完全にクライア
+ントサイドで完結し、GASが担うのは「記録シートへのログ追記」「重量表・工事番号一覧の読み
+書き」「利用ログ」という付随機能のみです。姉妹アプリ「DXF製品情報抽出アプリ」(DXF＿マス
+タ作成【自社図面】)と同じ設計思想です。
 
-姉妹アプリ「DXF製品情報抽出アプリ」(DXF＿マスタ作成【自社図面】スプレッドシート
-に紐づくGASアプリ)と同じ構成を採用している。
+## 構成
 
-- 抽出ロジックは**Pyodide**(ブラウザ内でPythonをそのまま実行するWASM)で動作。
-  `Index.html`内の`<script type="text/python-src">`に埋め込まれたPythonコードを
-  Pyodideがそのまま実行する(サーバー側でのPython実行やJSへの移植は不要)。
-- 埋め込まれている4つのPythonファイルのうち、以下3つは
-  [`masamizsumi-dotcom/tdf-master-extract`](https://github.com/masamizsumi-dotcom/tdf-master-extract)
-  リポジトリの検証済みコードを**一切変更せず**埋め込んでいる(大梁48ファイル・
-  小梁47+9ファイルでの実データ検証結果がそのまま担保される)。
-  - `tdf_binary.py` — .tdfバイナリの低レベルパーサー
-  - `tdf_master_extractor.py` — 大梁(1G系)抽出ロジック
-  - `tdf_master_extractor_multi.py` — 小梁(1B系)抽出ロジック
-  - `tdf_app.py` — 上記3つを呼び出し、Excel(openpyxl)書き込みの代わりに
-    dictのリストを返すよう置き換えた薄いラッパー(このアプリのための新規コード)
-- Excel生成は[SheetJS](https://sheetjs.com/)(ブラウザ内JS、cdnjs経由)。
-- GAS(`Code.gs`)は以下のみを担当する(重い処理は一切行わない):
-  - 記録シートへの実行ログ追記
-  - 日時名のデータシート追加(最大10件、古い順に自動削除)
-  - 設定シートの重量表(サイズ→kg/m)・工事番号一覧の読み書き
-  - 利用記録(開始・終了時刻)
+```
+tdf-master-web/
+  index.html   … フロントエンドのHTML(画面構造 + 埋め込みPythonソース)
+  style.css    … スタイル
+  app.js       … 画面ロジック + Pyodide制御 + Excel出力(SheetJS) + GAS APIとの通信処理
+                 (fetchでGET/POST)
+  gas/Code.gs  … GAS側に貼り付けるバックエンドコード(記録・重量表/工事番号一覧・
+                 利用ログのJSON API)
+  scripts/     … 参照用のPythonソース一式(index.html に埋め込まれている内容と同一。
+                 tdf_binary.py/tdf_master_extractor.py/tdf_master_extractor_multi.py は
+                 masamizsumi-dotcom/tdf-master-extract の検証済みコードを無改変のまま
+                 コピーしたもの。tdf_app.py のみ、Excel書き込みをdictリスト返却に
+                 置き換えた新規ラッパー)
+```
 
-`scripts/`フォルダの4ファイルは参照用のソース(Index.htmlに埋め込まれている
-内容と同一)。ロジックを変更する場合はまずこちらを編集し、Index.htmlへの
-埋め込みも忘れず更新すること。
+## アプリの使い方
 
-## セットアップ手順
+1. 起動画面で「大梁/小梁」を選択し、工事番号を入力(候補あり)して「開始」
+2. .tdfファイルを選択(複数可。ドラッグ&ドロップも可)すると、ブラウザ内(Pyodide)で
+   抽出処理が実行される
+3. 結果一覧が表示される(長さ・継手が抽出できなかった行は赤字で強調)
+4. 「Excelダウンロード」で結果をxlsxとして保存。同時にスプレッドシートの「記録」シートに
+   ログが1行追記され、抽出結果全体が日時名のシートとして最右端に追加される(最大10件、
+   古い順に自動削除)
 
-対象スプレッドシート: [TDF＿マスタ作成](https://docs.google.com/spreadsheets/d/1dfTrPnZKZa2bPvDg8Jbjus1FeMT-LNEeB1fjryZSZCc/edit)
-(記録・設定シートは作成済み)
+---
 
-1. 上記スプレッドシートを開き、「拡張機能」→「Apps Script」を開く
-2. デフォルトの`コード.gs`の中身を削除し、以下の内容を貼り付けて`Code.gs`という
-   ファイル名で保存する
-   → [Code.gs をGitHubで見る](https://github.com/aism24/-/blob/main/tdf-master-web/Code.gs)
-   (右上の「Copy raw contents」でコピーできます)
-3. 「+」→「HTML」で`Index`という名前のHTMLファイルを新規作成し、以下の内容を
-   貼り付ける
-   → [Index.html をGitHubで見る](https://github.com/aism24/-/blob/main/tdf-master-web/Index.html)
-4. スクリプトエディタの関数選択で`setupSpreadsheet`を選び、一度だけ実行する
-   (記録・設定・利用記録の3シートを初期化。記録・設定シートは既存のものを
-   そのまま使うので中身は消えない)
-5. 「デプロイ」→「新しいデプロイ」→種類「ウェブアプリ」→アクセスできるユーザー
-   「全員」でデプロイし、発行されたURLを控える
-6. 発行されたURLを開き、「大梁/小梁」「工事番号」を選択して.tdfファイルを
-   選択(複数可)すると抽出が始まる
+## 1. スプレッドシートの準備
 
-## 更新履歴
+対象: [TDF＿マスタ作成](https://docs.google.com/spreadsheets/d/1dfTrPnZKZa2bPvDg8Jbjus1FeMT-LNEeB1fjryZSZCc/edit)
 
+以下3シートを用意する(`setupSpreadsheet`関数で自動作成されるが、既存の記録・設定シートの
+中身は変更しない)。
+
+- **記録**(1行=1回のExcelダウンロード): タイムスタンプ／工事番号／工事名(式)／製品数／
+  シート名／図番頭
+- **設定**: A:B列=サイズ／重量(kg/m)の対応表、D:E列=工事番号／工事名の一覧(画面の入力補助・
+  工事名の自動表示に使用)
+- **利用記録**: 使用開始日時／梁種別／利用時間
+
+## 2. GAS側(バックエンドAPI)のセットアップ
+
+このアプリのGASは、「TDF＿マスタ作成」スプレッドシートに**コンテナバインド**して使います
+(`SpreadsheetApp.getActiveSpreadsheet()`で自動的に自分自身を参照するため、`SPREADSHEET_ID`
+の設定は不要です)。
+
+1. 「TDF＿マスタ作成」スプレッドシートを開き、「拡張機能→Apps Script」を開きます。
+2. [`gas/Code.gs`](https://github.com/aism24/-/blob/main/tdf-master-web/gas/Code.gs) の内容を
+   まるごとコピー&ペーストします(右上の「Copy raw contents」でコピーできます)。
+3. 保存後、エディタ上部の関数選択で **`setupSpreadsheet`** を選び、▶実行ボタンを押すと、
+   記録・設定・利用記録の3シートが初期化されます(初回はスプレッドシートへのアクセス許可を
+   承認してください)。既存の記録・設定シートの中身は消えません。
+4. 右上の **「デプロイ」→「新しいデプロイ」** を選択します。
+5. 歯車アイコンから種類を **「ウェブアプリ」** に設定し、以下を指定します。
+   - **次のユーザーとして実行**: 「自分」
+   - **アクセスできるユーザー**: **「全員」**(フロントエンドから匿名でアクセスするため必須)
+6. 「デプロイ」をクリックし、表示される **新しいウェブアプリのURL**
+   (`https://script.google.com/macros/s/xxxxx/exec`)をコピーします。
+7. **このURLをClaudeとのチャットに貼り付けてください。** `app.js` の `GAS_API_URL` に反映して
+   GitHubにpushします。
+8. コードを修正した場合は、この新規デプロイを編集し「新バージョン」として更新すればURLは
+   変わりません。
+
+### 注意点
+
+- CORSのプリフライト(OPTIONSリクエスト)にGASは対応していないため、`app.js` からのPOSTは
+  `Content-Type: text/plain` で送信しています。`application/json` に変更しないでください。
+- レスポンスは常にHTTP 200で返り、成否は返却JSONの `status` フィールド(`success`/`error`)で
+  判定します。
+- GAS呼び出しはあくまで付随機能(記録・利用ログ)です。`GAS_API_URL`未設定・GAS側の不調・
+  通信エラー等があっても、抽出・Excel出力といったアプリ本来の機能は止まりません。
+
+---
+
+## 3. フロントエンド(GitHub Pages)のセットアップ
+
+1. `tdf-master-web/app.js` の先頭にある `GAS_API_URL` を、手順2で取得したウェブアプリのURLに
+   書き換えます。
+2. 変更をリポジトリにコミット・プッシュし、mainブランチに反映します。
+3. リポジトリの GitHub Pages が有効になっていれば(他アプリと同じ設定、`main`ブランチ
+   `/ (root)`)、数分後に `https://aism24.github.io/-/tdf-master-web/` で公開されます。
+
+---
+
+## 4. 動作確認チェックリスト
+
+- [ ] 起動画面で大梁/小梁・工事番号を選択して開始できる
+- [ ] .tdfファイル(複数可、ドラッグ&ドロップも)を選択すると抽出が実行される
+- [ ] 結果一覧が表示される(長さ・継手が空欄の行は赤字で強調される)
+- [ ] 「Excelダウンロード」でファイルがダウンロードされる
+- [ ] ダウンロード後、「記録」シートに1行追加され、日時名のデータシートが最右端に追加される
+- [ ] `GAS_API_URL` を意図的に無効な値にしても、抽出・Excel出力は問題なく動作する
+      (記録・利用ログだけがコンソール警告付きで失敗する)
+
+## 5. アーキテクチャの要点(なぜPyodideを使うか)
+
+- GAS(Google Apps Script)はユーザーのローカルPC/社内ネットワークのファイルに直接アクセス
+  できない、実行時間6分の制限がある等の制約があり、.tdfのような複雑なバイナリ解析をサー
+  バー側で行うのに向かない。
+- そこで、抽出ロジック(Python)を**ブラウザ内でPyodide(WASM版CPython)を使ってそのまま実行**
+  する方式を採用。ユーザーが選んだ.tdfファイルはブラウザ内で`Uint8Array`として読み込み、
+  Pyodideの仮想ファイルシステムに書き込んでから、埋め込み済みのPythonコードの
+  `extract_file(path, beam_type)`を呼び出す。
+- この方式により、`tdf-master-extract`の検証済みPythonコードを**1行も変更せずに**ブラウザで
+  動かせる(移植によるバグ混入のリスクがない)。
+
+## 6. 更新履歴
+
+- 2026-09-15: GAS単体構成(`doGet`がHTMLを返す)から、GAS×GitHub Pages分離構成
+  (GASはJSON APIのみ、フロントエンドはGitHub Pagesで配信)に変更。
 - 2026-09-15: `tdf-master-extract`側の大梁(1G系)継手判定ロジック更新
-  ([Fix large-beam joint detection to not rely on GJ prefix](https://github.com/masamizsumi-dotcom/tdf-master-extract/commit/c12c66623189a5571a60ab99b088d7b1d7493517)、
-  `extract_to_excel.py`の変更)を`tdf_app.py`の大梁側処理に反映。
-  `tdf_binary.py`/`tdf_master_extractor.py`/`tdf_master_extractor_multi.py`
-  自体は今回変更なし(無改変であることを確認済み)。
+  ([Fix large-beam joint detection to not rely on GJ prefix](https://github.com/masamizsumi-dotcom/tdf-master-extract/commit/c12c66623189a5571a60ab99b088d7b1d7493517))
+  を`scripts/tdf_app.py`の大梁側処理に反映。
 
 ## 既知の制約・今後の課題
 
