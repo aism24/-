@@ -57,10 +57,15 @@
     <div>
       <p style="margin-bottom:14px;">TDFファイルを選択、またはこの画面にドラッグ&amp;ドロップしてください</p>
       <div class="upload-bar" onclick="document.getElementById('file-input').click()">📂 クリックしてTDFファイルを選択(複数可)</div>
-      <div class="folder-path-warn">
-        該当ファイルがあるフォルダ絶対パスを事前コピー必要<br>
-        フォルダパスを起点に図番にハイパーリンクが付与されます。<br>
-        ※ファイル選択時のアドレスをコピーする
+      <div class="folder-path-warn-wrap">
+        <div class="folder-path-warn">
+          該当ファイルがあるフォルダ絶対パスを事前コピー必要<br>
+          フォルダパスを起点に図番にハイパーリンクが付与されます。<br>
+          ※ファイル選択時のアドレスをコピーする
+        </div>
+        <div class="address-copy-preview">
+          <img src="assets/address-copy-guide.jpg" alt="アドレスバーのアドレスをコピーする例">
+        </div>
       </div>
     </div>
   </div>
