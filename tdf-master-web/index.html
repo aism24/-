@@ -85,9 +85,12 @@
   <div id="basepath-box">
     <div class="basepath-label">図面フォルダの絶対パスを入力してください</div>
     <div class="basepath-hint">
-      エクスプローラーで、TDFファイルが入っているフォルダを右クリック→「パスのコピー」した内容を貼り付けてください(前後の &quot; は自動的に取り除きます)。<br>
+      エクスプローラーで、TDFファイルが入っているフォルダを右クリック→「パスのコピー」してから、
+      下の「クリップボードから貼り付け」を押すか、テキスト欄に直接貼り付けてください
+      (前後の &quot; は自動的に取り除きます)。<br>
       未入力のまま「スキップ」を押した場合は、図番へのハイパーリンクなしでダウンロードします。
     </div>
+    <button type="button" id="basepath-paste-btn" class="header-btn">📋 クリップボードから貼り付け</button>
     <textarea id="basepath-textarea" placeholder="例: \\server\share\TDF図面&#10;例: C:\Users\name\Documents\TDF"></textarea>
     <div class="basepath-actions">
       <button type="button" id="basepath-skip-btn" class="header-btn">スキップ</button>

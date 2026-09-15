@@ -154,6 +154,7 @@ table#result-table tbody tr:hover { background: #f7fbff; }
 }
 .basepath-label { font-size: 15px; font-weight: bold; margin-bottom: 10px; }
 .basepath-hint { font-size: 12px; color: #666; line-height: 1.6; margin-bottom: 12px; }
+#basepath-paste-btn { width: 100%; margin-bottom: 8px; }
 #basepath-textarea {
   width: 100%; min-height: 64px; padding: 8px 10px; font-size: 13px;
   border: 1px solid #bbb; border-radius: 6px; resize: vertical; font-family: inherit;

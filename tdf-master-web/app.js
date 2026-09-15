@@ -271,6 +271,7 @@ function askBasePath() {
   return new Promise(resolve => {
     const overlay = document.getElementById('basepath-overlay');
     const textarea = document.getElementById('basepath-textarea');
+    const pasteBtn = document.getElementById('basepath-paste-btn');
     const okBtn = document.getElementById('basepath-ok-btn');
     const skipBtn = document.getElementById('basepath-skip-btn');
     textarea.value = '';
@@ -279,8 +280,17 @@ function askBasePath() {
 
     function cleanup() {
       overlay.classList.remove('open');
+      pasteBtn.removeEventListener('click', onPaste);
       okBtn.removeEventListener('click', onOk);
       skipBtn.removeEventListener('click', onSkip);
+    }
+    async function onPaste() {
+      try {
+        textarea.value = stripQuotes((await navigator.clipboard.readText()).trim());
+        textarea.focus();
+      } catch (e) {
+        showToast('クリップボードを読み取れませんでした。テキスト欄に直接貼り付けてください', 'error');
+      }
     }
     function onOk() {
       const val = stripQuotes(textarea.value.trim());
@@ -291,6 +301,7 @@ function askBasePath() {
       cleanup();
       resolve('');
     }
+    pasteBtn.addEventListener('click', onPaste);
     okBtn.addEventListener('click', onOk);
     skipBtn.addEventListener('click', onSkip);
   });
