@@ -71,9 +71,10 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 #beam-btns { display: flex; gap: 14px; justify-content: center; margin-bottom: 20px; }
 .beam-btn {
   flex: 1; padding: 22px 10px; font-size: 16px; font-weight: bold; border-radius: 10px;
-  border: 2px solid #ccc; background: #fafafa; cursor: pointer; transition: .15s;
+  border: 2px solid #ccc; background: #fafafa; cursor: pointer;
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
 }
-.beam-btn:hover { border-color: #1a73e8; background: #eef4ff; }
+.beam-btn:hover { border-color: #1a73e8; background: #eef4ff; transform: scale(1.5); position: relative; z-index: 10; }
 .beam-btn.selected { border-color: #1a73e8; background: #1a73e8; color: #fff; }
 #koji-field { text-align: left; margin-top: 4px; }
 #koji-field label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
