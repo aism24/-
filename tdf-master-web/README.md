@@ -132,6 +132,14 @@ tdf-master-web/
 
 ## 6. 更新履歴
 
+- 2026-09-15: `masamizsumi-dotcom/tdf-master-extract`の上流修正
+  ([Fix column-mark exclusion to catch J-inserted anagrams](https://github.com/masamizsumi-dotcom/tdf-master-extract/commit/3340d3a9b3c2808a605ea2d0659a6e940177a756))
+  を反映。`scripts/tdf_master_extractor_multi.py`(バイト単位で同一管理)の
+  `_has_nearby_duplicate`に、継手候補の文字列に「J」が挿入されただけで
+  それ以外の文字が並び替えで一致する場合も柱マーク混入とみなす判定を追加
+  (実例: `zPJ482`が柱マーク`P482z`から400mmの位置にあり、従来の完全一致・
+  部分一致の判定では検出できなかったケース)。`index.html`内の埋め込み
+  コードも同期。
 - 2026-09-15: 4点の改善を実施。
   (1) 結果テーブルのテキストを中央揃えに変更(長さ・重量列は右揃えのまま)。
   (2) 結果テーブルに罫線を追加(外枠は二重線、横線は細い実線、縦線は細い
