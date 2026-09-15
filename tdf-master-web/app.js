@@ -228,7 +228,6 @@ function renderTable(results) {
     const cols = [
       r._id, r['図番'] ?? '', r['製品マーク'] ?? '', r['設計符号'] ?? '', size,
       honsuRaw, lenStr, weightStr, r['左継手'] ?? '', r['右継手'] ?? '',
-      r['種別'] ?? '', r['製品段'] ?? '',
     ];
     const missingIdx = new Set([6, 8, 9]); // 長さ・左継手・右継手が空なら強調
     cols.forEach((v, ci) => {
@@ -243,12 +242,12 @@ function renderTable(results) {
 
 async function downloadExcel() {
   if (extractedResults.length === 0) return;
-  const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(t)', '左継手', '右継手', '種別', '製品段'];
+  const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(t)', '左継手', '右継手'];
   const rows = extractedResults.map(r => {
     const weightT = computeWeightT(r);
     return [
       r._id, kojiNo, r['図番'], r['製品マーク'], r['設計符号'], r['サイズ'], r['本数'],
-      r['長さ'], weightT == null ? '' : Number(weightT.toFixed(2)), r['左継手'], r['右継手'], r['種別'], r['製品段'],
+      r['長さ'], weightT == null ? '' : Number(weightT.toFixed(2)), r['左継手'], r['右継手'],
     ];
   });
   const excelRows = [headers, ...rows];
