@@ -92,22 +92,12 @@ function getKojiList() {
     .filter(([no]) => no !== '');
 }
 
-// 利用記録: 起動時に呼び出し(開始日時・梁種別を記録)
-// 戻り値: { row } (終了時に利用時間を書き込むために使用)
-function logUsageStart(beamType) {
+// 利用記録: 工場選択時に呼び出し(使用日時・工場を記録)。時間の記録は行わない。
+// 常に見出し行の直下(2行目)に挿入し、既存の記録は下にずらす(=2行目が常に最新)。
+function logUsageStart(factory) {
   const sheet = sheet_(SHEET_USAGE);
-  const now = new Date();
-  const nextRow = sheet.getLastRow() + 1;
-  sheet.getRange(nextRow, 1, 1, 2).setValues([[now, beamType || '']]);
-  return { row: nextRow };
-}
-
-// 利用記録: 終了時に呼び出し(利用時間を書き込む)
-function logUsageEnd(row, startMs, endMs) {
-  const sheet = sheet_(SHEET_USAGE);
-  const minutes = Math.round((endMs - startMs) / 60000);
-  const label = minutes < 1 ? '1分未満' : minutes + '分';
-  sheet.getRange(row, 3).setValue(label);
+  sheet.insertRowBefore(2);
+  sheet.getRange(2, 1, 1, 2).setValues([[new Date(), factory || '']]);
   return {};
 }
 
@@ -148,8 +138,7 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     if (body.action === "onExcelDownload") return ok_(onExcelDownload(body.kojiNo, body.productCount, body.rows));
-    if (body.action === "logUsageStart") return ok_(logUsageStart(body.beamType));
-    if (body.action === "logUsageEnd") return ok_(logUsageEnd(body.row, body.startMs, body.endMs));
+    if (body.action === "logUsageStart") return ok_(logUsageStart(body.factory));
     return errRes_("不明なaction: " + body.action);
   } catch (err) {
     return errRes_(err.message);
@@ -185,16 +174,15 @@ function setupSpreadsheet() {
     setSheet.setFrozenRows(1);
   }
 
+  // 利用記録シート: 使用日時・工場の2列(以前のバージョンの3列見出しが残っていても
+  // ここで上書きして揃える。データ行には触れない)。
   let logSheet = ss.getSheetByName(SHEET_USAGE);
   if (!logSheet) logSheet = ss.insertSheet(SHEET_USAGE);
-  if (logSheet.getLastRow() === 0) {
-    logSheet.getRange('A1:C1').setValues([['使用開始日時', '梁種別', '利用時間']]);
-    logSheet.getRange('A1:C1').setFontWeight('bold').setBackground('#d9e1f2');
-    logSheet.setFrozenRows(1);
-    logSheet.setColumnWidth(1, 160);
-    logSheet.setColumnWidth(2, 120);
-    logSheet.setColumnWidth(3, 100);
-  }
+  logSheet.getRange('A1:B1').setValues([['使用日時', '工場']]);
+  logSheet.getRange('A1:B1').setFontWeight('bold').setBackground('#d9e1f2');
+  logSheet.setFrozenRows(1);
+  logSheet.setColumnWidth(1, 160);
+  logSheet.setColumnWidth(2, 120);
 
   Logger.log('setupSpreadsheet 完了');
 }

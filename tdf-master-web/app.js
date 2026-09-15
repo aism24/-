@@ -7,8 +7,8 @@ let beamType = null;
 let kojiNo = '';
 let extractedResults = [];
 let currentFileName = '';
-let _usageRow = null;
-let _usageStartMs = null;
+
+const FACTORY_NAMES = { h: '本社', y: '夢前', t: '鳥取' };
 
 // ---------- GAS API共通 ----------
 // (URL未設定・GAS側の不調時もアプリ本来の抽出・Excel出力は止めない。
@@ -38,6 +38,13 @@ async function apiPost(action, payload) {
   return json.data;
 }
 
+function selectFactory(code) {
+  // 利用記録シートへ日時・工場のみ記録する(失敗してもアプリ利用は継続させる)。
+  apiPost('logUsageStart', { factory: FACTORY_NAMES[code] || code }).catch(() => {});
+  document.getElementById('factory-modal').classList.add('hidden');
+  document.getElementById('beam-modal').classList.remove('hidden');
+}
+
 function selectBeamType(type, btnEl) {
   beamType = type;
   document.querySelectorAll('.beam-btn').forEach(b => b.classList.remove('selected'));
@@ -55,23 +62,6 @@ async function startApp() {
   document.getElementById('beam-type-label').textContent =
     (beamType === 'small' ? '小梁(1B系)' : '大梁(1G系)') + ' / 工事番号: ' + kojiNo;
   await initPyodide();
-}
-
-function _initUsageLog() {
-  _usageStartMs = Date.now();
-  apiPost('logUsageStart', { beamType: beamType === 'small' ? '小梁' : '大梁' })
-    .then(r => { if (r && r.row != null) _usageRow = r.row; })
-    .catch(() => {});
-  window.addEventListener('beforeunload', () => {
-    // ページ離脱時はfetchが完了を待たずキャンセルされることがあるため、
-    // 確実に送信されるnavigator.sendBeaconを使う。
-    if (_usageRow != null && navigator.sendBeacon) {
-      const body = JSON.stringify({
-        action: 'logUsageEnd', row: _usageRow, startMs: _usageStartMs, endMs: Date.now(),
-      });
-      navigator.sendBeacon(GAS_API_URL, new Blob([body], { type: 'text/plain;charset=utf-8' }));
-    }
-  });
 }
 
 async function initPyodide() {
@@ -107,7 +97,6 @@ async function initPyodide() {
       }
     } catch (_) {}
 
-    _initUsageLog();
     hideStatus();
     showToast('準備完了 — TDFファイルを選択してください', 'success');
   } catch (e) {
