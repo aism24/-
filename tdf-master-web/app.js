@@ -3,7 +3,7 @@ const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxyGKGdIUONX9-kvs-m
 
 let pyodide = null;
 let weightMap = {};
-let beamType = null;
+const beamType = 'small'; // 小梁(1B系)専用アプリのため固定
 let kojiNo = '';
 let extractedResults = [];
 
@@ -40,34 +40,28 @@ async function apiPost(action, payload) {
 function selectFactory(code) {
   // 利用記録シートへ日時・工場のみ記録する(失敗してもアプリ利用は継続させる)。
   apiPost('logUsageStart', { factory: FACTORY_NAMES[code] || code }).catch(() => {});
-  // 工事名選択肢・重量表はアプリを開いた時点(loadMasterData()参照)で先読み済みのため、
-  // ここでは呼び出さない。工場選択→梁種別選択の間には既にプルダウンへ反映されている。
+  // 工事名選択肢・重量表は起動時(読込中表示中)に取得済みのため、ここでは
+  // 呼び出さない。前回選択した工事名も既にプルダウンへ復元済み。
   document.getElementById('factory-modal').classList.add('hidden');
   document.getElementById('beam-modal').classList.remove('hidden');
-}
-
-function selectBeamType(type, btnEl) {
-  beamType = type;
-  document.querySelectorAll('.beam-btn').forEach(b => b.classList.remove('selected'));
-  btnEl.classList.add('selected');
-  updateStartBtn();
 }
 
 const KOJI_STORAGE_KEY = 'tdf_master_web_last_koji';
 
 function updateStartBtn() {
   kojiNo = document.getElementById('koji-select').value;
-  document.getElementById('beam-start-btn').disabled = !(beamType && kojiNo);
+  document.getElementById('beam-start-btn').disabled = !kojiNo;
   if (kojiNo) {
     try { localStorage.setItem(KOJI_STORAGE_KEY, kojiNo); } catch (_) {}
   }
 }
 
-// 設定シートの重量表・工事名一覧は、アプリを開いた直後(工場選択モーダルが
-// 表示されている間、Pyodideの起動も待たずに)先読みしておく。こうすることで
-// 「工場選択→梁種別選択」と進む一連の操作の間にAPI応答が完了し、工事名
-// プルダウンや前回選択の復元が体感的に即座に反映される。2つのAPI呼び出しは
-// 互いに依存しないので並列実行し、直列実行した場合に比べて待ち時間を短縮する。
+// 設定シートの重量表・工事名一覧は、アプリ起動直後(工場選択モーダルを
+// 表示する前、Pyodideの起動も待たずに)取得する。取得完了(前回選択した
+// 工事名の復元含む)まで「読込中」を表示し、完了後に工場選択モーダルを
+// 表示することで、工場選択の時点で工事名プルダウンが既に使える状態に
+// する。2つのAPI呼び出しは互いに依存しないので並列実行し、直列実行した
+// 場合に比べて待ち時間を短縮する。
 async function loadMasterData() {
   const [weightResult, kojiResult] = await Promise.allSettled([
     apiGet('getWeightTable'),
@@ -339,7 +333,7 @@ async function downloadExcel() {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '製品情報');
   const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
-  const baseName = (kojiNo || 'TDF') + '_' + (beamType === 'small' ? '小梁' : '大梁');
+  const baseName = (kojiNo || 'TDF') + '_小梁';
   XLSX.writeFile(wb, baseName + '_' + ts + '.xlsx');
 
   try {
@@ -394,5 +388,11 @@ document.body.addEventListener('drop', e => {
   if (pyodide && e.dataTransfer.files.length) processFiles(e.dataTransfer.files);
 });
 
-// アプリを開いた直後(工場選択モーダル表示中)に工事名選択肢・重量表を先読みする。
-loadMasterData();
+// アプリ起動直後は「読込中」を表示し、工事名選択肢・重量表の取得(前回選択
+// した工事名の復元含む)が完了してから工場選択モーダルを表示する。
+(async () => {
+  showStatus('読込中', '工事情報を取得しています…');
+  await loadMasterData();
+  hideStatus();
+  document.getElementById('factory-modal').classList.remove('hidden');
+})();
