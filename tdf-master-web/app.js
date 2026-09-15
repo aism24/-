@@ -95,8 +95,7 @@ async function loadMasterData() {
 async function startApp() {
   document.getElementById('beam-modal').classList.add('hidden');
   const kojiName = document.getElementById('koji-select').selectedOptions[0]?.textContent || kojiNo;
-  document.getElementById('beam-type-label').textContent =
-    (beamType === 'small' ? '小梁(1B系)' : '大梁(1G系)') + ' / 工事名: ' + kojiName;
+  document.getElementById('beam-type-label').textContent = kojiNo + '＿' + kojiName;
   await initPyodide();
 }
 
@@ -188,23 +187,23 @@ async function processFiles(files) {
   }
 }
 
-// 重量(kg)を求める。TDFファイル自身に重量セルがあればそれを数値化して使い
-// (「N.Nkg」形式のテキストからkgを取り除く)、無ければ設定シートの重量表
-// (サイズ→kg/m)×長さ(m)×本数で概算する。長さは既にPython側でm単位に
-// 変換済みなので、ここでの単位変換(/1000等)は不要。
-function computeWeightKg(r) {
+// 重量(t)を求める。TDFファイル自身に重量セル(kg)があればそれをt換算して使い
+// (「N.Nkg」形式のテキストからkgを取り除いてt換算)、無ければ設定シートの
+// 重量表(サイズ→kg/m)×長さ(m)×本数をt換算して概算する。長さは既にPython側で
+// m単位に変換済みなので、ここでの長さの単位変換は不要。
+function computeWeightT(r) {
   const size = r['サイズ'] ?? '';
   const honsu = parseInt(r['本数'] ?? 1) || 1;
   const lenM = parseFloat(r['長さ']);
   const rawWeight = r['重量'];
   if (rawWeight) {
     const n = parseFloat(String(rawWeight).replace(/kg$/i, ''));
-    if (!isNaN(n)) return { value: n, estimated: false };
+    if (!isNaN(n)) return n / 1000;
   }
   if (!isNaN(lenM) && weightMap[size] != null) {
-    return { value: weightMap[size] * lenM * honsu, estimated: true };
+    return (weightMap[size] * lenM * honsu) / 1000;
   }
-  return { value: null, estimated: false };
+  return null;
 }
 
 function renderTable(results) {
@@ -219,8 +218,8 @@ function renderTable(results) {
     const honsuRaw = r['本数'] ?? '';
     const lenRaw = r['長さ'];
     const lenStr = (lenRaw === null || lenRaw === undefined) ? '' : lenRaw;
-    const weight = computeWeightKg(r);
-    const weightStr = weight.value == null ? '' : weight.value.toFixed(2) + 'kg' + (weight.estimated ? '(概算)' : '');
+    const weightT = computeWeightT(r);
+    const weightStr = weightT == null ? '' : weightT.toFixed(2);
 
     const isDupMark = r['製品マーク'] && markCounts[r['製品マーク']] > 1;
     const tr = document.createElement('tr');
@@ -244,12 +243,12 @@ function renderTable(results) {
 
 async function downloadExcel() {
   if (extractedResults.length === 0) return;
-  const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(kg)', '左継手', '右継手', '種別', '製品段'];
+  const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(t)', '左継手', '右継手', '種別', '製品段'];
   const rows = extractedResults.map(r => {
-    const weight = computeWeightKg(r);
+    const weightT = computeWeightT(r);
     return [
       r._id, kojiNo, r['図番'], r['製品マーク'], r['設計符号'], r['サイズ'], r['本数'],
-      r['長さ'], weight.value == null ? '' : Number(weight.value.toFixed(2)), r['左継手'], r['右継手'], r['種別'], r['製品段'],
+      r['長さ'], weightT == null ? '' : Number(weightT.toFixed(2)), r['左継手'], r['右継手'], r['種別'], r['製品段'],
     ];
   });
   const excelRows = [headers, ...rows];
