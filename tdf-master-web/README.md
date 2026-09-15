@@ -129,6 +129,17 @@ tdf-master-web/
 
 ## 6. 更新履歴
 
+- 2026-09-15: `masamizsumi-dotcom/tdf-master-extract`の上流修正
+  ([Fix column-mark exclusion and add deletion-mark filtering to large beam](https://github.com/masamizsumi-dotcom/tdf-master-extract/commit/97694d12ca01c364d1d5e1ec067993ca3ab15f0e))
+  を反映。`scripts/tdf_master_extractor_multi.py`(小梁側、バイト単位で同一
+  管理)を差分同期で更新し、柱マーク除外(`_has_nearby_duplicate`)が1文字の
+  断面記号("A"/"B"等)に誤反応しないよう修正、かつ製品長さ2000mm未満では
+  この除外自体を適用しないよう変更。`scripts/tdf_app.py`(大梁側の同種ロジック
+  ・`_has_nearby_duplicate`/`_assign_joints_batch_large`・小梁側は
+  `exm.assign_joints_batch`を直接呼ぶため自動反映)にも同じ修正を移植し、
+  あわせて大梁側の抽出でも削除マーク(×印)の行を除外する
+  `exm.filter_deleted_rows`呼び出しを追加(従来小梁側のみ呼んでいた抜け漏れ
+  を解消)。index.html内の埋め込みコードも同期済み。
 - 2026-09-15: 梁種別選択モーダルの「1詳細：1製品」「1詳細：複数製品」ボタンに、
   ホバー(1.5倍拡大)時、それぞれの図面例(大梁1本1台の例／小梁1詳細に複数台の例)
   をポップアップ表示するようにした。図面画像は`tdf-master-web/assets/`配下に
