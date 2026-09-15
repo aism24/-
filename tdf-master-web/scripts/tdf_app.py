@@ -21,7 +21,7 @@ import tdf_master_extractor_multi as exm
 
 HEADERS = [
     "ID", "図番", "製品マーク", "設計符号", "サイズ", "本数",
-    "長さ", "重量", "左継手", "右継手", "種別", "製品段",
+    "長さ(m)", "重量", "左継手", "右継手", "種別", "製品段",
 ]
 
 _AXIS_TOLERANCE_DEG = 2.0
@@ -231,9 +231,12 @@ def _extract_large_beam(tdf: tb.TdfData) -> list[dict]:
         left, right = joints.get(id(row), (None, None))
         if length_value is None:
             left = right = None
+        # 記録はm単位(内部の判定ロジックはmm前提のまま、出力直前だけ変換)。
+        # masamizsumi-dotcom/tdf-master-extract の同種の変更に合わせたもの。
+        length_value_m = None if length_value is None else length_value / 1000.0
         out.append({
             "図番": drawing_number, "製品マーク": row.mark, "設計符号": row.design_code,
-            "サイズ": row.size, "本数": row.count, "長さ": length_value, "重量": row.weight,
+            "サイズ": row.size, "本数": row.count, "長さ": length_value_m, "重量": row.weight,
             "左継手": left, "右継手": right, "種別": beam_types[id(row)], "製品段": tier_label,
         })
     return out
@@ -319,9 +322,12 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
         left, right = joints.get(id(row), (None, None))
         if length_value is None:
             left = right = None
+        # 記録はm単位(内部の判定ロジックはmm前提のまま、出力直前だけ変換)。
+        # masamizsumi-dotcom/tdf-master-extract の同種の変更に合わせたもの。
+        length_value_m = None if length_value is None else length_value / 1000.0
         out.append({
             "図番": drawing_number, "製品マーク": row.mark, "設計符号": row.design_code,
-            "サイズ": row.size, "本数": row.count, "長さ": length_value, "重量": row.weight,
+            "サイズ": row.size, "本数": row.count, "長さ": length_value_m, "重量": row.weight,
             "左継手": left, "右継手": right, "種別": beam_types[id(row)], "製品段": tier_label,
         })
     return out
