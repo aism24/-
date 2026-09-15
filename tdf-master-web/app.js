@@ -6,7 +6,6 @@ let weightMap = {};
 let beamType = null;
 let kojiNo = '';
 let extractedResults = [];
-let currentFileName = '';
 
 const FACTORY_NAMES = { h: '本社', y: '夢前', t: '鳥取' };
 
@@ -65,15 +64,21 @@ function updateStartBtn() {
 
 // 設定シートの重量表・工事名一覧は、Pyodideの起動を待たずに(工場選択画面が
 // 出た時点で)先読みしておく。工事名の選択肢は梁種別選択画面で即使えるように
-// する必要があるため。
+// する必要があるため。2つのAPI呼び出しは互いに依存しないので並列実行し、
+// 直列実行した場合に比べて待ち時間を短縮する。
 async function loadMasterData() {
-  try {
-    const data = await apiGet('getWeightTable');
-    if (data && data.length > 0) weightMap = Object.fromEntries(data);
-  } catch (_) {}
+  const [weightResult, kojiResult] = await Promise.allSettled([
+    apiGet('getWeightTable'),
+    apiGet('getKojiList'),
+  ]);
 
-  try {
-    const kojiList = await apiGet('getKojiList');
+  if (weightResult.status === 'fulfilled') {
+    const data = weightResult.value;
+    if (data && data.length > 0) weightMap = Object.fromEntries(data);
+  }
+
+  if (kojiResult.status === 'fulfilled') {
+    const kojiList = kojiResult.value;
     const sel = document.getElementById('koji-select');
     if (kojiList && kojiList.length > 0) {
       kojiList.forEach(([no, name]) => {
@@ -89,7 +94,7 @@ async function loadMasterData() {
       sel.value = lastKoji;
       updateStartBtn();
     }
-  } catch (_) {}
+  }
 }
 
 async function startApp() {
@@ -162,7 +167,6 @@ async function processFiles(files) {
   }
 
   document.getElementById('btn-reset').disabled = false;
-  currentFileName = tdfFiles.length === 1 ? tdfFiles[0].name : tdfFiles[0].name + ' 他' + (tdfFiles.length - 1) + 'ファイル';
 
   extractedResults.sort((a, b) => {
     const cmp = (key) => String(a[key] ?? '').localeCompare(String(b[key] ?? ''), 'ja', { numeric: true });
