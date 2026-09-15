@@ -132,6 +132,9 @@ tdf-master-web/
 
 ## 6. 更新履歴
 
+- 2026-09-15: フォルダパス入力ポップアップの「クリップボードから貼り付け」
+  ボタンを、背景ピンク色でゆっくり点滅させるように変更(気付きやすくする
+  ための視覚的な強調)。
 - 2026-09-15: `masamizsumi-dotcom/tdf-master-extract`の上流修正
   ([Fix column-mark exclusion to catch J-inserted anagrams](https://github.com/masamizsumi-dotcom/tdf-master-extract/commit/3340d3a9b3c2808a605ea2d0659a6e940177a756))
   を反映。`scripts/tdf_master_extractor_multi.py`(バイト単位で同一管理)の
