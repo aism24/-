@@ -41,6 +41,7 @@ async function apiPost(action, payload) {
 function selectFactory(code) {
   // 利用記録シートへ日時・工場のみ記録する(失敗してもアプリ利用は継続させる)。
   apiPost('logUsageStart', { factory: FACTORY_NAMES[code] || code }).catch(() => {});
+  loadMasterData(); // 工事名選択肢・重量表を先読み(Pyodideの起動を待たない)
   document.getElementById('factory-modal').classList.add('hidden');
   document.getElementById('beam-modal').classList.remove('hidden');
 }
@@ -52,15 +53,50 @@ function selectBeamType(type, btnEl) {
   updateStartBtn();
 }
 
+const KOJI_STORAGE_KEY = 'tdf_master_web_last_koji';
+
 function updateStartBtn() {
-  kojiNo = document.getElementById('koji-input').value.trim();
+  kojiNo = document.getElementById('koji-select').value;
   document.getElementById('beam-start-btn').disabled = !(beamType && kojiNo);
+  if (kojiNo) {
+    try { localStorage.setItem(KOJI_STORAGE_KEY, kojiNo); } catch (_) {}
+  }
+}
+
+// 設定シートの重量表・工事名一覧は、Pyodideの起動を待たずに(工場選択画面が
+// 出た時点で)先読みしておく。工事名の選択肢は梁種別選択画面で即使えるように
+// する必要があるため。
+async function loadMasterData() {
+  try {
+    const data = await apiGet('getWeightTable');
+    if (data && data.length > 0) weightMap = Object.fromEntries(data);
+  } catch (_) {}
+
+  try {
+    const kojiList = await apiGet('getKojiList');
+    const sel = document.getElementById('koji-select');
+    if (kojiList && kojiList.length > 0) {
+      kojiList.forEach(([no, name]) => {
+        const opt = document.createElement('option');
+        opt.value = no; opt.textContent = name || no;
+        sel.appendChild(opt);
+      });
+    }
+    // 初回は空欄のまま、2回目以降は前回選んだ工事名を記憶して自動選択する。
+    let lastKoji = null;
+    try { lastKoji = localStorage.getItem(KOJI_STORAGE_KEY); } catch (_) {}
+    if (lastKoji && [...sel.options].some(o => o.value === lastKoji)) {
+      sel.value = lastKoji;
+      updateStartBtn();
+    }
+  } catch (_) {}
 }
 
 async function startApp() {
   document.getElementById('beam-modal').classList.add('hidden');
+  const kojiName = document.getElementById('koji-select').selectedOptions[0]?.textContent || kojiNo;
   document.getElementById('beam-type-label').textContent =
-    (beamType === 'small' ? '小梁(1B系)' : '大梁(1G系)') + ' / 工事番号: ' + kojiNo;
+    (beamType === 'small' ? '小梁(1B系)' : '大梁(1G系)') + ' / 工事名: ' + kojiName;
   await initPyodide();
 }
 
@@ -79,23 +115,6 @@ async function initPyodide() {
       pyodide.FS.writeFile(path, document.getElementById(elId).textContent);
     }
     await pyodide.runPythonAsync("import sys\nsys.path.insert(0, '/scripts')\nimport tdf_app");
-
-    try {
-      const data = await apiGet('getWeightTable');
-      if (data && data.length > 0) weightMap = Object.fromEntries(data);
-    } catch (_) {}
-
-    try {
-      const kojiList = await apiGet('getKojiList');
-      if (kojiList && kojiList.length > 0) {
-        const dl = document.getElementById('koji-list');
-        kojiList.forEach(([no, name]) => {
-          const opt = document.createElement('option');
-          opt.value = no; opt.label = name || '';
-          dl.appendChild(opt);
-        });
-      }
-    } catch (_) {}
 
     hideStatus();
     showToast('準備完了 — TDFファイルを選択してください', 'success');

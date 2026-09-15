@@ -108,8 +108,19 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 .beam-btn.selected { border-color: #1a73e8; background: #1a73e8; color: #fff; }
 #koji-field { text-align: left; margin-top: 4px; }
 #koji-field label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
-#koji-field input {
+.koji-warn-red {
+  color: #c0392b; font-weight: bold; font-size: 12px;
+  animation: koji-warn-blink 3s ease-in-out infinite;
+}
+@keyframes koji-warn-blink {
+  0%   { opacity: 1; }
+  80%  { opacity: 1; }
+  90%  { opacity: 0; }
+  100% { opacity: 1; }
+}
+#koji-field select {
   width: 100%; padding: 9px 10px; font-size: 14px; border: 1px solid #bbb; border-radius: 6px;
+  background: #fff; cursor: pointer;
 }
 #beam-start-btn {
   margin-top: 20px; width: 100%; padding: 12px; font-size: 15px; font-weight: bold;
