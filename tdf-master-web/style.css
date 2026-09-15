@@ -81,6 +81,10 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 .factory-btn.yumesaki { background: #e67e22; box-shadow: 0 3px 10px rgba(230,126,34,0.35); }
 .factory-btn.tottori { background: #27ae60; box-shadow: 0 3px 10px rgba(39,174,96,0.35); }
 .factory-btn.selected { border-color: #222; box-shadow: 0 0 0 3px rgba(0,0,0,0.18), 0 3px 10px rgba(26,115,232,0.35); }
+#factory-btns.has-selection .factory-btn:not(.selected) { filter: grayscale(1); opacity: .5; }
+#factory-btns.has-selection .factory-btn:not(.selected):hover {
+  transform: none; box-shadow: 0 3px 10px rgba(0,0,0,0.2); border-color: transparent;
+}
 #beam-box {
   background: #fff; border-radius: 14px; padding: 36px 40px; width: 92%; max-width: 480px;
   box-shadow: 0 12px 40px rgba(0,0,0,.35); text-align: center;
