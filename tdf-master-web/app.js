@@ -180,6 +180,25 @@ async function processFiles(files) {
   }
 }
 
+// 重量(kg)を求める。TDFファイル自身に重量セルがあればそれを数値化して使い
+// (「N.Nkg」形式のテキストからkgを取り除く)、無ければ設定シートの重量表
+// (サイズ→kg/m)×長さ(m)×本数で概算する。長さは既にPython側でm単位に
+// 変換済みなので、ここでの単位変換(/1000等)は不要。
+function computeWeightKg(r) {
+  const size = r['サイズ'] ?? '';
+  const honsu = parseInt(r['本数'] ?? 1) || 1;
+  const lenM = parseFloat(r['長さ']);
+  const rawWeight = r['重量'];
+  if (rawWeight) {
+    const n = parseFloat(String(rawWeight).replace(/kg$/i, ''));
+    if (!isNaN(n)) return { value: n, estimated: false };
+  }
+  if (!isNaN(lenM) && weightMap[size] != null) {
+    return { value: weightMap[size] * lenM * honsu, estimated: true };
+  }
+  return { value: null, estimated: false };
+}
+
 function renderTable(results) {
   const tbody = document.getElementById('result-tbody');
   tbody.innerHTML = '';
@@ -190,13 +209,10 @@ function renderTable(results) {
   results.forEach(r => {
     const size = r['サイズ'] ?? '';
     const honsuRaw = r['本数'] ?? '';
-    const honsu = parseInt(honsuRaw) || 1;
     const lenRaw = r['長さ'];
     const lenStr = (lenRaw === null || lenRaw === undefined) ? '' : lenRaw;
-    let weightStr = r['重量'] ?? '';
-    if (!weightStr && lenRaw != null && weightMap[size] != null) {
-      weightStr = (weightMap[size] * (parseFloat(lenRaw) / 1000) * honsu).toFixed(2) + 'kg(概算)';
-    }
+    const weight = computeWeightKg(r);
+    const weightStr = weight.value == null ? '' : weight.value.toFixed(2) + 'kg' + (weight.estimated ? '(概算)' : '');
 
     const isDupMark = r['製品マーク'] && markCounts[r['製品マーク']] > 1;
     const tr = document.createElement('tr');
@@ -220,11 +236,14 @@ function renderTable(results) {
 
 async function downloadExcel() {
   if (extractedResults.length === 0) return;
-  const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ', '重量', '左継手', '右継手', '種別', '製品段'];
-  const rows = extractedResults.map(r => [
-    r._id, kojiNo, r['図番'], r['製品マーク'], r['設計符号'], r['サイズ'], r['本数'],
-    r['長さ'], r['重量'], r['左継手'], r['右継手'], r['種別'], r['製品段'],
-  ]);
+  const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(kg)', '左継手', '右継手', '種別', '製品段'];
+  const rows = extractedResults.map(r => {
+    const weight = computeWeightKg(r);
+    return [
+      r._id, kojiNo, r['図番'], r['製品マーク'], r['設計符号'], r['サイズ'], r['本数'],
+      r['長さ'], weight.value == null ? '' : Number(weight.value.toFixed(2)), r['左継手'], r['右継手'], r['種別'], r['製品段'],
+    ];
+  });
   const excelRows = [headers, ...rows];
 
   const ws = XLSX.utils.aoa_to_sheet(excelRows);

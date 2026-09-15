@@ -122,6 +122,12 @@ tdf-master-web/
 
 ## 6. 更新履歴
 
+- 2026-09-15: 「長さ」の出力単位をmm→mに変更(`tdf-master-extract`側の
+  [Record 長さ in meters instead of millimeters](https://github.com/masamizsumi-dotcom/tdf-master-extract/commit/f62ce769cc77add4f92ef59a5bda869e6c2dc517)
+  に追従、`scripts/tdf_app.py`の出力直前のみ変換。内部の判定ロジックはmm前提のまま)。
+  あわせて重量表示・Excel出力のロジックを`computeWeightKg()`に共通化し、TDF自身に重量が
+  無い行でも設定シートの重量表(サイズ→kg/m)による概算値がExcelにも反映されるよう修正
+  (従来は画面表示のみ反映され、Excel出力には反映されていなかった)。
 - 2026-09-15: GAS単体構成(`doGet`がHTMLを返す)から、GAS×GitHub Pages分離構成
   (GASはJSON APIのみ、フロントエンドはGitHub Pagesで配信)に変更。
 - 2026-09-15: `tdf-master-extract`側の大梁(1G系)継手判定ロジック更新
