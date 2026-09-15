@@ -414,8 +414,12 @@ async function downloadExcel() {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '製品情報');
   const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
-  const baseName = (kojiNo || 'TDF') + '_小梁';
-  const filename = baseName + '_' + ts + '.xlsx';
+  // ファイル名は「工事番号_図番(枝番を除く)_日時」とする。枝番は図番末尾の
+  // 「-数字」または「-数字+英数字」(例: -11 / -11A)なので、それを取り除いた
+  // 部分を使う。複数図番が含まれる場合は先頭行の図番を代表として使う。
+  const firstZuban = extractedResults[0] ? extractedResults[0]['図番'] : '';
+  const zubanPrefix = String(firstZuban || '').replace(/-\d+[A-Za-z0-9]*$/, '') || 'TDF';
+  const filename = (kojiNo || 'TDF') + '_' + zubanPrefix + '_' + ts + '.xlsx';
 
   if (hyperlinkRefs.length > 0) {
     try {
