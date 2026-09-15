@@ -4,6 +4,7 @@ const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxyGKGdIUONX9-kvs-m
 let pyodide = null;
 let weightMap = {};
 let kojiNo = '';
+let selectedFactory = null;
 let extractedResults = [];
 
 const FACTORY_NAMES = { h: '本社', y: '夢前', t: '鳥取' };
@@ -37,30 +38,29 @@ async function apiPost(action, payload) {
 }
 
 function selectFactory(code) {
-  // 利用記録シートへ日時・工場のみ記録する(失敗してもアプリ利用は継続させる)。
-  apiPost('logUsageStart', { factory: FACTORY_NAMES[code] || code }).catch(() => {});
-  // 工事名選択肢・重量表は起動時(読込中表示中)に取得済みのため、ここでは
-  // 呼び出さない。前回選択した工事名も既にプルダウンへ復元済み。
-  document.getElementById('factory-modal').classList.add('hidden');
-  document.getElementById('beam-modal').classList.remove('hidden');
+  selectedFactory = code;
+  document.querySelectorAll('.factory-btn').forEach(btn => {
+    btn.classList.toggle('selected', btn.dataset.factory === code);
+  });
+  updateStartBtn();
 }
 
 const KOJI_STORAGE_KEY = 'tdf_master_web_last_koji';
 
 function updateStartBtn() {
   kojiNo = document.getElementById('koji-select').value;
-  document.getElementById('beam-start-btn').disabled = !kojiNo;
+  document.getElementById('beam-start-btn').disabled = !(selectedFactory && kojiNo);
   if (kojiNo) {
     try { localStorage.setItem(KOJI_STORAGE_KEY, kojiNo); } catch (_) {}
   }
 }
 
-// 設定シートの重量表・工事名一覧は、アプリ起動直後(工場選択モーダルを
-// 表示する前、Pyodideの起動も待たずに)取得する。取得完了(前回選択した
-// 工事名の復元含む)まで「読込中」を表示し、完了後に工場選択モーダルを
-// 表示することで、工場選択の時点で工事名プルダウンが既に使える状態に
-// する。2つのAPI呼び出しは互いに依存しないので並列実行し、直列実行した
-// 場合に比べて待ち時間を短縮する。
+// 設定シートの重量表・工事名一覧は、アプリ起動直後(工場・工事名選択
+// モーダルを表示する前、Pyodideの起動も待たずに)取得する。取得完了
+// (前回選択した工事名の復元含む)まで「読込中」を表示し、完了後に
+// モーダルを表示することで、工場・工事名を選択できる時点で工事名
+// プルダウンが既に使える状態にする。2つのAPI呼び出しは互いに依存
+// しないので並列実行し、直列実行した場合に比べて待ち時間を短縮する。
 async function loadMasterData() {
   const [weightResult, kojiResult] = await Promise.allSettled([
     apiGet('getWeightTable'),
@@ -93,6 +93,8 @@ async function loadMasterData() {
 }
 
 async function startApp() {
+  // 利用記録シートへ日時・工場のみ記録する(失敗してもアプリ利用は継続させる)。
+  apiPost('logUsageStart', { factory: FACTORY_NAMES[selectedFactory] || selectedFactory }).catch(() => {});
   document.getElementById('beam-modal').classList.add('hidden');
   const kojiName = document.getElementById('koji-select').selectedOptions[0]?.textContent || kojiNo;
   document.getElementById('beam-type-label').textContent = kojiNo + '＿' + kojiName;
@@ -388,10 +390,10 @@ document.body.addEventListener('drop', e => {
 });
 
 // アプリ起動直後は「読込中」を表示し、工事名選択肢・重量表の取得(前回選択
-// した工事名の復元含む)が完了してから工場選択モーダルを表示する。
+// した工事名の復元含む)が完了してから工場・工事名選択モーダルを表示する。
 (async () => {
   showStatus('読込中', '工事情報を取得しています…');
   await loadMasterData();
   hideStatus();
-  document.getElementById('factory-modal').classList.remove('hidden');
+  document.getElementById('beam-modal').classList.remove('hidden');
 })();
