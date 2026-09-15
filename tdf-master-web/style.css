@@ -158,6 +158,26 @@ table#result-table tbody tr:hover { background: #f7fbff; }
 #status-box .msg { font-size: 15px; font-weight: bold; margin-bottom: 6px; }
 #status-box .sub { font-size: 12px; color: #666; }
 
+/* 図面フォルダの絶対パス入力(Excelダウンロード時、図番へのハイパーリンク用)。
+   前回値は記憶しない(案件ごとにフォルダが変わるため、毎回貼り付けてもらう運用)。 */
+#basepath-overlay {
+  display: none; position: fixed; inset: 0; z-index: 5500;
+  background: rgba(20,30,40,0.55); align-items: center; justify-content: center;
+}
+#basepath-overlay.open { display: flex; }
+#basepath-box {
+  background: #fff; border-radius: 12px; padding: 28px 32px; width: 92%; max-width: 480px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.35);
+}
+.basepath-label { font-size: 15px; font-weight: bold; margin-bottom: 10px; }
+.basepath-hint { font-size: 12px; color: #666; line-height: 1.6; margin-bottom: 12px; }
+#basepath-textarea {
+  width: 100%; min-height: 64px; padding: 8px 10px; font-size: 13px;
+  border: 1px solid #bbb; border-radius: 6px; resize: vertical; font-family: inherit;
+}
+#basepath-textarea:focus { outline: 2px solid #1a73e8; outline-offset: 1px; }
+.basepath-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+
 #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 6000; }
 .toast-item {
   background: #333; color: #fff; padding: 10px 20px; border-radius: 6px; font-size: 13px;
