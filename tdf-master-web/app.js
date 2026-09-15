@@ -40,7 +40,8 @@ async function apiPost(action, payload) {
 function selectFactory(code) {
   // 利用記録シートへ日時・工場のみ記録する(失敗してもアプリ利用は継続させる)。
   apiPost('logUsageStart', { factory: FACTORY_NAMES[code] || code }).catch(() => {});
-  loadMasterData(); // 工事名選択肢・重量表を先読み(Pyodideの起動を待たない)
+  // 工事名選択肢・重量表はアプリを開いた時点(loadMasterData()参照)で先読み済みのため、
+  // ここでは呼び出さない。工場選択→梁種別選択の間には既にプルダウンへ反映されている。
   document.getElementById('factory-modal').classList.add('hidden');
   document.getElementById('beam-modal').classList.remove('hidden');
 }
@@ -62,10 +63,11 @@ function updateStartBtn() {
   }
 }
 
-// 設定シートの重量表・工事名一覧は、Pyodideの起動を待たずに(工場選択画面が
-// 出た時点で)先読みしておく。工事名の選択肢は梁種別選択画面で即使えるように
-// する必要があるため。2つのAPI呼び出しは互いに依存しないので並列実行し、
-// 直列実行した場合に比べて待ち時間を短縮する。
+// 設定シートの重量表・工事名一覧は、アプリを開いた直後(工場選択モーダルが
+// 表示されている間、Pyodideの起動も待たずに)先読みしておく。こうすることで
+// 「工場選択→梁種別選択」と進む一連の操作の間にAPI応答が完了し、工事名
+// プルダウンや前回選択の復元が体感的に即座に反映される。2つのAPI呼び出しは
+// 互いに依存しないので並列実行し、直列実行した場合に比べて待ち時間を短縮する。
 async function loadMasterData() {
   const [weightResult, kojiResult] = await Promise.allSettled([
     apiGet('getWeightTable'),
@@ -322,3 +324,6 @@ document.getElementById('file-input').addEventListener('change', e => {
 document.body.addEventListener('drop', e => {
   if (pyodide && e.dataTransfer.files.length) processFiles(e.dataTransfer.files);
 });
+
+// アプリを開いた直後(工場選択モーダル表示中)に工事名選択肢・重量表を先読みする。
+loadMasterData();
