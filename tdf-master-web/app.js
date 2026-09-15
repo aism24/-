@@ -42,6 +42,8 @@ function selectFactory(code) {
   document.querySelectorAll('.factory-btn').forEach(btn => {
     btn.classList.toggle('selected', btn.dataset.factory === code);
   });
+  // 選択された工場以外はグレーアウトする(押し直せば選択し直せる)。
+  document.getElementById('factory-btns').classList.add('has-selection');
   updateStartBtn();
 }
 
@@ -307,6 +309,68 @@ function askBasePath() {
   });
 }
 
+// 各列の最大文字幅(全角文字は2、半角文字は1として概算)から、Excelの列幅を
+// オートフィットに近い形で求める。SheetJSコミュニティ版は列幅の指定
+// (`!cols`)には対応しているため、追加ライブラリなしで実現できる。
+function computeColWidths(aoaRows) {
+  const colCount = aoaRows[0].length;
+  const widths = new Array(colCount).fill(0);
+  aoaRows.forEach(row => {
+    row.forEach((cell, ci) => {
+      const s = cell === null || cell === undefined ? '' : String(cell);
+      let w = 0;
+      for (const ch of s) w += /[^\x00-\xff]/.test(ch) ? 2 : 1;
+      if (w > widths[ci]) widths[ci] = w;
+    });
+  });
+  return widths.map(w => ({ wch: Math.min(Math.max(w + 2, 6), 60) }));
+}
+
+// ハイパーリンクを付与したセルへ、Excel標準のハイパーリンク書式(青太字・
+// 下線)を適用する。SheetJSコミュニティ版はcell.sによる書式書き込みに
+// 対応していない(書式書き込みは有償のPro版のみ)ため、生成されたxlsx
+// (実体はzip)をJSZipで開き、styles.xmlへ新しいフォント定義とセル書式を
+// 追加、対象セルのs属性を差し替える形で実現する。
+async function applyHyperlinkStyle(wb, hyperlinkRefs) {
+  const arrayBuf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+  const zip = await JSZip.loadAsync(arrayBuf);
+
+  let stylesXml = await zip.file('xl/styles.xml').async('string');
+  const fontCount = parseInt(stylesXml.match(/<fonts count="(\d+)">/)[1], 10);
+  const newFontId = fontCount;
+  stylesXml = stylesXml
+    .replace(/<fonts count="(\d+)">/, `<fonts count="${fontCount + 1}">`)
+    .replace('</fonts>', '<font><u/><b/><sz val="11"/><color rgb="FF0000FF"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font></fonts>');
+
+  const xfCount = parseInt(stylesXml.match(/<cellXfs count="(\d+)">/)[1], 10);
+  const newXfId = xfCount;
+  stylesXml = stylesXml
+    .replace(/<cellXfs count="(\d+)">/, `<cellXfs count="${xfCount + 1}">`)
+    .replace('</cellXfs>', `<xf numFmtId="0" fontId="${newFontId}" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>`);
+  zip.file('xl/styles.xml', stylesXml);
+
+  const refSet = new Set(hyperlinkRefs);
+  let sheetXml = await zip.file('xl/worksheets/sheet1.xml').async('string');
+  sheetXml = sheetXml.replace(/<c r="([A-Z]+\d+)"([^>]*?)(\/?)>/g, (m, ref, attrs, selfClose) => {
+    if (!refSet.has(ref)) return m;
+    const cleanedAttrs = attrs.replace(/\ss="\d+"/, '');
+    return `<c r="${ref}"${cleanedAttrs} s="${newXfId}"${selfClose}>`;
+  });
+  zip.file('xl/worksheets/sheet1.xml', sheetXml);
+
+  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 async function downloadExcel() {
   if (extractedResults.length === 0) return;
   const basePath = await askBasePath();
@@ -324,6 +388,7 @@ async function downloadExcel() {
   const excelRows = [headers, ...rows];
 
   const ws = XLSX.utils.aoa_to_sheet(excelRows);
+  ws['!cols'] = computeColWidths(excelRows);
   // セルの値は丸めない実数値のまま、表示形式(セル書式)だけ小数2桁にする
   // (Excel上で参照・計算する際に元の精度が失われないようにするため)。
   rows.forEach((_row, i) => {
@@ -334,19 +399,35 @@ async function downloadExcel() {
   // 図面フォルダの絶対パスが入力されていれば、図番セルに元TDFファイルへの
   // ハイパーリンクを付与する(そのファイル名は抽出時点で既に判明しているため、
   // フォルダの絶対パスとファイル名を組み合わせるだけで済む)。
+  const hyperlinkRefs = [];
   if (basePath) {
     extractedResults.forEach((r, i) => {
       if (!r._filename) return;
       const cellRef = XLSX.utils.encode_cell({ r: i + 1, c: ZUBAN_COL });
       const cell = ws[cellRef];
-      if (cell) cell.l = { Target: buildFileUrl(basePath, r._filename) };
+      if (cell) {
+        cell.l = { Target: buildFileUrl(basePath, r._filename) };
+        hyperlinkRefs.push(cellRef);
+      }
     });
   }
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '製品情報');
   const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const baseName = (kojiNo || 'TDF') + '_小梁';
-  XLSX.writeFile(wb, baseName + '_' + ts + '.xlsx');
+  const filename = baseName + '_' + ts + '.xlsx';
+
+  if (hyperlinkRefs.length > 0) {
+    try {
+      const blob = await applyHyperlinkStyle(wb, hyperlinkRefs);
+      downloadBlob(blob, filename);
+    } catch (e) {
+      console.error('ハイパーリンク書式の適用に失敗しました', e);
+      XLSX.writeFile(wb, filename);
+    }
+  } else {
+    XLSX.writeFile(wb, filename);
+  }
 
   try {
     await apiPost('onExcelDownload', { kojiNo, productCount: extractedResults.length, rows: excelRows });
