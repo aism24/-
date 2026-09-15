@@ -246,9 +246,67 @@ function renderTable(results) {
   });
 }
 
+// Windowsエクスプローラーの「パスのコピー」は前後を二重引用符で囲むため、あれば取り除く。
+function stripQuotes(s) {
+  return s.replace(/^"(.*)"$/, '$1');
+}
+
+// フォルダの絶対パス(basePath)とファイル名から、そのファイルへのfile://リンクを作る。
+// (excel-drawing-link-tool と同じロジック。UNCパス(\\server\share)とローカルドライブ
+//  パス(C:\...)の両方に対応する)
+function buildFileUrl(basePath, fileName) {
+  const normalized = (basePath || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+  const isUnc = /^\/\//.test(normalized);
+  let path = normalized + '/' + fileName;
+  let url;
+  if (isUnc) {
+    url = 'file:' + path;
+  } else {
+    path = path.replace(/^\/+/, '');
+    url = 'file:///' + path;
+  }
+  return url.replace(/ /g, '%20');
+}
+
+// 図面フォルダの絶対パス入力ポップアップ。ブラウザはセキュリティ上ドロップ/選択された
+// ファイルの実際の絶対パスを取得できないため、フォルダのパスだけユーザーに貼って
+// もらい、既に判明しているファイル名(_filename)と組み合わせてリンクを作る。
+// 案件ごとにフォルダが変わるため、前回値は記憶せず毎回空欄から始める。
+function askBasePath() {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('basepath-overlay');
+    const textarea = document.getElementById('basepath-textarea');
+    const okBtn = document.getElementById('basepath-ok-btn');
+    const skipBtn = document.getElementById('basepath-skip-btn');
+    textarea.value = '';
+    overlay.classList.add('open');
+    textarea.focus();
+
+    function cleanup() {
+      overlay.classList.remove('open');
+      okBtn.removeEventListener('click', onOk);
+      skipBtn.removeEventListener('click', onSkip);
+    }
+    function onOk() {
+      const val = stripQuotes(textarea.value.trim());
+      cleanup();
+      resolve(val);
+    }
+    function onSkip() {
+      cleanup();
+      resolve('');
+    }
+    okBtn.addEventListener('click', onOk);
+    skipBtn.addEventListener('click', onSkip);
+  });
+}
+
 async function downloadExcel() {
   if (extractedResults.length === 0) return;
+  const basePath = await askBasePath();
+
   const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(t)', '左継手', '右継手'];
+  const ZUBAN_COL = 2; // headers配列内の「図番」の列インデックス(0始まり)
   const WEIGHT_COL = 8; // headers配列内の「重量(t)」の列インデックス(0始まり)
   const rows = extractedResults.map(r => {
     const weightT = computeWeightT(r);
@@ -267,6 +325,17 @@ async function downloadExcel() {
     const cell = ws[cellRef];
     if (cell && typeof cell.v === 'number') cell.z = '0.00';
   });
+  // 図面フォルダの絶対パスが入力されていれば、図番セルに元TDFファイルへの
+  // ハイパーリンクを付与する(そのファイル名は抽出時点で既に判明しているため、
+  // フォルダの絶対パスとファイル名を組み合わせるだけで済む)。
+  if (basePath) {
+    extractedResults.forEach((r, i) => {
+      if (!r._filename) return;
+      const cellRef = XLSX.utils.encode_cell({ r: i + 1, c: ZUBAN_COL });
+      const cell = ws[cellRef];
+      if (cell) cell.l = { Target: buildFileUrl(basePath, r._filename) };
+    });
+  }
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '製品情報');
   const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
