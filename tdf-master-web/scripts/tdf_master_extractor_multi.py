@@ -342,7 +342,8 @@ def _find_reference_line_endpoints(tdf: tb.TdfData, x_min: float, x_max: float, 
 NEARBY_DUP_RANGE = 1000.0
 
 
-def _has_nearby_duplicate(tdf: tb.TdfData, mx: float, my: float, text: str) -> bool:
+def _has_nearby_duplicate(tdf: tb.TdfData, mx: float, my: float, text: str,
+                           own_marks: frozenset[str] = frozenset()) -> bool:
     for rec in tdf.texts:
         if abs(rec.x - mx) < 3 and abs(rec.y - my) < 3:
             continue  # 長丸内の自分自身は除く
@@ -356,6 +357,15 @@ def _has_nearby_duplicate(tdf: tb.TdfData, mx: float, my: float, text: str) -> b
             continue  # 寸法値等の純粋な数値は比較対象外
         if len(other_s) < 2:
             continue  # 断面記号等の1文字ラベルは偶然の部分一致を起こすため対象外
+        if other_s in own_marks:
+            # 製品マーク自体(例: "WB32-1B582-1")は設計符号("B582")を部分
+            # 文字列として含むのが通常の命名なので、近傍重複判定の比較対象
+            # から除外する(2026-09-15、WB3-1B-08のWB32-1B582-1で確認:
+            # 自己参照の左継手候補"B582"の近く[914mm]に自分自身のマーク
+            # ラベル"WB32-1B582-1"があり、これを柱マークと誤認して左継手が
+            # 空欄になっていた。柱マーク[P441等]は`rows`のマーク一覧には
+            # 現れないため、この除外を加えても柱マーク除外の効果は失われない)。
+            continue
         if other == text or text in other or other in text:
             return True
         # 継手候補側に「J」が挿入されただけで、それ以外の文字は並び替えても
@@ -435,7 +445,11 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
     # お互いを「近傍重複」とみなして両方消えてしまう恐れがあるため
     # (2026-09-15、ユーザー指摘)。事前に候補ごとの判定結果をキャッシュし、
     # 短い製品の場合はこのキャッシュを参照しない(=除外条件を適用しない)。
-    dup_flags = {(mx, my, t): _has_nearby_duplicate(tdf, mx, my, t) for mx, my, t in candidates_raw}
+    own_marks = frozenset(r.mark for r in rows)
+    dup_flags = {
+        (mx, my, t): _has_nearby_duplicate(tdf, mx, my, t, own_marks)
+        for mx, my, t in candidates_raw
+    }
 
     # (候補位置, テキスト, 側) ごとに、最も近いグループ(と距離)を記録する
     claims: dict[tuple, tuple] = {}

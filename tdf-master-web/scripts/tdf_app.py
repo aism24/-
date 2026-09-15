@@ -81,13 +81,21 @@ def _compute_tier_info_small(rows: list) -> dict:
                 info[id(r)] = (tier_label, None)
             continue
         prev_tier = tiers[i - 1]
-        global_y_max = min(r.y for r in prev_tier)
+        # y_maxは「直上の段の範囲に踏み込まない」ための上限。当初は直上の段
+        # 全体(列を問わない)の最小Y(=直上の段の最も下の行)を使っていたが、
+        # 無関係な別列がたまたま直上の段で最も小さいYを持つ場合に境界が
+        # 狭くなりすぎる不具合があり(EA2-1B-15のEA22-1TB489-9)、一度は
+        # 「X範囲が重なる[同じ列とみなせる]行の最小Y」に限定する修正を
+        # 行った。しかし今度は逆に、直上の段に同じ列の対応物が存在しない
+        # 場合(WB3-1B-03のWB31-1TB441-9/10/14/15/16、直上の段の該当列には
+        # 何も無い)に、直上の段全体の最小Y(=最も下の行)にフォールバック
+        # すると狭すぎて実際の寸法線が範囲外になることが判明(2026-09-15、
+        # ユーザー指摘・スクリーンショットで確認)。「同じ列」判定に頼らず、
+        # 直上の段の最も上にある行のY(=段全体の最大Y)を上限とすることで
+        # 解消した(直上の段のどの列であっても、その段が実際に始まる位置
+        # より下は安全にtierN側の探索範囲とみなせるため)。
+        y_max = max(r.y for r in prev_tier)
         for r in tier:
-            same_col = [
-                pr for pr in prev_tier
-                if max(r.x_mark, pr.x_mark) < min(r.x_next, pr.x_next)
-            ]
-            y_max = min(pr.y for pr in same_col) if same_col else global_y_max
             info[id(r)] = (tier_label, y_max)
     return info
 
