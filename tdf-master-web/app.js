@@ -243,16 +243,24 @@ function renderTable(results) {
 async function downloadExcel() {
   if (extractedResults.length === 0) return;
   const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(t)', '左継手', '右継手'];
+  const WEIGHT_COL = 8; // headers配列内の「重量(t)」の列インデックス(0始まり)
   const rows = extractedResults.map(r => {
     const weightT = computeWeightT(r);
     return [
       r._id, kojiNo, r['図番'], r['製品マーク'], r['設計符号'], r['サイズ'], r['本数'],
-      r['長さ'], weightT == null ? '' : Number(weightT.toFixed(2)), r['左継手'], r['右継手'],
+      r['長さ'], weightT == null ? '' : weightT, r['左継手'], r['右継手'],
     ];
   });
   const excelRows = [headers, ...rows];
 
   const ws = XLSX.utils.aoa_to_sheet(excelRows);
+  // セルの値は丸めない実数値のまま、表示形式(セル書式)だけ小数2桁にする
+  // (Excel上で参照・計算する際に元の精度が失われないようにするため)。
+  rows.forEach((_row, i) => {
+    const cellRef = XLSX.utils.encode_cell({ r: i + 1, c: WEIGHT_COL });
+    const cell = ws[cellRef];
+    if (cell && typeof cell.v === 'number') cell.z = '0.00';
+  });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '製品情報');
   const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
