@@ -21,7 +21,7 @@ HEADERS = [
     "長さ(m)", "重量", "左継手", "右継手", "種別", "製品段",
 ]
 
-_AXIS_TOLERANCE_DEG = 2.0
+_AXIS_TOLERANCE_DEG = 0.1
 TIER_Y_GAP_THRESHOLD = 3000.0
 
 
