@@ -112,6 +112,15 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 #beam-start-btn:disabled { background: #bbb; cursor: not-allowed; }
 
 #empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 15px; text-align: center; padding: 40px; }
+.folder-path-warn {
+  margin-top: 18px; display: inline-block; padding: 10px 16px; border-radius: 6px;
+  color: #c0392b; font-weight: bold; font-size: 13px; line-height: 1.8;
+  animation: folder-path-warn-blink 2.5s ease-in-out infinite;
+}
+@keyframes folder-path-warn-blink {
+  0%, 100% { background-color: rgba(255, 221, 0, 0); }
+  50% { background-color: rgba(255, 221, 0, 0.85); }
+}
 main { flex: 1; display: flex; flex-direction: column; padding: 16px 20px 40px; }
 #result-area { display: none; flex-direction: column; gap: 10px; }
 #result-area.visible { display: flex; }
