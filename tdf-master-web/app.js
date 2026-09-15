@@ -3,7 +3,6 @@ const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxyGKGdIUONX9-kvs-m
 
 let pyodide = null;
 let weightMap = {};
-const beamType = 'small'; // 小梁(1B系)専用アプリのため固定
 let kojiNo = '';
 let extractedResults = [];
 
@@ -140,7 +139,7 @@ async function processFiles(files) {
     try {
       const uint8 = new Uint8Array(await file.arrayBuffer());
       pyodide.FS.writeFile('/input.tdf', uint8);
-      const pyResult = await pyodide.runPythonAsync(`tdf_app.extract_file('/input.tdf', '${beamType}')`);
+      const pyResult = await pyodide.runPythonAsync(`tdf_app.extract_file('/input.tdf')`);
       const rows = pyResult.toJs({ dict_converter: Object.fromEntries });
       pyResult.destroy();
       if (rows.length === 0) {
