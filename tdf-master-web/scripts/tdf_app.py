@@ -82,6 +82,15 @@ def _compute_tier_info_large(rows: list) -> dict:
 # 大梁の図面では長丸が柱マーク(P441等)も囲むことがあるため、その柱マークが
 # 近傍(1000mm以内)に円で囲まれていない形でも重複して描かれている場合は
 # 除外する(_has_nearby_duplicate)。
+#
+# 2026-09-15追加: 数値のみ(寸法値等)・1文字のみ(断面記号"A"/"B"等)の
+# テキストは比較対象から除外する。前者は寸法値がコード名の数字部分に
+# 偶然部分一致してしまうため(例: "441"が"TB441"に部分一致)、後者は
+# 断面記号の1文字が偶然コード名の末尾と一致してしまうため(例: "A"が
+# "B60A"に部分一致。小梁47ファイル基準で6行の誤爆が発生したことで判明)。
+# あわせて、この除外自体を製品長さ2000mm未満では適用しない
+# (SHORT_PRODUCT_THRESHOLD。短い製品は自己参照する左右の継手候補同士が
+# 近傍重複範囲内に収まり、両方消えてしまう恐れがあるため)。
 NEARBY_DUP_RANGE = 1000.0
 
 
@@ -94,8 +103,11 @@ def _has_nearby_duplicate(tdf: tb.TdfData, mx: float, my: float, text: str) -> b
         other = tdf.resolve_text(rec)
         if not other:
             continue
-        if other.strip().isdigit():
+        other_s = other.strip()
+        if other_s.isdigit():
             continue  # 寸法値等の純粋な数値は比較対象外
+        if len(other_s) < 2:
+            continue  # 断面記号等の1文字ラベルは偶然の部分一致を起こすため対象外
         if other == text or text in other or other in text:
             return True
     return False
@@ -125,11 +137,9 @@ def _assign_joints_batch_large(tdf: tb.TdfData, rows: list, tier_info: dict, len
         near = [rec for rec in tdf.texts if abs(rec.x - mx) < 3 and abs(rec.y - my) < 3]
         for rec in near:
             t = tdf.resolve_text(rec)
-            if not t:
-                continue
-            if _has_nearby_duplicate(tdf, mx, my, t):
-                continue
-            candidates_raw.append((mx, my, t))
+            if t:
+                candidates_raw.append((mx, my, t))
+    dup_flags = {(mx, my, t): _has_nearby_duplicate(tdf, mx, my, t) for mx, my, t in candidates_raw}
 
     claims: dict[tuple, tuple] = {}
     for key, members in groups.items():
@@ -146,6 +156,7 @@ def _assign_joints_batch_large(tdf: tb.TdfData, rows: list, tier_info: dict, len
             return xr, yr
 
         threshold = max(length_value * 0.6, exm.JOINT_MIN_THRESHOLD)
+        apply_dup_exclusion = length_value >= exm.SHORT_PRODUCT_THRESHOLD
         for r in members:
             _tier_label, y_max = tier_info.get(id(r), (None, None))
             row_length = lengths.get(id(r))
@@ -165,6 +176,8 @@ def _assign_joints_batch_large(tdf: tb.TdfData, rows: list, tier_info: dict, len
                 use_2d = False
             for mx, my, t in candidates_raw:
                 if my <= r.y or (y_max is not None and my >= y_max):
+                    continue
+                if apply_dup_exclusion and dup_flags[(mx, my, t)]:
                     continue
                 xr, yr = rotate(mx, my)
                 for side, ref in (("left", left_ref), ("right", right_ref)):
@@ -203,6 +216,10 @@ def _extract_large_beam(tdf: tb.TdfData) -> list[dict]:
     rows = ex.find_product_rows(tdf)
     existing_dai_positions = {(round(r.x_next, 1), round(r.y, 1)) for r in rows}
     rows = rows + exm.find_product_rows_shared_group(tdf, existing_positions=existing_dai_positions)
+    # ×印(削除マーク)で削除された行を除外する(2026-09-15追加)。従来この
+    # 呼び出しが無く、削除されるはずの行が誤って残ってしまっていた不具合
+    # (小梁側は元から呼んでいた)。
+    rows = exm.filter_deleted_rows(tdf, rows)
     _sort_rows_large(rows)
     tier_info = _compute_tier_info_large(rows)
 
