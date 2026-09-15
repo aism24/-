@@ -138,6 +138,9 @@ table#result-table th, table#result-table td {
   border-bottom: 1px solid #eee; padding: 7px 10px; text-align: left; white-space: nowrap;
 }
 table#result-table th { background: #e3f5e6; position: sticky; top: 0; font-weight: bold; z-index: 2; }
+/* 製品マーク(3列目)は固定幅、サイズ(5列目)はその2倍の固定幅。他の列はオートフィット。 */
+table#result-table th:nth-child(3), table#result-table td:nth-child(3) { width: 120px; }
+table#result-table th:nth-child(5), table#result-table td:nth-child(5) { width: 240px; }
 table#result-table tbody tr:nth-child(even) { background: #fff6d9; }
 table#result-table tbody tr:nth-child(odd) { background: #fffdf3; }
 table#result-table tbody tr:hover { background: #f7fbff; }
