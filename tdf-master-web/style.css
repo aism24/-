@@ -61,35 +61,26 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 }
 #beam-modal.hidden { display: none; }
 
-/* 工場選択モーダル(DXF版アプリと同じ配色・演出) */
-#factory-modal {
-  position: fixed; inset: 0; z-index: 2100;
-  background: rgba(10,20,50,0.82);
-  display: flex; align-items: center; justify-content: center;
-}
-#factory-modal.hidden { display: none; }
-#factory-box {
-  background: #fff; border-radius: 18px; padding: 44px 52px;
-  text-align: center; box-shadow: 0 12px 48px rgba(0,0,0,0.38); min-width: 340px;
-}
-#factory-box h2 { font-size: 17px; color: #444; margin-bottom: 32px; font-weight: bold; line-height: 1.5; }
+#factory-field { margin: 4px 0 22px; }
+#factory-field > label { font-size: 13px; color: #555; display: block; margin-bottom: 10px; }
 #factory-btns { display: flex; gap: 18px; justify-content: center; }
 .factory-btn {
   background: #1a73e8; color: #fff; border: 2px solid transparent; border-radius: 12px;
-  padding: 20px 0; font-size: 20px; font-weight: bold; cursor: pointer; min-width: 88px;
+  padding: 14px 0; font-size: 18px; font-weight: bold; cursor: pointer; min-width: 80px;
   transition: background .15s, transform .2s, box-shadow .2s, border-color .2s;
   box-shadow: 0 3px 10px rgba(26,115,232,0.35);
 }
 .factory-btn:hover {
-  transform: scale(1.18);
+  transform: scale(1.1);
   box-shadow: 0 0 18px 6px rgba(26,115,232,0.7), 0 0 40px 10px rgba(26,115,232,0.3);
   border-color: rgba(255,255,255,0.8);
 }
 .factory-btn.yumesaki:hover { box-shadow: 0 0 18px 6px rgba(230,126,34,0.75), 0 0 40px 10px rgba(230,126,34,0.3); }
 .factory-btn.tottori:hover { box-shadow: 0 0 18px 6px rgba(39,174,96,0.75), 0 0 40px 10px rgba(39,174,96,0.3); }
-.factory-btn:active { transform: scale(1.08); }
+.factory-btn:active { transform: scale(1.04); }
 .factory-btn.yumesaki { background: #e67e22; box-shadow: 0 3px 10px rgba(230,126,34,0.35); }
 .factory-btn.tottori { background: #27ae60; box-shadow: 0 3px 10px rgba(39,174,96,0.35); }
+.factory-btn.selected { border-color: #222; box-shadow: 0 0 0 3px rgba(0,0,0,0.18), 0 3px 10px rgba(26,115,232,0.35); }
 #beam-box {
   background: #fff; border-radius: 14px; padding: 36px 40px; width: 92%; max-width: 480px;
   box-shadow: 0 12px 40px rgba(0,0,0,.35); text-align: center;
