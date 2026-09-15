@@ -1,5 +1,5 @@
 // デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。デプロイ後にここへ差し替えてください。
-const GAS_API_URL = "GAS_DEPLOY_URL_HERE";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxyGKGdIUONX9-kvs-mTayA3UXp6Rztc9VjP4jloTMRDctTQqrWeIC5CWQDSz4rfXs/exec";
 
 let pyodide = null;
 let weightMap = {};
