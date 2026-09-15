@@ -387,6 +387,12 @@ async function downloadExcel() {
   });
   const excelRows = [headers, ...rows];
 
+  // スプレッドシート記録用(GAS)のみ、L列=梁判別・M列=段を追加する
+  // (ダウンロードするExcelファイル自体には含めない)。
+  const recordHeaders = [...headers, '梁判別', '段'];
+  const recordRows = extractedResults.map((r, i) => [...rows[i], r['種別'] ?? '', r['製品段'] ?? '']);
+  const recordExcelRows = [recordHeaders, ...recordRows];
+
   const ws = XLSX.utils.aoa_to_sheet(excelRows);
   ws['!cols'] = computeColWidths(excelRows);
   // セルの値は丸めない実数値のまま、表示形式(セル書式)だけ小数2桁にする
@@ -434,7 +440,7 @@ async function downloadExcel() {
   }
 
   try {
-    await apiPost('onExcelDownload', { kojiNo, productCount: extractedResults.length, rows: excelRows });
+    await apiPost('onExcelDownload', { kojiNo, productCount: extractedResults.length, rows: recordExcelRows });
   } catch (e) {
     console.error('GAS記録エラー', e);
   }
