@@ -43,6 +43,12 @@ def _get_rows_small(tdf: tb.TdfData) -> list:
     rows = ex.find_product_rows(tdf)
     existing = {(round(r.x_next, 1), round(r.y, 1)) for r in rows}
     rows = rows + exm.find_product_rows_shared_group(tdf, existing_positions=existing)
+    # 「製品マーク|設計符号|本数(N台)」の3項目パターン(サイズ省略)。
+    # サイズが元々描かれていない図面(2026-09-16、KIX01現場`N-1 2G-05`)に
+    # 対応するため追加(既存の2パターンで拾われたdaiセルとは重複しない
+    # ようにマージする)。
+    existing = {(round(r.x_next, 1), round(r.y, 1)) for r in rows}
+    rows = rows + ex.find_product_rows_no_size(tdf, existing_positions=existing)
     rows = exm.filter_deleted_rows(tdf, rows)
     return rows
 
@@ -111,8 +117,26 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
 
     lengths: dict[int, float | None] = {}
     beam_types: dict[int, str | None] = {}
+    joints_no_size: dict[int, tuple] = {}
     for row in rows:
         _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
+        if row.size_missing:
+            # 「マーク|設計符号|本数」3項目パターン専用の独立ロジック
+            # (既存の4項目パターン向けdetermine_length/assign_joints_batch
+            # は一切呼び出さない。2026-09-16、KIX01現場`N-1 2G-05`対応)。
+            x_min = row.x_mark - ex.RELAX_MARGIN
+            x_max = row.x_next + ex.RELAX_MARGIN
+            length_value, debug = ex.determine_length_no_size(tdf, x_min, x_max, row.y)
+            lengths[id(row)] = length_value
+            beam_types[id(row)] = classify_beam_type(debug.get("main_axis_deg"))
+            endpoints = debug.get("endpoints")
+            left, right, left_jobj, right_jobj = ex.determine_joints_no_size(
+                tdf, row.y, length_value, endpoints
+            ) if length_value is not None else (None, None, None, None)
+            joints_no_size[id(row)] = (left, right)
+            if length_value is not None:
+                row.size = ex.determine_size_no_size(tdf, endpoints, left_jobj, right_jobj)
+            continue
         if len(rows) == 1:
             x_min = row.x_mark - ex.RELAX_MARGIN
             x_max = row.x_next + ex.RELAX_MARGIN
@@ -125,7 +149,12 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
             debug.get("main_axis_deg") if length_value is not None else None
         )
 
-    joints = exm.assign_joints_batch(tdf, rows, tier_info, lengths)
+    # 3項目パターンの行はassign_joints_batch(既存の4項目パターン専用の
+    # グルーピングロジック)には一切渡さない。
+    joints = exm.assign_joints_batch(
+        tdf, [r for r in rows if not r.size_missing], tier_info, lengths
+    )
+    joints.update(joints_no_size)
 
     out = []
     for row in rows:

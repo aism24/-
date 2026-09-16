@@ -417,6 +417,12 @@ class ProductRow:
     left_joint: str | None = None
     right_joint: str | None = None
     drawing_number: str | None = None
+    # True: find_product_rows_no_size(「マーク|設計符号|本数」3項目パターン)由来の行。
+    # この行だけ、長さ・継手・サイズの判定を別の専用ロジック(determine_length_no_size等)に
+    # 振り分ける(既存の4項目パターン向けdetermine_length等は一切変更しない)。
+    # デフォルトFalseのため、既存のfind_product_rows/find_product_rows_shared_groupが
+    # 作る行には影響しない(2026-09-16、KIX01現場`N-1 2G-05`対応)。
+    size_missing: bool = False
 
 
 def find_product_rows(tdf: tb.TdfData) -> list[ProductRow]:
@@ -473,7 +479,91 @@ def find_product_rows(tdf: tb.TdfData) -> list[ProductRow]:
     return rows
 
 
+def find_product_rows_no_size(
+    tdf: tb.TdfData, existing_positions: set[tuple[float, float]] | None = None,
+) -> list[ProductRow]:
+    """「製品マーク | 設計符号 | 本数(N台)」の3項目パターン(サイズ省略)を検出する。
+
+    `find_product_rows`(4項目: マーク・設計符号・サイズ・本数)では見つからない
+    「N台」セルを対象に、直近2つを[設計符号, マーク]とみなす。サイズが元々
+    描かれていない図面(2026-09-16、KIX01現場`N-1 2G-05`で発覚)に対応する。
+
+    同じY(行)に複数の「N台」セルが離れて並ぶ図面では、単純に「daiより
+    小さい全X」を対象にすると、手前の別の製品の本数・マーク等まで巻き込んで
+    しまう(例: マーク単体の行が2つ、同じYに離れて存在する場合)。これを
+    避けるため、同じY(行)にある**直前の**「N台」セルより右側だけを検索範囲
+    とする(直前の「N台」が無ければ従来通り無制限)。
+    """
+    existing_positions = existing_positions or set()
+
+    dai_cells = []
+    for r in tdf.texts:
+        if r.rot != 0:
+            continue
+        text = tdf.resolve_text(r)
+        if text and tb.is_dai_cell(text):
+            key = (round(r.x, 1), round(r.y, 1))
+            if key in existing_positions:
+                continue
+            dai_cells.append(r)
+
+    # 行(Y)ごとに「N台」セルをX昇順で並べ、直前の境界を求めるための索引を作る
+    dai_by_row: dict[float, list] = {}
+    for r in tdf.texts:
+        if r.rot != 0:
+            continue
+        text = tdf.resolve_text(r)
+        if text and tb.is_dai_cell(text):
+            dai_by_row.setdefault(round(r.y, 1), []).append(r)
+    for members in dai_by_row.values():
+        members.sort(key=lambda r: r.x)
+
+    rows: list[ProductRow] = []
+    for dai in dai_cells:
+        row_key = round(dai.y, 1)
+        siblings = dai_by_row.get(row_key, [])
+        prev_x = max(
+            (r.x for r in siblings if r.x < dai.x), default=None,
+        )
+        same_row = [
+            r for r in tdf.texts
+            if r.rot == 0 and abs(r.y - dai.y) < SAME_ROW_Y_TOLERANCE
+            and r.x < dai.x and (prev_x is None or r.x > prev_x)
+            and tdf.resolve_text(r)
+        ]
+        same_row.sort(key=lambda r: r.x)
+        if len(same_row) < 2:
+            continue
+        code_rec, mark_rec = same_row[-1], same_row[-2]
+        code_text = tdf.resolve_text(code_rec)
+        if _looks_like_size(code_text):
+            # サイズが実は描かれていた(3つ目が本来のサイズ)=4項目パターンの
+            # 対象であり、既にfind_product_rowsで処理されているはず。ここでは
+            # 二重集計を避けるため無視する。
+            continue
+
+        rows.append(ProductRow(
+            mark=tdf.resolve_text(mark_rec), design_code=code_text,
+            size=None, count=tdf.resolve_text(dai), weight=None,
+            x_mark=mark_rec.x, x_next=dai.x, y=dai.y,
+            size_missing=True,
+        ))
+
+    rows.sort(key=lambda r: r.x_mark)
+    return rows
+
+
 _DRAWING_NUMBER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9\-]{2,19}$")
+
+# ラベル(「図面番号」)近傍の候補にのみ適用する緩和版パターン。現場によっては
+# 図番の区切りに半角/全角スペースが使われることがある(例: "N-1 2G-5"が
+# "N-1 2G-5"のようにスペースを含んだ1つのテキストとして描画される)。
+# ページ全体を対象とするフォールバック(文字高さ最大)にこの緩和を適用すると、
+# スペースを含む無関係な注記(タイトル欄の他の項目等)まで拾ってしまう
+# リスクが上がるため、緩和はラベルとの位置的な近さで絞り込んだ候補にのみ
+# 適用する(2026-09-16、KIX01現場の`N-1 2G-05`で図番が読み取れない問題を
+# 受けて追加)。
+_DRAWING_NUMBER_PATTERN_LOOSE = re.compile(r"^[A-Za-z][A-Za-z0-9\- 　]{2,19}$")
 
 
 def _find_zumenbango_label_pos(tdf: tb.TdfData) -> tuple[float, float] | None:
@@ -527,17 +617,30 @@ def find_drawing_number(tdf: tb.TdfData) -> str | None:
         t = r.text.strip()
         if _DRAWING_NUMBER_PATTERN.match(t) and not t.isdigit():
             candidates.append(r)
-    if not candidates:
-        return None
 
     label_pos = _find_zumenbango_label_pos(tdf)
     if label_pos is not None:
         label_y, label_x = label_pos
-        near = [r for r in candidates if abs(r.y - label_y) < 500.0]
+        # ラベル近傍だけは緩和版パターン(スペース許容)で候補を探し直す。
+        # 緩和版は非緩和版を包含するため、従来一致していたものは変わらず
+        # 一致し続ける。
+        near = []
+        for r in tdf.texts:
+            if r.text is None or r.rot != 0:
+                continue
+            t = r.text.strip()
+            if not t or t.isdigit():
+                continue
+            if not _DRAWING_NUMBER_PATTERN_LOOSE.match(t):
+                continue
+            if abs(r.y - label_y) < 500.0:
+                near.append(r)
         if near:
             near.sort(key=lambda r: abs(r.x - label_x))
             return near[0].text.strip()
 
+    if not candidates:
+        return None
     candidates.sort(key=lambda r: -r.h)
     return candidates[0].text.strip()
 
@@ -869,6 +972,372 @@ def determine_joints(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float,
 RELAX_MARGIN = 5000.0
 
 
+# ---------------------------------------------------------------------------
+# 「製品マーク|設計符号|本数(N台)」3項目パターン(サイズ省略)専用の
+# 長さ・継手・サイズ判定
+# ---------------------------------------------------------------------------
+#
+# find_product_rows_no_size()が見つけた行(ProductRow.size_missing=True)だけを
+# 対象にする、完全に独立したロジック。既存の4項目パターン向け
+# determine_length/determine_joints、および呼び出し元のfind_product_rows等は
+# 一切変更していない。
+#
+# 2026-09-16、KIX01現場`N-1 2G-05`(2GX1Y3/G16N)で、既存ロジックの前提
+# (マーク〜本数のX範囲が梁の見た目の全長に対応する)が成り立たない図面が
+# 見つかったことを受けて追加。ユーザーと共に、姉妹アプリ(DXF抽出アプリ、
+# 他社図面向けIndex他社図面.html)の考え方を参考に設計した:
+#   - 長さ: 単純な「向き一致・長さ一致の直線本数が最多」ではなく、
+#     DXFアプリの「サブ寸法和+直線連結性の検証」(_bottom_up_y_validate/
+#     _filter_connected_nums_y)を移植して使う。
+#   - 継手: 確定した長さと一致する直線の実端点(_find_reference_line_endpoints、
+#     小梁側と共通の既存ユーティリティを流用)の近傍にある長丸のうち、
+#     各端点に最も近いものを採用する(絶対閾値は設けない。DXFアプリの
+#     nearest_sizeと同じ考え方)。
+#   - サイズ: 各継手位置に最も近いサイズ文字列を探し、それが長さのX範囲の
+#     外側にあれば「継手側(＝接続先部材)のサイズ」とみなし(DXFアプリの
+#     is_joint_size)、そのY座標帯(±300)・長さのX範囲内で改めて探した
+#     単一候補を採用する。
+#
+# 実例1件(N-1 2G-05)でのみ検証済み。ユーザー確認の上、以下は今回
+# 意図的に対象外とした(実例が無いまま組むと根拠のない実装になるため):
+#   - 斜め梁(種別判定自体は既存classify_beam_typeを流用し角度で判定するが、
+#     斜め梁と判定された場合の長さ・サイズ抽出ロジックは無い)
+#   - サブ寸法和が0件/複数値タイの場合のタイブレーク(空欄のままにする)
+#   - サイズ候補が0件/複数件の場合のフォールバック(空欄のままにする)
+#   - 製品段(tier)は既存のcompute_tier_info(呼び出し側でrows全体に対して
+#     実行される)をそのまま流用する(この関数自体には手を加えない)。
+
+_NUM_MIN_VALUE = 10.0
+_SUBSUM_Y_GROUP_TOL = 10.0  # 連結性フィルタ用のYグループ化許容誤差
+_SUBSUM_VALIDATE_Y_TOL = 50.0  # サブ寸法和検証用のYグループ化許容誤差(緩め)
+_SUBSUM_MIN_SUM = 500.0
+_SIZE_JOINT_Y_BAND = 300.0
+
+
+def _collect_horiz_nums_no_size(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float):
+    """y_refより上・[x_min,x_max]内にある数値テキストを(value, x, y, rot_deg)で集める。
+    縦書き(90°±10°)は除外する(追い寸法のため長さ算出に使わない、という
+    既存determine_lengthと同じ前提)。"""
+    items = []
+    for r in tdf.texts:
+        text = tdf.resolve_text(r)
+        if text is None:
+            continue
+        vc = text.strip()
+        try:
+            val = float(vc)
+        except ValueError:
+            continue
+        if val < _NUM_MIN_VALUE:
+            continue
+        if not (x_min <= r.x <= x_max and r.y > y_ref):
+            continue
+        rot_deg = math.degrees(tdf.resolve_rot(r))
+        if abs(abs(rot_deg) % 180 - 90) <= 10:
+            continue
+        items.append((val, r.x, r.y, rot_deg))
+    return items
+
+
+def _find_matching_line_x(tdf: tb.TdfData, val: float, tx: float, ty: float):
+    """値valとほぼ同じ長さ(±0.1)の直線のうち、Y平均がtyに近く(±300)、
+    中点XがtxはXに最も近いものの(min_x, max_x, y平均)を返す。無ければNone。"""
+    best = None
+    best_dx = float("inf")
+    for ln in tdf.lines:
+        if abs(ln.length - val) > 0.1:
+            continue
+        y_avg = (ln.y1 + ln.y2) / 2
+        if abs(y_avg - ty) >= 300:
+            continue
+        cx = (ln.x1 + ln.x2) / 2
+        dx = abs(cx - tx)
+        if dx < best_dx:
+            best_dx = dx
+            best = (min(ln.x1, ln.x2), max(ln.x1, ln.x2), y_avg)
+    return best
+
+
+def _filter_connected_nums_no_size(tdf: tb.TdfData, nums_xy):
+    """同一Y座標グループ内で、対応する直線の端点が実際に繋がっている
+    (沿い方向の座標差50以内)最大の連結成分だけを残す。対応する直線が
+    見つからない数値は無条件で残す(DXFアプリの_filter_connected_nums_yの
+    移植)。"""
+    if not nums_xy:
+        return []
+    annotated = [
+        (val, tx, ty, ang, _find_matching_line_x(tdf, val, tx, ty))
+        for val, tx, ty, ang in nums_xy
+    ]
+
+    groups: dict[float, list[int]] = {}
+    grp_keys: list[float] = []
+    for i, (_val, _tx, ty, _ang, _xr) in enumerate(annotated):
+        placed = False
+        for rep_y in grp_keys:
+            if abs(ty - rep_y) <= _SUBSUM_Y_GROUP_TOL:
+                groups[rep_y].append(i)
+                placed = True
+                break
+        if not placed:
+            grp_keys.append(ty)
+            groups[ty] = [i]
+
+    def _keep_largest_component(indices: list[int]) -> set[int]:
+        if len(indices) <= 1:
+            return set(indices)
+        with_line = [(k, annotated[k]) for k in indices if annotated[k][-1] is not None]
+        without_line = [k for k in indices if annotated[k][-1] is None]
+        if len(with_line) <= 1:
+            return set(indices)
+        n = len(with_line)
+        par = list(range(n))
+
+        def _find(x):
+            while par[x] != x:
+                par[x] = par[par[x]]
+                x = par[x]
+            return x
+
+        def _union(a, b):
+            par[_find(a)] = _find(b)
+
+        for a in range(n):
+            xa = with_line[a][1][-1]
+            for b in range(a + 1, n):
+                xb = with_line[b][1][-1]
+                if abs(xa[1] - xb[0]) <= 50 or abs(xb[1] - xa[0]) <= 50:
+                    _union(a, b)
+        comp_count: dict[int, int] = {}
+        for k in range(n):
+            c = _find(k)
+            comp_count[c] = comp_count.get(c, 0) + 1
+        max_size = max(comp_count.values())
+        keep = set(without_line)
+        for k, (orig_idx, _rec) in enumerate(with_line):
+            if comp_count[_find(k)] == max_size:
+                keep.add(orig_idx)
+        return keep
+
+    keep: set[int] = set()
+    for indices in groups.values():
+        keep |= _keep_largest_component(indices)
+
+    result = []
+    for i in range(len(nums_xy)):
+        if i not in keep:
+            continue
+        line_range = annotated[i][4]
+        eff_y = line_range[2] if line_range is not None else nums_xy[i][2]
+        result.append((nums_xy[i][0], eff_y, nums_xy[i][3]))
+    return result
+
+
+def _bottom_up_validate_no_size(tdf: tb.TdfData, group_nums_y, target_nums_y):
+    """同一Y-group(連結性フィルタ後、±50)の合算が、target_nums_y内の
+    別の単体テキスト(水平のみ)と一致する回数を数える(DXFアプリの
+    _bottom_up_y_validateの移植)。孤立した候補(近傍に他の数値テキストも
+    接続する直線も無い)は採用しない。
+    Returns: {value: match_count}
+    """
+    groups: dict[float, list[float]] = {}
+    grp_keys: list[float] = []
+    for val, y, _ang in group_nums_y:
+        placed = False
+        for rep_y in grp_keys:
+            if abs(y - rep_y) <= _SUBSUM_VALIDATE_Y_TOL:
+                groups[rep_y].append(val)
+                placed = True
+                break
+        if not placed:
+            grp_keys.append(y)
+            groups[y] = [val]
+
+    def _is_isolated(tx: float, ty: float) -> bool:
+        for _v2, x2, y2, _a2 in target_nums_y:
+            if abs(y2 - ty) <= _SUBSUM_VALIDATE_Y_TOL and x2 != tx:
+                return False
+        for ln in tdf.lines:
+            y_avg = (ln.y1 + ln.y2) / 2
+            if abs(y_avg - ty) <= _SUBSUM_VALIDATE_Y_TOL and (
+                abs(ln.x1 - tx) <= 50 or abs(ln.x2 - tx) <= 50
+            ):
+                return False
+        return True
+
+    def _dist_horiz(ang_deg: float) -> float:
+        am = ang_deg % 180
+        return min(am, 180 - am)
+
+    text_entries = [(v, x, y) for v, x, y, ang in target_nums_y if _dist_horiz(ang) <= 0.1]
+    match_counts: dict[float, int] = {}
+    for rep_y, vals in groups.items():
+        if len(vals) < 2:
+            continue
+        group_sum = sum(vals)
+        if group_sum < _SUBSUM_MIN_SUM:
+            continue
+        tol = max(2.0, group_sum * 0.001)
+        ranked = sorted(
+            (abs(tv - group_sum), tv, tx, ty)
+            for tv, tx, ty in text_entries if abs(tv - group_sum) <= tol
+        )
+        best_tv = None
+        for _diff, tv, tx, ty in ranked:
+            if _is_isolated(tx, ty):
+                continue
+            best_tv = tv
+            break
+        if best_tv is not None:
+            match_counts[best_tv] = match_counts.get(best_tv, 0) + 1
+    return match_counts
+
+
+def determine_length_no_size(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float):
+    """3項目パターン専用の長さ判定。DXF抽出アプリの「サブ寸法和+直線連結性の
+    検証」を移植したもの(既存のdetermine_lengthとは独立、互いに影響しない)。
+
+    サブ寸法和で一意に(タイ無しで)決まった候補が無い場合はNoneを返す
+    (タイブレークは実装しない。ユーザー確認済み方針)。
+
+    Returns: (length_value or None, debug dict)
+    """
+    all_nums_xy = _collect_horiz_nums_no_size(tdf, x_min, x_max, y_ref)
+    group_nums_y = _filter_connected_nums_no_size(tdf, all_nums_xy)
+    match_counts = _bottom_up_validate_no_size(tdf, group_nums_y, all_nums_xy)
+
+    debug = {"all_nums_count": len(all_nums_xy), "match_counts": match_counts}
+    if not match_counts:
+        return None, {**debug, "reason": "no sub-sum match"}
+
+    max_c = max(match_counts.values())
+    top = [v for v, c in match_counts.items() if c == max_c]
+    if len(top) != 1:
+        return None, {**debug, "reason": "tie among top candidates", "top": top}
+
+    length_value = top[0]
+
+    # 種別(普通梁/斜め梁)判定用に、確定した長さに一致する参照直線の角度を求める。
+    # tdf_master_extractor_multiは本モジュールをimportしているため、循環import
+    # を避けるためここでは関数内でローカルimportする。
+    import tdf_master_extractor_multi as exm
+    endpoints = exm._find_reference_line_endpoints(tdf, x_min, x_max, y_ref, None, length_value)
+    main_axis_deg = None
+    if endpoints is not None:
+        (lx, ly), (rx, ry) = endpoints
+        main_axis_deg = math.degrees(math.atan2(ry - ly, rx - lx))
+    debug["main_axis_deg"] = main_axis_deg
+    debug["endpoints"] = endpoints
+    return length_value, debug
+
+
+def _nearest_size_text_no_size(tdf: tb.TdfData, cx: float, cy: float):
+    """(cx, cy)に最も近いサイズらしきテキストを返す(絶対閾値なし。
+    DXFアプリのnearest_sizeと同じ考え方)。"""
+    best = None
+    best_d = float("inf")
+    for r in tdf.texts:
+        text = tdf.resolve_text(r)
+        if not text or not _looks_like_size(text):
+            continue
+        d = math.hypot(r.x - cx, r.y - cy)
+        if d < best_d:
+            best_d = d
+            best = (r.x, r.y, text)
+    return best
+
+
+def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float, endpoints):
+    """3項目パターン専用の継手判定。確定した長さに一致する参照直線の実端点
+    (endpoints、determine_length_no_sizeのdebug['endpoints']をそのまま渡す)
+    の近傍にある長丸のうち、各端点に最も近いものを左右継手候補とする
+    (絶対閾値は設けない)。
+
+    この図面では長丸の中心ぴったりにテキストが無く、少し離れた位置に
+    継手コードがあったため、テキスト自体も「最も近いもの」を絶対閾値なしで
+    採用する(ユーザー確認済み方針)。
+
+    Returns: (left_text, right_text, left_center, right_center)
+             継手候補が1つも無い場合は (None, None, None, None)
+    """
+    if endpoints is None:
+        return None, None, None, None
+    (lx, ly), (rx, ry) = endpoints
+
+    centers = [c for c in find_stadium_centers(tdf) if c[1] > y_ref]
+    if not centers:
+        return None, None, None, None
+
+    left_center = min(centers, key=lambda c: math.hypot(c[0] - lx, c[1] - ly))
+    right_center = min(centers, key=lambda c: math.hypot(c[0] - rx, c[1] - ry))
+
+    def _nearest_text(cx: float, cy: float):
+        best = None
+        best_d = float("inf")
+        for r in tdf.texts:
+            if r.rot != 0:
+                continue
+            text = tdf.resolve_text(r)
+            if not text:
+                continue
+            d = math.hypot(r.x - cx, r.y - cy)
+            if d < best_d:
+                best_d = d
+                best = text
+        return best
+
+    left_text = _nearest_text(left_center[0], left_center[1])
+    right_text = _nearest_text(right_center[0], right_center[1])
+    return (
+        left_text, right_text,
+        {"cx": left_center[0], "cy": left_center[1]},
+        {"cx": right_center[0], "cy": right_center[1]},
+    )
+
+
+def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
+    """3項目パターン専用のサイズ判定。左右継手位置に最も近いサイズ文字列を
+    探し、それが長さのX範囲(endpointsのX最小〜最大)の外側にあれば
+    「継手側(接続先部材)のサイズ」とみなし(DXFアプリのis_joint_size)、
+    そのY座標帯(±300)・長さのX範囲内で改めて単一候補を探す。
+
+    候補が0件または複数件(値が割れる)の場合はNoneを返す(フォールバックは
+    実装しない。ユーザー確認済み方針)。
+    """
+    if endpoints is None:
+        return None
+    (lx, _ly), (rx, _ry) = endpoints
+    x_lo, x_hi = min(lx, rx), max(lx, rx)
+
+    def _is_joint_size(pos) -> bool:
+        return not (x_lo <= pos[0] <= x_hi)
+
+    size_l = _nearest_size_text_no_size(tdf, left_jobj["cx"], left_jobj["cy"]) if left_jobj else None
+    size_r = _nearest_size_text_no_size(tdf, right_jobj["cx"], right_jobj["cy"]) if right_jobj else None
+    refs = [p for p in (size_l, size_r) if p is not None and _is_joint_size(p)]
+    if not refs:
+        return None
+
+    y_lo = min(p[1] for p in refs) - _SIZE_JOINT_Y_BAND
+    y_hi = max(p[1] for p in refs) + _SIZE_JOINT_Y_BAND
+    exclude_xy = {(p[0], p[1]) for p in refs}
+
+    values = set()
+    for r in tdf.texts:
+        text = tdf.resolve_text(r)
+        if not text or not _looks_like_size(text):
+            continue
+        if (r.x, r.y) in exclude_xy:
+            continue
+        if not (x_lo <= r.x <= x_hi and y_lo <= r.y <= y_hi):
+            continue
+        values.add(text)
+
+    if len(values) == 1:
+        return next(iter(values))
+    return None
+
+
 def extract(path: str) -> list[ProductRow]:
     tdf = tb.load(path)
     drawing_number = find_drawing_number(tdf)
@@ -915,7 +1384,6 @@ if __name__ == "__main__":
         print(f"  製品マーク={r.mark} 設計符号={r.design_code} サイズ={r.size} "
               f"本数={r.count} 重量={r.weight} 長さ={r.length} "
               f"左継手={r.left_joint} 右継手={r.right_joint}")
-
 </script>
 <script id="py-tdf-master-extractor-multi" type="text/python-src">
 """実寸法師(.tdf)から製品マスタ情報を抽出するロジックのうち、「1製品に複数
@@ -1503,6 +1971,12 @@ def _get_rows_small(tdf: tb.TdfData) -> list:
     rows = ex.find_product_rows(tdf)
     existing = {(round(r.x_next, 1), round(r.y, 1)) for r in rows}
     rows = rows + exm.find_product_rows_shared_group(tdf, existing_positions=existing)
+    # 「製品マーク|設計符号|本数(N台)」の3項目パターン(サイズ省略)。
+    # サイズが元々描かれていない図面(2026-09-16、KIX01現場`N-1 2G-05`)に
+    # 対応するため追加(既存の2パターンで拾われたdaiセルとは重複しない
+    # ようにマージする)。
+    existing = {(round(r.x_next, 1), round(r.y, 1)) for r in rows}
+    rows = rows + ex.find_product_rows_no_size(tdf, existing_positions=existing)
     rows = exm.filter_deleted_rows(tdf, rows)
     return rows
 
@@ -1571,8 +2045,26 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
 
     lengths: dict[int, float | None] = {}
     beam_types: dict[int, str | None] = {}
+    joints_no_size: dict[int, tuple] = {}
     for row in rows:
         _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
+        if row.size_missing:
+            # 「マーク|設計符号|本数」3項目パターン専用の独立ロジック
+            # (既存の4項目パターン向けdetermine_length/assign_joints_batch
+            # は一切呼び出さない。2026-09-16、KIX01現場`N-1 2G-05`対応)。
+            x_min = row.x_mark - ex.RELAX_MARGIN
+            x_max = row.x_next + ex.RELAX_MARGIN
+            length_value, debug = ex.determine_length_no_size(tdf, x_min, x_max, row.y)
+            lengths[id(row)] = length_value
+            beam_types[id(row)] = classify_beam_type(debug.get("main_axis_deg"))
+            endpoints = debug.get("endpoints")
+            left, right, left_jobj, right_jobj = ex.determine_joints_no_size(
+                tdf, row.y, length_value, endpoints
+            ) if length_value is not None else (None, None, None, None)
+            joints_no_size[id(row)] = (left, right)
+            if length_value is not None:
+                row.size = ex.determine_size_no_size(tdf, endpoints, left_jobj, right_jobj)
+            continue
         if len(rows) == 1:
             x_min = row.x_mark - ex.RELAX_MARGIN
             x_max = row.x_next + ex.RELAX_MARGIN
@@ -1585,7 +2077,12 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
             debug.get("main_axis_deg") if length_value is not None else None
         )
 
-    joints = exm.assign_joints_batch(tdf, rows, tier_info, lengths)
+    # 3項目パターンの行はassign_joints_batch(既存の4項目パターン専用の
+    # グルーピングロジック)には一切渡さない。
+    joints = exm.assign_joints_batch(
+        tdf, [r for r in rows if not r.size_missing], tier_info, lengths
+    )
+    joints.update(joints_no_size)
 
     out = []
     for row in rows:
