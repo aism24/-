@@ -1272,7 +1272,12 @@ _CHAIN_MIN_SEG_LEN = 500.0   # 直線チェーンを構成する最小の直線�
 _CHAIN_CONNECT_TOL = 30.0    # チェーンとみなす端点同士の距離
 _CHAIN_ANGLE_TOL = 5.0       # ほぼ水平とみなす角度差(度、既存のline角度判定と同程度)
 _CHAIN_SUM_TOL = 1.0         # 合計とテキスト候補値が一致するとみなす誤差
-_CHAIN_MIN_WIN_COUNT = 2     # この系統数以上、かつ他候補より厳密に多い場合のみ採用
+# 2026-09-16、S-1 R1G-13対応で2→4に引き上げ: 呼び出し側(extract_to_excel.py)
+# の「一致直線数(a)が僅差の場合のみ試す」という事前ゲートを撤廃したため、
+# 誤って高い一致直線数を持つ候補(`N-1 2G-05`の正解10480.0は一致直線数5本、
+# 誤答12900.0の系統数はたった3)を巻き込まないよう、この採用基準自体を
+# 引き上げて安全弁とした。
+_CHAIN_MIN_WIN_COUNT = 4     # この系統数以上、かつ他候補より厳密に多い場合のみ採用
 
 
 def _chain_sum_counts(tdf: tb.TdfData, y_ref: float, y_max: float | None = None) -> dict[float, int]:

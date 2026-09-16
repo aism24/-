@@ -180,17 +180,20 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
                     lengths[id(row)] = connected
                     break
 
-    # 同じ行を共有する隣接製品が無い(単独ファイル)場合の絞り込み: 候補値の
-    # うち、端点連結した直線チェーンの合計として最も多くの系統(重複して
-    # 描かれた控え線群)で裏付けられるものを優先する(S-1 R1G-14〜16対応。
-    # 詳細はtdf_master_extractor._chain_sum_candidateのコメント参照)。
+    # 候補値のうち、端点連結した直線チェーンの合計として最も多くの系統
+    # (重複して描かれた控え線群)で裏付けられるものを優先する(S-1 R1G-14〜16
+    # 対応。詳細はtdf_master_extractor._chain_sum_candidateのコメント参照)。
+    #
+    # 上記の隣接製品連結判定と違い、こちらは「一致直線数(a)が僅差の場合の
+    # み」という事前ゲートを設けていない(S-1 R1G-13の`R1GX2Y2`で、誤った
+    # 答えの一致直線数[5本]が正しく動作している`N-1 2G-05`[こちらも一致
+    # 直線数5本]と見分けがつかず、このゲートが正しい連結チェーン判定[系統数
+    # 8]の実行を妨げていたため撤廃。代わりに`_chain_sum_candidate`側の
+    # 採用基準[系統数]自体を引き上げて安全弁とした。
+    # masamizsumi-dotcom/tdf-master-extractの同種の変更に合わせたもの)。
     for row in size_missing_rows:
         candidates = size_missing_debug.get(id(row), {}).get("candidates")
         if not candidates:
-            continue
-        ranked = sorted(candidates, key=lambda c: (-c[3], -c[1], -c[2]))
-        top_a, top_primary = ranked[0][1], ranked[0][3]
-        if top_primary > 0 or top_a > ex._AMBIGUOUS_MATCH_MAX:
             continue
         _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
         chain_val = ex._chain_sum_candidate(tdf, row, candidates, tier_y_max)
