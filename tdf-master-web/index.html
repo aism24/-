@@ -356,6 +356,7 @@ def is_dai_cell(text: str | None) -> bool:
 """
 from __future__ import annotations
 
+import collections
 import math
 import re
 from dataclasses import dataclass, field
@@ -1010,8 +1011,17 @@ RELAX_MARGIN = 5000.0
 _NUM_MIN_VALUE = 10.0
 _SUBSUM_Y_GROUP_TOL = 10.0  # 連結性フィルタ用のYグループ化許容誤差
 _SUBSUM_VALIDATE_Y_TOL = 50.0  # サブ寸法和検証用のYグループ化許容誤差(緩め)
-_SUBSUM_MIN_SUM = 500.0
+# 2026-09-16、N-1 2G-10対応で500→2000に引き上げ: 500のままだと、梁本体とは
+# 無関係な小さな数値(ボルト穴等の斜め注記400+200+200=800)が偶然近傍の別の
+# 「800」ラベルと一致し、誤って全長として採用されてしまうケースがあった
+# (実際の全長は9035で、9035自体は分解されない単一ラベルのため、こちらは
+# 下の_line_length_frequency_no_sizeフォールバックで拾う)。この定数は
+# determine_length_no_size専用で、既存4項目パターンのdetermine_lengthとは
+# 無関係(そちらへの影響なし)。
+_SUBSUM_MIN_SUM = 2000.0
 _SIZE_JOINT_Y_BAND = 300.0
+_LINE_FREQ_MIN_COUNT = 3  # 同一長さ直線の頻度フォールバック採用の最低本数
+_LINE_FREQ_MIN_VALUE = 2000.0  # フォールバック候補の最小値(全長として現実的な下限)
 
 
 def _collect_horiz_nums_no_size(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float):
@@ -1193,12 +1203,39 @@ def _bottom_up_validate_no_size(tdf: tb.TdfData, group_nums_y, target_nums_y):
     return match_counts
 
 
+def _line_length_frequency_no_size(tdf: tb.TdfData, x_min: float, x_max: float,
+                                    candidates) -> dict[float, int]:
+    """候補値ごとに、[x_min, x_max]内に完全に収まる(両端点とも範囲内)、
+    長さがほぼ一致(±0.1)する直線の本数を数える。
+
+    サブ寸法和検証(合計が別のテキストと一致するか)が使えない場合の
+    フォールバック: ある数値がそのまま梁の全長を表す単一ラベルであり、
+    かつ実際に同じ長さの直線が複数本(基準線・上端線・下端線等)存在する
+    ケースを拾う(N-1 2G-10で確認: 全長9035が分解されないラベルとして
+    1回だけ書かれ、同じ長さの水平線が9本ある)。
+    """
+    counts: dict[float, int] = {}
+    for v in candidates:
+        c = 0
+        for ln in tdf.lines:
+            if abs(ln.length - v) > 0.1:
+                continue
+            lo, hi = min(ln.x1, ln.x2), max(ln.x1, ln.x2)
+            if lo < x_min or hi > x_max:
+                continue
+            c += 1
+        if c > 0:
+            counts[v] = c
+    return counts
+
+
 def determine_length_no_size(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float):
     """3項目パターン専用の長さ判定。DXF抽出アプリの「サブ寸法和+直線連結性の
     検証」を移植したもの(既存のdetermine_lengthとは独立、互いに影響しない)。
 
-    サブ寸法和で一意に(タイ無しで)決まった候補が無い場合はNoneを返す
-    (タイブレークは実装しない。ユーザー確認済み方針)。
+    サブ寸法和で一意に決まらない場合、同一長さ直線の頻度によるフォールバック
+    (`_line_length_frequency_no_size`)を試みる。それでも一意に決まらない
+    場合はNoneを返す(2026-09-16、N-1 2G-10対応で追加)。
 
     Returns: (length_value or None, debug dict)
     """
@@ -1207,15 +1244,30 @@ def determine_length_no_size(tdf: tb.TdfData, x_min: float, x_max: float, y_ref:
     match_counts = _bottom_up_validate_no_size(tdf, group_nums_y, all_nums_xy)
 
     debug = {"all_nums_count": len(all_nums_xy), "match_counts": match_counts}
-    if not match_counts:
-        return None, {**debug, "reason": "no sub-sum match"}
 
-    max_c = max(match_counts.values())
-    top = [v for v, c in match_counts.items() if c == max_c]
-    if len(top) != 1:
-        return None, {**debug, "reason": "tie among top candidates", "top": top}
+    length_value = None
+    if match_counts:
+        max_c = max(match_counts.values())
+        top = [v for v, c in match_counts.items() if c == max_c]
+        if len(top) == 1:
+            length_value = top[0]
 
-    length_value = top[0]
+    if length_value is None:
+        candidates = {
+            v for v, _x, _y, ang in all_nums_xy
+            if v >= _LINE_FREQ_MIN_VALUE and (abs(ang % 180 - 0) <= 0.1 or abs(ang % 180 - 180) <= 0.1)
+        }
+        freq = _line_length_frequency_no_size(tdf, x_min, x_max, candidates)
+        debug["line_freq"] = freq
+        if freq:
+            max_fc = max(freq.values())
+            top_f = [v for v, c in freq.items() if c == max_fc]
+            if max_fc >= _LINE_FREQ_MIN_COUNT and len(top_f) == 1:
+                length_value = top_f[0]
+                debug["reason"] = "line frequency fallback"
+
+    if length_value is None:
+        return None, {**debug, "reason": debug.get("reason", "no sub-sum match / no line-frequency match")}
 
     # 種別(普通梁/斜め梁)判定用に、確定した長さに一致する参照直線の角度を求める。
     # tdf_master_extractor_multiは本モジュールをimportしているため、循環import
@@ -1247,15 +1299,93 @@ def _nearest_size_text_no_size(tdf: tb.TdfData, cx: float, cy: float):
     return best
 
 
+def _find_stadium_capsules_no_size(tdf: tb.TdfData, angle_tol_deg: float = 1.0,
+                                    radius_tol: float = 0.5, max_dist_factor: float = 20.0):
+    """`find_stadium_centers`と同じペアリングロジックだが、中点だけでなく
+    2つの円弧中心そのもの(カプセルの両端点)も返す(既存のfind_stadium_centers
+    は変更せず、こちらは独立実装)。
+
+    2026-09-16、KIX01現場`N-1 2G-06`で、継手記号(半径57.0)とは別に、
+    フランジ沿いのボルト穴らしき小さい円弧ペア(半径4.6)も同じ条件を
+    満たしてしまい、「中心に最も近いテキスト」方式では継手と無関係な
+    テキストを誤って拾う問題が見つかった。実際に長丸(カプセル)の中に
+    テキストが入っているかで判定するには、中点だけでなく2端点(カプセルの
+    軸)が必要なため、この専用版を追加した。
+
+    Returns: [(ax, ay, bx, by, r), ...]
+    """
+    arcs = [a for a in tdf.arcs if a.a1 is not None]
+    pairs = []
+    used = set()
+    n = len(arcs)
+    for i in range(n):
+        a = arcs[i]
+        if a.offset in used:
+            continue
+        for j in range(i + 1, n):
+            b = arcs[j]
+            if b.offset in used:
+                continue
+            if abs(a.r - b.r) > radius_tol:
+                continue
+            a1d = math.degrees(a.a1)
+            b1d = math.degrees(b.a1)
+            diff = abs((a1d - b1d) % 360)
+            diff = min(diff, 360 - diff)
+            if abs(diff - 180.0) > angle_tol_deg:
+                continue
+            dist = math.hypot(b.cx - a.cx, b.cy - a.cy)
+            if not (0.1 < dist < a.r * max_dist_factor):
+                continue
+            pairs.append((a.cx, a.cy, b.cx, b.cy, a.r))
+            used.add(a.offset)
+            used.add(b.offset)
+            break
+    return pairs
+
+
+def _point_in_capsule_no_size(px: float, py: float, ax: float, ay: float,
+                               bx: float, by: float, r: float) -> bool:
+    """点(px,py)がカプセル(2端点ax,ay〜bx,by・半径r)の中に入っているかを判定する。"""
+    dx, dy = bx - ax, by - ay
+    seg_len2 = dx * dx + dy * dy
+    if seg_len2 == 0:
+        return math.hypot(px - ax, py - ay) <= r
+    t = ((px - ax) * dx + (py - ay) * dy) / seg_len2
+    t = max(0.0, min(1.0, t))
+    cx, cy = ax + t * dx, ay + t * dy
+    return math.hypot(px - cx, py - cy) <= r
+
+
+def _text_enclosed_by_capsule_no_size(tdf: tb.TdfData, rec, capsule) -> bool:
+    """テキストの開始点・終了点(幅×文字数から計算)のどちらかがカプセルの
+    中に入っていればTrue(2026-09-16、ユーザー指摘: テキストは点ではなく
+    範囲を持つため、開始点だけ/終了点だけがカプセルに入っているケースも
+    正しく拾う必要がある)。"""
+    text = tdf.resolve_text(rec)
+    if not text:
+        return False
+    ax, ay, bx, by, r = capsule
+    if _point_in_capsule_no_size(rec.x, rec.y, ax, ay, bx, by, r):
+        return True
+    rot = tdf.resolve_rot(rec)
+    total_w = rec.w * len(text)
+    end_x = rec.x + total_w * math.cos(rot)
+    end_y = rec.y + total_w * math.sin(rot)
+    return _point_in_capsule_no_size(end_x, end_y, ax, ay, bx, by, r)
+
+
 def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float, endpoints):
     """3項目パターン専用の継手判定。確定した長さに一致する参照直線の実端点
     (endpoints、determine_length_no_sizeのdebug['endpoints']をそのまま渡す)
-    の近傍にある長丸のうち、各端点に最も近いものを左右継手候補とする
-    (絶対閾値は設けない)。
+    それぞれについて、**実際に長丸(カプセル)に囲まれているテキスト**だけを
+    候補にし、その中で最も近いものを左右継手として採用する(絶対閾値は
+    設けない)。
 
-    この図面では長丸の中心ぴったりにテキストが無く、少し離れた位置に
-    継手コードがあったため、テキスト自体も「最も近いもの」を絶対閾値なしで
-    採用する(ユーザー確認済み方針)。
+    2026-09-16、KIX01現場`N-1 2G-06`で「長丸の中心に最も近いテキスト」
+    方式だと、継手記号とは無関係な小さい円(ボルト穴等)の方が近く、
+    無関係なテキストを誤って拾う不具合が見つかったため、「カプセルに
+    実際に囲まれているか」で候補を絞り込む方式に改訂した。
 
     Returns: (left_text, right_text, left_center, right_center)
              継手候補が1つも無い場合は (None, None, None, None)
@@ -1264,45 +1394,50 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
         return None, None, None, None
     (lx, ly), (rx, ry) = endpoints
 
-    centers = [c for c in find_stadium_centers(tdf) if c[1] > y_ref]
-    if not centers:
+    capsules = [c for c in _find_stadium_capsules_no_size(tdf) if (c[1] + c[3]) / 2 > y_ref]
+    candidates = []  # (mid_x, mid_y, text)
+    for ax, ay, bx, by, r in capsules:
+        for rec in tdf.texts:
+            if rec.rot != 0:
+                continue
+            if not _text_enclosed_by_capsule_no_size(tdf, rec, (ax, ay, bx, by, r)):
+                continue
+            candidates.append(((ax + bx) / 2, (ay + by) / 2, tdf.resolve_text(rec)))
+            break  # 1つのカプセルには通常1つのテキストしか描かれていない
+
+    if not candidates:
         return None, None, None, None
 
-    left_center = min(centers, key=lambda c: math.hypot(c[0] - lx, c[1] - ly))
-    right_center = min(centers, key=lambda c: math.hypot(c[0] - rx, c[1] - ry))
+    def _nearest(px: float, py: float):
+        return min(candidates, key=lambda c: math.hypot(c[0] - px, c[1] - py))
 
-    def _nearest_text(cx: float, cy: float):
-        best = None
-        best_d = float("inf")
-        for r in tdf.texts:
-            if r.rot != 0:
-                continue
-            text = tdf.resolve_text(r)
-            if not text:
-                continue
-            d = math.hypot(r.x - cx, r.y - cy)
-            if d < best_d:
-                best_d = d
-                best = text
-        return best
-
-    left_text = _nearest_text(left_center[0], left_center[1])
-    right_text = _nearest_text(right_center[0], right_center[1])
+    left_cx, left_cy, left_text = _nearest(lx, ly)
+    right_cx, right_cy, right_text = _nearest(rx, ry)
     return (
         left_text, right_text,
-        {"cx": left_center[0], "cy": left_center[1]},
-        {"cx": right_center[0], "cy": right_center[1]},
+        {"cx": left_cx, "cy": left_cy},
+        {"cx": right_cx, "cy": right_cy},
     )
+
+
+def _char_multiset_overlap_no_size(a: str, b: str) -> int:
+    """2つの文字列の「1文字ずつの多重集合」としての共通部分の個数を返す。
+    サイズ表記(例: H-900x300x16x28)同士の類似度の簡易指標として使う。"""
+    ca = collections.Counter(a)
+    cb = collections.Counter(b)
+    return sum((ca & cb).values())
 
 
 def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
     """3項目パターン専用のサイズ判定。左右継手位置に最も近いサイズ文字列を
     探し、それが長さのX範囲(endpointsのX最小〜最大)の外側にあれば
     「継手側(接続先部材)のサイズ」とみなし(DXFアプリのis_joint_size)、
-    そのY座標帯(±300)・長さのX範囲内で改めて単一候補を探す。
+    そのY座標帯(±300)・長さのX範囲内で改めて候補を探す。
 
-    候補が0件または複数件(値が割れる)の場合はNoneを返す(フォールバックは
-    実装しない。ユーザー確認済み方針)。
+    候補が単一ならそれを採用。複数件の場合は、継手側サイズ(refs)との
+    1文字多重集合の一致数が最も多い候補を採用する(DXFアプリのフォールバック
+    と同じ考え方: 断面形状記号や寸法が近い側が本体サイズである可能性が高い)。
+    一致数が同点の場合や候補0件の場合はNoneを返す。
     """
     if endpoints is None:
         return None
@@ -1335,6 +1470,19 @@ def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
 
     if len(values) == 1:
         return next(iter(values))
+    if len(values) > 1:
+        ref_texts = [p[2] for p in refs]
+        scored = sorted(
+            (
+                (max(_char_multiset_overlap_no_size(v, rt) for rt in ref_texts), v)
+                for v in values
+            ),
+            key=lambda item: item[0],
+            reverse=True,
+        )
+        if len(scored) >= 2 and scored[0][0] == scored[1][0]:
+            return None
+        return scored[0][1]
     return None
 
 
