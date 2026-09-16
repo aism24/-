@@ -93,6 +93,26 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 #beam-box .logo-frame img { width: 56px; height: 56px; }
 #beam-box .company-name { font-size: 20px; line-height: 56px; }
 #beam-box h2 { font-size: 17px; margin: 6px 0 18px; }
+
+.manual-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #1a73e8; color: #fff; border: none; border-radius: 20px;
+  padding: 9px 20px; font-size: 13px; font-weight: bold; cursor: pointer;
+  margin: 0 0 16px; box-shadow: 0 2px 8px rgba(26,115,232,0.35);
+  transition: background .15s, transform .15s;
+}
+.manual-btn:hover { background: #1558b0; transform: translateY(-1px); }
+
+/* 「開始」押下後、説明書ボタンはヘッダーの会社ロゴ左側へ移動する
+   (app.jsのmoveManualButtonToHeader、FLIPアニメーションで実装)。
+   移動後はこのスタイルに切り替わる。 */
+.manual-btn-header {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #fff; color: #1a73e8; border: 1px solid #1a73e8; border-radius: 14px;
+  padding: 5px 12px; font-size: 12px; font-weight: bold; cursor: pointer;
+  white-space: nowrap; flex-shrink: 0;
+}
+.manual-btn-header:hover { background: #eaf2fe; }
 #koji-field { text-align: left; margin-top: 4px; }
 #koji-field label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
 .koji-warn-red {
@@ -197,6 +217,39 @@ table#result-table tbody tr:hover { background: #f7fbff; }
 }
 #basepath-textarea:focus { outline: 2px solid #1a73e8; outline-offset: 1px; }
 .basepath-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+
+/* 操作マニュアル(説明書)ビューア。全ページ共通で←/→/閉じるの3ボタンを表示し、
+   前後端では該当ボタンをdisabledにする(ボタン自体は常に表示したまま)。 */
+#manual-overlay {
+  display: none; position: fixed; inset: 0; z-index: 7000;
+  background: rgba(20,30,40,0.72); align-items: center; justify-content: center;
+  padding: 20px;
+}
+#manual-overlay.open { display: flex; }
+#manual-box {
+  background: #fff; border-radius: 14px; padding: 20px; width: 100%; max-width: 900px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.4); display: flex; flex-direction: column; gap: 14px;
+}
+#manual-image-wrap {
+  position: relative; width: 100%; background: #0b1220; border-radius: 8px; overflow: hidden;
+}
+#manual-image { width: 100%; height: auto; display: block; }
+/* 1ページ目にある元PDFのハイパーリンク(「実際のアプリを開く」ボタン)の
+   位置を、PDFのリンク座標(page.get_links())から画像に対する割合で再現し、
+   透明なクリック領域として重ねる。1ページ目以外では非表示。 */
+.manual-link {
+  position: absolute; left: 6.72%; top: 87.36%; width: 21.25%; height: 7.92%;
+  display: none; cursor: pointer;
+}
+.manual-link.visible { display: block; }
+#manual-page-indicator { text-align: center; font-size: 13px; color: #666; font-weight: bold; }
+#manual-actions { display: flex; justify-content: center; gap: 12px; }
+#manual-actions button {
+  padding: 9px 22px; border-radius: 8px; border: 1px solid #bbb; background: #fff;
+  font-size: 14px; font-weight: bold; cursor: pointer; min-width: 96px;
+}
+#manual-actions button:disabled { opacity: .4; cursor: not-allowed; }
+#manual-actions button#manual-close { background: #333; color: #fff; border-color: #333; }
 
 #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 6000; }
 .toast-item {
