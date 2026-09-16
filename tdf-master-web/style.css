@@ -95,13 +95,13 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 #beam-box h2 { font-size: 17px; margin: 6px 0 18px; }
 
 .manual-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: #1a73e8; color: #fff; border: none; border-radius: 20px;
-  padding: 9px 20px; font-size: 13px; font-weight: bold; cursor: pointer;
-  margin: 0 0 16px; box-shadow: 0 2px 8px rgba(26,115,232,0.35);
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; background: #ff8fc7; color: #000; border: none; border-radius: 14px;
+  padding: 14px 10px; font-size: 26px; font-weight: bold; cursor: pointer;
+  margin: 0 0 16px; box-shadow: 0 3px 12px rgba(255,143,199,0.5);
   transition: background .15s, transform .15s;
 }
-.manual-btn:hover { background: #1558b0; transform: translateY(-1px); }
+.manual-btn:hover { background: #ff6fb5; transform: translateY(-1px); }
 
 /* 「開始」押下後、説明書ボタンはヘッダーの会社ロゴ左側へ移動する
    (app.jsのmoveManualButtonToHeader、FLIPアニメーションで実装)。
