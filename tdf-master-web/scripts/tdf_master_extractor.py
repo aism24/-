@@ -45,8 +45,10 @@ def _try_float(s: str | None) -> float | None:
 # ユーザー確認済み)。H系統(HF/HFT/HY/HYT)・L系統(LH)は接頭辞が長い方を
 # 先に置く必要はない(全体一致に失敗すれば他の候補へバックトラックされる
 # ため)が、可読性のため長い接頭辞を先に並べている。
+# 2026-09-16、KIX01現場`S-1 R1G-07`で`MHY-1200x500x22x40`という表記
+# (`M`+H系統)が実データで初めて確認されたため追加。
 SIZE_PATTERN = re.compile(
-    r"^(BBOX|BCP|BCR|BOX|BH|BT|CT|C|HFT|HYT|HF|HY|H|I|LH|L|P|SH|TH|[0-9]+φ|\[|角)[\-‐]?\s*[0-9]"
+    r"^(BBOX|BCP|BCR|BOX|BH|BT|CT|C|MHY|HFT|HYT|HF|HY|H|I|LH|L|P|SH|TH|[0-9]+φ|\[|角)[\-‐]?\s*[0-9]"
 )
 
 # 「同じ行」とみなすY座標の許容誤差。当初1.0(ほぼ完全一致)だったが、
@@ -1037,7 +1039,8 @@ def _text_enclosed_by_capsule_no_size(tdf: tb.TdfData, rec, capsule) -> bool:
     return _point_in_capsule_no_size(end_x, end_y, ax, ay, bx, by, r)
 
 
-def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float, endpoints):
+def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float, endpoints,
+                              y_max: float | None = None):
     """3項目パターン専用の継手判定。確定した長さに一致する参照直線の実端点
     (endpoints、determine_length_no_sizeのdebug['endpoints']をそのまま渡す)
     それぞれについて、**実際に長丸(カプセル)に囲まれているテキスト**だけを
@@ -1049,6 +1052,11 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
     無関係なテキストを誤って拾う不具合が見つかったため、「カプセルに
     実際に囲まれているか」で候補を絞り込む方式に改訂した。
 
+    `y_max`を指定すると、段(tier)が2段以上ある図面で、自分の段より上に
+    ある別の段の継手候補を除外する(2026-09-16、S-1 R1G-03対応。後述の
+    X軸のみでの距離判定に切り替えたことで、Y方向の距離という暗黙の段
+    分離効果が失われたため、明示的なY範囲の打ち切りが別途必要になった)。
+
     Returns: (left_text, right_text, left_center, right_center)
              継手候補が1つも無い場合は (None, None, None, None)
     """
@@ -1056,12 +1064,20 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
         return None, None, None, None
     (lx, ly), (rx, ry) = endpoints
 
-    capsules = [c for c in _find_stadium_capsules_no_size(tdf) if (c[1] + c[3]) / 2 > y_ref]
+    # 2026-09-16、S-1 R1G-06(屋根梁、主軸が約0.6度傾いている)で、継手ラベル
+    # 自身も同じ0.6度回転して描かれていたため「回転角がちょうど0度」という
+    # 事前フィルタに一致せず、無関係な回転0度の別継手(BJ12)が誤って採用
+    # されていた。カプセル内包判定(_text_enclosed_by_capsule_no_size)自体は
+    # テキストの回転を考慮して始点・終点を計算する実装のため、この事前
+    # フィルタ自体が不要かつ有害(ユーザー承認済み、N-1 2G回帰11行に影響
+    # ないことを確認済み)。
+    capsules = [
+        c for c in _find_stadium_capsules_no_size(tdf)
+        if (c[1] + c[3]) / 2 > y_ref and (y_max is None or (c[1] + c[3]) / 2 < y_max)
+    ]
     candidates = []  # (mid_x, mid_y, text)
     for ax, ay, bx, by, r in capsules:
         for rec in tdf.texts:
-            if rec.rot != 0:
-                continue
             if not _text_enclosed_by_capsule_no_size(tdf, rec, (ax, ay, bx, by, r)):
                 continue
             candidates.append(((ax + bx) / 2, (ay + by) / 2, tdf.resolve_text(rec)))
@@ -1070,11 +1086,29 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
     if not candidates:
         return None, None, None, None
 
-    def _nearest(px: float, py: float):
-        return min(candidates, key=lambda c: math.hypot(c[0] - px, c[1] - py))
+    # 2026-09-16、S-1 R1G-14〜16で、全長の寸法線が実際の部材・継手位置から
+    # Y方向に大きくオフセットされた「見やすさのための注記段」に描かれていた
+    # ため、その寸法線の実端点との2次元距離で継手候補を探すと、Y位置がたまたま
+    # その注記段に近い無関係な継手(BJ12)を誤って拾ってしまっていた。
+    # ユーザー指摘: 継手の判定は「マーク群より上の範囲で、長さの左端X〜右端X
+    # (斜め梁ならその勾配に沿って)付近にある長丸テキスト」であるべきで、
+    # 寸法線自体のY位置に依存すべきではない。実端点のY座標を無視し、主軸の
+    # 傾きに沿って回転させたX座標だけで最も近いものを選ぶ(Y方向の距離は
+    # 見た目上の都合でいくらでも離れうるため無視してよい)。
+    main_axis_deg = math.degrees(math.atan2(ry - ly, rx - lx))
+    theta = -math.radians(main_axis_deg)
 
-    left_cx, left_cy, left_text = _nearest(lx, ly)
-    right_cx, right_cy, right_text = _nearest(rx, ry)
+    def _rotate_x(x: float, y: float) -> float:
+        return x * math.cos(theta) - y * math.sin(theta)
+
+    lx_r = _rotate_x(lx, ly)
+    rx_r = _rotate_x(rx, ry)
+
+    def _nearest(target_xr: float):
+        return min(candidates, key=lambda c: abs(_rotate_x(c[0], c[1]) - target_xr))
+
+    left_cx, left_cy, left_text = _nearest(lx_r)
+    right_cx, right_cy, right_text = _nearest(rx_r)
     return (
         left_text, right_text,
         {"cx": left_cx, "cy": left_cy},
@@ -1145,6 +1179,170 @@ def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
         if len(scored) >= 2 and scored[0][0] == scored[1][0]:
             return None
         return scored[0][1]
+    return None
+
+
+# ---------------------------------------------------------------------------
+# 「製品マーク|設計符号|本数」3項目パターン専用: 隣接製品との直線連結による
+# 長さ候補の絞り込み(2026-09-16、S-1 R1G-07〜10対応)
+# ---------------------------------------------------------------------------
+#
+# 1枚の図面に2製品の寸法チェーンが連結して描かれているケース(例:
+# R1GX2Y1[9491.2]とR1GX2Y1a[11480]が同じ全体寸法線の続きとして描かれている)
+# で、単純な「範囲内で一致する直線の本数が多い方を採用」という判定だと、
+# 無関係な繰り返し寸法(重複コピーが複数存在する値)の方が本数で勝ってしまう
+# ことがあった。ユーザー指摘: 「隣接製品の長さが確定している場合、その直線と
+# 同じ角度で繋がっている(端点が一致する)直線を持つ候補を優先すべき」。
+#
+# 「重複コピーが無い、単独の直線」だけに絞って端点の連結を見ることで、
+# 繰り返し寸法(常に複数コピーが存在する)を自然に除外できる。
+_SINGULAR_LINE_Y_TOL = 100.0  # 同じ長さの直線が近いYに複数あるかの判定幅
+_CONNECT_POINT_TOL = 50.0     # 隣接製品の直線と端点が繋がっているとみなす距離
+_CONNECT_ANGLE_TOL = 3.0      # 端点連結を認める角度差(度)
+_AMBIGUOUS_MATCH_MAX = 3      # この一致直線数以下(かつprimary_cnt=0)の場合のみ連結判定を試みる
+
+
+def _is_singular_length_line(tdf: tb.TdfData, ln, value: float, y_tol: float = _SINGULAR_LINE_Y_TOL) -> bool:
+    ty = (ln.y1 + ln.y2) / 2
+    count = 0
+    for other in tdf.lines:
+        if abs(other.length - value) > 0.5:
+            continue
+        oy = (other.y1 + other.y2) / 2
+        if abs(oy - ty) < y_tol:
+            count += 1
+    return count == 1
+
+
+def _singular_lines_for_value(tdf: tb.TdfData, value: float) -> list:
+    cands = [ln for ln in tdf.lines if abs(ln.length - value) < 0.5]
+    return [ln for ln in cands if _is_singular_length_line(tdf, ln, value)]
+
+
+def _line_angle_deg(ln) -> float:
+    return math.degrees(math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1)) % 180
+
+
+def _connected_length_candidate(tdf: tb.TdfData, candidates: list, sibling_length: float) -> float | None:
+    """候補値のうち、隣接製品(sibling_length、確定済み)の「単独直線」と端点が
+    繋がっている「単独直線」を持つものを返す(無ければNone)。candidatesは
+    determine_lengthのdebug['candidates'](val, a, b, primary_cnt)のリスト。"""
+    sib_lines = _singular_lines_for_value(tdf, sibling_length)
+    if not sib_lines:
+        return None
+    best_val = None
+    best_dist = float("inf")
+    for val, _a, _b, _primary in candidates:
+        cand_lines = _singular_lines_for_value(tdf, val)
+        for cln in cand_lines:
+            for sln in sib_lines:
+                for px, py in ((cln.x1, cln.y1), (cln.x2, cln.y2)):
+                    for qx, qy in ((sln.x1, sln.y1), (sln.x2, sln.y2)):
+                        dist = math.hypot(px - qx, py - qy)
+                        if dist > _CONNECT_POINT_TOL:
+                            continue
+                        diff = abs(_line_angle_deg(cln) - _line_angle_deg(sln))
+                        diff = min(diff, 180 - diff)
+                        if diff > _CONNECT_ANGLE_TOL:
+                            continue
+                        if dist < best_dist:
+                            best_dist = dist
+                            best_val = val
+    return best_val
+
+
+# ---------------------------------------------------------------------------
+# 「製品マーク|設計符号|本数」3項目パターン専用: 端点連結した直線群の合計長
+# による長さ候補の絞り込み(2026-09-16、S-1 R1G-14〜16対応)
+# ---------------------------------------------------------------------------
+#
+# S-1 R1G-14で、正解の全長(10480.6)には対応する数値テキストラベルが1つしか
+# 無く、その1本の直線に対する一致本数(a=1)では、別の無関係な値(12900.0、
+# これも1本)と決着がつかなかった。ユーザー提案: 「寸法線(の合計)が候補の
+# 数値テキストと一致し、その一致(合計)が複数系統で成立するものを優先する」。
+#
+# 実際に調べたところ、10480.6は「2465.24+3625.11+4390.25」という、個別には
+# 数値ラベルの無い(直線だけの)3本の連結チェーンの合計と一致し、しかも
+# こうした独立した合計の系統(重複して描かれた別のYの控え線群)が4つ見つかった
+# (12900.0は3つ)。この「合計が一致する連結チェーンの本数」を数え、既存の
+# 候補(determine_lengthが既に検出した数値テキスト)の中で最も多い系統数を
+# 持つものを優先する。
+_CHAIN_MIN_SEG_LEN = 500.0   # 直線チェーンを構成する最小の直線長(ボルト・矢印等の
+                              # 極小ノイズを除外)
+_CHAIN_CONNECT_TOL = 30.0    # チェーンとみなす端点同士の距離
+_CHAIN_ANGLE_TOL = 5.0       # ほぼ水平とみなす角度差(度、既存のline角度判定と同程度)
+_CHAIN_SUM_TOL = 1.0         # 合計とテキスト候補値が一致するとみなす誤差
+_CHAIN_MIN_WIN_COUNT = 2     # この系統数以上、かつ他候補より厳密に多い場合のみ採用
+
+
+def _chain_sum_counts(tdf: tb.TdfData, y_ref: float, y_max: float | None = None) -> dict[float, int]:
+    """y_ref(行のY)より上・(y_maxがあればそれより下)にあるほぼ水平な直線
+    (_CHAIN_MIN_SEG_LEN以上)を対象に、端点が連結している(_CHAIN_CONNECT_TOL以内)
+    グループを求め、2本以上のグループについて合計長を集計する。
+    戻り値: {合計長(丸め): 出現した連結グループの数}
+    """
+    lines = []
+    for ln in tdf.lines:
+        ang = math.degrees(math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1)) % 180
+        if min(ang, 180 - ang) > _CHAIN_ANGLE_TOL:
+            continue
+        if ln.y1 <= y_ref or ln.y2 <= y_ref:
+            continue
+        if y_max is not None and (ln.y1 >= y_max or ln.y2 >= y_max):
+            continue
+        if ln.length < _CHAIN_MIN_SEG_LEN:
+            continue
+        lines.append(ln)
+
+    n = len(lines)
+    parent = list(range(n))
+
+    def _find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def _union(a, b):
+        parent[_find(a)] = _find(b)
+
+    pts = [((ln.x1, ln.y1), (ln.x2, ln.y2)) for ln in lines]
+    for i in range(n):
+        for j in range(i + 1, n):
+            for p in pts[i]:
+                for q in pts[j]:
+                    if math.hypot(p[0] - q[0], p[1] - q[1]) <= _CHAIN_CONNECT_TOL:
+                        _union(i, j)
+
+    groups: dict[int, list] = {}
+    for i, ln in enumerate(lines):
+        groups.setdefault(_find(i), []).append(ln)
+
+    counts: dict[float, int] = {}
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        total = round(sum(m.length for m in members), 1)
+        counts[total] = counts.get(total, 0) + 1
+    return counts
+
+
+def _chain_sum_candidate(tdf: tb.TdfData, row: ProductRow, candidates: list, y_max: float | None = None) -> float | None:
+    """候補値のうち、連結直線チェーンの合計として最も多くの系統で裏付けられる
+    ものを返す(他候補より厳密に多く、かつ_CHAIN_MIN_WIN_COUNT以上の場合のみ。
+    そうでなければNone)。"""
+    counts = _chain_sum_counts(tdf, row.y, y_max)
+    scored = []
+    for val, _a, _b, _primary in candidates:
+        cnt = sum(c for cv, c in counts.items() if abs(cv - val) < _CHAIN_SUM_TOL)
+        scored.append((val, cnt))
+    scored.sort(key=lambda t: -t[1])
+    if len(scored) < 2:
+        return None
+    best_val, best_cnt = scored[0]
+    second_cnt = scored[1][1]
+    if best_cnt >= _CHAIN_MIN_WIN_COUNT and best_cnt > second_cnt:
+        return best_val
     return None
 
 

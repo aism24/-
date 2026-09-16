@@ -118,24 +118,21 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
     lengths: dict[int, float | None] = {}
     beam_types: dict[int, str | None] = {}
     joints_no_size: dict[int, tuple] = {}
+    size_missing_debug: dict[int, dict] = {}
     for row in rows:
         _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
         if row.size_missing:
-            # 「マーク|設計符号|本数」3項目パターン専用の独立ロジック
-            # (既存の4項目パターン向けdetermine_length/assign_joints_batch
-            # は一切呼び出さない。2026-09-16、KIX01現場`N-1 2G-05`対応)。
-            x_min = row.x_mark - ex.RELAX_MARGIN
-            x_max = row.x_next + ex.RELAX_MARGIN
-            length_value, debug = ex.determine_length_no_size(tdf, x_min, x_max, row.y)
+            # 「マーク|設計符号|本数」3項目パターン専用の行だが、長さ判定
+            # 自体は既存4項目パターン向けdetermine_lengthをそのまま流用する
+            # (2026-09-16当初はサブ寸法和+直線頻度の専用ロジック
+            # `determine_length_no_size`を新設したが、S-1 R1Gシリーズの
+            # 検証で、そちらは不要どころか無条件の±5000mm緩和(RELAX_MARGIN)
+            # が複数製品の近接する図面で別製品の寸法情報を巻き込む害がある
+            # と判明。緩和なしのdetermine_lengthだけでN-1 2G・S-1 R1Gの
+            # 大半の長さが正解することを確認済み)。
+            length_value, debug = ex.determine_length(tdf, row.x_mark, row.x_next, row.y, y_max=tier_y_max)
             lengths[id(row)] = length_value
-            beam_types[id(row)] = classify_beam_type(debug.get("main_axis_deg"))
-            endpoints = debug.get("endpoints")
-            left, right, left_jobj, right_jobj = ex.determine_joints_no_size(
-                tdf, row.y, length_value, endpoints
-            ) if length_value is not None else (None, None, None, None)
-            joints_no_size[id(row)] = (left, right)
-            if length_value is not None:
-                row.size = ex.determine_size_no_size(tdf, endpoints, left_jobj, right_jobj)
+            size_missing_debug[id(row)] = debug
             continue
         if len(rows) == 1:
             x_min = row.x_mark - ex.RELAX_MARGIN
@@ -148,6 +145,76 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
         beam_types[id(row)] = classify_beam_type(
             debug.get("main_axis_deg") if length_value is not None else None
         )
+
+    # 3項目パターンの行同士で同じY(行)を共有するもの(1枚の図面に2製品の
+    # 寸法チェーンが連結して描かれているケース)は、隣接製品の確定した長さと
+    # 直線が実際に連結しているかで長さ候補を絞り込む(S-1 R1G-07〜10対応。
+    # 詳細はtdf_master_extractor._connected_length_candidateのコメント参照)。
+    size_missing_rows = [r for r in rows if r.size_missing]
+    by_row_y: dict[float, list] = {}
+    for r in size_missing_rows:
+        by_row_y.setdefault(round(r.y, 1), []).append(r)
+    for members in by_row_y.values():
+        if len(members) < 2:
+            continue
+        for row in members:
+            candidates = size_missing_debug.get(id(row), {}).get("candidates")
+            if not candidates:
+                continue
+            # 既存のdetermine_length自体が高信頼(一致直線数が多い、または
+            # primary_cnt>0)で選んでいる値は、連結判定で上書きしない(僅差の
+            # 場合のみ連結判定を試みる安全弁。masamizsumi-dotcom/
+            # tdf-master-extractの同種の変更に合わせたもの)。
+            ranked = sorted(candidates, key=lambda c: (-c[3], -c[1], -c[2]))
+            top_a, top_primary = ranked[0][1], ranked[0][3]
+            if top_primary > 0 or top_a > ex._AMBIGUOUS_MATCH_MAX:
+                continue
+            for other in members:
+                if other is row:
+                    continue
+                sibling_length = lengths.get(id(other))
+                if sibling_length is None:
+                    continue
+                connected = ex._connected_length_candidate(tdf, candidates, sibling_length)
+                if connected is not None and connected != lengths.get(id(row)):
+                    lengths[id(row)] = connected
+                    break
+
+    # 同じ行を共有する隣接製品が無い(単独ファイル)場合の絞り込み: 候補値の
+    # うち、端点連結した直線チェーンの合計として最も多くの系統(重複して
+    # 描かれた控え線群)で裏付けられるものを優先する(S-1 R1G-14〜16対応。
+    # 詳細はtdf_master_extractor._chain_sum_candidateのコメント参照)。
+    for row in size_missing_rows:
+        candidates = size_missing_debug.get(id(row), {}).get("candidates")
+        if not candidates:
+            continue
+        ranked = sorted(candidates, key=lambda c: (-c[3], -c[1], -c[2]))
+        top_a, top_primary = ranked[0][1], ranked[0][3]
+        if top_primary > 0 or top_a > ex._AMBIGUOUS_MATCH_MAX:
+            continue
+        _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
+        chain_val = ex._chain_sum_candidate(tdf, row, candidates, tier_y_max)
+        if chain_val is not None and chain_val != lengths.get(id(row)):
+            lengths[id(row)] = chain_val
+
+    for row in size_missing_rows:
+        _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
+        length_value = lengths[id(row)]
+        debug = size_missing_debug.get(id(row), {})
+        beam_types[id(row)] = classify_beam_type(
+            debug.get("main_axis_deg") if length_value is not None else None
+        )
+        endpoints = (
+            exm._find_reference_line_endpoints(
+                tdf, row.x_mark, row.x_next, row.y, tier_y_max, length_value,
+            ) if length_value is not None else None
+        )
+        left, right, left_jobj, right_jobj = ex.determine_joints_no_size(
+            tdf, row.y, length_value, endpoints, y_max=tier_y_max
+        ) if length_value is not None else (None, None, None, None)
+        joints_no_size[id(row)] = (left, right)
+        if length_value is not None:
+            row.size = ex.determine_size_no_size(tdf, endpoints, left_jobj, right_jobj)
 
     # 3項目パターンの行はassign_joints_batch(既存の4項目パターン専用の
     # グルーピングロジック)には一切渡さない。
