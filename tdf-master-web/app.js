@@ -109,12 +109,44 @@ async function startApp() {
 const MANUAL_PAGE_COUNT = 8;
 let manualPage = 1;
 
+// 1ページ目のPDF埋め込みリンク(「実際のアプリを開く」)の矩形を、PDFページ
+// 全体に対する割合で表したもの(page.get_links()の座標から算出)。
+const MANUAL_LINK_RECT_PCT = { left: 0.0671875, top: 0.8736111111111111, width: 0.2125, height: 0.07916666666666666 };
+
+// 説明書を画面いっぱいに表示する都合上、画像はmax-width/max-height:100%で
+// アスペクト比を保って収められるため、表示領域(#manual-image-wrap)より
+// 実際の画像が小さくなる(上下または左右に余白が出る)ことがある。そのため
+// リンクの重ね要素はCSSの割合指定ではなく、実際に描画された<img>の矩形を
+// 都度計測して位置・サイズを反映する。
+function positionManualLink() {
+  const link = document.getElementById('manual-link-app');
+  const img = document.getElementById('manual-image');
+  const wrap = document.getElementById('manual-image-wrap');
+  if (!link || !img || !wrap || !link.classList.contains('visible')) return;
+  const place = () => {
+    const imgRect = img.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+    const offsetX = imgRect.left - wrapRect.left;
+    const offsetY = imgRect.top - wrapRect.top;
+    link.style.left = (offsetX + imgRect.width * MANUAL_LINK_RECT_PCT.left) + 'px';
+    link.style.top = (offsetY + imgRect.height * MANUAL_LINK_RECT_PCT.top) + 'px';
+    link.style.width = (imgRect.width * MANUAL_LINK_RECT_PCT.width) + 'px';
+    link.style.height = (imgRect.height * MANUAL_LINK_RECT_PCT.height) + 'px';
+  };
+  if (img.complete) place(); else img.onload = place;
+}
+
+window.addEventListener('resize', () => {
+  if (document.getElementById('manual-overlay').classList.contains('open')) positionManualLink();
+});
+
 function renderManualPage() {
   document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png`;
   document.getElementById('manual-page-indicator').textContent = `${manualPage} / ${MANUAL_PAGE_COUNT}`;
   document.getElementById('manual-prev').disabled = manualPage <= 1;
   document.getElementById('manual-next').disabled = manualPage >= MANUAL_PAGE_COUNT;
   document.getElementById('manual-link-app').classList.toggle('visible', manualPage === 1);
+  positionManualLink();
 }
 
 function openManual() {

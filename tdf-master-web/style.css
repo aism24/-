@@ -223,24 +223,24 @@ table#result-table tbody tr:hover { background: #f7fbff; }
 #manual-overlay {
   display: none; position: fixed; inset: 0; z-index: 7000;
   background: rgba(20,30,40,0.72); align-items: center; justify-content: center;
-  padding: 20px;
+  padding: 14px;
 }
 #manual-overlay.open { display: flex; }
 #manual-box {
-  background: #fff; border-radius: 14px; padding: 20px; width: 100%; max-width: 900px;
-  box-shadow: 0 12px 40px rgba(0,0,0,.4); display: flex; flex-direction: column; gap: 14px;
+  background: #fff; border-radius: 14px; padding: 16px; width: 100%; height: 100%;
+  box-shadow: 0 12px 40px rgba(0,0,0,.4); display: flex; flex-direction: column; gap: 12px;
 }
 #manual-image-wrap {
-  position: relative; width: 100%; background: #0b1220; border-radius: 8px; overflow: hidden;
+  position: relative; flex: 1 1 auto; min-height: 0; background: #0b1220; border-radius: 8px;
+  overflow: hidden; display: flex; align-items: center; justify-content: center;
 }
-#manual-image { width: 100%; height: auto; display: block; }
-/* 1ページ目にある元PDFのハイパーリンク(「実際のアプリを開く」ボタン)の
-   位置を、PDFのリンク座標(page.get_links())から画像に対する割合で再現し、
-   透明なクリック領域として重ねる。1ページ目以外では非表示。 */
-.manual-link {
-  position: absolute; left: 6.72%; top: 87.36%; width: 21.25%; height: 7.92%;
-  display: none; cursor: pointer;
-}
+/* 画面全体を使ってPDFページ画像を表示する(拡大表示でテキストを読みやすくするため)。
+   max-width/max-height:100%でアスペクト比を保ったまま画面に収め、上下または左右に
+   余白(レターボックス)が出ることがあるため、1ページ目のリンク重ね要素は
+   CSSの割合指定ではなくJS(app.jsのpositionManualLink)で実際に描画された
+   画像の矩形を基準に位置・サイズを計算する。 */
+#manual-image { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; }
+.manual-link { position: absolute; display: none; cursor: pointer; }
 .manual-link.visible { display: block; }
 #manual-page-indicator { text-align: center; font-size: 13px; color: #666; font-weight: bold; }
 #manual-actions { display: flex; justify-content: center; gap: 12px; }
