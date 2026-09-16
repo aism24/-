@@ -97,10 +97,87 @@ async function loadMasterData() {
 async function startApp() {
   // 利用記録シートへ日時・工場のみ記録する(失敗してもアプリ利用は継続させる)。
   apiPost('logUsageStart', { factory: FACTORY_NAMES[selectedFactory] || selectedFactory }).catch(() => {});
+  moveManualButtonToHeader();
   document.getElementById('beam-modal').classList.add('hidden');
   const kojiName = document.getElementById('koji-select').selectedOptions[0]?.textContent || kojiNo;
   document.getElementById('beam-type-label').textContent = kojiNo + '＿' + kojiName;
   await initPyodide();
+}
+
+// ---------- 操作マニュアル(説明書) ----------
+
+const MANUAL_PAGE_COUNT = 8;
+let manualPage = 1;
+
+function renderManualPage() {
+  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png`;
+  document.getElementById('manual-page-indicator').textContent = `${manualPage} / ${MANUAL_PAGE_COUNT}`;
+  document.getElementById('manual-prev').disabled = manualPage <= 1;
+  document.getElementById('manual-next').disabled = manualPage >= MANUAL_PAGE_COUNT;
+  document.getElementById('manual-link-app').classList.toggle('visible', manualPage === 1);
+}
+
+function openManual() {
+  manualPage = 1;
+  renderManualPage();
+  document.getElementById('manual-overlay').classList.add('open');
+}
+
+function closeManual() {
+  document.getElementById('manual-overlay').classList.remove('open');
+}
+
+function manualPrev() {
+  if (manualPage > 1) { manualPage--; renderManualPage(); }
+}
+
+function manualNext() {
+  if (manualPage < MANUAL_PAGE_COUNT) { manualPage++; renderManualPage(); }
+}
+
+// 「開始」ボタン押下時、説明書ボタンを工場・工事名選択モーダル内から
+// ヘッダーの会社ロゴ左側へ移動させる。FLIP(First-Last-Invert-Play)手法:
+// 先に実際の移動先(ヘッダー)へ要素を配置してしまい、旧位置・旧サイズとの
+// 差分から逆算したtransformを一旦適用して見た目上は元の位置に留めておき、
+// そのtransformを解除するアニメーションを再生することで、「縮みながら
+// 移動する」演出を実現する(要素を毎フレームJSで動かす方式より軽量)。
+function moveManualButtonToHeader() {
+  const btn = document.getElementById('manual-btn');
+  const headerBrand = document.getElementById('header-brand');
+  if (!btn || !headerBrand) return;
+
+  const firstRect = btn.getBoundingClientRect();
+
+  btn.classList.remove('manual-btn');
+  btn.classList.add('manual-btn-header');
+  btn.textContent = '説明書';
+  headerBrand.insertBefore(btn, headerBrand.firstChild);
+
+  const lastRect = btn.getBoundingClientRect();
+  const dx = firstRect.left - lastRect.left;
+  const dy = firstRect.top - lastRect.top;
+  const sx = firstRect.width / lastRect.width;
+  const sy = firstRect.height / lastRect.height;
+
+  btn.style.position = 'relative';
+  btn.style.zIndex = '2500';
+  btn.style.transformOrigin = 'top left';
+  btn.style.transition = 'none';
+  btn.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+  void btn.offsetWidth; // 上記transformを一度確実に反映させる(強制リフロー)
+
+  requestAnimationFrame(() => {
+    btn.style.transition = 'transform .6s cubic-bezier(0.22, 1, 0.36, 1)';
+    btn.style.transform = 'none';
+  });
+
+  btn.addEventListener('transitionend', function onEnd() {
+    btn.style.transition = '';
+    btn.style.zIndex = '';
+    btn.style.position = '';
+    btn.style.transformOrigin = '';
+    btn.removeEventListener('transitionend', onEnd);
+  });
 }
 
 async function initPyodide() {
