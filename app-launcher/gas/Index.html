@@ -8,7 +8,7 @@
        window.open()は許可されるがページ読み込み時の自動遷移は許可されない)ため、
        JSに頼らないmeta refreshを主手段にし、下のscriptとbody先頭のリンクを
        保険として併用する。 -->
-  <meta http-equiv="refresh" content="0;url=https://aism24.github.io/-/app-launcher/">
+  <meta http-equiv="refresh" content="0;url=https://app-launcher-ashy.vercel.app/">
   <style>
     body {
       font-family: "Segoe UI", "Meiryo", sans-serif;
@@ -212,11 +212,11 @@
        機能するクリック起点のリンクを常時表示しておく(ユーザー操作を伴う
        target="_top"のリンク遷移は、iframeサンドボックスでも確実に機能する)。 -->
   <script>
-    window.top.location.href = 'https://aism24.github.io/-/app-launcher/';
+    window.top.location.href = 'https://app-launcher-ashy.vercel.app/';
   </script>
   <div id="redirect-banner" style="max-width:640px;margin:0 auto 20px;padding:14px 18px;background:#1a2b1a;border:2px solid #4caf50;border-radius:10px;text-align:center;color:#eee;font-size:15px;">
-    アプリ一覧はGitHub Pages版に移行しました。自動的に切り替わらない場合は
-    <a href="https://aism24.github.io/-/app-launcher/" target="_top" style="color:#8f8;font-weight:bold;">こちらをクリック</a>
+    アプリ一覧は最新版に移行しました。自動的に切り替わらない場合は
+    <a href="https://app-launcher-ashy.vercel.app/" target="_top" style="color:#8f8;font-weight:bold;">こちらをクリック</a>
     してください。
   </div>
   <div class="header">
@@ -294,9 +294,9 @@
         // GAS Web Appからは起動できない(window.location・window.top.locationの
         // どちらで試しても、Google側のサンドボックスが遷移を横取りしてしまい、
         // 空白のパネルが開くだけで反応しない。実機で確認済み)。
-        // そのため、iframeに埋め込まれないGitHub Pages版のランチャーを新規タブで開き、
+        // そのため、iframeに埋め込まれない最新版のランチャーを新規タブで開き、
         // そちらで改めてカードをクリックしてもらう。
-        window.open('https://aism24.github.io/-/app-launcher/', '_blank');
+        window.open('https://app-launcher-ashy.vercel.app/', '_blank');
       }
       google.script.run.logAppOpen(name);
     }
