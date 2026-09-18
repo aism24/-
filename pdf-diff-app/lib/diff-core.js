@@ -459,11 +459,9 @@
       const x0 = b.x0 * scale - pad, y0 = b.y0 * scale - pad;
       const x1 = b.x1 * scale + pad, y1 = b.y1 * scale + pad;
       if (mode === 'box') {
+        // 枠線を引くと重なった文字が読みにくくなるため、塗りつぶしのみにする
         ctx.fillStyle = color.fill;
         ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-        ctx.strokeStyle = color.stroke;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
       } else if (mode === 'outline') {
         ctx.strokeStyle = color.stroke;
         ctx.lineWidth = 4;
