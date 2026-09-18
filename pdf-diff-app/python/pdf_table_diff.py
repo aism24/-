@@ -123,7 +123,7 @@ def draw_highlights(img, boxes, color, zoom=ZOOM, pad=2):
     for (x0, y0, x1, y1) in boxes:
         X0, Y0 = x0 * zoom - pad, y0 * zoom - pad
         X1, Y1 = x1 * zoom + pad, y1 * zoom + pad
-        draw.rectangle([X0, Y0, X1, Y1], fill=(*color, 90), outline=(*color, 255), width=2)
+        draw.rectangle([X0, Y0, X1, Y1], fill=(*color, 90))
     return img
 
 
@@ -152,8 +152,8 @@ def compose_side_by_side(img_old, img_new, old_label="旧 (OLD)", new_label="新
     draw.rectangle([w + gap, 0, w * 2 + gap, header_h], fill=(230, 245, 235))
 
     font = load_cjk_font(48)
-    draw.text((30, 20), f"{old_label} ※赤枠=変更前の値", fill=(180, 0, 0), font=font)
-    draw.text((w + gap + 30, 20), f"{new_label} ※緑枠=変更後の値", fill=(0, 110, 40), font=font)
+    draw.text((30, 20), f"{old_label} ※赤塗り=変更前の値", fill=(180, 0, 0), font=font)
+    draw.text((w + gap + 30, 20), f"{new_label} ※緑塗り=変更後の値", fill=(0, 110, 40), font=font)
 
     canvas.paste(img_old, (0, header_h))
     canvas.paste(img_new, (w + gap, header_h))
