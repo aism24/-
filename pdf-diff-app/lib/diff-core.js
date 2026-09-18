@@ -291,6 +291,52 @@
     return { oldBoxes, newBoxes };
   }
 
+  // ---------- 表方式(サーバーAPI経由、Pythonオリジナルコードをそのまま使用) ----------
+  //
+  // pdf.js経由の推定(charWeightによる文字幅近似・全角スペースの単語分割等)は
+  // PyMuPDF(page.get_text("words"))の実測値と細かく食い違うことが分かったため、
+  // 精度が最重要な「表」モードはブラウザ内では計算せず、Vercelの
+  // Pythonサーバーレス関数(api/table-diff.py、pdf_table_diff.pyをそのまま実行)
+  // にPDFを送って結果画像を受け取る。API未設定・失敗時のみdiffTable()による
+  // 従来のJS計算にフォールバックする。
+
+  function arrayBufferToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+  }
+
+  function base64PngToImage(b64) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('サーバーから返された画像の読み込みに失敗しました'));
+      img.src = `data:image/png;base64,${b64}`;
+    });
+  }
+
+  async function diffTableViaApi(apiUrl, oldPdfBase64, newPdfBase64, oldPage, newPage) {
+    const res = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPdfBase64, newPdfBase64, oldPage, newPage }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => res.statusText);
+      throw new Error(`表モードAPIエラー(${res.status}): ${detail}`);
+    }
+    const data = await res.json();
+    const [oldImg, newImg] = await Promise.all([
+      base64PngToImage(data.oldPngBase64),
+      base64PngToImage(data.newPngBase64),
+    ]);
+    return { oldImg, newImg, oldBoxesCount: data.oldBoxesCount, newBoxesCount: data.newBoxesCount };
+  }
+
   // ---------- 文章方式(1文字単位) ----------
 
   // 単語(セル)の境目に挟む不可視の区切り文字。新旧どちらの行にも同じ位置に
@@ -584,6 +630,12 @@
   async function runDiff(oldArrayBuffer, newArrayBuffer, opts = {}) {
     const scale = opts.scale || RENDER_SCALE;
     const onLog = opts.onLog || (() => {});
+    const tableDiffApiUrl = opts.tableDiffApiUrl || null;
+
+    // pdf.jsはワーカーへの転送でArrayBufferをdetach(内容を空に)することがあるため、
+    // 表モードAPI送信用の生バイト列は、pdf.jsに渡す前にコピーしてbase64化しておく。
+    const oldPdfBase64ForApi = tableDiffApiUrl ? arrayBufferToBase64(oldArrayBuffer.slice(0)) : null;
+    const newPdfBase64ForApi = tableDiffApiUrl ? arrayBufferToBase64(newArrayBuffer.slice(0)) : null;
 
     onLog('PDFを読み込み中...');
     const oldDoc = await pdfjsLib.getDocument({ data: oldArrayBuffer }).promise;
@@ -611,6 +663,24 @@
         votes[category] = (votes[category] || 0) + 1;
         onLog(`p${pageOut}: 旧${p.oldIdx + 1} ⇔ 新${p.newIdx + 1}(${CATEGORY_LABEL[category]})を比較中...`);
 
+        const labelOld = `旧 p.${p.oldIdx + 1}`, labelNew = `新 p.${p.newIdx + 1}`;
+
+        if (category === 'table' && tableDiffApiUrl) {
+          try {
+            onLog('表モード: サーバー(Python)で比較中...');
+            const r = await diffTableViaApi(tableDiffApiUrl, oldPdfBase64ForApi, newPdfBase64ForApi, p.oldIdx, p.newIdx);
+            const composed = composeSideBySide(r.oldImg, r.newImg, labelOld, labelNew);
+            results.push({
+              composed, category, labelOld, labelNew,
+              oldCanvas: r.oldImg, newCanvas: r.newImg,
+              changed: r.oldBoxesCount + r.newBoxesCount > 0,
+            });
+            continue;
+          } catch (err) {
+            onLog(`表モードAPIに失敗したため、ブラウザ内計算にフォールバックします(${err.message})`);
+          }
+        }
+
         let oldBoxes = [], newBoxes = [];
         if (category === 'table') {
           const r = diffTable(op.rows, np.rows);
@@ -622,7 +692,6 @@
           const r = diffImagePixels(op.canvas, np.canvas);
           oldBoxes = r.boxes; newBoxes = r.boxes;
         }
-        const labelOld = `旧 p.${p.oldIdx + 1}`, labelNew = `新 p.${p.newIdx + 1}`;
         const cOld = withHighlights(op.canvas, oldBoxes, COLOR_OLD);
         const cNew = withHighlights(np.canvas, newBoxes, COLOR_NEW);
         const composed = composeSideBySide(cOld, cNew, labelOld, labelNew);

@@ -1,6 +1,12 @@
 // デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。デプロイ後にここへ差し替えてください。
 const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzLz81VioiuR3ku_utdvDlwpT6ImXXQmM6ziZtDX4If9Q0MWxi0926U8rFikxEV9qo4Ig/exec";
 
+// 「表」モードの比較をブラウザ内(pdf.js)ではなくVercelのPythonサーバーレス関数で
+// 行うためのAPIパス(同一オリジンの相対パス。Vercelデプロイ時のみ存在する)。
+// 存在しない/失敗する環境(例: githackプレビュー)では、diff-core.js側で
+// 自動的に従来のJS計算にフォールバックする。
+const TABLE_DIFF_API_URL = "/api/table-diff";
+
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
@@ -167,7 +173,9 @@ function buildSide(canvas, label, side, placeholderMessage) {
 
   if (canvas) {
     const img = document.createElement('img');
-    img.src = canvas.toDataURL('image/png');
+    // 表モード(サーバーAPI経由)はcanvasではなくHTMLImageElementが渡ってくるため、
+    // toDataURLが無ければsrcをそのまま使う
+    img.src = typeof canvas.toDataURL === 'function' ? canvas.toDataURL('image/png') : canvas.src;
     img.className = 'page-image';
     img.draggable = false;
     col.appendChild(img);
@@ -271,7 +279,7 @@ els.runBtn.addEventListener('click', async () => {
       fileToArrayBuffer(oldFile),
       fileToArrayBuffer(newFile),
     ]);
-    const result = await PdfDiffCore.runDiff(oldBuf, newBuf, { onLog: log });
+    const result = await PdfDiffCore.runDiff(oldBuf, newBuf, { onLog: log, tableDiffApiUrl: TABLE_DIFF_API_URL });
     lastResult = result;
     updateResetEnabled();
     els.resultCategory.textContent = `分類: ${result.category}`;
