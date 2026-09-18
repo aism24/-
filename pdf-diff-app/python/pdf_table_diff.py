@@ -132,6 +132,8 @@ def load_cjk_font(size=48):
         r"C:\Windows\Fonts\meiryo.ttc",
         r"C:\Windows\Fonts\YuGothM.ttc",
         r"C:\Windows\Fonts\msgothic.ttc",
+        # Vercel等のLinux実行環境向けの同梱フォント(Windowsフォントが無い場合のフォールバック)
+        str(Path(__file__).parent / "fonts" / "VL-Gothic-Regular.ttf"),
     ]
     for fp in candidates:
         try:
