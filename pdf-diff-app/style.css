@@ -25,11 +25,23 @@ html, body { height: 100%; }
 body {
   margin: 0;
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
   font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
   background: var(--bg-color);
   color: var(--text-color);
+}
+
+#top-bar {
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg-color);
+}
+
+/* 解析結果がまだ無い間だけ、アップロード欄を画面下いっぱいまで広げる */
+body:has(#result-section.hidden) #top-bar {
+  min-height: 100vh;
 }
 
 header {
@@ -99,6 +111,7 @@ main {
 
 #upload-section {
   flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: stretch;
@@ -146,7 +159,7 @@ main {
 
 #status { display: none; }
 
-#result-section { margin-top: 44px; padding: 0 24px 60px; }
+#result-section { margin-top: 8px; padding: 0 24px 60px; }
 #result-section.hidden { display: none; }
 
 #viewer-toolbar {
@@ -161,19 +174,19 @@ main {
   padding: 10px 16px;
   margin-bottom: 14px;
   position: sticky;
-  top: 0;
+  top: var(--topbar-height, 0px);
   z-index: 10;
 }
 
 #result-category { font-weight: bold; }
 
-#zoom-controls { display: flex; align-items: center; gap: 8px; }
-#zoom-controls button {
+.zoom-controls { display: flex; align-items: center; gap: 8px; }
+.zoom-controls button {
   width: 30px; height: 30px; border-radius: 50%; border: 1px solid #bbb;
   background: #fff; font-size: 16px; cursor: pointer;
 }
-#zoom-level { min-width: 48px; text-align: center; font-size: 13px; }
-#zoom-reset {
+.zoom-level { min-width: 48px; text-align: center; font-size: 13px; }
+.zoom-controls .zoom-reset-btn {
   width: auto; height: auto; border-radius: 4px;
   padding: 6px 10px; font-size: 12px; font-weight: bold;
   white-space: nowrap; flex-shrink: 0;
@@ -185,7 +198,37 @@ main {
 }
 #download-btn:hover { background: #d9870a; }
 
-#viewer {
+/* 画面中央に旧/新の境界を置き、それぞれ独立してズーム・パンできる2分割ビュー */
+#viewer-split {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.viewer-pane {
+  flex: 1 1 0;
+  min-width: 0;
+}
+#viewer-pane-old { border-right: 2px solid var(--header-border); padding-right: 16px; }
+#viewer-pane-new { padding-left: 16px; }
+
+.pane-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--header-bg);
+  border: 1px solid var(--header-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  position: sticky;
+  top: calc(var(--topbar-height, 0px) + var(--toolbar-height, 0px));
+  z-index: 9;
+}
+.pane-label { font-weight: bold; font-size: 13px; }
+
+.pane-scroll {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -194,15 +237,9 @@ main {
   cursor: grab;
   user-select: none;
 }
-#viewer.panning { cursor: grabbing; }
+.pane-scroll.panning { cursor: grabbing; }
 
-.page-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 20px;
-}
-
-.page-col { display: flex; flex-direction: column; align-items: flex-start; gap: 0; }
+.page-col { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
 
 .page-col-header {
   font-size: 13px; font-weight: bold; padding: 6px 10px; border-radius: 4px 4px 0 0;

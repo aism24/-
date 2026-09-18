@@ -7,7 +7,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 let oldFile = null;
 let newFile = null;
 let lastResult = null;
-let zoom = 1.0;
+const zoomBySide = { old: 1.0, new: 1.0 };
 
 const els = {
   oldInput: document.getElementById('old-pdf'),
@@ -23,13 +23,27 @@ const els = {
   status: document.getElementById('status'),
   resultSection: document.getElementById('result-section'),
   resultCategory: document.getElementById('result-category'),
-  viewer: document.getElementById('viewer'),
-  zoomLevel: document.getElementById('zoom-level'),
-  zoomIn: document.getElementById('zoom-in'),
-  zoomOut: document.getElementById('zoom-out'),
-  zoomReset: document.getElementById('zoom-reset'),
+  viewerToolbar: document.getElementById('viewer-toolbar'),
   downloadBtn: document.getElementById('download-btn'),
+  topBar: document.getElementById('top-bar'),
+  viewers: {
+    old: document.getElementById('viewer-old'),
+    new: document.getElementById('viewer-new'),
+  },
+  zoomLevel: {
+    old: document.getElementById('zoom-level-old'),
+    new: document.getElementById('zoom-level-new'),
+  },
 };
+
+// 上の固定ヘッダー欄・結果ツールバーの高さをCSS変数に反映し、
+// その直下に各ペインのズームバーが重ならず固定表示されるようにする
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty('--topbar-height', `${els.topBar.offsetHeight}px`);
+}).observe(els.topBar);
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty('--toolbar-height', `${els.viewerToolbar.offsetHeight}px`);
+}).observe(els.viewerToolbar);
 
 function updateRunEnabled() {
   els.runBtn.disabled = !(oldFile && newFile);
@@ -87,7 +101,8 @@ els.resetBtn.addEventListener('click', () => {
   setNewFile(null);
   clearLog();
   els.resultSection.classList.add('hidden');
-  els.viewer.innerHTML = '';
+  els.viewers.old.innerHTML = '';
+  els.viewers.new.innerHTML = '';
 });
 
 function log(msg) {
@@ -160,69 +175,72 @@ function buildSide(canvas, label, side, placeholderMessage) {
   return col;
 }
 
+// 旧新を1枚の合成画像に描くのではなく、別々の<img>としてそれぞれのペインに
+// そのまま表示する。これにより旧PDF/新PDFを個別にズーム・パンできる。
 function renderResults(results) {
-  els.viewer.innerHTML = '';
+  els.viewers.old.innerHTML = '';
+  els.viewers.new.innerHTML = '';
   results.forEach((r) => {
-    const row = document.createElement('div');
-    row.className = 'page-row';
-    row.appendChild(buildSide(r.oldCanvas, r.labelOld, 'old', r.placeholderMessage));
-    row.appendChild(buildSide(r.newCanvas, r.labelNew, 'new', r.placeholderMessage));
-    els.viewer.appendChild(row);
+    els.viewers.old.appendChild(buildSide(r.oldCanvas, r.labelOld, 'old', r.placeholderMessage));
+    els.viewers.new.appendChild(buildSide(r.newCanvas, r.labelNew, 'new', r.placeholderMessage));
   });
-  applyZoom();
+  applyZoom('old');
+  applyZoom('new');
 }
 
-// ページごとに旧/新を別々の<img>として描画しているため、各画像は自分自身の
-// 基準幅(元のcanvas幅)を基準に拡大縮小する。これにより、旧新をまとめた1枚の
-// 画像を全体の中心基準で拡大縮小していた以前の挙動と異なり、それぞれが
-// 自分の位置を保ったまま独立してズームする。
-function applyZoom() {
-  els.zoomLevel.textContent = `${Math.round(zoom * 100)}%`;
-  document.querySelectorAll('.page-image').forEach((img) => {
+function applyZoom(side) {
+  const zoom = zoomBySide[side];
+  els.zoomLevel[side].textContent = `${Math.round(zoom * 100)}%`;
+  els.viewers[side].querySelectorAll('.page-image').forEach((img) => {
     const baseWidth = Number(img.dataset.baseWidth) || img.naturalWidth;
     img.style.width = `${baseWidth * zoom}px`;
   });
 }
 
-function setZoom(z) {
-  zoom = Math.max(0.2, Math.min(3, z));
-  applyZoom();
+function setZoom(side, z) {
+  zoomBySide[side] = Math.max(0.2, Math.min(3, z));
+  applyZoom(side);
 }
 
-els.zoomIn.addEventListener('click', () => setZoom(zoom + 0.1));
-els.zoomOut.addEventListener('click', () => setZoom(zoom - 0.1));
-els.zoomReset.addEventListener('click', () => setZoom(1.0));
+['old', 'new'].forEach((side) => {
+  document.getElementById(`zoom-in-${side}`).addEventListener('click', () => setZoom(side, zoomBySide[side] + 0.1));
+  document.getElementById(`zoom-out-${side}`).addEventListener('click', () => setZoom(side, zoomBySide[side] - 0.1));
+  document.getElementById(`zoom-reset-${side}`).addEventListener('click', () => setZoom(side, 1.0));
 
-els.viewer.addEventListener('wheel', (e) => {
-  if (!els.viewer.querySelector('.page-image')) return;
-  e.preventDefault();
-  setZoom(zoom - e.deltaY * 0.001);
-}, { passive: false });
+  const viewerEl = els.viewers[side];
 
-// 差分表示エリアを左クリックで掴んでドラッグすると、上下左右にパン(スクロール)できる
-let isPanning = false;
-let panStartX = 0, panStartY = 0, panStartScrollLeft = 0, panStartScrollTop = 0;
+  viewerEl.addEventListener('wheel', (e) => {
+    if (!viewerEl.querySelector('.page-image')) return;
+    e.preventDefault();
+    setZoom(side, zoomBySide[side] - e.deltaY * 0.001);
+  }, { passive: false });
 
-els.viewer.addEventListener('mousedown', (e) => {
-  if (e.button !== 0 || !els.viewer.querySelector('.page-image')) return;
-  isPanning = true;
-  panStartX = e.clientX;
-  panStartY = e.clientY;
-  panStartScrollLeft = els.viewer.scrollLeft;
-  panStartScrollTop = window.scrollY;
-  els.viewer.classList.add('panning');
-  e.preventDefault();
-});
+  // ペインを左クリックで掴んでドラッグすると、そのペインだけ左右にパンできる
+  // (上下は旧新で連動するページ全体のスクロールに委ねる)
+  let isPanning = false;
+  let panStartX = 0, panStartY = 0, panStartScrollLeft = 0, panStartScrollTop = 0;
 
-window.addEventListener('mousemove', (e) => {
-  if (!isPanning) return;
-  els.viewer.scrollLeft = panStartScrollLeft - (e.clientX - panStartX);
-  window.scrollTo(window.scrollX, panStartScrollTop - (e.clientY - panStartY));
-});
+  viewerEl.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || !viewerEl.querySelector('.page-image')) return;
+    isPanning = true;
+    panStartX = e.clientX;
+    panStartY = e.clientY;
+    panStartScrollLeft = viewerEl.scrollLeft;
+    panStartScrollTop = window.scrollY;
+    viewerEl.classList.add('panning');
+    e.preventDefault();
+  });
 
-window.addEventListener('mouseup', () => {
-  isPanning = false;
-  els.viewer.classList.remove('panning');
+  window.addEventListener('mousemove', (e) => {
+    if (!isPanning) return;
+    viewerEl.scrollLeft = panStartScrollLeft - (e.clientX - panStartX);
+    window.scrollTo(window.scrollX, panStartScrollTop - (e.clientY - panStartY));
+  });
+
+  window.addEventListener('mouseup', () => {
+    isPanning = false;
+    viewerEl.classList.remove('panning');
+  });
 });
 
 els.runBtn.addEventListener('click', async () => {
