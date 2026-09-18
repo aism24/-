@@ -291,14 +291,15 @@
     return { oldBoxes, newBoxes };
   }
 
-  // ---------- 表方式(サーバーAPI経由、Pythonオリジナルコードをそのまま使用) ----------
+  // ---------- サーバーAPI経由の差分計算(Pythonオリジナルコードをそのまま使用) ----------
   //
   // pdf.js経由の推定(charWeightによる文字幅近似・全角スペースの単語分割等)は
-  // PyMuPDF(page.get_text("words"))の実測値と細かく食い違うことが分かったため、
-  // 精度が最重要な「表」モードはブラウザ内では計算せず、Vercelの
-  // Pythonサーバーレス関数(api/table-diff.py、pdf_table_diff.pyをそのまま実行)
-  // にPDFを送って結果画像を受け取る。API未設定・失敗時のみdiffTable()による
-  // 従来のJS計算にフォールバックする。
+  // PyMuPDF(page.get_text等)の実測値と細かく食い違うことが分かったため、
+  // 表/文章/図面の3方式とも、ブラウザ内では計算せずVercelのPythonサーバーレス
+  // 関数(api/table-diff.py・text-diff.py・image-diff.py、pdfの3スクリプトを
+  // それぞれそのまま実行)にPDFを送って結果画像を受け取ることを優先する。
+  // API未設定・失敗時のみ、各方式のdiffTable()/diffText()/diffImagePixels()
+  // による従来のJS計算にフォールバックする。
 
   function arrayBufferToBase64(buf) {
     const bytes = new Uint8Array(buf);
@@ -319,7 +320,7 @@
     });
   }
 
-  async function diffTableViaApi(apiUrl, oldPdfBase64, newPdfBase64, oldPage, newPage) {
+  async function diffViaApi(apiUrl, oldPdfBase64, newPdfBase64, oldPage, newPage) {
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -327,7 +328,7 @@
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => res.statusText);
-      throw new Error(`表モードAPIエラー(${res.status}): ${detail}`);
+      throw new Error(`APIエラー(${res.status}): ${detail}`);
     }
     const data = await res.json();
     const [oldImg, newImg] = await Promise.all([
@@ -613,29 +614,34 @@
     return best ? CATEGORY_LABEL[best] : '不明';
   }
 
-  async function preparePage(doc, num, scale, onLog) {
+  async function preparePage(doc, num, scale, onLog, manualCategory) {
     const page = await doc.getPage(num);
     const viewport = page.getViewport({ scale });
     const { canvas, promise } = renderToCanvas(page, viewport);
     await promise;
     const words = await extractWords(page, viewport);
     const rows = clusterRows(words);
-    const category = classifyPage(words, rows);
+    // ユーザーが「表/文章/図面」を明示指定した場合は自動判定(classifyPage)を
+    // 使わず、全ページをその種類として扱う(誤判定の心配を無くすため)。
+    const category = manualCategory || classifyPage(words, rows);
     const text = words.map((w) => w.text).join('');
     const thumb = text.length < 20 ? downsampleCanvas(canvas, THUMB_SIZE) : null;
-    if (onLog) onLog(`ページ${num}: ${CATEGORY_LABEL[category] || category}と判定`);
+    if (onLog) onLog(`ページ${num}: ${CATEGORY_LABEL[category] || category}${manualCategory ? '(指定)' : 'と判定'}`);
     return { canvas, words, rows, category, sig: { text, thumb } };
   }
 
   async function runDiff(oldArrayBuffer, newArrayBuffer, opts = {}) {
     const scale = opts.scale || RENDER_SCALE;
     const onLog = opts.onLog || (() => {});
-    const tableDiffApiUrl = opts.tableDiffApiUrl || null;
+    const manualCategory = opts.manualCategory || null;
+    // 各方式(表/文章/図面)ごとのサーバーAPI URL。{ table: '/api/table-diff', ... }
+    const apiUrls = opts.apiUrls || {};
 
     // pdf.jsはワーカーへの転送でArrayBufferをdetach(内容を空に)することがあるため、
-    // 表モードAPI送信用の生バイト列は、pdf.jsに渡す前にコピーしてbase64化しておく。
-    const oldPdfBase64ForApi = tableDiffApiUrl ? arrayBufferToBase64(oldArrayBuffer.slice(0)) : null;
-    const newPdfBase64ForApi = tableDiffApiUrl ? arrayBufferToBase64(newArrayBuffer.slice(0)) : null;
+    // API送信用の生バイト列は、pdf.jsに渡す前にコピーしてbase64化しておく。
+    const useApi = Object.keys(apiUrls).length > 0;
+    const oldPdfBase64ForApi = useApi ? arrayBufferToBase64(oldArrayBuffer.slice(0)) : null;
+    const newPdfBase64ForApi = useApi ? arrayBufferToBase64(newArrayBuffer.slice(0)) : null;
 
     onLog('PDFを読み込み中...');
     const oldDoc = await pdfjsLib.getDocument({ data: oldArrayBuffer }).promise;
@@ -644,9 +650,9 @@
     onLog(`旧: 全${oldDoc.numPages}ページ / 新: 全${newDoc.numPages}ページ`);
 
     const oldPages = [];
-    for (const i of range(oldDoc.numPages)) oldPages.push(await preparePage(oldDoc, i + 1, scale, onLog));
+    for (const i of range(oldDoc.numPages)) oldPages.push(await preparePage(oldDoc, i + 1, scale, onLog, manualCategory));
     const newPages = [];
-    for (const i of range(newDoc.numPages)) newPages.push(await preparePage(newDoc, i + 1, scale, onLog));
+    for (const i of range(newDoc.numPages)) newPages.push(await preparePage(newDoc, i + 1, scale, onLog, manualCategory));
 
     onLog('新旧ページの対応関係を解析中...');
     const pairs = alignPages(oldPages.map((p) => p.sig), newPages.map((p) => p.sig));
@@ -665,10 +671,10 @@
 
         const labelOld = `旧 p.${p.oldIdx + 1}`, labelNew = `新 p.${p.newIdx + 1}`;
 
-        if (category === 'table' && tableDiffApiUrl) {
+        if (apiUrls[category]) {
           try {
-            onLog('表モード: サーバー(Python)で比較中...');
-            const r = await diffTableViaApi(tableDiffApiUrl, oldPdfBase64ForApi, newPdfBase64ForApi, p.oldIdx, p.newIdx);
+            onLog(`${CATEGORY_LABEL[category]}モード: サーバー(Python)で比較中...`);
+            const r = await diffViaApi(apiUrls[category], oldPdfBase64ForApi, newPdfBase64ForApi, p.oldIdx, p.newIdx);
             const composed = composeSideBySide(r.oldImg, r.newImg, labelOld, labelNew);
             results.push({
               composed, category, labelOld, labelNew,
@@ -677,7 +683,7 @@
             });
             continue;
           } catch (err) {
-            onLog(`表モードAPIに失敗したため、ブラウザ内計算にフォールバックします(${err.message})`);
+            onLog(`${CATEGORY_LABEL[category]}モードAPIに失敗したため、ブラウザ内計算にフォールバックします(${err.message})`);
           }
         }
 

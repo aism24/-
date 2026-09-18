@@ -47,6 +47,12 @@
     <input type="file" id="old-pdf" accept="application/pdf" hidden>
   </div>
   <div class="upload-actions">
+    <div id="mode-select" role="group" aria-label="PDFの種類">
+      <span class="mode-label">種類:</span>
+      <button type="button" class="mode-btn" data-mode="table">表</button>
+      <button type="button" class="mode-btn" data-mode="text">文章</button>
+      <button type="button" class="mode-btn" data-mode="image">図面</button>
+    </div>
     <button id="run-btn" disabled>解析</button>
     <button id="reset-btn" disabled>リセット</button>
   </div>

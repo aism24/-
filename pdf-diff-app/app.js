@@ -1,11 +1,15 @@
 // デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。デプロイ後にここへ差し替えてください。
 const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzLz81VioiuR3ku_utdvDlwpT6ImXXQmM6ziZtDX4If9Q0MWxi0926U8rFikxEV9qo4Ig/exec";
 
-// 「表」モードの比較をブラウザ内(pdf.js)ではなくVercelのPythonサーバーレス関数で
-// 行うためのAPIパス(同一オリジンの相対パス。Vercelデプロイ時のみ存在する)。
-// 存在しない/失敗する環境(例: githackプレビュー)では、diff-core.js側で
-// 自動的に従来のJS計算にフォールバックする。
-const TABLE_DIFF_API_URL = "/api/table-diff";
+// 表/文章/図面の各モードの比較をブラウザ内(pdf.js)ではなくVercelのPython
+// サーバーレス関数で行うためのAPIパス(同一オリジンの相対パス。Vercel
+// デプロイ時のみ存在する)。存在しない/失敗する環境(例: githackプレビュー)
+// では、diff-core.js側で自動的に従来のJS計算にフォールバックする。
+const DIFF_API_URLS = {
+  table: "/api/table-diff",
+  text: "/api/text-diff",
+  image: "/api/image-diff",
+};
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -13,6 +17,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 let oldFile = null;
 let newFile = null;
 let lastResult = null;
+let selectedMode = null; // 'table' | 'text' | 'image'。自動判定は行わず、ユーザーの指定を必須とする。
 const zoomBySide = { old: 1.0, new: 1.0 };
 
 const els = {
@@ -26,6 +31,7 @@ const els = {
   newField: document.getElementById('new-pdf-field'),
   runBtn: document.getElementById('run-btn'),
   resetBtn: document.getElementById('reset-btn'),
+  modeBtns: document.querySelectorAll('.mode-btn'),
   status: document.getElementById('status'),
   resultSection: document.getElementById('result-section'),
   resultCategory: document.getElementById('result-category'),
@@ -37,11 +43,18 @@ const els = {
 };
 
 function updateRunEnabled() {
-  els.runBtn.disabled = !(oldFile && newFile);
+  els.runBtn.disabled = !(oldFile && newFile && selectedMode);
 }
 
 function updateResetEnabled() {
-  els.resetBtn.disabled = !(oldFile || newFile || lastResult);
+  els.resetBtn.disabled = !(oldFile || newFile || lastResult || selectedMode);
+}
+
+function setMode(mode) {
+  selectedMode = mode;
+  els.modeBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === mode));
+  updateRunEnabled();
+  updateResetEnabled();
 }
 
 function setOldFile(file) {
@@ -84,12 +97,17 @@ function setupDropZone(fieldEl, setFile) {
 setupDropZone(els.oldField, setOldFile);
 setupDropZone(els.newField, setNewFile);
 
+els.modeBtns.forEach((btn) => {
+  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+
 els.resetBtn.addEventListener('click', () => {
   lastResult = null;
   els.oldInput.value = '';
   els.newInput.value = '';
   setOldFile(null);
   setNewFile(null);
+  setMode(null);
   clearLog();
   els.resultSection.classList.add('hidden');
   els.viewers.old.innerHTML = '';
@@ -269,7 +287,7 @@ function setZoom(side, z) {
 });
 
 els.runBtn.addEventListener('click', async () => {
-  if (!oldFile || !newFile) return;
+  if (!oldFile || !newFile || !selectedMode) return;
   els.runBtn.disabled = true;
   els.resultSection.classList.add('hidden');
   clearLog();
@@ -279,7 +297,11 @@ els.runBtn.addEventListener('click', async () => {
       fileToArrayBuffer(oldFile),
       fileToArrayBuffer(newFile),
     ]);
-    const result = await PdfDiffCore.runDiff(oldBuf, newBuf, { onLog: log, tableDiffApiUrl: TABLE_DIFF_API_URL });
+    const result = await PdfDiffCore.runDiff(oldBuf, newBuf, {
+      onLog: log,
+      manualCategory: selectedMode,
+      apiUrls: DIFF_API_URLS,
+    });
     lastResult = result;
     updateResetEnabled();
     els.resultCategory.textContent = `分類: ${result.category}`;
