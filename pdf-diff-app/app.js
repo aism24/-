@@ -23,9 +23,7 @@ const els = {
   status: document.getElementById('status'),
   resultSection: document.getElementById('result-section'),
   resultCategory: document.getElementById('result-category'),
-  viewerToolbar: document.getElementById('viewer-toolbar'),
   downloadBtn: document.getElementById('download-btn'),
-  topBar: document.getElementById('top-bar'),
   viewers: {
     old: document.getElementById('viewer-old'),
     new: document.getElementById('viewer-new'),
@@ -35,15 +33,6 @@ const els = {
     new: document.getElementById('zoom-level-new'),
   },
 };
-
-// 上の固定ヘッダー欄・結果ツールバーの高さをCSS変数に反映し、
-// その直下に各ペインのズームバーが重ならず固定表示されるようにする
-new ResizeObserver(() => {
-  document.documentElement.style.setProperty('--topbar-height', `${els.topBar.offsetHeight}px`);
-}).observe(els.topBar);
-new ResizeObserver(() => {
-  document.documentElement.style.setProperty('--toolbar-height', `${els.viewerToolbar.offsetHeight}px`);
-}).observe(els.viewerToolbar);
 
 function updateRunEnabled() {
   els.runBtn.disabled = !(oldFile && newFile);
@@ -162,7 +151,6 @@ function buildSide(canvas, label, side, placeholderMessage) {
   if (canvas) {
     const img = document.createElement('img');
     img.src = canvas.toDataURL('image/png');
-    img.dataset.baseWidth = canvas.width;
     img.className = 'page-image';
     img.draggable = false;
     col.appendChild(img);
@@ -188,12 +176,15 @@ function renderResults(results) {
   applyZoom('new');
 }
 
+// 100%でPDFの横幅全体がペイン内に収まるよう、ページ画像の実ピクセル幅ではなく
+// ペイン自体の表示幅を基準(fit-to-width)にズーム倍率をかける。
 function applyZoom(side) {
   const zoom = zoomBySide[side];
+  const viewerEl = els.viewers[side];
   els.zoomLevel[side].textContent = `${Math.round(zoom * 100)}%`;
-  els.viewers[side].querySelectorAll('.page-image').forEach((img) => {
-    const baseWidth = Number(img.dataset.baseWidth) || img.naturalWidth;
-    img.style.width = `${baseWidth * zoom}px`;
+  const fitWidth = viewerEl.clientWidth;
+  viewerEl.querySelectorAll('.page-image').forEach((img) => {
+    img.style.width = `${fitWidth * zoom}px`;
   });
 }
 
@@ -215,8 +206,8 @@ function setZoom(side, z) {
     setZoom(side, zoomBySide[side] - e.deltaY * 0.001);
   }, { passive: false });
 
-  // ペインを左クリックで掴んでドラッグすると、そのペインだけ左右にパンできる
-  // (上下は旧新で連動するページ全体のスクロールに委ねる)
+  // ペインを左クリックで掴んでドラッグすると、そのペイン自身の縦横スクロールだけが
+  // 動く(旧/新は別々のスクロールコンテナなので、もう一方には一切影響しない)
   let isPanning = false;
   let panStartX = 0, panStartY = 0, panStartScrollLeft = 0, panStartScrollTop = 0;
 
@@ -226,7 +217,7 @@ function setZoom(side, z) {
     panStartX = e.clientX;
     panStartY = e.clientY;
     panStartScrollLeft = viewerEl.scrollLeft;
-    panStartScrollTop = window.scrollY;
+    panStartScrollTop = viewerEl.scrollTop;
     viewerEl.classList.add('panning');
     e.preventDefault();
   });
@@ -234,13 +225,15 @@ function setZoom(side, z) {
   window.addEventListener('mousemove', (e) => {
     if (!isPanning) return;
     viewerEl.scrollLeft = panStartScrollLeft - (e.clientX - panStartX);
-    window.scrollTo(window.scrollX, panStartScrollTop - (e.clientY - panStartY));
+    viewerEl.scrollTop = panStartScrollTop - (e.clientY - panStartY);
   });
 
   window.addEventListener('mouseup', () => {
     isPanning = false;
     viewerEl.classList.remove('panning');
   });
+
+  new ResizeObserver(() => applyZoom(side)).observe(viewerEl);
 });
 
 els.runBtn.addEventListener('click', async () => {

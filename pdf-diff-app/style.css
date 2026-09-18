@@ -24,24 +24,25 @@ html, body { height: 100%; }
 
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
   background: var(--bg-color);
   color: var(--text-color);
 }
 
 #top-bar {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  position: sticky;
-  top: 0;
-  z-index: 20;
   background: var(--bg-color);
 }
 
 /* 解析結果がまだ無い間だけ、アップロード欄を画面下いっぱいまで広げる */
 body:has(#result-section.hidden) #top-bar {
-  min-height: 100vh;
+  flex: 1 1 auto;
 }
 
 header {
@@ -102,11 +103,15 @@ header {
 }
 
 main {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
   max-width: none;
   width: 100%;
   margin: 0;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 #upload-section {
@@ -159,10 +164,19 @@ main {
 
 #status { display: none; }
 
-#result-section { margin-top: 8px; padding: 0 24px 60px; }
+#result-section {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 8px;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 #result-section.hidden { display: none; }
 
 #viewer-toolbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -173,9 +187,6 @@ main {
   border-radius: 8px;
   padding: 10px 16px;
   margin-bottom: 14px;
-  position: sticky;
-  top: var(--topbar-height, 0px);
-  z-index: 10;
 }
 
 #result-category { font-weight: bold; }
@@ -198,21 +209,27 @@ main {
 }
 #download-btn:hover { background: #d9870a; }
 
-/* 画面中央に旧/新の境界を置き、それぞれ独立してズーム・パンできる2分割ビュー */
+/* 画面中央に旧/新の境界を置き、それぞれ独立してズーム・パン(縦横とも)できる2分割ビュー */
 #viewer-split {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 0;
 }
 
 .viewer-pane {
   flex: 1 1 0;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 #viewer-pane-old { border-right: 2px solid var(--header-border); padding-right: 16px; }
 #viewer-pane-new { padding-left: 16px; }
 
 .pane-toolbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -222,18 +239,18 @@ main {
   border-radius: 8px;
   padding: 8px 12px;
   margin-bottom: 12px;
-  position: sticky;
-  top: calc(var(--topbar-height, 0px) + var(--toolbar-height, 0px));
-  z-index: 9;
 }
 .pane-label { font-weight: bold; font-size: 13px; }
 
 .pane-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 24px;
-  overflow-x: auto;
+  padding-bottom: 24px;
+  overflow: auto;
   cursor: grab;
   user-select: none;
 }
