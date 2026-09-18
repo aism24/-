@@ -50,9 +50,16 @@ header {
 }
 
 #brand {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
+  min-height: var(--logo-size);
+}
+
+#brand-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
   gap: 14px;
   flex-wrap: wrap;
 }
@@ -73,11 +80,13 @@ header {
 }
 
 #app-name {
-  font-size: calc(var(--logo-size) * 0.4);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: calc(var(--logo-size) * 0.7);
   font-weight: bold;
   color: var(--accent);
   white-space: nowrap;
-  align-self: center;
 }
 
 main {
@@ -193,6 +202,5 @@ main {
 
 @media (max-width: 640px) {
   :root { --logo-size: 34px; }
-  #app-name { font-size: 14px; }
   .file-name { max-width: 120px; }
 }
