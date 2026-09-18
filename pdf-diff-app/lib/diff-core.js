@@ -131,15 +131,14 @@
     const modeRatio = freq[modeCount] / rows.length;
     if (rows.length >= 3 && Number(modeCount) >= 2 && modeRatio >= 0.5) return 'table';
 
-    const leftXs = rows.map((r) => r[0].x0);
-    const rightXs = rows.map((r) => r[r.length - 1].x1);
-    const maxRight = Math.max(...rightXs);
-    const avgLeft = leftXs.reduce((a, b) => a + b, 0) / leftXs.length;
-    const leftVariance = Math.sqrt(leftXs.reduce((s, x) => s + (x - avgLeft) ** 2, 0) / leftXs.length);
-    const wideRowRatio = rightXs.filter((rx) => rx >= maxRight * 0.7).length / rows.length;
-    const avgCharsPerRow = words.reduce((s, w) => s + w.text.length, 0) / rows.length;
+    // 文章判定: 見出し・箇条書き番号などが混じると行の左端は揃わないため、
+    // 行揃えではなく「ある程度長い(=文章が流れている)行がどれだけあるか」
+    // で判定する(契約書・規程類はほぼ全行が長文、帳票は短い行の寄せ集め)。
+    const rowCharCounts = rows.map((r) => r.reduce((s, w) => s + w.text.length, 0));
+    const longRowRatio = rowCharCounts.filter((c) => c >= 15).length / rows.length;
+    const totalChars = rowCharCounts.reduce((a, b) => a + b, 0);
 
-    if (rows.length >= 5 && leftVariance < 15 && wideRowRatio >= 0.5 && avgCharsPerRow >= 8) {
+    if (rows.length >= 3 && (longRowRatio >= 0.4 || totalChars >= 80)) {
       return 'text';
     }
     return 'image';
@@ -449,33 +448,19 @@
 
   // ---------- ハイライト描画 ----------
 
-  function withHighlights(srcCanvas, boxes, mode, color, scale = 1) {
+  // 表/図面/文章のいずれの方式でも、枠線は文字や図形に重なって見づらくなるため
+  // 使わず、半透明の塗りつぶしのみでハイライトする。
+  function withHighlights(srcCanvas, boxes, color, scale = 1) {
     const c = document.createElement('canvas');
     c.width = srcCanvas.width; c.height = srcCanvas.height;
     const ctx = c.getContext('2d');
     ctx.drawImage(srcCanvas, 0, 0);
     const pad = 2;
+    ctx.fillStyle = color.fill;
     boxes.forEach((b) => {
       const x0 = b.x0 * scale - pad, y0 = b.y0 * scale - pad;
       const x1 = b.x1 * scale + pad, y1 = b.y1 * scale + pad;
-      if (mode === 'box') {
-        // 枠線を引くと重なった文字が読みにくくなるため、塗りつぶしのみにする
-        ctx.fillStyle = color.fill;
-        ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-      } else if (mode === 'outline') {
-        ctx.strokeStyle = color.stroke;
-        ctx.lineWidth = 4;
-        ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-      } else if (mode === 'strike') {
-        const y = (y0 + y1) / 2;
-        ctx.strokeStyle = color.stroke;
-        ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
-      } else if (mode === 'underline') {
-        ctx.strokeStyle = color.stroke;
-        ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(x0, y1); ctx.lineTo(x1, y1); ctx.stroke();
-      }
+      ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
     });
     return c;
   }
@@ -583,33 +568,44 @@
         votes[category] = (votes[category] || 0) + 1;
         onLog(`p${pageOut}: 旧${p.oldIdx + 1} ⇔ 新${p.newIdx + 1}(${CATEGORY_LABEL[category]})を比較中...`);
 
-        let oldBoxes = [], newBoxes = [], modeOld = 'box', modeNew = 'box';
+        let oldBoxes = [], newBoxes = [];
         if (category === 'table') {
           const r = diffTable(op.rows, np.rows);
           oldBoxes = r.oldBoxes; newBoxes = r.newBoxes;
         } else if (category === 'text') {
           const r = diffText(op.rows, np.rows);
           oldBoxes = r.oldBoxes; newBoxes = r.newBoxes;
-          modeOld = 'strike'; modeNew = 'underline';
         } else {
           const r = diffImagePixels(op.canvas, np.canvas);
           oldBoxes = r.boxes; newBoxes = r.boxes;
-          modeOld = 'outline'; modeNew = 'outline';
         }
-        const cOld = withHighlights(op.canvas, oldBoxes, modeOld, COLOR_OLD);
-        const cNew = withHighlights(np.canvas, newBoxes, modeNew, COLOR_NEW);
-        const composed = composeSideBySide(cOld, cNew, `旧 p.${p.oldIdx + 1}`, `新 p.${p.newIdx + 1}`);
-        results.push({ composed, category, changed: oldBoxes.length + newBoxes.length > 0 });
+        const labelOld = `旧 p.${p.oldIdx + 1}`, labelNew = `新 p.${p.newIdx + 1}`;
+        const cOld = withHighlights(op.canvas, oldBoxes, COLOR_OLD);
+        const cNew = withHighlights(np.canvas, newBoxes, COLOR_NEW);
+        const composed = composeSideBySide(cOld, cNew, labelOld, labelNew);
+        results.push({
+          composed, category, labelOld, labelNew,
+          oldCanvas: cOld, newCanvas: cNew,
+          changed: oldBoxes.length + newBoxes.length > 0,
+        });
       } else if (p.type === 'delete') {
         const op = oldPages[p.oldIdx];
         onLog(`p${pageOut}: 旧${p.oldIdx + 1}は新版に対応ページなし(削除)`);
-        const composed = composePlaceholder(op.canvas, null, `旧 p.${p.oldIdx + 1}`, '(新版になし)', 'このページは削除されました');
-        results.push({ composed, category: 'delete' });
+        const labelOld = `旧 p.${p.oldIdx + 1}`, labelNew = '(新版になし)';
+        const composed = composePlaceholder(op.canvas, null, labelOld, labelNew, 'このページは削除されました');
+        results.push({
+          composed, category: 'delete', labelOld, labelNew,
+          oldCanvas: op.canvas, newCanvas: null, placeholderMessage: 'このページは削除されました',
+        });
       } else if (p.type === 'insert') {
         const np = newPages[p.newIdx];
         onLog(`p${pageOut}: 新${p.newIdx + 1}は旧版に対応ページなし(新規追加)`);
-        const composed = composePlaceholder(null, np.canvas, '(旧版になし)', `新 p.${p.newIdx + 1}`, 'このページは新規追加されました');
-        results.push({ composed, category: 'insert' });
+        const labelOld = '(旧版になし)', labelNew = `新 p.${p.newIdx + 1}`;
+        const composed = composePlaceholder(null, np.canvas, labelOld, labelNew, 'このページは新規追加されました');
+        results.push({
+          composed, category: 'insert', labelOld, labelNew,
+          oldCanvas: null, newCanvas: np.canvas, placeholderMessage: 'このページは新規追加されました',
+        });
       }
     }
 
