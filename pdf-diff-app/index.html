@@ -28,24 +28,26 @@
 
 <main>
   <section id="upload-section">
-    <div class="file-field">
+    <div class="file-field" id="old-pdf-field">
       <label for="old-pdf">旧PDF</label>
       <div class="file-row">
         <button type="button" id="old-pdf-btn" class="file-btn" onclick="document.getElementById('old-pdf').click()">ファイルを選択</button>
-        <span id="old-pdf-name" class="file-name">未選択</span>
+        <span id="old-pdf-name" class="file-name">未選択(ドラッグ&amp;ドロップ可)</span>
       </div>
       <input type="file" id="old-pdf" accept="application/pdf" hidden>
     </div>
-    <div class="file-field">
+    <div class="upload-actions">
+      <button id="run-btn" disabled>解析</button>
+      <button id="reset-btn">リセット</button>
+    </div>
+    <div class="file-field" id="new-pdf-field">
       <label for="new-pdf">新PDF</label>
       <div class="file-row">
         <button type="button" id="new-pdf-btn" class="file-btn" onclick="document.getElementById('new-pdf').click()">ファイルを選択</button>
-        <span id="new-pdf-name" class="file-name">未選択</span>
+        <span id="new-pdf-name" class="file-name">未選択(ドラッグ&amp;ドロップ可)</span>
       </div>
       <input type="file" id="new-pdf" accept="application/pdf" hidden>
     </div>
-    <button id="run-btn" disabled>解析</button>
-    <button id="reset-btn">リセット</button>
   </section>
 
   <section id="status"></section>
@@ -54,9 +56,10 @@
     <div id="viewer-toolbar">
       <span id="result-category"></span>
       <div id="zoom-controls">
-        <button id="zoom-out">－</button>
+        <button id="zoom-out" title="縮小">－</button>
         <span id="zoom-level">100%</span>
-        <button id="zoom-in">＋</button>
+        <button id="zoom-in" title="拡大">＋</button>
+        <button id="zoom-reset" title="ズームを元に戻す">100%に戻す</button>
       </div>
       <button id="download-btn">📥 PDFダウンロード</button>
     </div>

@@ -16,6 +16,8 @@ const els = {
   newBtn: document.getElementById('new-pdf-btn'),
   oldName: document.getElementById('old-pdf-name'),
   newName: document.getElementById('new-pdf-name'),
+  oldField: document.getElementById('old-pdf-field'),
+  newField: document.getElementById('new-pdf-field'),
   runBtn: document.getElementById('run-btn'),
   resetBtn: document.getElementById('reset-btn'),
   status: document.getElementById('status'),
@@ -25,6 +27,7 @@ const els = {
   zoomLevel: document.getElementById('zoom-level'),
   zoomIn: document.getElementById('zoom-in'),
   zoomOut: document.getElementById('zoom-out'),
+  zoomReset: document.getElementById('zoom-reset'),
   downloadBtn: document.getElementById('download-btn'),
 };
 
@@ -32,34 +35,53 @@ function updateRunEnabled() {
   els.runBtn.disabled = !(oldFile && newFile);
 }
 
-els.oldInput.addEventListener('change', (e) => {
-  oldFile = e.target.files[0] || null;
-  els.oldName.textContent = oldFile ? oldFile.name : '未選択';
+function setOldFile(file) {
+  oldFile = file || null;
+  els.oldName.textContent = oldFile ? oldFile.name : '未選択(ドラッグ&ドロップ可)';
   els.oldBtn.disabled = !!oldFile;
   updateRunEnabled();
-});
+}
 
-els.newInput.addEventListener('change', (e) => {
-  newFile = e.target.files[0] || null;
-  els.newName.textContent = newFile ? newFile.name : '未選択';
+function setNewFile(file) {
+  newFile = file || null;
+  els.newName.textContent = newFile ? newFile.name : '未選択(ドラッグ&ドロップ可)';
   els.newBtn.disabled = !!newFile;
   updateRunEnabled();
-});
+}
+
+els.oldInput.addEventListener('change', (e) => setOldFile(e.target.files[0]));
+els.newInput.addEventListener('change', (e) => setNewFile(e.target.files[0]));
+
+function setupDropZone(fieldEl, setFile) {
+  ['dragenter', 'dragover'].forEach((evt) => {
+    fieldEl.addEventListener(evt, (e) => {
+      e.preventDefault();
+      fieldEl.classList.add('drag-over');
+    });
+  });
+  ['dragleave', 'dragend'].forEach((evt) => {
+    fieldEl.addEventListener(evt, () => fieldEl.classList.remove('drag-over'));
+  });
+  fieldEl.addEventListener('drop', (e) => {
+    e.preventDefault();
+    fieldEl.classList.remove('drag-over');
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file && file.type === 'application/pdf') setFile(file);
+  });
+}
+
+setupDropZone(els.oldField, setOldFile);
+setupDropZone(els.newField, setNewFile);
 
 els.resetBtn.addEventListener('click', () => {
-  oldFile = null;
-  newFile = null;
   lastResult = null;
   els.oldInput.value = '';
   els.newInput.value = '';
-  els.oldName.textContent = '未選択';
-  els.newName.textContent = '未選択';
-  els.oldBtn.disabled = false;
-  els.newBtn.disabled = false;
+  setOldFile(null);
+  setNewFile(null);
   clearLog();
   els.resultSection.classList.add('hidden');
   els.viewer.innerHTML = '';
-  updateRunEnabled();
 });
 
 function log(msg) {
@@ -125,8 +147,20 @@ function applyZoom() {
   });
 }
 
-els.zoomIn.addEventListener('click', () => { zoom = Math.min(3, zoom + 0.1); applyZoom(); });
-els.zoomOut.addEventListener('click', () => { zoom = Math.max(0.2, zoom - 0.1); applyZoom(); });
+function setZoom(z) {
+  zoom = Math.max(0.2, Math.min(3, z));
+  applyZoom();
+}
+
+els.zoomIn.addEventListener('click', () => setZoom(zoom + 0.1));
+els.zoomOut.addEventListener('click', () => setZoom(zoom - 0.1));
+els.zoomReset.addEventListener('click', () => setZoom(1.0));
+
+els.viewer.addEventListener('wheel', (e) => {
+  if (!els.viewer.querySelector('.page-image')) return;
+  e.preventDefault();
+  setZoom(zoom - e.deltaY * 0.001);
+}, { passive: false });
 
 els.runBtn.addEventListener('click', async () => {
   if (!oldFile || !newFile) return;
