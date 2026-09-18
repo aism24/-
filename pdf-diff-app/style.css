@@ -52,14 +52,34 @@ header {
   padding: 10px 16px;
 }
 
-#app-desc {
+#app-desc-row {
   flex: 0 0 auto;
-  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 10px 16px;
+}
+
+#app-desc {
+  flex: 1 1 auto;
+  margin: 0;
   text-align: center;
   font-size: calc(var(--logo-size) * 0.4);
   font-weight: bold;
   color: #1e9633;
+}
+
+#header-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* 解析結果が出るまでは分類・ダウンロードは意味を持たないため隠す
+   (visibilityで隠すことで、表示時にレイアウトが動かないようにする) */
+body:has(#result-section.hidden) #header-actions {
+  visibility: hidden;
 }
 
 #brand {
@@ -175,21 +195,7 @@ main {
 }
 #result-section.hidden { display: none; }
 
-#viewer-toolbar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-  background: var(--header-bg);
-  border: 1px solid var(--header-border);
-  border-radius: 8px;
-  padding: 10px 16px;
-  margin-bottom: 14px;
-}
-
-#result-category { font-weight: bold; }
+#result-category { font-weight: bold; font-size: calc(var(--logo-size) * 0.4); color: var(--text-color); }
 
 .zoom-controls { display: flex; align-items: center; gap: 8px; }
 .zoom-controls button {
@@ -228,20 +234,6 @@ main {
 #viewer-pane-old { border-right: 2px solid var(--header-border); padding-right: 16px; }
 #viewer-pane-new { padding-left: 16px; }
 
-.pane-toolbar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  background: var(--header-bg);
-  border: 1px solid var(--header-border);
-  border-radius: 8px;
-  padding: 8px 12px;
-  margin-bottom: 12px;
-}
-.pane-label { font-weight: bold; font-size: 13px; }
-
 .pane-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -258,11 +250,22 @@ main {
 
 .page-col { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
 
+/* ページのラベルとそのペインのズーム操作を1行にまとめる。position:stickyで、
+   スクロール中は今表示されているページのヘッダーが常に上部に固定される
+   (ページが複数あっても、次のページの見出しが来ると自然に置き換わる)。 */
 .page-col-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   font-size: 13px; font-weight: bold; padding: 6px 10px; border-radius: 4px 4px 0 0;
 }
 .page-col-header-old { background: #fdecea; }
 .page-col-header-new { background: #e9f7ef; }
+.page-label { white-space: nowrap; }
 
 .page-placeholder {
   width: 400px; min-height: 200px;

@@ -28,10 +28,6 @@ const els = {
     old: document.getElementById('viewer-old'),
     new: document.getElementById('viewer-new'),
   },
-  zoomLevel: {
-    old: document.getElementById('zoom-level-old'),
-    new: document.getElementById('zoom-level-new'),
-  },
 };
 
 function updateRunEnabled() {
@@ -139,14 +135,35 @@ async function sendLog(category) {
   }
 }
 
+// ページごとのヘッダーに、その面(旧/新)のズーム操作をまとめて載せる。
+// ページ数分だけ同じ操作一式が繰り返し生成されるが、IDではなくdata-side/
+// data-actionでイベント委譲するため個数はいくつでもよく、position:stickyに
+// より現在スクロール中のページのヘッダーが画面上部に固定表示される。
+function buildHeader(label, side) {
+  const header = document.createElement('div');
+  header.className = `page-col-header page-col-header-${side}`;
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'page-label';
+  labelEl.textContent = label;
+  header.appendChild(labelEl);
+
+  const zoomControls = document.createElement('div');
+  zoomControls.className = 'zoom-controls';
+  zoomControls.innerHTML = `
+    <button type="button" class="zoom-btn" data-side="${side}" data-action="out" title="縮小">－</button>
+    <span class="zoom-level" data-side="${side}">${Math.round(zoomBySide[side] * 100)}%</span>
+    <button type="button" class="zoom-btn" data-side="${side}" data-action="in" title="拡大">＋</button>
+    <button type="button" class="zoom-btn zoom-reset-btn" data-side="${side}" data-action="reset" title="ズームを元に戻す">戻す</button>
+  `;
+  header.appendChild(zoomControls);
+  return header;
+}
+
 function buildSide(canvas, label, side, placeholderMessage) {
   const col = document.createElement('div');
   col.className = `page-col page-col-${side}`;
-
-  const header = document.createElement('div');
-  header.className = `page-col-header page-col-header-${side}`;
-  header.textContent = label;
-  col.appendChild(header);
+  col.appendChild(buildHeader(label, side));
 
   if (canvas) {
     const img = document.createElement('img');
@@ -181,7 +198,9 @@ function renderResults(results) {
 function applyZoom(side) {
   const zoom = zoomBySide[side];
   const viewerEl = els.viewers[side];
-  els.zoomLevel[side].textContent = `${Math.round(zoom * 100)}%`;
+  viewerEl.querySelectorAll(`.zoom-level[data-side="${side}"]`).forEach((el) => {
+    el.textContent = `${Math.round(zoom * 100)}%`;
+  });
   const fitWidth = viewerEl.clientWidth;
   viewerEl.querySelectorAll('.page-image').forEach((img) => {
     img.style.width = `${fitWidth * zoom}px`;
@@ -194,11 +213,16 @@ function setZoom(side, z) {
 }
 
 ['old', 'new'].forEach((side) => {
-  document.getElementById(`zoom-in-${side}`).addEventListener('click', () => setZoom(side, zoomBySide[side] + 0.1));
-  document.getElementById(`zoom-out-${side}`).addEventListener('click', () => setZoom(side, zoomBySide[side] - 0.1));
-  document.getElementById(`zoom-reset-${side}`).addEventListener('click', () => setZoom(side, 1.0));
-
   const viewerEl = els.viewers[side];
+
+  // ページごとに繰り返し生成されるズームボタンをイベント委譲で一括処理する
+  viewerEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.zoom-btn');
+    if (!btn || btn.dataset.side !== side) return;
+    if (btn.dataset.action === 'in') setZoom(side, zoomBySide[side] + 0.1);
+    else if (btn.dataset.action === 'out') setZoom(side, zoomBySide[side] - 0.1);
+    else if (btn.dataset.action === 'reset') setZoom(side, 1.0);
+  });
 
   viewerEl.addEventListener('wheel', (e) => {
     if (!viewerEl.querySelector('.page-image')) return;
@@ -212,7 +236,7 @@ function setZoom(side, z) {
   let panStartX = 0, panStartY = 0, panStartScrollLeft = 0, panStartScrollTop = 0;
 
   viewerEl.addEventListener('mousedown', (e) => {
-    if (e.button !== 0 || !viewerEl.querySelector('.page-image')) return;
+    if (e.button !== 0 || e.target.closest('button') || !viewerEl.querySelector('.page-image')) return;
     isPanning = true;
     panStartX = e.clientX;
     panStartY = e.clientY;

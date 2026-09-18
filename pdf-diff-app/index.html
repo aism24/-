@@ -29,7 +29,13 @@
   </div>
 </header>
 
-<p id="app-desc">「表」「文章」「図面」のそれぞれの変更点解析をしてPDFにてダウンロードするアプリです。</p>
+<div id="app-desc-row">
+  <p id="app-desc">「表」「文章」「図面」のそれぞれの変更点解析をしてPDFにてダウンロードするアプリです。</p>
+  <div id="header-actions">
+    <span id="result-category"></span>
+    <button id="download-btn">📥 PDFダウンロード</button>
+  </div>
+</div>
 
 <section id="upload-section">
   <div class="file-field" id="old-pdf-field">
@@ -59,33 +65,11 @@
   <section id="status"></section>
 
   <section id="result-section" class="hidden">
-    <div id="viewer-toolbar">
-      <span id="result-category"></span>
-      <button id="download-btn">📥 PDFダウンロード</button>
-    </div>
     <div id="viewer-split">
       <div class="viewer-pane" id="viewer-pane-old">
-        <div class="pane-toolbar">
-          <span class="pane-label">旧PDF</span>
-          <div class="zoom-controls">
-            <button id="zoom-out-old" title="縮小">－</button>
-            <span id="zoom-level-old" class="zoom-level">100%</span>
-            <button id="zoom-in-old" title="拡大">＋</button>
-            <button id="zoom-reset-old" class="zoom-reset-btn" title="ズームを元に戻す">戻す</button>
-          </div>
-        </div>
         <div class="pane-scroll" id="viewer-old"></div>
       </div>
       <div class="viewer-pane" id="viewer-pane-new">
-        <div class="pane-toolbar">
-          <span class="pane-label">新PDF</span>
-          <div class="zoom-controls">
-            <button id="zoom-out-new" title="縮小">－</button>
-            <span id="zoom-level-new" class="zoom-level">100%</span>
-            <button id="zoom-in-new" title="拡大">＋</button>
-            <button id="zoom-reset-new" class="zoom-reset-btn" title="ズームを元に戻す">戻す</button>
-          </div>
-        </div>
         <div class="pane-scroll" id="viewer-new"></div>
       </div>
     </div>
