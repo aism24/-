@@ -20,17 +20,33 @@
 
 * { box-sizing: border-box; }
 
+html, body { height: 100%; }
+
 body {
   margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
   background: var(--bg-color);
   color: var(--text-color);
 }
 
 header {
+  flex: 0 0 auto;
   background: var(--header-bg);
   border-bottom: 1px solid var(--header-border);
   padding: 10px 16px;
+}
+
+#app-desc {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 10px 16px;
+  text-align: center;
+  font-size: calc(var(--logo-size) * 0.4);
+  font-weight: bold;
+  color: #1e9633;
 }
 
 #brand {
@@ -65,6 +81,7 @@ header {
 }
 
 main {
+  flex: 0 0 auto;
   max-width: none;
   width: 100%;
   margin: 0;
@@ -72,26 +89,28 @@ main {
 }
 
 #upload-section {
+  flex: 1 1 auto;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 20px;
-  background: var(--header-bg);
-  border: 1px solid var(--header-border);
-  border-radius: 8px;
-  padding: 20px;
+  align-items: stretch;
+  gap: 0;
 }
 
 .file-field {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
-  padding: 10px; border: 2px dashed transparent; border-radius: 8px;
+  padding: 40px 10px 10px; border: 2px dashed transparent;
   transition: background .15s, border-color .15s;
 }
-.file-field.drag-over { background: #fff4cc; border-color: #ffd400; }
+#old-pdf-field { background: #fdecea; }
+#new-pdf-field { background: #e9f7ef; }
+#old-pdf-field.drag-over, #new-pdf-field.drag-over { background: #fff4cc; border-color: #ffd400; }
 .file-field label { font-size: 13px; font-weight: bold; color: var(--text-color); }
 .file-row { display: flex; align-items: center; gap: 10px; }
 
-.upload-actions { display: flex; align-items: center; gap: 12px; justify-self: center; }
+.upload-actions {
+  display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 12px;
+  padding: 40px 24px 10px; background: var(--header-bg);
+}
 
 .file-btn {
   background: #fff; border: 1px solid #bbb; border-radius: 4px;
@@ -114,6 +133,7 @@ main {
   padding: 10px 22px; font-size: 15px; font-weight: bold; cursor: pointer;
 }
 #reset-btn:hover { background: #e6bf00; }
+#reset-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 #status { display: none; }
 
