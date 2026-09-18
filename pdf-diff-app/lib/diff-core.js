@@ -55,7 +55,14 @@
 
   function charWeight(ch) {
     const code = ch.codePointAt(0);
-    return code <= 0xff ? 0.55 : 1.0;
+    // ASCII/Latin-1に加え、半角カタカナ(U+FF61-FF9F)・半角句読点等の
+    // 半角形(U+FF61-FFDC)も見た目は半角幅なので、0xff以下だけを見る判定では
+    // 半角カタカナ(フリガナ等で多用)が全角扱いになり幅を約2倍に見積もって
+    // しまっていた(実測より大きく右にズレる)。これが原因で、フリガナ欄の
+    // 推定終端位置が隣接する別欄の文字と前後してしまい、行内の単語の並び順が
+    // 新旧PDFでズレる(=文字単位diffの対応がおかしくなる)ケースがあった。
+    const isHalfWidth = code <= 0xff || (code >= 0xff61 && code <= 0xffdc);
+    return isHalfWidth ? 0.55 : 1.0;
   }
 
   async function extractWords(page, viewport) {
