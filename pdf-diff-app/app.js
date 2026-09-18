@@ -35,11 +35,16 @@ function updateRunEnabled() {
   els.runBtn.disabled = !(oldFile && newFile);
 }
 
+function updateResetEnabled() {
+  els.resetBtn.disabled = !(oldFile || newFile || lastResult);
+}
+
 function setOldFile(file) {
   oldFile = file || null;
   els.oldName.textContent = oldFile ? oldFile.name : '未選択(ドラッグ&ドロップ可)';
   els.oldBtn.disabled = !!oldFile;
   updateRunEnabled();
+  updateResetEnabled();
 }
 
 function setNewFile(file) {
@@ -47,6 +52,7 @@ function setNewFile(file) {
   els.newName.textContent = newFile ? newFile.name : '未選択(ドラッグ&ドロップ可)';
   els.newBtn.disabled = !!newFile;
   updateRunEnabled();
+  updateResetEnabled();
 }
 
 els.oldInput.addEventListener('change', (e) => setOldFile(e.target.files[0]));
@@ -175,6 +181,7 @@ els.runBtn.addEventListener('click', async () => {
     ]);
     const result = await PdfDiffCore.runDiff(oldBuf, newBuf, { onLog: log });
     lastResult = result;
+    updateResetEnabled();
     els.resultCategory.textContent = `分類: ${result.category}`;
     renderResults(result.results);
     els.resultSection.classList.remove('hidden');

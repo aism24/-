@@ -26,30 +26,32 @@
   </div>
 </header>
 
-<main>
-  <section id="upload-section">
-    <div class="file-field" id="old-pdf-field">
-      <label for="old-pdf">旧PDF</label>
-      <div class="file-row">
-        <button type="button" id="old-pdf-btn" class="file-btn" onclick="document.getElementById('old-pdf').click()">ファイルを選択</button>
-        <span id="old-pdf-name" class="file-name">未選択(ドラッグ&amp;ドロップ可)</span>
-      </div>
-      <input type="file" id="old-pdf" accept="application/pdf" hidden>
-    </div>
-    <div class="upload-actions">
-      <button id="run-btn" disabled>解析</button>
-      <button id="reset-btn">リセット</button>
-    </div>
-    <div class="file-field" id="new-pdf-field">
-      <label for="new-pdf">新PDF</label>
-      <div class="file-row">
-        <button type="button" id="new-pdf-btn" class="file-btn" onclick="document.getElementById('new-pdf').click()">ファイルを選択</button>
-        <span id="new-pdf-name" class="file-name">未選択(ドラッグ&amp;ドロップ可)</span>
-      </div>
-      <input type="file" id="new-pdf" accept="application/pdf" hidden>
-    </div>
-  </section>
+<p id="app-desc">「表」「文章」「図面」のそれぞれの変更点解析をしてPDFにてダウンロードするアプリです。</p>
 
+<section id="upload-section">
+  <div class="file-field" id="old-pdf-field">
+    <label for="old-pdf">旧PDF</label>
+    <div class="file-row">
+      <button type="button" id="old-pdf-btn" class="file-btn" onclick="document.getElementById('old-pdf').click()">ファイルを選択</button>
+      <span id="old-pdf-name" class="file-name">未選択(ドラッグ&amp;ドロップ可)</span>
+    </div>
+    <input type="file" id="old-pdf" accept="application/pdf" hidden>
+  </div>
+  <div class="upload-actions">
+    <button id="run-btn" disabled>解析</button>
+    <button id="reset-btn" disabled>リセット</button>
+  </div>
+  <div class="file-field" id="new-pdf-field">
+    <label for="new-pdf">新PDF</label>
+    <div class="file-row">
+      <button type="button" id="new-pdf-btn" class="file-btn" onclick="document.getElementById('new-pdf').click()">ファイルを選択</button>
+      <span id="new-pdf-name" class="file-name">未選択(ドラッグ&amp;ドロップ可)</span>
+    </div>
+    <input type="file" id="new-pdf" accept="application/pdf" hidden>
+  </div>
+</section>
+
+<main>
   <section id="status"></section>
 
   <section id="result-section" class="hidden">
