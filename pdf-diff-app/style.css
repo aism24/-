@@ -83,7 +83,7 @@ header {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  font-size: calc(var(--logo-size) * 0.5);
+  font-size: calc(var(--logo-size) * 0.7);
   font-weight: bold;
   color: var(--accent);
   white-space: nowrap;
