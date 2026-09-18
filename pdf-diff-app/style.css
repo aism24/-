@@ -1,0 +1,169 @@
+:root {
+  --header-bg: #ffffff;
+  --header-border: #e0e0e0;
+  --masamiz-color: #000000;
+  --text-color: #222222;
+  --bg-color: #f5f6f8;
+  --accent: #1a73e8;
+  --logo-size: 48px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --header-bg: #1c1e22;
+    --header-border: #33363c;
+    --masamiz-color: #ffffff;
+    --text-color: #eaeaea;
+    --bg-color: #121316;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+  background: var(--bg-color);
+  color: var(--text-color);
+}
+
+header {
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--header-border);
+  padding: 10px 16px;
+}
+
+#brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+#logo-wrap {
+  display: block;
+  width: var(--logo-size);
+  height: var(--logo-size);
+  flex-shrink: 0;
+}
+
+#company-name {
+  font-weight: bold;
+  white-space: nowrap;
+  line-height: var(--logo-size);
+  font-size: var(--logo-size);
+  color: var(--text-color);
+}
+
+#app-name {
+  font-size: calc(var(--logo-size) * 0.4);
+  font-weight: bold;
+  color: var(--accent);
+  white-space: nowrap;
+  align-self: center;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 16px 60px;
+}
+
+#upload-section {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 20px;
+  background: var(--header-bg);
+  border: 1px solid var(--header-border);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.file-field { display: flex; flex-direction: column; gap: 6px; }
+.file-field label { font-size: 13px; font-weight: bold; color: var(--text-color); }
+.file-row { display: flex; align-items: center; gap: 10px; }
+
+.file-btn {
+  background: #fff; border: 1px solid #bbb; border-radius: 4px;
+  padding: 8px 14px; font-size: 13px; font-weight: bold; cursor: pointer;
+}
+.file-btn:hover { background: #f0f0f0; }
+
+.file-name { font-size: 12px; color: #666; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+#run-btn {
+  background: var(--accent); color: #fff; border: none; border-radius: 6px;
+  padding: 10px 26px; font-size: 15px; font-weight: bold; cursor: pointer;
+}
+#run-btn:disabled { opacity: .4; cursor: not-allowed; }
+#run-btn:not(:disabled):hover { background: #1558b0; }
+
+#status {
+  margin-top: 16px;
+  font-size: 12px;
+  color: #555;
+  max-height: 160px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--header-border);
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+#status:empty { display: none; }
+
+#result-section { margin-top: 24px; }
+#result-section.hidden { display: none; }
+
+#viewer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  background: var(--header-bg);
+  border: 1px solid var(--header-border);
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+#result-category { font-weight: bold; }
+
+#zoom-controls { display: flex; align-items: center; gap: 8px; }
+#zoom-controls button {
+  width: 30px; height: 30px; border-radius: 50%; border: 1px solid #bbb;
+  background: #fff; font-size: 16px; cursor: pointer;
+}
+#zoom-level { min-width: 48px; text-align: center; font-size: 13px; }
+
+#download-btn {
+  background: #f39c12; color: #fff; border: none; border-radius: 6px;
+  padding: 8px 18px; font-size: 13px; font-weight: bold; cursor: pointer;
+}
+#download-btn:hover { background: #d9870a; }
+
+#viewer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  overflow-x: auto;
+}
+
+.page-image {
+  max-width: none;
+  border: 1px solid var(--header-border);
+  border-radius: 4px;
+  background: #fff;
+}
+
+@media (max-width: 640px) {
+  :root { --logo-size: 34px; }
+  #app-name { font-size: 14px; }
+  .file-name { max-width: 120px; }
+}
