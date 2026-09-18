@@ -135,21 +135,52 @@ async function sendLog(category) {
   }
 }
 
+function buildSide(canvas, label, side, placeholderMessage) {
+  const col = document.createElement('div');
+  col.className = `page-col page-col-${side}`;
+
+  const header = document.createElement('div');
+  header.className = `page-col-header page-col-header-${side}`;
+  header.textContent = label;
+  col.appendChild(header);
+
+  if (canvas) {
+    const img = document.createElement('img');
+    img.src = canvas.toDataURL('image/png');
+    img.dataset.baseWidth = canvas.width;
+    img.className = 'page-image';
+    img.draggable = false;
+    col.appendChild(img);
+  } else {
+    const ph = document.createElement('div');
+    ph.className = `page-placeholder page-placeholder-${side}`;
+    ph.textContent = placeholderMessage || '';
+    col.appendChild(ph);
+  }
+  return col;
+}
+
 function renderResults(results) {
   els.viewer.innerHTML = '';
   results.forEach((r) => {
-    const img = document.createElement('img');
-    img.src = r.composed.toDataURL('image/png');
-    img.className = 'page-image';
-    els.viewer.appendChild(img);
+    const row = document.createElement('div');
+    row.className = 'page-row';
+    row.appendChild(buildSide(r.oldCanvas, r.labelOld, 'old', r.placeholderMessage));
+    row.appendChild(buildSide(r.newCanvas, r.labelNew, 'new', r.placeholderMessage));
+    els.viewer.appendChild(row);
   });
   applyZoom();
 }
 
+// ページごとに旧/新を別々の<img>として描画しているため、各画像は自分自身の
+// 基準幅(元のcanvas幅)を基準に拡大縮小する。これにより、旧新をまとめた1枚の
+// 画像を全体の中心基準で拡大縮小していた以前の挙動と異なり、それぞれが
+// 自分の位置を保ったまま独立してズームする。
 function applyZoom() {
   els.zoomLevel.textContent = `${Math.round(zoom * 100)}%`;
   document.querySelectorAll('.page-image').forEach((img) => {
-    img.style.width = `${zoom * 100}%`;
+    const baseWidth = Number(img.dataset.baseWidth) || img.naturalWidth;
+    img.style.width = `${baseWidth * zoom}px`;
   });
 }
 
@@ -167,6 +198,32 @@ els.viewer.addEventListener('wheel', (e) => {
   e.preventDefault();
   setZoom(zoom - e.deltaY * 0.001);
 }, { passive: false });
+
+// 差分表示エリアを左クリックで掴んでドラッグすると、上下左右にパン(スクロール)できる
+let isPanning = false;
+let panStartX = 0, panStartY = 0, panStartScrollLeft = 0, panStartScrollTop = 0;
+
+els.viewer.addEventListener('mousedown', (e) => {
+  if (e.button !== 0 || !els.viewer.querySelector('.page-image')) return;
+  isPanning = true;
+  panStartX = e.clientX;
+  panStartY = e.clientY;
+  panStartScrollLeft = els.viewer.scrollLeft;
+  panStartScrollTop = window.scrollY;
+  els.viewer.classList.add('panning');
+  e.preventDefault();
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!isPanning) return;
+  els.viewer.scrollLeft = panStartScrollLeft - (e.clientX - panStartX);
+  window.scrollTo(window.scrollX, panStartScrollTop - (e.clientY - panStartY));
+});
+
+window.addEventListener('mouseup', () => {
+  isPanning = false;
+  els.viewer.classList.remove('panning');
+});
 
 els.runBtn.addEventListener('click', async () => {
   if (!oldFile || !newFile) return;
