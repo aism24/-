@@ -2,7 +2,7 @@
 //
 // スプレッドシート「PDF差分解析(表、文章、図面)」の「記録」シートに、
 // アプリ側(index.html/app.js)から解析完了時にPOSTされる
-// { date: ISO日時文字列, category: "表"|"文章"|"図面"|... } を
+// { date: "yyyy-MM-dd HH:mm:ss"形式の日本時間文字列, category: "表"|"文章"|"図面"|... } を
 // 常に2行目(A2:B2)へ追記する。追記後にA2:Bを日時の降順で並び替えることで、
 // 「2行目が常に最新」を維持する。
 //
@@ -20,7 +20,7 @@ const SHEET_NAME = '記録';
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
-    const date = data.date || new Date().toISOString();
+    const date = data.date || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm:ss');
     const category = data.category || '';
 
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);

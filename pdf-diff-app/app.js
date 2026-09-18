@@ -52,6 +52,17 @@ function clearLog() {
   els.status.innerHTML = '';
 }
 
+function formatDateJST(date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type) => parts.find((p) => p.type === type).value;
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
+}
+
 function fileToArrayBuffer(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -67,7 +78,7 @@ async function sendLog(category) {
     await fetch(GAS_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ date: new Date().toISOString(), category }),
+      body: JSON.stringify({ date: formatDateJST(new Date()), category }),
     });
   } catch (err) {
     // 記録の失敗はアプリ本来の解析結果表示を止めない
@@ -137,7 +148,6 @@ els.downloadBtn.addEventListener('click', () => {
     }
     doc.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, w, h);
   });
-  const now = new Date();
-  const stamp = now.toISOString().slice(0, 19).replace(/[-:T]/g, '');
+  const stamp = formatDateJST(new Date()).replace(/[-: ]/g, '');
   doc.save(`pdf-diff-${stamp}.pdf`);
 });
