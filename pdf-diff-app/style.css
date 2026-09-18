@@ -24,12 +24,25 @@ html, body { height: 100%; }
 
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
   background: var(--bg-color);
   color: var(--text-color);
+}
+
+#top-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-color);
+}
+
+/* 解析結果がまだ無い間だけ、アップロード欄を画面下いっぱいまで広げる */
+body:has(#result-section.hidden) #top-bar {
+  flex: 1 1 auto;
 }
 
 header {
@@ -39,14 +52,34 @@ header {
   padding: 10px 16px;
 }
 
-#app-desc {
+#app-desc-row {
   flex: 0 0 auto;
-  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 10px 16px;
+}
+
+#app-desc {
+  flex: 1 1 auto;
+  margin: 0;
   text-align: center;
   font-size: calc(var(--logo-size) * 0.4);
   font-weight: bold;
   color: #1e9633;
+}
+
+#header-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* 解析結果が出るまでは分類・ダウンロードは意味を持たないため隠す
+   (visibilityで隠すことで、表示時にレイアウトが動かないようにする) */
+body:has(#result-section.hidden) #header-actions {
+  visibility: hidden;
 }
 
 #brand {
@@ -75,7 +108,7 @@ header {
   font-weight: bold;
   white-space: nowrap;
   line-height: var(--logo-size);
-  font-size: calc(var(--logo-size) * 0.5);
+  font-size: calc(var(--logo-size) * 0.25);
   color: var(--text-color);
 }
 
@@ -90,15 +123,20 @@ header {
 }
 
 main {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
   max-width: none;
   width: 100%;
   margin: 0;
-  padding: 20px 24px 60px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 #upload-section {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: stretch;
@@ -106,7 +144,7 @@ main {
 }
 
 .file-field {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 14px;
   padding: 14px 10px; border: 2px dashed transparent;
   transition: background .15s, border-color .15s;
 }
@@ -146,34 +184,30 @@ main {
 
 #status { display: none; }
 
-#result-section { margin-top: 24px; }
+#result-section {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 8px;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* ヘッダー固定部分より下は、旧(左/赤系)・新(右/緑系)を背景色でも
+     区分けする。左右中央でぴったり分かれるよう、result-section自体に
+     グラデーションで塗る(paddingの下も含めて全体に効く)。 */
+  background: linear-gradient(to right, #fdecea 50%, #e9f7ef 50%);
+}
 #result-section.hidden { display: none; }
 
-#viewer-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-  background: var(--header-bg);
-  border: 1px solid var(--header-border);
-  border-radius: 8px;
-  padding: 10px 16px;
-  margin-bottom: 14px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
+#result-category { font-weight: bold; font-size: calc(var(--logo-size) * 0.4); color: var(--text-color); }
 
-#result-category { font-weight: bold; }
-
-#zoom-controls { display: flex; align-items: center; gap: 8px; }
-#zoom-controls button {
+.zoom-controls { display: flex; align-items: center; gap: 8px; }
+.zoom-controls button {
   width: 30px; height: 30px; border-radius: 50%; border: 1px solid #bbb;
   background: #fff; font-size: 16px; cursor: pointer;
 }
-#zoom-level { min-width: 48px; text-align: center; font-size: 13px; }
-#zoom-reset {
+.zoom-level { min-width: 48px; text-align: center; font-size: 13px; }
+.zoom-controls .zoom-reset-btn {
   width: auto; height: auto; border-radius: 4px;
   padding: 6px 10px; font-size: 12px; font-weight: bold;
   white-space: nowrap; flex-shrink: 0;
@@ -185,30 +219,57 @@ main {
 }
 #download-btn:hover { background: #d9870a; }
 
-#viewer {
+/* 画面中央に旧/新の境界を置き、それぞれ独立してズーム・パン(縦横とも)できる2分割ビュー */
+#viewer-split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.viewer-pane {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+#viewer-pane-old { border-right: 2px solid var(--header-border); padding-right: 16px; }
+#viewer-pane-new { padding-left: 16px; }
+
+.pane-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 24px;
-  overflow-x: auto;
+  padding-bottom: 24px;
+  overflow: auto;
   cursor: grab;
   user-select: none;
 }
-#viewer.panning { cursor: grabbing; }
+.pane-scroll.panning { cursor: grabbing; }
 
-.page-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 20px;
-}
+.page-col { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
 
-.page-col { display: flex; flex-direction: column; align-items: flex-start; gap: 0; }
-
+/* ページのラベルとそのペインのズーム操作を1行にまとめる。position:stickyで、
+   スクロール中は今表示されているページのヘッダーが常に上部に固定される
+   (ページが複数あっても、次のページの見出しが来ると自然に置き換わる)。 */
 .page-col-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   font-size: 13px; font-weight: bold; padding: 6px 10px; border-radius: 4px 4px 0 0;
 }
 .page-col-header-old { background: #fdecea; }
 .page-col-header-new { background: #e9f7ef; }
+.page-label { white-space: nowrap; }
 
 .page-placeholder {
   width: 400px; min-height: 200px;

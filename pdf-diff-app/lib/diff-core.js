@@ -55,7 +55,14 @@
 
   function charWeight(ch) {
     const code = ch.codePointAt(0);
-    return code <= 0xff ? 0.55 : 1.0;
+    // ASCII/Latin-1に加え、半角カタカナ(U+FF61-FF9F)・半角句読点等の
+    // 半角形(U+FF61-FFDC)も見た目は半角幅なので、0xff以下だけを見る判定では
+    // 半角カタカナ(フリガナ等で多用)が全角扱いになり幅を約2倍に見積もって
+    // しまっていた(実測より大きく右にズレる)。これが原因で、フリガナ欄の
+    // 推定終端位置が隣接する別欄の文字と前後してしまい、行内の単語の並び順が
+    // 新旧PDFでズレる(=文字単位diffの対応がおかしくなる)ケースがあった。
+    const isHalfWidth = code <= 0xff || (code >= 0xff61 && code <= 0xffdc);
+    return isHalfWidth ? 0.55 : 1.0;
   }
 
   async function extractWords(page, viewport) {
@@ -286,28 +293,37 @@
 
   // ---------- 文章方式(1文字単位) ----------
 
-  function buildCharStream(rows) {
-    // 行の折り返し位置は新旧でズレうる(1文字増減しただけで以降の行が
-    // 全部ズレる)ため、行区切り文字は入れず読み順の文字を素で連結する
-    // (差分検出を折り返し位置に依存させないため。pdf_text_diff.pyと同じ方針)。
+  // 単語(セル)の境目に挟む不可視の区切り文字。新旧どちらの行にも同じ位置に
+  // 入るため、Diff.diffCharsは必ずこれを「一致」とみなし、変更範囲が
+  // 隣接する無関係な単語(例: フリガナ欄と契約金額欄が同じ行にある場合)まで
+  // 誤って巻き込むのを防ぐ。表示上は使われないので画面には影響しない。
+  const WORD_SEP = '\u0000';
+
+  function buildCharStream(row) {
+    // 1行分の単語を対象に、区切り文字を挟みながら読み順に連結する。
+    // 行をまたぐ連結は行わない(diffTextが行単位で対応付けてから
+    // この関数を呼ぶため。行の折り返し位置は新旧でズレうるが、
+    // それは行単位アライメント側で吸収する)。
     let text = '';
     const map = [];
-    rows.forEach((row) => {
-      row.forEach((w) => {
-        const chars = Array.from(w.text);
-        const weights = chars.map(charWeight);
-        const totalWeight = weights.reduce((a, b) => a + b, 0) || 1;
-        const width = w.x1 - w.x0;
-        let offset = 0;
-        chars.forEach((ch, i) => {
-          text += ch;
-          map.push({
-            x0: w.x0 + (offset / totalWeight) * width,
-            x1: w.x0 + ((offset + weights[i]) / totalWeight) * width,
-            y0: w.y0, y1: w.y1,
-          });
-          offset += weights[i];
+    row.forEach((w, idx) => {
+      if (idx > 0) {
+        text += WORD_SEP;
+        map.push(null);
+      }
+      const chars = Array.from(w.text);
+      const weights = chars.map(charWeight);
+      const totalWeight = weights.reduce((a, b) => a + b, 0) || 1;
+      const width = w.x1 - w.x0;
+      let offset = 0;
+      chars.forEach((ch, i) => {
+        text += ch;
+        map.push({
+          x0: w.x0 + (offset / totalWeight) * width,
+          x1: w.x0 + ((offset + weights[i]) / totalWeight) * width,
+          y0: w.y0, y1: w.y1,
         });
+        offset += weights[i];
       });
     });
     return { text, map };
@@ -331,24 +347,51 @@
     return merged;
   }
 
+  // 「表」方式(diffTable)と同じく、まず行単位でDiff.diffArraysによる対応付け
+  // (Needleman-Wunsch型ではなくLCSだが、行が完全に一致するかどうかで判定する
+  // 点は同じ)を行い、対応の取れた行同士だけをさらに文字単位で比較する。
+  // ページ全体を1本の文字列にして文字単位diffにかけていた以前の実装では、
+  // 「台」のような短い繰り返し文字が原因で、新規追加された行の文字が
+  // ページ内の離れた場所にある同じ文字と誤って対応付けられ、追加として
+  // 検出されないことがあった。行単位で先に対応を確定させることでこれを防ぐ。
   function diffText(oldRows, newRows) {
-    const oldStream = buildCharStream(oldRows);
-    const newStream = buildCharStream(newRows);
-    const changes = Diff.diffChars(oldStream.text, newStream.text);
+    const oldStreams = oldRows.map(buildCharStream);
+    const newStreams = newRows.map(buildCharStream);
+    const rowChanges = Diff.diffArrays(oldStreams.map((s) => s.text), newStreams.map((s) => s.text));
+    const rowPairs = pairChanges(rowChanges);
     const oldBoxes = [], newBoxes = [];
-    let oi = 0, ni = 0;
-    changes.forEach((part) => {
-      const len = part.value.length;
-      if (!part.added && !part.removed) { oi += len; ni += len; return; }
-      if (part.removed) {
-        for (let k = 0; k < len; k++) { const b = oldStream.map[oi + k]; if (b) oldBoxes.push(b); }
-        oi += len;
+
+    const pushAll = (map, boxes) => map.forEach((b) => { if (b) boxes.push(b); });
+
+    rowPairs.forEach((rp) => {
+      if (rp.type === 'equal') return;
+      if (rp.type === 'delete') {
+        pushAll(oldStreams[rp.oldIdx].map, oldBoxes);
+        return;
       }
-      if (part.added) {
-        for (let k = 0; k < len; k++) { const b = newStream.map[ni + k]; if (b) newBoxes.push(b); }
-        ni += len;
+      if (rp.type === 'insert') {
+        pushAll(newStreams[rp.newIdx].map, newBoxes);
+        return;
       }
+      // 'pair': 対応は取れたが内容が異なる行同士を、さらに文字単位で比較する
+      const oldStream = oldStreams[rp.oldIdx];
+      const newStream = newStreams[rp.newIdx];
+      const changes = Diff.diffChars(oldStream.text, newStream.text);
+      let oi = 0, ni = 0;
+      changes.forEach((part) => {
+        const len = part.value.length;
+        if (!part.added && !part.removed) { oi += len; ni += len; return; }
+        if (part.removed) {
+          for (let k = 0; k < len; k++) { const b = oldStream.map[oi + k]; if (b) oldBoxes.push(b); }
+          oi += len;
+        }
+        if (part.added) {
+          for (let k = 0; k < len; k++) { const b = newStream.map[ni + k]; if (b) newBoxes.push(b); }
+          ni += len;
+        }
+      });
     });
+
     return { oldBoxes: mergeConsecutiveBoxes(oldBoxes), newBoxes: mergeConsecutiveBoxes(newBoxes) };
   }
 

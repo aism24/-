@@ -7,7 +7,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 let oldFile = null;
 let newFile = null;
 let lastResult = null;
-let zoom = 1.0;
+const zoomBySide = { old: 1.0, new: 1.0 };
 
 const els = {
   oldInput: document.getElementById('old-pdf'),
@@ -23,12 +23,11 @@ const els = {
   status: document.getElementById('status'),
   resultSection: document.getElementById('result-section'),
   resultCategory: document.getElementById('result-category'),
-  viewer: document.getElementById('viewer'),
-  zoomLevel: document.getElementById('zoom-level'),
-  zoomIn: document.getElementById('zoom-in'),
-  zoomOut: document.getElementById('zoom-out'),
-  zoomReset: document.getElementById('zoom-reset'),
   downloadBtn: document.getElementById('download-btn'),
+  viewers: {
+    old: document.getElementById('viewer-old'),
+    new: document.getElementById('viewer-new'),
+  },
 };
 
 function updateRunEnabled() {
@@ -87,7 +86,8 @@ els.resetBtn.addEventListener('click', () => {
   setNewFile(null);
   clearLog();
   els.resultSection.classList.add('hidden');
-  els.viewer.innerHTML = '';
+  els.viewers.old.innerHTML = '';
+  els.viewers.new.innerHTML = '';
 });
 
 function log(msg) {
@@ -135,19 +135,39 @@ async function sendLog(category) {
   }
 }
 
+// ページごとのヘッダーに、その面(旧/新)のズーム操作をまとめて載せる。
+// ページ数分だけ同じ操作一式が繰り返し生成されるが、IDではなくdata-side/
+// data-actionでイベント委譲するため個数はいくつでもよく、position:stickyに
+// より現在スクロール中のページのヘッダーが画面上部に固定表示される。
+function buildHeader(label, side) {
+  const header = document.createElement('div');
+  header.className = `page-col-header page-col-header-${side}`;
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'page-label';
+  labelEl.textContent = label;
+  header.appendChild(labelEl);
+
+  const zoomControls = document.createElement('div');
+  zoomControls.className = 'zoom-controls';
+  zoomControls.innerHTML = `
+    <button type="button" class="zoom-btn" data-side="${side}" data-action="out" title="縮小">－</button>
+    <span class="zoom-level" data-side="${side}">${Math.round(zoomBySide[side] * 100)}%</span>
+    <button type="button" class="zoom-btn" data-side="${side}" data-action="in" title="拡大">＋</button>
+    <button type="button" class="zoom-btn zoom-reset-btn" data-side="${side}" data-action="reset" title="ズームを元に戻す">戻す</button>
+  `;
+  header.appendChild(zoomControls);
+  return header;
+}
+
 function buildSide(canvas, label, side, placeholderMessage) {
   const col = document.createElement('div');
   col.className = `page-col page-col-${side}`;
-
-  const header = document.createElement('div');
-  header.className = `page-col-header page-col-header-${side}`;
-  header.textContent = label;
-  col.appendChild(header);
+  col.appendChild(buildHeader(label, side));
 
   if (canvas) {
     const img = document.createElement('img');
     img.src = canvas.toDataURL('image/png');
-    img.dataset.baseWidth = canvas.width;
     img.className = 'page-image';
     img.draggable = false;
     col.appendChild(img);
@@ -160,69 +180,84 @@ function buildSide(canvas, label, side, placeholderMessage) {
   return col;
 }
 
+// 旧新を1枚の合成画像に描くのではなく、別々の<img>としてそれぞれのペインに
+// そのまま表示する。これにより旧PDF/新PDFを個別にズーム・パンできる。
 function renderResults(results) {
-  els.viewer.innerHTML = '';
+  els.viewers.old.innerHTML = '';
+  els.viewers.new.innerHTML = '';
   results.forEach((r) => {
-    const row = document.createElement('div');
-    row.className = 'page-row';
-    row.appendChild(buildSide(r.oldCanvas, r.labelOld, 'old', r.placeholderMessage));
-    row.appendChild(buildSide(r.newCanvas, r.labelNew, 'new', r.placeholderMessage));
-    els.viewer.appendChild(row);
+    els.viewers.old.appendChild(buildSide(r.oldCanvas, r.labelOld, 'old', r.placeholderMessage));
+    els.viewers.new.appendChild(buildSide(r.newCanvas, r.labelNew, 'new', r.placeholderMessage));
   });
-  applyZoom();
+  applyZoom('old');
+  applyZoom('new');
 }
 
-// ページごとに旧/新を別々の<img>として描画しているため、各画像は自分自身の
-// 基準幅(元のcanvas幅)を基準に拡大縮小する。これにより、旧新をまとめた1枚の
-// 画像を全体の中心基準で拡大縮小していた以前の挙動と異なり、それぞれが
-// 自分の位置を保ったまま独立してズームする。
-function applyZoom() {
-  els.zoomLevel.textContent = `${Math.round(zoom * 100)}%`;
-  document.querySelectorAll('.page-image').forEach((img) => {
-    const baseWidth = Number(img.dataset.baseWidth) || img.naturalWidth;
-    img.style.width = `${baseWidth * zoom}px`;
+// 100%でPDFの横幅全体がペイン内に収まるよう、ページ画像の実ピクセル幅ではなく
+// ペイン自体の表示幅を基準(fit-to-width)にズーム倍率をかける。
+function applyZoom(side) {
+  const zoom = zoomBySide[side];
+  const viewerEl = els.viewers[side];
+  viewerEl.querySelectorAll(`.zoom-level[data-side="${side}"]`).forEach((el) => {
+    el.textContent = `${Math.round(zoom * 100)}%`;
+  });
+  const fitWidth = viewerEl.clientWidth;
+  viewerEl.querySelectorAll('.page-image').forEach((img) => {
+    img.style.width = `${fitWidth * zoom}px`;
   });
 }
 
-function setZoom(z) {
-  zoom = Math.max(0.2, Math.min(3, z));
-  applyZoom();
+function setZoom(side, z) {
+  zoomBySide[side] = Math.max(0.2, Math.min(3, z));
+  applyZoom(side);
 }
 
-els.zoomIn.addEventListener('click', () => setZoom(zoom + 0.1));
-els.zoomOut.addEventListener('click', () => setZoom(zoom - 0.1));
-els.zoomReset.addEventListener('click', () => setZoom(1.0));
+['old', 'new'].forEach((side) => {
+  const viewerEl = els.viewers[side];
 
-els.viewer.addEventListener('wheel', (e) => {
-  if (!els.viewer.querySelector('.page-image')) return;
-  e.preventDefault();
-  setZoom(zoom - e.deltaY * 0.001);
-}, { passive: false });
+  // ページごとに繰り返し生成されるズームボタンをイベント委譲で一括処理する
+  viewerEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.zoom-btn');
+    if (!btn || btn.dataset.side !== side) return;
+    if (btn.dataset.action === 'in') setZoom(side, zoomBySide[side] + 0.1);
+    else if (btn.dataset.action === 'out') setZoom(side, zoomBySide[side] - 0.1);
+    else if (btn.dataset.action === 'reset') setZoom(side, 1.0);
+  });
 
-// 差分表示エリアを左クリックで掴んでドラッグすると、上下左右にパン(スクロール)できる
-let isPanning = false;
-let panStartX = 0, panStartY = 0, panStartScrollLeft = 0, panStartScrollTop = 0;
+  viewerEl.addEventListener('wheel', (e) => {
+    if (!viewerEl.querySelector('.page-image')) return;
+    e.preventDefault();
+    setZoom(side, zoomBySide[side] - e.deltaY * 0.001);
+  }, { passive: false });
 
-els.viewer.addEventListener('mousedown', (e) => {
-  if (e.button !== 0 || !els.viewer.querySelector('.page-image')) return;
-  isPanning = true;
-  panStartX = e.clientX;
-  panStartY = e.clientY;
-  panStartScrollLeft = els.viewer.scrollLeft;
-  panStartScrollTop = window.scrollY;
-  els.viewer.classList.add('panning');
-  e.preventDefault();
-});
+  // ペインを左クリックで掴んでドラッグすると、そのペイン自身の縦横スクロールだけが
+  // 動く(旧/新は別々のスクロールコンテナなので、もう一方には一切影響しない)
+  let isPanning = false;
+  let panStartX = 0, panStartY = 0, panStartScrollLeft = 0, panStartScrollTop = 0;
 
-window.addEventListener('mousemove', (e) => {
-  if (!isPanning) return;
-  els.viewer.scrollLeft = panStartScrollLeft - (e.clientX - panStartX);
-  window.scrollTo(window.scrollX, panStartScrollTop - (e.clientY - panStartY));
-});
+  viewerEl.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || e.target.closest('button') || !viewerEl.querySelector('.page-image')) return;
+    isPanning = true;
+    panStartX = e.clientX;
+    panStartY = e.clientY;
+    panStartScrollLeft = viewerEl.scrollLeft;
+    panStartScrollTop = viewerEl.scrollTop;
+    viewerEl.classList.add('panning');
+    e.preventDefault();
+  });
 
-window.addEventListener('mouseup', () => {
-  isPanning = false;
-  els.viewer.classList.remove('panning');
+  window.addEventListener('mousemove', (e) => {
+    if (!isPanning) return;
+    viewerEl.scrollLeft = panStartScrollLeft - (e.clientX - panStartX);
+    viewerEl.scrollTop = panStartScrollTop - (e.clientY - panStartY);
+  });
+
+  window.addEventListener('mouseup', () => {
+    isPanning = false;
+    viewerEl.classList.remove('panning');
+  });
+
+  new ResizeObserver(() => applyZoom(side)).observe(viewerEl);
 });
 
 els.runBtn.addEventListener('click', async () => {
