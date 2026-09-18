@@ -524,14 +524,14 @@
     return best ? CATEGORY_LABEL[best] : '不明';
   }
 
-  async function preparePage(doc, num, scale, onLog) {
+  async function preparePage(doc, num, scale, onLog, forceCategory) {
     const page = await doc.getPage(num);
     const viewport = page.getViewport({ scale });
     const { canvas, promise } = renderToCanvas(page, viewport);
     await promise;
     const words = await extractWords(page, viewport);
     const rows = clusterRows(words);
-    const category = classifyPage(words, rows);
+    const category = forceCategory || classifyPage(words, rows);
     const text = words.map((w) => w.text).join('');
     const thumb = text.length < 20 ? downsampleCanvas(canvas, THUMB_SIZE) : null;
     if (onLog) onLog(`ページ${num}: ${CATEGORY_LABEL[category] || category}と判定`);
@@ -541,6 +541,7 @@
   async function runDiff(oldArrayBuffer, newArrayBuffer, opts = {}) {
     const scale = opts.scale || RENDER_SCALE;
     const onLog = opts.onLog || (() => {});
+    const forceCategory = opts.forceCategory || null;
 
     onLog('PDFを読み込み中...');
     const oldDoc = await pdfjsLib.getDocument({ data: oldArrayBuffer }).promise;
@@ -549,9 +550,9 @@
     onLog(`旧: 全${oldDoc.numPages}ページ / 新: 全${newDoc.numPages}ページ`);
 
     const oldPages = [];
-    for (const i of range(oldDoc.numPages)) oldPages.push(await preparePage(oldDoc, i + 1, scale, onLog));
+    for (const i of range(oldDoc.numPages)) oldPages.push(await preparePage(oldDoc, i + 1, scale, onLog, forceCategory));
     const newPages = [];
-    for (const i of range(newDoc.numPages)) newPages.push(await preparePage(newDoc, i + 1, scale, onLog));
+    for (const i of range(newDoc.numPages)) newPages.push(await preparePage(newDoc, i + 1, scale, onLog, forceCategory));
 
     onLog('新旧ページの対応関係を解析中...');
     const pairs = alignPages(oldPages.map((p) => p.sig), newPages.map((p) => p.sig));

@@ -8,8 +8,13 @@ let oldFile = null;
 let newFile = null;
 let lastResult = null;
 let zoom = 1.0;
+let selectedType = null;
 
 const els = {
+  homeScreen: document.getElementById('home-screen'),
+  appScreen: document.getElementById('app-screen'),
+  homeBtn: document.getElementById('home-btn'),
+  typeBtns: document.querySelectorAll('.type-btn'),
   oldInput: document.getElementById('old-pdf'),
   newInput: document.getElementById('new-pdf'),
   oldBtn: document.getElementById('old-pdf-btn'),
@@ -79,7 +84,7 @@ function setupDropZone(fieldEl, setFile) {
 setupDropZone(els.oldField, setOldFile);
 setupDropZone(els.newField, setNewFile);
 
-els.resetBtn.addEventListener('click', () => {
+function clearWorkArea() {
   lastResult = null;
   els.oldInput.value = '';
   els.newInput.value = '';
@@ -88,7 +93,30 @@ els.resetBtn.addEventListener('click', () => {
   clearLog();
   els.resultSection.classList.add('hidden');
   els.viewer.innerHTML = '';
+}
+
+els.resetBtn.addEventListener('click', clearWorkArea);
+
+function selectType(type) {
+  selectedType = type;
+  clearWorkArea();
+  els.homeScreen.classList.add('hidden');
+  els.appScreen.classList.remove('hidden');
+  els.homeBtn.classList.remove('hidden');
+}
+
+function goHome() {
+  selectedType = null;
+  clearWorkArea();
+  els.appScreen.classList.add('hidden');
+  els.homeScreen.classList.remove('hidden');
+  els.homeBtn.classList.add('hidden');
+}
+
+els.typeBtns.forEach((btn) => {
+  btn.addEventListener('click', () => selectType(btn.dataset.type));
 });
+els.homeBtn.addEventListener('click', goHome);
 
 function log(msg) {
   const p = document.createElement('div');
@@ -236,7 +264,7 @@ els.runBtn.addEventListener('click', async () => {
       fileToArrayBuffer(oldFile),
       fileToArrayBuffer(newFile),
     ]);
-    const result = await PdfDiffCore.runDiff(oldBuf, newBuf, { onLog: log });
+    const result = await PdfDiffCore.runDiff(oldBuf, newBuf, { onLog: log, forceCategory: selectedType });
     lastResult = result;
     updateResetEnabled();
     els.resultCategory.textContent = `分類: ${result.category}`;
