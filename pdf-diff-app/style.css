@@ -192,6 +192,10 @@ main {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* ヘッダー固定部分より下は、旧(左/赤系)・新(右/緑系)を背景色でも
+     区分けする。左右中央でぴったり分かれるよう、result-section自体に
+     グラデーションで塗る(paddingの下も含めて全体に効く)。 */
+  background: linear-gradient(to right, #fdecea 50%, #e9f7ef 50%);
 }
 #result-section.hidden { display: none; }
 
