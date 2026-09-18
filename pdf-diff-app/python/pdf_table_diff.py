@@ -152,8 +152,8 @@ def compose_side_by_side(img_old, img_new, old_label="旧 (OLD)", new_label="新
     draw.rectangle([w + gap, 0, w * 2 + gap, header_h], fill=(230, 245, 235))
 
     font = load_cjk_font(48)
-    draw.text((30, 20), f"{old_label} ※赤塗り=変更前の値", fill=(180, 0, 0), font=font)
-    draw.text((w + gap + 30, 20), f"{new_label} ※緑塗り=変更後の値", fill=(0, 110, 40), font=font)
+    draw.text((30, 20), f"{old_label} ※赤色塗り=変更前の値", fill=(180, 0, 0), font=font)
+    draw.text((w + gap + 30, 20), f"{new_label} ※緑色塗り=変更後の値", fill=(0, 110, 40), font=font)
 
     canvas.paste(img_old, (0, header_h))
     canvas.paste(img_new, (w + gap, header_h))
