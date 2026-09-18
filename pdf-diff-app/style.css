@@ -3,7 +3,7 @@
   --header-border: #e0e0e0;
   --masamiz-color: #000000;
   --text-color: #222222;
-  --bg-color: #f5f6f8;
+  --bg-color: #fffbe0;
   --accent: #1a73e8;
   --logo-size: 48px;
 }
@@ -52,7 +52,7 @@ header {
   font-weight: bold;
   white-space: nowrap;
   line-height: var(--logo-size);
-  font-size: var(--logo-size);
+  font-size: calc(var(--logo-size) * 0.7);
   color: var(--text-color);
 }
 
@@ -65,9 +65,10 @@ header {
 }
 
 main {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 20px 16px 60px;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 20px 24px 60px;
 }
 
 #upload-section {
@@ -90,6 +91,7 @@ main {
   padding: 8px 14px; font-size: 13px; font-weight: bold; cursor: pointer;
 }
 .file-btn:hover { background: #f0f0f0; }
+.file-btn:disabled { background: #e0e0e0; color: #999; border-color: #ccc; cursor: not-allowed; }
 
 .file-name { font-size: 12px; color: #666; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -100,18 +102,13 @@ main {
 #run-btn:disabled { opacity: .4; cursor: not-allowed; }
 #run-btn:not(:disabled):hover { background: #1558b0; }
 
-#status {
-  margin-top: 16px;
-  font-size: 12px;
-  color: #555;
-  max-height: 160px;
-  overflow-y: auto;
-  background: #fff;
-  border: 1px solid var(--header-border);
-  border-radius: 6px;
-  padding: 10px 14px;
+#reset-btn {
+  background: #ffd400; color: #333; border: none; border-radius: 6px;
+  padding: 10px 22px; font-size: 15px; font-weight: bold; cursor: pointer;
 }
-#status:empty { display: none; }
+#reset-btn:hover { background: #e6bf00; }
+
+#status { display: none; }
 
 #result-section { margin-top: 24px; }
 #result-section.hidden { display: none; }

@@ -31,7 +31,7 @@
     <div class="file-field">
       <label for="old-pdf">旧PDF</label>
       <div class="file-row">
-        <button type="button" class="file-btn" onclick="document.getElementById('old-pdf').click()">ファイルを選択</button>
+        <button type="button" id="old-pdf-btn" class="file-btn" onclick="document.getElementById('old-pdf').click()">ファイルを選択</button>
         <span id="old-pdf-name" class="file-name">未選択</span>
       </div>
       <input type="file" id="old-pdf" accept="application/pdf" hidden>
@@ -39,12 +39,13 @@
     <div class="file-field">
       <label for="new-pdf">新PDF</label>
       <div class="file-row">
-        <button type="button" class="file-btn" onclick="document.getElementById('new-pdf').click()">ファイルを選択</button>
+        <button type="button" id="new-pdf-btn" class="file-btn" onclick="document.getElementById('new-pdf').click()">ファイルを選択</button>
         <span id="new-pdf-name" class="file-name">未選択</span>
       </div>
       <input type="file" id="new-pdf" accept="application/pdf" hidden>
     </div>
     <button id="run-btn" disabled>解析</button>
+    <button id="reset-btn">リセット</button>
   </section>
 
   <section id="status"></section>

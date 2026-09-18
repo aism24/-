@@ -12,9 +12,12 @@ let zoom = 1.0;
 const els = {
   oldInput: document.getElementById('old-pdf'),
   newInput: document.getElementById('new-pdf'),
+  oldBtn: document.getElementById('old-pdf-btn'),
+  newBtn: document.getElementById('new-pdf-btn'),
   oldName: document.getElementById('old-pdf-name'),
   newName: document.getElementById('new-pdf-name'),
   runBtn: document.getElementById('run-btn'),
+  resetBtn: document.getElementById('reset-btn'),
   status: document.getElementById('status'),
   resultSection: document.getElementById('result-section'),
   resultCategory: document.getElementById('result-category'),
@@ -32,12 +35,30 @@ function updateRunEnabled() {
 els.oldInput.addEventListener('change', (e) => {
   oldFile = e.target.files[0] || null;
   els.oldName.textContent = oldFile ? oldFile.name : '未選択';
+  els.oldBtn.disabled = !!oldFile;
   updateRunEnabled();
 });
 
 els.newInput.addEventListener('change', (e) => {
   newFile = e.target.files[0] || null;
   els.newName.textContent = newFile ? newFile.name : '未選択';
+  els.newBtn.disabled = !!newFile;
+  updateRunEnabled();
+});
+
+els.resetBtn.addEventListener('click', () => {
+  oldFile = null;
+  newFile = null;
+  lastResult = null;
+  els.oldInput.value = '';
+  els.newInput.value = '';
+  els.oldName.textContent = '未選択';
+  els.newName.textContent = '未選択';
+  els.oldBtn.disabled = false;
+  els.newBtn.disabled = false;
+  clearLog();
+  els.resultSection.classList.add('hidden');
+  els.viewer.innerHTML = '';
   updateRunEnabled();
 });
 
