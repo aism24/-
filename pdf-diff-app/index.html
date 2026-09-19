@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PDF差分解析</title>
+<title>PDF比較解析アプリ</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/9.0.0/diff.min.js"></script>
@@ -11,11 +11,11 @@
 </head>
 <body>
 
+<div id="top-bar">
 <header>
   <div id="brand">
-    <span id="app-name">PDF差分解析</span>
+    <span id="app-name">PDF比較解析アプリ</span>
     <div id="brand-right">
-    <button type="button" id="home-btn" class="hidden">ホームに戻る（種類変更）</button>
     <span id="logo-wrap" aria-hidden="true">
       <svg viewBox="0 0 464 514" width="100%" height="100%">
         <!-- 正光 (masamiz) Logo Mark -->
@@ -29,57 +29,58 @@
   </div>
 </header>
 
-<section id="home-screen">
+<div id="app-desc-row">
   <p id="app-desc">「表」「文章」「図面」のそれぞれの変更点解析をしてPDFにてダウンロードするアプリです。</p>
-  <div id="type-select">
-    <button type="button" class="type-btn" data-type="table">表</button>
-    <button type="button" class="type-btn" data-type="text">文章</button>
-    <button type="button" class="type-btn" data-type="image">図面</button>
+  <div id="header-actions">
+    <span id="result-category"></span>
+    <button id="download-btn">📥 PDFダウンロード</button>
+  </div>
+</div>
+
+<section id="upload-section">
+  <div class="file-field" id="old-pdf-field">
+    <label for="old-pdf">旧PDF</label>
+    <div class="file-row">
+      <button type="button" id="old-pdf-btn" class="file-btn" onclick="document.getElementById('old-pdf').click()">ファイルを選択</button>
+      <span id="old-pdf-name" class="file-name">未選択(ドラッグ&amp;ドロップ可)</span>
+    </div>
+    <input type="file" id="old-pdf" accept="application/pdf" hidden>
+  </div>
+  <div class="upload-actions">
+    <div id="mode-select" role="group" aria-label="PDFの種類">
+      <span class="mode-label">種類:</span>
+      <button type="button" class="mode-btn" data-mode="table">表</button>
+      <button type="button" class="mode-btn" data-mode="text">文章</button>
+      <button type="button" class="mode-btn" data-mode="image">図面</button>
+    </div>
+    <button id="run-btn" disabled>解析</button>
+    <button id="reset-btn" disabled>リセット</button>
+  </div>
+  <div class="file-field" id="new-pdf-field">
+    <label for="new-pdf">新PDF</label>
+    <div class="file-row">
+      <button type="button" id="new-pdf-btn" class="file-btn" onclick="document.getElementById('new-pdf').click()">ファイルを選択</button>
+      <span id="new-pdf-name" class="file-name">未選択(ドラッグ&amp;ドロップ可)</span>
+    </div>
+    <input type="file" id="new-pdf" accept="application/pdf" hidden>
   </div>
 </section>
+</div>
 
-<section id="app-screen" class="hidden">
-  <section id="upload-section">
-    <div class="file-field" id="old-pdf-field">
-      <label for="old-pdf">旧PDF</label>
-      <div class="file-row">
-        <button type="button" id="old-pdf-btn" class="file-btn" onclick="document.getElementById('old-pdf').click()">ファイルを選択</button>
-        <span id="old-pdf-name" class="file-name">未選択(ドラッグ&amp;ドロップ可)</span>
+<main>
+  <section id="status"></section>
+
+  <section id="result-section" class="hidden">
+    <div id="viewer-split">
+      <div class="viewer-pane" id="viewer-pane-old">
+        <div class="pane-scroll" id="viewer-old"></div>
       </div>
-      <input type="file" id="old-pdf" accept="application/pdf" hidden>
-    </div>
-    <div class="upload-actions">
-      <button id="run-btn" disabled>解析</button>
-      <button id="reset-btn" disabled>リセット</button>
-    </div>
-    <div class="file-field" id="new-pdf-field">
-      <label for="new-pdf">新PDF</label>
-      <div class="file-row">
-        <button type="button" id="new-pdf-btn" class="file-btn" onclick="document.getElementById('new-pdf').click()">ファイルを選択</button>
-        <span id="new-pdf-name" class="file-name">未選択(ドラッグ&amp;ドロップ可)</span>
+      <div class="viewer-pane" id="viewer-pane-new">
+        <div class="pane-scroll" id="viewer-new"></div>
       </div>
-      <input type="file" id="new-pdf" accept="application/pdf" hidden>
     </div>
   </section>
-
-  <main>
-    <section id="status"></section>
-
-    <section id="result-section" class="hidden">
-      <div id="viewer-toolbar">
-        <span id="result-category"></span>
-        <div id="zoom-controls">
-          <button id="zoom-out" title="縮小">－</button>
-          <span id="zoom-level">100%</span>
-          <button id="zoom-in" title="拡大">＋</button>
-          <button id="zoom-reset" title="ズームを元に戻す">戻す</button>
-        </div>
-        <button id="download-btn">📥 PDFダウンロード</button>
-      </div>
-      <div id="viewer"></div>
-    </section>
-  </main>
-</section>
+</main>
 
 <script src="lib/diff-core.js"></script>
 <script src="app.js"></script>

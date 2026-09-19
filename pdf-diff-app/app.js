@@ -1,20 +1,26 @@
 // デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。デプロイ後にここへ差し替えてください。
 const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzLz81VioiuR3ku_utdvDlwpT6ImXXQmM6ziZtDX4If9Q0MWxi0926U8rFikxEV9qo4Ig/exec";
 
+// 表/文章/図面の各モードの比較をブラウザ内(pdf.js)ではなくVercelのPython
+// サーバーレス関数で行うためのAPIパス(同一オリジンの相対パス。Vercel
+// デプロイ時のみ存在する)。存在しない/失敗する環境(例: githackプレビュー)
+// では、diff-core.js側で自動的に従来のJS計算にフォールバックする。
+const DIFF_API_URLS = {
+  table: "/api/table-diff",
+  text: "/api/text-diff",
+  image: "/api/image-diff",
+};
+
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 let oldFile = null;
 let newFile = null;
 let lastResult = null;
-let zoom = 1.0;
-let selectedType = null;
+let selectedMode = null; // 'table' | 'text' | 'image'。自動判定は行わず、ユーザーの指定を必須とする。
+const zoomBySide = { old: 1.0, new: 1.0 };
 
 const els = {
-  homeScreen: document.getElementById('home-screen'),
-  appScreen: document.getElementById('app-screen'),
-  homeBtn: document.getElementById('home-btn'),
-  typeBtns: document.querySelectorAll('.type-btn'),
   oldInput: document.getElementById('old-pdf'),
   newInput: document.getElementById('new-pdf'),
   oldBtn: document.getElementById('old-pdf-btn'),
@@ -25,23 +31,30 @@ const els = {
   newField: document.getElementById('new-pdf-field'),
   runBtn: document.getElementById('run-btn'),
   resetBtn: document.getElementById('reset-btn'),
+  modeBtns: document.querySelectorAll('.mode-btn'),
   status: document.getElementById('status'),
   resultSection: document.getElementById('result-section'),
   resultCategory: document.getElementById('result-category'),
-  viewer: document.getElementById('viewer'),
-  zoomLevel: document.getElementById('zoom-level'),
-  zoomIn: document.getElementById('zoom-in'),
-  zoomOut: document.getElementById('zoom-out'),
-  zoomReset: document.getElementById('zoom-reset'),
   downloadBtn: document.getElementById('download-btn'),
+  viewers: {
+    old: document.getElementById('viewer-old'),
+    new: document.getElementById('viewer-new'),
+  },
 };
 
 function updateRunEnabled() {
-  els.runBtn.disabled = !(oldFile && newFile);
+  els.runBtn.disabled = !(oldFile && newFile && selectedMode);
 }
 
 function updateResetEnabled() {
-  els.resetBtn.disabled = !(oldFile || newFile || lastResult);
+  els.resetBtn.disabled = !(oldFile || newFile || lastResult || selectedMode);
+}
+
+function setMode(mode) {
+  selectedMode = mode;
+  els.modeBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === mode));
+  updateRunEnabled();
+  updateResetEnabled();
 }
 
 function setOldFile(file) {
@@ -84,39 +97,22 @@ function setupDropZone(fieldEl, setFile) {
 setupDropZone(els.oldField, setOldFile);
 setupDropZone(els.newField, setNewFile);
 
-function clearWorkArea() {
+els.modeBtns.forEach((btn) => {
+  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+
+els.resetBtn.addEventListener('click', () => {
   lastResult = null;
   els.oldInput.value = '';
   els.newInput.value = '';
   setOldFile(null);
   setNewFile(null);
+  setMode(null);
   clearLog();
   els.resultSection.classList.add('hidden');
-  els.viewer.innerHTML = '';
-}
-
-els.resetBtn.addEventListener('click', clearWorkArea);
-
-function selectType(type) {
-  selectedType = type;
-  clearWorkArea();
-  els.homeScreen.classList.add('hidden');
-  els.appScreen.classList.remove('hidden');
-  els.homeBtn.classList.remove('hidden');
-}
-
-function goHome() {
-  selectedType = null;
-  clearWorkArea();
-  els.appScreen.classList.add('hidden');
-  els.homeScreen.classList.remove('hidden');
-  els.homeBtn.classList.add('hidden');
-}
-
-els.typeBtns.forEach((btn) => {
-  btn.addEventListener('click', () => selectType(btn.dataset.type));
+  els.viewers.old.innerHTML = '';
+  els.viewers.new.innerHTML = '';
 });
-els.homeBtn.addEventListener('click', goHome);
 
 function log(msg) {
   const p = document.createElement('div');
@@ -163,19 +159,41 @@ async function sendLog(category) {
   }
 }
 
+// ページごとのヘッダーに、その面(旧/新)のズーム操作をまとめて載せる。
+// ページ数分だけ同じ操作一式が繰り返し生成されるが、IDではなくdata-side/
+// data-actionでイベント委譲するため個数はいくつでもよく、position:stickyに
+// より現在スクロール中のページのヘッダーが画面上部に固定表示される。
+function buildHeader(label, side) {
+  const header = document.createElement('div');
+  header.className = `page-col-header page-col-header-${side}`;
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'page-label';
+  labelEl.textContent = label;
+  header.appendChild(labelEl);
+
+  const zoomControls = document.createElement('div');
+  zoomControls.className = 'zoom-controls';
+  zoomControls.innerHTML = `
+    <button type="button" class="zoom-btn" data-side="${side}" data-action="out" title="縮小">－</button>
+    <span class="zoom-level" data-side="${side}">${Math.round(zoomBySide[side] * 100)}%</span>
+    <button type="button" class="zoom-btn" data-side="${side}" data-action="in" title="拡大">＋</button>
+    <button type="button" class="zoom-btn zoom-reset-btn" data-side="${side}" data-action="reset" title="ズームを元に戻す">戻す</button>
+  `;
+  header.appendChild(zoomControls);
+  return header;
+}
+
 function buildSide(canvas, label, side, placeholderMessage) {
   const col = document.createElement('div');
   col.className = `page-col page-col-${side}`;
-
-  const header = document.createElement('div');
-  header.className = `page-col-header page-col-header-${side}`;
-  header.textContent = label;
-  col.appendChild(header);
+  col.appendChild(buildHeader(label, side));
 
   if (canvas) {
     const img = document.createElement('img');
-    img.src = canvas.toDataURL('image/png');
-    img.dataset.baseWidth = canvas.width;
+    // 表モード(サーバーAPI経由)はcanvasではなくHTMLImageElementが渡ってくるため、
+    // toDataURLが無ければsrcをそのまま使う
+    img.src = typeof canvas.toDataURL === 'function' ? canvas.toDataURL('image/png') : canvas.src;
     img.className = 'page-image';
     img.draggable = false;
     col.appendChild(img);
@@ -188,73 +206,88 @@ function buildSide(canvas, label, side, placeholderMessage) {
   return col;
 }
 
+// 旧新を1枚の合成画像に描くのではなく、別々の<img>としてそれぞれのペインに
+// そのまま表示する。これにより旧PDF/新PDFを個別にズーム・パンできる。
 function renderResults(results) {
-  els.viewer.innerHTML = '';
+  els.viewers.old.innerHTML = '';
+  els.viewers.new.innerHTML = '';
   results.forEach((r) => {
-    const row = document.createElement('div');
-    row.className = 'page-row';
-    row.appendChild(buildSide(r.oldCanvas, r.labelOld, 'old', r.placeholderMessage));
-    row.appendChild(buildSide(r.newCanvas, r.labelNew, 'new', r.placeholderMessage));
-    els.viewer.appendChild(row);
+    els.viewers.old.appendChild(buildSide(r.oldCanvas, r.labelOld, 'old', r.placeholderMessage));
+    els.viewers.new.appendChild(buildSide(r.newCanvas, r.labelNew, 'new', r.placeholderMessage));
   });
-  applyZoom();
+  applyZoom('old');
+  applyZoom('new');
 }
 
-// ページごとに旧/新を別々の<img>として描画しているため、各画像は自分自身の
-// 基準幅(元のcanvas幅)を基準に拡大縮小する。これにより、旧新をまとめた1枚の
-// 画像を全体の中心基準で拡大縮小していた以前の挙動と異なり、それぞれが
-// 自分の位置を保ったまま独立してズームする。
-function applyZoom() {
-  els.zoomLevel.textContent = `${Math.round(zoom * 100)}%`;
-  document.querySelectorAll('.page-image').forEach((img) => {
-    const baseWidth = Number(img.dataset.baseWidth) || img.naturalWidth;
-    img.style.width = `${baseWidth * zoom}px`;
+// 100%でPDFの横幅全体がペイン内に収まるよう、ページ画像の実ピクセル幅ではなく
+// ペイン自体の表示幅を基準(fit-to-width)にズーム倍率をかける。
+function applyZoom(side) {
+  const zoom = zoomBySide[side];
+  const viewerEl = els.viewers[side];
+  viewerEl.querySelectorAll(`.zoom-level[data-side="${side}"]`).forEach((el) => {
+    el.textContent = `${Math.round(zoom * 100)}%`;
+  });
+  const fitWidth = viewerEl.clientWidth;
+  viewerEl.querySelectorAll('.page-image').forEach((img) => {
+    img.style.width = `${fitWidth * zoom}px`;
   });
 }
 
-function setZoom(z) {
-  zoom = Math.max(0.2, Math.min(3, z));
-  applyZoom();
+function setZoom(side, z) {
+  zoomBySide[side] = Math.max(0.2, Math.min(3, z));
+  applyZoom(side);
 }
 
-els.zoomIn.addEventListener('click', () => setZoom(zoom + 0.1));
-els.zoomOut.addEventListener('click', () => setZoom(zoom - 0.1));
-els.zoomReset.addEventListener('click', () => setZoom(1.0));
+['old', 'new'].forEach((side) => {
+  const viewerEl = els.viewers[side];
 
-els.viewer.addEventListener('wheel', (e) => {
-  if (!els.viewer.querySelector('.page-image')) return;
-  e.preventDefault();
-  setZoom(zoom - e.deltaY * 0.001);
-}, { passive: false });
+  // ページごとに繰り返し生成されるズームボタンをイベント委譲で一括処理する
+  viewerEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.zoom-btn');
+    if (!btn || btn.dataset.side !== side) return;
+    if (btn.dataset.action === 'in') setZoom(side, zoomBySide[side] + 0.1);
+    else if (btn.dataset.action === 'out') setZoom(side, zoomBySide[side] - 0.1);
+    else if (btn.dataset.action === 'reset') setZoom(side, 1.0);
+  });
 
-// 差分表示エリアを左クリックで掴んでドラッグすると、上下左右にパン(スクロール)できる
-let isPanning = false;
-let panStartX = 0, panStartY = 0, panStartScrollLeft = 0, panStartScrollTop = 0;
+  viewerEl.addEventListener('wheel', (e) => {
+    if (!viewerEl.querySelector('.page-image')) return;
+    e.preventDefault();
+    setZoom(side, zoomBySide[side] - e.deltaY * 0.001);
+  }, { passive: false });
 
-els.viewer.addEventListener('mousedown', (e) => {
-  if (e.button !== 0 || !els.viewer.querySelector('.page-image')) return;
-  isPanning = true;
-  panStartX = e.clientX;
-  panStartY = e.clientY;
-  panStartScrollLeft = els.viewer.scrollLeft;
-  panStartScrollTop = window.scrollY;
-  els.viewer.classList.add('panning');
-  e.preventDefault();
-});
+  // ペインを左クリックで掴んでドラッグすると、そのペイン自身の縦横スクロールだけが
+  // 動く(旧/新は別々のスクロールコンテナなので、もう一方には一切影響しない)
+  let isPanning = false;
+  let panStartX = 0, panStartY = 0, panStartScrollLeft = 0, panStartScrollTop = 0;
 
-window.addEventListener('mousemove', (e) => {
-  if (!isPanning) return;
-  els.viewer.scrollLeft = panStartScrollLeft - (e.clientX - panStartX);
-  window.scrollTo(window.scrollX, panStartScrollTop - (e.clientY - panStartY));
-});
+  viewerEl.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || e.target.closest('button') || !viewerEl.querySelector('.page-image')) return;
+    isPanning = true;
+    panStartX = e.clientX;
+    panStartY = e.clientY;
+    panStartScrollLeft = viewerEl.scrollLeft;
+    panStartScrollTop = viewerEl.scrollTop;
+    viewerEl.classList.add('panning');
+    e.preventDefault();
+  });
 
-window.addEventListener('mouseup', () => {
-  isPanning = false;
-  els.viewer.classList.remove('panning');
+  window.addEventListener('mousemove', (e) => {
+    if (!isPanning) return;
+    viewerEl.scrollLeft = panStartScrollLeft - (e.clientX - panStartX);
+    viewerEl.scrollTop = panStartScrollTop - (e.clientY - panStartY);
+  });
+
+  window.addEventListener('mouseup', () => {
+    isPanning = false;
+    viewerEl.classList.remove('panning');
+  });
+
+  new ResizeObserver(() => applyZoom(side)).observe(viewerEl);
 });
 
 els.runBtn.addEventListener('click', async () => {
-  if (!oldFile || !newFile) return;
+  if (!oldFile || !newFile || !selectedMode) return;
   els.runBtn.disabled = true;
   els.resultSection.classList.add('hidden');
   clearLog();
@@ -264,7 +297,11 @@ els.runBtn.addEventListener('click', async () => {
       fileToArrayBuffer(oldFile),
       fileToArrayBuffer(newFile),
     ]);
-    const result = await PdfDiffCore.runDiff(oldBuf, newBuf, { onLog: log, forceCategory: selectedType });
+    const result = await PdfDiffCore.runDiff(oldBuf, newBuf, {
+      onLog: log,
+      manualCategory: selectedMode,
+      apiUrls: DIFF_API_URLS,
+    });
     lastResult = result;
     updateResetEnabled();
     els.resultCategory.textContent = `分類: ${result.category}`;
