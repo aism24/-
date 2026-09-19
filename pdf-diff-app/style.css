@@ -232,6 +232,8 @@ main {
 
 #run-reset-row { display: flex; flex-direction: row; gap: 12px; }
 
+#mode-label-row { display: flex; align-items: center; gap: 12px; }
+
 /* 選択中の種類(表/文章/図面)を大きく表示し、背景を黄色でゆっくり点滅させて目立たせる */
 #selected-mode-label {
   font-size: 30px;
@@ -242,6 +244,21 @@ main {
   animation: selected-mode-blink 2s ease-in-out infinite;
 }
 #selected-mode-label:empty { display: none; animation: none; }
+
+/* 「左右表示 ⇔ 重ね合わせ」切り替えボタン。ボタンには現在の表示方式では
+   なく、押した時に切り替わる「次の表示方式」の名前を表示する。 */
+#view-mode-btn {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: bold;
+  border: none;
+  border-radius: 6px;
+  background: #6c63d6;
+  color: #fff;
+  cursor: pointer;
+}
+#view-mode-btn:hover { background: #564fc4; }
+#view-mode-btn.hidden { display: none; }
 
 @keyframes selected-mode-blink {
   0%, 100% { background-color: transparent; }
@@ -338,6 +355,37 @@ main {
   background: linear-gradient(to right, #fdecea 50%, #e9f7ef 50%);
 }
 #result-section.hidden { display: none; }
+
+/* 重ね合わせモードでは新側のペインを隠し、旧側のペインを全幅表示に切り替える */
+#result-section.overlay-mode { background: #f0f0f0; }
+#result-section.overlay-mode #viewer-pane-new { display: none; }
+#result-section.overlay-mode #viewer-pane-old { flex: 1 1 100%; border-right: none; padding-right: 0; }
+
+/* 重ね合わせ時の旧/両/新レイヤー切り替え。左右表示のときは表示しない */
+#overlay-layer-nav {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 0;
+}
+#overlay-layer-nav.hidden { display: none; }
+.layer-btn {
+  padding: 8px 20px;
+  font-size: 14px;
+  font-weight: bold;
+  border: 2px solid #999;
+  border-radius: 6px;
+  background: #fff;
+  color: #555;
+  cursor: pointer;
+}
+.layer-btn:hover { border-color: #6c63d6; }
+.layer-btn.active { background: #6c63d6; border-color: #6c63d6; color: #fff; }
+
+/* 重ね合わせ表示の旧新2枚は、multiplyで重ねることで白背景同士は白のまま
+   保ちつつ、文字(暗い部分)だけが重なって濃く見えるようにする */
+.overlay-image { mix-blend-mode: multiply; background: transparent; }
 
 #result-category { font-weight: bold; font-size: calc(var(--logo-size) * 0.4); color: var(--text-color); }
 
@@ -439,6 +487,7 @@ main {
   background: #fff;
   -webkit-user-drag: none;
   will-change: transform;
+  transition: opacity 0.15s ease;
 }
 
 /* 解析中は画面中央に「解析中」テキストとプログレスバーをオーバーレイ表示する */

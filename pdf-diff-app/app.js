@@ -19,6 +19,8 @@ let newFile = null;
 let lastResult = null;
 let selectedMode = null; // 'table' | 'text' | 'image'。自動判定は行わず、ユーザーの指定を必須とする。
 let currentPageIndex = 0; // 解析結果のうち、旧新で共通して表示中のページ番号(0始まり)
+let viewMode = 'side'; // 'side'(左右表示) | 'overlay'(重ね合わせ)
+let overlayLayer = 'both'; // 重ね合わせ時のみ有効: 'old' | 'both' | 'new'
 const MODE_LABELS = { table: '表', text: '文章', image: '図面' };
 const zoomBySide = { old: 1.0, new: 1.0 };
 const panBySide = { old: { x: 0, y: 0 }, new: { x: 0, y: 0 } };
@@ -42,6 +44,9 @@ const els = {
   pageNextBtn: document.getElementById('page-next-btn'),
   pageInput: document.getElementById('page-input'),
   pageTotalLabel: document.getElementById('page-total-label'),
+  viewModeBtn: document.getElementById('view-mode-btn'),
+  overlayLayerNav: document.getElementById('overlay-layer-nav'),
+  layerBtns: document.querySelectorAll('.layer-btn'),
   modeBtns: document.querySelectorAll('.type-btn'),
   selectedModeLabel: document.getElementById('selected-mode-label'),
   imageModeNotice: document.getElementById('image-mode-notice'),
@@ -133,6 +138,10 @@ function clearWorkArea() {
   els.pageNav.classList.add('hidden');
   els.pageInput.value = '1';
   els.pageTotalLabel.textContent = '';
+  els.viewModeBtn.classList.add('hidden');
+  overlayLayer = 'both';
+  els.layerBtns.forEach((b) => b.classList.toggle('active', b.dataset.layer === 'both'));
+  setViewMode('side');
 }
 
 els.resetBtn.addEventListener('click', clearWorkArea);
@@ -223,6 +232,12 @@ function buildHeader(label, side) {
   return header;
 }
 
+// 表モード(サーバーAPI経由)はcanvasではなくHTMLImageElementが渡ってくるため、
+// toDataURLが無ければsrcをそのまま使う
+function toImgSrc(canvas) {
+  return typeof canvas.toDataURL === 'function' ? canvas.toDataURL('image/png') : canvas.src;
+}
+
 function buildSide(canvas, label, side, placeholderMessage) {
   const col = document.createElement('div');
   col.className = `page-col page-col-${side}`;
@@ -233,9 +248,7 @@ function buildSide(canvas, label, side, placeholderMessage) {
 
   if (canvas) {
     const img = document.createElement('img');
-    // 表モード(サーバーAPI経由)はcanvasではなくHTMLImageElementが渡ってくるため、
-    // toDataURLが無ければsrcをそのまま使う
-    img.src = typeof canvas.toDataURL === 'function' ? canvas.toDataURL('image/png') : canvas.src;
+    img.src = toImgSrc(canvas);
     img.className = 'page-image';
     img.draggable = false;
     viewport.appendChild(img);
@@ -249,9 +262,74 @@ function buildSide(canvas, label, side, placeholderMessage) {
   return col;
 }
 
+// 重ね合わせ表示: 旧新のページ画像を同じ.page-viewportに重ねて配置する。
+// ズーム・パンは(独立した旧新ではなく)oldのスロットを共用の状態として使う
+// ため、ヘッダーのズーム操作もdata-side="old"のまま流用する。
+function buildOverlayView(r) {
+  const col = document.createElement('div');
+  col.className = 'page-col page-col-old';
+  col.appendChild(buildHeader(`重ね合わせ: ${r.labelOld} / ${r.labelNew}`, 'old'));
+
+  const viewport = document.createElement('div');
+  viewport.className = 'page-viewport';
+
+  if (r.oldCanvas) {
+    const imgOld = document.createElement('img');
+    imgOld.src = toImgSrc(r.oldCanvas);
+    imgOld.className = 'page-image overlay-image overlay-image-old';
+    imgOld.draggable = false;
+    viewport.appendChild(imgOld);
+  }
+  if (r.newCanvas) {
+    const imgNew = document.createElement('img');
+    imgNew.src = toImgSrc(r.newCanvas);
+    imgNew.className = 'page-image overlay-image overlay-image-new';
+    imgNew.draggable = false;
+    viewport.appendChild(imgNew);
+  }
+  if (!r.oldCanvas && !r.newCanvas) {
+    const ph = document.createElement('div');
+    ph.className = 'page-placeholder page-placeholder-old';
+    ph.textContent = r.placeholderMessage || '';
+    viewport.appendChild(ph);
+  }
+  col.appendChild(viewport);
+  return col;
+}
+
+// 重ね合わせ時の旧/両/新レイヤーの表示・非表示を反映する
+function applyOverlayLayer() {
+  const viewerEl = els.viewers.old;
+  const imgOld = viewerEl.querySelector('.overlay-image-old');
+  const imgNew = viewerEl.querySelector('.overlay-image-new');
+  if (imgOld) imgOld.style.opacity = overlayLayer === 'new' ? '0' : overlayLayer === 'both' ? '0.6' : '1';
+  if (imgNew) imgNew.style.opacity = overlayLayer === 'old' ? '0' : overlayLayer === 'both' ? '0.6' : '1';
+}
+
+els.layerBtns.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    overlayLayer = btn.dataset.layer;
+    els.layerBtns.forEach((b) => b.classList.toggle('active', b === btn));
+    applyOverlayLayer();
+  });
+});
+
+function setViewMode(mode) {
+  viewMode = mode;
+  els.viewModeBtn.textContent = viewMode === 'side' ? '重ね合わせ' : '左右表示';
+  els.resultSection.classList.toggle('overlay-mode', viewMode === 'overlay');
+  els.overlayLayerNav.classList.toggle('hidden', viewMode !== 'overlay');
+  if (lastResult) showPage(currentPageIndex);
+}
+
+els.viewModeBtn.addEventListener('click', () => {
+  setViewMode(viewMode === 'side' ? 'overlay' : 'side');
+});
+
 // 旧新を1枚の合成画像に描くのではなく、別々の<img>としてそれぞれのペインに
-// そのまま表示する。これにより旧PDF/新PDFを個別にズーム・パンできる。
-// 複数ページある場合はスクロールでめくらせず、旧新で同じページ番号を1組だけ表示する。
+// そのまま表示する(左右表示時)。これにより旧PDF/新PDFを個別にズーム・パン
+// できる。複数ページある場合はスクロールでめくらせず、旧新で同じページ番号を
+// 1組だけ表示する。重ね合わせ表示時はoldのペインのみに旧新を重ねて描画する。
 function showPage(index) {
   if (!lastResult || !lastResult.results.length) return;
   const results = lastResult.results;
@@ -260,13 +338,19 @@ function showPage(index) {
 
   els.viewers.old.innerHTML = '';
   els.viewers.new.innerHTML = '';
-  els.viewers.old.appendChild(buildSide(r.oldCanvas, r.labelOld, 'old', r.placeholderMessage));
-  els.viewers.new.appendChild(buildSide(r.newCanvas, r.labelNew, 'new', r.placeholderMessage));
+  if (viewMode === 'overlay') {
+    els.viewers.old.appendChild(buildOverlayView(r));
+  } else {
+    els.viewers.old.appendChild(buildSide(r.oldCanvas, r.labelOld, 'old', r.placeholderMessage));
+    els.viewers.new.appendChild(buildSide(r.newCanvas, r.labelNew, 'new', r.placeholderMessage));
+  }
   panBySide.old = { x: 0, y: 0 };
   panBySide.new = { x: 0, y: 0 };
   applyZoom('old');
   applyZoom('new');
+  if (viewMode === 'overlay') applyOverlayLayer();
 
+  els.viewModeBtn.classList.remove('hidden');
   els.pageNav.classList.remove('hidden');
   els.pageInput.max = String(results.length);
   els.pageInput.value = String(currentPageIndex + 1);
