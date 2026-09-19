@@ -6,7 +6,7 @@
 
 比較処理そのものは、ユーザーのローカル環境で検証済みのオリジナルPythonコード
 (`pdf_table_diff.py` / `pdf_text_diff.py` / `pdf_image_diff.py`、Python+PyMuPDF)を
-Vercelのサーバーレス関数(`api/*-diff.py`)としてそのまま実行する。フロントエンドは
+Vercelのサーバーレス関数(`api/*_diff.py`)としてそのまま実行する。フロントエンドは
 そのAPIを呼び出すだけで、ロジックの再実装はしていない。**ブラウザ内(JS)での差分計算は
 一切行わない**(以前はAPI呼び出しが使えない環境向けにJS版フォールバックがあったが、
 全角スペースの扱いの違い等でPython版と結果がズレる実害バグが確認されたため撤去した)。
@@ -21,9 +21,9 @@ pdf-diff-app/
   style.css           スタイル
   app.js              UI制御・GASへのログ送信・PDFダウンロード生成
   lib/diff-core.js    差分解析コアロジック(ページ整合のみ。セル/文字/ピクセル単位の差分検出はPython API専用)
-  api/table-diff.py   表モードAPI(Vercel Pythonサーバーレス関数、pdf_table_diff.pyを呼び出すだけ)
-  api/text-diff.py    文章モードAPI(同、pdf_text_diff.pyを呼び出すだけ)
-  api/image-diff.py   図面モードAPI(同、pdf_image_diff.pyを呼び出すだけ)
+  api/table_diff.py   表モードAPI(Vercel Pythonサーバーレス関数、pdf_table_diff.pyを呼び出すだけ)
+  api/text_diff.py    文章モードAPI(同、pdf_text_diff.pyを呼び出すだけ)
+  api/image_diff.py   図面モードAPI(同、pdf_image_diff.pyを呼び出すだけ)
   python/              ユーザー正解版のオリジナルPythonスクリプト本体・日本語フォント
   requirements.txt     Vercel Python関数の依存パッケージ(PyMuPDF/Pillow/numpy/scipy)
   vercel.json          各API関数にpython/を同梱する設定
@@ -39,7 +39,7 @@ pdf-diff-app/
 
 1. ユーザーが「表」「文章」「図面」のいずれかを選択(未選択の間は解析ボタンが無効)
 2. 新旧PDFをアップロードし、解析を実行
-3. 選択した種類に対応するVercel API(`/api/table-diff`等)にPDFを送信し、
+3. 選択した種類に対応するVercel API(`/api/table_diff`等)にPDFを送信し、
    ユーザー正解版のPythonロジックで比較(Vercel未デプロイの環境ではここでエラーになる)
 4. 新旧のページ列を、ページ内容の類似度でLCSベース整列(`alignPages`)。新版でページが
    挿入された場合でも、対応する旧ページが無いページとして正しく「追加」判定される
@@ -63,6 +63,12 @@ Vercelダッシュボードで Add New Project → 対象リポジトリ選択 �
 以後はこのフォルダへのpushで自動的に最新版がVercel URLに反映される。
 CLAUDE.mdの「開発中の確認とVercel連携のタイミング」の方針に従い、開発中はVercel
 側のGit連携を解除しておき、完成時に(再)接続してデプロイすること。
+
+**注意(2026-09-19)**: `api/`配下のPythonファイル名にハイフンを含めると
+(例: `table-diff.py`)、Vercelの新しいPythonランタイムがモジュールとして
+import出来ず(`table-diff`はPythonの識別子として不正)、
+`No python entrypoint found in default locations`でビルドが失敗する。
+`api/`配下のファイル名は必ずアンダースコア区切り(`table_diff.py`等)にすること。
 
 ## 既知の制約・今後の調整余地
 
