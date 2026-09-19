@@ -381,21 +381,49 @@ els.runBtn.addEventListener('click', async () => {
   }
 });
 
+// PNG+高解像度のまま全ページをjsPDFに渡すと、内部でPDFデータを1つの
+// 文字列として組み立てる際にJSエンジンの文字列長上限を超え、
+// "Uncaught RangeError: Invalid string length" で失敗することがある
+// (就業規則20ページの実データで確認済み)。ダウンロード用画像は
+// 縦横の上限を設けて縮小し、JPEG(可逆でなくてよい)に変換して
+// 埋め込みサイズを大きく削減する。
+const DOWNLOAD_MAX_DIM = 2000;
+const DOWNLOAD_JPEG_QUALITY = 0.85;
+
+function canvasToDownloadImage(canvas) {
+  const scale = Math.min(1, DOWNLOAD_MAX_DIM / Math.max(canvas.width, canvas.height));
+  const w = Math.max(1, Math.round(canvas.width * scale));
+  const h = Math.max(1, Math.round(canvas.height * scale));
+  let src = canvas;
+  if (scale < 1) {
+    const resized = document.createElement('canvas');
+    resized.width = w;
+    resized.height = h;
+    resized.getContext('2d').drawImage(canvas, 0, 0, w, h);
+    src = resized;
+  }
+  return { dataUrl: src.toDataURL('image/jpeg', DOWNLOAD_JPEG_QUALITY), w, h };
+}
+
 els.downloadBtn.addEventListener('click', () => {
   if (!lastResult || !lastResult.results.length) return;
-  const { jsPDF } = window.jspdf;
-  let doc = null;
-  lastResult.results.forEach((r, i) => {
-    const canvas = r.composed;
-    const w = canvas.width, h = canvas.height;
-    const orientation = w > h ? 'l' : 'p';
-    if (i === 0) {
-      doc = new jsPDF({ orientation, unit: 'px', format: [w, h] });
-    } else {
-      doc.addPage([w, h], orientation);
-    }
-    doc.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, w, h);
-  });
-  const stamp = formatDateJST(new Date()).replace(/[-: ]/g, '');
-  doc.save(`pdf-diff-${stamp}.pdf`);
+  try {
+    const { jsPDF } = window.jspdf;
+    let doc = null;
+    lastResult.results.forEach((r, i) => {
+      const { dataUrl, w, h } = canvasToDownloadImage(r.composed);
+      const orientation = w > h ? 'l' : 'p';
+      if (i === 0) {
+        doc = new jsPDF({ orientation, unit: 'px', format: [w, h] });
+      } else {
+        doc.addPage([w, h], orientation);
+      }
+      doc.addImage(dataUrl, 'JPEG', 0, 0, w, h);
+    });
+    const stamp = formatDateJST(new Date()).replace(/[-: ]/g, '');
+    doc.save(`pdf-diff-${stamp}.pdf`);
+  } catch (err) {
+    console.error(err);
+    log(`ダウンロードに失敗しました: ${err.message || err}`);
+  }
 });
