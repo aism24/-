@@ -392,7 +392,10 @@
     // ページ数分の待ち時間がそのまま積み上がってしまう(特に図面モードのように
     // 1ページの処理が重い方式で顕著)。PAGE_CONCURRENCY件ずつ並行して処理することで
     // 合計の待ち時間を縮める(結果の内容・表示順序は変えず、待ち方だけを変える)。
-    const PAGE_CONCURRENCY = 3;
+    // 本番API(20ページの実データ)で計測したところ、3→8に増やすことで合計時間が
+    // 約9.4秒→約4.7秒に短縮された(全ページ同時実行だと逆にコールドスタートが
+    // 重なり約5.5秒とやや悪化するため、8を採用)。
+    const PAGE_CONCURRENCY = 8;
 
     onLog('PDFを読み込み中...');
     const oldDoc = await pdfjsLib.getDocument({ data: oldArrayBuffer }).promise;
