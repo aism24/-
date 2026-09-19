@@ -37,6 +37,7 @@ const els = {
   resetBtn: document.getElementById('reset-btn'),
   modeBtns: document.querySelectorAll('.type-btn'),
   selectedModeLabel: document.getElementById('selected-mode-label'),
+  imageModeNotice: document.getElementById('image-mode-notice'),
   analyzingOverlay: document.getElementById('analyzing-overlay'),
   status: document.getElementById('status'),
   resultSection: document.getElementById('result-section'),
@@ -61,6 +62,7 @@ function setMode(mode) {
   selectedMode = mode;
   els.modeBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === mode));
   els.selectedModeLabel.textContent = mode ? MODE_LABELS[mode] : '';
+  els.imageModeNotice.classList.toggle('hidden', mode !== 'image');
   updateRunEnabled();
   updateResetEnabled();
 }
