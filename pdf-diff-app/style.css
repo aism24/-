@@ -383,24 +383,17 @@ main {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 24px;
-  padding-bottom: 24px;
-  overflow: auto;
-  cursor: grab;
-  user-select: none;
+  align-items: stretch;
+  overflow: hidden;
 }
-.pane-scroll.panning { cursor: grabbing; }
 
-.page-col { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
+.page-col { display: flex; flex-direction: column; align-items: stretch; gap: 0; flex: 1 1 auto; min-height: 0; }
 
-/* ページのラベルとそのペインのズーム操作を1行にまとめる。position:stickyで、
-   スクロール中は今表示されているページのヘッダーが常に上部に固定される
-   (ページが複数あっても、次のページの見出しが来ると自然に置き換わる)。 */
+/* ページのラベルとそのペインのズーム操作を1行にまとめる。ヘッダーは
+   ページ画像の拡大・パン操作(page-viewport側)とは別要素にしてあるため、
+   ズームやドラッグ移動をしてもヘッダー自体は常に同じ位置に固定表示される。 */
 .page-col-header {
-  position: sticky;
-  top: 0;
-  z-index: 5;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -411,8 +404,24 @@ main {
 .page-col-header-new { background: #e9f7ef; }
 .page-label { white-space: nowrap; }
 
+/* ページ画像だけを拡大・ドラッグ移動できる領域。overflow:hiddenで
+   はみ出た部分を切り取り、画像はtransform: translate()で自由に動かす
+   (ネイティブのスクロールバーには依存しないため、画像がペインに収まる
+   ズーム倍率でもドラッグで動かせる)。 */
+.page-viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  background: #f2f2f2;
+}
+.page-viewport.panning { cursor: grabbing; }
+
 .page-placeholder {
-  width: 400px; min-height: 200px;
+  position: absolute;
+  inset: 0;
   display: flex; align-items: center; justify-content: center;
   font-weight: bold; padding: 20px; text-align: center;
 }
@@ -420,12 +429,16 @@ main {
 .page-placeholder-new { background: #e9f7ef; color: #1e9633; }
 
 .page-image {
+  position: absolute;
+  top: 0;
+  left: 0;
   display: block;
   max-width: none;
   border: 1px solid var(--header-border);
   border-radius: 0 4px 4px 4px;
   background: #fff;
   -webkit-user-drag: none;
+  will-change: transform;
 }
 
 /* 解析中は画面中央に「解析中」テキストとプログレスバーをオーバーレイ表示する */
