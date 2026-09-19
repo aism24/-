@@ -13,6 +13,25 @@
 
   const range = (n) => Array.from({ length: n }, (_, i) => i);
 
+  // 同時実行数を抑えつつ配列の各要素を非同期処理する(結果は入力と同じ順序で返す)。
+  // ページごとのサーバーAPI呼び出しを、1件ずつ完了を待たず数件並行して投げるために使う
+  // (図面モード等、1ページあたりの処理が重い方式でページ数が多いPDFの合計待ち時間を
+  // 短縮する目的。無制限に同時実行すると大きいPDFを何本も同時アップロードすることになり
+  // ブラウザ・サーバー双方に負荷がかかるため、上限を設けて数件ずつ処理する)。
+  async function mapWithConcurrency(items, limit, fn) {
+    const results = new Array(items.length);
+    let nextIndex = 0;
+    async function worker() {
+      while (nextIndex < items.length) {
+        const current = nextIndex++;
+        results[current] = await fn(items[current], current);
+      }
+    }
+    const workerCount = Math.max(1, Math.min(limit, items.length));
+    await Promise.all(Array.from({ length: workerCount }, worker));
+    return results;
+  }
+
   // ---------- ページ描画 ----------
 
   function renderToCanvas(page, viewport) {
@@ -344,14 +363,13 @@
     const { canvas, promise } = renderToCanvas(page, viewport);
     await promise;
     const words = await extractWords(page, viewport);
-    const rows = clusterRows(words);
     // 種類(表/文章/図面)はユーザーが必ず選択してから解析するため、
     // ここでは常にmanualCategoryを使う(自動判定は行わない)。
     const category = manualCategory;
     const text = words.map((w) => w.text).join('');
     const thumb = text.length < 20 ? downsampleCanvas(canvas, THUMB_SIZE) : null;
     if (onLog) onLog(`ページ${num}: ${CATEGORY_LABEL[category] || category}(指定)`);
-    return { canvas, words, rows, category, sig: { text, thumb } };
+    return { canvas, category, sig: { text, thumb } };
   }
 
   async function runDiff(oldArrayBuffer, newArrayBuffer, opts = {}) {
@@ -370,30 +388,51 @@
     const oldPdfBase64ForApi = arrayBufferToBase64(oldArrayBuffer.slice(0));
     const newPdfBase64ForApi = arrayBufferToBase64(newArrayBuffer.slice(0));
 
+    // ページ描画(pdf.js)・サーバーAPI呼び出しのどちらも、1件ずつ完了を待つと
+    // ページ数分の待ち時間がそのまま積み上がってしまう(特に図面モードのように
+    // 1ページの処理が重い方式で顕著)。PAGE_CONCURRENCY件ずつ並行して処理することで
+    // 合計の待ち時間を縮める(結果の内容・表示順序は変えず、待ち方だけを変える)。
+    const PAGE_CONCURRENCY = 3;
+
     onLog('PDFを読み込み中...');
     const oldDoc = await pdfjsLib.getDocument({ data: oldArrayBuffer }).promise;
     const newDoc = await pdfjsLib.getDocument({ data: newArrayBuffer }).promise;
 
     onLog(`旧: 全${oldDoc.numPages}ページ / 新: 全${newDoc.numPages}ページ`);
 
-    const oldPages = [];
-    for (const i of range(oldDoc.numPages)) oldPages.push(await preparePage(oldDoc, i + 1, scale, onLog, manualCategory));
-    const newPages = [];
-    for (const i of range(newDoc.numPages)) newPages.push(await preparePage(newDoc, i + 1, scale, onLog, manualCategory));
+    // 旧新どちらのページ描画も1つの同時実行プールにまとめて処理する
+    // (旧の描画がすべて終わるのを待ってから新の描画を始める、という段階分けをしない)。
+    const pageTasks = [
+      ...range(oldDoc.numPages).map((i) => ({ doc: oldDoc, num: i + 1 })),
+      ...range(newDoc.numPages).map((i) => ({ doc: newDoc, num: i + 1 })),
+    ];
+    const preparedPages = await mapWithConcurrency(
+      pageTasks,
+      PAGE_CONCURRENCY,
+      (t) => preparePage(t.doc, t.num, scale, onLog, manualCategory)
+    );
+    const oldPages = preparedPages.slice(0, oldDoc.numPages);
+    const newPages = preparedPages.slice(oldDoc.numPages);
 
     onLog('新旧ページの対応関係を解析中...');
     const pairs = alignPages(oldPages.map((p) => p.sig), newPages.map((p) => p.sig));
 
-    const results = [];
+    // votesはAPIレスポンスを待たなくても分かる(対応ページの種類は選択時点で確定している)ため、
+    // 並列処理を始める前に先に集計しておく。
     const votes = {};
-    let pageOut = 0;
-
-    for (const p of pairs) {
-      pageOut++;
+    pairs.forEach((p) => {
       if (p.type === 'equal' || p.type === 'pair') {
-        const op = oldPages[p.oldIdx], np = newPages[p.newIdx];
-        const category = op.category;
+        const category = oldPages[p.oldIdx].category;
         votes[category] = (votes[category] || 0) + 1;
+      }
+    });
+
+    // サーバーAPI呼び出しも、上のページ描画と同じPAGE_CONCURRENCYで並行実行する。
+    async function buildPageResult(p, idx) {
+      const pageOut = idx + 1;
+      if (p.type === 'equal' || p.type === 'pair') {
+        const op = oldPages[p.oldIdx];
+        const category = op.category;
         onLog(`p${pageOut}: 旧${p.oldIdx + 1} ⇔ 新${p.newIdx + 1}(${CATEGORY_LABEL[category]})を比較中...`);
 
         const labelOld = `旧 p.${p.oldIdx + 1}`, labelNew = `新 p.${p.newIdx + 1}`;
@@ -401,31 +440,33 @@
         onLog(`${CATEGORY_LABEL[category]}モード: サーバー(Python)で比較中...`);
         const r = await diffViaApi(apiUrls[category], oldPdfBase64ForApi, newPdfBase64ForApi, p.oldIdx, p.newIdx);
         const composed = composeSideBySide(r.oldImg, r.newImg, labelOld, labelNew);
-        results.push({
+        return {
           composed, category, labelOld, labelNew,
           oldCanvas: r.oldImg, newCanvas: r.newImg,
           changed: r.oldBoxesCount + r.newBoxesCount > 0,
-        });
+        };
       } else if (p.type === 'delete') {
         const op = oldPages[p.oldIdx];
         onLog(`p${pageOut}: 旧${p.oldIdx + 1}は新版に対応ページなし(削除)`);
         const labelOld = `旧 p.${p.oldIdx + 1}`, labelNew = '(新版になし)';
         const composed = composePlaceholder(op.canvas, null, labelOld, labelNew, 'このページは削除されました');
-        results.push({
+        return {
           composed, category: 'delete', labelOld, labelNew,
           oldCanvas: op.canvas, newCanvas: null, placeholderMessage: 'このページは削除されました',
-        });
+        };
       } else if (p.type === 'insert') {
         const np = newPages[p.newIdx];
         onLog(`p${pageOut}: 新${p.newIdx + 1}は旧版に対応ページなし(新規追加)`);
         const labelOld = '(旧版になし)', labelNew = `新 p.${p.newIdx + 1}`;
         const composed = composePlaceholder(null, np.canvas, labelOld, labelNew, 'このページは新規追加されました');
-        results.push({
+        return {
           composed, category: 'insert', labelOld, labelNew,
           oldCanvas: null, newCanvas: np.canvas, placeholderMessage: 'このページは新規追加されました',
-        });
+        };
       }
     }
+
+    const results = await mapWithConcurrency(pairs, PAGE_CONCURRENCY, buildPageResult);
 
     const overallCategory = pickOverallCategory(votes);
     onLog(`分類: ${overallCategory}`);
@@ -435,6 +476,6 @@
   global.PdfDiffCore = {
     runDiff,
     // テスト用に一部関数も公開
-    _internal: { clusterRows, extractWords, alignPages, pairChanges },
+    _internal: { clusterRows, extractWords, alignPages, pairChanges, mapWithConcurrency },
   };
 })(window);
