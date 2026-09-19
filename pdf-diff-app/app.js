@@ -18,6 +18,7 @@ let oldFile = null;
 let newFile = null;
 let lastResult = null;
 let selectedMode = null; // 'table' | 'text' | 'image'。自動判定は行わず、ユーザーの指定を必須とする。
+let currentPageIndex = 0; // 解析結果のうち、旧新で共通して表示中のページ番号(0始まり)
 const MODE_LABELS = { table: '表', text: '文章', image: '図面' };
 const zoomBySide = { old: 1.0, new: 1.0 };
 
@@ -35,6 +36,11 @@ const els = {
   newField: document.getElementById('new-pdf-field'),
   runBtn: document.getElementById('run-btn'),
   resetBtn: document.getElementById('reset-btn'),
+  pageNav: document.getElementById('page-nav'),
+  pagePrevBtn: document.getElementById('page-prev-btn'),
+  pageNextBtn: document.getElementById('page-next-btn'),
+  pageInput: document.getElementById('page-input'),
+  pageTotalLabel: document.getElementById('page-total-label'),
   modeBtns: document.querySelectorAll('.type-btn'),
   selectedModeLabel: document.getElementById('selected-mode-label'),
   imageModeNotice: document.getElementById('image-mode-notice'),
@@ -113,6 +119,7 @@ setupDropZone(els.newField, setNewFile);
 
 function clearWorkArea() {
   lastResult = null;
+  currentPageIndex = 0;
   els.oldInput.value = '';
   els.newInput.value = '';
   setOldFile(null);
@@ -122,6 +129,9 @@ function clearWorkArea() {
   els.resultSection.classList.add('hidden');
   els.viewers.old.innerHTML = '';
   els.viewers.new.innerHTML = '';
+  els.pageNav.classList.add('hidden');
+  els.pageInput.value = '1';
+  els.pageTotalLabel.textContent = '';
 }
 
 els.resetBtn.addEventListener('click', clearWorkArea);
@@ -236,16 +246,40 @@ function buildSide(canvas, label, side, placeholderMessage) {
 
 // 旧新を1枚の合成画像に描くのではなく、別々の<img>としてそれぞれのペインに
 // そのまま表示する。これにより旧PDF/新PDFを個別にズーム・パンできる。
-function renderResults(results) {
+// 複数ページある場合はスクロールでめくらせず、旧新で同じページ番号を1組だけ表示する。
+function showPage(index) {
+  if (!lastResult || !lastResult.results.length) return;
+  const results = lastResult.results;
+  currentPageIndex = Math.max(0, Math.min(index, results.length - 1));
+  const r = results[currentPageIndex];
+
   els.viewers.old.innerHTML = '';
   els.viewers.new.innerHTML = '';
-  results.forEach((r) => {
-    els.viewers.old.appendChild(buildSide(r.oldCanvas, r.labelOld, 'old', r.placeholderMessage));
-    els.viewers.new.appendChild(buildSide(r.newCanvas, r.labelNew, 'new', r.placeholderMessage));
-  });
+  els.viewers.old.appendChild(buildSide(r.oldCanvas, r.labelOld, 'old', r.placeholderMessage));
+  els.viewers.new.appendChild(buildSide(r.newCanvas, r.labelNew, 'new', r.placeholderMessage));
   applyZoom('old');
   applyZoom('new');
+
+  els.pageNav.classList.remove('hidden');
+  els.pageInput.max = String(results.length);
+  els.pageInput.value = String(currentPageIndex + 1);
+  els.pageTotalLabel.textContent = `/ ${results.length}`;
+  els.pagePrevBtn.disabled = currentPageIndex <= 0;
+  els.pageNextBtn.disabled = currentPageIndex >= results.length - 1;
 }
+
+els.pagePrevBtn.addEventListener('click', () => showPage(currentPageIndex - 1));
+els.pageNextBtn.addEventListener('click', () => showPage(currentPageIndex + 1));
+
+function goToPageFromInput() {
+  const n = parseInt(els.pageInput.value, 10);
+  if (Number.isNaN(n)) return;
+  showPage(n - 1);
+}
+els.pageInput.addEventListener('change', goToPageFromInput);
+els.pageInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') goToPageFromInput();
+});
 
 // 100%でPDFの横幅全体がペイン内に収まるよう、ページ画像の実ピクセル幅ではなく
 // ペイン自体の表示幅を基準(fit-to-width)にズーム倍率をかける。
@@ -334,7 +368,7 @@ els.runBtn.addEventListener('click', async () => {
     lastResult = result;
     updateResetEnabled();
     els.resultCategory.textContent = `分類: ${result.category}`;
-    renderResults(result.results);
+    showPage(0);
     els.resultSection.classList.remove('hidden');
     log('解析が完了しました。');
     await sendLog(result.category);

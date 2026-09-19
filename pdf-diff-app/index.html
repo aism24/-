@@ -59,8 +59,19 @@
   </div>
   <div class="upload-actions">
     <span id="selected-mode-label"></span>
-    <button id="run-btn" disabled>解析</button>
-    <button id="reset-btn" disabled>リセット</button>
+    <div id="run-reset-row">
+      <button id="run-btn" disabled>解析</button>
+      <button id="reset-btn" disabled>リセット</button>
+    </div>
+    <div id="page-nav" class="hidden">
+      <button type="button" id="page-prev-btn" title="前のページ">▲</button>
+      <span id="page-nav-field">
+        <span id="page-nav-text">ページ</span>
+        <input type="number" id="page-input" min="1" value="1">
+        <span id="page-total-label"></span>
+      </span>
+      <button type="button" id="page-next-btn" title="次のページ">▼</button>
+    </div>
     <div id="image-mode-notice" class="hidden">
       <p>「図面」解析は複数枚の解析になると時間がかかります。</p>
       <p>出来るだけ１枚でファイルを添付してください。</p>

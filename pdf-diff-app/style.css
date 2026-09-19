@@ -227,8 +227,10 @@ main {
 
 .upload-actions {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
-  padding: 14px 24px; background: var(--header-bg);
+  padding: 14px 32px; background: var(--header-bg);
 }
+
+#run-reset-row { display: flex; flex-direction: row; gap: 12px; }
 
 /* 選択中の種類(表/文章/図面)を大きく表示し、背景を黄色でゆっくり点滅させて目立たせる */
 #selected-mode-label {
@@ -260,6 +262,29 @@ main {
   color: #d32f2f;
 }
 #image-mode-notice.hidden { animation: none; }
+
+/* 解析結果のページ送り。旧新は同じページ番号を共有して表示する */
+#page-nav {
+  display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8px;
+}
+#page-nav.hidden { display: none; }
+#page-nav button {
+  width: 32px; height: 32px;
+  font-size: 14px; font-weight: bold;
+  border: none; border-radius: 6px;
+  background: var(--accent); color: #fff;
+  cursor: pointer;
+}
+#page-nav button:disabled { opacity: .4; cursor: not-allowed; }
+#page-nav button:not(:disabled):hover { background: #1558b0; }
+#page-nav-field {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: bold; color: var(--text-color);
+}
+#page-input {
+  width: 48px; padding: 4px; text-align: center;
+  font-size: 14px; border: 1px solid #ccc; border-radius: 4px;
+}
 
 @keyframes image-mode-notice-blink {
   0%, 100% { background-color: transparent; }
