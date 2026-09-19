@@ -246,6 +246,25 @@ main {
   50% { background-color: #ffe066; }
 }
 
+/* 図面解析の注意書き。背景を水色でゆっくり点滅させて目立たせる */
+#image-mode-notice {
+  text-align: center;
+  padding: 6px 16px;
+  border-radius: 8px;
+  animation: image-mode-notice-blink 3s ease-in-out infinite;
+}
+#image-mode-notice p {
+  margin: 2px 0;
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--text-color);
+}
+
+@keyframes image-mode-notice-blink {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: #99e6ff; }
+}
+
 .file-btn {
   background: #fff; border: 1px solid #bbb; border-radius: 4px;
   padding: 8px 14px; font-size: 13px; font-weight: bold; cursor: pointer;
