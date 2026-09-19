@@ -21,6 +21,9 @@ let selectedMode = null; // 'table' | 'text' | 'image'。自動判定は行わ�
 const zoomBySide = { old: 1.0, new: 1.0 };
 
 const els = {
+  homeScreen: document.getElementById('home-screen'),
+  appScreen: document.getElementById('app-screen'),
+  homeBtn: document.getElementById('home-btn'),
   oldInput: document.getElementById('old-pdf'),
   newInput: document.getElementById('new-pdf'),
   oldBtn: document.getElementById('old-pdf-btn'),
@@ -31,7 +34,7 @@ const els = {
   newField: document.getElementById('new-pdf-field'),
   runBtn: document.getElementById('run-btn'),
   resetBtn: document.getElementById('reset-btn'),
-  modeBtns: document.querySelectorAll('.mode-btn'),
+  modeBtns: document.querySelectorAll('.type-btn'),
   status: document.getElementById('status'),
   resultSection: document.getElementById('result-section'),
   resultCategory: document.getElementById('result-category'),
@@ -97,11 +100,7 @@ function setupDropZone(fieldEl, setFile) {
 setupDropZone(els.oldField, setOldFile);
 setupDropZone(els.newField, setNewFile);
 
-els.modeBtns.forEach((btn) => {
-  btn.addEventListener('click', () => setMode(btn.dataset.mode));
-});
-
-els.resetBtn.addEventListener('click', () => {
+function clearWorkArea() {
   lastResult = null;
   els.oldInput.value = '';
   els.newInput.value = '';
@@ -112,6 +111,24 @@ els.resetBtn.addEventListener('click', () => {
   els.resultSection.classList.add('hidden');
   els.viewers.old.innerHTML = '';
   els.viewers.new.innerHTML = '';
+}
+
+els.resetBtn.addEventListener('click', clearWorkArea);
+
+els.modeBtns.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    setMode(btn.dataset.mode);
+    els.homeScreen.classList.add('hidden');
+    els.appScreen.classList.remove('hidden');
+    els.homeBtn.classList.remove('hidden');
+  });
+});
+
+els.homeBtn.addEventListener('click', () => {
+  clearWorkArea();
+  els.appScreen.classList.add('hidden');
+  els.homeScreen.classList.remove('hidden');
+  els.homeBtn.classList.add('hidden');
 });
 
 function log(msg) {

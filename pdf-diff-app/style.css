@@ -33,6 +33,82 @@ body {
   color: var(--text-color);
 }
 
+.hidden { display: none !important; }
+
+header {
+  flex: 0 0 auto;
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--header-border);
+  padding: 10px 16px;
+}
+
+/* ホーム画面: ヘッダー下の残り領域全体を使って、種類選択ボタンを画面中心に表示 */
+#home-screen {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 20px;
+}
+
+#app-desc {
+  margin: 0;
+  text-align: center;
+  font-size: calc(var(--logo-size) * 0.4);
+  font-weight: bold;
+  color: #1e9633;
+}
+
+#type-select {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+/* 文字数(1文字/2文字)に関わらずボタンの大きさを統一し、2文字分の大きさに揃える */
+.type-btn {
+  width: 3.4em;
+  height: 3.4em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: bold;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+.type-btn:hover { background: #1558b0; }
+
+#app-screen {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#home-btn {
+  background: #ffd400;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #333;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#home-btn:hover { background: #e6bf00; }
+
 #top-bar {
   flex: 0 0 auto;
   display: flex;
@@ -45,29 +121,13 @@ body:has(#result-section.hidden) #top-bar {
   flex: 1 1 auto;
 }
 
-header {
-  flex: 0 0 auto;
-  background: var(--header-bg);
-  border-bottom: 1px solid var(--header-border);
-  padding: 10px 16px;
-}
-
 #app-desc-row {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   padding: 10px 16px;
-}
-
-#app-desc {
-  flex: 1 1 auto;
-  margin: 0;
-  text-align: center;
-  font-size: calc(var(--logo-size) * 0.4);
-  font-weight: bold;
-  color: #1e9633;
 }
 
 #header-actions {
@@ -167,15 +227,6 @@ main {
 .file-btn:disabled { background: #e0e0e0; color: #999; border-color: #ccc; cursor: not-allowed; }
 
 .file-name { font-size: 12px; color: #666; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-#mode-select { display: flex; align-items: center; gap: 6px; }
-.mode-label { font-size: 13px; font-weight: bold; color: var(--text-color); }
-.mode-btn {
-  background: #fff; border: 1px solid #bbb; border-radius: 999px;
-  padding: 7px 18px; font-size: 13px; font-weight: bold; cursor: pointer; color: #555;
-}
-.mode-btn:hover { background: #f0f0f0; }
-.mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 #run-btn {
   background: var(--accent); color: #fff; border: none; border-radius: 6px;
@@ -300,4 +351,5 @@ main {
 @media (max-width: 640px) {
   :root { --logo-size: 34px; }
   .file-name { max-width: 120px; }
+  .type-btn { width: 2.8em; height: 2.8em; font-size: 18px; }
 }
