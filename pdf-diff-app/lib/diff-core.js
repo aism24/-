@@ -55,7 +55,14 @@
 
   function charWeight(ch) {
     const code = ch.codePointAt(0);
-    return code <= 0xff ? 0.55 : 1.0;
+    // ASCII/Latin-1に加え、半角カタカナ(U+FF61-FF9F)・半角句読点等の
+    // 半角形(U+FF61-FFDC)も見た目は半角幅なので、0xff以下だけを見る判定では
+    // 半角カタカナ(フリガナ等で多用)が全角扱いになり幅を約2倍に見積もって
+    // しまっていた(実測より大きく右にズレる)。これが原因で、フリガナ欄の
+    // 推定終端位置が隣接する別欄の文字と前後してしまい、行内の単語の並び順が
+    // 新旧PDFでズレる(=文字単位diffの対応がおかしくなる)ケースがあった。
+    const isHalfWidth = code <= 0xff || (code >= 0xff61 && code <= 0xffdc);
+    return isHalfWidth ? 0.55 : 1.0;
   }
 
   async function extractWords(page, viewport) {
@@ -284,30 +291,86 @@
     return { oldBoxes, newBoxes };
   }
 
+  // ---------- サーバーAPI経由の差分計算(Pythonオリジナルコードをそのまま使用) ----------
+  //
+  // pdf.js経由の推定(charWeightによる文字幅近似・全角スペースの単語分割等)は
+  // PyMuPDF(page.get_text等)の実測値と細かく食い違うことが分かったため、
+  // 表/文章/図面の3方式とも、ブラウザ内では計算せずVercelのPythonサーバーレス
+  // 関数(api/table-diff.py・text-diff.py・image-diff.py、pdfの3スクリプトを
+  // それぞれそのまま実行)にPDFを送って結果画像を受け取ることを優先する。
+  // API未設定・失敗時のみ、各方式のdiffTable()/diffText()/diffImagePixels()
+  // による従来のJS計算にフォールバックする。
+
+  function arrayBufferToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+  }
+
+  function base64PngToImage(b64) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('サーバーから返された画像の読み込みに失敗しました'));
+      img.src = `data:image/png;base64,${b64}`;
+    });
+  }
+
+  async function diffViaApi(apiUrl, oldPdfBase64, newPdfBase64, oldPage, newPage) {
+    const res = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPdfBase64, newPdfBase64, oldPage, newPage }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => res.statusText);
+      throw new Error(`APIエラー(${res.status}): ${detail}`);
+    }
+    const data = await res.json();
+    const [oldImg, newImg] = await Promise.all([
+      base64PngToImage(data.oldPngBase64),
+      base64PngToImage(data.newPngBase64),
+    ]);
+    return { oldImg, newImg, oldBoxesCount: data.oldBoxesCount, newBoxesCount: data.newBoxesCount };
+  }
+
   // ---------- 文章方式(1文字単位) ----------
 
-  function buildCharStream(rows) {
-    // 行の折り返し位置は新旧でズレうる(1文字増減しただけで以降の行が
-    // 全部ズレる)ため、行区切り文字は入れず読み順の文字を素で連結する
-    // (差分検出を折り返し位置に依存させないため。pdf_text_diff.pyと同じ方針)。
+  // 単語(セル)の境目に挟む不可視の区切り文字。新旧どちらの行にも同じ位置に
+  // 入るため、Diff.diffCharsは必ずこれを「一致」とみなし、変更範囲が
+  // 隣接する無関係な単語(例: フリガナ欄と契約金額欄が同じ行にある場合)まで
+  // 誤って巻き込むのを防ぐ。表示上は使われないので画面には影響しない。
+  const WORD_SEP = '\u0000';
+
+  function buildCharStream(row) {
+    // 1行分の単語を対象に、区切り文字を挟みながら読み順に連結する。
+    // 行をまたぐ連結は行わない(diffTextが行単位で対応付けてから
+    // この関数を呼ぶため。行の折り返し位置は新旧でズレうるが、
+    // それは行単位アライメント側で吸収する)。
     let text = '';
     const map = [];
-    rows.forEach((row) => {
-      row.forEach((w) => {
-        const chars = Array.from(w.text);
-        const weights = chars.map(charWeight);
-        const totalWeight = weights.reduce((a, b) => a + b, 0) || 1;
-        const width = w.x1 - w.x0;
-        let offset = 0;
-        chars.forEach((ch, i) => {
-          text += ch;
-          map.push({
-            x0: w.x0 + (offset / totalWeight) * width,
-            x1: w.x0 + ((offset + weights[i]) / totalWeight) * width,
-            y0: w.y0, y1: w.y1,
-          });
-          offset += weights[i];
+    row.forEach((w, idx) => {
+      if (idx > 0) {
+        text += WORD_SEP;
+        map.push(null);
+      }
+      const chars = Array.from(w.text);
+      const weights = chars.map(charWeight);
+      const totalWeight = weights.reduce((a, b) => a + b, 0) || 1;
+      const width = w.x1 - w.x0;
+      let offset = 0;
+      chars.forEach((ch, i) => {
+        text += ch;
+        map.push({
+          x0: w.x0 + (offset / totalWeight) * width,
+          x1: w.x0 + ((offset + weights[i]) / totalWeight) * width,
+          y0: w.y0, y1: w.y1,
         });
+        offset += weights[i];
       });
     });
     return { text, map };
@@ -331,24 +394,51 @@
     return merged;
   }
 
+  // 「表」方式(diffTable)と同じく、まず行単位でDiff.diffArraysによる対応付け
+  // (Needleman-Wunsch型ではなくLCSだが、行が完全に一致するかどうかで判定する
+  // 点は同じ)を行い、対応の取れた行同士だけをさらに文字単位で比較する。
+  // ページ全体を1本の文字列にして文字単位diffにかけていた以前の実装では、
+  // 「台」のような短い繰り返し文字が原因で、新規追加された行の文字が
+  // ページ内の離れた場所にある同じ文字と誤って対応付けられ、追加として
+  // 検出されないことがあった。行単位で先に対応を確定させることでこれを防ぐ。
   function diffText(oldRows, newRows) {
-    const oldStream = buildCharStream(oldRows);
-    const newStream = buildCharStream(newRows);
-    const changes = Diff.diffChars(oldStream.text, newStream.text);
+    const oldStreams = oldRows.map(buildCharStream);
+    const newStreams = newRows.map(buildCharStream);
+    const rowChanges = Diff.diffArrays(oldStreams.map((s) => s.text), newStreams.map((s) => s.text));
+    const rowPairs = pairChanges(rowChanges);
     const oldBoxes = [], newBoxes = [];
-    let oi = 0, ni = 0;
-    changes.forEach((part) => {
-      const len = part.value.length;
-      if (!part.added && !part.removed) { oi += len; ni += len; return; }
-      if (part.removed) {
-        for (let k = 0; k < len; k++) { const b = oldStream.map[oi + k]; if (b) oldBoxes.push(b); }
-        oi += len;
+
+    const pushAll = (map, boxes) => map.forEach((b) => { if (b) boxes.push(b); });
+
+    rowPairs.forEach((rp) => {
+      if (rp.type === 'equal') return;
+      if (rp.type === 'delete') {
+        pushAll(oldStreams[rp.oldIdx].map, oldBoxes);
+        return;
       }
-      if (part.added) {
-        for (let k = 0; k < len; k++) { const b = newStream.map[ni + k]; if (b) newBoxes.push(b); }
-        ni += len;
+      if (rp.type === 'insert') {
+        pushAll(newStreams[rp.newIdx].map, newBoxes);
+        return;
       }
+      // 'pair': 対応は取れたが内容が異なる行同士を、さらに文字単位で比較する
+      const oldStream = oldStreams[rp.oldIdx];
+      const newStream = newStreams[rp.newIdx];
+      const changes = Diff.diffChars(oldStream.text, newStream.text);
+      let oi = 0, ni = 0;
+      changes.forEach((part) => {
+        const len = part.value.length;
+        if (!part.added && !part.removed) { oi += len; ni += len; return; }
+        if (part.removed) {
+          for (let k = 0; k < len; k++) { const b = oldStream.map[oi + k]; if (b) oldBoxes.push(b); }
+          oi += len;
+        }
+        if (part.added) {
+          for (let k = 0; k < len; k++) { const b = newStream.map[ni + k]; if (b) newBoxes.push(b); }
+          ni += len;
+        }
+      });
     });
+
     return { oldBoxes: mergeConsecutiveBoxes(oldBoxes), newBoxes: mergeConsecutiveBoxes(newBoxes) };
   }
 
@@ -524,24 +614,34 @@
     return best ? CATEGORY_LABEL[best] : '不明';
   }
 
-  async function preparePage(doc, num, scale, onLog, forceCategory) {
+  async function preparePage(doc, num, scale, onLog, manualCategory) {
     const page = await doc.getPage(num);
     const viewport = page.getViewport({ scale });
     const { canvas, promise } = renderToCanvas(page, viewport);
     await promise;
     const words = await extractWords(page, viewport);
     const rows = clusterRows(words);
-    const category = forceCategory || classifyPage(words, rows);
+    // ユーザーが「表/文章/図面」を明示指定した場合は自動判定(classifyPage)を
+    // 使わず、全ページをその種類として扱う(誤判定の心配を無くすため)。
+    const category = manualCategory || classifyPage(words, rows);
     const text = words.map((w) => w.text).join('');
     const thumb = text.length < 20 ? downsampleCanvas(canvas, THUMB_SIZE) : null;
-    if (onLog) onLog(`ページ${num}: ${CATEGORY_LABEL[category] || category}と判定`);
+    if (onLog) onLog(`ページ${num}: ${CATEGORY_LABEL[category] || category}${manualCategory ? '(指定)' : 'と判定'}`);
     return { canvas, words, rows, category, sig: { text, thumb } };
   }
 
   async function runDiff(oldArrayBuffer, newArrayBuffer, opts = {}) {
     const scale = opts.scale || RENDER_SCALE;
     const onLog = opts.onLog || (() => {});
-    const forceCategory = opts.forceCategory || null;
+    const manualCategory = opts.manualCategory || null;
+    // 各方式(表/文章/図面)ごとのサーバーAPI URL。{ table: '/api/table-diff', ... }
+    const apiUrls = opts.apiUrls || {};
+
+    // pdf.jsはワーカーへの転送でArrayBufferをdetach(内容を空に)することがあるため、
+    // API送信用の生バイト列は、pdf.jsに渡す前にコピーしてbase64化しておく。
+    const useApi = Object.keys(apiUrls).length > 0;
+    const oldPdfBase64ForApi = useApi ? arrayBufferToBase64(oldArrayBuffer.slice(0)) : null;
+    const newPdfBase64ForApi = useApi ? arrayBufferToBase64(newArrayBuffer.slice(0)) : null;
 
     onLog('PDFを読み込み中...');
     const oldDoc = await pdfjsLib.getDocument({ data: oldArrayBuffer }).promise;
@@ -550,9 +650,9 @@
     onLog(`旧: 全${oldDoc.numPages}ページ / 新: 全${newDoc.numPages}ページ`);
 
     const oldPages = [];
-    for (const i of range(oldDoc.numPages)) oldPages.push(await preparePage(oldDoc, i + 1, scale, onLog, forceCategory));
+    for (const i of range(oldDoc.numPages)) oldPages.push(await preparePage(oldDoc, i + 1, scale, onLog, manualCategory));
     const newPages = [];
-    for (const i of range(newDoc.numPages)) newPages.push(await preparePage(newDoc, i + 1, scale, onLog, forceCategory));
+    for (const i of range(newDoc.numPages)) newPages.push(await preparePage(newDoc, i + 1, scale, onLog, manualCategory));
 
     onLog('新旧ページの対応関係を解析中...');
     const pairs = alignPages(oldPages.map((p) => p.sig), newPages.map((p) => p.sig));
@@ -569,6 +669,24 @@
         votes[category] = (votes[category] || 0) + 1;
         onLog(`p${pageOut}: 旧${p.oldIdx + 1} ⇔ 新${p.newIdx + 1}(${CATEGORY_LABEL[category]})を比較中...`);
 
+        const labelOld = `旧 p.${p.oldIdx + 1}`, labelNew = `新 p.${p.newIdx + 1}`;
+
+        if (apiUrls[category]) {
+          try {
+            onLog(`${CATEGORY_LABEL[category]}モード: サーバー(Python)で比較中...`);
+            const r = await diffViaApi(apiUrls[category], oldPdfBase64ForApi, newPdfBase64ForApi, p.oldIdx, p.newIdx);
+            const composed = composeSideBySide(r.oldImg, r.newImg, labelOld, labelNew);
+            results.push({
+              composed, category, labelOld, labelNew,
+              oldCanvas: r.oldImg, newCanvas: r.newImg,
+              changed: r.oldBoxesCount + r.newBoxesCount > 0,
+            });
+            continue;
+          } catch (err) {
+            onLog(`${CATEGORY_LABEL[category]}モードAPIに失敗したため、ブラウザ内計算にフォールバックします(${err.message})`);
+          }
+        }
+
         let oldBoxes = [], newBoxes = [];
         if (category === 'table') {
           const r = diffTable(op.rows, np.rows);
@@ -580,7 +698,6 @@
           const r = diffImagePixels(op.canvas, np.canvas);
           oldBoxes = r.boxes; newBoxes = r.boxes;
         }
-        const labelOld = `旧 p.${p.oldIdx + 1}`, labelNew = `新 p.${p.newIdx + 1}`;
         const cOld = withHighlights(op.canvas, oldBoxes, COLOR_OLD);
         const cNew = withHighlights(np.canvas, newBoxes, COLOR_NEW);
         const composed = composeSideBySide(cOld, cNew, labelOld, labelNew);

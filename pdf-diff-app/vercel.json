@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/table-diff.py": {
+      "includeFiles": "python/**"
+    },
+    "api/text-diff.py": {
+      "includeFiles": "python/**"
+    },
+    "api/image-diff.py": {
+      "includeFiles": "python/**"
+    }
+  }
+}
