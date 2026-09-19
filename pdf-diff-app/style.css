@@ -20,11 +20,15 @@
 
 * { box-sizing: border-box; }
 
-/* ボタン内テキストは常に縦横中央揃えにする(ブラウザ既定だと下寄りに見えることがあるため) */
+/* ボタン内テキストは常に縦横中央揃えにする。
+   align-items:centerだけだと、游ゴシック/Meiryo等のフォントの行送り
+   (line-height由来の上下の余白)が非対称なため、わずかに下寄りに見える
+   ことがある。line-height:1にしてグリフ自体の高さで中央揃えする。 */
 button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  line-height: 1;
 }
 
 html, body { height: 100%; }
