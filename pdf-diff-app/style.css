@@ -94,17 +94,17 @@ header {
 }
 
 #home-btn {
-  background: none;
-  border: 1px solid var(--header-border);
+  background: #ffd400;
+  border: none;
   border-radius: 4px;
   padding: 6px 10px;
   font-size: 12px;
   font-weight: bold;
-  color: var(--text-color);
+  color: #333;
   cursor: pointer;
   white-space: nowrap;
 }
-#home-btn:hover { background: rgba(0, 0, 0, 0.06); }
+#home-btn:hover { background: #e6bf00; }
 
 #brand {
   position: relative;
