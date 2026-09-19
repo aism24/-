@@ -236,8 +236,8 @@
   // pdf.js経由の推定(charWeightによる文字幅近似・全角スペースの単語分割等)は
   // PyMuPDF(page.get_text等)の実測値と細かく食い違い、誤ハイライトなどの実害が
   // 確認されたため、表/文章/図面の3方式とも、ブラウザ内では計算せず必ず
-  // VercelのPythonサーバーレス関数(api/table-diff.py・text-diff.py・
-  // image-diff.py、pdfの3スクリプトをそれぞれそのまま実行)にPDFを送って
+  // VercelのPythonサーバーレス関数(api/table_diff.py・text_diff.py・
+  // image_diff.py、pdfの3スクリプトをそれぞれそのまま実行)にPDFを送って
   // 結果画像を受け取る。ブラウザ内(JS)での差分計算は行わない
   // (バックエンドが無い環境では動作しない。githackプレビュー等での確認には
   // 使えないので、確認時は必ずVercelにデプロイすること)。
@@ -358,7 +358,7 @@
     const scale = opts.scale || RENDER_SCALE;
     const onLog = opts.onLog || (() => {});
     const manualCategory = opts.manualCategory;
-    // 各方式(表/文章/図面)ごとのサーバーAPI URL。{ table: '/api/table-diff', ... }
+    // 各方式(表/文章/図面)ごとのサーバーAPI URL。{ table: '/api/table_diff', ... }
     // 差分計算は必ずこのAPI(Python正解版)で行う。ブラウザ内計算への
     // フォールバックは行わない(結果がPython版とズレるため撤去済み)。
     const apiUrls = opts.apiUrls || {};

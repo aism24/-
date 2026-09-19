@@ -6,9 +6,9 @@ const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzLz81VioiuR3ku_utd
 // での計算は行わない(Python版と結果がズレる実害バグがあったため撤去済み)。
 // そのためVercel未デプロイの環境(githackプレビュー等)では解析が失敗する。
 const DIFF_API_URLS = {
-  table: "/api/table-diff",
-  text: "/api/text-diff",
-  image: "/api/image-diff",
+  table: "/api/table_diff",
+  text: "/api/text_diff",
+  image: "/api/image_diff",
 };
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
