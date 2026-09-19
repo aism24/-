@@ -1,10 +1,10 @@
 // デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。デプロイ後にここへ差し替えてください。
 const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzLz81VioiuR3ku_utdvDlwpT6ImXXQmM6ziZtDX4If9Q0MWxi0926U8rFikxEV9qo4Ig/exec";
 
-// 表/文章/図面の各モードの比較をブラウザ内(pdf.js)ではなくVercelのPython
-// サーバーレス関数で行うためのAPIパス(同一オリジンの相対パス。Vercel
-// デプロイ時のみ存在する)。存在しない/失敗する環境(例: githackプレビュー)
-// では、diff-core.js側で自動的に従来のJS計算にフォールバックする。
+// 表/文章/図面の各モードの比較は、必ずVercelのPythonサーバーレス関数で行う
+// (同一オリジンの相対パス。Vercelデプロイ時のみ存在する)。ブラウザ内(JS)
+// での計算は行わない(Python版と結果がズレる実害バグがあったため撤去済み)。
+// そのためVercel未デプロイの環境(githackプレビュー等)では解析が失敗する。
 const DIFF_API_URLS = {
   table: "/api/table-diff",
   text: "/api/text-diff",

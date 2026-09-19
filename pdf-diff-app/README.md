@@ -7,10 +7,11 @@
 比較処理そのものは、ユーザーのローカル環境で検証済みのオリジナルPythonコード
 (`pdf_table_diff.py` / `pdf_text_diff.py` / `pdf_image_diff.py`、Python+PyMuPDF)を
 Vercelのサーバーレス関数(`api/*-diff.py`)としてそのまま実行する。フロントエンドは
-そのAPIを呼び出すだけで、ロジックの再実装はしていない。API呼び出しが使えない環境
-(Vercelを経由しないgithackプレビュー等バックエンドの無い環境)では、`lib/diff-core.js`
-内のJS版計算(pdf.js移植、正解のPython版と完全には一致しない簡易版)に自動フォールバック
-する。PDFの中身はVercel関数への送信を除き外部に送信されない。
+そのAPIを呼び出すだけで、ロジックの再実装はしていない。**ブラウザ内(JS)での差分計算は
+一切行わない**(以前はAPI呼び出しが使えない環境向けにJS版フォールバックがあったが、
+全角スペースの扱いの違い等でPython版と結果がズレる実害バグが確認されたため撤去した)。
+そのため、Vercelにデプロイされていない環境(githackプレビュー等)では解析ボタンを押すと
+エラーになる。PDFの中身はVercel関数への送信を除き外部に送信されない。
 
 ## 構成
 
@@ -19,7 +20,7 @@ pdf-diff-app/
   index.html          画面(ヘッダー・種類選択・アップロード・ビューア)
   style.css           スタイル
   app.js              UI制御・GASへのログ送信・PDFダウンロード生成
-  lib/diff-core.js    差分解析コアロジック(ページ整合・3方式の差分検出のJS版、Python API利用時のフォールバック用)
+  lib/diff-core.js    差分解析コアロジック(ページ整合のみ。セル/文字/ピクセル単位の差分検出はPython API専用)
   api/table-diff.py   表モードAPI(Vercel Pythonサーバーレス関数、pdf_table_diff.pyを呼び出すだけ)
   api/text-diff.py    文章モードAPI(同、pdf_text_diff.pyを呼び出すだけ)
   api/image-diff.py   図面モードAPI(同、pdf_image_diff.pyを呼び出すだけ)
@@ -30,16 +31,16 @@ pdf-diff-app/
 ```
 
 使用ライブラリ(すべてCDN経由、ビルド不要):
-- [pdf.js](https://mozilla.github.io/pdf.js/) 3.11.174 — PDF描画・テキスト座標抽出(JSフォールバック用)
-- [jsdiff](https://github.com/kpdecker/jsdiff) 9.0.0 — LCSベースの差分検出(JSフォールバック用)
+- [pdf.js](https://mozilla.github.io/pdf.js/) 3.11.174 — PDF描画・ページ整合(挿入/削除ページ検出)用のテキスト座標抽出
+- [jsdiff](https://github.com/kpdecker/jsdiff) 9.0.0 — ページ整合(`alignPages`)のLCS計算に使用
 - [jsPDF](https://github.com/parallax/jsPDF) 4.2.1 — 結果を1つのPDFにまとめてダウンロード
 
 ## 処理の流れ
 
 1. ユーザーが「表」「文章」「図面」のいずれかを選択(未選択の間は解析ボタンが無効)
 2. 新旧PDFをアップロードし、解析を実行
-3. 選択した種類に対応するVercel API(`/api/table-diff`等)にページ画像・座標情報を送信し、
-   ユーザー正解版のPythonロジックで比較(API不可の環境ではJS版に自動フォールバック)
+3. 選択した種類に対応するVercel API(`/api/table-diff`等)にPDFを送信し、
+   ユーザー正解版のPythonロジックで比較(Vercel未デプロイの環境ではここでエラーになる)
 4. 新旧のページ列を、ページ内容の類似度でLCSベース整列(`alignPages`)。新版でページが
    挿入された場合でも、対応する旧ページが無いページとして正しく「追加」判定される
 5. 対応の取れたページ同士を、選択した方式(表=行/セル単位diff、文章=1文字単位diff、
@@ -65,9 +66,9 @@ CLAUDE.mdの「開発中の確認とVercel連携のタイミング」の方針�
 
 ## 既知の制約・今後の調整余地
 
-- **JSフォールバック版の精度**: Vercel API(Python正解版)が使えない環境で使われる
-  `lib/diff-core.js`のJS計算は、Python版ほどの精度・一致度は保証しない
-  (文字位置の推定に誤差があるなど)。あくまでバックエンド無し環境向けの簡易フォールバック。
+- **Vercel未デプロイの環境では動作しない**: 差分計算はPython API専用のため、
+  githackプレビュー等バックエンドの無い環境では解析ボタンを押すとエラーになる。
+  挙動確認には必ずVercelへのデプロイが必要。
 - **図面方式のページサイズ不一致**: 新旧でページサイズが違う場合は縦横比を保ったまま
   中央寄せで合わせて比較する(引き伸ばしはしない)。位置合わせ(特徴点マッチング)は
   未実装。
