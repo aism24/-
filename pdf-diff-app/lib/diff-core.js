@@ -1,17 +1,15 @@
 // PDF差分解析コアロジック
-// ページ整合(挿入/削除ページの自動検出)・ページ種別自動分類・
-// 表/画像(図面)/文章の3方式それぞれの差分検出を行う。
-// 元になったPythonツール(pdf_table_diff.py / pdf_image_diff.py / pdf_text_diff.py)の
-// アルゴリズムをブラウザ内で完結するJavaScript(pdf.js + jsdiff)に移植したもの。
+// ページ整合(挿入/削除ページの自動検出)を行い、表/文章/図面それぞれの
+// セル・文字・ピクセル単位の差分検出そのものは、必ずVercelのPython
+// サーバーレス関数(ユーザー正解版のPythonスクリプトをそのまま実行)に
+// 委譲する。ブラウザ内(JS)での差分計算は行わない(全角スペースの扱い等で
+// Python版と結果が食い違う実害バグが確認され撤去した)。
 (function (global) {
   'use strict';
 
   const ROW_Y_TOLERANCE = 3;
   const RENDER_SCALE = 2.0;
   const THUMB_SIZE = 48;
-
-  const COLOR_OLD = { fill: 'rgba(230,30,30,0.35)', stroke: '#e61e1e' };
-  const COLOR_NEW = { fill: 'rgba(30,150,60,0.35)', stroke: '#1e9633' };
 
   const range = (n) => Array.from({ length: n }, (_, i) => i);
 
@@ -124,33 +122,6 @@
     return rows;
   }
 
-  // ---------- ページ種別の自動分類 ----------
-  // 判定順: テキスト無し→図面 / 行の語数が揃う(グリッド)→表 /
-  // 段落状に幅広く流れる行が多い→文章 / それ以外(ラベル・値が散らばる帳票)→図面(画像方式)
-
-  function classifyPage(words, rows) {
-    if (words.length === 0 || rows.length < 2) return 'image';
-
-    const counts = rows.map((r) => r.length);
-    const freq = {};
-    counts.forEach((c) => { freq[c] = (freq[c] || 0) + 1; });
-    const modeCount = Object.keys(freq).reduce((a, b) => (freq[a] >= freq[b] ? a : b));
-    const modeRatio = freq[modeCount] / rows.length;
-    if (rows.length >= 3 && Number(modeCount) >= 2 && modeRatio >= 0.5) return 'table';
-
-    // 文章判定: 見出し・箇条書き番号などが混じると行の左端は揃わないため、
-    // 行揃えではなく「ある程度長い(=文章が流れている)行がどれだけあるか」
-    // で判定する(契約書・規程類はほぼ全行が長文、帳票は短い行の寄せ集め)。
-    const rowCharCounts = rows.map((r) => r.reduce((s, w) => s + w.text.length, 0));
-    const longRowRatio = rowCharCounts.filter((c) => c >= 15).length / rows.length;
-    const totalChars = rowCharCounts.reduce((a, b) => a + b, 0);
-
-    if (rows.length >= 3 && (longRowRatio >= 0.4 || totalChars >= 80)) {
-      return 'text';
-    }
-    return 'image';
-  }
-
   // ---------- LCSベースの整列(difflib.SequenceMatcher相当、jsdiffで実装) ----------
   // removed直後にaddedが続くブロックは、重なる件数だけ1:1ペアとして扱い、
   // 余りをdelete/insertとする(行挿入・ページ挿入どちらにも使う共通ロジック)。
@@ -260,46 +231,16 @@
     return pairs;
   }
 
-  // ---------- 表方式 ----------
-
-  function boxOf(w) { return { x0: w.x0, y0: w.y0, x1: w.x1, y1: w.y1 }; }
-
-  function diffTable(oldRows, newRows) {
-    const oldSig = oldRows.map((r) => r.map((w) => w.text).join(' '));
-    const newSig = newRows.map((r) => r.map((w) => w.text).join(' '));
-    const changes = Diff.diffArrays(oldSig, newSig);
-    const pairs = pairChanges(changes);
-    const oldBoxes = [], newBoxes = [];
-    for (const p of pairs) {
-      if (p.type === 'equal') continue;
-      if (p.type === 'pair') {
-        const orow = oldRows[p.oldIdx], nrow = newRows[p.newIdx];
-        const otok = orow.map((w) => w.text), ntok = nrow.map((w) => w.text);
-        const tchanges = Diff.diffArrays(otok, ntok);
-        const tpairs = pairChanges(tchanges);
-        for (const tp of tpairs) {
-          if (tp.type === 'equal') continue;
-          if (tp.oldIdx != null) oldBoxes.push(boxOf(orow[tp.oldIdx]));
-          if (tp.newIdx != null) newBoxes.push(boxOf(nrow[tp.newIdx]));
-        }
-      } else if (p.type === 'delete') {
-        oldRows[p.oldIdx].forEach((w) => oldBoxes.push(boxOf(w)));
-      } else if (p.type === 'insert') {
-        newRows[p.newIdx].forEach((w) => newBoxes.push(boxOf(w)));
-      }
-    }
-    return { oldBoxes, newBoxes };
-  }
-
   // ---------- サーバーAPI経由の差分計算(Pythonオリジナルコードをそのまま使用) ----------
   //
   // pdf.js経由の推定(charWeightによる文字幅近似・全角スペースの単語分割等)は
-  // PyMuPDF(page.get_text等)の実測値と細かく食い違うことが分かったため、
-  // 表/文章/図面の3方式とも、ブラウザ内では計算せずVercelのPythonサーバーレス
-  // 関数(api/table-diff.py・text-diff.py・image-diff.py、pdfの3スクリプトを
-  // それぞれそのまま実行)にPDFを送って結果画像を受け取ることを優先する。
-  // API未設定・失敗時のみ、各方式のdiffTable()/diffText()/diffImagePixels()
-  // による従来のJS計算にフォールバックする。
+  // PyMuPDF(page.get_text等)の実測値と細かく食い違い、誤ハイライトなどの実害が
+  // 確認されたため、表/文章/図面の3方式とも、ブラウザ内では計算せず必ず
+  // VercelのPythonサーバーレス関数(api/table-diff.py・text-diff.py・
+  // image-diff.py、pdfの3スクリプトをそれぞれそのまま実行)にPDFを送って
+  // 結果画像を受け取る。ブラウザ内(JS)での差分計算は行わない
+  // (バックエンドが無い環境では動作しない。githackプレビュー等での確認には
+  // 使えないので、確認時は必ずVercelにデプロイすること)。
 
   function arrayBufferToBase64(buf) {
     const bytes = new Uint8Array(buf);
@@ -336,223 +277,6 @@
       base64PngToImage(data.newPngBase64),
     ]);
     return { oldImg, newImg, oldBoxesCount: data.oldBoxesCount, newBoxesCount: data.newBoxesCount };
-  }
-
-  // ---------- 文章方式(1文字単位) ----------
-
-  // 単語(セル)の境目に挟む不可視の区切り文字。新旧どちらの行にも同じ位置に
-  // 入るため、Diff.diffCharsは必ずこれを「一致」とみなし、変更範囲が
-  // 隣接する無関係な単語(例: フリガナ欄と契約金額欄が同じ行にある場合)まで
-  // 誤って巻き込むのを防ぐ。表示上は使われないので画面には影響しない。
-  const WORD_SEP = '\u0000';
-
-  function buildCharStream(row) {
-    // 1行分の単語を対象に、区切り文字を挟みながら読み順に連結する。
-    // 行をまたぐ連結は行わない(diffTextが行単位で対応付けてから
-    // この関数を呼ぶため。行の折り返し位置は新旧でズレうるが、
-    // それは行単位アライメント側で吸収する)。
-    let text = '';
-    const map = [];
-    row.forEach((w, idx) => {
-      if (idx > 0) {
-        text += WORD_SEP;
-        map.push(null);
-      }
-      const chars = Array.from(w.text);
-      const weights = chars.map(charWeight);
-      const totalWeight = weights.reduce((a, b) => a + b, 0) || 1;
-      const width = w.x1 - w.x0;
-      let offset = 0;
-      chars.forEach((ch, i) => {
-        text += ch;
-        map.push({
-          x0: w.x0 + (offset / totalWeight) * width,
-          x1: w.x0 + ((offset + weights[i]) / totalWeight) * width,
-          y0: w.y0, y1: w.y1,
-        });
-        offset += weights[i];
-      });
-    });
-    return { text, map };
-  }
-
-  function mergeConsecutiveBoxes(boxes, tol = 4) {
-    if (!boxes.length) return [];
-    const sorted = [...boxes].sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0);
-    const merged = [{ ...sorted[0] }];
-    for (let i = 1; i < sorted.length; i++) {
-      const last = merged[merged.length - 1];
-      const cur = sorted[i];
-      if (Math.abs(cur.y0 - last.y0) <= tol && cur.x0 - last.x1 <= tol * 4) {
-        last.x1 = Math.max(last.x1, cur.x1);
-        last.y1 = Math.max(last.y1, cur.y1);
-        last.y0 = Math.min(last.y0, cur.y0);
-      } else {
-        merged.push({ ...cur });
-      }
-    }
-    return merged;
-  }
-
-  // 「表」方式(diffTable)と同じく、まず行単位でDiff.diffArraysによる対応付け
-  // (Needleman-Wunsch型ではなくLCSだが、行が完全に一致するかどうかで判定する
-  // 点は同じ)を行い、対応の取れた行同士だけをさらに文字単位で比較する。
-  // ページ全体を1本の文字列にして文字単位diffにかけていた以前の実装では、
-  // 「台」のような短い繰り返し文字が原因で、新規追加された行の文字が
-  // ページ内の離れた場所にある同じ文字と誤って対応付けられ、追加として
-  // 検出されないことがあった。行単位で先に対応を確定させることでこれを防ぐ。
-  function diffText(oldRows, newRows) {
-    const oldStreams = oldRows.map(buildCharStream);
-    const newStreams = newRows.map(buildCharStream);
-    const rowChanges = Diff.diffArrays(oldStreams.map((s) => s.text), newStreams.map((s) => s.text));
-    const rowPairs = pairChanges(rowChanges);
-    const oldBoxes = [], newBoxes = [];
-
-    const pushAll = (map, boxes) => map.forEach((b) => { if (b) boxes.push(b); });
-
-    rowPairs.forEach((rp) => {
-      if (rp.type === 'equal') return;
-      if (rp.type === 'delete') {
-        pushAll(oldStreams[rp.oldIdx].map, oldBoxes);
-        return;
-      }
-      if (rp.type === 'insert') {
-        pushAll(newStreams[rp.newIdx].map, newBoxes);
-        return;
-      }
-      // 'pair': 対応は取れたが内容が異なる行同士を、さらに文字単位で比較する
-      const oldStream = oldStreams[rp.oldIdx];
-      const newStream = newStreams[rp.newIdx];
-      const changes = Diff.diffChars(oldStream.text, newStream.text);
-      let oi = 0, ni = 0;
-      changes.forEach((part) => {
-        const len = part.value.length;
-        if (!part.added && !part.removed) { oi += len; ni += len; return; }
-        if (part.removed) {
-          for (let k = 0; k < len; k++) { const b = oldStream.map[oi + k]; if (b) oldBoxes.push(b); }
-          oi += len;
-        }
-        if (part.added) {
-          for (let k = 0; k < len; k++) { const b = newStream.map[ni + k]; if (b) newBoxes.push(b); }
-          ni += len;
-        }
-      });
-    });
-
-    return { oldBoxes: mergeConsecutiveBoxes(oldBoxes), newBoxes: mergeConsecutiveBoxes(newBoxes) };
-  }
-
-  // ---------- 画像(図面)方式 ----------
-
-  function grayscale(imgData) {
-    const { data, width, height } = imgData;
-    const gray = new Float32Array(width * height);
-    for (let i = 0; i < width * height; i++) {
-      const o = i * 4;
-      gray[i] = data[o] * 0.299 + data[o + 1] * 0.587 + data[o + 2] * 0.114;
-    }
-    return gray;
-  }
-
-  function dilateMask(mask, w, h, iterations) {
-    let cur = mask;
-    for (let it = 0; it < iterations; it++) {
-      const next = new Uint8Array(w * h);
-      for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          const idx = y * w + x;
-          if (cur[idx]) { next[idx] = 1; continue; }
-          let hit = 0;
-          for (let dy = -1; dy <= 1 && !hit; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-              const nx = x + dx, ny = y + dy;
-              if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-              if (cur[ny * w + nx]) { hit = 1; break; }
-            }
-          }
-          next[idx] = hit;
-        }
-      }
-      cur = next;
-    }
-    return cur;
-  }
-
-  function labelBoxes(mask, w, h, minPixels) {
-    const visited = new Uint8Array(w * h);
-    const boxes = [];
-    const stack = new Int32Array(w * h);
-    for (let start = 0; start < w * h; start++) {
-      if (!mask[start] || visited[start]) continue;
-      let sp = 0;
-      stack[sp++] = start;
-      visited[start] = 1;
-      let x0 = w, y0 = h, x1 = 0, y1 = 0, count = 0;
-      while (sp > 0) {
-        const cur = stack[--sp];
-        const cy = (cur / w) | 0, cx = cur - cy * w;
-        count++;
-        if (cx < x0) x0 = cx; if (cx > x1) x1 = cx;
-        if (cy < y0) y0 = cy; if (cy > y1) y1 = cy;
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            if (!dx && !dy) continue;
-            const nx = cx + dx, ny = cy + dy;
-            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-            const nidx = ny * w + nx;
-            if (mask[nidx] && !visited[nidx]) { visited[nidx] = 1; stack[sp++] = nidx; }
-          }
-        }
-      }
-      if (count >= minPixels) boxes.push({ x0, y0, x1: x1 + 1, y1: y1 + 1 });
-    }
-    return boxes;
-  }
-
-  function fitCanvas(srcCanvas, targetW, targetH) {
-    if (srcCanvas.width === targetW && srcCanvas.height === targetH) return srcCanvas;
-    const c = document.createElement('canvas');
-    c.width = targetW; c.height = targetH;
-    const ctx = c.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, targetW, targetH);
-    const scale = Math.min(targetW / srcCanvas.width, targetH / srcCanvas.height);
-    const w = srcCanvas.width * scale, h = srcCanvas.height * scale;
-    ctx.drawImage(srcCanvas, (targetW - w) / 2, (targetH - h) / 2, w, h);
-    return c;
-  }
-
-  function diffImagePixels(canvasOld, canvasNew) {
-    const w = canvasOld.width, h = canvasOld.height;
-    const fittedNew = fitCanvas(canvasNew, w, h);
-    const dOld = canvasOld.getContext('2d').getImageData(0, 0, w, h);
-    const dNew = fittedNew.getContext('2d').getImageData(0, 0, w, h);
-    const gOld = grayscale(dOld), gNew = grayscale(dNew);
-    const THRESHOLD = 40;
-    let mask = new Uint8Array(w * h);
-    for (let i = 0; i < w * h; i++) mask[i] = Math.abs(gOld[i] - gNew[i]) > THRESHOLD ? 1 : 0;
-    mask = dilateMask(mask, w, h, 4);
-    const boxes = labelBoxes(mask, w, h, 60);
-    return { boxes };
-  }
-
-  // ---------- ハイライト描画 ----------
-
-  // 表/図面/文章のいずれの方式でも、枠線は文字や図形に重なって見づらくなるため
-  // 使わず、半透明の塗りつぶしのみでハイライトする。
-  function withHighlights(srcCanvas, boxes, color, scale = 1) {
-    const c = document.createElement('canvas');
-    c.width = srcCanvas.width; c.height = srcCanvas.height;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(srcCanvas, 0, 0);
-    const pad = 2;
-    ctx.fillStyle = color.fill;
-    boxes.forEach((b) => {
-      const x0 = b.x0 * scale - pad, y0 = b.y0 * scale - pad;
-      const x1 = b.x1 * scale + pad, y1 = b.y1 * scale + pad;
-      ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-    });
-    return c;
   }
 
   function composeSideBySide(canvasOld, canvasNew, labelOld, labelNew) {
@@ -621,27 +345,30 @@
     await promise;
     const words = await extractWords(page, viewport);
     const rows = clusterRows(words);
-    // ユーザーが「表/文章/図面」を明示指定した場合は自動判定(classifyPage)を
-    // 使わず、全ページをその種類として扱う(誤判定の心配を無くすため)。
-    const category = manualCategory || classifyPage(words, rows);
+    // 種類(表/文章/図面)はユーザーが必ず選択してから解析するため、
+    // ここでは常にmanualCategoryを使う(自動判定は行わない)。
+    const category = manualCategory;
     const text = words.map((w) => w.text).join('');
     const thumb = text.length < 20 ? downsampleCanvas(canvas, THUMB_SIZE) : null;
-    if (onLog) onLog(`ページ${num}: ${CATEGORY_LABEL[category] || category}${manualCategory ? '(指定)' : 'と判定'}`);
+    if (onLog) onLog(`ページ${num}: ${CATEGORY_LABEL[category] || category}(指定)`);
     return { canvas, words, rows, category, sig: { text, thumb } };
   }
 
   async function runDiff(oldArrayBuffer, newArrayBuffer, opts = {}) {
     const scale = opts.scale || RENDER_SCALE;
     const onLog = opts.onLog || (() => {});
-    const manualCategory = opts.manualCategory || null;
+    const manualCategory = opts.manualCategory;
     // 各方式(表/文章/図面)ごとのサーバーAPI URL。{ table: '/api/table-diff', ... }
+    // 差分計算は必ずこのAPI(Python正解版)で行う。ブラウザ内計算への
+    // フォールバックは行わない(結果がPython版とズレるため撤去済み)。
     const apiUrls = opts.apiUrls || {};
+    if (!manualCategory) throw new Error('種類(表/文章/図面)が指定されていません');
+    if (!apiUrls[manualCategory]) throw new Error(`「${CATEGORY_LABEL[manualCategory]}」モードのAPI URLが設定されていません`);
 
     // pdf.jsはワーカーへの転送でArrayBufferをdetach(内容を空に)することがあるため、
     // API送信用の生バイト列は、pdf.jsに渡す前にコピーしてbase64化しておく。
-    const useApi = Object.keys(apiUrls).length > 0;
-    const oldPdfBase64ForApi = useApi ? arrayBufferToBase64(oldArrayBuffer.slice(0)) : null;
-    const newPdfBase64ForApi = useApi ? arrayBufferToBase64(newArrayBuffer.slice(0)) : null;
+    const oldPdfBase64ForApi = arrayBufferToBase64(oldArrayBuffer.slice(0));
+    const newPdfBase64ForApi = arrayBufferToBase64(newArrayBuffer.slice(0));
 
     onLog('PDFを読み込み中...');
     const oldDoc = await pdfjsLib.getDocument({ data: oldArrayBuffer }).promise;
@@ -671,40 +398,13 @@
 
         const labelOld = `旧 p.${p.oldIdx + 1}`, labelNew = `新 p.${p.newIdx + 1}`;
 
-        if (apiUrls[category]) {
-          try {
-            onLog(`${CATEGORY_LABEL[category]}モード: サーバー(Python)で比較中...`);
-            const r = await diffViaApi(apiUrls[category], oldPdfBase64ForApi, newPdfBase64ForApi, p.oldIdx, p.newIdx);
-            const composed = composeSideBySide(r.oldImg, r.newImg, labelOld, labelNew);
-            results.push({
-              composed, category, labelOld, labelNew,
-              oldCanvas: r.oldImg, newCanvas: r.newImg,
-              changed: r.oldBoxesCount + r.newBoxesCount > 0,
-            });
-            continue;
-          } catch (err) {
-            onLog(`${CATEGORY_LABEL[category]}モードAPIに失敗したため、ブラウザ内計算にフォールバックします(${err.message})`);
-          }
-        }
-
-        let oldBoxes = [], newBoxes = [];
-        if (category === 'table') {
-          const r = diffTable(op.rows, np.rows);
-          oldBoxes = r.oldBoxes; newBoxes = r.newBoxes;
-        } else if (category === 'text') {
-          const r = diffText(op.rows, np.rows);
-          oldBoxes = r.oldBoxes; newBoxes = r.newBoxes;
-        } else {
-          const r = diffImagePixels(op.canvas, np.canvas);
-          oldBoxes = r.boxes; newBoxes = r.boxes;
-        }
-        const cOld = withHighlights(op.canvas, oldBoxes, COLOR_OLD);
-        const cNew = withHighlights(np.canvas, newBoxes, COLOR_NEW);
-        const composed = composeSideBySide(cOld, cNew, labelOld, labelNew);
+        onLog(`${CATEGORY_LABEL[category]}モード: サーバー(Python)で比較中...`);
+        const r = await diffViaApi(apiUrls[category], oldPdfBase64ForApi, newPdfBase64ForApi, p.oldIdx, p.newIdx);
+        const composed = composeSideBySide(r.oldImg, r.newImg, labelOld, labelNew);
         results.push({
           composed, category, labelOld, labelNew,
-          oldCanvas: cOld, newCanvas: cNew,
-          changed: oldBoxes.length + newBoxes.length > 0,
+          oldCanvas: r.oldImg, newCanvas: r.newImg,
+          changed: r.oldBoxesCount + r.newBoxesCount > 0,
         });
       } else if (p.type === 'delete') {
         const op = oldPages[p.oldIdx];
@@ -735,6 +435,6 @@
   global.PdfDiffCore = {
     runDiff,
     // テスト用に一部関数も公開
-    _internal: { classifyPage, clusterRows, extractWords, alignPages, pairChanges, diffText, buildCharStream, mergeConsecutiveBoxes },
+    _internal: { clusterRows, extractWords, alignPages, pairChanges },
   };
 })(window);
