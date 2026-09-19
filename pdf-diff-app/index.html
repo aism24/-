@@ -58,6 +58,7 @@
     <input type="file" id="old-pdf" accept="application/pdf" hidden>
   </div>
   <div class="upload-actions">
+    <span id="selected-mode-label"></span>
     <button id="run-btn" disabled>解析</button>
     <button id="reset-btn" disabled>リセット</button>
   </div>
@@ -86,6 +87,13 @@
     </div>
   </section>
 </main>
+</div>
+
+<div id="analyzing-overlay" class="hidden">
+  <div id="analyzing-box">
+    <div id="analyzing-text">解析中</div>
+    <div id="analyzing-progress"><div id="analyzing-progress-bar"></div></div>
+  </div>
 </div>
 
 <script src="lib/diff-core.js"></script>

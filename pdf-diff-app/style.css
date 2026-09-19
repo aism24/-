@@ -20,6 +20,13 @@
 
 * { box-sizing: border-box; }
 
+/* ボタン内テキストは常に縦横中央揃えにする(ブラウザ既定だと下寄りに見えることがあるため) */
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 html, body { height: 100%; }
 
 body {
@@ -215,8 +222,24 @@ main {
 .file-row { display: flex; align-items: center; gap: 10px; }
 
 .upload-actions {
-  display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 12px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
   padding: 14px 24px; background: var(--header-bg);
+}
+
+/* 選択中の種類(表/文章/図面)を大きく表示し、背景を黄色でゆっくり点滅させて目立たせる */
+#selected-mode-label {
+  font-size: 30px;
+  font-weight: bold;
+  color: var(--text-color);
+  padding: 2px 20px;
+  border-radius: 8px;
+  animation: selected-mode-blink 2s ease-in-out infinite;
+}
+#selected-mode-label:empty { display: none; animation: none; }
+
+@keyframes selected-mode-blink {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: #ffe066; }
 }
 
 .file-btn {
@@ -228,18 +251,26 @@ main {
 
 .file-name { font-size: 12px; color: #666; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+#run-btn, #reset-btn {
+  width: 150px;
+  padding: 10px 0;
+  font-size: 15px;
+  font-weight: bold;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
 #run-btn {
-  background: var(--accent); color: #fff; border: none; border-radius: 6px;
-  padding: 10px 26px; font-size: 15px; font-weight: bold; cursor: pointer;
+  background: var(--accent); color: #fff;
 }
 #run-btn:disabled { opacity: .4; cursor: not-allowed; }
 #run-btn:not(:disabled):hover { background: #1558b0; }
 
 #reset-btn {
-  background: #ffd400; color: #333; border: none; border-radius: 6px;
-  padding: 10px 22px; font-size: 15px; font-weight: bold; cursor: pointer;
+  background: #ffd400; color: #333;
 }
-#reset-btn:hover { background: #e6bf00; }
+#reset-btn:not(:disabled):hover { background: #e6bf00; }
 #reset-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 #status { display: none; }
@@ -346,6 +377,56 @@ main {
   border-radius: 0 4px 4px 4px;
   background: #fff;
   -webkit-user-drag: none;
+}
+
+/* 解析中は画面中央に「解析中」テキストとプログレスバーをオーバーレイ表示する */
+#analyzing-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+#analyzing-overlay.hidden { display: none !important; }
+
+#analyzing-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  background: var(--header-bg);
+  color: var(--text-color);
+  padding: 32px 48px;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+}
+
+#analyzing-text {
+  font-size: 28px;
+  font-weight: bold;
+}
+
+#analyzing-progress {
+  width: 240px;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--header-border);
+  overflow: hidden;
+}
+
+#analyzing-progress-bar {
+  width: 40%;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--accent);
+  animation: analyzing-bar-move 1.2s ease-in-out infinite;
+}
+
+@keyframes analyzing-bar-move {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
 }
 
 @media (max-width: 640px) {

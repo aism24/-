@@ -18,6 +18,7 @@ let oldFile = null;
 let newFile = null;
 let lastResult = null;
 let selectedMode = null; // 'table' | 'text' | 'image'。自動判定は行わず、ユーザーの指定を必須とする。
+const MODE_LABELS = { table: '表', text: '文章', image: '図面' };
 const zoomBySide = { old: 1.0, new: 1.0 };
 
 const els = {
@@ -35,6 +36,8 @@ const els = {
   runBtn: document.getElementById('run-btn'),
   resetBtn: document.getElementById('reset-btn'),
   modeBtns: document.querySelectorAll('.type-btn'),
+  selectedModeLabel: document.getElementById('selected-mode-label'),
+  analyzingOverlay: document.getElementById('analyzing-overlay'),
   status: document.getElementById('status'),
   resultSection: document.getElementById('result-section'),
   resultCategory: document.getElementById('result-category'),
@@ -50,14 +53,20 @@ function updateRunEnabled() {
 }
 
 function updateResetEnabled() {
-  els.resetBtn.disabled = !(oldFile || newFile || lastResult || selectedMode);
+  // ファイルが1つも選択されておらず解析結果も無い間は、リセットボタンもグレーアウトのままにする
+  els.resetBtn.disabled = !(oldFile || newFile || lastResult);
 }
 
 function setMode(mode) {
   selectedMode = mode;
   els.modeBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === mode));
+  els.selectedModeLabel.textContent = mode ? MODE_LABELS[mode] : '';
   updateRunEnabled();
   updateResetEnabled();
+}
+
+function setAnalyzing(isAnalyzing) {
+  els.analyzingOverlay.classList.toggle('hidden', !isAnalyzing);
 }
 
 function setOldFile(file) {
@@ -309,6 +318,7 @@ els.runBtn.addEventListener('click', async () => {
   els.resultSection.classList.add('hidden');
   clearLog();
   log('解析を開始します...');
+  setAnalyzing(true);
   try {
     const [oldBuf, newBuf] = await Promise.all([
       fileToArrayBuffer(oldFile),
@@ -331,6 +341,7 @@ els.runBtn.addEventListener('click', async () => {
     log(`エラーが発生しました: ${err.message || err}`);
   } finally {
     els.runBtn.disabled = false;
+    setAnalyzing(false);
   }
 });
 
