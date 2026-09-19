@@ -21,6 +21,7 @@ let selectedMode = null; // 'table' | 'text' | 'image'。自動判定は行わ�
 let currentPageIndex = 0; // 解析結果のうち、旧新で共通して表示中のページ番号(0始まり)
 const MODE_LABELS = { table: '表', text: '文章', image: '図面' };
 const zoomBySide = { old: 1.0, new: 1.0 };
+const panBySide = { old: { x: 0, y: 0 }, new: { x: 0, y: 0 } };
 
 const els = {
   homeScreen: document.getElementById('home-screen'),
@@ -227,6 +228,9 @@ function buildSide(canvas, label, side, placeholderMessage) {
   col.className = `page-col page-col-${side}`;
   col.appendChild(buildHeader(label, side));
 
+  const viewport = document.createElement('div');
+  viewport.className = 'page-viewport';
+
   if (canvas) {
     const img = document.createElement('img');
     // 表モード(サーバーAPI経由)はcanvasではなくHTMLImageElementが渡ってくるため、
@@ -234,13 +238,14 @@ function buildSide(canvas, label, side, placeholderMessage) {
     img.src = typeof canvas.toDataURL === 'function' ? canvas.toDataURL('image/png') : canvas.src;
     img.className = 'page-image';
     img.draggable = false;
-    col.appendChild(img);
+    viewport.appendChild(img);
   } else {
     const ph = document.createElement('div');
     ph.className = `page-placeholder page-placeholder-${side}`;
     ph.textContent = placeholderMessage || '';
-    col.appendChild(ph);
+    viewport.appendChild(ph);
   }
+  col.appendChild(viewport);
   return col;
 }
 
@@ -257,6 +262,8 @@ function showPage(index) {
   els.viewers.new.innerHTML = '';
   els.viewers.old.appendChild(buildSide(r.oldCanvas, r.labelOld, 'old', r.placeholderMessage));
   els.viewers.new.appendChild(buildSide(r.newCanvas, r.labelNew, 'new', r.placeholderMessage));
+  panBySide.old = { x: 0, y: 0 };
+  panBySide.new = { x: 0, y: 0 };
   applyZoom('old');
   applyZoom('new');
 
@@ -283,21 +290,38 @@ els.pageInput.addEventListener('keydown', (e) => {
 
 // 100%でPDFの横幅全体がペイン内に収まるよう、ページ画像の実ピクセル幅ではなく
 // ペイン自体の表示幅を基準(fit-to-width)にズーム倍率をかける。
+// パン位置(ドラッグでの移動量)はtransform: translate()で反映する。ヘッダーは
+// このtransformの対象外(別要素)なので、拡大・移動してもヘッダーは動かない。
 function applyZoom(side) {
   const zoom = zoomBySide[side];
   const viewerEl = els.viewers[side];
   viewerEl.querySelectorAll(`.zoom-level[data-side="${side}"]`).forEach((el) => {
     el.textContent = `${Math.round(zoom * 100)}%`;
   });
-  const fitWidth = viewerEl.clientWidth;
+  const viewport = viewerEl.querySelector('.page-viewport');
+  const fitWidth = viewport ? viewport.clientWidth : viewerEl.clientWidth;
   viewerEl.querySelectorAll('.page-image').forEach((img) => {
     img.style.width = `${fitWidth * zoom}px`;
+  });
+  applyPan(side);
+}
+
+function applyPan(side) {
+  const pan = panBySide[side];
+  const viewerEl = els.viewers[side];
+  viewerEl.querySelectorAll('.page-image').forEach((img) => {
+    img.style.transform = `translate(${pan.x}px, ${pan.y}px)`;
   });
 }
 
 function setZoom(side, z) {
   zoomBySide[side] = Math.max(0.2, Math.min(3, z));
   applyZoom(side);
+}
+
+function resetView(side) {
+  panBySide[side] = { x: 0, y: 0 };
+  setZoom(side, 1.0);
 }
 
 ['old', 'new'].forEach((side) => {
@@ -309,40 +333,46 @@ function setZoom(side, z) {
     if (!btn || btn.dataset.side !== side) return;
     if (btn.dataset.action === 'in') setZoom(side, zoomBySide[side] + 0.1);
     else if (btn.dataset.action === 'out') setZoom(side, zoomBySide[side] - 0.1);
-    else if (btn.dataset.action === 'reset') setZoom(side, 1.0);
+    else if (btn.dataset.action === 'reset') resetView(side);
   });
 
   viewerEl.addEventListener('wheel', (e) => {
-    if (!viewerEl.querySelector('.page-image')) return;
+    if (!e.target.closest('.page-viewport') || !viewerEl.querySelector('.page-image')) return;
     e.preventDefault();
     setZoom(side, zoomBySide[side] - e.deltaY * 0.001);
   }, { passive: false });
 
-  // ペインを左クリックで掴んでドラッグすると、そのペイン自身の縦横スクロールだけが
-  // 動く(旧/新は別々のスクロールコンテナなので、もう一方には一切影響しない)
+  // ページ画像の入っている.page-viewportだけを左クリックで掴んでドラッグすると、
+  // transform: translate()でその画像だけが動く(ヘッダーは動かない)。旧/新は
+  // 別々の状態(panBySide)を持つので、もう一方には一切影響しない。ズーム倍率が
+  // 100%未満でペインに収まっている場合も、スクロール量に頼らず動かせる。
   let isPanning = false;
-  let panStartX = 0, panStartY = 0, panStartScrollLeft = 0, panStartScrollTop = 0;
+  let panStartX = 0, panStartY = 0, panOriginX = 0, panOriginY = 0;
 
   viewerEl.addEventListener('mousedown', (e) => {
-    if (e.button !== 0 || e.target.closest('button') || !viewerEl.querySelector('.page-image')) return;
+    if (e.button !== 0 || e.target.closest('button')) return;
+    const viewport = e.target.closest('.page-viewport');
+    if (!viewport || !viewport.querySelector('.page-image')) return;
     isPanning = true;
     panStartX = e.clientX;
     panStartY = e.clientY;
-    panStartScrollLeft = viewerEl.scrollLeft;
-    panStartScrollTop = viewerEl.scrollTop;
-    viewerEl.classList.add('panning');
+    panOriginX = panBySide[side].x;
+    panOriginY = panBySide[side].y;
+    viewport.classList.add('panning');
     e.preventDefault();
   });
 
   window.addEventListener('mousemove', (e) => {
     if (!isPanning) return;
-    viewerEl.scrollLeft = panStartScrollLeft - (e.clientX - panStartX);
-    viewerEl.scrollTop = panStartScrollTop - (e.clientY - panStartY);
+    panBySide[side].x = panOriginX + (e.clientX - panStartX);
+    panBySide[side].y = panOriginY + (e.clientY - panStartY);
+    applyPan(side);
   });
 
   window.addEventListener('mouseup', () => {
+    if (!isPanning) return;
     isPanning = false;
-    viewerEl.classList.remove('panning');
+    viewerEl.querySelectorAll('.page-viewport.panning').forEach((v) => v.classList.remove('panning'));
   });
 
   new ResizeObserver(() => applyZoom(side)).observe(viewerEl);
