@@ -257,8 +257,9 @@ main {
   margin: 2px 0;
   font-size: 13px;
   font-weight: bold;
-  color: var(--text-color);
+  color: #d32f2f;
 }
+#image-mode-notice.hidden { animation: none; }
 
 @keyframes image-mode-notice-blink {
   0%, 100% { background-color: transparent; }
