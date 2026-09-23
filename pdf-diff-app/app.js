@@ -402,11 +402,14 @@ function applyZoom(side) {
   applyPan(side);
 }
 
+// CSS側で.page-imageをleft:50%にしているため、常に自身の幅の半分(-50%)を
+// 差し引いた上でパン位置を足すことで、ズームでペイン幅より狭くなった場合も
+// 水平中央を基準に表示・パンできるようにする。
 function applyPan(side) {
   const pan = panBySide[side];
   const viewerEl = els.viewers[side];
   viewerEl.querySelectorAll('.page-image').forEach((img) => {
-    img.style.transform = `translate(${pan.x}px, ${pan.y}px)`;
+    img.style.transform = `translate(calc(-50% + ${pan.x}px), ${pan.y}px)`;
   });
 }
 
