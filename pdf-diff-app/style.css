@@ -479,10 +479,13 @@ main {
 .page-placeholder-old { background: #fdecea; color: #e61e1e; }
 .page-placeholder-new { background: #e9f7ef; color: #1e9633; }
 
+/* leftを50%にし、app.js側のtransformで自身の幅の半分だけ左に戻すことで、
+   ズームでペイン幅より狭くなった場合も画像が常に水平中央に来るようにする
+   (以前はleft:0で、ズームアウト時に画像が左端に寄って見えていた)。 */
 .page-image {
   position: absolute;
   top: 0;
-  left: 0;
+  left: 50%;
   display: block;
   max-width: none;
   border: 1px solid var(--header-border);
