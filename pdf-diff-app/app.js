@@ -314,11 +314,19 @@ els.layerBtns.forEach((btn) => {
   });
 });
 
+// 左右表示⇔重ね合わせの切り替え時は、旧/新どちらのズーム率もリセットする。
+// (重ね合わせ表示は常にoldスロットのズーム状態を流用するため、切り替え前に
+// oldだけを拡大していると、切り替え後もそのズーム率を引き継いでしまう一方、
+// newは表示されていた間ズーム操作を受け付けないため直前の値のまま残り、
+// 旧新でズーム率がズレたまま表示される問題があった。切り替えのたびに必ず
+// 全体表示(fit-to-width=100%)へ揃えることでこれを防ぐ)
 function setViewMode(mode) {
   viewMode = mode;
   els.viewModeBtn.textContent = viewMode === 'side' ? '重ね合わせ' : '左右表示';
   els.resultSection.classList.toggle('overlay-mode', viewMode === 'overlay');
   els.overlayLayerNav.classList.toggle('hidden', viewMode !== 'overlay');
+  zoomBySide.old = 1.0;
+  zoomBySide.new = 1.0;
   if (lastResult) showPage(currentPageIndex);
 }
 

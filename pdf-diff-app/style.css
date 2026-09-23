@@ -256,7 +256,7 @@ main {
    なく、押した時に切り替わる「次の表示方式」の名前を表示する。 */
 #view-mode-btn {
   padding: 8px 16px;
-  font-size: 14px;
+  font-size: 30px;
   font-weight: bold;
   border: none;
   border-radius: 6px;
