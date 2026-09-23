@@ -7,7 +7,6 @@
 (function (global) {
   'use strict';
 
-  const ROW_Y_TOLERANCE = 3;
   const RENDER_SCALE = 2.0;
   const THUMB_SIZE = 48;
 
@@ -119,57 +118,6 @@
       offset += partWeight;
     }
     return out;
-  }
-
-  function clusterRows(words, tol = ROW_Y_TOLERANCE) {
-    const sorted = [...words].sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0);
-    const rows = [];
-    let cur = [];
-    let curY = null;
-    for (const w of sorted) {
-      if (curY === null || Math.abs(w.y0 - curY) <= tol) {
-        cur.push(w);
-        curY = curY === null ? w.y0 : curY;
-      } else {
-        rows.push(cur);
-        cur = [w];
-        curY = w.y0;
-      }
-    }
-    if (cur.length) rows.push(cur);
-    rows.forEach((r) => r.sort((a, b) => a.x0 - b.x0));
-    return rows;
-  }
-
-  // ---------- LCSベースの整列(difflib.SequenceMatcher相当、jsdiffで実装) ----------
-  // removed直後にaddedが続くブロックは、重なる件数だけ1:1ペアとして扱い、
-  // 余りをdelete/insertとする(行挿入・ページ挿入どちらにも使う共通ロジック)。
-
-  function pairChanges(changes) {
-    const result = [];
-    let oi = 0, ni = 0;
-    for (let idx = 0; idx < changes.length; idx++) {
-      const part = changes[idx];
-      if (!part.added && !part.removed) {
-        part.value.forEach(() => { result.push({ type: 'equal', oldIdx: oi, newIdx: ni }); oi++; ni++; });
-      } else if (part.removed) {
-        const next = changes[idx + 1];
-        if (next && next.added) {
-          const n = Math.min(part.value.length, next.value.length);
-          for (let k = 0; k < n; k++) result.push({ type: 'pair', oldIdx: oi + k, newIdx: ni + k });
-          for (let k = n; k < part.value.length; k++) result.push({ type: 'delete', oldIdx: oi + k, newIdx: null });
-          for (let k = n; k < next.value.length; k++) result.push({ type: 'insert', oldIdx: null, newIdx: ni + k });
-          oi += part.value.length;
-          ni += next.value.length;
-          idx++; // addedパートは消費済み
-        } else {
-          part.value.forEach(() => { result.push({ type: 'delete', oldIdx: oi, newIdx: null }); oi++; });
-        }
-      } else if (part.added) {
-        part.value.forEach(() => { result.push({ type: 'insert', oldIdx: null, newIdx: ni }); ni++; });
-      }
-    }
-    return result;
   }
 
   function textSimilarity(a, b) {
@@ -479,6 +427,6 @@
   global.PdfDiffCore = {
     runDiff,
     // テスト用に一部関数も公開
-    _internal: { clusterRows, extractWords, alignPages, pairChanges, mapWithConcurrency },
+    _internal: { extractWords, alignPages, mapWithConcurrency },
   };
 })(window);
