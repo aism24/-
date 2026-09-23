@@ -1,4 +1,0 @@
-PyMuPDF
-Pillow
-numpy
-scipy

@@ -262,7 +262,6 @@ main {
   cursor: pointer;
 }
 #view-mode-btn:hover { background: #564fc4; }
-#view-mode-btn.hidden { display: none; }
 
 @keyframes selected-mode-blink {
   0%, 100% { background-color: transparent; }
@@ -288,7 +287,6 @@ main {
 #page-nav {
   display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8px;
 }
-#page-nav.hidden { display: none; }
 #page-nav button {
   width: 32px; height: 32px;
   font-size: 14px; font-weight: bold;
@@ -358,7 +356,6 @@ main {
      グラデーションで塗る(paddingの下も含めて全体に効く)。 */
   background: linear-gradient(to right, #fdecea 50%, #e9f7ef 50%);
 }
-#result-section.hidden { display: none; }
 
 /* 重ね合わせモードでは新側のペインを隠し、旧側のペインを全幅表示に切り替える */
 #result-section.overlay-mode { background: #f0f0f0; }
@@ -373,7 +370,6 @@ main {
   gap: 10px;
   padding: 10px 0;
 }
-#overlay-layer-nav.hidden { display: none; }
 .layer-btn {
   padding: 8px 20px;
   font-size: 14px;
@@ -504,8 +500,6 @@ main {
   justify-content: center;
   background: rgba(0, 0, 0, 0.35);
 }
-#analyzing-overlay.hidden { display: none !important; }
-
 #analyzing-box {
   display: flex;
   flex-direction: column;
