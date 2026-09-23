@@ -46,6 +46,10 @@ body {
 
 .hidden { display: none !important; }
 
+#header-bar {
+  flex: 0 0 auto;
+}
+
 header {
   flex: 0 0 auto;
   background: var(--header-bg);
@@ -60,9 +64,9 @@ header {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 28px;
-  padding: 20px;
+  padding: 40px 20px 20px;
 }
 
 #app-desc {
