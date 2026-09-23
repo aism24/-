@@ -123,6 +123,10 @@ function setupDropZone(fieldEl, setFile) {
 setupDropZone(els.oldField, setOldFile);
 setupDropZone(els.newField, setNewFile);
 
+// リセットボタンは、選択中モードはそのままにファイル・結果だけを消す
+// (モード選択ボタンはホーム画面側にしか無く、アプリ画面のままモードが
+// nullになると選び直せなくなり、解析ボタンが永久に無効のままになる
+// バグがあったため、モードのクリアはホームに戻るボタン側でのみ行う)。
 function clearWorkArea() {
   lastResult = null;
   currentPageIndex = 0;
@@ -130,7 +134,6 @@ function clearWorkArea() {
   els.newInput.value = '';
   setOldFile(null);
   setNewFile(null);
-  setMode(null);
   clearLog();
   els.resultSection.classList.add('hidden');
   els.viewers.old.innerHTML = '';
@@ -157,6 +160,7 @@ els.modeBtns.forEach((btn) => {
 
 els.homeBtn.addEventListener('click', () => {
   clearWorkArea();
+  setMode(null);
   els.appScreen.classList.add('hidden');
   els.homeScreen.classList.remove('hidden');
   els.homeBtn.classList.add('hidden');
