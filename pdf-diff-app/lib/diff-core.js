@@ -228,11 +228,44 @@
     });
   }
 
-  async function diffViaApi(apiUrl, oldPdfBase64, newPdfBase64, oldPage, newPage) {
+  // 以前はページごとのAPI呼び出しのたびに旧新PDF「全体」を送っていたため、
+  // ページ数Nに対してアップロード量がN倍になり、読み込みが遅くなっていた。
+  // pdf-libで対象ページだけを1ページのPDFに切り出して送る(PyMuPDFの抽出・
+  // 描画結果は全体PDF+ページ番号指定の場合とバイト単位で一致することを
+  // 3方式とも確認済み)。暗号化PDF・pdf-lib未読込・切り出し失敗時は従来通り
+  // 全体PDF+ページ番号を送る。
+  function createPagePayloader(arrayBuffer) {
+    let fullBase64 = null;
+    const full = (pageIdx) => {
+      if (!fullBase64) fullBase64 = arrayBufferToBase64(arrayBuffer);
+      return { pdfBase64: fullBase64, page: pageIdx };
+    };
+    const srcPromise = global.PDFLib
+      ? global.PDFLib.PDFDocument.load(arrayBuffer).catch(() => null)
+      : Promise.resolve(null);
+    return async (pageIdx) => {
+      const src = await srcPromise;
+      if (!src || src.isEncrypted) return full(pageIdx);
+      try {
+        const doc = await global.PDFLib.PDFDocument.create();
+        const [copied] = await doc.copyPages(src, [pageIdx]);
+        doc.addPage(copied);
+        const bytes = await doc.save();
+        return { pdfBase64: arrayBufferToBase64(bytes), page: 0 };
+      } catch (e) {
+        return full(pageIdx);
+      }
+    };
+  }
+
+  async function diffViaApi(apiUrl, oldPayload, newPayload) {
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ oldPdfBase64, newPdfBase64, oldPage, newPage }),
+      body: JSON.stringify({
+        oldPdfBase64: oldPayload.pdfBase64, newPdfBase64: newPayload.pdfBase64,
+        oldPage: oldPayload.page, newPage: newPayload.page,
+      }),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => res.statusText);
@@ -308,16 +341,25 @@
   async function preparePage(doc, num, scale, onLog, manualCategory) {
     const page = await doc.getPage(num);
     const viewport = page.getViewport({ scale });
-    const { canvas, promise } = renderToCanvas(page, viewport);
-    await promise;
     const words = await extractWords(page, viewport);
     // 種類(表/文章/図面)はユーザーが必ず選択してから解析するため、
     // ここでは常にmanualCategoryを使う(自動判定は行わない)。
     const category = manualCategory;
     const text = words.map((w) => w.text).join('');
-    const thumb = text.length < 20 ? downsampleCanvas(canvas, THUMB_SIZE) : null;
+    // ページ画像の描画(重い)は、ページ整合にサムネイルが必要な場合(文字が
+    // 少ないページ)だけ行う。表示用の画像はサーバーAPIが返すため不要で、
+    // 削除/追加ページの表示用は必要になった時点でgetCanvas()で描画する。
+    let canvasPromise = null;
+    const getCanvas = () => {
+      if (!canvasPromise) {
+        const { canvas, promise } = renderToCanvas(page, viewport);
+        canvasPromise = promise.then(() => canvas);
+      }
+      return canvasPromise;
+    };
+    const thumb = text.length < 20 ? downsampleCanvas(await getCanvas(), THUMB_SIZE) : null;
     if (onLog) onLog(`ページ${num}: ${CATEGORY_LABEL[category] || category}(指定)`);
-    return { canvas, category, sig: { text, thumb } };
+    return { getCanvas, category, sig: { text, thumb } };
   }
 
   async function runDiff(oldArrayBuffer, newArrayBuffer, opts = {}) {
@@ -333,8 +375,8 @@
 
     // pdf.jsはワーカーへの転送でArrayBufferをdetach(内容を空に)することがあるため、
     // API送信用の生バイト列は、pdf.jsに渡す前にコピーしてbase64化しておく。
-    const oldPdfBase64ForApi = arrayBufferToBase64(oldArrayBuffer.slice(0));
-    const newPdfBase64ForApi = arrayBufferToBase64(newArrayBuffer.slice(0));
+    const oldPagePayload = createPagePayloader(oldArrayBuffer.slice(0));
+    const newPagePayload = createPagePayloader(newArrayBuffer.slice(0));
 
     // ページ描画(pdf.js)・サーバーAPI呼び出しのどちらも、1件ずつ完了を待つと
     // ページ数分の待ち時間がそのまま積み上がってしまう(特に図面モードのように
@@ -389,7 +431,8 @@
         const labelOld = `旧 p.${p.oldIdx + 1}`, labelNew = `新 p.${p.newIdx + 1}`;
 
         onLog(`${CATEGORY_LABEL[category]}モード: サーバー(Python)で比較中...`);
-        const r = await diffViaApi(apiUrls[category], oldPdfBase64ForApi, newPdfBase64ForApi, p.oldIdx, p.newIdx);
+        const [oldPayload, newPayload] = await Promise.all([oldPagePayload(p.oldIdx), newPagePayload(p.newIdx)]);
+        const r = await diffViaApi(apiUrls[category], oldPayload, newPayload);
         const composed = composeSideBySide(r.oldImg, r.newImg, labelOld, labelNew);
         return {
           composed, category, labelOld, labelNew,
@@ -398,6 +441,7 @@
         };
       } else if (p.type === 'delete') {
         const op = oldPages[p.oldIdx];
+        op.canvas = await op.getCanvas();
         onLog(`p${pageOut}: 旧${p.oldIdx + 1}は新版に対応ページなし(削除)`);
         const labelOld = `旧 p.${p.oldIdx + 1}`, labelNew = '(新版になし)';
         const composed = composePlaceholder(op.canvas, null, labelOld, labelNew, 'このページは削除されました');
@@ -407,6 +451,7 @@
         };
       } else if (p.type === 'insert') {
         const np = newPages[p.newIdx];
+        np.canvas = await np.getCanvas();
         onLog(`p${pageOut}: 新${p.newIdx + 1}は旧版に対応ページなし(新規追加)`);
         const labelOld = '(旧版になし)', labelNew = `新 p.${p.newIdx + 1}`;
         const composed = composePlaceholder(null, np.canvas, labelOld, labelNew, 'このページは新規追加されました');

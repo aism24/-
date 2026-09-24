@@ -81,10 +81,8 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
   **対象アプリ1件だけ**なら条件OK。他のプロジェクトが含まれていたら、マージせず
   ユーザーに「◯◯の連携が残っているので先に解除してください」と伝える。
   (0件なら対象アプリも未連携なので、連携を依頼する。)
-  ※このフィルタが連携中プロジェクトを正しく返すことは未検証(2026-09-24時点では
-  連携中が0件だったため)。次に対象アプリを連携した直後に1件返ることを確認し、
-  ここに結果を追記すること。返らない場合は、ユーザーにVercelの各プロジェクトの
-  Settings → Git 画面で連携状態を確認してもらう。
+  ※2026-09-24、pdf-diff-pythonappを再連携した直後にこのフィルタで1件
+  (pdf-diff-pythonappのみ)返ることを確認済み(フィルタは正しく機能する)。
 - 念のためマージ後に `list_deployments` で直近のデプロイを確認し、対象アプリ以外の
   デプロイが発生していないことを確かめて報告する。
 - 公開が終わって開発モードへ戻す(連携を解除する)ときも、上記の方法で0件に
@@ -94,6 +92,6 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 
 | Vercelプロジェクト | 対象フォルダ | Git連携 | 備考 |
 |---|---|---|---|
-| pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 解除中(2026-09-24〜、開発モード) | Ignored Build Step=Automatic、Skip deployments=有効 |
+| pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 連携中(2026-09-24再連携、公開モード) | Ignored Build Step=Automatic、Skip deployments=有効 |
 
-2026-09-24時点で `list_projects`(repoUrl=aism24/-)の結果は0件=このリポジトリと連携中のVercelプロジェクトは無し。
+2026-09-24(再連携後)時点で `list_projects`(repoUrl=aism24/-)の結果は1件(pdf-diff-pythonappのみ)。
