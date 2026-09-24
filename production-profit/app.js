@@ -273,33 +273,120 @@ function drawChart(id, cfg) {
   state.charts[id] = new Chart(document.getElementById(id), cfg);
 }
 
-/* 損益分岐点グラフ(横軸トン数)。o: {fixed, unitPrice, perTon(変動費+人件費/t), profitRate, actualTons, beTons, goalTons} */
+/* 損益分岐点グラフ(SVG。横軸=生産トン数、縦軸=金額)。
+   o: {fixed, unitPrice, laborPerTon, varPerTon, profitRate, x(つまみの初期位置t), beTons, goalTons, handleLabel, onMove(t)}
+   面の塗り分け: 固定費帯 / 人件費帯 / 変動費帯 / 損失域(分岐点の左、売上線と総費用線の間) / 利益域(右)。
+   つまみ(縦の点線)をドラッグすると、その重量での内訳(固定費・人件費・変動費・利益or損失)を積み上げバーで表示する。 */
+const bepState = {};
+function niceStep(range, count) {
+  const raw = range / Math.max(count, 1), mag = Math.pow(10, Math.floor(Math.log10(raw || 1)));
+  const n = raw / mag;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
+}
+function man(v) { return Math.abs(v) >= 10000 ? fmt(v / 10000, 0) + '万円' : yen(v) + '円'; }
+
 function drawBep(id, o) {
-  const maxX = Math.max(o.actualTons || 0, o.beTons || 0, o.goalTons || 0, 1) * 1.3;
-  const pts = (f) => [0, maxX].map((x) => ({ x, y: f(x) }));
-  const tick = css('--text2'), grid = css('--grid');
-  const ds = [
-    { label: '売上', data: pts((x) => x * o.unitPrice), borderColor: css('--s1'), backgroundColor: css('--s1'), borderWidth: 2, pointRadius: 0 },
-    { label: '総費用', data: pts((x) => o.fixed + x * o.perTon), borderColor: css('--s2'), backgroundColor: css('--s2'), borderWidth: 2, pointRadius: 0 },
-    { label: '総費用+利益目標', data: pts((x) => o.fixed + x * o.perTon + x * o.unitPrice * o.profitRate), borderColor: css('--s2'), backgroundColor: css('--s2'), borderDash: [6, 4], borderWidth: 2, pointRadius: 0 },
-    { label: '固定費', data: pts(() => o.fixed), borderColor: css('--muted'), backgroundColor: css('--muted'), borderDash: [2, 3], borderWidth: 2, pointRadius: 0 },
-  ];
-  if (o.beTons !== null) ds.push({ label: '損益分岐点 ' + ton(o.beTons) + 't', data: [{ x: o.beTons, y: o.beTons * o.unitPrice }], type: 'scatter', pointRadius: 7, pointStyle: 'rectRot', backgroundColor: css('--bad'), borderColor: css('--surface'), borderWidth: 2 });
-  if (o.goalTons !== null) ds.push({ label: '利益目標達成 ' + ton(o.goalTons) + 't', data: [{ x: o.goalTons, y: o.goalTons * o.unitPrice }], type: 'scatter', pointRadius: 7, pointStyle: 'triangle', backgroundColor: css('--good'), borderColor: css('--surface'), borderWidth: 2 });
-  if (o.actualTons) ds.push({ label: (o.actualLabel || '実績') + ' ' + ton(o.actualTons) + 't', data: [{ x: o.actualTons, y: o.actualTons * o.unitPrice }], type: 'scatter', pointRadius: 8, backgroundColor: css('--text'), borderColor: css('--surface'), borderWidth: 2 });
-  drawChart(id, {
-    type: 'line', data: { datasets: ds.map((d) => Object.assign({ showLine: d.type !== 'scatter' }, d)) },
-    options: {
-      responsive: true, maintainAspectRatio: false, animation: false,
-      interaction: { mode: 'nearest', intersect: false },
-      plugins: { legend: { labels: { color: tick, boxWidth: 12 } },
-        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${ton(c.parsed.x)}t / ${yen(c.parsed.y)}円` } } },
-      scales: {
-        x: { type: 'linear', min: 0, max: maxX, ticks: { color: tick, callback: (v) => fmt(v, 0) }, grid: { color: grid }, title: { display: true, text: '生産トン数(t)', color: tick } },
-        y: { min: 0, ticks: { color: tick, callback: (v) => fmt(v / 10000, 0) + '万' }, grid: { color: grid }, title: { display: true, text: '金額(円)', color: tick } },
-      },
-    },
+  const box = document.getElementById(id);
+  const prev = bepState[id];
+  // 同じ条件の再描画(ドラッグ中など)ではつまみ位置を保つ。条件が変わったら初期位置に戻す。
+  const sig = [o.fixed, o.unitPrice, o.laborPerTon, o.varPerTon, o.profitRate].join('|');
+  const st = bepState[id] = { o, x: (prev && prev.sig === sig && !o.forceX) ? prev.x : (o.x || 0), sig, maxX: prev && prev.sig === sig ? prev.maxX : null };
+  if (!st.maxX) st.maxX = Math.max(o.x || 0, o.beTons || 0, o.goalTons || 0, 1) * 1.35;
+  renderBepSvg(id);
+  if (!box.dataset.bound) {
+    box.dataset.bound = '1';
+    let dragging = false;
+    const toX = (e) => {
+      const s = bepState[id], g = s.geom, r = box.getBoundingClientRect();
+      return Math.min(s.maxX, Math.max(0, (e.clientX - r.left - g.l) / g.w * s.maxX));
+    };
+    box.addEventListener('pointerdown', (e) => {
+      const s = bepState[id], g = s.geom, r = box.getBoundingClientRect();
+      if (!g || e.clientY - r.top > g.t + g.h + 4) return;
+      dragging = true; box.setPointerCapture(e.pointerId);
+      s.x = toX(e); renderBepSvg(id); if (s.o.onMove) s.o.onMove(s.x);
+    });
+    box.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const s = bepState[id]; s.x = toX(e); renderBepSvg(id); if (s.o.onMove) s.o.onMove(s.x);
+    });
+    const end = () => { dragging = false; };
+    box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
+    window.addEventListener('resize', () => bepState[id] && renderBepSvg(id));
+  }
+}
+
+function renderBepSvg(id) {
+  const box = document.getElementById(id), st = bepState[id], o = st.o;
+  const W = box.clientWidth || 600, H = box.clientHeight || 380;
+  const g = st.geom = { l: 64, r: 16, t: 16, b: 36 };
+  g.w = W - g.l - g.r; g.h = H - g.t - g.b;
+  const P = o.unitPrice || 0, lab = o.laborPerTon || 0, vr = o.varPerTon || 0, F = o.fixed || 0;
+  const maxX = st.maxX;
+  const cost = (x) => F + (lab + vr) * x, sales = (x) => P * x;
+  const maxY = Math.max(sales(maxX), cost(maxX), F, 1) * 1.05;
+  const X = (x) => g.l + x / maxX * g.w, Y = (y) => g.t + g.h - y / maxY * g.h;
+  const pts = (arr) => arr.map((p) => X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' ');
+  const be = o.beTons !== null && o.beTons !== undefined && o.beTons <= maxX ? o.beTons : null;
+  let h = '';
+  // グリッドと目盛
+  const xs = niceStep(maxX, Math.max(3, Math.floor(g.w / 90))), ys = niceStep(maxY, 5);
+  for (let v = 0; v <= maxY + 1e-9; v += ys) h += `<line class="bg" x1="${g.l}" x2="${g.l + g.w}" y1="${Y(v)}" y2="${Y(v)}"/><text class="ax" x="${g.l - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v / 10000, 0)}万</text>`;
+  for (let v = 0; v <= maxX + 1e-9; v += xs) h += `<line class="bg" y1="${g.t}" y2="${g.t + g.h}" x1="${X(v)}" x2="${X(v)}"/><text class="ax" x="${X(v)}" y="${g.t + g.h + 16}" text-anchor="middle">${fmt(v, 0)}</text>`;
+  h += `<text class="ax" x="${g.l + g.w}" y="${H - 4}" text-anchor="end">生産重量(t)</text>`;
+  // 面: 固定費帯・人件費帯・変動費帯
+  h += `<polygon class="fFixed" points="${pts([[0, 0], [maxX, 0], [maxX, F], [0, F]])}"/>`;
+  h += `<polygon class="fLabor" points="${pts([[0, F], [maxX, F + lab * maxX], [maxX, F]])}"/>`;
+  h += `<polygon class="fVar" points="${pts([[0, F], [maxX, cost(maxX)], [maxX, F + lab * maxX]])}"/>`;
+  // 損失域・利益域
+  if (be !== null) {
+    h += `<polygon class="fLoss" points="${pts([[0, 0], [0, F], [be, sales(be)]])}"/>`;
+    h += `<polygon class="fProfit" points="${pts([[be, sales(be)], [maxX, sales(maxX)], [maxX, cost(maxX)]])}"/>`;
+  } else {
+    h += `<polygon class="fLoss" points="${pts([[0, 0], [0, F], [maxX, cost(maxX)], [maxX, sales(maxX)]])}"/>`;
+  }
+  // 線
+  h += `<line class="lFixed" x1="${X(0)}" x2="${X(maxX)}" y1="${Y(F)}" y2="${Y(F)}"/>`;
+  h += `<text class="lbl" x="${g.l + 6}" y="${Y(F) - 6}">固定費 ${man(F)}</text>`;
+  h += `<line class="lCost" x1="${X(0)}" y1="${Y(F)}" x2="${X(maxX)}" y2="${Y(cost(maxX))}"/>`;
+  h += `<line class="lSales" x1="${X(0)}" y1="${Y(0)}" x2="${X(maxX)}" y2="${Y(sales(maxX))}"/>`;
+  h += `<text class="lbl" x="${X(maxX) - 4}" y="${Y(sales(maxX)) + 14}" text-anchor="end">売上</text>`;
+  h += `<text class="lbl cost" x="${X(maxX) - 4}" y="${Y(cost(maxX)) + 14}" text-anchor="end">総費用</text>`;
+  // 利益目標達成点
+  if (o.goalTons !== null && o.goalTons !== undefined && o.goalTons <= maxX) {
+    const gx = X(o.goalTons), gy = Y(sales(o.goalTons));
+    h += `<path class="mGoal" d="M${gx},${gy - 7} L${gx + 6},${gy + 4} L${gx - 6},${gy + 4} Z"/><text class="lbl good" x="${gx - 8}" y="${gy - 10}" text-anchor="end">利益目標 ${ton(o.goalTons)}t</text>`;
+  }
+  // 損益分岐点(軸への補助線付き)
+  if (be !== null) {
+    const bx = X(be), by = Y(sales(be));
+    h += `<line class="lBe" x1="${bx}" x2="${bx}" y1="${by}" y2="${g.t + g.h}"/><line class="lBe" x1="${g.l}" x2="${bx}" y1="${by}" y2="${by}"/>`;
+    h += `<circle class="mBeHalo" cx="${bx}" cy="${by}" r="11"/><circle class="mBe" cx="${bx}" cy="${by}" r="7"/>`;
+    h += `<text class="lbl be" x="${bx + 14}" y="${by - 10}">損益分岐点 ${ton(be)}t / ${man(sales(be))}</text>`;
+  }
+  // つまみ位置の内訳バー
+  const x = st.x, cx = X(x), bw = 8;
+  const segs = [['固定費', 0, F, 'bFixed'], ['人件費', F, F + lab * x, 'bLabor'], ['変動費', F + lab * x, cost(x), 'bVar']];
+  const profit = sales(x) - cost(x);
+  if (profit >= 0) segs.push(['利益', cost(x), sales(x), 'bProfit']); else segs.push(['損失', sales(x), cost(x), 'bLoss']);
+  h += `<line class="lCursor" x1="${cx}" x2="${cx}" y1="${g.t}" y2="${g.t + g.h}"/>`;
+  const labels = [];
+  segs.forEach(([name, y0, y1, cls]) => {
+    if (y1 - y0 <= 0) return;
+    h += `<rect class="${cls}" x="${cx - bw / 2}" width="${bw}" y="${Y(y1)}" height="${Math.max(1, Y(y0) - Y(y1))}"/>`;
+    labels.push({ text: `${name} ${man(y1 - y0)}`, y: (Y(y0) + Y(y1)) / 2 + 4, cls });
   });
+  // ラベルの重なりを避ける(下のつまみに掛からない位置から、下から順に最低16px間隔)
+  labels.sort((a, b) => b.y - a.y);
+  if (labels.length && labels[0].y > g.t + g.h - 32) labels[0].y = g.t + g.h - 32;
+  for (let i = 1; i < labels.length; i++) if (labels[i - 1].y - labels[i].y < 16) labels[i].y = labels[i - 1].y - 16;
+  const right = cx < g.l + g.w * 0.62;
+  labels.forEach((lb) => { h += `<text class="lbl seg ${lb.cls}" x="${right ? cx + 10 : cx - 10}" y="${lb.y}" text-anchor="${right ? 'start' : 'end'}">${lb.text}</text>`; });
+  // つまみ
+  const hl = `${o.handleLabel || '生産重量'} ◀▶ ${ton(x)}t`;
+  const hw = hl.length * 7.5 + 18;
+  h += `<g class="handle"><rect x="${cx - hw / 2}" y="${g.t + g.h - 26}" width="${hw}" height="22" rx="11"/><text x="${cx}" y="${g.t + g.h - 11}" text-anchor="middle">${hl}</text></g>`;
+  box.innerHTML = `<svg class="bepSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="損益分岐点グラフ">${h}</svg>`;
 }
 
 /* ===================== 損益分岐点タブ ===================== */
@@ -314,7 +401,8 @@ function renderBep(sel, an) {
     kpi('実績生産重量', ton(t.weight), 't', t.goalTons ? `目標達成まで ${ton(Math.max(0, t.goalTons - t.weight))}t` : ''),
     kpi('1t当たり限界利益', yen(t.unitPrice !== null ? t.unitPrice - perTon : null), '円/t', `トン単価 ${yen(t.unitPrice)} − 変動費 ${yen(t.varPerTon)} − 人件費 ${yen(t.laborPerTon)}`),
   ].join('');
-  drawBep('c-bep', { fixed: t.fixed, unitPrice: t.unitPrice || 0, perTon, profitRate: p, actualTons: t.weight, beTons: t.breakEvenTons, goalTons: t.goalTons });
+  drawBep('c-bep', { fixed: t.fixed, unitPrice: t.unitPrice || 0, laborPerTon: t.laborPerTon || 0, varPerTon: t.varPerTon || 0,
+    profitRate: p, x: t.weight, beTons: t.breakEvenTons, goalTons: t.goalTons, handleLabel: '生産重量' });
   const rows = [
     ['固定費(期間計)', yen(t.fixed) + ' 円', '費用設定の月固定費×月数、未入力の工場は 基準売上×固定費率'],
     ['トン単価(平均)', yen(t.unitPrice) + ' 円/t', '売上 ÷ 生産重量(工事ごとの契約金額÷総重量で計算した売上の合計)'],
@@ -331,6 +419,7 @@ function renderBep(sel, an) {
 /* ===================== シミュレーション ===================== */
 
 const SIM = [['w', 1], ['n', 0.01], ['p', 100]];
+let simDragging = false;
 function initSim() {
   SIM.forEach(([k]) => {
     const r = document.getElementById('s-' + k + '-r'), n = document.getElementById('s-' + k);
@@ -388,8 +477,16 @@ function updateSim() {
     kpi('人件費', yen(r.labor), '円', `${yen(r.laborRate)}円/人工`),
     kpi('変動費+固定費', yen(r.variable + r.fixed), '円', `変動費 ${yen(r.varPerTon)}円/t・固定費 ${yen(r.fixed)}円`),
   ].join('');
-  drawBep('c-sim', { fixed: r.fixed, unitPrice: P, perTon: r.varPerTon + n * r.laborRate, profitRate: state.settings.rates.profit / 100,
-    actualTons: W, actualLabel: '試算', beTons: r.breakEvenTons, goalTons: r.goalTons });
+  // つまみのドラッグで試算の生産重量を動かせる(スライダー・数値欄と連動)
+  drawBep('c-sim', { fixed: r.fixed, unitPrice: P, laborPerTon: n * r.laborRate, varPerTon: r.varPerTon, profitRate: state.settings.rates.profit / 100,
+    x: W, forceX: !simDragging, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: '試算重量',
+    onMove: (t) => {
+      simDragging = true;
+      document.getElementById('s-w').value = +t.toFixed(1);
+      document.getElementById('s-w-r').value = t;
+      updateSim();
+      simDragging = false;
+    } });
 }
 
 async function saveSimAsTarget() {

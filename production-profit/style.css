@@ -13,18 +13,21 @@
   --bad: #d03b3b;
   --warn-bg: #fff4d6;
   --grid: #e8e7e2;
+  --bep-cost: #c8423b; --bep-fixed: #5b63b0; --bep-labor: #8a5cc2; --bep-var: #1a9a8c; --bep-be: #d99a00;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #111110; --surface: #1a1a19; --border: #383835; --text: #ffffff; --text2: #c3c2b7;
     --muted: #9a998f; --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
     --good: #0ca30c; --bad: #e66767; --warn-bg: #3a3220; --grid: #2c2c2a;
+    --bep-cost: #e66767; --bep-fixed: #8a91e0; --bep-labor: #b48ae6; --bep-var: #3cc0b1; --bep-be: #f0b429;
   }
 }
 :root[data-theme="dark"] {
   --bg: #111110; --surface: #1a1a19; --border: #383835; --text: #ffffff; --text2: #c3c2b7;
   --muted: #9a998f; --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
   --good: #0ca30c; --bad: #e66767; --warn-bg: #3a3220; --grid: #2c2c2a;
+    --bep-cost: #e66767; --bep-fixed: #8a91e0; --bep-labor: #b48ae6; --bep-var: #3cc0b1; --bep-be: #f0b429;
 }
 
 * { box-sizing: border-box; }
@@ -119,3 +122,37 @@ td input[type="number"] { width: 130px; }
   .simRow label { grid-column: 1 / -1; }
   .tab { padding: 12px 16px; }
 }
+
+/* 損益分岐点グラフ(SVG) */
+.bepBox { touch-action: pan-y; cursor: ew-resize; user-select: none; }
+.bepSvg { display: block; font-size: 12px; }
+.bepSvg .bg { stroke: var(--grid); stroke-width: 1; }
+.bepSvg .ax { fill: var(--text2); font-size: 11px; }
+.bepSvg .lbl { fill: var(--text); font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.bepSvg .lbl.cost { fill: var(--bep-cost); }
+.bepSvg .lbl.be { fill: var(--bep-be); }
+.bepSvg .lbl.good, .bepSvg .lbl.bProfit { fill: var(--good); }
+.bepSvg .lbl.bLoss { fill: var(--bad); }
+.bepSvg .lbl.bVar { fill: var(--bep-var); }
+.bepSvg .lbl.bLabor { fill: var(--bep-labor); }
+.bepSvg .lbl.bFixed { fill: var(--bep-fixed); }
+.bepSvg .fFixed { fill: var(--bep-fixed); fill-opacity: .16; }
+.bepSvg .fLabor { fill: var(--bep-labor); fill-opacity: .16; }
+.bepSvg .fVar { fill: var(--bep-var); fill-opacity: .16; }
+.bepSvg .fLoss { fill: var(--bad); fill-opacity: .18; }
+.bepSvg .fProfit { fill: var(--good); fill-opacity: .16; }
+.bepSvg .lFixed { stroke: var(--bep-fixed); stroke-width: 2; }
+.bepSvg .lCost { stroke: var(--bep-cost); stroke-width: 2; }
+.bepSvg .lSales { stroke: var(--text); stroke-width: 2; }
+.bepSvg .lBe { stroke: var(--bep-be); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.bepSvg .mBe { fill: var(--bep-be); stroke: var(--surface); stroke-width: 2; }
+.bepSvg .mBeHalo { fill: var(--bep-be); fill-opacity: .25; }
+.bepSvg .mGoal { fill: var(--good); stroke: var(--surface); stroke-width: 1.5; }
+.bepSvg .lCursor { stroke: var(--text); stroke-width: 1.2; stroke-dasharray: 5 4; }
+.bepSvg .bFixed { fill: var(--bep-fixed); }
+.bepSvg .bLabor { fill: var(--bep-labor); }
+.bepSvg .bVar { fill: var(--bep-var); }
+.bepSvg .bProfit { fill: var(--good); }
+.bepSvg .bLoss { fill: var(--bad); }
+.bepSvg .handle rect { fill: var(--text); }
+.bepSvg .handle text { fill: var(--surface); font-weight: 600; }

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>生産損益分析</title>
 <!-- app.js/calc.js/style.cssを変更したら ?v= を必ず変えること(ブラウザ/CDNキャッシュ対策) -->
-<link rel="stylesheet" href="style.css?v=20260925a">
+<link rel="stylesheet" href="style.css?v=20260925b">
 </head>
 <body>
 
@@ -74,8 +74,8 @@
   <!-- 損益分岐点 -->
   <main id="tab-bep" class="tab">
     <div id="bep-kpis" class="kpis"></div>
-    <div class="panel"><h2>損益分岐点グラフ(選択期間・選択工場)</h2><div class="chartBox tall"><canvas id="c-bep"></canvas></div>
-      <p class="muted small">横軸=生産トン数。売上線と総費用線の交点が損益分岐点、売上線と「総費用+利益目標」線の交点が利益目標の達成点です。</p></div>
+    <div class="panel"><h2>損益分岐点グラフ(選択期間・選択工場)</h2><div class="chartBox tall bepBox" id="c-bep"></div>
+      <p class="muted small">横軸=生産重量。売上線(黒)と総費用線(赤)の交点が損益分岐点。縦の点線(つまみ)を左右にドラッグすると、その重量での固定費・人件費・変動費・利益の内訳を表示します。</p></div>
     <div class="panel"><h2>計算の内訳</h2><div class="tableWrap"><table id="t-bep"></table></div></div>
   </main>
 
@@ -95,7 +95,7 @@
       </div>
       <div class="panel"><div id="sim-kpis" class="kpis compact"></div></div>
     </div>
-    <div class="panel"><h2>試算の損益分岐点</h2><div class="chartBox tall"><canvas id="c-sim"></canvas></div></div>
+    <div class="panel"><h2>試算の損益分岐点</h2><div class="chartBox tall bepBox" id="c-sim"></div></div>
   </main>
 
   <!-- 工事別分析 -->
@@ -151,7 +151,7 @@
 <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">読み込み中…</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="calc.js?v=20260925a"></script>
-<script src="app.js?v=20260925a"></script>
+<script src="calc.js?v=20260925b"></script>
+<script src="app.js?v=20260925b"></script>
 </body>
 </html>
