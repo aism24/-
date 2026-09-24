@@ -453,6 +453,14 @@ main {
 }
 .page-col-header-old { background: #fdecea; }
 .page-col-header-new { background: #e9f7ef; }
+/* 重ね合わせ時のヘッダー: 水色。ラベル/旧両新ボタン/ズームの3列で、ボタンを中央に置く */
+.page-col-header-overlay {
+  background: #dff3fb;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+}
+.page-col-header-overlay .zoom-controls { justify-self: end; }
+.page-col-header-overlay #overlay-layer-nav { padding: 0; }
 .page-label { white-space: nowrap; }
 
 /* ページ画像だけを拡大・ドラッグ移動できる領域。overflow:hiddenで

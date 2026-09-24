@@ -272,7 +272,12 @@ function buildSide(canvas, label, side, placeholderMessage) {
 function buildOverlayView(r) {
   const col = document.createElement('div');
   col.className = 'page-col page-col-old';
-  col.appendChild(buildHeader(`重ね合わせ: ${r.labelOld} / ${r.labelNew}`, 'old'));
+  const header = buildHeader(`重ね合わせ: ${r.labelOld} / ${r.labelNew}`, 'old');
+  // 旧新の色(赤系/緑系)とは別の水色のヘッダーにし、旧/両/新ボタンを
+  // ヘッダー行の中央に配置する(ボタン要素自体は使い回し、イベントも維持)
+  header.classList.replace('page-col-header-old', 'page-col-header-overlay');
+  header.insertBefore(els.overlayLayerNav, header.lastChild);
+  col.appendChild(header);
 
   const viewport = document.createElement('div');
   viewport.className = 'page-viewport';
@@ -500,7 +505,9 @@ els.runBtn.addEventListener('click', async () => {
     showPage(0);
     els.resultSection.classList.remove('hidden');
     log('解析が完了しました。');
-    await sendLog(result.category);
+    // 記録シートへの書き込み(GAS)は数秒かかることがあるため、完了を待たずに
+    // 解析中表示を解除する(以前はこの待ち時間ぶん表示が遅れていた)
+    sendLog(result.category);
   } catch (err) {
     console.error(err);
     log(`エラーが発生しました: ${err.message || err}`);
