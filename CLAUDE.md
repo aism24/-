@@ -92,12 +92,14 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 
 | Vercelプロジェクト | 対象フォルダ | Git連携 | 備考 |
 |---|---|---|---|
-| pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 解除(2026-09-24) | |
+| pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 解除(2026-09-24、関数統合版を本番デプロイ後に再解除) | |
 | daily-report (https://all-daily-report.vercel.app/) | daily-report | 解除(2026-09-24) | `daily-report/vercel.json` で `git.deploymentEnabled=false`。Ignored Build Step=`git diff HEAD^ HEAD --quiet -- .` |
 
 2026-09-24、ユーザーが全プロジェクトのGit連携を解除。`list_projects`(repoUrl=aism24/-)の結果が0件であることを確認済み(push/マージしてもデプロイされない状態)。
 
-※Functions Storage(Hobby上限10GB)の大半はpdf-diff-pythonapp。3つのPython関数それぞれに約300MBのライブラリ
+※2026-09-24、PR #306(関数を`api/diff.py`1本に統合・scipy除去)を本番デプロイ済み(1件のみ、3モードとも正解値一致を本番APIで確認)。その後連携を再解除し0件を確認。
+
+※Functions Storage(Hobby上限10GB)の大半はpdf-diff-pythonapp。(以下は統合前の状況)3つのPython関数それぞれに約300MBのライブラリ
 (scipy 143MB・numpy 73MB・PyMuPDF 65MB等)が同梱され、1デプロイ≒1GB消費する。デプロイは必要最小限にすること。
 
 【反省・厳守】2026-09-24、daily-reportの修正時にpdf-diff-pythonappの連携が残っているのを
