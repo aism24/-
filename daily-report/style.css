@@ -122,7 +122,8 @@ button{ font-family:inherit; cursor:pointer; }
 }
 .ngOnlyBtn:hover{ background:#fdeaea; }
 .ngOnlyBtn.active{ background:#c33; color:#fff; }
-table.dataTable.r4Table{ table-layout:auto; width:auto; border-collapse:separate; border-spacing:0; }
+/* 白いカード廃止に伴い、届出等の色が無い通常セルは表自体の白背景で白表示にする */
+table.dataTable.r4Table{ background:#fff; table-layout:auto; width:auto; border-collapse:separate; border-spacing:0; }
 .r4Table .r4NameCol{ white-space:nowrap; position:sticky; left:0; z-index:2; background:#fff; }
 /* 3文字(例:「前有給」)まで1行で収まる幅に統一(均等割り付け) */
 .r4Table .r4DateCell{ width:60px; min-width:60px; max-width:60px; }
@@ -395,8 +396,9 @@ table.dataTable.r5Table th:nth-child(4), table.dataTable.r5Table td:nth-child(4)
 }
 
 .r4FileHeader{
-  background:#fff; padding:8px 16px 10px; margin-bottom:8px;
-  border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.1);
+  /* 白いカードは廃止(ユーザー指定)。stickyで表の上に重なるため透明ではなく
+     .mainと同じ薄黄色で塗る */
+  background:#fffbcc; padding:8px 16px 10px; margin-bottom:8px;
   /* 集計条件パネルの直下に積み重なるsticky要素。topは集計条件パネルの
      実測高さに応じてadjustR4StickyOffset_内でJSから設定する。横方向は
      .r4StickyPanelと同じ理由でleft未指定、JS側でtransformにより揃える。 */
@@ -412,7 +414,7 @@ table.dataTable.r5Table th:nth-child(4), table.dataTable.r5Table td:nth-child(4)
    短い等)に、白いカードだけが画面いっぱいに間延びして表示されてしまう
    (実データで確認)。背景を透明にするのではなく、カード自体を表の実幅に
    ぴったり合わせることで、この間延びを解消する。 */
-.previewPanel.r4PreviewPanel{ width:fit-content; }
+.previewPanel.r4PreviewPanel{ width:fit-content; background:transparent; box-shadow:none; }
 .previewPanel h3{ font-size:13px; margin:0 0 10px; color:#444; }
 .filterSummary{ font-size:11px; color:#777; margin:0 0 12px; padding:6px 8px; background:#f7f9fc; border-radius:4px; }
 .previewEmpty{ color:#999; font-size:13px; text-align:center; padding:40px 0; }
