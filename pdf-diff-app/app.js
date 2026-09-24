@@ -5,10 +5,11 @@ const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzLz81VioiuR3ku_utd
 // (同一オリジンの相対パス。Vercelデプロイ時のみ存在する)。ブラウザ内(JS)
 // での計算は行わない(Python版と結果がズレる実害バグがあったため撤去済み)。
 // そのためVercel未デプロイの環境(githackプレビュー等)では解析が失敗する。
+// 3モードとも1本の関数(api/diff.py)でmodeを切り替える(Functions Storage節約のため統合)。
 const DIFF_API_URLS = {
-  table: "/api/table_diff",
-  text: "/api/text_diff",
-  image: "/api/image_diff",
+  table: "/api/diff?mode=table",
+  text: "/api/diff?mode=text",
+  image: "/api/diff?mode=image",
 };
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =

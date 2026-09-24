@@ -23,7 +23,6 @@ import argparse
 import fitz
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from scipy import ndimage
 
 ZOOM = 3.0
 DIFF_THRESHOLD = 40    # グレースケール輝度差のこの値を超えたら「変化画素」とみなす
@@ -57,25 +56,94 @@ def detect_diff_boxes(img_old, img_new):
     mask = np.abs(a - b) > DIFF_THRESHOLD
 
     if DILATE_ITER > 0:
-        mask = ndimage.binary_dilation(mask, iterations=DILATE_ITER)
+        mask = binary_dilation_cross(mask, DILATE_ITER)
 
-    labeled, num = ndimage.label(mask)
     boxes = []
-    if num == 0:
-        return boxes
-
-    slices = ndimage.find_objects(labeled)
-    for label_id, sl in enumerate(slices, start=1):
-        if sl is None:
-            continue
-        blob_pixels = int((labeled[sl] == label_id).sum())
+    for x0, y0, x1, y1, blob_pixels in label_boxes(mask):
         if blob_pixels < MIN_BLOB_PIXELS:
             continue
-        y0, y1 = sl[0].start, sl[0].stop
-        x0, x1 = sl[1].start, sl[1].stop
         boxes.append((x0, y0, x1, y1))
 
     return boxes
+
+
+# 以前はscipy.ndimage(binary_dilation/label/find_objects)を使っていたが、scipyは
+# Vercel関数の同梱サイズの約半分(143MB)を占めるため、同じ計算をnumpyだけで行う
+# (十字の構造要素・4近傍連結・境界外=0のscipy既定動作と、検出矩形が位置・数・
+# 順序とも一致することを確認済み。2026-09-24)。
+
+
+def binary_dilation_cross(mask, iterations):
+    # scipy.ndimage.binary_dilation(mask, iterations=n) と同じ(上下左右に1画素ずつ膨張)
+    m = mask
+    for _ in range(iterations):
+        d = m.copy()
+        d[1:, :] |= m[:-1, :]
+        d[:-1, :] |= m[1:, :]
+        d[:, 1:] |= m[:, :-1]
+        d[:, :-1] |= m[:, 1:]
+        m = d
+    return m
+
+
+def label_boxes(mask):
+    """4近傍連結成分ごとの (x0, y0, x1, y1, 画素数) を、scipy.ndimage.labelの
+    ラベル番号順(ラスタ走査で最初に現れた順)で返す。x1/y1は範囲の終端(含まない)。
+    行ごとの連続区間(ラン)を求め、上下の行で重なるラン同士をUnion-Findで結合する。"""
+    h, w = mask.shape
+    padded = np.zeros((h, w + 2), dtype=np.int8)
+    padded[:, 1:-1] = mask
+    d = np.diff(padded, axis=1)
+    run_row, run_start = np.nonzero(d == 1)
+    _, run_end = np.nonzero(d == -1)
+    n = len(run_row)
+    if n == 0:
+        return []
+
+    parent = list(range(n))
+
+    def find(i):
+        root = i
+        while parent[root] != root:
+            root = parent[root]
+        while parent[i] != root:
+            parent[i], i = root, parent[i]
+        return root
+
+    row_first = np.searchsorted(run_row, np.arange(h + 1)).tolist()
+    starts, ends = run_start.tolist(), run_end.tolist()
+    for r in range(1, h):
+        i, i_end = row_first[r - 1], row_first[r]
+        j, j_end = row_first[r], row_first[r + 1]
+        while i < i_end and j < j_end:
+            if starts[i] < ends[j] and starts[j] < ends[i]:
+                ri, rj = find(i), find(j)
+                if ri != rj:
+                    # 小さい方(ラスタ順で先に現れたラン)を根にする=成分の代表がscipyのラベル順と一致
+                    if ri < rj:
+                        parent[rj] = ri
+                    else:
+                        parent[ri] = rj
+            if ends[i] < ends[j]:
+                i += 1
+            else:
+                j += 1
+
+    roots = np.array([find(i) for i in range(n)])
+    _, comp = np.unique(roots, return_inverse=True)
+    k = int(comp.max()) + 1
+    x0 = np.full(k, w)
+    y0 = np.full(k, h)
+    x1 = np.zeros(k, dtype=np.int64)
+    y1 = np.zeros(k, dtype=np.int64)
+    pixels = np.zeros(k, dtype=np.int64)
+    np.minimum.at(x0, comp, run_start)
+    np.minimum.at(y0, comp, run_row)
+    np.maximum.at(x1, comp, run_end)
+    np.maximum.at(y1, comp, run_row + 1)
+    np.add.at(pixels, comp, run_end - run_start)
+    return list(zip(x0.tolist(), y0.tolist(), x1.tolist(), y1.tolist(), pixels.tolist()))
+
 
 
 def pad_box(box, pad, w, h):
