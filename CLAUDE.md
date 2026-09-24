@@ -92,9 +92,39 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 
 | Vercelプロジェクト | 対象フォルダ | Git連携 | 備考 |
 |---|---|---|---|
-| pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 連携中(2026-09-24再連携、公開モード) | Ignored Build Step=Automatic、Skip deployments=有効 |
+| pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 解除(2026-09-24) | |
+| daily-report (https://all-daily-report.vercel.app/) | daily-report | 連携中(2026-09-24)、ただし自動デプロイ停止 | `daily-report/vercel.json` で `git.deploymentEnabled=false`。Ignored Build Step=`git diff HEAD^ HEAD --quiet -- .` |
 
-2026-09-24(再連携後)時点で `list_projects`(repoUrl=aism24/-)の結果は1件(pdf-diff-pythonappのみ)。
+2026-09-24時点で `list_projects`(repoUrl=aism24/-)の結果は1件(daily-reportのみ)。
+
+【反省・厳守】2026-09-24、daily-reportの修正時にpdf-diff-pythonappの連携が残っているのを
+確認しながら「Skip deploymentsが有効だから大丈夫」と自己判断してpush・マージし、
+pdf-diff-pythonappのデプロイが2回(ブランチpushのPreview+mainマージのProduction)発生した。
+**Skip deploymentsは当てにならない。対象以外の連携中プロジェクトが1件でもあれば、
+push・マージは一切せず、先にユーザーへ解除を依頼すること。**(ブランチへのpushだけでも
+Previewデプロイが発生する)
+
+【Ignored Build Stepの注意】コマンドはRoot Directory内で実行される。
+`git diff HEAD^ HEAD --quiet -- ./<フォルダ名>` と書くと存在しないパスを指して常にスキップ
+(CANCELED)になるため、`-- .` と書く。
+
+## 自動デプロイ停止方式(vercel.json)(2026-09-24〜、daily-reportで検証済み)
+
+Git連携の接続/解除はClaudeのVercelツールではできない(ユーザー操作が必要)。そのため、
+連携の付け外しの代わりに、アプリのフォルダ(Root Directory)に次の `vercel.json` を置く方式を使う。
+
+```json
+{ "git": { "deploymentEnabled": false } }
+```
+
+- 効果: 連携したままでも、ブランチpush・mainマージで自動デプロイされない
+  (2026-09-24にdaily-reportで、push・マージともにデプロイが発生しないことを確認済み)。
+- 公開するとき: Claudeが Vercelツールの `create_deployment`(target=production、
+  gitSource={type:github, org:aism24, repo:"-", ref:main, sha:<マージコミット>})で
+  デプロイする(この方式でREADYになることを確認済み)。その後 `list_deployments` で
+  READYを確認し、本番URLを実際にfetchして反映を確かめてから報告する。
+- 他のアプリをVercel連携する場合も、先にそのフォルダへ同じ `vercel.json` を置いてから
+  連携してもらう。
 
 ## 不要フォルダ(残置)(2026-09-24〜)
 
