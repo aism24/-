@@ -45,3 +45,25 @@ Vercelのデプロイ枠(利用制限)を消費しすぎないよう、pushの�
 - **公開後にさらに修正が必要になった場合**: コード編集作業に入る前に、Vercel側の
   Git連携を再度有効化してから作業する(修正が完了して連携を解除するかどうかは
   その都度判断)。
+
+## マージ後の本番反映チェック(Git連携の戻し忘れ防止)(2026-09-24〜)
+
+開発中にVercelのGit連携を解除したまま、公開時に戻し忘れると、mainへマージしても
+本番(Vercel URL)が古いまま残る。これに気付けるよう、以下を必ず行う。
+
+- mainへマージしたら、Vercelツール(`list_deployments`等)で対象アプリのVercel
+  プロジェクトのデプロイ一覧を確認する(読み取りのみでデプロイ枠は消費しない)。
+- 今回のマージコミットのデプロイが存在しない場合は、「Git連携が解除されているため
+  本番(Vercel URL)には未反映」とユーザーへ明示的に伝え、公開するなら連携を
+  戻す手順(Settings → Git → GitHub → `aism24/-` をConnect → 次のmainマージ or
+  Deployments → Create Deployment(main))を案内する。jsDelivrでの確認だけで
+  「完了」と報告しないこと。
+- 連携を戻す際は Settings → Build and Deployment → Ignored Build Step が
+  「Automatic」になっていることも確認する(`exit 0` / Don't build anything が
+  残っていると本番に反映されない)。
+
+### 現在のGit連携状態(変更したらここを更新する)
+
+| Vercelプロジェクト | 対象フォルダ | Git連携 | 備考 |
+|---|---|---|---|
+| pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 解除中(2026-09-24〜、開発モード) | Ignored Build Step=Automatic、Skip deployments=有効 |
