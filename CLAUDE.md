@@ -95,3 +95,11 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 | pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 連携中(2026-09-24再連携、公開モード) | Ignored Build Step=Automatic、Skip deployments=有効 |
 
 2026-09-24(再連携後)時点で `list_projects`(repoUrl=aism24/-)の結果は1件(pdf-diff-pythonappのみ)。
+
+## 不要フォルダ(残置)(2026-09-24〜)
+
+- `open_jissun/`: **不要フォルダ**(ユーザー判断)。実際の「実寸法師を開く」は
+  `jissun-open`(Vercel)→ jissun:// → 社内共有フォルダのHTML で運用しており、
+  このフォルダ(GitHub Pages版)は使わない。容量影響がほぼ無いため削除せず残しているだけ。
+  新規の作業・Vercel化・ランチャー登録の対象にしないこと。
+  (ただし `gas/Code.gs` は稼働中GASのソースの可能性があるため、参照用としては有効)
