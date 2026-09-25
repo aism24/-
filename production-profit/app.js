@@ -141,6 +141,13 @@ function initUi() {
     document.getElementById(id).onchange = onFilterChange;
   });
   document.getElementById('refresh-btn').onclick = refresh;
+  // 期間の「年度・月〆」ボタン(どちらか一方だけ選べる)
+  document.getElementById('f-modes').onclick = (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    document.getElementById('f-mode').value = b.dataset.mode;
+    onFilterChange();
+  };
   // 月度の◀▶: 1か月ずつ移動(リストは新しい順)
   const stepPeriod = (d) => {
     const i = selP.selectedIndex + d;
@@ -226,6 +233,7 @@ function refreshWorkList(from, to, sites) {
 
 function selection() {
   const mode = document.getElementById('f-mode').value;
+  document.querySelectorAll('#f-modes button').forEach((x) => x.classList.toggle('active', x.dataset.mode === mode));
   document.getElementById('f-period-wrap').hidden = mode !== 'period';
   document.getElementById('f-fiscal-wrap').hidden = mode !== 'fiscal';
   document.getElementById('f-range-wrap').hidden = mode !== 'range';
