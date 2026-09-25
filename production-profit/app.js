@@ -619,6 +619,28 @@ function renderBepSvg(id) {
     gb.setAttribute('x', bb.x - 6); gb.setAttribute('y', bb.y - 3);
     gb.setAttribute('width', bb.width + 12); gb.setAttribute('height', bb.height + 6);
   }
+  // ④ 内訳の文字(利益など)がまだ★・目標表示・つまみ・ほかの内訳と重なるときは、縦線の左右 × (元の高さ・★の下・★の上)から
+  //   重なりが最も少なくグラフ内に収まる位置へ移す(★が縦線のすぐ近くにあるとき用)
+  if (star) {
+    const fixedObst = [star, gb, box.querySelector('.handle rect')].filter(Boolean).map(rectOf);
+    const sr = rectOf(star);
+    segEls.forEach((el) => {
+      const others = segEls.filter((e) => e !== el).map(rectOf);
+      const obst = fixedObst.concat(others);
+      const hit = (r) => obst.reduce((a2, o) => a2 + area(r, o), 0);
+      if (hit(rectOf(el)) === 0) return;
+      const y0 = Number(el.getAttribute('y')), hgt = rectOf(el).h;
+      let best = null;
+      [['start', 10], ['end', -10]].forEach(([anc, ox]) => [y0, sr.y + sr.h + hgt * 0.85, sr.y - 4].forEach((y) => {
+        el.setAttribute('text-anchor', anc); el.setAttribute('x', st.cursorX + ox); el.setAttribute('y', y);
+        const r = rectOf(el);
+        const out = Math.max(0, g.l - r.x) + Math.max(0, r.x + r.w - (W - 2)) + Math.max(0, g.t - r.y) + Math.max(0, r.y + r.h - (g.t + g.h));
+        const score = out * 1000 + hit(r) + Math.abs(y - y0) * 0.01; // 同じくらいなら元の高さに近い方
+        if (!best || score < best.score) best = { score, anc, x: st.cursorX + ox, y };
+      }));
+      el.setAttribute('text-anchor', best.anc); el.setAttribute('x', best.x); el.setAttribute('y', best.y);
+    });
+  }
   // 損益分岐値: グラフの左上に置き、点から引き出し線を引く
   const bi = box.querySelector('.beInfo');
   if (bi && st.beAt) {
@@ -729,9 +751,20 @@ function renderSim(sel, an) {
   state.simRemain = null;
   if (sel.to < sel.fullTo) {
     const full = C.analyze(sel.data, state.settings, sel.from, sel.fullTo, sel.sites, sel.work || undefined).total;
-    const fracOf = (from, to) => C.periodsInRange(from, to).reduce((a, x) => a + x.frac, 0);
-    const done = fracOf(sel.from, sel.to), left = fracOf(sel.from, sel.fullTo) - done;
-    state.simRemain = Object.assign(C.remainingNeed(t, full, state.settings), { done, left, end: sel.fullTo });
+    // これまで・残りの期間は出勤日数で数える(残りの月の連休なども反映される)
+    const cal = state.settings.calendar || {};
+    const next = C.utcToYmd(Date.parse(sel.to + 'T00:00:00Z') + 86400000);
+    const doneDays = C.workDaysIn(cal, sel.from, sel.to), leftDays = C.workDaysIn(cal, next, sel.fullTo);
+    state.simRemain = Object.assign(C.remainingNeed(t, full, state.settings), { doneDays, leftDays, end: sel.fullTo });
+  }
+  // 「時間を減らす」の判定用: 期間の出勤日数と、直近12か月度(締まった月)の1出勤日あたり工数(工場単位。工事を選んだときは使わない)
+  state.simDaily = null;
+  if (!sel.work && state.lastYmd) {
+    const cal = state.settings.calendar || {};
+    const lastKey = C.periodKeyOf(state.lastYmd);
+    const endKey = state.lastYmd === C.periodRange(lastKey).to ? lastKey : C.shiftPeriod(lastKey, -1);
+    const days = C.workDaysIn(cal, sel.from, sel.to);
+    if (days > 0) state.simDaily = Object.assign({ days }, C.dailyHoursStats(state.cache, cal, sel.sites, endKey));
   }
   renderSimWorks(an);
   if (!state.simBase) {
@@ -831,10 +864,23 @@ function renderSimAdvice(r, t, W, P) {
     (ok ? `<span class="advGap">達成済み（目標より <b class="pos">${yen(-a.gap)}</b>円 多い）</span>`
       : `<span class="advGap">不足額 <b class="neg">${yen(a.gap)}</b>円 ／ ほかの条件は同じとして、どれか1つで</span>`) + '</div>';
 
+  // 「時間を減らす」を1出勤日あたりに直し、直近1年で最も少なかった月の1日あたり工数(今の体制で実際に出せた最少水準)と比べる
+  const dailyNote = (c) => {
+    const dd = state.simDaily;
+    if (!dd || c.ng || ok || !(c.need > 0)) return '';
+    const now = r.hours / dd.days, after = (r.hours - c.need) / dd.days;
+    let h = `<div class="advDaily">1日 ${fmt(now, 0)}→<b>${fmt(after, 0)}</b>h（−${fmt(now - after, 0)}h・約${fmt((now - after) / 8, 0)}人分）</div>`;
+    if (dd.min !== null) {
+      h += `<div class="advDaily muted2" title="直近12か月度の1出勤日あたり工数。最少=${esc(C.periodLabel(dd.minKey))}">過去1年 平均${fmt(dd.avg, 0)}・最少${fmt(dd.min, 0)}h/日</div>`;
+      if (after < dd.min) h += `<div class="advWarn" title="過去1年で最も少なかった月の1日あたり工数を下回るため、人員配置の見直しが必要">⚠ 過去1年の最少を下回る＝時間削減だけでは困難</div>`;
+    }
+    return h;
+  };
+
   // ② 施策カード: 必要な変化量・変更前→後・変化率のバー(3枚の中で一番大きい変化率を100%とする)・1単位あたりの利益増
   const plans = [
     { cls: 'advW', title: '生産量を増やす', cond: '今の時間のまま', need: a.addTons, unit: 't', d: 1, from: W, sign: 1, unitNote: `1t増で 利益 +${yen(a.perTon)}円` },
-    { cls: 'advH', title: '時間を減らす', cond: '今の生産量のまま', need: a.cutHours, unit: 'h', d: 0, from: r.hours, sign: -1, unitNote: `1h減で 利益 +${yen(a.perHour)}円` },
+    { cls: 'advH', title: '時間を減らす', cond: '今の生産量のまま', need: a.cutHours, unit: 'h', d: 0, from: r.hours, sign: -1, unitNote: `1h減で 利益 +${yen(a.perHour)}円`, daily: true },
     { cls: 'advV', title: '変動費を下げる', cond: '1tあたり', need: a.cutVarPerTon, unit: '円/t', d: 0, from: r.varPerTon, sign: -1, unitNote: `1,000円/t減で 利益 +${yen(a.perVar1000)}円` },
   ];
   plans.forEach((c) => {
@@ -852,7 +898,7 @@ function renderSimAdvice(r, t, W, P) {
         `<div class="advFromTo">${fmt(c.from, c.d)} → ${fmt(c.from + c.sign * c.need, c.d)}${c.unit}</div>` +
         `<div class="advBar"><i style="width:${Math.max(2, c.rate / maxRate * 100)}%"></i><span>${ok ? '' : sg}${pct(c.rate)}</span></div>`;
     }
-    return `<div class="advCard ${c.cls}"><div class="advTitle">${c.title}<small>（${c.cond}）</small></div>${body}<div class="advNote">${c.unitNote}</div></div>`;
+    return `<div class="advCard ${c.cls}"><div class="advTitle">${c.title}<small>（${c.cond}）</small></div>${body}${c.daily ? dailyNote(c) : ''}<div class="advNote">${c.unitNote}</div></div>`;
   }).join('') + '</div>';
 
   // ③ 今後の見積もりの目安単価: 損益0・今・目標の3つの単価を1本の目盛りに並べる
@@ -869,19 +915,21 @@ function renderSimAdvice(r, t, W, P) {
   // ④ 期間全体で達成するには: 残り期間に月あたり何t必要か(これまでの月平均との比較)
   const m = state.simRemain;
   if (m) {
-    const avgT = m.done > 0 ? t.weight / m.done : 0;
-    const perM = m.tons !== null && m.left > 0 ? m.tons / m.left : null;
+    // 1出勤日あたりの必要生産量と、これまでの1出勤日あたり生産量を比べる
+    const avgT = m.doneDays > 0 ? t.weight / m.doneDays : 0;
+    const perM = m.tons !== null && m.leftDays > 0 ? m.tons / m.leftDays : null;
     const ratio = perM !== null && avgT > 0 ? perM / avgT : null;
     const lv = m.tons === null ? 'lvBad' : m.tons <= 0 || (ratio !== null && ratio <= 1) ? 'lvGood' : ratio !== null && ratio <= 1.2 ? 'lvWarn' : 'lvBad';
     let body;
     if (m.tons === null) body = '<div class="advBig neg">今の条件では到達不能</div>';
+    else if (m.tons > 0 && !(m.leftDays > 0)) body = '<div class="advBig neg">残りの出勤日がありません</div>';
     else if (m.tons <= 0) body = '<div class="advBig pos">達成見込み</div><div class="advFromTo">残り期間の生産量に関わらず達成</div>';
     else {
       const w = (v) => Math.max(2, v / Math.max(perM, avgT) * 100).toFixed(1);
-      body = `<div class="advBig">月あたり ${ton(perM)}<span class="advUnit">t</span>${ratio !== null ? `<span class="advRatio">これまでの ${fmt(ratio, 2)}倍</span>` : ''}</div>
-        <div class="advCmp"><span>必要</span><div class="advBar2"><i class="need" style="width:${w(perM)}%"></i></div><b>${ton(perM)}t</b></div>
-        <div class="advCmp"><span>これまで</span><div class="advBar2"><i style="width:${w(avgT)}%"></i></div><b>${ton(avgT)}t</b></div>
-        <div class="advNote">残り約${fmt(m.left, 1)}か月で 計${ton(m.tons)}t（残りの月の固定費 ${yen(m.extraFixed)}円込み）</div>`;
+      body = `<div class="advBig">1出勤日あたり ${ton(perM)}<span class="advUnit">t</span>${ratio !== null ? `<span class="advRatio">これまでの ${fmt(ratio, 2)}倍</span>` : ''}</div>
+        <div class="advCmp"><span>必要</span><div class="advBar2"><i class="need" style="width:${w(perM)}%"></i></div><b>${ton(perM)}t/日</b></div>
+        <div class="advCmp"><span>これまで</span><div class="advBar2"><i style="width:${w(avgT)}%"></i></div><b>${ton(avgT)}t/日</b></div>
+        <div class="advNote">残りの出勤日 ${m.leftDays}日で 計${ton(m.tons)}t（残りの固定費 ${yen(m.extraFixed)}円込み）</div>`;
     }
     row2 += `<div class="advCard advRemain ${lv}"><div class="advTitle">期間全体で達成するには<small>（〜${md(m.end)}）</small></div>${body}</div>`;
   }
