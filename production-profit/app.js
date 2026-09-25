@@ -458,16 +458,16 @@ function renderBepSvg(id) {
     const nBe = w > 0 && lr > 0 ? (P - vr - oF / w) / lr : null;
     // [項目, 数値, 単位]。数値は右端をそろえる(描画後に列幅を測って配置)
     const lines = [
-      ['損益分岐生産重量', ton(be), 't'],
-      ['損益分岐売上高', fmt(sales(be) / 10000, 0), '万円'],
-      ['損益分岐トン単価', w > 0 ? yen(F / w + vr + lab) : '—', '円/t'],
-      ['損益分岐1t当たり人工数', nBe !== null ? npt(nBe) : '—', '人工'],
-      ['損益分岐工数', nBe !== null ? fmt(nBe * w * C.HOURS_PER_NINKU, 0) : '—', 'h'],
+      ['生産量', ton(be), 't'],
+      ['売上高', fmt(sales(be) / 10000, 0), '万円'],
+      ['トン単価', w > 0 ? yen(F / w + vr + lab) : '—', '円/t'],
+      ['人工数', nBe !== null ? npt(nBe) : '—', '人工'],
+      ['工数', nBe !== null ? fmt(nBe * w * C.HOURS_PER_NINKU, 0) : '—', 'h'],
     ];
     const small = g.w < 700; // グラフが小さいときは文字を小さくして空白に収める
     st.beLh = small ? 15 : 22;
     const fs = `style="font-size:${small ? 12 : 18}px"`;
-    beLbl = `<line class="beLead"/><rect class="beBg" rx="6"/><g class="beInfo">${lines.map(([a, b, c]) =>
+    beLbl = `<line class="beLead"/><rect class="beBg" rx="6"/><g class="beInfo"><text class="lbl be bT" text-anchor="middle" ${fs}>損益分岐値</text>${lines.map(([a, b, c]) =>
       `<text class="lbl be bL" ${fs}>${a}</text><text class="lbl be bN" text-anchor="end" ${fs}>${b}</text><text class="lbl be bU" ${fs}>${c}</text>`).join('')}</g>`; // 文字は最前面に描く
     st.beAt = { bx, by };
   } else st.beAt = null;
@@ -525,7 +525,9 @@ function renderBepSvg(id) {
     const wmax = (els) => Math.max(0, ...els.map((e) => e.getBBox().width));
     const Ls = col('.bL'), Ns = col('.bN'), Us = col('.bU');
     const lw = wmax(Ls), nw = wmax(Ns), uw = wmax(Us), lh = st.beLh, asc = lh * 0.78;
-    const bb = { width: lw + 10 + nw + 3 + uw, height: lh * Ls.length }, pad = 6;
+    const T = bi.querySelector('.bT'), tw = T.getBBox().width; // 見出し「損益分岐値」(1行目・中央揃え)
+    const cw = lw + 10 + nw + 3 + uw, bw = Math.max(cw, tw);
+    const bb = { width: bw, height: lh * (Ls.length + 1) }, pad = 6;
     // 候補: ①点の左上 ②左端に寄せる ③左上端。目標表示(黄色)と重ならない最初の候補を使う
     const gr = gb && gb.getAttribute('width') ? { x: +gb.getAttribute('x'), y: +gb.getAttribute('y'), w: +gb.getAttribute('width'), h: +gb.getAttribute('height') } : null;
     const hit = (l, t) => gr && l - pad < gr.x + gr.w && l + bb.width + pad > gr.x && t - pad < gr.y + gr.h && t + bb.height + pad > gr.y;
@@ -542,8 +544,9 @@ function renderBepSvg(id) {
       pick = cands.find(([l, t]) => !hit(l, t));
     }
     const [left, top] = pick || cands[cands.length - 1];
+    T.setAttribute('x', left + bw / 2); T.setAttribute('y', top + asc);
     Ls.forEach((e, i) => {
-      const y = top + asc + i * lh;
+      const y = top + asc + (i + 1) * lh;
       e.setAttribute('x', left); e.setAttribute('y', y);
       Ns[i].setAttribute('x', left + lw + 10 + nw); Ns[i].setAttribute('y', y);
       Us[i].setAttribute('x', left + lw + 10 + nw + 3); Us[i].setAttribute('y', y);
