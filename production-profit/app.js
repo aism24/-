@@ -519,11 +519,11 @@ function renderSim(sel, an) {
   updateSim();
 }
 
-/* 入力欄の右に、工事ごとの実績(生産重量・人工/t・トン単価・売上額(概算)=生産重量×トン単価)を重量の多い順に並べる */
+/* 入力欄の右に、工事ごとの実績(生産重量・人工/t・トン単価・売上額(概算)=生産重量×トン単価)を工事番号の昇順に並べる */
 function renderSimWorks(an) {
   const rows = C.workBreakdown(an, state.cache)
     .filter((r) => r.workNo !== C.COMMON_WORK && r.weight > 0)
-    .sort((a, b) => b.weight - a.weight);
+    .sort((a, b) => a.workNo.localeCompare(b.workNo, 'ja', { numeric: true })); // 工事番号の昇順
   const box = document.getElementById('sim-works');
   if (!rows.length) { box.innerHTML = '<div class="muted small simEmpty">この条件で生産実績のある工事はありません</div>'; return; }
   box.innerHTML = rows.map((r) => `<div class="simCol" title="${esc(r.workNo + ' ' + r.name)}">
