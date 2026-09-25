@@ -231,18 +231,18 @@ td input[type="number"] { width: 130px; }
 /* ===================== 損益分岐生産量グラフ(SVG) ===================== */
 .bepBox { touch-action: pan-y; cursor: ew-resize; user-select: none; }
 .bepBox svg { position: absolute; top: 0; left: 0; }
-.bepSvg { display: block; font-size: 12px; }
+.bepSvg { display: block; font-size: calc(12px * var(--k, 1)); } /* --k: グラフの大きさに合わせた文字の倍率(app.jsで設定) */
 .bepSvg .bg { stroke: var(--grid); stroke-width: 1; }
-.bepSvg .ax { fill: var(--text2); font-size: 11px; }
+.bepSvg .ax { fill: var(--text2); font-size: calc(11px * max(1, var(--k, 1))); } /* 目盛りは小さくしない */
 .bepSvg .lbl { fill: var(--text); font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
-.bepSvg .lbl.fixedLbl { fill: var(--bep-fixed); font-size: 11px; }
+.bepSvg .lbl.fixedLbl { fill: var(--bep-fixed); font-size: calc(11px * max(1, var(--k, 1))); }
 .bepSvg .lbl.cost { fill: var(--bep-cost); }
 .bepSvg .lbl.good, .bepSvg .lbl.bProfit { fill: var(--good); }
 .bepSvg .lbl.bLoss { fill: var(--bad); }
 .bepSvg .lbl.bVar { fill: var(--bep-var); }
 .bepSvg .lbl.bFixed { fill: var(--bep-fixed); }
-.bepSvg .lbl.seg { font-size: 18px; } /* 内訳の文字は1.5倍 */
-.bepSvg .lbl.lineLbl { font-size: 24px; font-weight: 800; stroke-width: 4px; } /* 「売上」「総費用」は2倍・太字 */
+.bepSvg .lbl.seg { font-size: calc(18px * var(--k, 1)); } /* 内訳の文字は1.5倍 */
+.bepSvg .lbl.lineLbl { font-size: calc(24px * var(--k, 1)); font-weight: 800; stroke-width: 4px; } /* 「売上」「総費用」は2倍・太字 */
 /* 面: 人件費は固定費に含めて表示するため、人件費帯も固定費と同じ色 */
 .bepSvg .fFixed, .bepSvg .fLabor { fill: var(--bep-fixed); fill-opacity: .16; }
 .bepSvg .fVar { fill: var(--bep-var); fill-opacity: .16; }
@@ -260,14 +260,14 @@ td input[type="number"] { width: 130px; }
 .bepSvg .bProfit { fill: var(--good); }
 .bepSvg .bLoss { fill: var(--bad); }
 .bepSvg .handle rect { fill: var(--text); }
-.bepSvg .handle text { fill: var(--surface); font-weight: 600; }
+.bepSvg .handle text { fill: var(--surface); font-weight: 600; font-size: 12px; } /* つまみは操作部品なので大きさ固定 */
 /* 損益分岐値(引き出し線+背景。見出し「損益分岐値」は太字) */
-.bepSvg .lbl.be { fill: var(--bep-be); font-size: 18px; }
+.bepSvg .lbl.be { fill: var(--bep-be); font-size: calc(18px * var(--k, 1)); }
 .bepSvg .lbl.be.bT { font-weight: 800; }
 .bepSvg .beLead { stroke: var(--bep-be); stroke-width: 1.5; }
 .bepSvg .beBg { fill: var(--surface); fill-opacity: .88; stroke: var(--bep-be); stroke-width: 1; }
 /* 利益目標: ★と「目標生産量/目標利益額」はピンク・2倍・太字、黄色背景がゆっくり点滅 */
-.bepSvg .lbl.goalLbl { font-size: 24px; font-weight: 800; fill: var(--goal); }
+.bepSvg .lbl.goalLbl { font-size: calc(24px * var(--k, 1)); font-weight: 800; fill: var(--goal); }
 .bepSvg .mGoal { fill: var(--goal); stroke: var(--surface); stroke-width: 1.5; }
 .bepSvg .goalBg { fill: #ffe45c; animation: goalBlink 2.4s ease-in-out infinite alternate; }
 @keyframes goalBlink { from { opacity: 1; } to { opacity: 0.15; } }
