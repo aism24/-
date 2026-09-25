@@ -472,9 +472,7 @@ const SIM = [['w', 1], ['n', 0.01], ['p', 100]];
 let simDragging = false;
 function initSim() {
   SIM.forEach(([k]) => {
-    const r = document.getElementById('s-' + k + '-r'), n = document.getElementById('s-' + k);
-    r.oninput = () => { n.value = r.value; updateSim(); };
-    n.oninput = () => { r.value = n.value; updateSim(); };
+    document.getElementById('s-' + k).oninput = updateSim;
   });
   document.getElementById('s-reset').onclick = () => { state.simBase = null; renderAll(); };
 }
@@ -493,9 +491,8 @@ function renderSim(sel, an) {
     state.simBase = base;
     state.simExact = {};
     const set = (k, v, max, step) => {
-      const r = document.getElementById('s-' + k + '-r'), n = document.getElementById('s-' + k);
-      // 数値欄は刻みで丸めない(丸めると基準値でも損益が配分どおりにならず「未達」と出るため)
-      r.min = 0; r.max = max; r.step = step; r.value = v; n.value = +v.toFixed(k === 'p' ? 0 : k === 'w' ? 1 : 2);
+      const n = document.getElementById('s-' + k);
+      n.step = step; n.value = +v.toFixed(k === 'p' ? 0 : k === 'w' ? 1 : 2);
       // 表示は丸めるが、数値欄を触っていない間は丸める前の値で計算する(基準値で損益が配分どおりになるように)
       state.simExact[k] = { shown: n.value, value: v };
     };
@@ -534,7 +531,6 @@ function updateSim() {
     onMove: (t) => {
       simDragging = true;
       document.getElementById('s-w').value = +t.toFixed(1);
-      document.getElementById('s-w-r').value = t;
       updateSim();
       simDragging = false;
     } });
