@@ -109,6 +109,13 @@ tr.common td { color: var(--text2); }
 td input[type="number"] { width: 130px; }
 
 .simGrid { display: grid; grid-template-columns: minmax(300px, 1fr) 1.4fr; gap: 16px; }
+/* 目標シミュレーター: 左=入力(上)と各数値(下)、右=グラフ(左列の高さいっぱい) */
+.simLayout { display: grid; grid-template-columns: minmax(360px, 1fr) 1.5fr; gap: 16px; align-items: stretch; }
+.simLeft { display: flex; flex-direction: column; min-width: 0; }
+.simLeft .panel:last-child { flex: 1; margin-bottom: 0; }
+.simLeft .kpis.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.simChart { display: flex; flex-direction: column; margin-bottom: 0; }
+.simChart .chartBox { flex: 1; min-height: 420px; height: auto; }
 .simRow { display: grid; grid-template-columns: 120px 1fr 120px; gap: 10px; align-items: center; margin-bottom: 14px; }
 .simRow input[type="range"] { width: 100%; }
 .btnRow { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -123,7 +130,8 @@ td input[type="number"] { width: 130px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 800px) {
-  .grid2, .simGrid { grid-template-columns: 1fr; }
+  .grid2, .simGrid, .simLayout { grid-template-columns: 1fr; }
+  .simChart .chartBox { min-height: 360px; }
   .simRow { grid-template-columns: 1fr 110px; }
   .simRow label { grid-column: 1 / -1; }
   .tab { padding: 12px 16px; }
