@@ -371,6 +371,8 @@ function niceStep(range, count) {
   const n = raw / mag;
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
 }
+/* 1億円以上は「7.6億円」(小数1桁)、未満は万円表示 */
+function oku(v) { return Math.abs(v) >= 1e8 ? fmt(v / 1e8, 1) + '億円' : man(v); }
 function man(v) { return Math.abs(v) >= 10000 ? fmt(v / 10000, 0) + '万円' : yen(v) + '円'; }
 
 function drawBep(id, o) {
@@ -487,7 +489,7 @@ function renderBepSvg(id) {
     }).join(' ');
     const left = gx > g.l + 290, up = gy - 76 > g.t;
     const tx = left ? gx - 22 : gx + 22, ty = up ? gy - 44 : gy + 34;
-    h += `<rect class="goalBg" rx="6"/><text class="lbl good goalLbl" x="${tx}" y="${ty}" text-anchor="${left ? 'end' : 'start'}">目標生産量 ${ton(o.goalTons)}t<tspan x="${tx}" dy="28">目標利益額 ${yen(sales(o.goalTons) * (o.profitRate || 0))}円</tspan></text>`;
+    h += `<rect class="goalBg" rx="6"/><text class="lbl good goalLbl" x="${tx}" y="${ty}" text-anchor="${left ? 'end' : 'start'}">目標生産量 ${ton(o.goalTons)}t<tspan x="${tx}" dy="28">目標利益額 ${oku(sales(o.goalTons) * (o.profitRate || 0))}</tspan></text>`;
     h += `<circle class="goalBg" cx="${gx}" cy="${gy}" r="22.5"/><polygon class="mGoal" points="${star}"/>`; // ★の背景に1.5倍の〇(黄色・点滅)
   }
   box.innerHTML = `<svg class="bepSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="損益分岐生産量グラフ">${h}</svg>`;
