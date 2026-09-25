@@ -357,8 +357,8 @@ function drawBep(id, o) {
   const box = document.getElementById(id);
   const prev = bepState[id];
   // 同じ条件の再描画(ドラッグ中など)ではつまみ位置を保つ。条件が変わったら初期位置に戻す。
-  const sig = [o.fixed, o.unitPrice, o.laborPerTon, o.varPerTon, o.profitRate].join('|');
-  const st = bepState[id] = { o, x: (prev && prev.sig === sig && !o.forceX) ? prev.x : (o.x || 0), sig, maxX: prev && prev.sig === sig ? prev.maxX : null };
+  const sig = o.sig || [o.fixed, o.unitPrice, o.laborPerTon, o.varPerTon, o.profitRate].join('|');
+  const st = bepState[id] = { o, x: (prev && prev.sig === sig && !o.forceX) ? prev.x : (o.x || 0), sig, maxX: prev && prev.sig === sig && !o.forceX ? prev.maxX : null }; // ドラッグ中以外は縮尺を取り直す
   if (!st.maxX) st.maxX = Math.max(o.x || 0, o.beTons || 0, o.goalTons || 0, 1) * 1.35;
   renderBepSvg(id);
   if (!box.dataset.bound) {
@@ -402,7 +402,7 @@ function renderBepSvg(id) {
   for (let v = 0; v <= maxY + 1e-9; v += ys) {
     h += `<line class="bg" x1="${g.l}" x2="${g.l + g.w}" y1="${Y(v)}" y2="${Y(v)}"/>`;
     // 左余白の固定費ラベル(2行)と重なる目盛りの数字は出さない
-    if (Math.abs(Y(v) - Y(F)) > 22) h += `<text class="ax" x="${g.l - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v / 10000, 0)}万</text>`;
+    if (Math.abs(Y(v) - Y(F)) > (o.fixedLabel ? 34 : 22)) h += `<text class="ax" x="${g.l - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v / 10000, 0)}万</text>`;
   }
   for (let v = 0; v <= maxX + 1e-9; v += xs) h += `<line class="bg" y1="${g.t}" y2="${g.t + g.h}" x1="${X(v)}" x2="${X(v)}"/><text class="ax" x="${X(v)}" y="${g.t + g.h + 16}" text-anchor="middle">${fmt(v, 0)}</text>`;
   h += `<text class="ax" x="${g.l + g.w}" y="${H - 4}" text-anchor="end">生産重量(t)</text>`;
@@ -419,17 +419,18 @@ function renderBepSvg(id) {
   }
   // 線
   h += `<line class="lFixed" x1="${X(0)}" x2="${X(maxX)}" y1="${Y(F)}" y2="${Y(F)}"/>`;
-  h += `<text class="lbl fixedLbl" x="${g.l - 6}" y="${Y(F) - 3}" text-anchor="end">その他固定費<tspan x="${g.l - 6}" dy="14">${man(F)}</tspan></text>`;
+  h += `<text class="lbl fixedLbl" x="${g.l - 6}" y="${Y(F) - 3}" text-anchor="end">${(o.fixedLabel || ['その他固定費']).map((t, i) => i ? `<tspan x="${g.l - 6}" dy="13">${t}</tspan>` : t).join('')}<tspan x="${g.l - 6}" dy="14">${man(F)}</tspan></text>`;
   h += `<line class="lCost" x1="${X(0)}" y1="${Y(F)}" x2="${X(maxX)}" y2="${Y(cost(maxX))}"/>`;
   h += `<line class="lSales" x1="${X(0)}" y1="${Y(0)}" x2="${X(maxX)}" y2="${Y(sales(maxX))}"/>`;
   h += `<text class="lbl lineLbl" x="${X(maxX) - 4}" y="${Y(sales(maxX)) + 26}" text-anchor="end">売上</text>`;
   h += `<text class="lbl cost lineLbl" x="${X(maxX) - 4}" y="${Y(cost(maxX)) + 26}" text-anchor="end">総費用</text>`;
   // 損益分岐生産量(軸への補助線付き)
+  let beLbl = '';
   if (be !== null) {
     const bx = X(be), by = Y(sales(be));
     h += `<line class="lBe" x1="${bx}" x2="${bx}" y1="${by}" y2="${g.t + g.h}"/><line class="lBe" x1="${g.l}" x2="${bx}" y1="${by}" y2="${by}"/>`;
     h += `<circle class="mBeHalo" cx="${bx}" cy="${by}" r="11"/><circle class="mBe" cx="${bx}" cy="${by}" r="7"/>`;
-    h += `<text class="lbl be" x="${bx + 14}" y="${by - 10}">損益分岐生産量 ${ton(be)}t / ${man(sales(be))}</text>`;
+    beLbl = `<text class="lbl be" x="${bx + 14}" y="${by - 10}">損益分岐生産量 ${ton(be)}t / ${man(sales(be))}</text>`; // 文字は最前面に描く
   }
   // つまみ位置の内訳バー
   const x = st.x, cx = X(x), bw = 8;
@@ -455,6 +456,7 @@ function renderBepSvg(id) {
   const hw = Math.max(hl1.length * 13, hl2.length * 7.5) + 22;
   const hx = Math.min(W - 4 - hw / 2, Math.max(4 + hw / 2, cx));
   h += `<g class="handle"><rect x="${hx - hw / 2}" y="${g.t - 50}" width="${hw}" height="40" rx="10"/><text x="${hx}" y="${g.t - 34}" text-anchor="middle">${hl1}<tspan x="${hx}" dy="16">${hl2}</tspan></text></g>`;
+  h += beLbl;
   // 利益目標達成点(★・目標表示は最前面に描く。試算の破線やバーは裏側を通る)
   if (o.goalTons !== null && o.goalTons !== undefined && o.goalTons <= maxX) {
     const gx = X(o.goalTons), gy = Y(sales(o.goalTons));
@@ -612,7 +614,9 @@ function updateSim() {
     sRow('<span class="subLbl">└ その他固定費</span>', yen(r.fixed), '円', state.simFixedNote),
   ].join('');
   // つまみのドラッグで試算の生産重量を動かせる(スライダー・数値欄と連動)
-  drawBep('c-sim', { fixed: r.fixed, unitPrice: P, laborPerTon: n * r.laborRate, varPerTon: r.varPerTon, profitRate: state.settings.rates.profit / 100,
+  // 人件費は試算の生産重量での額を固定費に含め、固定費線を水平にする(つまみのドラッグ中に縮尺が変わらないよう、署名は基準値で作る)
+  drawBep('c-sim', { fixed: r.fixed + r.labor, unitPrice: P, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: state.settings.rates.profit / 100,
+    fixedLabel: ['固定費', '(人件費込み)'], sig: [r.fixed, P, n, r.laborRate, r.varPerTon, state.settings.rates.profit].join('|'),
     x: W, forceX: !simDragging, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: '試算',
     onMove: (t) => {
       simDragging = true;
