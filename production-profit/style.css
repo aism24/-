@@ -349,3 +349,6 @@ td input[type="number"] { width: 130px; }
 .gPeriod { justify-content: flex-start; padding-left: 24px; } /* 年度・月〆ボタンの位置を固定し、右側の期/月度の欄だけ変わるように */
 .simTable .sVal .unit { display: inline-block; width: 2.3em; text-align: left; } /* 単位の幅をそろえて数値の右端を合わせる */
 .bepSvg .lbl.seg, .bepSvg .lbl.be { font-size: 18px; } /* 内訳・損益分岐生産量の文字を1.5倍 */
+/* ◀▶は月度リストと同じ高さにして、年度・月〆の切替で行の高さが変わらないように */
+.periodWrap { align-items: stretch; }
+.monthBtn { font-size: 16px; min-height: 0; padding: 0 12px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; }
