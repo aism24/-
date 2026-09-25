@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>生産損益分析</title>
 <!-- app.js/calc.js/style.cssを変更したら ?v= を必ず変えること(ブラウザ/CDNキャッシュ対策) -->
-<link rel="stylesheet" href="style.css?v=20260925g">
+<link rel="stylesheet" href="style.css?v=20260925h">
 </head>
 <body>
 
@@ -91,7 +91,7 @@
 
   <!-- 目標シミュレーター -->
   <main id="tab-sim" class="tab active">
-    <p class="muted small">選択中の期間・工場・工事の実績(目標があれば目標)を基準に、重量・工数・金額を動かして試算します。人件費単価・固定費・変動費単価は基準値のまま固定します。</p>
+    <p class="muted small">選択中の期間・工場・工事の実績を基準に、重量・工数・金額を動かして試算します。人件費単価・固定費・変動費単価は基準値のまま固定します。</p>
     <div class="simLayout">
       <div class="simLeft">
         <div class="panel simInputs">
@@ -100,9 +100,7 @@
           <div class="simRow"><label>トン単価(円/t)</label><input type="range" id="s-p-r"><input type="number" id="s-p" step="any"></div>
           <div class="btnRow">
             <button id="s-reset" class="ghost">基準値に戻す</button>
-            <button id="s-save" class="primary">この値を月間目標として保存</button>
           </div>
-          <p id="s-save-note" class="muted small"></p>
         </div>
         <div class="panel"><div id="sim-kpis" class="kpis compact"></div></div>
       </div>
@@ -146,11 +144,6 @@
         <div class="tableWrap"><table id="set-costs"></table></div>
       </div>
       <div class="panel">
-        <h2>月間目標</h2>
-        <label>月度 <select id="set-tperiod"></select></label>
-        <div class="tableWrap"><table id="set-targets"></table></div>
-      </div>
-      <div class="panel">
         <h2>工事ごとの契約金額</h2>
         <label>絞り込み <input type="search" id="set-wsearch" placeholder="工事No・工事名"></label>
         <label class="check"><input type="checkbox" id="set-wunset"> 契約金額が未入力の工事だけ</label>
@@ -163,7 +156,7 @@
 <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">読み込み中…</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="calc.js?v=20260925g"></script>
-<script src="app.js?v=20260925g"></script>
+<script src="calc.js?v=20260925h"></script>
+<script src="app.js?v=20260925h"></script>
 </body>
 </html>

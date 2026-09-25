@@ -133,9 +133,6 @@ function initUi() {
     document.getElementById('f-site').value = b.dataset.site;
     onFilterChange();
   };
-  document.getElementById('set-tperiod').innerHTML = periods.slice().reverse().concat([C.shiftPeriod(cur, 1), C.shiftPeriod(cur, 2)])
-    .filter((k, i, a) => a.indexOf(k) === i).sort().reverse().map((k) => `<option value="${k}">${C.periodLabel(k)}</option>`).join('');
-  document.getElementById('set-tperiod').value = cur;
 
   ['f-mode', 'f-period', 'f-fiscal', 'f-from', 'f-to', 'f-site', 'f-work'].forEach((id) => {
     document.getElementById(id).onchange = onFilterChange;
@@ -187,7 +184,7 @@ function refreshWorkList(from, to, sites) {
   sel.innerHTML = '<option value="">全工事</option>' + list.map((wn) =>
     `<option value="${esc(wn)}">${esc(wn === C.COMMON_WORK ? '' : wn + '　')}${esc(name(wn))}(${ton(found[wn].weight)}t)</option>`).join('');
   sel.value = list.includes(cur) ? cur : '';
-  document.getElementById('f-work-note').textContent = sel.value ? '工事に絞ると固定費は工場の固定費を売上比で配賦します(月間目標は工場単位のため対象外)' : list.length + '件';
+  document.getElementById('f-work-note').textContent = sel.value ? '工事に絞ると固定費は工場の固定費を売上比で配賦します' : list.length + '件';
   return sel.value;
 }
 
@@ -227,24 +224,27 @@ function renderAll() {
 function kpi(label, value, unit, sub, cls) {
   return `<div class="kpi"><div class="label">${label}</div><div class="value ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="sub">${sub || ''}</div></div>`;
 }
-function vsTarget(actual, target, fmtFn, lowerIsBetter) {
-  if (!target) return '目標未設定';
-  const ok = lowerIsBetter ? actual <= target : actual >= target;
-  return `目標 ${fmtFn(target)} <span class="${ok ? 'pos' : 'neg'}">(${lowerIsBetter ? '' : '達成率 '}${lowerIsBetter ? (ok ? '達成' : '未達') : pct(actual / target)})</span>`;
+/* 目標は利益目標額(売上×利益率)の1つだけ。損益がこれ以上なら達成。 */
+function goalKpi(profit, goal, hasSales) {
+  const ok = hasSales && profit - goal >= -1; // 1円未満の誤差は達成扱い
+  const d = profit - goal;
+  return kpi('利益目標額', yen(goal), '円', hasSales ? `<span class="${ok ? 'pos' : 'neg'}">${ok ? '達成' : '未達'}</span>(損益との差 ${d >= 0 ? '+' : ''}${yen(d)}円)` : '売上なし',
+    hasSales ? (ok ? 'pos' : 'neg') : '');
 }
 
 function renderDash(sel, an) {
   const t = an.total;
   const note = document.getElementById('dash-note');
   note.hidden = !t.estimated;
-  note.textContent = '目標が未設定の月度は、実績売上を基準に費用を配分率で割り付けているため、損益は利益率(' +
-    state.settings.rates.profit + '%)どおりの見込み値になります。月間目標や実額(設定タブ)を入れると、実態との差が表れます。';
+  note.textContent = '費用の実額(スプシ「費用設定」)が未入力の工場は、実績売上を配分率で割り付けているため、損益は利益率(' +
+    state.settings.rates.profit + '%)どおりの見込み値になります。実額を入れると、実態との差が表れます。';
   document.getElementById('kpis').innerHTML = [
-    kpi('生産重量', ton(t.weight), 't', vsTarget(t.weight, t.hasTarget && t.targetWeight, ton)),
-    kpi('1t当たり人工数', npt(t.ninkuPerTon), '人工/t', `総工数 ${fmt(t.hours, 1)}h(${fmt(t.ninku, 1)}人工)<br>` + vsTarget(t.ninkuPerTon, t.hasTarget && t.targetNinkuPerTon, npt, true)),
-    kpi('平均トン単価', yen(t.unitPrice), '円/t', t.hasTarget ? '目標 ' + yen(t.targetUnitPrice) + '円/t' : '目標未設定'),
-    kpi('売上額', yen(t.sales), '円', vsTarget(t.sales, t.hasTarget && t.targetSales, yen)),
-    kpi('損益', yen(t.profit), '円', `利益率 ${pct(t.profitRate)} / 利益目標 ${yen(t.profitGoal)}円`, t.profit >= 0 ? 'pos' : 'neg'),
+    kpi('生産重量', ton(t.weight), 't', ''),
+    kpi('1t当たり人工数', npt(t.ninkuPerTon), '人工/t', `総工数 ${fmt(t.hours, 1)}h(${fmt(t.ninku, 1)}人工)`),
+    kpi('平均トン単価', yen(t.unitPrice), '円/t', ''),
+    kpi('売上額', yen(t.sales), '円', ''),
+    kpi('損益', yen(t.profit), '円', `利益率 ${pct(t.profitRate)}`, t.profit >= 0 ? 'pos' : 'neg'),
+    goalKpi(t.profit, t.profitGoal, t.sales > 0),
     kpi('損益分岐点', ton(t.breakEvenTons), 't', t.breakEvenTons !== null ? `実績は分岐点の ${pct(t.weight / t.breakEvenTons)}` : '限界利益がマイナスのため到達不能'),
     kpi('目標売上額(利益目標達成)', yen(t.goalSales), '円', t.goalTons !== null ? `必要生産量 ${ton(t.goalTons)}t` + (t.goalSales ? ` / 達成率 ${pct(t.sales / t.goalSales)}` : '') : '到達不能'),
   ].join('');
@@ -280,8 +280,8 @@ function renderDash(sel, an) {
     options: baseOpts('円', 0),
   });
 
-  const head = '<tr><th>月度</th><th class="n">生産重量(t)</th><th class="n">目標重量</th><th class="n">工数(h)</th><th class="n">人工/t</th><th class="n">トン単価</th><th class="n">売上</th><th class="n">人件費</th><th class="n">変動費</th><th class="n">固定費</th><th class="n">損益</th><th class="n">利益率</th><th class="n">分岐点(t)</th></tr>';
-  const rowHtml = (label, x, cls) => `<tr class="${cls || ''}"><td>${label}</td><td class="n">${ton(x.weight)}</td><td class="n">${x.hasTarget ? ton(x.targetWeight) : '—'}</td><td class="n">${fmt(x.hours, 1)}</td><td class="n">${npt(x.ninkuPerTon)}</td><td class="n">${yen(x.unitPrice)}</td><td class="n">${yen(x.sales)}</td><td class="n">${yen(x.labor)}</td><td class="n">${yen(x.variable)}</td><td class="n">${yen(x.fixed)}</td><td class="n ${x.profit >= 0 ? 'pos' : 'neg'}">${yen(x.profit)}</td><td class="n">${pct(x.profitRate)}</td><td class="n">${ton(x.breakEvenTons)}</td></tr>`;
+  const head = '<tr><th>月度</th><th class="n">生産重量(t)</th><th class="n">工数(h)</th><th class="n">人工/t</th><th class="n">トン単価</th><th class="n">売上</th><th class="n">人件費</th><th class="n">変動費</th><th class="n">固定費</th><th class="n">損益</th><th class="n">利益率</th><th class="n">分岐点(t)</th></tr>';
+  const rowHtml = (label, x, cls) => `<tr class="${cls || ''}"><td>${label}</td><td class="n">${ton(x.weight)}</td><td class="n">${fmt(x.hours, 1)}</td><td class="n">${npt(x.ninkuPerTon)}</td><td class="n">${yen(x.unitPrice)}</td><td class="n">${yen(x.sales)}</td><td class="n">${yen(x.labor)}</td><td class="n">${yen(x.variable)}</td><td class="n">${yen(x.fixed)}</td><td class="n ${x.profit >= 0 ? 'pos' : 'neg'}">${yen(x.profit)}</td><td class="n">${pct(x.profitRate)}</td><td class="n">${ton(x.breakEvenTons)}</td></tr>`;
   document.getElementById('t-trend').innerHTML = head + trAll.byPeriod.map((x) => rowHtml(C.periodLabel(x.period), x)).join('') + rowHtml('合計', trAll.total, 'total');
   document.getElementById('t-site').innerHTML = head.replace('<th>月度</th>', '<th>工場</th>') +
     an.bySite.map((x) => rowHtml(esc(x.site), x)).join('') + (an.bySite.length > 1 ? rowHtml('全社', an.total, 'total') : '');
@@ -472,15 +472,15 @@ function initSim() {
     n.oninput = () => { r.value = n.value; updateSim(); };
   });
   document.getElementById('s-reset').onclick = () => { state.simBase = null; renderAll(); };
-  document.getElementById('s-save').onclick = saveSimAsTarget;
 }
 
 function renderSim(sel, an) {
   const t = an.total;
+  // 初期値は選択中の期間・工場・工事の実績
   const base = {
-    w: t.hasTarget ? t.targetWeight : t.weight,
-    n: t.hasTarget && t.targetNinkuPerTon ? t.targetNinkuPerTon : (t.ninkuPerTon || 0),
-    p: t.hasTarget && t.targetUnitPrice ? t.targetUnitPrice : (t.unitPrice || state.settings.standardUnitPrice || 0),
+    w: t.weight,
+    n: t.ninkuPerTon || 0,
+    p: t.unitPrice || state.settings.standardUnitPrice || 0,
   };
   state.simSel = sel;
   state.simTotal = t;
@@ -498,11 +498,6 @@ function renderSim(sel, an) {
     set('n', base.n, Math.max(base.n * 2, 1), 0.01);
     set('p', base.p, Math.max(base.p * 2, 10000), 100);
   }
-  const canSave = sel.mode === 'period' && !!sel.site && !sel.work;
-  const btn = document.getElementById('s-save');
-  btn.disabled = !canSave;
-  document.getElementById('s-save-note').textContent = canSave ? `${C.periodLabel(sel.periodKey)}・${sel.site} の月間目標として保存します(編集用パスワードが必要)`
-    : '月間目標として保存するには、期間を「月度」、工場を1つ、工事は「全工事」を選んでください。';
   updateSim();
 }
 
@@ -521,7 +516,7 @@ function updateSim() {
   document.getElementById('sim-kpis').innerHTML = [
     kpi('売上額', yen(r.sales), '円', diff(r.sales, b.w * b.p, yen)),
     kpi('損益', yen(r.profit), '円', `利益率 ${pct(r.profitRate)}`, r.profit >= 0 ? 'pos' : 'neg'),
-    kpi('利益目標', r.goalMet ? '達成' : '未達', '', `目標利益 ${yen(r.profitGoal)}円`, r.goalMet ? 'pos' : 'neg'),
+    goalKpi(r.profit, r.profitGoal, r.sales > 0),
     kpi('必要人工', fmt(r.ninku, 1), '人工', `${fmt(r.hours, 0)}h`),
     kpi('損益分岐点', ton(r.breakEvenTons), 't', r.breakEvenTons !== null ? `余裕 ${ton(W - r.breakEvenTons)}t` : '到達不能'),
     kpi('目標売上額', yen(r.goalSales), '円', r.goalTons !== null ? `必要生産量 ${ton(r.goalTons)}t` : '到達不能'),
@@ -538,17 +533,6 @@ function updateSim() {
       updateSim();
       simDragging = false;
     } });
-}
-
-async function saveSimAsTarget() {
-  const sel = state.simSel;
-  if (!(await ensureEdit())) return;
-  state.settings.targets[sel.periodKey + '|' + sel.site] = {
-    weight: simValue('w'), ninkuPerTon: simValue('n'), unitPrice: simValue('p'),
-  };
-  await saveSettings();
-  state.simBase = null;
-  renderAll();
 }
 
 /* ===================== 工事別分析 ===================== */
@@ -629,7 +613,6 @@ function initSettings() {
     renderSettings();
   };
   document.getElementById('set-save').onclick = saveSettings;
-  document.getElementById('set-tperiod').onchange = renderSettings;
   document.getElementById('set-wsearch').oninput = renderSettingsWorks;
   document.getElementById('set-wunset').onchange = renderSettingsWorks;
   // 入力はすべて委譲で拾い、state.settingsへ即時反映する(保存ボタンで送信)
@@ -642,7 +625,6 @@ function initSettings() {
     else if (d.k === 'std') s.standardUnitPrice = v || 0;
     else if (d.k === 'common') s.commonWorkNos = v;
     else if (d.k === 'cost') (s.costs[d.site] = s.costs[d.site] || {})[d.f] = v;
-    else if (d.k === 'target') (s.targets[d.key] = s.targets[d.key] || {})[d.f] = v;
     else if (d.k === 'work') {
       const w = (s.works[d.wn] = s.works[d.wn] || { name: (state.cache.works[d.wn] || {}).name || '' });
       w[d.f] = v;
@@ -652,7 +634,6 @@ function initSettings() {
     state.dirty = true;
     document.getElementById('set-dirty').textContent = '未保存の変更があります';
     if (d.k === 'rate') updateRateSum();
-    if (d.k === 'target') renderTargetSales();
   });
 }
 
@@ -704,23 +685,7 @@ function renderSettings() {
       return `<tr><td>${esc(site)}</td><td class="n">${numInput({ k: 'cost', site, f: 'laborRate' }, c.laborRate, 100)}</td><td class="n">${numInput({ k: 'cost', site, f: 'fixedMonthly' }, c.fixedMonthly, 10000)}</td><td class="n">${numInput({ k: 'cost', site, f: 'variablePerTon' }, c.variablePerTon, 100)}</td></tr>`;
     }).join('');
 
-  const pk = document.getElementById('set-tperiod').value;
-  document.getElementById('set-targets').innerHTML = '<tr><th>工場</th><th class="n">目標重量(t)</th><th class="n">目標人工/t</th><th class="n">目標トン単価(円/t)</th><th class="n">目標売上</th></tr>' +
-    state.cache.sites.map((site) => {
-      const key = pk + '|' + site, t = s.targets[key] || {};
-      return `<tr><td>${esc(site)}</td><td class="n">${numInput({ k: 'target', key, f: 'weight' }, t.weight, 0.1)}</td><td class="n">${numInput({ k: 'target', key, f: 'ninkuPerTon' }, t.ninkuPerTon, 0.01)}</td><td class="n">${numInput({ k: 'target', key, f: 'unitPrice' }, t.unitPrice, 100)}</td><td class="n" id="ts-${esc(site)}"></td></tr>`;
-    }).join('');
-  renderTargetSales();
   renderSettingsWorks();
-}
-
-function renderTargetSales() {
-  const pk = document.getElementById('set-tperiod').value;
-  state.cache.sites.forEach((site) => {
-    const t = state.settings.targets[pk + '|' + site] || {};
-    const el = document.getElementById('ts-' + site);
-    if (el) el.textContent = t.weight && t.unitPrice ? yen(t.weight * t.unitPrice) + '円' : '—';
-  });
 }
 
 function renderSettingsWorks() {

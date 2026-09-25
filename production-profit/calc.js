@@ -9,7 +9,7 @@
  *   人工 : 作業時間(h) ÷ 8
  *
  * ■ 費用モデル(工場×月度のセルごとに計算し、表示範囲で合算する)
- *   基準売上 = 月間目標があれば 目標重量×目標トン単価、無ければ実績売上
+ *   基準売上 = 実績売上(目標は利益目標額=売上×利益率のみ。月間目標は使わない)
  *   人件費単価(円/人工) = 実額入力があればそれ、無ければ 人件費率×基準売上÷基準人工
  *   固定費(円)         = 実額(月額)入力があればそれ、無ければ 固定費率×基準売上
  *   変動費単価(円/t)   = 実額入力があればそれ、無ければ 変動費率×基準トン単価
@@ -31,7 +31,6 @@
       commonWorkNos: '00-00', // 共通(工事なし)として扱う工事No(カンマ区切り)
       works: {},   // workNo -> { totalWeight: number|null(上書き), contract: number|null }
       costs: {},   // site -> { laborRate, fixedMonthly, variablePerTon } (いずれもnull=未入力)
-      targets: {}, // 'YYYY-MM|site' -> { weight, ninkuPerTon, unitPrice }
     };
   }
 
@@ -144,28 +143,18 @@
     return cells;
   }
 
-  /* 工場×月度1セル分の費用モデル。actualはaggregateのセル(無ければ0扱い)。 */
+  /* 工場×月度1セル分の費用モデル。actualはaggregateのセル(無ければ0扱い)。
+     費用の基準は実績売上・実績人工・実績トン単価(実額が入力された項目は実額)。 */
   function cellModel(site, periodKey, frac, actual, settings) {
     var rates = settings.rates || {};
     var cost = (settings.costs || {})[site] || {};
-    var t = (settings.targets || {})[periodKey + '|' + site];
     var W = actual ? actual.weight : 0;
     var N = actual ? actual.hours / HOURS_PER_NINKU : 0;
     var S = actual ? actual.sales : 0;
+    var basePrice = W > 0 ? S / W : (num(settings.standardUnitPrice) || 0);
 
-    var target = null;
-    if (t && num(t.weight) !== null && num(t.unitPrice) !== null) {
-      var tw = num(t.weight) * frac;
-      var tn = num(t.ninkuPerTon) || 0;
-      target = { weight: tw, ninkuPerTon: tn, unitPrice: num(t.unitPrice), sales: tw * num(t.unitPrice), ninku: tw * tn };
-    }
-    var baseSales = target ? target.sales : S;
-    var baseNinku = target ? target.ninku : N;
-    var basePrice = target ? target.unitPrice : (W > 0 ? S / W : (num(settings.standardUnitPrice) || 0));
-
-    var laborRate = num(cost.laborRate) !== null ? num(cost.laborRate)
-      : (baseNinku > 0 ? (rates.labor / 100) * baseSales / baseNinku : 0);
-    var fixed = num(cost.fixedMonthly) !== null ? num(cost.fixedMonthly) * frac : (rates.fixed / 100) * baseSales;
+    var laborRate = num(cost.laborRate) !== null ? num(cost.laborRate) : (N > 0 ? (rates.labor / 100) * S / N : 0);
+    var fixed = num(cost.fixedMonthly) !== null ? num(cost.fixedMonthly) * frac : (rates.fixed / 100) * S;
     var varPerTon = num(cost.variablePerTon) !== null ? num(cost.variablePerTon) : (rates.variable / 100) * basePrice;
 
     var labor = N * laborRate;
@@ -173,28 +162,23 @@
     return {
       site: site, period: periodKey, frac: frac,
       weight: W, hours: N * HOURS_PER_NINKU, ninku: N, sales: S,
-      target: target, laborRate: laborRate, fixed: fixed, varPerTon: varPerTon,
+      laborRate: laborRate, fixed: fixed, varPerTon: varPerTon,
       labor: labor, variable: variable, profit: S - labor - variable - fixed,
       byWork: actual ? actual.byWork : {},
       estimated: {
         labor: num(cost.laborRate) === null, fixed: num(cost.fixedMonthly) === null,
-        variable: num(cost.variablePerTon) === null, base: !target,
+        variable: num(cost.variablePerTon) === null,
       },
     };
   }
 
   /* 複数セルの合算と、合算後の指標(人工/t・トン単価・損益分岐点など)。 */
   function summarize(models, settings) {
-    var s = { weight: 0, hours: 0, ninku: 0, sales: 0, labor: 0, variable: 0, fixed: 0, profit: 0,
-      targetWeight: 0, targetSales: 0, targetNinku: 0, hasTarget: false, estimated: false };
+    var s = { weight: 0, hours: 0, ninku: 0, sales: 0, labor: 0, variable: 0, fixed: 0, profit: 0, estimated: false };
     models.forEach(function (m) {
       s.weight += m.weight; s.hours += m.hours; s.ninku += m.ninku; s.sales += m.sales;
       s.labor += m.labor; s.variable += m.variable; s.fixed += m.fixed; s.profit += m.profit;
-      if (m.target) {
-        s.hasTarget = true;
-        s.targetWeight += m.target.weight; s.targetSales += m.target.sales; s.targetNinku += m.target.ninku;
-      }
-      if (m.estimated.base) s.estimated = true;
+      if (m.estimated.labor || m.estimated.fixed || m.estimated.variable) s.estimated = true;
     });
     var rates = settings.rates || {};
     var p = (rates.profit || 0) / 100;
@@ -207,8 +191,6 @@
     s.laborRate = s.ninku > 0 ? s.labor / s.ninku : avg(models, 'laborRate');
     s.profitRate = s.sales > 0 ? s.profit / s.sales : null;
     s.profitGoal = s.sales * p;
-    s.targetNinkuPerTon = s.targetWeight > 0 ? s.targetNinku / s.targetWeight : null;
-    s.targetUnitPrice = s.targetWeight > 0 ? s.targetSales / s.targetWeight : null;
     var be = breakEven({ fixed: s.fixed, unitPrice: s.unitPrice, varPerTon: s.varPerTon, laborPerTon: s.laborPerTon, profitRate: p });
     s.breakEvenTons = be.breakEvenTons;
     s.goalTons = be.goalTons;
@@ -236,11 +218,11 @@
     return r;
   }
 
-  /* 範囲・工場を指定した分析。月度×工場のセルを作り(実績が無い月でも目標・固定費を
+  /* 範囲・工場を指定した分析。月度×工場のセルを作り(実績が無い月でも固定費を
      反映するため、範囲内の全月度×全工場分を作る)、合計・月度別・工場別を返す。 */
   /* workNoを指定すると、その工事だけに絞った分析になる。人件費単価・変動費単価は工場×月度の値を
      そのまま使い、固定費は工場×月度の固定費を売上比で工事へ配賦する(workBreakdownと同じ考え方)。
-     月間目標は工場単位のため、工事に絞った場合は目標なしとして扱う。 */
+  */
   function analyze(data, settings, from, to, sites, workNo) {
     sites = sites || data.sites || DEFAULT_SITES;
     var cells = aggregate(data, settings, from, to, sites);
@@ -274,7 +256,7 @@
     return {
       site: m.site, period: m.period, frac: m.frac,
       weight: a.weight, hours: a.hours, ninku: N, sales: a.sales,
-      target: null, laborRate: m.laborRate, fixed: fixed, varPerTon: m.varPerTon,
+      laborRate: m.laborRate, fixed: fixed, varPerTon: m.varPerTon,
       labor: labor, variable: variable, profit: a.sales - labor - variable - fixed,
       byWork: byWork, estimated: m.estimated,
     };
@@ -325,7 +307,7 @@
       });
   }
 
-  /* シミュレーション。base は analyze().total(選択した月度・工場の基準値)。
+  /* シミュレーション。base は analyze().total(選択した期間・工場・工事の実績)。
      重量W・人工/t n・トン単価Pを変えたときの損益。人件費単価・固定費・変動費単価は
      基準値に固定する(売値を変えても材料費は変わらない前提)。 */
   function simulate(base, settings, W, n, P) {
