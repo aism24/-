@@ -375,6 +375,30 @@
     return { extraFixed: extraFixed, tons: margin > 0 ? need / margin : null };
   }
 
+  /* 会社カレンダー(settings.calendar: {'YYYY-MM-DD': 1=出勤 / 0=休日})で出勤日を数える。
+     カレンダーに無い日は日曜だけ休日とみなす。 */
+  function isWorkDay(calendar, ymd) {
+    var v = (calendar || {})[ymd];
+    if (v === 1 || v === 0) return v === 1;
+    return new Date(ymdToUtc(ymd)).getUTCDay() !== 0;
+  }
+  function workDaysIn(calendar, from, to) {
+    var n = 0;
+    for (var t = ymdToUtc(from), e = ymdToUtc(to); t <= e; t += 86400000) if (isWorkDay(calendar, utcToYmd(t))) n++;
+    return n;
+  }
+
+  /* 月度の途中の見込み: 範囲[from,to]の実績(重量・工数)を factor 倍したデータを返す(元のdataは変えない)。
+     期間全体(月度の最後まで)で analyze すると、固定費は1か月分・売上/変動費/人件費は見込みの量になる。 */
+  function scaleRange(data, from, to, factor) {
+    var out = {};
+    Object.keys(data).forEach(function (k) { out[k] = data[k]; });
+    out.rec = (data.rec || []).map(function (r) {
+      return r[0] < from || r[0] > to ? r : [r[0], r[1], r[2], (r[3] || 0) * factor, (r[4] || 0) * factor];
+    });
+    return out;
+  }
+
   var api = {
     HOURS_PER_NINKU: HOURS_PER_NINKU, COMMON_WORK: COMMON_WORK, DEFAULT_SITES: DEFAULT_SITES,
     defaultSettings: defaultSettings,
@@ -384,6 +408,7 @@
     unitPriceOf: unitPriceOf, commonWorkSet: commonWorkSet, aggregate: aggregate, cellModel: cellModel, summarize: summarize,
     breakEven: breakEven, analyze: analyze, workBreakdown: workBreakdown, simulate: simulate,
     lastDataYmd: lastDataYmd, advise: advise, remainingNeed: remainingNeed,
+    isWorkDay: isWorkDay, workDaysIn: workDaysIn, scaleRange: scaleRange,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PPCalc = api;
