@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>生産損益分析</title>
 <!-- app.js/calc.js/style.cssを変更したら ?v= を必ず変えること(ブラウザ/CDNキャッシュ対策) -->
-<link rel="stylesheet" href="style.css?v=20260925zs">
+<link rel="stylesheet" href="style.css?v=20260925zt">
 </head>
 <body>
 
@@ -33,13 +33,15 @@
   </header>
   <div class="filters">
     <div class="fGroup gPeriod">
-      <label>期間
-        <select id="f-mode">
-          <option value="period">月度(20日締め)</option>
-          <option value="fiscal">期(11/21〜)</option>
-          <option value="range">任意の範囲</option>
-        </select>
-      </label>
+      <span class="fLabel">期間</span>
+      <div id="f-modes" class="segBtns" role="group" aria-label="期間">
+        <button type="button" data-mode="fiscal" title="期(11/21〜翌11/20)">年度</button>
+        <button type="button" data-mode="period" title="月度(20日締め)">月〆</button>
+      </div>
+      <select id="f-mode" hidden>
+        <option value="fiscal">期(11/21〜)</option>
+        <option value="period">月度(20日締め)</option>
+      </select>
       <span id="f-period-wrap" class="periodWrap"><label for="f-period">月度</label> <button type="button" id="f-prev" class="monthBtn" title="前の月度">◀</button><select id="f-period"></select><button type="button" id="f-next" class="monthBtn" title="次の月度">▶</button></span>
       <label id="f-fiscal-wrap" hidden>期 <select id="f-fiscal"></select></label>
       <span id="f-range-wrap" hidden>
@@ -164,7 +166,7 @@
 <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">読み込み中…</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="calc.js?v=20260925zs"></script>
-<script src="app.js?v=20260925zs"></script>
+<script src="calc.js?v=20260925zt"></script>
+<script src="app.js?v=20260925zt"></script>
 </body>
 </html>
