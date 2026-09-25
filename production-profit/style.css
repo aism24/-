@@ -37,7 +37,7 @@
 /* ===================== 基本 ===================== */
 * { box-sizing: border-box; }
 /* 「1」も他の数字と同じ幅に: 英数字はInter(等幅数字対応)、日本語は各OSのゴシック。全体で等幅数字を使う */
-body { margin: 0; background: var(--bg); color: var(--text); font-family: "Inter", system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; font-size: 14px; font-variant-numeric: tabular-nums; }
+body { margin: 0; background: #000; /* アプリ最背面は黒(両テーマ) */ color: var(--text); font-family: "Inter", system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; font-size: 14px; font-variant-numeric: tabular-nums; }
 h1 { font-size: 18px; margin: 0; }
 h2 { font-size: 14px; margin: 0 0 8px; color: var(--text2); font-weight: 600; }
 .muted { color: var(--muted); }
@@ -143,7 +143,7 @@ td input[type="number"] { width: 130px; }
 .formGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 8px; }
 .formGrid label { display: flex; flex-direction: column; gap: 4px; }
 .formGrid input { width: 100%; }
-.saveBar { position: sticky; top: 0; z-index: 2; display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 8px 0 12px; background: var(--bg); }
+.saveBar { position: sticky; top: 0; z-index: 2; display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 8px 0 12px; background: #000; color: #fff; }
 
 .loading { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; gap: 12px; color: #fff; z-index: 10; }
 .spinner { width: 28px; height: 28px; border: 3px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; }
@@ -352,7 +352,7 @@ td input[type="number"] { width: 130px; }
 @media (max-width: 900px) { .simAdvice .advCards { grid-template-columns: 1fr; } }
 /* 現状分析は試算表(白)とは別の黒背景の枠に置く。黒地に直接のる文字は白抜き(カード内は淡色背景のまま) */
 .fullTab .simLeft .panel.simKpiPanel { flex: none; }
-.simAdvicePanel { background: #111110; border-color: #111110; }
+.simAdvicePanel { background: #0e3b22; border-color: #0e3b22; } /* 現状分析は濃い緑 */
 .simAdvicePanel:has(.simAdvice:empty) { display: none; }
 .simAdvicePanel .advHead { color: #fff; border-left-color: #6fb1ff; }
 .simAdvicePanel .advGap { color: #d6d5cf; }
