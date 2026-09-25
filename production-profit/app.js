@@ -360,7 +360,7 @@ function drawBep(id, o) {
 function renderBepSvg(id) {
   const box = document.getElementById(id), st = bepState[id], o = st.o;
   const W = box.clientWidth || 600, H = box.clientHeight || 380;
-  const g = st.geom = { l: 64, r: 16, t: 16, b: 36 };
+  const g = st.geom = { l: 64, r: 16, t: 40, b: 36 }; // 上の余白につまみを置く
   g.w = W - g.l - g.r; g.h = H - g.t - g.b;
   const P = o.unitPrice || 0, lab = o.laborPerTon || 0, vr = o.varPerTon || 0, F = o.fixed || 0;
   const maxX = st.maxX;
@@ -410,23 +410,23 @@ function renderBepSvg(id) {
   const segs = [['固定費', 0, F, 'bFixed'], ['人件費', F, F + lab * x, 'bLabor'], ['変動費', F + lab * x, cost(x), 'bVar']];
   const profit = sales(x) - cost(x);
   if (profit >= 0) segs.push(['利益', cost(x), sales(x), 'bProfit']); else segs.push(['損失', sales(x), cost(x), 'bLoss']);
-  h += `<line class="lCursor" x1="${cx}" x2="${cx}" y1="${g.t}" y2="${g.t + g.h}"/>`;
+  h += `<line class="lCursor" x1="${cx}" x2="${cx}" y1="${g.t - 10}" y2="${g.t + g.h}"/>`;
   const labels = [];
   segs.forEach(([name, y0, y1, cls]) => {
     if (y1 - y0 <= 0) return;
     h += `<rect class="${cls}" x="${cx - bw / 2}" width="${bw}" y="${Y(y1)}" height="${Math.max(1, Y(y0) - Y(y1))}"/>`;
     labels.push({ text: `${name} ${man(y1 - y0)}`, y: (Y(y0) + Y(y1)) / 2 + 4, cls });
   });
-  // ラベルの重なりを避ける(下のつまみに掛からない位置から、下から順に最低16px間隔)
+  // ラベルの重なりを避ける(下から順に最低16px間隔)
   labels.sort((a, b) => b.y - a.y);
-  if (labels.length && labels[0].y > g.t + g.h - 32) labels[0].y = g.t + g.h - 32;
   for (let i = 1; i < labels.length; i++) if (labels[i - 1].y - labels[i].y < 16) labels[i].y = labels[i - 1].y - 16;
   const right = cx < g.l + g.w * 0.62;
   labels.forEach((lb) => { h += `<text class="lbl seg ${lb.cls}" x="${right ? cx + 10 : cx - 10}" y="${lb.y}" text-anchor="${right ? 'start' : 'end'}">${lb.text}</text>`; });
-  // つまみ
+  // つまみ(グラフの上端。左右の端でははみ出さないように寄せる)
   const hl = `${o.handleLabel || '生産重量'} ◀▶ ${ton(x)}t`;
   const hw = hl.length * 7.5 + 18;
-  h += `<g class="handle"><rect x="${cx - hw / 2}" y="${g.t + g.h - 26}" width="${hw}" height="22" rx="11"/><text x="${cx}" y="${g.t + g.h - 11}" text-anchor="middle">${hl}</text></g>`;
+  const hx = Math.min(W - 4 - hw / 2, Math.max(4 + hw / 2, cx));
+  h += `<g class="handle"><rect x="${hx - hw / 2}" y="${g.t - 34}" width="${hw}" height="24" rx="12"/><text x="${hx}" y="${g.t - 17}" text-anchor="middle">${hl}</text></g>`;
   box.innerHTML = `<svg class="bepSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="損益分岐点グラフ">${h}</svg>`;
 }
 
@@ -526,7 +526,7 @@ function updateSim() {
   ].join('');
   // つまみのドラッグで試算の生産重量を動かせる(スライダー・数値欄と連動)
   drawBep('c-sim', { fixed: r.fixed, unitPrice: P, laborPerTon: n * r.laborRate, varPerTon: r.varPerTon, profitRate: state.settings.rates.profit / 100,
-    x: W, forceX: !simDragging, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: '試算重量',
+    x: W, forceX: !simDragging, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: '試算',
     onMove: (t) => {
       simDragging = true;
       document.getElementById('s-w').value = +t.toFixed(1);
