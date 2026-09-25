@@ -452,8 +452,21 @@ function renderBepSvg(id) {
     const bx = X(be), by = Y(sales(be));
     h += `<line class="lBe" x1="${bx}" x2="${bx}" y1="${by}" y2="${g.t + g.h}"/><line class="lBe" x1="${g.l}" x2="${bx}" y1="${by}" y2="${by}"/>`;
     h += `<circle class="mBeHalo" cx="${bx}" cy="${by}" r="11"/><circle class="mBe" cx="${bx}" cy="${by}" r="7"/>`;
-    beLbl = `<text class="lbl be" x="${bx + 14}" y="${by - 30}">損益分岐生産量<tspan x="${bx + 14}" dy="20">${ton(be)}t / ${man(sales(be))}</tspan></text>`; // 文字は最前面に描く
-  }
+    // 損益分岐の5項目(引き出し線で左上の空白へ。位置は描画後に文字の大きさを測って決める)。
+    // トン単価・人工数・工数は、つまみ位置の生産重量で損益0になる値。
+    const w = st.x, lr = o.laborRate || 0, oF = o.otherFixed !== undefined ? o.otherFixed : F;
+    const nBe = w > 0 && lr > 0 ? (P - vr - oF / w) / lr : null;
+    const lines = [
+      `損益分岐生産重量 ${ton(be)}t`,
+      `損益分岐売上高 ${man(sales(be))}`,
+      `損益分岐トン単価 ${w > 0 ? yen(F / w + vr + lab) + '円/t' : '—'}`,
+      `損益分岐1t当たり人工数 ${nBe !== null ? npt(nBe) + '人工' : '—'}`,
+      `損益分岐工数 ${nBe !== null ? fmt(nBe * w * C.HOURS_PER_NINKU, 0) + 'h' : '—'}`,
+    ];
+    const small = g.w < 700; // グラフが小さいときは文字を小さくして空白に収める
+    beLbl = `<line class="beLead"/><rect class="beBg" rx="6"/><text class="lbl be beInfo" x="0" y="0" style="font-size:${small ? 12 : 18}px">${lines.map((t, i) => `<tspan x="0" dy="${i ? (small ? 15 : 22) : 0}">${t}</tspan>`).join('')}</text>`; // 文字は最前面に描く
+    st.beAt = { bx, by };
+  } else st.beAt = null;
   // つまみ位置の内訳バー
   const x = st.x, cx = X(x), bw = 8;
   // 人件費は固定費に含めて1つの帯で表示する
@@ -482,6 +495,7 @@ function renderBepSvg(id) {
   // 利益目標達成点(★・目標表示は最前面に描く。試算の破線やバーは裏側を通る)
   if (o.goalTons !== null && o.goalTons !== undefined && o.goalTons <= maxX) {
     const gx = X(o.goalTons), gy = Y(sales(o.goalTons));
+    st.goalAt = { gx, gy };
     // ★印(2倍)と「目標生産量/目標利益額」(2倍・黄色背景がゆっくり点滅。背景の大きさは描画後に文字に合わせる)
     const star = Array.from({ length: 10 }, (_, i) => {
       const r = i % 2 ? 6 : 15, a = -Math.PI / 2 + i * Math.PI / 5;
@@ -493,20 +507,41 @@ function renderBepSvg(id) {
     h += `<circle class="goalBg" cx="${gx}" cy="${gy}" r="22.5"/><polygon class="mGoal" points="${star}"/>`; // ★の背景に1.5倍の〇(黄色・点滅)
   }
   box.innerHTML = `<svg class="bepSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="損益分岐生産量グラフ">${h}</svg>`;
-  // 損益分岐生産量の文字(2行)が右端からはみ出すときは左へ寄せる
-  const bl = box.querySelector('.lbl.be');
-  if (bl) {
-    const bb = bl.getBBox();
-    if (bb.x + bb.width > W - 4) { // 右端に収まるように左へ寄せる(2行とも)
-      const nx = Math.max(4, W - 4 - bb.width);
-      bl.setAttribute('x', nx); bl.querySelector('tspan').setAttribute('x', nx);
-    }
-  }
   const gl = box.querySelector('.goalLbl'), gb = box.querySelector('rect.goalBg');
   if (gl && gb) {
     const bb = gl.getBBox();
     gb.setAttribute('x', bb.x - 6); gb.setAttribute('y', bb.y - 3);
     gb.setAttribute('width', bb.width + 12); gb.setAttribute('height', bb.height + 6);
+  }
+  // 損益分岐の5項目: 点の左上(引き出し線の先)に置き、グラフ内に収まらなければ左上端へ寄せる
+  const bi = box.querySelector('.beInfo');
+  if (bi && st.beAt) {
+    const bb = bi.getBBox(), pad = 6;
+    // 候補: ①点の左上 ②左端に寄せる ③左上端。目標表示(黄色)と重ならない最初の候補を使う
+    const gr = gb && gb.getAttribute('width') ? { x: +gb.getAttribute('x'), y: +gb.getAttribute('y'), w: +gb.getAttribute('width'), h: +gb.getAttribute('height') } : null;
+    const hit = (l, t) => gr && l - pad < gr.x + gr.w && l + bb.width + pad > gr.x && t - pad < gr.y + gr.h && t + bb.height + pad > gr.y;
+    const cands = [[st.beAt.bx - 40 - bb.width, st.beAt.by - 40 - bb.height], [g.l + pad + 2, st.beAt.by - 40 - bb.height], [g.l + pad + 2, g.t + pad]]
+      .map(([l, t]) => [Math.max(g.l + pad + 2, l), Math.max(g.t + pad, t)]);
+    let pick = cands.find(([l, t]) => !hit(l, t));
+    if (!pick && gl && st.goalAt) {
+      // どこに置いても目標表示と重なるときは、目標表示を★の下へ移してから置き直す
+      const ny = st.goalAt.gy + 40;
+      gl.setAttribute('y', ny);
+      const b2 = gl.getBBox();
+      gb.setAttribute('x', b2.x - 6); gb.setAttribute('y', b2.y - 3);
+      gr.x = b2.x - 6; gr.y = b2.y - 3; gr.w = b2.width + 12; gr.h = b2.height + 6;
+      pick = cands.find(([l, t]) => !hit(l, t));
+    }
+    const [left, top] = pick || cands[cands.length - 1];
+    const tx = left - bb.x, ty = top - bb.y;
+    bi.setAttribute('y', ty);
+    bi.querySelectorAll('tspan').forEach((t) => t.setAttribute('x', tx));
+    const rb = box.querySelector('.beBg');
+    rb.setAttribute('x', left - pad); rb.setAttribute('y', top - pad / 2);
+    rb.setAttribute('width', bb.width + pad * 2); rb.setAttribute('height', bb.height + pad);
+    const ln = box.querySelector('.beLead');
+    ln.setAttribute('x1', st.beAt.bx); ln.setAttribute('y1', st.beAt.by);
+    ln.setAttribute('x2', left + bb.width + pad); ln.setAttribute('y2', top + bb.height + pad / 2);
   }
 }
 
@@ -522,7 +557,7 @@ function renderBep(sel, an) {
     kpi('実績生産重量', ton(t.weight), 't', t.goalTons ? `目標達成まで ${ton(Math.max(0, t.goalTons - t.weight))}t` : ''),
     kpi('1t当たり限界利益', yen(t.unitPrice !== null ? t.unitPrice - perTon : null), '円/t', `トン単価 ${yen(t.unitPrice)} − 変動費 ${yen(t.varPerTon)} − 人件費 ${yen(t.laborPerTon)}`),
   ].join('');
-  drawBep('c-bep', { fixed: t.fixed, unitPrice: t.unitPrice || 0, laborPerTon: t.laborPerTon || 0, varPerTon: t.varPerTon || 0,
+  drawBep('c-bep', { fixed: t.fixed, unitPrice: t.unitPrice || 0, laborPerTon: t.laborPerTon || 0, varPerTon: t.varPerTon || 0, laborRate: t.laborRate,
     profitRate: p, x: t.weight, beTons: t.breakEvenTons, goalTons: t.goalTons, handleLabel: '生産重量' });
   const rows = [
     ['固定費(期間計)', yen(t.fixed) + ' 円', '費用設定の月固定費×月数、未入力の工場は 基準売上×固定費率'],
@@ -647,7 +682,7 @@ function updateSim() {
   // つまみのドラッグで試算の生産重量を動かせる(スライダー・数値欄と連動)
   // 人件費は試算の生産重量での額を固定費に含め、固定費線を水平にする(つまみのドラッグ中に縮尺が変わらないよう、署名は基準値で作る)
   drawBep('c-sim', { fixed: r.fixed + r.labor, unitPrice: P, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: state.settings.rates.profit / 100,
-    fixedLabel: ['固定費', '(人件費込み)'], sig: [r.fixed, P, n, r.laborRate, r.varPerTon, state.settings.rates.profit].join('|'),
+    fixedLabel: ['固定費', '(人件費込み)'], otherFixed: r.fixed, laborRate: r.laborRate, sig: [r.fixed, P, n, r.laborRate, r.varPerTon, state.settings.rates.profit].join('|'),
     x: W, forceX: !simDragging, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: '試算',
     onMove: (t) => {
       simDragging = true;
