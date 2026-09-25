@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>生産損益分析</title>
 <!-- app.js/calc.js/style.cssを変更したら ?v= を必ず変えること(ブラウザ/CDNキャッシュ対策) -->
-<link rel="stylesheet" href="style.css?v=20260925b">
+<link rel="stylesheet" href="style.css?v=20260925c">
 </head>
 <body>
 
@@ -31,27 +31,37 @@
   </header>
 
   <div class="filters">
-    <label>期間
-      <select id="f-mode">
-        <option value="period">月度(20日締め)</option>
-        <option value="fiscal">期(11/21〜)</option>
-        <option value="range">任意の範囲</option>
-      </select>
-    </label>
-    <label id="f-period-wrap">月度 <select id="f-period"></select></label>
-    <label id="f-fiscal-wrap" hidden>期 <select id="f-fiscal"></select></label>
-    <span id="f-range-wrap" hidden>
-      <label>開始 <input type="date" id="f-from"></label>
-      <label>終了 <input type="date" id="f-to"></label>
-    </span>
-    <label>工場 <select id="f-site"></select></label>
-    <span id="f-range-text" class="muted small"></span>
+    <div class="fRow">
+      <label>期間
+        <select id="f-mode">
+          <option value="period">月度(20日締め)</option>
+          <option value="fiscal">期(11/21〜)</option>
+          <option value="range">任意の範囲</option>
+        </select>
+      </label>
+      <label id="f-period-wrap">月度 <select id="f-period"></select></label>
+      <label id="f-fiscal-wrap" hidden>期 <select id="f-fiscal"></select></label>
+      <span id="f-range-wrap" hidden>
+        <label>開始 <input type="date" id="f-from"></label>
+        <label>終了 <input type="date" id="f-to"></label>
+      </span>
+      <span id="f-range-text" class="muted small"></span>
+    </div>
+    <div class="fRow">
+      <span class="fLabel">工場</span>
+      <div id="f-sites" class="segBtns" role="group" aria-label="工場"></div>
+      <select id="f-site" hidden></select>
+    </div>
+    <div class="fRow">
+      <label>工事 <select id="f-work" class="workSelect"></select></label>
+      <span id="f-work-note" class="muted small"></span>
+    </div>
   </div>
 
   <nav class="tabs" role="tablist">
-    <button data-tab="dash" class="active">ダッシュボード</button>
+    <button data-tab="sim" class="active">目標シミュレーター</button>
+    <button data-tab="dash">ダッシュボード</button>
     <button data-tab="bep">損益分岐点</button>
-    <button data-tab="sim">シミュレーション</button>
     <button data-tab="works">工事別分析</button>
     <button data-tab="settings">設定</button>
   </nav>
@@ -59,7 +69,7 @@
   <div id="warnings" class="warnbox" hidden></div>
 
   <!-- ダッシュボード -->
-  <main id="tab-dash" class="tab active">
+  <main id="tab-dash" class="tab">
     <div id="dash-note" class="note" hidden></div>
     <div id="kpis" class="kpis"></div>
     <div class="grid2">
@@ -79,9 +89,9 @@
     <div class="panel"><h2>計算の内訳</h2><div class="tableWrap"><table id="t-bep"></table></div></div>
   </main>
 
-  <!-- シミュレーション -->
-  <main id="tab-sim" class="tab">
-    <p class="muted small">選択中の期間・工場の実績(目標があれば目標)を基準に、重量・工数・金額を動かして試算します。人件費単価・固定費・変動費単価は基準値のまま固定します。</p>
+  <!-- 目標シミュレーター -->
+  <main id="tab-sim" class="tab active">
+    <p class="muted small">選択中の期間・工場・工事の実績(目標があれば目標)を基準に、重量・工数・金額を動かして試算します。人件費単価・固定費・変動費単価は基準値のまま固定します。</p>
     <div class="simGrid">
       <div class="panel simInputs">
         <div class="simRow"><label>生産重量(t)</label><input type="range" id="s-w-r"><input type="number" id="s-w" step="any"></div>
@@ -151,7 +161,7 @@
 <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">読み込み中…</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="calc.js?v=20260925b"></script>
-<script src="app.js?v=20260925b"></script>
+<script src="calc.js?v=20260925c"></script>
+<script src="app.js?v=20260925c"></script>
 </body>
 </html>

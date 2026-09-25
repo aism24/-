@@ -238,13 +238,17 @@
 
   /* 範囲・工場を指定した分析。月度×工場のセルを作り(実績が無い月でも目標・固定費を
      反映するため、範囲内の全月度×全工場分を作る)、合計・月度別・工場別を返す。 */
-  function analyze(data, settings, from, to, sites) {
+  /* workNoを指定すると、その工事だけに絞った分析になる。人件費単価・変動費単価は工場×月度の値を
+     そのまま使い、固定費は工場×月度の固定費を売上比で工事へ配賦する(workBreakdownと同じ考え方)。
+     月間目標は工場単位のため、工事に絞った場合は目標なしとして扱う。 */
+  function analyze(data, settings, from, to, sites, workNo) {
     sites = sites || data.sites || DEFAULT_SITES;
     var cells = aggregate(data, settings, from, to, sites);
     var models = [];
     periodsInRange(from, to).forEach(function (p) {
       sites.forEach(function (site) {
-        models.push(cellModel(site, p.key, p.frac, cells[p.key + '|' + site], settings));
+        var m = cellModel(site, p.key, p.frac, cells[p.key + '|' + site], settings);
+        models.push(workNo ? scopeToWork(m, workNo) : m);
       });
     });
     var byPeriod = {}, bySite = {};
@@ -259,6 +263,21 @@
       var s = summarize(bySite[site] || [], settings); s.site = site; return s;
     });
     return { models: models, total: summarize(models, settings), byPeriod: outPeriod, bySite: outSite };
+  }
+
+  function scopeToWork(m, workNo) {
+    var a = m.byWork[workNo] || emptyAgg();
+    var share = m.sales > 0 ? a.sales / m.sales : 0;
+    var N = a.hours / HOURS_PER_NINKU;
+    var labor = N * m.laborRate, variable = a.weight * m.varPerTon, fixed = m.fixed * share;
+    var byWork = {}; byWork[workNo] = a;
+    return {
+      site: m.site, period: m.period, frac: m.frac,
+      weight: a.weight, hours: a.hours, ninku: N, sales: a.sales,
+      target: null, laborRate: m.laborRate, fixed: fixed, varPerTon: m.varPerTon,
+      labor: labor, variable: variable, profit: a.sales - labor - variable - fixed,
+      byWork: byWork, estimated: m.estimated,
+    };
   }
 
   /* 工事別の内訳。共通工数はセル内の重量比で各工事へ按分した値も併せて返す。
