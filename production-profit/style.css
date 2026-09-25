@@ -359,3 +359,4 @@ td input[type="number"] { width: 130px; }
 #s-reset { background: #d6efff; border-color: #9fd3f5; } /* 「現在値に戻す」は水色 */
 .bepSvg .lbl.be.bT { font-weight: 800; } /* 見出し「損益分岐値」 */
 .simTable .sLabel:has(.subLbl) { text-align: left; padding-left: 1em; } /* 内訳(└ 人件費・└ その他固定費)は左揃え */
+.simInputs .btnRow { justify-content: flex-end; } .simInputs .btnRow #s-reset { order: 2; } .simInputs .btnRow .muted { order: 1; text-align: right; } /* 「現在値に戻す」は右端、説明文はその左 */
