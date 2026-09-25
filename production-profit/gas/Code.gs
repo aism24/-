@@ -1,7 +1,7 @@
 /**
  * 生産損益分析 - GAS API バックエンド
  *
- * 新規の管理用スプレッドシート(「生産損益分析」)にコンテナバインドで設置する。
+ * 管理用スプレッドシート(「損益分岐点生産重量」)にコンテナバインドで設置する。
  * 既存の2アプリ(生産管理ダッシュボード・日報全期間集計)のコード・デプロイには一切
  * 手を加えず、それぞれの公開済みJSON APIを UrlFetchApp で「読み取りのみ」呼び出して
  * 集計する(日報のアーカイブ横断マージ等のロジックを二重に持たないため)。
@@ -34,6 +34,12 @@ const SHEETS = {
   BASIC: '基本設定',
   WORKS: '工事単価',
   COSTS: '費用設定',
+};
+// 各シートの見出し(シートが無いときに自動作成する)
+const HEADERS = {
+  BASIC: ['項目', '値'],
+  WORKS: ['工事No', '工事名', '契約総重量(t)', '契約金額(円)'],
+  COSTS: ['工場', '人件費単価(円/人工)', '月固定費(円)', '変動費単価(円/t)'],
 };
 const BASIC_KEYS = [
   ['人件費率', 'rates.labor', 30],
@@ -198,12 +204,10 @@ function aggregateSources_(src) {
     return [c[0], c[1], c[2], round_(c[3], 3), round_(c[4], 2)];
   });
   Object.keys(works).forEach(function (wn) { works[wn].totalWeight = round_(works[wn].totalWeight, 3); });
-  const sites = SITE_ORDER.slice();
 
   return {
     generatedAt: new Date().toISOString(),
-    pmGeneratedAt: pm.generatedAt || null,
-    sites: sites,
+    sites: SITE_ORDER.slice(),
     works: works,
     rec: rec,
     warnings: warnings,
@@ -222,8 +226,8 @@ function loadCacheText_() {
   const it = folder_().getFilesByName(CACHE_FILE_NAME);
   if (!it.hasNext()) return null;
   const text = it.next().getBlob().getDataAsString();
-  try { JSON.parse(text); } catch (e) { return null; }
-  return text;
+  // 数MBのJSONを毎回JSON.parseすると遅いため、形だけ確かめる(壊れていれば作り直す)
+  return /^\s*\{[\s\S]*\}\s*$/.test(text) ? text : null;
 }
 
 function saveCacheText_(text) {
@@ -262,25 +266,26 @@ function numOrNull_(v) {
 function readSettings_() {
   const s = { rates: {}, commonWorkNos: '00-00', works: {}, costs: {} };
   const basic = {};
-  rows_(sheet_(SHEETS.BASIC, ['項目', '値'])).forEach(function (r) { basic[r[0]] = r[1]; });
+  rows_(sheet_(SHEETS.BASIC, HEADERS.BASIC)).forEach(function (r) { basic[r[0]] = r[1]; });
   BASIC_KEYS.forEach(function (k) {
     const raw = basic[k[0]];
-    const val = (raw === undefined || raw === '') ? k[2] : (typeof k[2] === 'number' ? (numOrNull_(raw) === null ? k[2] : numOrNull_(raw)) : String(raw));
+    const n = typeof k[2] === 'number' ? numOrNull_(raw) : null;
+    const val = (raw === undefined || raw === '') ? k[2] : (typeof k[2] === 'number' ? (n === null ? k[2] : n) : String(raw));
     const path = k[1].split('.');
     if (path.length === 2) s[path[0]][path[1]] = val; else s[path[0]] = val;
   });
-  rows_(sheet_(SHEETS.WORKS, ['工事No', '工事名', '契約総重量(t)', '契約金額(円)'])).forEach(function (r) {
+  rows_(sheet_(SHEETS.WORKS, HEADERS.WORKS)).forEach(function (r) {
     if (!r[0]) return;
     s.works[String(r[0]).trim()] = { name: r[1], totalWeight: numOrNull_(r[2]), contract: numOrNull_(r[3]) };
   });
-  rows_(sheet_(SHEETS.COSTS, ['工場', '人件費単価(円/人工)', '月固定費(円)', '変動費単価(円/t)'])).forEach(function (r) {
+  rows_(sheet_(SHEETS.COSTS, HEADERS.COSTS)).forEach(function (r) {
     if (!r[0]) return;
     s.costs[String(r[0]).trim()] = { laborRate: numOrNull_(r[1]), fixedMonthly: numOrNull_(r[2]), variablePerTon: numOrNull_(r[3]) };
   });
   return s;
 }
 
-/* シートの内容を丸ごと書き換える。工事No・月度は「25-12」「2026-10」のような文字列が
+/* シートの内容を丸ごと書き換える(基本設定・費用設定用)。「25-12」のような文字列が
    日付に自動変換されないよう、書き込み前にA列を書式なしテキスト(@)にする。 */
 function writeRows_(sh, rows, width) {
   const last = sh.getLastRow();
@@ -318,12 +323,12 @@ function saveSettings_(s) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30 * 1000);
   try {
-    writeRows_(sheet_(SHEETS.BASIC, ['項目', '値']), BASIC_KEYS.map(function (k) {
+    writeRows_(sheet_(SHEETS.BASIC, HEADERS.BASIC), BASIC_KEYS.map(function (k) {
       const path = k[1].split('.');
       const v = path.length === 2 ? (s[path[0]] || {})[path[1]] : s[path[0]];
       return [k[0], blank_(v === undefined ? k[2] : v)];
     }), 2);
-    const wsh = sheet_(SHEETS.WORKS, ['工事No', '工事名', '契約総重量(t)', '契約金額(円)']);
+    const wsh = sheet_(SHEETS.WORKS, HEADERS.WORKS);
     const wLast = wsh.getLastRow();
     const existing = wLast >= 2 ? wsh.getRange(2, 1, wLast - 1, 4).getValues() : [];
     const merged = mergeWorkRows_(existing, s.works || {});
@@ -332,7 +337,7 @@ function saveSettings_(s) {
       wsh.getRange(2, 1, merged.length, 4).setValues(merged);
     }
     const costs = s.costs || {};
-    writeRows_(sheet_(SHEETS.COSTS, ['工場', '人件費単価(円/人工)', '月固定費(円)', '変動費単価(円/t)']), Object.keys(costs)
+    writeRows_(sheet_(SHEETS.COSTS, HEADERS.COSTS), Object.keys(costs)
       .map(function (site) { const c = costs[site]; return [site, blank_(numOrNull_(c.laborRate)), blank_(numOrNull_(c.fixedMonthly)), blank_(numOrNull_(c.variablePerTon))]; }), 4);
   } finally {
     lock.releaseLock();

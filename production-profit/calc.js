@@ -16,6 +16,8 @@
  *   損益 = 売上 − 人件費(人工×人件費単価) − 変動費(重量×変動費単価) − 固定費
  *   損益分岐点トン数 = 固定費 ÷ (トン単価 − 変動費単価 − 人工/t×人件費単価)
  *   利益目標達成トン数 = 固定費 ÷ (トン単価×(1−利益率) − 変動費単価 − 人工/t×人件費単価)
+ *   (目標シミュレーター(simulate)だけは人件費を固定費に含め、
+ *    損益分岐点トン数 = (固定費 + 人件費) ÷ (トン単価 − 変動費単価) とする)
  */
 (function (root) {
   'use strict';
@@ -129,9 +131,10 @@
     var priceCache = {};
     var cells = {};
     (data.rec || []).forEach(function (r) {
-      var ymd = r[0], site = r[1], workNo = r[2], w = r[3] || 0, h = r[4] || 0;
+      var ymd = r[0], site = r[1];
+      if (ymd < from || ymd > to || !siteSet[site]) return; // 範囲外は先に除外(大半の行がここで抜ける)
+      var workNo = r[2], w = r[3] || 0, h = r[4] || 0;
       if (!workNo || commonSet[workNo]) workNo = COMMON_WORK;
-      if (ymd < from || ymd > to || !siteSet[site]) return;
       if (!priceCache[workNo]) priceCache[workNo] = workNo === COMMON_WORK ? { price: 0 } : unitPriceOf(workNo, data, settings);
       var s = w * priceCache[workNo].price;
       var key = periodKeyOf(ymd) + '|' + site;
@@ -267,7 +270,7 @@
     var rows = {};
     function row(wn) {
       return rows[wn] || (rows[wn] = { workNo: wn, name: wn === COMMON_WORK ? '共通(工事なし)' : (((data.works || {})[wn] || {}).name || ''),
-        weight: 0, hours: 0, allocHours: 0, sales: 0, labor: 0, allocLabor: 0, variable: 0, fixed: 0 });
+        weight: 0, hours: 0, allocHours: 0, sales: 0, labor: 0, variable: 0, fixed: 0 });
     }
     analysis.models.forEach(function (m) {
       var common = m.byWork[COMMON_WORK];
@@ -323,7 +326,6 @@
       weight: W, ninkuPerTon: n, unitPrice: P, sales: sales, ninku: ninku, hours: ninku * HOURS_PER_NINKU,
       labor: labor, variable: variable, fixed: fixed, profit: profit,
       profitRate: sales > 0 ? profit / sales : null, profitGoal: sales * p,
-      goalMet: sales > 0 && profit - sales * p >= -1, // 1円未満の浮動小数点誤差は達成扱い
       breakEvenTons: be.breakEvenTons, goalTons: be.goalTons, goalSales: be.goalSales,
       laborRate: laborRate, varPerTon: varPerTon,
     };

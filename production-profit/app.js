@@ -8,7 +8,7 @@ const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 
 const C = PPCalc;
 const SITE_COLORS = ['--s1', '--s2', '--s3'];
-const state = { cache: null, settings: null, pw: '', editPw: '', dirty: false, charts: {}, simBase: null };
+const state = { cache: null, settings: null, pw: '', editPw: '', charts: {}, simBase: null };
 
 /* ===================== 通信 ===================== */
 
@@ -120,9 +120,6 @@ function initUi() {
   const fys = [];
   for (let y = C.fiscalYearOf(cur); y >= C.fiscalYearOf(first); y--) fys.push(y);
   document.getElementById('f-fiscal').innerHTML = fys.map((y) => `<option value="${y}">${C.fiscalLabel(y)}</option>`).join('');
-  const r = C.periodRange(selP.value);
-  document.getElementById('f-from').value = r.from;
-  document.getElementById('f-to').value = r.to;
   document.getElementById('f-site').innerHTML = '<option value="">全社</option>' +
     state.cache.sites.map((s) => `<option>${esc(s)}</option>`).join('');
   // 2行目: 工場ボタン(3工場=全社 / 本社 / 夢前 / 鳥取)
@@ -137,7 +134,7 @@ function initUi() {
     onFilterChange();
   };
 
-  ['f-mode', 'f-period', 'f-fiscal', 'f-from', 'f-to', 'f-site', 'f-work'].forEach((id) => {
+  ['f-period', 'f-fiscal', 'f-work'].forEach((id) => {
     document.getElementById(id).onchange = onFilterChange;
   });
   document.getElementById('refresh-btn').onclick = refresh;
@@ -158,8 +155,8 @@ function initUi() {
   document.getElementById('f-prev').onclick = () => stepPeriod(1);
   document.getElementById('f-next').onclick = () => stepPeriod(-1);
   document.getElementById('reset-btn').onclick = () => { applyDefaults(); renderAll(); };
-  document.getElementById('w-search').oninput = renderWorks;
-  document.getElementById('w-alloc').onchange = renderWorks;
+  document.getElementById('w-search').oninput = () => renderWorks();
+  document.getElementById('w-alloc').onchange = () => renderWorks();
   document.getElementById('w-csv').onclick = downloadWorksCsv;
   initSim();
   initSettings();
@@ -236,34 +233,27 @@ function selection() {
   document.querySelectorAll('#f-modes button').forEach((x) => x.classList.toggle('active', x.dataset.mode === mode));
   document.getElementById('f-period-wrap').hidden = mode !== 'period';
   document.getElementById('f-fiscal-wrap').hidden = mode !== 'fiscal';
-  document.getElementById('f-range-wrap').hidden = mode !== 'range';
   const selPer = document.getElementById('f-period');
   document.getElementById('f-prev').disabled = selPer.selectedIndex >= selPer.options.length - 1;
   document.getElementById('f-next').disabled = selPer.selectedIndex <= 0;
-  let r;
-  if (mode === 'period') r = C.periodRange(document.getElementById('f-period').value);
-  else if (mode === 'fiscal') r = C.fiscalRange(Number(document.getElementById('f-fiscal').value));
-  else {
-    r = { from: document.getElementById('f-from').value, to: document.getElementById('f-to').value };
-    if (!r.from || !r.to || r.from > r.to) r = C.periodRange(document.getElementById('f-period').value);
-  }
+  const r = mode === 'period' ? C.periodRange(selPer.value) : C.fiscalRange(Number(document.getElementById('f-fiscal').value));
   const site = document.getElementById('f-site').value;
   const sites = site ? [site] : state.cache.sites;
   document.getElementById('f-range-text').textContent = r.from.replace(/-/g, '/') + ' 〜 ' + r.to.replace(/-/g, '/');
   const work = refreshWorkList(r.from, r.to, sites);
-  return { mode, from: r.from, to: r.to, site, sites, work, periodKey: mode === 'period' ? document.getElementById('f-period').value : null };
+  return { mode, from: r.from, to: r.to, site, sites, work, periodKey: mode === 'period' ? selPer.value : null };
 }
 
 function renderAll() {
   if (!state.cache) return;
   const active = document.querySelector('.tabs button.active').dataset.tab;
   const sel = selection();
+  if (active === 'works') return renderWorks(sel);
+  if (active === 'settings') return renderSettings();
   const an = C.analyze(state.cache, state.settings, sel.from, sel.to, sel.sites, sel.work || undefined);
   if (active === 'dash') renderDash(sel, an);
   if (active === 'bep') renderBep(sel, an);
   if (active === 'sim') renderSim(sel, an);
-  if (active === 'works') renderWorks();
-  if (active === 'settings') renderSettings();
 }
 
 /* ===================== KPI ===================== */
@@ -591,13 +581,12 @@ function renderBep(sel, an) {
 
 /* ===================== シミュレーション ===================== */
 
-const SIM = [['w', 1], ['n', 0.01], ['p', 100]];
 // 入力欄の表示桁(生産重量=#,##0.0 / 人工/t=0.00 / トン単価=#,##0)。「,」区切りを出すため入力欄はtext型
 const SIM_DIGITS = { w: 1, n: 2, p: 0 };
 const simFmt = (k, v) => fmt(v, SIM_DIGITS[k]);
 let simDragging = false;
 function initSim() {
-  SIM.forEach(([k]) => {
+  Object.keys(SIM_DIGITS).forEach((k) => {
     const el = document.getElementById('s-' + k);
     el.oninput = updateSim;
     // 入力中は自由に打てるようにし、欄を離れたら「,」区切りの形に整える
@@ -620,7 +609,6 @@ function renderSim(sel, an) {
     n: t.ninkuPerTon || 0,
     p: t.unitPrice || 0,
   };
-  state.simSel = sel;
   state.simTotal = t;
   // 固定費の内訳(工場1か所の月固定費 × 工場数 × 月数)。工事を選んでいるときは配賦前の工場の固定費から出す
   const fm = (sel.work ? C.analyze(state.cache, state.settings, sel.from, sel.to, sel.sites) : an).models;
@@ -631,15 +619,13 @@ function renderSim(sel, an) {
   if (!state.simBase) {
     state.simBase = base;
     state.simExact = {};
-    const set = (k, v, max, step) => {
+    const set = (k, v) => {
       const n = document.getElementById('s-' + k);
       n.value = simFmt(k, v);
       // 表示は丸めるが、数値欄を触っていない間は丸める前の値で計算する(基準値で損益が配分どおりになるように)
       state.simExact[k] = { shown: n.value, value: v };
     };
-    set('w', base.w, Math.max(base.w * 2, 10), 0.1);
-    set('n', base.n, Math.max(base.n * 2, 1), 0.01);
-    set('p', base.p, Math.max(base.p * 2, 10000), 100);
+    ['w', 'n', 'p'].forEach((k) => set(k, base[k]));
   }
   updateSim();
 }
@@ -711,8 +697,7 @@ function updateSim() {
 
 /* ===================== 工事別分析 ===================== */
 
-function worksRows() {
-  const sel = selection();
+function worksRows(sel) {
   const an = C.analyze(state.cache, state.settings, sel.from, sel.to, sel.sites);
   const q = document.getElementById('w-search').value.trim().toLowerCase();
   let rows = C.workBreakdown(an, state.cache);
@@ -720,9 +705,9 @@ function worksRows() {
   return rows;
 }
 
-function renderWorks() {
+function renderWorks(sel) {
   const alloc = document.getElementById('w-alloc').checked;
-  const rows = worksRows();
+  const rows = worksRows(sel || selection());
   const npCol = (r) => alloc ? r.allocNinkuPerTon : r.ninkuPerTon;
   const top = rows.filter((r) => r.workNo !== C.COMMON_WORK && r.weight > 0).sort((a, b) => b.weight - a.weight).slice(0, 15);
   drawChart('c-works', {
@@ -745,7 +730,7 @@ function downloadWorksCsv() {
   const alloc = document.getElementById('w-alloc').checked;
   const sel = selection();
   const lines = [['工事No', '工事名', '重量(t)', '工数(h)', '人工', '人工/t', 'トン単価', '売上', '人件費', '変動費', '限界利益', '固定費配賦', '損益']];
-  worksRows().forEach((r) => {
+  worksRows(sel).forEach((r) => {
     const h = alloc ? r.allocHours : r.hours;
     lines.push([r.workNo, r.name, r.weight.toFixed(3), h.toFixed(2), (h / 8).toFixed(2), r.weight > 0 ? (h / 8 / r.weight).toFixed(3) : '',
       r.unitPrice !== null ? Math.round(r.unitPrice) : '', Math.round(r.sales), Math.round(r.labor), Math.round(r.variable), Math.round(r.marginal), Math.round(r.fixed), Math.round(r.profit)]);
@@ -804,7 +789,6 @@ function initSettings() {
       const cell = document.getElementById('wp-' + d.wn);
       if (cell) cell.textContent = yen(C.unitPriceOf(d.wn, state.cache, s).price);
     }
-    state.dirty = true;
     document.getElementById('set-dirty').textContent = '未保存の変更があります';
     if (d.k === 'rate') updateRateSum();
   });
@@ -816,7 +800,6 @@ async function saveSettings() {
   try {
     const data = await api('saveSettings', { settings: state.settings });
     state.settings = Object.assign(C.defaultSettings(), data.settings);
-    state.dirty = false;
     document.getElementById('set-dirty').textContent = '保存しました';
   } catch (e) {
     alert('保存に失敗しました: ' + e.message);
