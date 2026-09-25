@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>生産損益分析</title>
 <!-- app.js/calc.js/style.cssを変更したら ?v= を必ず変えること(ブラウザ/CDNキャッシュ対策) -->
-<link rel="stylesheet" href="style.css?v=20260925q">
+<link rel="stylesheet" href="style.css?v=20260925r">
 </head>
 <body>
 
@@ -99,9 +99,9 @@
           <div class="simGridWrap">
             <div class="simFixed">
               <div class="simHead">試算</div>
-              <div class="simRow"><label>生産重量(t)</label><input type="number" id="s-w" step="any"></div>
-              <div class="simRow"><label>1t当たり人工数</label><input type="number" id="s-n" step="any"></div>
-              <div class="simRow"><label>トン単価(円/t)</label><input type="number" id="s-p" step="any"></div>
+              <div class="simRow"><label>生産重量(t)</label><input type="text" inputmode="decimal" id="s-w" class="simNum" autocomplete="off"></div>
+              <div class="simRow"><label>1t当たり人工数</label><input type="text" inputmode="decimal" id="s-n" class="simNum" autocomplete="off"></div>
+              <div class="simRow"><label>トン単価(円/t)</label><input type="text" inputmode="decimal" id="s-p" class="simNum" autocomplete="off"></div>
             </div>
             <div class="simWorks" id="sim-works"></div>
           </div>
@@ -163,7 +163,7 @@
 <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">読み込み中…</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="calc.js?v=20260925q"></script>
-<script src="app.js?v=20260925q"></script>
+<script src="calc.js?v=20260925r"></script>
+<script src="app.js?v=20260925r"></script>
 </body>
 </html>
