@@ -185,7 +185,7 @@ function onFilterChange() {
   renderAll();
 }
 
-/* 3行目の工事リスト: 選択中の期間・工場に生産重量か工数がある工事だけを並べる
+/* 3行目の工事リスト: 選択中の期間・工場に生産重量がある工事だけを並べる
    (選択中の工事がリストから外れる場合は「全工事」に戻す)。 */
 function refreshWorkList(from, to, sites) {
   const sel = document.getElementById('f-work');
@@ -199,7 +199,8 @@ function refreshWorkList(from, to, sites) {
     const f = found[wn] || (found[wn] = { weight: 0, hours: 0 });
     f.weight += r[3]; f.hours += r[4];
   });
-  const list = Object.keys(found).filter((wn) => wn !== C.COMMON_WORK).sort().reverse();
+  // 生産量がゼロ(表示で0.0t)の工事は除外する
+  const list = Object.keys(found).filter((wn) => wn !== C.COMMON_WORK && found[wn].weight >= 0.05).sort().reverse();
   if (found[C.COMMON_WORK]) list.push(C.COMMON_WORK);
   const name = (wn) => wn === C.COMMON_WORK ? '共通(工事なし)' : ((state.cache.works[wn] || {}).name || '');
   sel.innerHTML = '<option value="">全工事</option>' + list.map((wn) =>
