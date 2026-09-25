@@ -316,3 +316,4 @@ td input[type="number"] { width: 130px; }
 .simIn .simUnit { width: 3.2em; text-align: left; padding-left: 2px; } /* 単位の幅をそろえて数値の右端を合わせる */
 .simGridWrap .simRow .simIn .simNum:focus { outline: none; }
 .simIn:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
+.bepSvg .lbl.lineLbl { font-size: 24px; font-weight: 800; stroke-width: 4px; } /* グラフの「売上」「総費用」は2倍・太字 */

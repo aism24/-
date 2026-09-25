@@ -403,8 +403,8 @@ function renderBepSvg(id) {
   h += `<text class="lbl fixedLbl" x="${g.l - 6}" y="${Y(F) - 3}" text-anchor="end">固定費<tspan x="${g.l - 6}" dy="14">${man(F)}</tspan></text>`;
   h += `<line class="lCost" x1="${X(0)}" y1="${Y(F)}" x2="${X(maxX)}" y2="${Y(cost(maxX))}"/>`;
   h += `<line class="lSales" x1="${X(0)}" y1="${Y(0)}" x2="${X(maxX)}" y2="${Y(sales(maxX))}"/>`;
-  h += `<text class="lbl" x="${X(maxX) - 4}" y="${Y(sales(maxX)) + 14}" text-anchor="end">売上</text>`;
-  h += `<text class="lbl cost" x="${X(maxX) - 4}" y="${Y(cost(maxX)) + 14}" text-anchor="end">総費用</text>`;
+  h += `<text class="lbl lineLbl" x="${X(maxX) - 4}" y="${Y(sales(maxX)) + 26}" text-anchor="end">売上</text>`;
+  h += `<text class="lbl cost lineLbl" x="${X(maxX) - 4}" y="${Y(cost(maxX)) + 26}" text-anchor="end">総費用</text>`;
   // 利益目標達成点
   if (o.goalTons !== null && o.goalTons !== undefined && o.goalTons <= maxX) {
     const gx = X(o.goalTons), gy = Y(sales(o.goalTons));
