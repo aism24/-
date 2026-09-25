@@ -563,7 +563,7 @@ function updateSim() {
     sRow('損益', yen(r.profit), '円', `利益率 ${pct(r.profitRate)}※設定より変更可能`, r.profit >= 0 ? 'pos' : 'neg'),
     goalKpi(r.profit, r.profitGoal, r.sales > 0, sRow),
     sRow('目標売上額', yen(r.goalSales), '円', r.goalTons !== null ? `必要生産量 ${ton(r.goalTons)}t` : '到達不能'),
-    sRow('損益分岐生産量', ton(r.breakEvenTons), 't', r.breakEvenTons !== null ? `余裕 ${ton(W - r.breakEvenTons)}t` : '到達不能'),
+    sRow('損益分岐生産量', ton(r.breakEvenTons), 't', r.breakEvenTons !== null ? (W >= r.breakEvenTons ? `<span class="pos">余裕 ${ton(W - r.breakEvenTons)}</span>t` : `<span class="neg">不足 ${ton(r.breakEvenTons - W)}</span>t`) : '到達不能'),
     sRow('必要人工', fmt(r.ninku, 1), '人工', `${fmt(r.hours, 0)}h`),
     sRow('人件費', yen(r.labor), '円', `${yen(r.laborRate)}円/人工`),
     sRow('変動費', yen(r.variable), '円', `${yen(r.varPerTon)}円/t`),

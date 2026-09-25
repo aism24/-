@@ -305,3 +305,4 @@ td input[type="number"] { width: 130px; }
 .simTable .sLabel { text-align: center; }
 #tab-sim .simGridWrap .simFixed .simRow, .simGridWrap .simFixed .simRow, .simFixed .simHead.simHeadRow { grid-template-columns: 104px 124px; gap: 0 8px; }
 .simGridWrap .simFixed .simRow .simNum { width: 100%; }
+.simTable .sNote .pos .nv, .simTable .sNote .neg .nv { color: inherit; } /* 余裕=緑(OK)・不足=赤(NG)は数値も同色 */
