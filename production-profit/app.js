@@ -437,14 +437,14 @@ function drawBep(id, o) {
       const s = bepState[id];
       grabDx = s.cursorX - (e.clientX - box.getBoundingClientRect().left);
       dragging = true; box.setPointerCapture(e.pointerId);
-      box.style.cursor = 'grabbing';
+      box.classList.add('grabbing');
       e.preventDefault();
     });
     box.addEventListener('pointermove', (e) => {
-      if (!dragging) { box.style.cursor = onLine(e) ? 'grab' : ''; return; }
+      if (!dragging) { box.classList.toggle('canGrab', onLine(e)); return; }
       const s = bepState[id]; s.x = toX(e); renderBepSvg(id); if (s.o.onMove) s.o.onMove(s.x);
     });
-    const end = (e) => { dragging = false; box.style.cursor = e && onLine(e) ? 'grab' : ''; };
+    const end = (e) => { dragging = false; box.classList.remove('grabbing'); box.classList.toggle('canGrab', !!(e && onLine(e))); };
     box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
     window.addEventListener('resize', () => bepState[id] && renderBepSvg(id));
   }
