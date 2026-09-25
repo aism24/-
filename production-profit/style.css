@@ -348,3 +348,4 @@ td input[type="number"] { width: 130px; }
 .periodWrap[hidden] { display: none; }
 .gPeriod { justify-content: flex-start; padding-left: 24px; } /* 年度・月〆ボタンの位置を固定し、右側の期/月度の欄だけ変わるように */
 .simTable .sVal .unit { display: inline-block; width: 2.3em; text-align: left; } /* 単位の幅をそろえて数値の右端を合わせる */
+.bepSvg .lbl.seg, .bepSvg .lbl.be { font-size: 18px; } /* 内訳・損益分岐生産量の文字を1.5倍 */
