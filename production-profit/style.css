@@ -308,7 +308,7 @@ td input[type="number"] { width: 130px; }
 }
 
 /* 目標シミュレーター: 現状分析(試算表の下の空きスペース)。②施策カード3枚 ③目安単価 ④期間全体 */
-.simAdvice { margin-top: 10px; font-size: clamp(11px, 1.35vh, 16px); line-height: 1.35; color: var(--text); --adv-w: var(--g-period); --adv-h: var(--g-work); --adv-v: var(--g-site); --adv-p: var(--warn-bg); --adv-bar: #9aa3ad; }
+.simAdvice { margin-top: 0; font-size: clamp(11px, 1.35vh, 16px); line-height: 1.35; color: var(--text); --adv-w: var(--g-period); --adv-h: var(--g-work); --adv-v: var(--g-site); --adv-p: var(--warn-bg); --adv-bar: #9aa3ad; }
 .simAdvice:empty { display: none; }
 .simAdvice .advHead { font-weight: 700; font-size: 1.15em; border-left: 4px solid var(--accent); padding-left: 8px; margin-bottom: 6px; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; }
 .simAdvice .advGap { font-weight: 400; font-size: 0.8em; color: var(--muted); }
@@ -350,3 +350,11 @@ td input[type="number"] { width: 130px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .simAdvice .advRemain.lvBad { background: #3d2220; } }
 :root[data-theme="dark"] .simAdvice .advRemain.lvBad { background: #3d2220; }
 @media (max-width: 900px) { .simAdvice .advCards { grid-template-columns: 1fr; } }
+/* 現状分析は試算表(白)とは別の黒背景の枠に置く。黒地に直接のる文字は白抜き(カード内は淡色背景のまま) */
+.fullTab .simLeft .panel.simKpiPanel { flex: none; }
+.simAdvicePanel { background: #111110; border-color: #111110; }
+.simAdvicePanel:has(.simAdvice:empty) { display: none; }
+.simAdvicePanel .advHead { color: #fff; border-left-color: #6fb1ff; }
+.simAdvicePanel .advGap { color: #d6d5cf; }
+.simAdvicePanel .advGap .neg { color: #ff8f85; }
+.simAdvicePanel .advGap .pos { color: #7fe07f; }
