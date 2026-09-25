@@ -62,7 +62,13 @@ button:disabled { opacity: .5; cursor: default; }
 .lockBox .companyName { font-size: 20px; }
 .lockBox h1 { text-align: center; }
 .topbar #refresh-btn { margin-left: auto; }
-.filters { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.filters { display: flex; flex-direction: column; gap: 8px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.fRow { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.fLabel { color: var(--text); }
+.segBtns { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.segBtns button { min-width: 72px; padding: 6px 14px; }
+.segBtns button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.workSelect { max-width: min(520px, calc(100vw - 80px)); }
 .filters.inner { background: none; border: none; padding: 0 0 12px; }
 .filters label { display: flex; align-items: center; gap: 6px; }
 .check { display: flex; align-items: center; gap: 6px; }

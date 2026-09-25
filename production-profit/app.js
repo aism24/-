@@ -122,12 +122,23 @@ function initUi() {
   document.getElementById('f-to').value = r.to;
   document.getElementById('f-site').innerHTML = '<option value="">全社</option>' +
     state.cache.sites.map((s) => `<option>${esc(s)}</option>`).join('');
+  // 2行目: 工場ボタン(3工場=全社 / 本社 / 夢前 / 鳥取)
+  const segs = [['', state.cache.sites.length + '工場']].concat(state.cache.sites.map((s) => [s, s]));
+  const box = document.getElementById('f-sites');
+  box.innerHTML = segs.map(([v, l]) => `<button type="button" data-site="${esc(v)}" class="${v === '' ? 'active' : ''}">${esc(l)}</button>`).join('');
+  box.onclick = (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    box.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+    document.getElementById('f-site').value = b.dataset.site;
+    onFilterChange();
+  };
   document.getElementById('set-tperiod').innerHTML = periods.slice().reverse().concat([C.shiftPeriod(cur, 1), C.shiftPeriod(cur, 2)])
     .filter((k, i, a) => a.indexOf(k) === i).sort().reverse().map((k) => `<option value="${k}">${C.periodLabel(k)}</option>`).join('');
   document.getElementById('set-tperiod').value = cur;
 
-  ['f-mode', 'f-period', 'f-fiscal', 'f-from', 'f-to', 'f-site'].forEach((id) => {
-    document.getElementById(id).onchange = () => { state.simBase = null; renderAll(); };
+  ['f-mode', 'f-period', 'f-fiscal', 'f-from', 'f-to', 'f-site', 'f-work'].forEach((id) => {
+    document.getElementById(id).onchange = onFilterChange;
   });
   document.getElementById('refresh-btn').onclick = refresh;
   document.getElementById('w-search').oninput = renderWorks;
@@ -151,6 +162,35 @@ async function refresh() {
 
 /* ===================== 選択範囲 ===================== */
 
+function onFilterChange() {
+  state.simBase = null;
+  renderAll();
+}
+
+/* 3行目の工事リスト: 選択中の期間・工場に生産重量か工数がある工事だけを並べる
+   (選択中の工事がリストから外れる場合は「全工事」に戻す)。 */
+function refreshWorkList(from, to, sites) {
+  const sel = document.getElementById('f-work');
+  const cur = sel.value;
+  const common = C.commonWorkSet(state.settings);
+  const siteSet = new Set(sites);
+  const found = {};
+  state.cache.rec.forEach((r) => {
+    if (r[0] < from || r[0] > to || !siteSet.has(r[1])) return;
+    const wn = (!r[2] || common[r[2]]) ? C.COMMON_WORK : r[2];
+    const f = found[wn] || (found[wn] = { weight: 0, hours: 0 });
+    f.weight += r[3]; f.hours += r[4];
+  });
+  const list = Object.keys(found).filter((wn) => wn !== C.COMMON_WORK).sort().reverse();
+  if (found[C.COMMON_WORK]) list.push(C.COMMON_WORK);
+  const name = (wn) => wn === C.COMMON_WORK ? '共通(工事なし)' : ((state.cache.works[wn] || {}).name || '');
+  sel.innerHTML = '<option value="">全工事</option>' + list.map((wn) =>
+    `<option value="${esc(wn)}">${esc(wn === C.COMMON_WORK ? '' : wn + '　')}${esc(name(wn))}(${ton(found[wn].weight)}t)</option>`).join('');
+  sel.value = list.includes(cur) ? cur : '';
+  document.getElementById('f-work-note').textContent = sel.value ? '工事に絞ると固定費は工場の固定費を売上比で配賦します(月間目標は工場単位のため対象外)' : list.length + '件';
+  return sel.value;
+}
+
 function selection() {
   const mode = document.getElementById('f-mode').value;
   document.getElementById('f-period-wrap').hidden = mode !== 'period';
@@ -166,14 +206,15 @@ function selection() {
   const site = document.getElementById('f-site').value;
   const sites = site ? [site] : state.cache.sites;
   document.getElementById('f-range-text').textContent = r.from.replace(/-/g, '/') + ' 〜 ' + r.to.replace(/-/g, '/');
-  return { mode, from: r.from, to: r.to, site, sites, periodKey: mode === 'period' ? document.getElementById('f-period').value : null };
+  const work = refreshWorkList(r.from, r.to, sites);
+  return { mode, from: r.from, to: r.to, site, sites, work, periodKey: mode === 'period' ? document.getElementById('f-period').value : null };
 }
 
 function renderAll() {
   if (!state.cache) return;
   const active = document.querySelector('.tabs button.active').dataset.tab;
   const sel = selection();
-  const an = C.analyze(state.cache, state.settings, sel.from, sel.to, sel.sites);
+  const an = C.analyze(state.cache, state.settings, sel.from, sel.to, sel.sites, sel.work || undefined);
   if (active === 'dash') renderDash(sel, an);
   if (active === 'bep') renderBep(sel, an);
   if (active === 'sim') renderSim(sel, an);
@@ -214,9 +255,9 @@ function renderDash(sel, an) {
   const firstKey = state.cache.rec.length ? C.periodKeyOf(state.cache.rec[0][0]) : startKey;
   if (startKey < firstKey && firstKey <= endKey) startKey = firstKey; // データの無い月度は並べない
   const tr = { from: C.periodRange(startKey).from, to: C.periodRange(endKey).to };
-  const trAll = C.analyze(state.cache, state.settings, tr.from, tr.to, sel.sites);
+  const trAll = C.analyze(state.cache, state.settings, tr.from, tr.to, sel.sites, sel.work || undefined);
   const labels = trAll.byPeriod.map((p) => C.periodLabel(p.period).replace(/^\d{2}(\d{2})年/, '$1/').replace('月度', ''));
-  const perSite = sel.sites.map((s) => ({ site: s, an: C.analyze(state.cache, state.settings, tr.from, tr.to, [s]) }));
+  const perSite = sel.sites.map((s) => ({ site: s, an: C.analyze(state.cache, state.settings, tr.from, tr.to, [s], sel.work || undefined) }));
 
   drawChart('c-weight', {
     type: 'bar',
@@ -450,11 +491,11 @@ function renderSim(sel, an) {
     set('n', base.n, Math.max(base.n * 2, 1), 0.01);
     set('p', base.p, Math.max(base.p * 2, 10000), 100);
   }
-  const canSave = sel.mode === 'period' && !!sel.site;
+  const canSave = sel.mode === 'period' && !!sel.site && !sel.work;
   const btn = document.getElementById('s-save');
   btn.disabled = !canSave;
   document.getElementById('s-save-note').textContent = canSave ? `${C.periodLabel(sel.periodKey)}・${sel.site} の月間目標として保存します(編集用パスワードが必要)`
-    : '月間目標として保存するには、期間を「月度」、工場を1つ選んでください。';
+    : '月間目標として保存するには、期間を「月度」、工場を1つ、工事は「全工事」を選んでください。';
   updateSim();
 }
 
