@@ -472,10 +472,22 @@ function renderBep(sel, an) {
 /* ===================== シミュレーション ===================== */
 
 const SIM = [['w', 1], ['n', 0.01], ['p', 100]];
+// 入力欄の表示桁(生産重量=#,##0.0 / 人工/t=0.00 / トン単価=#,##0)。「,」区切りを出すため入力欄はtext型
+const SIM_DIGITS = { w: 1, n: 2, p: 0 };
+const simFmt = (k, v) => fmt(v, SIM_DIGITS[k]);
 let simDragging = false;
 function initSim() {
   SIM.forEach(([k]) => {
-    document.getElementById('s-' + k).oninput = updateSim;
+    const el = document.getElementById('s-' + k);
+    el.oninput = updateSim;
+    // 入力中は自由に打てるようにし、欄を離れたら「,」区切りの形に整える
+    el.onchange = () => {
+      const v = parseNum(el.value);
+      const ex = (state.simExact || {})[k];
+      if (ex && Math.abs(v - parseNum(ex.shown)) < 1e-9) { el.value = ex.shown; return; }
+      el.value = simFmt(k, v);
+      updateSim();
+    };
   });
   document.getElementById('s-reset').onclick = () => { state.simBase = null; renderAll(); };
 }
@@ -496,7 +508,7 @@ function renderSim(sel, an) {
     state.simExact = {};
     const set = (k, v, max, step) => {
       const n = document.getElementById('s-' + k);
-      n.step = step; n.value = +v.toFixed(k === 'p' ? 0 : k === 'w' ? 1 : 2);
+      n.value = simFmt(k, v);
       // 表示は丸めるが、数値欄を触っていない間は丸める前の値で計算する(基準値で損益が配分どおりになるように)
       state.simExact[k] = { shown: n.value, value: v };
     };
@@ -522,9 +534,11 @@ function renderSimWorks(an) {
   </div>`).join('');
 }
 
+function parseNum(v) { return Number(String(v).replace(/[,，\s]/g, '')) || 0; }
+
 function simValue(k) {
   const v = document.getElementById('s-' + k).value, ex = (state.simExact || {})[k];
-  return ex && ex.shown === v ? ex.value : (Number(v) || 0);
+  return ex && ex.shown === v ? ex.value : parseNum(v);
 }
 
 function updateSim() {
@@ -553,7 +567,7 @@ function updateSim() {
     x: W, forceX: !simDragging, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: '試算',
     onMove: (t) => {
       simDragging = true;
-      document.getElementById('s-w').value = +t.toFixed(1);
+      document.getElementById('s-w').value = simFmt('w', t);
       updateSim();
       simDragging = false;
     } });

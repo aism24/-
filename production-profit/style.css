@@ -256,3 +256,5 @@ td input[type="number"] { width: 130px; }
 .simTable > div { padding: 3px 0; }
 .simTable .sVal { font-size: clamp(14px, 2.1vh, 26px); }
 @media (max-height: 820px) and (min-width: 801px) { #tab-sim .btnRow .muted { display: none; } }
+.simNum { width: 100%; text-align: right; font-variant-numeric: tabular-nums; }
+.simGridWrap .simRow .simNum { font-size: 15px; padding: 5px 8px; }
