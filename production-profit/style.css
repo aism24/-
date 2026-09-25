@@ -14,7 +14,8 @@
   --warn-bg: #fff4d6;
   --grid: #e8e7e2;
   --g-period: #e3f4e6; --g-site: #fce6ee; --g-work: #e3eefc;
-  --bep-cost: #c8423b; --bep-fixed: #5b63b0; --bep-labor: #8a5cc2; --bep-var: #1a9a8c; --bep-be: #d99a00;
+  --bep-cost: #c8423b; --bep-fixed: #5b63b0; --bep-var: #1a9a8c; --bep-be: #d99a00;
+  --goal: #e0287d; /* 利益目標(★・目標表示・目標%)のピンク */
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -22,27 +23,31 @@
     --muted: #9a998f; --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
     --good: #0ca30c; --bad: #e66767; --warn-bg: #3a3220; --grid: #2c2c2a;
     --g-period: #1d3324; --g-site: #3a2230; --g-work: #1d2a40;
-    --bep-cost: #e66767; --bep-fixed: #8a91e0; --bep-labor: #b48ae6; --bep-var: #3cc0b1; --bep-be: #f0b429;
+    --bep-cost: #e66767; --bep-fixed: #8a91e0; --bep-var: #3cc0b1; --bep-be: #f0b429;
   }
 }
 :root[data-theme="dark"] {
   --bg: #111110; --surface: #1a1a19; --border: #383835; --text: #ffffff; --text2: #c3c2b7;
   --muted: #9a998f; --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
   --good: #0ca30c; --bad: #e66767; --warn-bg: #3a3220; --grid: #2c2c2a;
-    --g-period: #1d3324; --g-site: #3a2230; --g-work: #1d2a40;
-    --bep-cost: #e66767; --bep-fixed: #8a91e0; --bep-labor: #b48ae6; --bep-var: #3cc0b1; --bep-be: #f0b429;
+  --g-period: #1d3324; --g-site: #3a2230; --g-work: #1d2a40;
+  --bep-cost: #e66767; --bep-fixed: #8a91e0; --bep-var: #3cc0b1; --bep-be: #f0b429;
 }
 
+/* ===================== 基本 ===================== */
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; font-size: 14px; }
+/* 「1」も他の数字と同じ幅に: 英数字はInter(等幅数字対応)、日本語は各OSのゴシック。全体で等幅数字を使う */
+body { margin: 0; background: var(--bg); color: var(--text); font-family: "Inter", system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; font-size: 14px; font-variant-numeric: tabular-nums; }
 h1 { font-size: 18px; margin: 0; }
 h2 { font-size: 14px; margin: 0 0 8px; color: var(--text2); font-weight: 600; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .err { color: var(--bad); min-height: 1em; }
+.pos { color: var(--good); }
+.neg { color: var(--bad); }
 [hidden] { display: none !important; }
 
-input, select, button { font: inherit; color: var(--text); }
+input, select, button { font: inherit; font-variant-numeric: tabular-nums; color: var(--text); }
 input, select { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
 input[type="number"] { width: 120px; text-align: right; }
 button { cursor: pointer; border-radius: 6px; padding: 7px 14px; border: 1px solid var(--border); background: var(--surface); }
@@ -50,12 +55,18 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button.ghost:hover { border-color: var(--accent); }
 button:disabled { opacity: .5; cursor: default; }
 
+/* ===================== ロック画面・ヘッダー ===================== */
 .lock { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .lockBox { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 28px; width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 12px; }
 
+.appHead { flex: none; background: var(--surface); }
+.appHead .warnbox { margin: 0; border-radius: 0; padding: 4px 16px; }
 .topbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
 .topCenter { grid-column: 2; display: flex; align-items: center; justify-content: center; gap: 12px; }
 .topRight { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+/* ヘッダーの「リセット」ボタン(会社ロゴの左、オレンジ) */
+.resetBtn { background: #f08c00; color: #fff; border: none; border-radius: 6px; padding: 6px 14px; font-weight: 700; cursor: pointer; }
+.resetBtn:hover { background: #d97a00; }
 /* 会社ロゴ: 赤いマークは固定色、「masamiz」文字はcurrentColorで文字色(--text)に追従し、
    ライト背景では黒・ダーク背景では白に切り替わる。 */
 .brand { display: flex; align-items: center; gap: 8px; }
@@ -66,25 +77,35 @@ button:disabled { opacity: .5; cursor: default; }
 .lockBox .brandLogo { width: 48px; height: 53px; }
 .lockBox .companyName { font-size: 20px; }
 .lockBox h1 { text-align: center; }
+
+/* ===================== 絞り込み(期間=薄い緑、工場=薄いピンク、工事=薄い青 を1行に並べる) ===================== */
 /* 3色の枠は常に均等幅(1/3ずつ)。枠の中身が入り切らないときは枠の中で改行する */
 .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: stretch; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
-/* 絞り込み: 期間=薄い緑、工場=薄いピンク、工事=薄い青 を1行に並べる */
+.filters.inner { background: none; border: none; padding: 0 0 12px; }
+.filters label { display: flex; align-items: center; gap: 6px; }
 .fGroup { display: flex; align-items: center; align-content: center; justify-content: center; text-align: center; gap: 6px 12px; padding: 6px 12px; border-radius: 8px; flex-wrap: wrap; min-width: 0; }
-.gPeriod { background: var(--g-period); }
+.fGroup label, .fLabel { white-space: nowrap; }
+.fLabel { color: var(--text); }
+/* 期間: 年度・月〆ボタンの位置を固定し、右側の期/月度の欄だけ変わるように左寄せ */
+.gPeriod { background: var(--g-period); justify-content: flex-start; padding-left: 24px; }
 .gSite { background: var(--g-site); }
 .gWork { background: var(--g-work); }
+.gWork label { flex: 0 1 380px; min-width: 0; }
+.gWork .workSelect { flex: 1 1 auto; min-width: 0; width: 100%; }
+.gWork #f-work-note { white-space: nowrap; }
 .gWork #f-price-warn { min-width: 0; }
-.fRow { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
-.fLabel { color: var(--text); }
+.workSelect { max-width: min(520px, calc(100vw - 80px)); }
 .segBtns { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .segBtns button { min-width: 72px; padding: 6px 14px; }
 .segBtns button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-.workSelect { max-width: min(520px, calc(100vw - 80px)); }
-.filters.inner { background: none; border: none; padding: 0 0 12px; }
-.filters label { display: flex; align-items: center; gap: 6px; }
+/* 月度の◀▶: 月度リストと同じ高さにして、年度・月〆の切替で行の高さが変わらないように */
+.periodWrap { display: inline-flex; align-items: stretch; gap: 6px; }
+.monthBtn { display: inline-flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1; padding: 0 12px; min-width: 40px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; }
+.monthBtn:disabled { opacity: .35; cursor: default; }
 .check { display: flex; align-items: center; gap: 6px; }
 
-.tabs { display: flex; gap: 4px; padding: 8px 16px 0; overflow-x: auto; }
+/* ===================== タブ・共通部品 ===================== */
+.tabs { display: flex; gap: 4px; padding: 4px 16px 0; overflow-x: auto; }
 .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--text2); white-space: nowrap; }
 .tabs button.active { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
 
@@ -92,16 +113,7 @@ button:disabled { opacity: .5; cursor: default; }
 .tab.active { display: block; }
 /* 画面全体: ヘッダー(会社名・タブ・絞り込み)を固定し、その下をタブの表示領域にする */
 #screen-main { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
-.appHead { flex: none; }
 #screen-main > .tab.active { flex: 1; min-height: 0; overflow: auto; width: 100%; }
-/* 目標シミュレーター: 画面いっぱい(上下左右ともスクロールしない) */
-#tab-sim { max-width: none; }
-#screen-main > #tab-sim.active { display: flex; flex-direction: column; overflow: hidden; padding: 12px 16px; }
-#tab-sim .simLayout { flex: 1; min-height: 0; }
-#tab-sim .simLeft { min-height: 0; overflow: auto; }
-#tab-sim .simLeft .panel { margin-bottom: 12px; }
-#tab-sim .simLeft .panel:last-child { margin-bottom: 0; }
-.bepBox svg { position: absolute; top: 0; left: 0; }
 .warnbox, .note { margin: 12px 16px 0; padding: 8px 12px; background: var(--warn-bg); border-radius: 6px; font-size: 12px; }
 .tab .note { margin: 0 0 12px; }
 
@@ -109,39 +121,24 @@ button:disabled { opacity: .5; cursor: default; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .chartBox { position: relative; height: 280px; }
 .chartBox.tall { height: 380px; }
+.btnRow { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.kpis.compact { margin: 0; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
 .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
-.kpis.compact .kpi { border: none; padding: 6px; }
 .kpi .label { font-size: 12px; color: var(--text2); }
-.kpi .value { font-size: 22px; font-weight: 700; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+.kpi .value { font-size: 22px; font-weight: 700; margin: 4px 0 2px; }
 .kpi .value .unit { font-size: 12px; font-weight: 400; color: var(--text2); margin-left: 2px; }
 .kpi .sub { font-size: 12px; color: var(--muted); }
-.pos { color: var(--good); }
-.neg { color: var(--bad); }
 
 .tableWrap { overflow-x: auto; }
 .tallTable { max-height: 520px; overflow-y: auto; }
-table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+table { border-collapse: collapse; width: 100%; }
 th, td { border-bottom: 1px solid var(--border); padding: 6px 8px; white-space: nowrap; }
 th { text-align: left; font-weight: 600; color: var(--text2); font-size: 12px; background: var(--surface); position: sticky; top: 0; }
 td.n, th.n { text-align: right; }
 tr.total td { font-weight: 700; border-top: 2px solid var(--border); }
 tr.common td { color: var(--text2); }
 td input[type="number"] { width: 130px; }
-
-.simGrid { display: grid; grid-template-columns: minmax(300px, 1fr) 1.4fr; gap: 16px; }
-/* 目標シミュレーター: 左=入力(上)と各数値(下)、右=グラフ(左列の高さいっぱい) */
-.simLayout { display: grid; grid-template-columns: minmax(360px, 1fr) 1.5fr; gap: 16px; align-items: stretch; }
-.simLeft { display: flex; flex-direction: column; min-width: 0; }
-.simLeft .panel:last-child { flex: 1; margin-bottom: 0; }
-.simLeft .kpis.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.simChart { display: flex; flex-direction: column; margin-bottom: 0; }
-.simChart .chartBox { flex: 1; min-height: 0; height: auto; overflow: hidden; }
-.simRow { display: grid; grid-template-columns: 140px minmax(0, 220px); gap: 10px; align-items: center; margin-bottom: 14px; }
-.simRow input[type="number"] { width: 100%; font-size: 16px; }
-.btnRow { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .formGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 8px; }
 .formGrid label { display: flex; flex-direction: column; gap: 4px; }
@@ -152,34 +149,96 @@ td input[type="number"] { width: 130px; }
 .spinner { width: 28px; height: 28px; border: 3px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-@media (max-width: 800px) {
-  .grid2, .simGrid, .simLayout { grid-template-columns: 1fr; }
-  .simChart .chartBox { min-height: 360px; }
-  /* スマホ: 画面に収まらないため通常の縦スクロールにする(ヘッダーを固定すると画面の半分近くを占めるため固定しない) */
-  #screen-main { display: block; height: auto; }
-  #screen-main > .tab.active, #screen-main > #tab-sim.active { overflow: visible; display: block; }
-  .topbar { grid-template-columns: 1fr; }
-  .topCenter, .topRight { grid-column: 1; justify-content: center; }
-  .simRow { grid-template-columns: 130px minmax(0, 1fr); }
-  .tab { padding: 12px 16px; }
-}
+/* ===================== 目標シミュレーター ===================== */
+/* 画面いっぱい(上下左右ともスクロールしない)。左=試算表(上)と各数値(下)、右=グラフ(左列の高さいっぱい) */
+#tab-sim { max-width: none; }
+#screen-main > #tab-sim.active { display: flex; flex-direction: column; overflow: hidden; padding: 12px 16px; }
+.simLayout { display: grid; grid-template-columns: minmax(360px, 1.25fr) 1.25fr; gap: 16px; align-items: stretch; }
+#tab-sim .simLayout { flex: 1; min-height: 0; }
+.simLeft { display: flex; flex-direction: column; min-width: 0; }
+#tab-sim .simLeft { min-height: 0; overflow: auto; }
+#tab-sim .panel { padding: 10px 14px; }
+#tab-sim .simLeft .panel { margin-bottom: 12px; }
+#tab-sim .simLeft .panel:last-child { flex: 1; margin-bottom: 0; }
+.simChart { display: flex; flex-direction: column; margin-bottom: 0; }
+.simChart .chartBox { flex: 1; min-height: 0; height: auto; overflow: hidden; }
+/* 試算表の下: 説明文と「現在値に戻す」(水色)を右寄せ(ボタンが右端) */
+#tab-sim .btnRow { align-items: center; }
+.simInputs .btnRow { justify-content: flex-end; }
+.simInputs .btnRow .muted { order: 1; text-align: right; }
+.simInputs .btnRow #s-reset { order: 2; }
+#s-reset { background: #d6efff; border-color: #9fd3f5; }
 
-/* 損益分岐点グラフ(SVG) */
+/* 試算表: 全体を罫線で囲う。左=項目名と入力欄、右=工事ごとの実績(行の高さをそろえて横に並べる) */
+.simGridWrap { display: flex; gap: 0; align-items: flex-start; margin-bottom: 8px; border: 1px solid var(--border); width: fit-content; max-width: 100%; }
+.simGridWrap .simHead { height: 34px; display: flex; flex-direction: column; justify-content: flex-end; font-size: 11px; color: var(--text2); line-height: 1.25; overflow: hidden; }
+.simFixed { flex: none; border-right: 1px solid var(--border); padding: 0 0 0 8px; }
+.simFixed .simHead { font-weight: 600; border-bottom: 1px solid transparent; padding-bottom: 3px; }
+/* 列幅: 入力欄の列は売上額(概算)が10億円台(9,999,999,999)でも収まる幅 */
+.simFixed .simHead.simHeadRow { display: grid; grid-template-columns: 104px 174px; gap: 0 8px; align-items: center; justify-content: stretch; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+.simHeadRow .simTitle { font-size: 22px; font-weight: 700; color: var(--text); text-align: center; }
+.simHeadRow .simInHead { align-self: stretch; display: flex; align-items: center; justify-content: center; border-left: 1px solid var(--border); font-size: 12px; font-weight: 600; }
+.simFixed .simRow { display: grid; grid-template-columns: 104px 174px; gap: 0 8px; align-items: stretch; height: 36px; margin: 0; border-bottom: 1px solid var(--border); }
+.simFixed .simRow:last-child { border-bottom: none; }
+.simFixed .simRow > label { align-self: center; text-align: center; }
+/* 入力欄: 枠なし・薄い黄色背景(着色部分=入力するところ)。末尾に単位(t・人工・円/t・円)。
+   4行目の売上額(概算)は自動計算で入力不可(着色なし・黒太字) */
+.simIn { display: flex; align-items: center; height: 100%; border-left: 1px solid var(--border); background: var(--warn-bg); padding-right: 6px; }
+.simIn.simInSales { background: transparent; }
+.simIn:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
+.simNum { flex: 1; min-width: 0; height: 100%; text-align: right; font-size: 15px; padding: 5px 4px 5px 8px; border: none; border-radius: 0; background: transparent; }
+.simNum:focus { outline: none; }
+.simNum.simSales { font-weight: 700; color: var(--text); cursor: default; }
+.simIn .simUnit { flex: none; width: 3.2em; text-align: left; padding-left: 2px; font-size: 11px; color: var(--text2); } /* 単位の幅をそろえて数値の右端を合わせる */
+/* 工事ごとの列: 罫線で区切り、工事番号・工事名は中央揃え。列幅は10億円台の売上額が収まる幅 */
+.simWorks { flex: 1; min-width: 0; display: flex; overflow-x: auto; scrollbar-width: thin; }
+.simCol { flex: 0 0 auto; width: calc(13ch + 16px); border-right: 1px solid var(--border); }
+.simCol:last-child { border-right: none; }
+.simCol .simHead { text-align: center; align-items: center; border-bottom: 1px solid var(--border); padding: 0 6px 3px; }
+.simCol .simHead b, .simCol .simHead span { display: block; width: 100%; text-align: center; }
+.simCol .simHead b { color: var(--text); font-size: 12px; }
+.simCol .simHead span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.simCell { height: 36px; display: flex; align-items: center; justify-content: flex-end; padding: 0 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.simCol .simCell:last-child { border-bottom: none; }
+.simCell.simSales { font-weight: 700; color: var(--text); }
+.simEmpty { padding-top: 40px; }
+
+/* 下の表: 項目(中央揃え)・数値(右端をそろえる)・備考。1280×720でスクロールなしに収まる行間 */
+.simTable { display: grid; grid-template-columns: max-content max-content 1fr; column-gap: 16px; align-items: baseline; }
+.simTable > div { padding: 1px 0; border-bottom: 1px solid var(--border); }
+.simTable .sLabel { color: var(--text2); font-size: clamp(13px, 2.05vh, 24px); line-height: 1.2; white-space: nowrap; text-align: center; }
+.simTable .sLabel:has(.subLbl) { text-align: left; padding-left: 1em; } /* 内訳(└ 人件費・└ その他固定費)は左揃え */
+.simTable .sLabel .subLbl { font-size: 0.8em; }
+.simTable .sVal { text-align: right; font-weight: 700; white-space: nowrap; font-size: clamp(14px, 1.95vh, 26px); }
+.simTable .sVal .unit { display: inline-block; width: 2.3em; text-align: left; font-size: 11px; font-weight: 400; color: var(--text2); margin-left: 3px; }
+/* 備考: 数値と達成/未達・超/不足だけを項目名と同じ大きさに(説明文・単位は小さいまま)。緑=OK・赤=NG */
+.simTable .sNote { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.simTable .sNote .nv, .simTable .sNote .pos, .simTable .sNote .neg, .simTable .sNote .goalPctWrap { font-size: clamp(13px, 2.05vh, 24px); line-height: 1.2; }
+.simTable .sNote .nv { color: var(--text2); }
+.simTable .sNote .pos, .simTable .sNote .neg { font-weight: 700; }
+.simTable .sNote .pos .nv, .simTable .sNote .neg .nv, .simTable .sNote .goalPct .nv { color: inherit; font-size: inherit; }
+.simTable .sNote .goalPct { color: var(--goal); font-weight: 700; } /* 損益の（目標xx%）の「目標xx%」はピンクの太字 */
+
+/* 広い画面は左40%・右60%(グラフを大きく)。狭い画面は下の表が収まる比率 */
+@media (min-width: 1500px) { .simLayout { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); } }
+
+/* ===================== 損益分岐生産量グラフ(SVG) ===================== */
 .bepBox { touch-action: pan-y; cursor: ew-resize; user-select: none; }
+.bepBox svg { position: absolute; top: 0; left: 0; }
 .bepSvg { display: block; font-size: 12px; }
 .bepSvg .bg { stroke: var(--grid); stroke-width: 1; }
 .bepSvg .ax { fill: var(--text2); font-size: 11px; }
 .bepSvg .lbl { fill: var(--text); font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
 .bepSvg .lbl.fixedLbl { fill: var(--bep-fixed); font-size: 11px; }
 .bepSvg .lbl.cost { fill: var(--bep-cost); }
-.bepSvg .lbl.be { fill: var(--bep-be); }
 .bepSvg .lbl.good, .bepSvg .lbl.bProfit { fill: var(--good); }
 .bepSvg .lbl.bLoss { fill: var(--bad); }
 .bepSvg .lbl.bVar { fill: var(--bep-var); }
-.bepSvg .lbl.bLabor { fill: var(--bep-labor); }
 .bepSvg .lbl.bFixed { fill: var(--bep-fixed); }
-.bepSvg .fFixed { fill: var(--bep-fixed); fill-opacity: .16; }
-.bepSvg .fLabor { fill: var(--bep-labor); fill-opacity: .16; }
+.bepSvg .lbl.seg { font-size: 18px; } /* 内訳の文字は1.5倍 */
+.bepSvg .lbl.lineLbl { font-size: 24px; font-weight: 800; stroke-width: 4px; } /* 「売上」「総費用」は2倍・太字 */
+/* 面: 人件費は固定費に含めて表示するため、人件費帯も固定費と同じ色 */
+.bepSvg .fFixed, .bepSvg .fLabor { fill: var(--bep-fixed); fill-opacity: .16; }
 .bepSvg .fVar { fill: var(--bep-var); fill-opacity: .16; }
 .bepSvg .fLoss { fill: var(--bad); fill-opacity: .18; }
 .bepSvg .fProfit { fill: var(--good); fill-opacity: .16; }
@@ -189,180 +248,44 @@ td input[type="number"] { width: 130px; }
 .bepSvg .lBe { stroke: var(--bep-be); stroke-width: 1.5; stroke-dasharray: 3 3; }
 .bepSvg .mBe { fill: var(--bep-be); stroke: var(--surface); stroke-width: 2; }
 .bepSvg .mBeHalo { fill: var(--bep-be); fill-opacity: .25; }
-.bepSvg .mGoal { fill: var(--good); stroke: var(--surface); stroke-width: 1.5; }
 .bepSvg .lCursor { stroke: var(--text); stroke-width: 1.2; stroke-dasharray: 5 4; }
 .bepSvg .bFixed { fill: var(--bep-fixed); }
-.bepSvg .bLabor { fill: var(--bep-labor); }
 .bepSvg .bVar { fill: var(--bep-var); }
 .bepSvg .bProfit { fill: var(--good); }
 .bepSvg .bLoss { fill: var(--bad); }
 .bepSvg .handle rect { fill: var(--text); }
 .bepSvg .handle text { fill: var(--surface); font-weight: 600; }
-.appHead { background: var(--surface); }
-.appHead .warnbox { margin: 0; border-radius: 0; padding: 4px 16px; }
-.appHead .tabs { padding-top: 4px; }
-/* 目標シミュレーター: 画面の高さに合わせて左列を詰め、スクロールを出さない */
-#tab-sim .panel { padding: 10px 14px; }
-#tab-sim .simRow { margin-bottom: 8px; }
-#tab-sim .kpis.compact { gap: 2px 10px; }
-#tab-sim .kpi { padding: 3px 4px; }
-#tab-sim .kpi .value { font-size: clamp(15px, 2.6vh, 30px); margin: 2px 0 0; }
-#tab-sim .kpi .label, #tab-sim .kpi .sub { font-size: 11px; }
-#tab-sim .btnRow { align-items: center; }
-@media (max-height: 760px) and (min-width: 801px) {
-  #tab-sim .btnRow .muted { display: none; }
-  #tab-sim .kpi .sub { font-size: 10px; }
-  .fGroup { padding: 4px 10px; }
-}
-.fGroup label, .fLabel { white-space: nowrap; }
-.gWork label { flex: 0 1 380px; min-width: 0; }
-.gWork .workSelect { flex: 1 1 auto; min-width: 0; width: 100%; }
-.gWork #f-work-note { white-space: nowrap; }
-@media (max-width: 800px) { .filters { grid-template-columns: 1fr; } }
-/* 目標シミュレーター: 入力欄 + 工事ごとの実績(行の高さを揃えて横に並べる) */
-.simGridWrap { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
-.simFixed { flex: none; width: 290px; }
-.simGridWrap .simHead { height: 34px; display: flex; flex-direction: column; justify-content: flex-end; font-size: 11px; color: var(--text2); line-height: 1.25; overflow: hidden; }
-.simFixed .simHead { font-weight: 600; }
-#tab-sim .simGridWrap .simRow, .simGridWrap .simRow { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; height: 38px; margin: 0; }
-.simWorks { flex: 1; min-width: 0; display: flex; gap: 2px; overflow-x: auto; padding-bottom: 4px; }
-.simCol { flex: none; min-width: 92px; max-width: 120px; }
-.simCol .simHead b { color: var(--text); font-size: 12px; }
-.simCol .simHead span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.simCell { height: 38px; display: flex; align-items: center; justify-content: flex-end; padding: 0 8px; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--border); font-size: 13px; }
-.simCol .simHead { padding: 0 8px; text-align: right; align-items: flex-end; }
-.simEmpty { padding-top: 40px; }
-@media (max-width: 800px) {
-  .simGridWrap { flex-direction: column; }
-  .simFixed { width: 100%; }
-  .simWorks { width: 100%; }
-}
-/* 工事ごとの実績を多く見せるため、入力欄を詰めて左列を広げる */
-.simLayout { grid-template-columns: minmax(360px, 1.25fr) 1.25fr; }
-.simFixed { width: 232px; }
-#tab-sim .simGridWrap .simRow, .simGridWrap .simRow { grid-template-columns: 104px 1fr; height: 36px; }
-.simCell { height: 36px; }
-.simGridWrap .simRow input[type="number"] { font-size: 15px; padding: 5px 8px; }
-.simCol { min-width: 84px; }
-.simWorks { scrollbar-width: thin; }
-@media (max-width: 800px) { .simLayout { grid-template-columns: 1fr; } .simFixed { width: 100%; } }
-/* 目標シミュレーターの各数値: 項目(左)・数値(中)・備考(右) */
-.simTable { display: grid; grid-template-columns: max-content max-content 1fr; column-gap: 16px; align-items: baseline; }
-.simTable > div { padding: 5px 0; border-bottom: 1px solid var(--border); }
-.simTable .sLabel { color: var(--text2); font-size: 12px; white-space: nowrap; }
-.simTable .sVal { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: clamp(15px, 2.3vh, 26px); }
-.simTable .sVal .unit { font-size: 11px; font-weight: 400; color: var(--text2); margin-left: 3px; }
-.simTable .sNote { color: var(--muted); font-size: 12px; }
-.simTable > div { padding: 3px 0; }
-.simTable .sVal { font-size: clamp(14px, 2.1vh, 26px); }
-@media (max-height: 820px) and (min-width: 801px) { #tab-sim .btnRow .muted { display: none; } }
-.simNum { width: 100%; text-align: right; font-variant-numeric: tabular-nums; }
-.simGridWrap .simRow .simNum { font-size: 15px; padding: 5px 8px; }
-/* 桁の一番多いトン単価(例: 999,999)に合わせ、入力欄3つと工事ごとの列をそれぞれ同じ幅にそろえる */
-#tab-sim .simGridWrap .simRow, .simGridWrap .simRow { grid-template-columns: 104px 11ch; }
-.simFixed { width: auto; }
-.simGridWrap .simRow .simNum { width: 11ch; box-sizing: content-box; }
-.simCol { flex: 0 0 auto; width: calc(9ch + 16px); min-width: 0; max-width: none; }
-.simCell { font-size: 13px; }
-@media (max-width: 800px) { .simFixed { width: 100%; } }
-.simCol .simHead b, .simCol .simHead span { display: block; width: 100%; }
-/* 工事ごとの列: 罫線で区切り、工事番号・工事名は中央揃え */
-.simWorks { gap: 0; border-left: 1px solid var(--border); }
-.simCol { border-right: 1px solid var(--border); }
-.simCol .simHead { text-align: center; align-items: center; border-bottom: 1px solid var(--border); padding: 0 6px 3px; }
-.simCol .simHead b, .simCol .simHead span { text-align: center; }
-.simFixed .simHead { border-bottom: 1px solid transparent; padding-bottom: 3px; }
-#tab-sim .simGridWrap .simRow, .simGridWrap .simRow { grid-template-columns: 104px auto; }
-.simTable .sLabel { font-size: clamp(13px, 2.2vh, 24px); line-height: 1.2; color: var(--text2); }
-/* 試算表: 全体を罫線で囲い、見出し「試算」(2倍)・「入力欄」を中央揃え */
-.simGridWrap { gap: 0; border: 1px solid var(--border); width: fit-content; max-width: 100%; box-sizing: border-box; }
-.simFixed { border-right: 1px solid var(--border); padding: 0 8px; }
-.simFixed .simRow { border-bottom: 1px solid var(--border); }
-.simFixed .simRow:last-child, .simCol .simCell:last-child { border-bottom: none; }
-.simWorks { border-left: none; padding-bottom: 0; }
-.simCol:last-child { border-right: none; }
-.simFixed .simHead.simHeadRow { display: grid; grid-template-columns: 104px auto; gap: 8px; align-items: center; justify-content: stretch; border-bottom: 1px solid var(--border); padding-bottom: 0; }
-.simHeadRow .simTitle { font-size: 22px; font-weight: 700; color: var(--text); text-align: center; }
-.simHeadRow .simInHead { font-size: 12px; font-weight: 600; text-align: center; }
-@media (max-width: 800px) { .simGridWrap { width: 100%; } .simFixed { border-right: none; border-bottom: 1px solid var(--border); } }
-/* 備考: 数値と達成/未達だけを項目名と同じく2倍に(説明文・単位は小さいまま)。達成=緑(OK)・未達=赤(NG) */
-.simTable .sNote { white-space: nowrap; }
-.simTable .sNote .nv, .simTable .sNote .pos, .simTable .sNote .neg { font-size: clamp(13px, 2.2vh, 24px); line-height: 1.2; }
-.simTable .sNote .nv { color: var(--text2); font-variant-numeric: tabular-nums; }
-.simTable .sNote .pos, .simTable .sNote .neg { font-weight: 700; }
-/* 4行目 売上額(概算): 入力欄は自動計算で入力不可、工事ごとの値とも黒太字 */
-.simGridWrap .simRow .simNum.simSales { font-weight: 700; color: var(--text); background: transparent; border-color: transparent; cursor: default; }
-.simCell.simSales { font-weight: 700; color: var(--text); }
-/* 入力欄: 枠なし・薄い黄色背景(着色部分=入力するところ)。入力欄の列の左にも罫線 */
-.simFixed { padding-right: 0; }
-#tab-sim .simGridWrap .simFixed .simRow, .simGridWrap .simFixed .simRow { align-items: stretch; }
-.simFixed .simRow > label { align-self: center; }
-.simGridWrap .simRow .simNum { box-sizing: border-box; width: calc(11ch + 17px); height: 100%; border: none; border-left: 1px solid var(--border); border-radius: 0; background: var(--warn-bg); }
-.simGridWrap .simRow .simNum:focus { outline: 2px solid var(--accent, #2878d8); outline-offset: -2px; }
-.simGridWrap .simRow .simNum.simSales { background: transparent; border-left: 1px solid var(--border); }
-.simHeadRow .simInHead { align-self: stretch; display: flex; align-items: center; justify-content: center; border-left: 1px solid var(--border); }
-/* 下の表の項目名は中央揃え */
-.simTable .sLabel { text-align: center; }
-#tab-sim .simGridWrap .simFixed .simRow, .simGridWrap .simFixed .simRow, .simFixed .simHead.simHeadRow { grid-template-columns: 104px 124px; gap: 0 8px; }
-.simGridWrap .simFixed .simRow .simNum { width: 100%; }
-.simTable .sNote .pos .nv, .simTable .sNote .neg .nv { color: inherit; } /* 余裕=緑(OK)・不足=赤(NG)は数値も同色 */
-/* 入力欄の列だけ末尾に単位(t・人工・円/t・円)。着色・罫線は入力欄と単位をまとめた枠(.simIn)に付ける */
-#tab-sim .simGridWrap .simFixed .simRow, .simGridWrap .simFixed .simRow, .simFixed .simHead.simHeadRow { grid-template-columns: 104px 158px; }
-.simIn { display: flex; align-items: center; height: 100%; border-left: 1px solid var(--border); background: var(--warn-bg); padding-right: 6px; box-sizing: border-box; }
-.simIn.simInSales { background: transparent; }
-.simGridWrap .simFixed .simRow .simIn .simNum { flex: 1; min-width: 0; width: auto; border-left: none; background: transparent; padding-right: 4px; }
-.simIn .simUnit { flex: none; font-size: 11px; color: var(--text2); }
-.simFixed .simRow > label { text-align: center; } /* 試算列(項目名)は中央揃え */
-.simIn .simUnit { width: 3.2em; text-align: left; padding-left: 2px; } /* 単位の幅をそろえて数値の右端を合わせる */
-.simGridWrap .simRow .simIn .simNum:focus { outline: none; }
-.simIn:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
-.bepSvg .lbl.lineLbl { font-size: 24px; font-weight: 800; stroke-width: 4px; } /* グラフの「売上」「総費用」は2倍・太字 */
-/* 利益目標: 目標生産量・目標利益額は2倍・太字、黄色背景がゆっくり点滅 */
-.bepSvg .lbl.goalLbl { font-size: 24px; font-weight: 800; }
+/* 損益分岐値(引き出し線+背景。見出し「損益分岐値」は太字) */
+.bepSvg .lbl.be { fill: var(--bep-be); font-size: 18px; }
+.bepSvg .lbl.be.bT { font-weight: 800; }
+.bepSvg .beLead { stroke: var(--bep-be); stroke-width: 1.5; }
+.bepSvg .beBg { fill: var(--surface); fill-opacity: .88; stroke: var(--bep-be); stroke-width: 1; }
+/* 利益目標: ★と「目標生産量/目標利益額」はピンク・2倍・太字、黄色背景がゆっくり点滅 */
+.bepSvg .lbl.goalLbl { font-size: 24px; font-weight: 800; fill: var(--goal); }
+.bepSvg .mGoal { fill: var(--goal); stroke: var(--surface); stroke-width: 1.5; }
 .bepSvg .goalBg { fill: #ffe45c; animation: goalBlink 2.4s ease-in-out infinite alternate; }
 @keyframes goalBlink { from { opacity: 1; } to { opacity: 0.15; } }
 @media (prefers-reduced-motion: reduce) { .bepSvg .goalBg { animation: none; } }
-.simTable .sNote .pos .nv, .simTable .sNote .neg .nv { font-size: inherit; } /* 損益との差: プラス=緑・マイナス=赤 */
-/* 利益目標の★と「目標生産量/目標利益額」はピンク */
-.bepSvg .lbl.goalLbl { fill: #e0287d; }
-.bepSvg .mGoal { fill: #e0287d; }
-/* ヘッダーの「リセット」ボタン(会社ロゴの左、オレンジ) */
-.resetBtn { background: #f08c00; color: #fff; border: none; border-radius: 6px; padding: 6px 14px; font-weight: 700; cursor: pointer; }
-.resetBtn:hover { background: #d97a00; }
-.bepSvg .goalBg, .bepSvg .goalLbl, .bepSvg .mGoal { pointer-events: none; } /* 最前面でもドラッグ操作を妨げない */
-/* 人件費は固定費に含めて表示(グラフの人件費帯も固定費と同じ色、表は内訳を小さく) */
-.bepSvg .fLabor { fill: var(--bep-fixed); fill-opacity: .16; }
-.simTable .sLabel .subLbl { font-size: 0.8em; }
-.simTable > div { padding: 1px 0; } /* 行を増やしたぶん詰める(1280×720でスクロールなし) */
-.simTable .sVal { font-size: clamp(14px, 1.95vh, 26px); }
-.simTable .sLabel, .simTable .sNote .nv, .simTable .sNote .pos, .simTable .sNote .neg { font-size: clamp(13px, 2.05vh, 24px); }
-.bepSvg .lbl.be { pointer-events: none; }
-/* 損益の（目標xx%）: 数値と同じ大きさ、「目標xx%」はピンクの太字 */
-.simTable .sNote .goalPctWrap { font-size: clamp(13px, 2.05vh, 24px); line-height: 1.2; }
-.simTable .sNote .goalPct { color: #e0287d; font-weight: 700; }
-.simTable .sNote .goalPct .nv { color: inherit; font-size: inherit; }
-/* 月度の◀▶ボタン(大きめ) */
-.periodWrap { display: inline-flex; align-items: center; gap: 6px; }
-.monthBtn { font-size: 20px; line-height: 1; padding: 6px 12px; min-width: 44px; min-height: 38px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; }
-.monthBtn:disabled { opacity: .35; cursor: default; }
-.periodWrap[hidden] { display: none; }
-.gPeriod { justify-content: flex-start; padding-left: 24px; } /* 年度・月〆ボタンの位置を固定し、右側の期/月度の欄だけ変わるように */
-.simTable .sVal .unit { display: inline-block; width: 2.3em; text-align: left; } /* 単位の幅をそろえて数値の右端を合わせる */
-.bepSvg .lbl.seg, .bepSvg .lbl.be { font-size: 18px; } /* 内訳・損益分岐生産量の文字を1.5倍 */
-/* ◀▶は月度リストと同じ高さにして、年度・月〆の切替で行の高さが変わらないように */
-.periodWrap { align-items: stretch; }
-.monthBtn { font-size: 16px; min-height: 0; padding: 0 12px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; }
-/* 損益分岐の5項目(引き出し線+背景) */
-.bepSvg .beLead { stroke: var(--bep-be); stroke-width: 1.5; }
-.bepSvg .beBg { fill: var(--surface); fill-opacity: .88; stroke: var(--bep-be); stroke-width: 1; }
-.bepSvg .beBg, .bepSvg .beLead { pointer-events: none; }
-#s-reset { background: #d6efff; border-color: #9fd3f5; } /* 「現在値に戻す」は水色 */
-.bepSvg .lbl.be.bT { font-weight: 800; } /* 見出し「損益分岐値」 */
-.simTable .sLabel:has(.subLbl) { text-align: left; padding-left: 1em; } /* 内訳(└ 人件費・└ その他固定費)は左揃え */
-.simInputs .btnRow { justify-content: flex-end; } .simInputs .btnRow #s-reset { order: 2; } .simInputs .btnRow .muted { order: 1; text-align: right; } /* 「現在値に戻す」は右端、説明文はその左 */
-/* 「1」も他の数字と同じ幅に: 英数字はInter(等幅数字対応)、全体で等幅数字を使う */
-body { font-family: "Inter", system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; font-variant-numeric: tabular-nums; }
-input, select, button, .bepSvg { font-variant-numeric: tabular-nums; }
-.simCol { width: calc(13ch + 16px); } /* 売上額(概算)が 9,999,999,999(10億円台)でもはみ出ない幅にそろえる */
-#tab-sim .simGridWrap .simFixed .simRow, .simGridWrap .simFixed .simRow, .simFixed .simHead.simHeadRow { grid-template-columns: 104px 174px; } /* 入力欄の列も10億円台が収まる幅 */
-@media (min-width: 1500px) { .simLayout { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); } } /* 広い画面は左40%・右60%(グラフを大きく)。狭い画面は下の表が収まる従来の比率 */
+/* 最前面の表示でもつまみのドラッグ操作を妨げない */
+.bepSvg .goalBg, .bepSvg .goalLbl, .bepSvg .mGoal, .bepSvg .lbl.be, .bepSvg .beBg, .bepSvg .beLead { pointer-events: none; }
+
+/* ===================== 画面サイズ別 ===================== */
+/* 高さの低い画面: 説明文を隠し、絞り込みの余白を詰める */
+@media (max-height: 820px) and (min-width: 801px) { #tab-sim .btnRow .muted { display: none; } }
+@media (max-height: 760px) and (min-width: 801px) {
+  .fGroup { padding: 4px 10px; }
+  .gPeriod { padding-left: 24px; }
+}
+/* スマホ: 画面に収まらないため通常の縦スクロールにする(ヘッダーを固定すると画面の半分近くを占めるため固定しない) */
+@media (max-width: 800px) {
+  .grid2, .simLayout, .filters { grid-template-columns: 1fr; }
+  .simChart .chartBox { min-height: 360px; }
+  #screen-main { display: block; height: auto; }
+  #screen-main > .tab.active, #screen-main > #tab-sim.active { overflow: visible; display: block; }
+  .topbar { grid-template-columns: 1fr; }
+  .topCenter, .topRight { grid-column: 1; justify-content: center; }
+  .tab { padding: 12px 16px; }
+  .simGridWrap { flex-direction: column; width: 100%; }
+  .simFixed { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+  .simWorks { width: 100%; }
+}
