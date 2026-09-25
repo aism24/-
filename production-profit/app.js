@@ -418,7 +418,7 @@ function renderBepSvg(id) {
   }
   // 線
   h += `<line class="lFixed" x1="${X(0)}" x2="${X(maxX)}" y1="${Y(F)}" y2="${Y(F)}"/>`;
-  h += `<text class="lbl fixedLbl" x="${g.l - 6}" y="${Y(F) - 3}" text-anchor="end">固定費<tspan x="${g.l - 6}" dy="14">${man(F)}</tspan></text>`;
+  h += `<text class="lbl fixedLbl" x="${g.l - 6}" y="${Y(F) - 3}" text-anchor="end">その他固定費<tspan x="${g.l - 6}" dy="14">${man(F)}</tspan></text>`;
   h += `<line class="lCost" x1="${X(0)}" y1="${Y(F)}" x2="${X(maxX)}" y2="${Y(cost(maxX))}"/>`;
   h += `<line class="lSales" x1="${X(0)}" y1="${Y(0)}" x2="${X(maxX)}" y2="${Y(sales(maxX))}"/>`;
   h += `<text class="lbl lineLbl" x="${X(maxX) - 4}" y="${Y(sales(maxX)) + 26}" text-anchor="end">売上</text>`;
@@ -432,7 +432,8 @@ function renderBepSvg(id) {
   }
   // つまみ位置の内訳バー
   const x = st.x, cx = X(x), bw = 8;
-  const segs = [['固定費', 0, F, 'bFixed'], ['人件費', F, F + lab * x, 'bLabor'], ['変動費', F + lab * x, cost(x), 'bVar']];
+  // 人件費は固定費に含めて1つの帯で表示する
+  const segs = [['固定費(人件費込み)', 0, F + lab * x, 'bFixed'], ['変動費', F + lab * x, cost(x), 'bVar']];
   const profit = sales(x) - cost(x);
   if (profit >= 0) segs.push(['利益', cost(x), sales(x), 'bProfit']); else segs.push(['損失', sales(x), cost(x), 'bLoss']);
   h += `<line class="lCursor" x1="${cx}" x2="${cx}" y1="${g.t - 10}" y2="${g.t + g.h}"/>`;
@@ -599,12 +600,14 @@ function updateSim() {
     sRow('売上額(概算)', yen(r.sales), '円', diff(r.sales, b.w * b.p, yen)),
     sRow('損益', yen(r.profit), '円', (r.profitRate === null ? '利益率 —' : `利益率 <span class="${r.profitRate * 100 >= state.settings.rates.profit - 1e-9 ? 'pos' : 'neg'}">${pct(r.profitRate)}</span>`) + `（目標${fmt(state.settings.rates.profit, state.settings.rates.profit % 1 ? 1 : 0)}%）`, r.profit >= 0 ? 'pos' : 'neg'),
     goalKpi(r.profit, r.profitGoal, r.sales > 0, sRow),
-    sRow('目標売上額', yen(r.goalSales), '円', r.goalTons !== null ? `必要生産量 ${ton(r.goalTons)}t` + (W >= r.goalTons ? `（<span class="pos">超 ${ton(W - r.goalTons)}</span>t）` : `（<span class="neg">不足 ${ton(r.goalTons - W)}</span>t）`) : '到達不能'),
+    sRow('目標売上額', yen(r.goalSales), '円', r.goalTons !== null ? `必要生産量 ${ton(r.goalTons)}t` + (W >= r.goalTons - 0.05 ? `（<span class="pos">超 ${ton(Math.max(0, W - r.goalTons))}</span>t）` : `（<span class="neg">不足 ${ton(r.goalTons - W)}</span>t）`) : '到達不能'),
     sRow('損益分岐生産量', ton(r.breakEvenTons), 't', r.breakEvenTons !== null ? (W >= r.breakEvenTons ? `<span class="pos">余裕 ${ton(W - r.breakEvenTons)}</span>t` : `<span class="neg">不足 ${ton(r.breakEvenTons - W)}</span>t`) : '到達不能'),
     sRow('必要人工', fmt(r.ninku, 1), '人工', `${fmt(r.hours, 0)}h`),
-    sRow('人件費', yen(r.labor), '円', `${yen(r.laborRate)}円/人工`),
     sRow('変動費', yen(r.variable), '円', `${yen(r.varPerTon)}円/t`),
-    sRow('固定費', yen(r.fixed), '円', state.simFixedNote),
+    // 人件費は固定費に含めて表示する(計算は従来どおり 人件費=生産重量×1t当たり人工数×人件費単価)
+    sRow('固定費(人件費込み)', yen(r.fixed + r.labor), '円', '人件費 + その他固定費'),
+    sRow('<span class="subLbl">└ 人件費</span>', yen(r.labor), '円', `${yen(r.laborRate)}円/人工`),
+    sRow('<span class="subLbl">└ その他固定費</span>', yen(r.fixed), '円', state.simFixedNote),
   ].join('');
   // つまみのドラッグで試算の生産重量を動かせる(スライダー・数値欄と連動)
   drawBep('c-sim', { fixed: r.fixed, unitPrice: P, laborPerTon: n * r.laborRate, varPerTon: r.varPerTon, profitRate: state.settings.rates.profit / 100,

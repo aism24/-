@@ -330,3 +330,9 @@ td input[type="number"] { width: 130px; }
 .resetBtn { background: #f08c00; color: #fff; border: none; border-radius: 6px; padding: 6px 14px; font-weight: 700; cursor: pointer; }
 .resetBtn:hover { background: #d97a00; }
 .bepSvg .goalBg, .bepSvg .goalLbl, .bepSvg .mGoal { pointer-events: none; } /* 最前面でもドラッグ操作を妨げない */
+/* 人件費は固定費に含めて表示(グラフの人件費帯も固定費と同じ色、表は内訳を小さく) */
+.bepSvg .fLabor { fill: var(--bep-fixed); fill-opacity: .16; }
+.simTable .sLabel .subLbl { font-size: 0.8em; }
+.simTable > div { padding: 1px 0; } /* 行を増やしたぶん詰める(1280×720でスクロールなし) */
+.simTable .sVal { font-size: clamp(14px, 1.95vh, 26px); }
+.simTable .sLabel, .simTable .sNote .nv, .simTable .sNote .pos, .simTable .sNote .neg { font-size: clamp(13px, 2.05vh, 24px); }
