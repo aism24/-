@@ -18,7 +18,6 @@
  *   工事単価 : 工事No | 工事名 | 契約総重量(t) | 契約金額(円) | (E列以降は自由。例: トン単価の計算式)
  *              保存時はA〜D列だけを工事No単位で更新・追記し、行の削除やE列以降の書き換えはしない
  *   費用設定 : 工場 | 人件費単価(円/人工) | 月固定費(円) | 変動費単価(円/t)
- *   月間目標 : 月度(YYYY-MM) | 工場 | 目標重量(t) | 目標人工/t | 目標トン単価(円/t)
  *
  * ■ パスワード(スクリプトプロパティ。リポジトリには書かない)
  *   VIEW_PASSWORD : 閲覧用(全API)
@@ -34,14 +33,12 @@ const SHEETS = {
   BASIC: '基本設定',
   WORKS: '工事単価',
   COSTS: '費用設定',
-  TARGETS: '月間目標',
 };
 const BASIC_KEYS = [
   ['人件費率', 'rates.labor', 30],
   ['変動費率', 'rates.variable', 40],
   ['固定費率', 'rates.fixed', 15],
   ['利益率', 'rates.profit', 15],
-  ['標準トン単価', 'standardUnitPrice', 0],
   ['共通扱い工事No', 'commonWorkNos', '00-00'],
 ];
 
@@ -256,7 +253,7 @@ function numOrNull_(v) {
 }
 
 function readSettings_() {
-  const s = { rates: {}, standardUnitPrice: 0, commonWorkNos: '00-00', works: {}, costs: {}, targets: {} };
+  const s = { rates: {}, commonWorkNos: '00-00', works: {}, costs: {} };
   const basic = {};
   rows_(sheet_(SHEETS.BASIC, ['項目', '値'])).forEach(function (r) { basic[r[0]] = r[1]; });
   BASIC_KEYS.forEach(function (k) {
@@ -272,12 +269,6 @@ function readSettings_() {
   rows_(sheet_(SHEETS.COSTS, ['工場', '人件費単価(円/人工)', '月固定費(円)', '変動費単価(円/t)'])).forEach(function (r) {
     if (!r[0]) return;
     s.costs[String(r[0]).trim()] = { laborRate: numOrNull_(r[1]), fixedMonthly: numOrNull_(r[2]), variablePerTon: numOrNull_(r[3]) };
-  });
-  rows_(sheet_(SHEETS.TARGETS, ['月度(YYYY-MM)', '工場', '目標重量(t)', '目標人工/t', '目標トン単価(円/t)'])).forEach(function (r) {
-    if (!r[0] || !r[1]) return;
-    s.targets[String(r[0]).trim() + '|' + String(r[1]).trim()] = {
-      weight: numOrNull_(r[2]), ninkuPerTon: numOrNull_(r[3]), unitPrice: numOrNull_(r[4]),
-    };
   });
   return s;
 }
@@ -336,10 +327,6 @@ function saveSettings_(s) {
     const costs = s.costs || {};
     writeRows_(sheet_(SHEETS.COSTS, ['工場', '人件費単価(円/人工)', '月固定費(円)', '変動費単価(円/t)']), Object.keys(costs)
       .map(function (site) { const c = costs[site]; return [site, blank_(numOrNull_(c.laborRate)), blank_(numOrNull_(c.fixedMonthly)), blank_(numOrNull_(c.variablePerTon))]; }), 4);
-    const targets = s.targets || {};
-    writeRows_(sheet_(SHEETS.TARGETS, ['月度(YYYY-MM)', '工場', '目標重量(t)', '目標人工/t', '目標トン単価(円/t)']), Object.keys(targets).sort()
-      .filter(function (k) { return numOrNull_(targets[k].weight) !== null; })
-      .map(function (k) { const t = targets[k]; const p = k.split('|'); return [p[0], p[1], numOrNull_(t.weight), blank_(numOrNull_(t.ninkuPerTon)), blank_(numOrNull_(t.unitPrice))]; }), 5);
   } finally {
     lock.releaseLock();
   }

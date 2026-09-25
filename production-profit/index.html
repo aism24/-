@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>生産損益分析</title>
 <!-- app.js/calc.js/style.cssを変更したら ?v= を必ず変えること(ブラウザ/CDNキャッシュ対策) -->
-<link rel="stylesheet" href="style.css?v=20260925g">
+<link rel="stylesheet" href="style.css?v=20260925i">
 </head>
 <body>
 
@@ -55,6 +55,7 @@
     <div class="fRow">
       <label>工事 <select id="f-work" class="workSelect"></select></label>
       <span id="f-work-note" class="muted small"></span>
+      <span id="f-price-warn" class="small neg" hidden></span>
     </div>
   </div>
 
@@ -91,7 +92,7 @@
 
   <!-- 目標シミュレーター -->
   <main id="tab-sim" class="tab active">
-    <p class="muted small">選択中の期間・工場・工事の実績(目標があれば目標)を基準に、重量・工数・金額を動かして試算します。人件費単価・固定費・変動費単価は基準値のまま固定します。</p>
+    <p class="muted small">選択中の期間・工場・工事の実績を基準に、重量・工数・金額を動かして試算します。人件費単価・固定費・変動費単価は基準値のまま固定します。</p>
     <div class="simLayout">
       <div class="simLeft">
         <div class="panel simInputs">
@@ -100,9 +101,7 @@
           <div class="simRow"><label>トン単価(円/t)</label><input type="range" id="s-p-r"><input type="number" id="s-p" step="any"></div>
           <div class="btnRow">
             <button id="s-reset" class="ghost">基準値に戻す</button>
-            <button id="s-save" class="primary">この値を月間目標として保存</button>
           </div>
-          <p id="s-save-note" class="muted small"></p>
         </div>
         <div class="panel"><div id="sim-kpis" class="kpis compact"></div></div>
       </div>
@@ -137,18 +136,12 @@
         <div class="formGrid" id="set-rates"></div>
         <p id="set-rate-sum" class="small"></p>
         <div class="formGrid">
-          <label>標準トン単価(円/t)<input type="number" id="set-std" step="100"><span class="muted small">契約金額が未入力の工事に使います</span></label>
           <label>共通扱い工事No<input type="text" id="set-common"><span class="muted small">カンマ区切り。工事に結び付かない工数として集計</span></label>
         </div>
       </div>
       <div class="panel">
         <h2>工場別の費用(実額。空欄=配分率から自動計算)</h2>
         <div class="tableWrap"><table id="set-costs"></table></div>
-      </div>
-      <div class="panel">
-        <h2>月間目標</h2>
-        <label>月度 <select id="set-tperiod"></select></label>
-        <div class="tableWrap"><table id="set-targets"></table></div>
       </div>
       <div class="panel">
         <h2>工事ごとの契約金額</h2>
@@ -163,7 +156,7 @@
 <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">読み込み中…</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="calc.js?v=20260925g"></script>
-<script src="app.js?v=20260925g"></script>
+<script src="calc.js?v=20260925i"></script>
+<script src="app.js?v=20260925i"></script>
 </body>
 </html>
