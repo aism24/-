@@ -352,3 +352,7 @@ td input[type="number"] { width: 130px; }
 /* ◀▶は月度リストと同じ高さにして、年度・月〆の切替で行の高さが変わらないように */
 .periodWrap { align-items: stretch; }
 .monthBtn { font-size: 16px; min-height: 0; padding: 0 12px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; }
+/* 損益分岐の5項目(引き出し線+背景) */
+.bepSvg .beLead { stroke: var(--bep-be); stroke-width: 1.5; }
+.bepSvg .beBg { fill: var(--surface); fill-opacity: .88; stroke: var(--bep-be); stroke-width: 1; }
+.bepSvg .beBg, .bepSvg .beLead { pointer-events: none; }
