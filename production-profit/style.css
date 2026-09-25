@@ -306,3 +306,13 @@ td input[type="number"] { width: 130px; }
   .gWork label { flex: 0 1 360px; }
   .gWork #f-price-warn { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 }
+
+/* 目標シミュレーター: 現状分析(試算表の下の空きスペース) */
+.simAdvice { margin-top: 10px; font-size: clamp(11px, 1.45vh, 17px); line-height: 1.4; color: var(--text); }
+.simAdvice:empty { display: none; }
+.simAdvice .advHead { font-weight: 700; font-size: 1.15em; border-left: 4px solid var(--accent, #3b82f6); padding-left: 8px; margin-bottom: 4px; }
+.simAdvice .advList { margin: 2px 0 2px; padding-left: 1.3em; }
+.simAdvice .advList li { margin: 1px 0; }
+.simAdvice .advSub { margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--border); }
+.simAdvice .big { font-size: 1.15em; font-weight: 700; }
+.simAdvice .muted { color: var(--muted); font-size: 0.9em; }

@@ -8,7 +8,7 @@
 <!-- 数字の幅をそろえる(等幅数字)ため、英数字はInterを使う(日本語は各OSのゴシック) -->
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
-<link rel="stylesheet" href="style.css?v=20260926p">
+<link rel="stylesheet" href="style.css?v=20260927a">
 </head>
 <body>
 
@@ -116,7 +116,7 @@
             <span class="muted small">初期値は選択中の期間・工場・工事の実績。人件費単価・固定費・変動費単価は固定して試算します。</span>
           </div>
         </div>
-        <div class="panel"><div id="sim-kpis" class="simTable"></div></div>
+        <div class="panel"><div id="sim-kpis" class="simTable"></div><div id="sim-advice" class="simAdvice"></div></div>
       </div>
       <div class="panel simChart"><div class="chartHead"><button id="s-reset" class="resetBtn2">現在値に戻す</button><h2>試算の損益分岐生産量</h2></div><div class="chartBox bepBox" id="c-sim"></div></div>
     </div>
@@ -169,7 +169,7 @@
 <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">読み込み中…</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="calc.js?v=20260926p"></script>
-<script src="app.js?v=20260926p"></script>
+<script src="calc.js?v=20260927a"></script>
+<script src="app.js?v=20260927a"></script>
 </body>
 </html>
