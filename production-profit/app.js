@@ -482,10 +482,13 @@ function renderSim(sel, an) {
   state.simTotal = t;
   if (!state.simBase) {
     state.simBase = base;
+    state.simExact = {};
     const set = (k, v, max, step) => {
       const r = document.getElementById('s-' + k + '-r'), n = document.getElementById('s-' + k);
       // 数値欄は刻みで丸めない(丸めると基準値でも損益が配分どおりにならず「未達」と出るため)
-      r.min = 0; r.max = max; r.step = step; r.value = v; n.value = +v.toFixed(3);
+      r.min = 0; r.max = max; r.step = step; r.value = v; n.value = +v.toFixed(k === 'p' ? 0 : k === 'w' ? 1 : 2);
+      // 表示は丸めるが、数値欄を触っていない間は丸める前の値で計算する(基準値で損益が配分どおりになるように)
+      state.simExact[k] = { shown: n.value, value: v };
     };
     set('w', base.w, Math.max(base.w * 2, 10), 0.1);
     set('n', base.n, Math.max(base.n * 2, 1), 0.01);
@@ -499,15 +502,18 @@ function renderSim(sel, an) {
   updateSim();
 }
 
+function simValue(k) {
+  const v = document.getElementById('s-' + k).value, ex = (state.simExact || {})[k];
+  return ex && ex.shown === v ? ex.value : (Number(v) || 0);
+}
+
 function updateSim() {
   const t = state.simTotal;
   if (!t) return;
-  const W = Number(document.getElementById('s-w').value) || 0;
-  const n = Number(document.getElementById('s-n').value) || 0;
-  const P = Number(document.getElementById('s-p').value) || 0;
+  const W = simValue('w'), n = simValue('n'), P = simValue('p');
   const r = C.simulate(t, state.settings, W, n, P);
   const b = state.simBase;
-  const diff = (v, bv, f) => { const d = v - bv; return d === 0 ? '基準どおり' : `基準比 ${d > 0 ? '+' : ''}${f(d)}`; };
+  const diff = (v, bv, f) => { const d = v - bv; return Math.abs(d) < 0.5 ? '基準どおり' : `基準比 ${d > 0 ? '+' : ''}${f(d)}`; };
   document.getElementById('sim-kpis').innerHTML = [
     kpi('売上額', yen(r.sales), '円', diff(r.sales, b.w * b.p, yen)),
     kpi('損益', yen(r.profit), '円', `利益率 ${pct(r.profitRate)}`, r.profit >= 0 ? 'pos' : 'neg'),
@@ -534,9 +540,7 @@ async function saveSimAsTarget() {
   const sel = state.simSel;
   if (!(await ensureEdit())) return;
   state.settings.targets[sel.periodKey + '|' + sel.site] = {
-    weight: Number(document.getElementById('s-w').value) || 0,
-    ninkuPerTon: Number(document.getElementById('s-n').value) || 0,
-    unitPrice: Number(document.getElementById('s-p').value) || 0,
+    weight: simValue('w'), ninkuPerTon: simValue('n'), unitPrice: simValue('p'),
   };
   await saveSettings();
   state.simBase = null;
