@@ -365,3 +365,4 @@ body { font-family: "Inter", system-ui, -apple-system, "Hiragino Sans", "Yu Goth
 input, select, button, .bepSvg { font-variant-numeric: tabular-nums; }
 .simCol { width: calc(13ch + 16px); } /* 売上額(概算)が 9,999,999,999(10億円台)でもはみ出ない幅にそろえる */
 #tab-sim .simGridWrap .simFixed .simRow, .simGridWrap .simFixed .simRow, .simFixed .simHead.simHeadRow { grid-template-columns: 104px 174px; } /* 入力欄の列も10億円台が収まる幅 */
+@media (min-width: 1500px) { .simLayout { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); } } /* 広い画面は左40%・右60%(グラフを大きく)。狭い画面は下の表が収まる従来の比率 */
