@@ -112,8 +112,10 @@ function initUi() {
   const recs = state.cache.rec;
   const first = recs.length ? C.periodKeyOf(recs[0][0]) : C.periodKeyOf(today);
   const cur = C.periodKeyOf(today);
+  // 月〆の選択肢は今日の月度から13か月分(例: 9/25なら 2026年10月度〜2025年10月度)
+  const monthFirst = C.shiftPeriod(cur, -12) > first ? C.shiftPeriod(cur, -12) : first;
   const periods = [];
-  for (let k = cur; k >= first; k = C.shiftPeriod(k, -1)) periods.push(k);
+  for (let k = cur; k >= monthFirst; k = C.shiftPeriod(k, -1)) periods.push(k);
   const selP = document.getElementById('f-period');
   selP.innerHTML = periods.map((k) => `<option value="${k}">${C.periodLabel(k)}</option>`).join('');
   // 既定は直近の確定月度(当月度が始まったばかりの時に空の画面にならないように)
