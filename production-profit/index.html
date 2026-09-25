@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>生産損益分析</title>
 <!-- app.js/calc.js/style.cssを変更したら ?v= を必ず変えること(ブラウザ/CDNキャッシュ対策) -->
-<link rel="stylesheet" href="style.css?v=20260925zr">
+<link rel="stylesheet" href="style.css?v=20260925zs">
 </head>
 <body>
 
@@ -40,7 +40,7 @@
           <option value="range">任意の範囲</option>
         </select>
       </label>
-      <label id="f-period-wrap">月度 <select id="f-period"></select></label>
+      <span id="f-period-wrap" class="periodWrap"><label for="f-period">月度</label> <button type="button" id="f-prev" class="monthBtn" title="前の月度">◀</button><select id="f-period"></select><button type="button" id="f-next" class="monthBtn" title="次の月度">▶</button></span>
       <label id="f-fiscal-wrap" hidden>期 <select id="f-fiscal"></select></label>
       <span id="f-range-wrap" hidden>
         <label>開始 <input type="date" id="f-from"></label>
@@ -164,7 +164,7 @@
 <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">読み込み中…</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="calc.js?v=20260925zr"></script>
-<script src="app.js?v=20260925zr"></script>
+<script src="calc.js?v=20260925zs"></script>
+<script src="app.js?v=20260925zs"></script>
 </body>
 </html>

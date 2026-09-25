@@ -341,3 +341,8 @@ td input[type="number"] { width: 130px; }
 .simTable .sNote .goalPctWrap { font-size: clamp(13px, 2.05vh, 24px); line-height: 1.2; }
 .simTable .sNote .goalPct { color: #e0287d; font-weight: 700; }
 .simTable .sNote .goalPct .nv { color: inherit; font-size: inherit; }
+/* 月度の◀▶ボタン(大きめ) */
+.periodWrap { display: inline-flex; align-items: center; gap: 6px; }
+.monthBtn { font-size: 20px; line-height: 1; padding: 6px 12px; min-width: 44px; min-height: 38px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; }
+.monthBtn:disabled { opacity: .35; cursor: default; }
+.periodWrap[hidden] { display: none; }

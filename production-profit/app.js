@@ -141,6 +141,15 @@ function initUi() {
     document.getElementById(id).onchange = onFilterChange;
   });
   document.getElementById('refresh-btn').onclick = refresh;
+  // 月度の◀▶: 1か月ずつ移動(リストは新しい順)
+  const stepPeriod = (d) => {
+    const i = selP.selectedIndex + d;
+    if (i < 0 || i >= selP.options.length) return;
+    selP.selectedIndex = i;
+    onFilterChange();
+  };
+  document.getElementById('f-prev').onclick = () => stepPeriod(1);
+  document.getElementById('f-next').onclick = () => stepPeriod(-1);
   document.getElementById('reset-btn').onclick = () => { applyDefaults(); renderAll(); };
   document.getElementById('w-search').oninput = renderWorks;
   document.getElementById('w-alloc').onchange = renderWorks;
@@ -220,6 +229,9 @@ function selection() {
   document.getElementById('f-period-wrap').hidden = mode !== 'period';
   document.getElementById('f-fiscal-wrap').hidden = mode !== 'fiscal';
   document.getElementById('f-range-wrap').hidden = mode !== 'range';
+  const selPer = document.getElementById('f-period');
+  document.getElementById('f-prev').disabled = selPer.selectedIndex >= selPer.options.length - 1;
+  document.getElementById('f-next').disabled = selPer.selectedIndex <= 0;
   let r;
   if (mode === 'period') r = C.periodRange(document.getElementById('f-period').value);
   else if (mode === 'fiscal') r = C.fiscalRange(Number(document.getElementById('f-fiscal').value));
