@@ -285,8 +285,10 @@ td input[type="number"] { width: 130px; }
 .simHeadRow .simTitle { font-size: 22px; font-weight: 700; color: var(--text); text-align: center; }
 .simHeadRow .simInHead { font-size: 12px; font-weight: 600; text-align: center; }
 @media (max-width: 800px) { .simGridWrap { width: 100%; } .simFixed { border-right: none; border-bottom: 1px solid var(--border); } }
-/* 備考(達成/未達・各数値)も項目名と同じく2倍に。達成=緑(OK)・未達=赤(NG) */
-.simTable .sNote { font-size: clamp(13px, 2.2vh, 24px); line-height: 1.2; color: var(--text2); white-space: nowrap; }
+/* 備考: 数値と達成/未達だけを項目名と同じく2倍に(説明文・単位は小さいまま)。達成=緑(OK)・未達=赤(NG) */
+.simTable .sNote { white-space: nowrap; }
+.simTable .sNote .nv, .simTable .sNote .pos, .simTable .sNote .neg { font-size: clamp(13px, 2.2vh, 24px); line-height: 1.2; }
+.simTable .sNote .nv { color: var(--text2); font-variant-numeric: tabular-nums; }
 .simTable .sNote .pos, .simTable .sNote .neg { font-weight: 700; }
 /* 4行目 売上額(概算): 入力欄は自動計算で入力不可、工事ごとの値とも黒太字 */
 .simGridWrap .simRow .simNum.simSales { font-weight: 700; color: var(--text); background: transparent; border-color: transparent; cursor: default; }
