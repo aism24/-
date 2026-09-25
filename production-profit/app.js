@@ -408,7 +408,15 @@ function renderBepSvg(id) {
   // 利益目標達成点
   if (o.goalTons !== null && o.goalTons !== undefined && o.goalTons <= maxX) {
     const gx = X(o.goalTons), gy = Y(sales(o.goalTons));
-    h += `<path class="mGoal" d="M${gx},${gy - 7} L${gx + 6},${gy + 4} L${gx - 6},${gy + 4} Z"/><text class="lbl good" x="${gx - 8}" y="${gy - 10}" text-anchor="end">利益目標 ${ton(o.goalTons)}t</text>`;
+    // ★印(2倍)と「目標生産量/目標利益額」(2倍・黄色背景がゆっくり点滅。背景の大きさは描画後に文字に合わせる)
+    const star = Array.from({ length: 10 }, (_, i) => {
+      const r = i % 2 ? 6 : 15, a = -Math.PI / 2 + i * Math.PI / 5;
+      return `${(gx + r * Math.cos(a)).toFixed(1)},${(gy + r * Math.sin(a)).toFixed(1)}`;
+    }).join(' ');
+    const left = gx > g.l + 290, up = gy - 76 > g.t;
+    const tx = left ? gx - 22 : gx + 22, ty = up ? gy - 44 : gy + 34;
+    h += `<rect class="goalBg" rx="6"/><text class="lbl good goalLbl" x="${tx}" y="${ty}" text-anchor="${left ? 'end' : 'start'}">目標生産量 ${ton(o.goalTons)}t<tspan x="${tx}" dy="28">目標利益額 ${yen(sales(o.goalTons) * (o.profitRate || 0))}円</tspan></text>`;
+    h += `<polygon class="mGoal" points="${star}"/>`;
   }
   // 損益分岐生産量(軸への補助線付き)
   if (be !== null) {
@@ -440,6 +448,12 @@ function renderBepSvg(id) {
   const hx = Math.min(W - 4 - hw / 2, Math.max(4 + hw / 2, cx));
   h += `<g class="handle"><rect x="${hx - hw / 2}" y="${g.t - 34}" width="${hw}" height="24" rx="12"/><text x="${hx}" y="${g.t - 17}" text-anchor="middle">${hl}</text></g>`;
   box.innerHTML = `<svg class="bepSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="損益分岐生産量グラフ">${h}</svg>`;
+  const gl = box.querySelector('.goalLbl'), gb = box.querySelector('.goalBg');
+  if (gl && gb) {
+    const bb = gl.getBBox();
+    gb.setAttribute('x', bb.x - 6); gb.setAttribute('y', bb.y - 3);
+    gb.setAttribute('width', bb.width + 12); gb.setAttribute('height', bb.height + 6);
+  }
 }
 
 /* ===================== 損益分岐生産量タブ ===================== */

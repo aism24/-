@@ -317,3 +317,8 @@ td input[type="number"] { width: 130px; }
 .simGridWrap .simRow .simIn .simNum:focus { outline: none; }
 .simIn:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
 .bepSvg .lbl.lineLbl { font-size: 24px; font-weight: 800; stroke-width: 4px; } /* グラフの「売上」「総費用」は2倍・太字 */
+/* 利益目標: 目標生産量・目標利益額は2倍・太字、黄色背景がゆっくり点滅 */
+.bepSvg .lbl.goalLbl { font-size: 24px; font-weight: 800; }
+.bepSvg .goalBg { fill: #ffe45c; animation: goalBlink 2.4s ease-in-out infinite alternate; }
+@keyframes goalBlink { from { opacity: 1; } to { opacity: 0.15; } }
+@media (prefers-reduced-motion: reduce) { .bepSvg .goalBg { animation: none; } }
