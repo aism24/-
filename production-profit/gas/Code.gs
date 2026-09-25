@@ -14,7 +14,9 @@
  *   毎日早朝のトリガー(dailyRefresh)と、画面の「今すぐ更新」で作り直す。
  *
  * ■ 設定シート(画面の「設定」タブから保存。初回に自動作成)
- *   基本設定 : 項目 | 値
+ *   基本設定 : 項目 | 値 (A〜B列。保存時はA〜B列だけを書き換える)
+ *              会社カレンダー: 同じシートのC列以降に「日付 | 出勤/休日」の2列(例: E〜F列)。
+ *              画面の月度の途中の見込み(出勤日数で月末まで引き伸ばす)に使う。保存時は触らない
  *   工事単価 : 工事No | 工事名 | 契約総重量(t) | 契約金額(円) | (E列以降は自由。例: トン単価の計算式)
  *              保存時はA〜D列だけを工事No単位で更新・追記し、行の削除やE列以降の書き換えはしない
  *   費用設定 : 工場 | 人件費単価(円/人工) | 月固定費(円) | 変動費単価(円/t)
@@ -282,14 +284,35 @@ function readSettings_() {
     if (!r[0]) return;
     s.costs[String(r[0]).trim()] = { laborRate: numOrNull_(r[1]), fixedMonthly: numOrNull_(r[2]), variablePerTon: numOrNull_(r[3]) };
   });
+  s.calendar = readCalendar_(sheet_(SHEETS.BASIC, HEADERS.BASIC));
   return s;
+}
+
+/* 基本設定シートのC列以降にある会社カレンダー(日付 | 出勤/休日)を { 'YYYY-MM-DD': 1(出勤) / 0(休日) } で返す。
+   日付のセルの右隣が「出勤」「休日」の組を探すので、列の位置が変わっても読める。 */
+function readCalendar_(sh) {
+  const last = sh.getLastRow(), width = sh.getLastColumn();
+  const cal = {};
+  if (last < 1 || width < 4) return cal;
+  const vals = sh.getRange(1, 3, last, width - 2).getValues();
+  const tz = Session.getScriptTimeZone();
+  vals.forEach(function (r) {
+    for (let c = 0; c + 1 < r.length; c++) {
+      const kind = String(r[c + 1]).trim();
+      if (!(r[c] instanceof Date) || (kind !== '出勤' && kind !== '休日')) continue;
+      cal[Utilities.formatDate(r[c], tz, 'yyyy-MM-dd')] = kind === '出勤' ? 1 : 0;
+      break;
+    }
+  });
+  return cal;
 }
 
 /* シートの内容を丸ごと書き換える(基本設定・費用設定用)。「25-12」のような文字列が
    日付に自動変換されないよう、書き込み前にA列を書式なしテキスト(@)にする。 */
 function writeRows_(sh, rows, width) {
   const last = sh.getLastRow();
-  if (last >= 2) sh.getRange(2, 1, last - 1, Math.max(width, sh.getLastColumn())).clearContent();
+  // 消すのは書き込む列(width列)だけ。右側の列(基本設定の会社カレンダー等)は残す
+  if (last >= 2) sh.getRange(2, 1, last - 1, width).clearContent();
   if (!rows.length) return;
   sh.getRange(2, 1, rows.length, 1).setNumberFormat('@');
   sh.getRange(2, 1, rows.length, width).setValues(rows);

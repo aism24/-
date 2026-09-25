@@ -97,6 +97,9 @@ function onData(data) {
   document.getElementById('updated').textContent = '集計: ' + g.toLocaleString('ja-JP');
 }
 
+// 月末見込みを出すのに必要な、月度の途中の出勤日の実績日数(これ未満は表示しない)
+const FC_MIN_DAYS = 3;
+
 let uiReady = false;
 function initUi() {
   if (uiReady) return;
@@ -158,6 +161,8 @@ function initUi() {
   document.getElementById('f-prev').onclick = () => stepPeriod(1);
   document.getElementById('f-next').onclick = () => stepPeriod(-1);
   document.getElementById('reset-btn').onclick = () => { applyDefaults(); renderAll(); };
+  // 月末見込み ⇔ 実績のみ(月度の途中のときだけ表示)
+  document.getElementById('f-fc').onclick = () => { state.fcOff = !state.fcOff; state.simBase = null; renderAll(); };
   document.getElementById('w-search').oninput = () => renderWorks();
   document.getElementById('w-alloc').onchange = () => renderWorks();
   document.getElementById('w-csv').onclick = downloadWorksCsv;
@@ -180,6 +185,7 @@ function applyDefaults() {
   document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x.dataset.tab === 'sim'));
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-sim'));
   state.simBase = null;
+  state.fcOff = false;
 }
 
 async function refresh() {
@@ -244,20 +250,46 @@ function selection() {
   const site = document.getElementById('f-site').value;
   const sites = site ? [site] : state.cache.sites;
   // 計算は実績の最終日まで(期・月度の途中では、まだ来ていない日の固定費を入れない)。fullToは期間本来の終わり
-  const to = state.lastYmd && state.lastYmd >= r.from && state.lastYmd < r.to ? state.lastYmd : r.to;
-  document.getElementById('f-range-text').textContent = r.from.replace(/-/g, '/') + ' 〜 ' + r.to.replace(/-/g, '/') +
-    (to < r.to ? `(実績〜${Number(to.slice(5, 7))}/${Number(to.slice(8))})` : '');
+  let to = state.lastYmd && state.lastYmd >= r.from && state.lastYmd < r.to ? state.lastYmd : r.to;
+  const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
+  let rangeNote = to < r.to ? `(実績〜${md(to)})` : '';
+  // 月度の途中: ここまでの実績を出勤日数(会社カレンダー)の比で月末まで引き伸ばした「月末見込み」で計算する
+  let data = state.cache, fc = null;
+  if (mode === 'period' && to < r.to) {
+    const cal = state.settings.calendar || {};
+    const done = C.workDaysIn(cal, r.from, to), total = C.workDaysIn(cal, r.from, r.to);
+    fc = { done, total, on: !state.fcOff, few: done < FC_MIN_DAYS };
+    rangeNote = `(実績〜${md(to)}・出勤日 ${done}/${total}日${fc.on && !fc.few ? '→月末見込み' : ''})`;
+    if (fc.on && !fc.few) { data = C.scaleRange(state.cache, r.from, to, total / done); to = r.to; }
+  }
+  document.getElementById('f-range-text').textContent = r.from.replace(/-/g, '/') + ' 〜 ' + r.to.replace(/-/g, '/') + rangeNote;
+  const fcBtn = document.getElementById('f-fc');
+  fcBtn.hidden = !fc;
+  fcBtn.classList.toggle('active', !!(fc && fc.on));
   const work = refreshWorkList(r.from, r.to, sites);
-  return { mode, from: r.from, to, fullTo: r.to, site, sites, work, periodKey: mode === 'period' ? selPer.value : null };
+  return { mode, from: r.from, to, fullTo: r.to, site, sites, work, periodKey: mode === 'period' ? selPer.value : null, data, fc };
 }
 
 function renderAll() {
   if (!state.cache) return;
   const active = document.querySelector('.tabs button.active').dataset.tab;
   const sel = selection();
+  // 月度の途中で出勤日の実績がまだ少ないときは、ぶれた数字を出さずに案内だけ表示する
+  const blk = document.getElementById('fc-block');
+  const block = !!(sel.fc && sel.fc.on && sel.fc.few) && ['sim', 'bep', 'dash'].includes(active);
+  blk.hidden = !block;
+  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('fcHidden', block && t.id === 'tab-' + active));
+  if (block) {
+    blk.innerHTML = `<p><b>${esc(C.periodLabel(sel.periodKey))}</b>は、まだ出勤日${sel.fc.done}日分の実績しかないため表示していません` +
+      `（出勤日${FC_MIN_DAYS}日分以上で、月末見込みを表示します）。</p>` +
+      '<p><button type="button" class="fcPrev">前の月度を表示</button> <button type="button" class="fcRaw">実績のみで表示</button></p>';
+    blk.querySelector('.fcPrev').onclick = () => document.getElementById('f-prev').click();
+    blk.querySelector('.fcRaw').onclick = () => { state.fcOff = true; state.simBase = null; renderAll(); };
+    return;
+  }
   if (active === 'works') return renderWorks(sel);
   if (active === 'settings') return renderSettings();
-  const an = C.analyze(state.cache, state.settings, sel.from, sel.to, sel.sites, sel.work || undefined);
+  const an = C.analyze(sel.data, state.settings, sel.from, sel.to, sel.sites, sel.work || undefined);
   if (active === 'dash') renderDash(sel, an);
   if (active === 'bep') renderBep(sel, an);
   if (active === 'sim') renderSim(sel, an);
@@ -300,9 +332,9 @@ function renderDash(sel, an) {
   if (startKey < firstKey && firstKey <= endKey) startKey = firstKey; // データの無い月度は並べない
   const tr = { from: C.periodRange(startKey).from, to: C.periodRange(endKey).to };
   if (sel.to < tr.to) tr.to = sel.to; // 実績の最終日まで
-  const trAll = C.analyze(state.cache, state.settings, tr.from, tr.to, sel.sites, sel.work || undefined);
+  const trAll = C.analyze(sel.data, state.settings, tr.from, tr.to, sel.sites, sel.work || undefined);
   const labels = trAll.byPeriod.map((p) => C.periodLabel(p.period).replace(/^\d{2}(\d{2})年/, '$1/').replace('月度', ''));
-  const perSite = sel.sites.map((s) => ({ site: s, an: C.analyze(state.cache, state.settings, tr.from, tr.to, [s], sel.work || undefined) }));
+  const perSite = sel.sites.map((s) => ({ site: s, an: C.analyze(sel.data, state.settings, tr.from, tr.to, [s], sel.work || undefined) }));
 
   drawChart('c-weight', {
     type: 'bar',
@@ -678,14 +710,14 @@ function renderSim(sel, an) {
   };
   state.simTotal = t;
   // 固定費の内訳(工場1か所の月固定費 × 工場数 × 月数)。工事を選んでいるときは配賦前の工場の固定費から出す
-  const fm = (sel.work ? C.analyze(state.cache, state.settings, sel.from, sel.to, sel.sites) : an).models;
+  const fm = (sel.work ? C.analyze(sel.data, state.settings, sel.from, sel.to, sel.sites) : an).models;
   const frac = fm.reduce((a, m) => a + m.frac, 0), fix = fm.reduce((a, m) => a + m.fixed, 0);
   const months = sel.sites.length ? frac / sel.sites.length : 0;
   state.simFixedNote = frac > 0 ? `${yen(fix / frac)}円/月 × ${sel.sites.length}工場 × ${fmt(months, Math.abs(months - Math.round(months)) < 0.05 ? 0 : 1)}か月` + (sel.work ? '(工事へ売上比で配賦)' : '') : '';
   // 期間の途中なら、期間全体(残りの月の固定費を含む)で目標利益率に届くのに必要な、残り期間の生産量
   state.simRemain = null;
   if (sel.to < sel.fullTo) {
-    const full = C.analyze(state.cache, state.settings, sel.from, sel.fullTo, sel.sites, sel.work || undefined).total;
+    const full = C.analyze(sel.data, state.settings, sel.from, sel.fullTo, sel.sites, sel.work || undefined).total;
     const fracOf = (from, to) => C.periodsInRange(from, to).reduce((a, x) => a + x.frac, 0);
     const done = fracOf(sel.from, sel.to), left = fracOf(sel.from, sel.fullTo) - done;
     state.simRemain = Object.assign(C.remainingNeed(t, full, state.settings), { done, left, end: sel.fullTo });
@@ -849,7 +881,7 @@ function renderSimAdvice(r, t, W, P) {
 /* ===================== 工事別分析 ===================== */
 
 function worksRows(sel) {
-  const an = C.analyze(state.cache, state.settings, sel.from, sel.to, sel.sites);
+  const an = C.analyze(sel.data, state.settings, sel.from, sel.to, sel.sites);
   const q = document.getElementById('w-search').value.trim().toLowerCase();
   let rows = C.workBreakdown(an, state.cache);
   if (q) rows = rows.filter((r) => (r.workNo + ' ' + r.name).toLowerCase().includes(q));

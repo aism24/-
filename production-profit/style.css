@@ -358,3 +358,9 @@ td input[type="number"] { width: 130px; }
 .simAdvicePanel .advGap { color: #d6d5cf; }
 .simAdvicePanel .advGap .neg { color: #ff8f85; }
 .simAdvicePanel .advGap .pos { color: #7fe07f; }
+/* 月度の途中の「月末見込み」切替と、実績が少ないときの案内 */
+.fcBtn { border: 1px solid var(--border); background: var(--surface); color: var(--text2); border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.fcBtn.active { background: #f08c00; border-color: #f08c00; color: #fff; font-weight: 700; }
+#screen-main > .tab.active.fcHidden { display: none; }
+.fcBlock { margin: 24px 16px; padding: 20px 24px; background: var(--warn-bg); border-radius: 8px; font-size: 15px; line-height: 1.7; }
+.fcBlock button { margin-right: 8px; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-weight: 700; }
