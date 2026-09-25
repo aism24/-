@@ -273,3 +273,4 @@ td input[type="number"] { width: 130px; }
 .simCol .simHead b, .simCol .simHead span { text-align: center; }
 .simFixed .simHead { border-bottom: 1px solid transparent; padding-bottom: 3px; }
 #tab-sim .simGridWrap .simRow, .simGridWrap .simRow { grid-template-columns: 104px auto; }
+.simTable .sLabel { font-size: clamp(13px, 2.2vh, 24px); line-height: 1.2; color: var(--text2); }
