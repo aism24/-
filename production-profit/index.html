@@ -8,7 +8,7 @@
 <!-- 数字の幅をそろえる(等幅数字)ため、英数字はInterを使う(日本語は各OSのゴシック) -->
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
-<link rel="stylesheet" href="style.css?v=20260926m">
+<link rel="stylesheet" href="style.css?v=20260926n">
 </head>
 <body>
 
@@ -92,7 +92,7 @@
         <div class="panel"><h2>計算の内訳</h2><div class="tableWrap"><table id="t-bep" class="bepTable"></table></div></div>
       </div>
       <div class="panel simChart"><h2>損益分岐生産量グラフ(選択期間・選択工場)</h2><div class="chartBox bepBox" id="c-bep"></div>
-        <p class="muted small bepHelp">横軸=生産重量。売上線(黒)と総費用線(赤)の交点が損益分岐生産量。縦の点線(つまみ)を左右にドラッグすると、その重量での固定費(人件費込み)・変動費・利益の内訳を表示します。</p></div>
+        <p class="muted small bepHelp">横軸=生産重量。売上線(黒)と総費用線(赤)の交点が損益分岐生産量。縦の点線は実績の生産重量で、その重量での固定費(人件費込み)・変動費・利益の内訳を表示します(生産量を変えた試算は目標シミュレーターで行います)。</p></div>
     </div>
   </main>
 
@@ -118,7 +118,7 @@
         </div>
         <div class="panel"><div id="sim-kpis" class="simTable"></div></div>
       </div>
-      <div class="panel simChart"><div class="chartHead"><h2>試算の損益分岐生産量</h2><button id="s-reset" class="resetGlow">現在値に戻す</button></div><div class="chartBox bepBox" id="c-sim"></div></div>
+      <div class="panel simChart"><div class="chartHead"><button id="s-reset" class="resetBtn2">現在値に戻す</button><h2>試算の損益分岐生産量</h2></div><div class="chartBox bepBox" id="c-sim"></div></div>
     </div>
   </main>
 
@@ -169,7 +169,7 @@
 <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">読み込み中…</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="calc.js?v=20260926m"></script>
-<script src="app.js?v=20260926m"></script>
+<script src="calc.js?v=20260926n"></script>
+<script src="app.js?v=20260926n"></script>
 </body>
 </html>
