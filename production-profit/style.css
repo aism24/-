@@ -288,3 +288,6 @@ td input[type="number"] { width: 130px; }
 /* 備考(達成/未達・各数値)も項目名と同じく2倍に。達成=緑(OK)・未達=赤(NG) */
 .simTable .sNote { font-size: clamp(13px, 2.2vh, 24px); line-height: 1.2; color: var(--text2); white-space: nowrap; }
 .simTable .sNote .pos, .simTable .sNote .neg { font-weight: 700; }
+/* 4行目 売上額(概算): 入力欄は自動計算で入力不可、工事ごとの値とも黒太字 */
+.simGridWrap .simRow .simNum.simSales { font-weight: 700; color: var(--text); background: transparent; border-color: transparent; cursor: default; }
+.simCell.simSales { font-weight: 700; color: var(--text); }

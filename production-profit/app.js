@@ -519,7 +519,7 @@ function renderSim(sel, an) {
   updateSim();
 }
 
-/* 入力欄の右に、工事ごとの実績(生産重量・人工/t・トン単価)を重量の多い順に並べる */
+/* 入力欄の右に、工事ごとの実績(生産重量・人工/t・トン単価・売上額(概算)=生産重量×トン単価)を重量の多い順に並べる */
 function renderSimWorks(an) {
   const rows = C.workBreakdown(an, state.cache)
     .filter((r) => r.workNo !== C.COMMON_WORK && r.weight > 0)
@@ -531,6 +531,7 @@ function renderSimWorks(an) {
     <div class="simCell">${fmt(r.weight, 1)}</div>
     <div class="simCell">${npt(r.ninkuPerTon)}</div>
     <div class="simCell ${r.unitPrice ? '' : 'neg'}">${r.unitPrice ? yen(r.unitPrice) : '未入力'}</div>
+    <div class="simCell simSales">${yen(r.sales)}</div>
   </div>`).join('');
 }
 
@@ -547,12 +548,13 @@ function updateSim() {
   const W = simValue('w'), n = simValue('n'), P = simValue('p');
   const r = C.simulate(t, state.settings, W, n, P);
   const b = state.simBase;
+  document.getElementById('s-s').value = yen(r.sales); // 売上額(概算)は計算値のみ(入力不可)
   const diff = (v, bv, f) => { const d = v - bv; return Math.abs(d) < 0.5 ? '基準どおり' : `基準比 ${d > 0 ? '+' : ''}${f(d)}`; };
   // 項目(左)・数値(中)・備考(右)の3列の表
   const sRow = (label, value, unit, note, cls) =>
     `<div class="sLabel">${label}</div><div class="sVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="sNote">${note || ''}</div>`;
   document.getElementById('sim-kpis').innerHTML = [
-    sRow('売上額', yen(r.sales), '円', diff(r.sales, b.w * b.p, yen)),
+    sRow('売上額(概算)', yen(r.sales), '円', diff(r.sales, b.w * b.p, yen)),
     sRow('損益', yen(r.profit), '円', `利益率 ${pct(r.profitRate)}`, r.profit >= 0 ? 'pos' : 'neg'),
     goalKpi(r.profit, r.profitGoal, r.sales > 0, sRow),
     sRow('目標売上額', yen(r.goalSales), '円', r.goalTons !== null ? `必要生産量 ${ton(r.goalTons)}t` : '到達不能'),
