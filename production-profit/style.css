@@ -143,6 +143,7 @@ td input[type="number"] { width: 130px; }
 .bepSvg .bg { stroke: var(--grid); stroke-width: 1; }
 .bepSvg .ax { fill: var(--text2); font-size: 11px; }
 .bepSvg .lbl { fill: var(--text); font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.bepSvg .lbl.fixedLbl { fill: var(--bep-fixed); font-size: 11px; }
 .bepSvg .lbl.cost { fill: var(--bep-cost); }
 .bepSvg .lbl.be { fill: var(--bep-be); }
 .bepSvg .lbl.good, .bepSvg .lbl.bProfit { fill: var(--good); }
