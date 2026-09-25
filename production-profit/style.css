@@ -293,3 +293,15 @@ td input[type="number"] { width: 130px; }
 /* 4行目 売上額(概算): 入力欄は自動計算で入力不可、工事ごとの値とも黒太字 */
 .simGridWrap .simRow .simNum.simSales { font-weight: 700; color: var(--text); background: transparent; border-color: transparent; cursor: default; }
 .simCell.simSales { font-weight: 700; color: var(--text); }
+/* 入力欄: 枠なし・薄い黄色背景(着色部分=入力するところ)。入力欄の列の左にも罫線 */
+.simFixed { padding-right: 0; }
+#tab-sim .simGridWrap .simFixed .simRow, .simGridWrap .simFixed .simRow { align-items: stretch; }
+.simFixed .simRow > label { align-self: center; }
+.simGridWrap .simRow .simNum { box-sizing: border-box; width: calc(11ch + 17px); height: 100%; border: none; border-left: 1px solid var(--border); border-radius: 0; background: var(--warn-bg); }
+.simGridWrap .simRow .simNum:focus { outline: 2px solid var(--accent, #2878d8); outline-offset: -2px; }
+.simGridWrap .simRow .simNum.simSales { background: transparent; border-left: 1px solid var(--border); }
+.simHeadRow .simInHead { align-self: stretch; display: flex; align-items: center; justify-content: center; border-left: 1px solid var(--border); }
+/* 下の表の項目名は中央揃え */
+.simTable .sLabel { text-align: center; }
+#tab-sim .simGridWrap .simFixed .simRow, .simGridWrap .simFixed .simRow, .simFixed .simHead.simHeadRow { grid-template-columns: 104px 124px; gap: 0 8px; }
+.simGridWrap .simFixed .simRow .simNum { width: 100%; }
