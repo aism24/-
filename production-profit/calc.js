@@ -27,7 +27,6 @@
   function defaultSettings() {
     return {
       rates: { labor: 30, variable: 40, fixed: 15, profit: 15 },
-      standardUnitPrice: 0,
       commonWorkNos: '00-00', // 共通(工事なし)として扱う工事No(カンマ区切り)
       works: {},   // workNo -> { totalWeight: number|null(上書き), contract: number|null }
       costs: {},   // site -> { laborRate, fixedMonthly, variablePerTon } (いずれもnull=未入力)
@@ -99,14 +98,14 @@
   function num(v) { return (v === null || v === undefined || v === '' || isNaN(Number(v))) ? null : Number(v); }
 
   /* 工事ごとのトン単価。契約金額÷契約総重量(契約総重量が未入力なら、代わりに生産実績の総重量)。
-     契約金額が無い工事は標準トン単価。 */
+     契約金額が無い工事は単価0(売上0円)として扱い、画面で警告する。 */
   function unitPriceOf(workNo, data, settings) {
     var w = (settings.works || {})[workNo] || {};
     var info = (data.works || {})[workNo] || {};
     var total = num(w.totalWeight) !== null ? num(w.totalWeight) : (info.totalWeight || 0);
     var contract = num(w.contract);
     if (contract !== null && total > 0) return { price: contract / total, source: 'contract', totalWeight: total };
-    return { price: num(settings.standardUnitPrice) || 0, source: 'standard', totalWeight: total };
+    return { price: 0, source: 'none', totalWeight: total };
   }
 
   /* ===================== 集計 ===================== */
@@ -151,7 +150,7 @@
     var W = actual ? actual.weight : 0;
     var N = actual ? actual.hours / HOURS_PER_NINKU : 0;
     var S = actual ? actual.sales : 0;
-    var basePrice = W > 0 ? S / W : (num(settings.standardUnitPrice) || 0);
+    var basePrice = W > 0 ? S / W : 0;
 
     var laborRate = num(cost.laborRate) !== null ? num(cost.laborRate) : (N > 0 ? (rates.labor / 100) * S / N : 0);
     var fixed = num(cost.fixedMonthly) !== null ? num(cost.fixedMonthly) * frac : (rates.fixed / 100) * S;

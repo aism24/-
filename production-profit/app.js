@@ -184,6 +184,11 @@ function refreshWorkList(from, to, sites) {
   sel.innerHTML = '<option value="">全工事</option>' + list.map((wn) =>
     `<option value="${esc(wn)}">${esc(wn === C.COMMON_WORK ? '' : wn + '　')}${esc(name(wn))}(${ton(found[wn].weight)}t)</option>`).join('');
   sel.value = list.includes(cur) ? cur : '';
+  // 契約金額が未入力で、この期間に生産実績がある工事(売上0円として計算される)を警告する
+  const noPrice = list.filter((wn) => wn !== C.COMMON_WORK && found[wn].weight > 0 && C.unitPriceOf(wn, state.cache, state.settings).source === 'none');
+  const warn = document.getElementById('f-price-warn');
+  warn.hidden = !noPrice.length;
+  warn.textContent = noPrice.length ? `契約金額が未入力の工事があります(売上0円で計算): ${noPrice.slice(0, 5).join('、')}${noPrice.length > 5 ? ' ほか' + (noPrice.length - 5) + '件' : ''}` : '';
   document.getElementById('f-work-note').textContent = sel.value ? '工事に絞ると固定費は工場の固定費を売上比で配賦します' : list.length + '件';
   return sel.value;
 }
@@ -480,7 +485,7 @@ function renderSim(sel, an) {
   const base = {
     w: t.weight,
     n: t.ninkuPerTon || 0,
-    p: t.unitPrice || state.settings.standardUnitPrice || 0,
+    p: t.unitPrice || 0,
   };
   state.simSel = sel;
   state.simTotal = t;
@@ -622,7 +627,6 @@ function initSettings() {
     const s = state.settings;
     const v = el.type === 'number' ? (el.value === '' ? null : Number(el.value)) : el.value;
     if (d.k === 'rate') s.rates[d.f] = v === null ? 0 : v;
-    else if (d.k === 'std') s.standardUnitPrice = v || 0;
     else if (d.k === 'common') s.commonWorkNos = v;
     else if (d.k === 'cost') (s.costs[d.site] = s.costs[d.site] || {})[d.f] = v;
     else if (d.k === 'work') {
@@ -674,8 +678,6 @@ function renderSettings() {
   document.getElementById('set-rates').innerHTML = RATE_LABELS.map(([f, l]) =>
     `<label>${l}(%)${numInput({ k: 'rate', f }, s.rates[f], 0.1)}</label>`).join('');
   updateRateSum();
-  document.getElementById('set-std').value = s.standardUnitPrice || '';
-  document.getElementById('set-std').dataset.k = 'std';
   document.getElementById('set-common').value = s.commonWorkNos || '';
   document.getElementById('set-common').dataset.k = 'common';
 
@@ -708,7 +710,7 @@ function renderSettingsWorks() {
 function demoApi(action, extra) {
   if (!state.demoCache) {
     state.demoCache = makeDemoCache();
-    state.demoSettings = Object.assign(C.defaultSettings(), { standardUnitPrice: 250000,
+    state.demoSettings = Object.assign(C.defaultSettings(), {
       works: { '26-01': { contract: 60000000, totalWeight: 200 }, '26-02': { contract: 45000000, totalWeight: null } } });
   }
   if (action === 'saveSettings') { state.demoSettings = JSON.parse(JSON.stringify(extra.settings)); }

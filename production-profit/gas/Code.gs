@@ -39,7 +39,6 @@ const BASIC_KEYS = [
   ['変動費率', 'rates.variable', 40],
   ['固定費率', 'rates.fixed', 15],
   ['利益率', 'rates.profit', 15],
-  ['標準トン単価', 'standardUnitPrice', 0],
   ['共通扱い工事No', 'commonWorkNos', '00-00'],
 ];
 
@@ -254,7 +253,7 @@ function numOrNull_(v) {
 }
 
 function readSettings_() {
-  const s = { rates: {}, standardUnitPrice: 0, commonWorkNos: '00-00', works: {}, costs: {} };
+  const s = { rates: {}, commonWorkNos: '00-00', works: {}, costs: {} };
   const basic = {};
   rows_(sheet_(SHEETS.BASIC, ['項目', '値'])).forEach(function (r) { basic[r[0]] = r[1]; });
   BASIC_KEYS.forEach(function (k) {

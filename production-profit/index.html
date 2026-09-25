@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>生産損益分析</title>
 <!-- app.js/calc.js/style.cssを変更したら ?v= を必ず変えること(ブラウザ/CDNキャッシュ対策) -->
-<link rel="stylesheet" href="style.css?v=20260925h">
+<link rel="stylesheet" href="style.css?v=20260925i">
 </head>
 <body>
 
@@ -55,6 +55,7 @@
     <div class="fRow">
       <label>工事 <select id="f-work" class="workSelect"></select></label>
       <span id="f-work-note" class="muted small"></span>
+      <span id="f-price-warn" class="small neg" hidden></span>
     </div>
   </div>
 
@@ -135,7 +136,6 @@
         <div class="formGrid" id="set-rates"></div>
         <p id="set-rate-sum" class="small"></p>
         <div class="formGrid">
-          <label>標準トン単価(円/t)<input type="number" id="set-std" step="100"><span class="muted small">契約金額が未入力の工事に使います</span></label>
           <label>共通扱い工事No<input type="text" id="set-common"><span class="muted small">カンマ区切り。工事に結び付かない工数として集計</span></label>
         </div>
       </div>
@@ -156,7 +156,7 @@
 <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">読み込み中…</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="calc.js?v=20260925h"></script>
-<script src="app.js?v=20260925h"></script>
+<script src="calc.js?v=20260925i"></script>
+<script src="app.js?v=20260925i"></script>
 </body>
 </html>
