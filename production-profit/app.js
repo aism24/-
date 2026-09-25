@@ -84,6 +84,9 @@ async function unlock(pw) {
 
 function onData(data) {
   state.cache = data.cache;
+  // 集計対象は本社・夢前・鳥取の3工場のみ(「中止」など他の加工先・所属は除外。GAS側でも除外している)
+  state.cache.sites = C.DEFAULT_SITES.slice();
+  state.cache.rec = (state.cache.rec || []).filter((r) => C.DEFAULT_SITES.indexOf(r[1]) >= 0);
   state.settings = Object.assign(C.defaultSettings(), data.settings || {});
   const w = document.getElementById('warnings');
   const list = state.cache.warnings || [];

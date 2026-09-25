@@ -27,6 +27,7 @@
 const PM_API_URL = 'https://script.google.com/macros/s/AKfycbya0wgwbTuBN1laM8tWFGTJhJw--pTAOBAYVyrsOoXbrOXZgs9q3ZsErTSQZwJFT2c2/exec';
 const DR_API_URL = 'https://script.google.com/macros/s/AKfycbyiocXgXi_YEMUUq5BJPe7CUi2V-LJIBvLwceextYV-82hEArRKRaHQ5peVj5oMfTsW/exec';
 const CACHE_FILE_NAME = '_cache_analysis.json';
+// 集計対象の工場。これ以外(「中止」「高馬」など)の加工先・所属のデータは集計から除外する
 const SITE_ORDER = ['本社', '夢前', '鳥取'];
 
 const SHEETS = {
@@ -145,12 +146,16 @@ function aggregateSources_(src) {
   const pm = src.pm || {}, drMaster = src.drMaster || {}, drRows = src.drRows || [];
   const map = {};
   const works = {};
-  const siteSet = {};
   const warnings = (pm.warnings || []).slice();
 
+  const excluded = {};
+  const isTarget = function (site) {
+    if (SITE_ORDER.indexOf(site) >= 0) return true;
+    excluded[site] = true;
+    return false;
+  };
   function cell(ymd, site, workNo) {
     const key = ymd + '\t' + site + '\t' + workNo;
-    siteSet[site] = true;
     return map[key] || (map[key] = [ymd, site, workNo, 0, 0]);
   }
 
@@ -158,6 +163,7 @@ function aggregateSources_(src) {
     const wn = String(w.workNo);
     const info = works[wn] || (works[wn] = { name: w.workName || '', totalWeight: 0 });
     Object.keys(w.bySite || {}).forEach(function (site) {
+      if (!isTarget(String(site).trim())) return;
       const byDate = w.bySite[site].weightByDate || {};
       Object.keys(byDate).forEach(function (ymd) {
         const wt = Number(byDate[ymd]) || 0;
@@ -174,7 +180,7 @@ function aggregateSources_(src) {
   let unknownIds = 0;
   drRows.forEach(function (r) {
     const hours = Number(r.hours) || 0;
-    if (!hours || !r.workDate || !r.factory) return;
+    if (!hours || !r.workDate || !r.factory || !isTarget(String(r.factory).trim())) return;
     const ymd = String(r.workDate).replace(/\//g, '-');
     const c = constructionNo[String(r.constructionId)];
     if (!c) unknownIds++;
@@ -183,6 +189,8 @@ function aggregateSources_(src) {
     else if (wn && !works[wn].name) works[wn].name = c.name;
     cell(ymd, String(r.factory).trim(), wn)[4] += hours;
   });
+  const exNames = Object.keys(excluded).filter(function (x) { return x; }).sort();
+  if (exNames.length) warnings.push('集計対象外の工場のデータを除外しました: ' + exNames.join('、'));
   if (unknownIds) warnings.push('工事マスタに無い工事IDの日報が' + unknownIds + '件あり、共通として集計しました');
 
   const rec = Object.keys(map).sort().map(function (k) {
@@ -190,8 +198,7 @@ function aggregateSources_(src) {
     return [c[0], c[1], c[2], round_(c[3], 3), round_(c[4], 2)];
   });
   Object.keys(works).forEach(function (wn) { works[wn].totalWeight = round_(works[wn].totalWeight, 3); });
-  const sites = SITE_ORDER.filter(function (s) { return siteSet[s]; })
-    .concat(Object.keys(siteSet).filter(function (s) { return SITE_ORDER.indexOf(s) < 0; }).sort());
+  const sites = SITE_ORDER.slice();
 
   return {
     generatedAt: new Date().toISOString(),
