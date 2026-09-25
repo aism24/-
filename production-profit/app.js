@@ -456,15 +456,19 @@ function renderBepSvg(id) {
     // トン単価・人工数・工数は、つまみ位置の生産重量で損益0になる値。
     const w = st.x, lr = o.laborRate || 0, oF = o.otherFixed !== undefined ? o.otherFixed : F;
     const nBe = w > 0 && lr > 0 ? (P - vr - oF / w) / lr : null;
+    // [項目, 数値, 単位]。数値は右端をそろえる(描画後に列幅を測って配置)
     const lines = [
-      `損益分岐生産重量 ${ton(be)}t`,
-      `損益分岐売上高 ${man(sales(be))}`,
-      `損益分岐トン単価 ${w > 0 ? yen(F / w + vr + lab) + '円/t' : '—'}`,
-      `損益分岐1t当たり人工数 ${nBe !== null ? npt(nBe) + '人工' : '—'}`,
-      `損益分岐工数 ${nBe !== null ? fmt(nBe * w * C.HOURS_PER_NINKU, 0) + 'h' : '—'}`,
+      ['損益分岐生産重量', ton(be), 't'],
+      ['損益分岐売上高', fmt(sales(be) / 10000, 0), '万円'],
+      ['損益分岐トン単価', w > 0 ? yen(F / w + vr + lab) : '—', '円/t'],
+      ['損益分岐1t当たり人工数', nBe !== null ? npt(nBe) : '—', '人工'],
+      ['損益分岐工数', nBe !== null ? fmt(nBe * w * C.HOURS_PER_NINKU, 0) : '—', 'h'],
     ];
     const small = g.w < 700; // グラフが小さいときは文字を小さくして空白に収める
-    beLbl = `<line class="beLead"/><rect class="beBg" rx="6"/><text class="lbl be beInfo" x="0" y="0" style="font-size:${small ? 12 : 18}px">${lines.map((t, i) => `<tspan x="0" dy="${i ? (small ? 15 : 22) : 0}">${t}</tspan>`).join('')}</text>`; // 文字は最前面に描く
+    st.beLh = small ? 15 : 22;
+    const fs = `style="font-size:${small ? 12 : 18}px"`;
+    beLbl = `<line class="beLead"/><rect class="beBg" rx="6"/><g class="beInfo">${lines.map(([a, b, c]) =>
+      `<text class="lbl be bL" ${fs}>${a}</text><text class="lbl be bN" text-anchor="end" ${fs}>${b}</text><text class="lbl be bU" ${fs}>${c}</text>`).join('')}</g>`; // 文字は最前面に描く
     st.beAt = { bx, by };
   } else st.beAt = null;
   // つまみ位置の内訳バー
@@ -516,7 +520,12 @@ function renderBepSvg(id) {
   // 損益分岐の5項目: 点の左上(引き出し線の先)に置き、グラフ内に収まらなければ左上端へ寄せる
   const bi = box.querySelector('.beInfo');
   if (bi && st.beAt) {
-    const bb = bi.getBBox(), pad = 6;
+    // 列幅(項目・数値・単位)を測り、3列に並べる
+    const col = (sel) => [...bi.querySelectorAll(sel)];
+    const wmax = (els) => Math.max(0, ...els.map((e) => e.getBBox().width));
+    const Ls = col('.bL'), Ns = col('.bN'), Us = col('.bU');
+    const lw = wmax(Ls), nw = wmax(Ns), uw = wmax(Us), lh = st.beLh, asc = lh * 0.78;
+    const bb = { width: lw + 10 + nw + 3 + uw, height: lh * Ls.length }, pad = 6;
     // 候補: ①点の左上 ②左端に寄せる ③左上端。目標表示(黄色)と重ならない最初の候補を使う
     const gr = gb && gb.getAttribute('width') ? { x: +gb.getAttribute('x'), y: +gb.getAttribute('y'), w: +gb.getAttribute('width'), h: +gb.getAttribute('height') } : null;
     const hit = (l, t) => gr && l - pad < gr.x + gr.w && l + bb.width + pad > gr.x && t - pad < gr.y + gr.h && t + bb.height + pad > gr.y;
@@ -533,9 +542,12 @@ function renderBepSvg(id) {
       pick = cands.find(([l, t]) => !hit(l, t));
     }
     const [left, top] = pick || cands[cands.length - 1];
-    const tx = left - bb.x, ty = top - bb.y;
-    bi.setAttribute('y', ty);
-    bi.querySelectorAll('tspan').forEach((t) => t.setAttribute('x', tx));
+    Ls.forEach((e, i) => {
+      const y = top + asc + i * lh;
+      e.setAttribute('x', left); e.setAttribute('y', y);
+      Ns[i].setAttribute('x', left + lw + 10 + nw); Ns[i].setAttribute('y', y);
+      Us[i].setAttribute('x', left + lw + 10 + nw + 3); Us[i].setAttribute('y', y);
+    });
     const rb = box.querySelector('.beBg');
     rb.setAttribute('x', left - pad); rb.setAttribute('y', top - pad / 2);
     rb.setAttribute('width', bb.width + pad * 2); rb.setAttribute('height', bb.height + pad);
