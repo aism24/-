@@ -69,7 +69,7 @@ button:disabled { opacity: .5; cursor: default; }
 /* 3色の枠は常に均等幅(1/3ずつ)。枠の中身が入り切らないときは枠の中で改行する */
 .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: stretch; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
 /* 絞り込み: 期間=薄い緑、工場=薄いピンク、工事=薄い青 を1行に並べる */
-.fGroup { display: flex; align-items: center; align-content: center; gap: 6px 12px; padding: 6px 12px; border-radius: 8px; flex-wrap: wrap; min-width: 0; }
+.fGroup { display: flex; align-items: center; align-content: center; justify-content: center; text-align: center; gap: 6px 12px; padding: 6px 12px; border-radius: 8px; flex-wrap: wrap; min-width: 0; }
 .gPeriod { background: var(--g-period); }
 .gSite { background: var(--g-site); }
 .gWork { background: var(--g-work); }
@@ -215,7 +215,7 @@ td input[type="number"] { width: 130px; }
   .fGroup { padding: 4px 10px; }
 }
 .fGroup label, .fLabel { white-space: nowrap; }
-.gWork label { flex: 1 1 220px; min-width: 0; }
+.gWork label { flex: 0 1 380px; min-width: 0; }
 .gWork .workSelect { flex: 1 1 auto; min-width: 0; width: 100%; }
 .gWork #f-work-note { white-space: nowrap; }
 @media (max-width: 800px) { .filters { grid-template-columns: 1fr; } }
