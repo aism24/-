@@ -597,7 +597,7 @@ function updateSim() {
     `<div class="sLabel">${label}</div><div class="sVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="sNote">${simNote(note)}</div>`;
   document.getElementById('sim-kpis').innerHTML = [
     sRow('売上額(概算)', yen(r.sales), '円', diff(r.sales, b.w * b.p, yen)),
-    sRow('損益', yen(r.profit), '円', `利益率 ${pct(r.profitRate)}`, r.profit >= 0 ? 'pos' : 'neg'),
+    sRow('損益', yen(r.profit), '円', (r.profitRate === null ? '利益率 —' : `利益率 <span class="${r.profitRate * 100 >= state.settings.rates.profit - 1e-9 ? 'pos' : 'neg'}">${pct(r.profitRate)}</span>`) + `（目標${fmt(state.settings.rates.profit, state.settings.rates.profit % 1 ? 1 : 0)}%）`, r.profit >= 0 ? 'pos' : 'neg'),
     goalKpi(r.profit, r.profitGoal, r.sales > 0, sRow),
     sRow('目標売上額', yen(r.goalSales), '円', r.goalTons !== null ? `必要生産量 ${ton(r.goalTons)}t` + (W >= r.goalTons ? `（<span class="pos">超 ${ton(W - r.goalTons)}</span>t）` : `（<span class="neg">不足 ${ton(r.goalTons - W)}</span>t）`) : '到達不能'),
     sRow('損益分岐生産量', ton(r.breakEvenTons), 't', r.breakEvenTons !== null ? (W >= r.breakEvenTons ? `<span class="pos">余裕 ${ton(W - r.breakEvenTons)}</span>t` : `<span class="neg">不足 ${ton(r.breakEvenTons - W)}</span>t`) : '到達不能'),
