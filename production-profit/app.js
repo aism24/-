@@ -440,8 +440,8 @@ function renderBepSvg(id) {
   h += `<text class="lbl fixedLbl" x="${g.l - 6}" y="${Y(F) - 3}" text-anchor="end">${(o.fixedLabel || ['その他固定費']).map((t, i) => i ? `<tspan x="${g.l - 6}" dy="${13 * Math.max(1, k)}">${t}</tspan>` : t).join('')}<tspan x="${g.l - 6}" dy="${14 * Math.max(1, k)}">${man(F)}</tspan></text>`;
   h += `<line class="lCost" x1="${X(0)}" y1="${Y(F)}" x2="${X(maxX)}" y2="${Y(cost(maxX))}"/>`;
   h += `<line class="lSales" x1="${X(0)}" y1="${Y(0)}" x2="${X(maxX)}" y2="${Y(sales(maxX))}"/>`;
-  h += `<text class="lbl lineLbl" x="${X(maxX) - 4}" y="${Y(sales(maxX)) + 26 * k}" text-anchor="end">売上</text>`;
-  h += `<text class="lbl cost lineLbl" x="${X(maxX) - 4}" y="${Y(cost(maxX)) + 26 * k}" text-anchor="end">総費用</text>`;
+  h += `<text class="lbl lineLbl" data-line="sales" x="${X(maxX) - 4}" y="${Y(sales(maxX)) + 26 * k}" text-anchor="end">売上</text>`;
+  h += `<text class="lbl cost lineLbl" data-line="cost" x="${X(maxX) - 4}" y="${Y(cost(maxX)) + 26 * k}" text-anchor="end">総費用</text>`;
   // 損益分岐生産量(軸への補助線付き)
   let beLbl = '';
   if (be !== null) {
@@ -467,6 +467,8 @@ function renderBepSvg(id) {
   } else st.beAt = null;
   // つまみ位置の内訳バー
   const x = st.x, cx = X(x), bw = 8;
+  st.cursorX = cx;
+  st.lineY = { sales: (v) => Y(sales(v)), cost: (v) => Y(cost(v)) }; st.toVal = (px) => (px - g.l) / g.w * maxX;
   // 人件費は固定費に含めて1つの帯で表示する
   const segs = [['固定費(人件費込み)', 0, F + lab * x, 'bFixed'], ['変動費', F + lab * x, cost(x), 'bVar']];
   const profit = sales(x) - cost(x);
@@ -506,8 +508,63 @@ function renderBepSvg(id) {
     h += `<circle class="goalBg" cx="${gx}" cy="${gy}" r="${22.5 * k}"/><polygon class="mGoal" points="${star}"/>`; // ★の背景に1.5倍の〇(黄色・点滅)
   }
   box.innerHTML = `<svg class="bepSvg" style="--k:${k.toFixed(3)}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="損益分岐生産量グラフ">${h}</svg>`;
-  const gl = box.querySelector('.goalLbl'), gb = box.querySelector('rect.goalBg');
-  if (gl && gb) {
+  // 文字の重なりを避ける(描画後に実際の大きさを測って配置を決める)
+  const rectOf = (el) => { const b = el.getBBox(); return { x: b.x, y: b.y, w: b.width, h: b.height }; };
+  const overlap = (a, b, m = 3) => a.x - m < b.x + b.w && a.x + a.w + m > b.x && a.y - m < b.y + b.h && a.y + a.h + m > b.y;
+  const area = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+  const gl = box.querySelector('.goalLbl'), gb = box.querySelector('rect.goalBg'), star = box.querySelector('circle.goalBg');
+  const segEls = [...box.querySelectorAll('.lbl.seg')];
+  // ①内訳の文字(利益など)が★と重なるときはバーの反対側へ移す
+  if (star) {
+    const sr = rectOf(star);
+    segEls.forEach((el) => {
+      if (!overlap(rectOf(el), sr)) return;
+      const toLeft = el.getAttribute('text-anchor') === 'start', w = rectOf(el).w;
+      if (toLeft ? st.cursorX - 10 - w < g.l : st.cursorX + 10 + w > W - 2) { // 反対側だとはみ出すときは★の下へずらす
+        el.setAttribute('y', sr.y + sr.h + rectOf(el).h * 0.85);
+        return;
+      }
+      el.setAttribute('text-anchor', toLeft ? 'end' : 'start');
+      el.setAttribute('x', st.cursorX + (toLeft ? -10 : 10));
+    });
+  }
+  // ②「売上」「総費用」: 右端を基本に、試算の縦線・内訳・★・もう一方の文字と重なるときは線に沿って左へずらす
+  //   (上側の線は線の上、下側の線は線の下に置く)
+  const curR = { x: st.cursorX - 8, y: g.t, w: 16, h: g.h };
+  const lineObst = segEls.map(rectOf).concat([curR]);
+  if (star) lineObst.push(rectOf(star));
+  box.querySelectorAll('.lbl.lineLbl').forEach((el) => {
+    const other = el.dataset.line === 'sales' ? 'cost' : 'sales';
+    let best = null;
+    [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3].forEach((f) => {
+      if (best && best.score === 0) return;
+      const xr = f === 1 ? g.l + g.w - 4 : g.l + g.w * f;
+      el.setAttribute('x', xr);
+      const w = rectOf(el).w, v = st.toVal(xr - w / 2);
+      const above = st.lineY[el.dataset.line](v) <= st.lineY[other](v);
+      el.setAttribute('y', st.lineY[el.dataset.line](v) + (above ? -8 * k : 26 * k));
+      const r = rectOf(el);
+      const score = lineObst.reduce((a2, o) => a2 + area(r, o), 0) + (r.y < g.t ? 1e6 : 0);
+      if (!best || score < best.score) best = { score, x: el.getAttribute('x'), y: el.getAttribute('y') };
+    });
+    el.setAttribute('x', best.x); el.setAttribute('y', best.y);
+    lineObst.push(rectOf(el));
+  });
+  // ③「目標生産量/目標利益額」は★の左上・右上・左下・右下のうち、ほかの文字と重ならずグラフ内に収まる位置へ
+  if (gl && gb && st.goalAt) {
+    const obst = segEls.concat([...box.querySelectorAll('.lbl.lineLbl')]).map(rectOf);
+    if (star) obst.push(rectOf(star));
+    const { gx, gy } = st.goalAt, dx = 22 * k, tsp = gl.querySelector('tspan');
+    const cands = [['end', -dx, -44 * k], ['start', dx, -44 * k], ['end', -dx, 34 * k], ['start', dx, 34 * k]];
+    let best = null;
+    cands.forEach(([anc, ox, oy]) => {
+      gl.setAttribute('text-anchor', anc); gl.setAttribute('x', gx + ox); gl.setAttribute('y', gy + oy); tsp.setAttribute('x', gx + ox);
+      const r = rectOf(gl);
+      const out = Math.max(0, g.l - r.x) + Math.max(0, r.x + r.w - (W - 2)) + Math.max(0, g.t - r.y) + Math.max(0, r.y + r.h - (g.t + g.h));
+      const score = out * 1000 + obst.reduce((a, o) => a + area(r, o), 0);
+      if (!best || score < best.score) best = { score, anc, ox, oy };
+    });
+    gl.setAttribute('text-anchor', best.anc); gl.setAttribute('x', gx + best.ox); gl.setAttribute('y', gy + best.oy); tsp.setAttribute('x', gx + best.ox);
     const bb = gl.getBBox();
     gb.setAttribute('x', bb.x - 6); gb.setAttribute('y', bb.y - 3);
     gb.setAttribute('width', bb.width + 12); gb.setAttribute('height', bb.height + 6);
