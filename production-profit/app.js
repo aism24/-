@@ -891,9 +891,9 @@ function renderSimAdvice(r, t, W, P) {
     let body;
     if (c.ng) body = `<div class="advBig neg">${c.need === null ? '到達不能' : 'これだけでは不可'}</div>`;
     else {
-      const more = c.need > 0; // false = 既に達成(余裕の量)
+      const more = c.need > 0; // false = 既に達成(超えている量)
       const sg = (c.sign > 0) === more ? '＋' : '−';
-      body = `<div class="advBig ${ok ? 'pos' : 'neg'}">${ok ? '余裕 ' : sg}${fmt(Math.abs(c.need), c.d)}<span class="advUnit">${c.unit}</span></div>` +
+      body = `<div class="advBig ${ok ? 'pos' : 'neg'}">${ok ? '超 ' : sg}${fmt(Math.abs(c.need), c.d)}<span class="advUnit">${c.unit}</span></div>` +
         `<div class="advFromTo">${fmt(c.from, c.d)} → ${fmt(c.from + c.sign * c.need, c.d)}${c.unit}</div>` +
         `<div class="advBar"><i style="width:${Math.max(2, c.rate / maxRate * 100)}%"></i><span>${ok ? '' : sg}${pct(c.rate)}</span></div>`;
     }

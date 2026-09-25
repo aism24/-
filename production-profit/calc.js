@@ -348,7 +348,7 @@
   }
 
   /* 現状分析: シミュレーション結果rで、目標利益率(売上×利益率)に届くには何をどれだけ変えればよいか。
-     ほかの条件は同じとして1つずつ変えた場合。値が0以下なら既に達成(余裕の量)。
+     ほかの条件は同じとして1つずつ変えた場合。値が0以下なら既に達成(超えている量)。
        生産量: 工数(人件費)は同じまま増産 → simulateの目標生産量(goalTons)
        時間  : 生産量・トン単価は同じまま、不足額 ÷ 1h当たり人件費
        変動費: 生産量・トン単価は同じまま、不足額 ÷ 生産重量
@@ -357,7 +357,7 @@
     var p = ((settings.rates || {}).profit || 0) / 100;
     var W = r.weight || 0;
     var cost = r.labor + r.variable + r.fixed;
-    var gap = r.profitGoal - r.profit; // 目標までの不足額(マイナスなら余裕)
+    var gap = r.profitGoal - r.profit; // 目標までの不足額(マイナスなら超)
     var perHour = (r.laborRate || 0) / HOURS_PER_NINKU;
     return {
       gap: gap,
