@@ -141,11 +141,29 @@ function initUi() {
     document.getElementById(id).onchange = onFilterChange;
   });
   document.getElementById('refresh-btn').onclick = refresh;
+  document.getElementById('reset-btn').onclick = () => { applyDefaults(); renderAll(); };
   document.getElementById('w-search').oninput = renderWorks;
   document.getElementById('w-alloc').onchange = renderWorks;
   document.getElementById('w-csv').onclick = downloadWorksCsv;
   initSim();
   initSettings();
+  applyDefaults();
+}
+
+/* 開いたとき・リセット時の既定表示: 本日を含む「今期」・3工場・全工事・目標シミュレーター */
+function applyDefaults() {
+  const today = C.utcToYmd(Date.now() + 9 * 3600 * 1000);
+  const fy = String(C.fiscalYearOf(C.periodKeyOf(today)));
+  document.getElementById('f-mode').value = 'fiscal';
+  const selF = document.getElementById('f-fiscal');
+  selF.value = fy;
+  if (selF.value !== fy) selF.selectedIndex = 0;
+  document.getElementById('f-site').value = '';
+  document.querySelectorAll('#f-sites button').forEach((x) => x.classList.toggle('active', x.dataset.site === ''));
+  document.getElementById('f-work').value = '';
+  document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x.dataset.tab === 'sim'));
+  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-sim'));
+  state.simBase = null;
 }
 
 async function refresh() {
@@ -579,7 +597,7 @@ function updateSim() {
     `<div class="sLabel">${label}</div><div class="sVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="sNote">${simNote(note)}</div>`;
   document.getElementById('sim-kpis').innerHTML = [
     sRow('売上額(概算)', yen(r.sales), '円', diff(r.sales, b.w * b.p, yen)),
-    sRow('損益', yen(r.profit), '円', `利益率 ${pct(r.profitRate)}`, r.profit >= 0 ? 'pos' : 'neg'),
+    sRow('損益', yen(r.profit), '円', (r.profitRate === null ? '利益率 —' : `利益率 <span class="${r.profitRate * 100 >= state.settings.rates.profit - 1e-9 ? 'pos' : 'neg'}">${pct(r.profitRate)}</span>`) + `（目標${fmt(state.settings.rates.profit, state.settings.rates.profit % 1 ? 1 : 0)}%）`, r.profit >= 0 ? 'pos' : 'neg'),
     goalKpi(r.profit, r.profitGoal, r.sales > 0, sRow),
     sRow('目標売上額', yen(r.goalSales), '円', r.goalTons !== null ? `必要生産量 ${ton(r.goalTons)}t` + (W >= r.goalTons ? `（<span class="pos">超 ${ton(W - r.goalTons)}</span>t）` : `（<span class="neg">不足 ${ton(r.goalTons - W)}</span>t）`) : '到達不能'),
     sRow('損益分岐生産量', ton(r.breakEvenTons), 't', r.breakEvenTons !== null ? (W >= r.breakEvenTons ? `<span class="pos">余裕 ${ton(W - r.breakEvenTons)}</span>t` : `<span class="neg">不足 ${ton(r.breakEvenTons - W)}</span>t`) : '到達不能'),

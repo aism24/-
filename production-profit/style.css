@@ -326,3 +326,6 @@ td input[type="number"] { width: 130px; }
 /* 利益目標の★と「目標生産量/目標利益額」はピンク */
 .bepSvg .lbl.goalLbl { fill: #e0287d; }
 .bepSvg .mGoal { fill: #e0287d; }
+/* ヘッダーの「リセット」ボタン(会社ロゴの左、オレンジ) */
+.resetBtn { background: #f08c00; color: #fff; border: none; border-radius: 6px; padding: 6px 14px; font-weight: 700; cursor: pointer; }
+.resetBtn:hover { background: #d97a00; }
