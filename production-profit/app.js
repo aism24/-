@@ -517,7 +517,7 @@ function renderBepSvg(id) {
     gb.setAttribute('x', bb.x - 6); gb.setAttribute('y', bb.y - 3);
     gb.setAttribute('width', bb.width + 12); gb.setAttribute('height', bb.height + 6);
   }
-  // 損益分岐の5項目: 点の左上(引き出し線の先)に置き、グラフ内に収まらなければ左上端へ寄せる
+  // 損益分岐値: グラフの左上に置き、点から引き出し線を引く
   const bi = box.querySelector('.beInfo');
   if (bi && st.beAt) {
     // 列幅(項目・数値・単位)を測り、3列に並べる
@@ -528,10 +528,10 @@ function renderBepSvg(id) {
     const T = bi.querySelector('.bT'), tw = T.getBBox().width; // 見出し「損益分岐値」(1行目・中央揃え)
     const cw = lw + 10 + nw + 3 + uw, bw = Math.max(cw, tw);
     const bb = { width: bw, height: lh * (Ls.length + 1) }, pad = 6;
-    // 候補: ①点の左上 ②左端に寄せる ③左上端。目標表示(黄色)と重ならない最初の候補を使う
+    // 候補: ①グラフの左上(既定) ②点の左上 ③左端に寄せる。目標表示(黄色)と重ならない最初の候補を使う
     const gr = gb && gb.getAttribute('width') ? { x: +gb.getAttribute('x'), y: +gb.getAttribute('y'), w: +gb.getAttribute('width'), h: +gb.getAttribute('height') } : null;
     const hit = (l, t) => gr && l - pad < gr.x + gr.w && l + bb.width + pad > gr.x && t - pad < gr.y + gr.h && t + bb.height + pad > gr.y;
-    const cands = [[st.beAt.bx - 40 - bb.width, st.beAt.by - 40 - bb.height], [g.l + pad + 2, st.beAt.by - 40 - bb.height], [g.l + pad + 2, g.t + pad]]
+    const cands = [[g.l + pad + 2, g.t + pad], [st.beAt.bx - 40 - bb.width, st.beAt.by - 40 - bb.height], [g.l + pad + 2, st.beAt.by - 40 - bb.height]]
       .map(([l, t]) => [Math.max(g.l + pad + 2, l), Math.max(g.t + pad, t)]);
     let pick = cands.find(([l, t]) => !hit(l, t));
     if (!pick && gl && st.goalAt) {
