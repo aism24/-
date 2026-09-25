@@ -323,3 +323,6 @@ td input[type="number"] { width: 130px; }
 @keyframes goalBlink { from { opacity: 1; } to { opacity: 0.15; } }
 @media (prefers-reduced-motion: reduce) { .bepSvg .goalBg { animation: none; } }
 .simTable .sNote .pos .nv, .simTable .sNote .neg .nv { font-size: inherit; } /* 損益との差: プラス=緑・マイナス=赤 */
+/* 利益目標の★と「目標生産量/目標利益額」はピンク */
+.bepSvg .lbl.goalLbl { fill: #e0287d; }
+.bepSvg .mGoal { fill: #e0287d; }

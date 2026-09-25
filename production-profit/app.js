@@ -416,7 +416,7 @@ function renderBepSvg(id) {
     const left = gx > g.l + 290, up = gy - 76 > g.t;
     const tx = left ? gx - 22 : gx + 22, ty = up ? gy - 44 : gy + 34;
     h += `<rect class="goalBg" rx="6"/><text class="lbl good goalLbl" x="${tx}" y="${ty}" text-anchor="${left ? 'end' : 'start'}">目標生産量 ${ton(o.goalTons)}t<tspan x="${tx}" dy="28">目標利益額 ${yen(sales(o.goalTons) * (o.profitRate || 0))}円</tspan></text>`;
-    h += `<polygon class="mGoal" points="${star}"/>`;
+    h += `<circle class="goalBg" cx="${gx}" cy="${gy}" r="22.5"/><polygon class="mGoal" points="${star}"/>`; // ★の背景に1.5倍の〇(黄色・点滅)
   }
   // 損益分岐生産量(軸への補助線付き)
   if (be !== null) {
@@ -448,7 +448,7 @@ function renderBepSvg(id) {
   const hx = Math.min(W - 4 - hw / 2, Math.max(4 + hw / 2, cx));
   h += `<g class="handle"><rect x="${hx - hw / 2}" y="${g.t - 34}" width="${hw}" height="24" rx="12"/><text x="${hx}" y="${g.t - 17}" text-anchor="middle">${hl}</text></g>`;
   box.innerHTML = `<svg class="bepSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="損益分岐生産量グラフ">${h}</svg>`;
-  const gl = box.querySelector('.goalLbl'), gb = box.querySelector('.goalBg');
+  const gl = box.querySelector('.goalLbl'), gb = box.querySelector('rect.goalBg');
   if (gl && gb) {
     const bb = gl.getBBox();
     gb.setAttribute('x', bb.x - 6); gb.setAttribute('y', bb.y - 3);
