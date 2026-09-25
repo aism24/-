@@ -306,3 +306,13 @@ td input[type="number"] { width: 130px; }
 #tab-sim .simGridWrap .simFixed .simRow, .simGridWrap .simFixed .simRow, .simFixed .simHead.simHeadRow { grid-template-columns: 104px 124px; gap: 0 8px; }
 .simGridWrap .simFixed .simRow .simNum { width: 100%; }
 .simTable .sNote .pos .nv, .simTable .sNote .neg .nv { color: inherit; } /* 余裕=緑(OK)・不足=赤(NG)は数値も同色 */
+/* 入力欄の列だけ末尾に単位(t・人工・円/t・円)。着色・罫線は入力欄と単位をまとめた枠(.simIn)に付ける */
+#tab-sim .simGridWrap .simFixed .simRow, .simGridWrap .simFixed .simRow, .simFixed .simHead.simHeadRow { grid-template-columns: 104px 158px; }
+.simIn { display: flex; align-items: center; height: 100%; border-left: 1px solid var(--border); background: var(--warn-bg); padding-right: 6px; box-sizing: border-box; }
+.simIn.simInSales { background: transparent; }
+.simGridWrap .simFixed .simRow .simIn .simNum { flex: 1; min-width: 0; width: auto; border-left: none; background: transparent; padding-right: 4px; }
+.simIn .simUnit { flex: none; font-size: 11px; color: var(--text2); }
+.simFixed .simRow > label { text-align: center; } /* 試算列(項目名)は中央揃え */
+.simIn .simUnit { width: 3.2em; text-align: left; padding-left: 2px; } /* 単位の幅をそろえて数値の右端を合わせる */
+.simGridWrap .simRow .simIn .simNum:focus { outline: none; }
+.simIn:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }

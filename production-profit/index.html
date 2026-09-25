@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>生産損益分析</title>
 <!-- app.js/calc.js/style.cssを変更したら ?v= を必ず変えること(ブラウザ/CDNキャッシュ対策) -->
-<link rel="stylesheet" href="style.css?v=20260925zb">
+<link rel="stylesheet" href="style.css?v=20260925zc">
 </head>
 <body>
 
@@ -99,10 +99,10 @@
           <div class="simGridWrap">
             <div class="simFixed">
               <div class="simHead simHeadRow"><span class="simTitle">試算</span><span class="simInHead">入力欄</span></div>
-              <div class="simRow"><label>生産重量(t)</label><input type="text" inputmode="decimal" id="s-w" class="simNum" autocomplete="off"></div>
-              <div class="simRow"><label>1t当たり人工数</label><input type="text" inputmode="decimal" id="s-n" class="simNum" autocomplete="off"></div>
-              <div class="simRow"><label>トン単価(円/t)</label><input type="text" inputmode="decimal" id="s-p" class="simNum" autocomplete="off"></div>
-              <div class="simRow"><label>売上額(概算)</label><input type="text" id="s-s" class="simNum simSales" readonly tabindex="-1" title="生産重量×トン単価(自動計算)"></div>
+              <div class="simRow"><label>生産重量(t)</label><span class="simIn"><input type="text" inputmode="decimal" id="s-w" class="simNum" autocomplete="off"><span class="simUnit">t</span></span></div>
+              <div class="simRow"><label>1t当たり人工数</label><span class="simIn"><input type="text" inputmode="decimal" id="s-n" class="simNum" autocomplete="off"><span class="simUnit">人工</span></span></div>
+              <div class="simRow"><label>トン単価(円/t)</label><span class="simIn"><input type="text" inputmode="decimal" id="s-p" class="simNum" autocomplete="off"><span class="simUnit">円/t</span></span></div>
+              <div class="simRow"><label>売上額(概算)</label><span class="simIn simInSales"><input type="text" id="s-s" class="simNum simSales" readonly tabindex="-1" title="生産重量×トン単価(自動計算)"><span class="simUnit">円</span></span></div>
             </div>
             <div class="simWorks" id="sim-works"></div>
           </div>
@@ -164,7 +164,7 @@
 <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">読み込み中…</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="calc.js?v=20260925zb"></script>
-<script src="app.js?v=20260925zb"></script>
+<script src="calc.js?v=20260925zc"></script>
+<script src="app.js?v=20260925zc"></script>
 </body>
 </html>
