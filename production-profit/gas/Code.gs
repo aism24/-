@@ -15,7 +15,8 @@
  *
  * ■ 設定シート(画面の「設定」タブから保存。初回に自動作成)
  *   基本設定 : 項目 | 値
- *   工事単価 : 工事No | 工事名 | 総重量上書き(t) | 契約金額(円)
+ *   工事単価 : 工事No | 工事名 | 契約総重量(t) | 契約金額(円) | (E列以降は自由。例: トン単価の計算式)
+ *              保存時はA〜D列だけを工事No単位で更新・追記し、行の削除やE列以降の書き換えはしない
  *   費用設定 : 工場 | 人件費単価(円/人工) | 月固定費(円) | 変動費単価(円/t)
  *   月間目標 : 月度(YYYY-MM) | 工場 | 目標重量(t) | 目標人工/t | 目標トン単価(円/t)
  *
@@ -248,7 +249,8 @@ function rows_(sh) {
 }
 
 function numOrNull_(v) {
-  const s = String(v === null || v === undefined ? '' : v).replace(/,/g, '').trim();
+  // 「10,000,000」「¥10,000,000」「10,000,000円」などの表示形式でも数値として読む
+  const s = String(v === null || v === undefined ? '' : v).replace(/[,¥￥円\s]/g, '').trim();
   if (s === '' || isNaN(Number(s))) return null;
   return Number(s);
 }
@@ -263,7 +265,7 @@ function readSettings_() {
     const path = k[1].split('.');
     if (path.length === 2) s[path[0]][path[1]] = val; else s[path[0]] = val;
   });
-  rows_(sheet_(SHEETS.WORKS, ['工事No', '工事名', '総重量上書き(t)', '契約金額(円)'])).forEach(function (r) {
+  rows_(sheet_(SHEETS.WORKS, ['工事No', '工事名', '契約総重量(t)', '契約金額(円)'])).forEach(function (r) {
     if (!r[0]) return;
     s.works[String(r[0]).trim()] = { name: r[1], totalWeight: numOrNull_(r[2]), contract: numOrNull_(r[3]) };
   });
@@ -290,6 +292,28 @@ function writeRows_(sh, rows, width) {
   sh.getRange(2, 1, rows.length, width).setValues(rows);
 }
 
+/* 「工事単価」シートのA〜D列を、既存の行を残したまま工事No単位で更新する(純粋関数)。
+   - 既存行: 工事Noがworksにあれば契約総重量・契約金額を更新(工事名は空欄のときだけ補う)
+   - worksにあってシートに無い工事: 契約総重量か契約金額が入っているものだけ末尾に追記
+   - worksに無い既存行・空行はそのまま(行の削除はしない。E列以降はそもそも触らない) */
+function mergeWorkRows_(existing, works) {
+  const seen = {};
+  const rows = existing.map(function (r) {
+    const wn = String(r[0] === null || r[0] === undefined ? '' : r[0]).trim();
+    if (!wn || !works[wn]) return r.slice(0, 4);
+    seen[wn] = true;
+    const w = works[wn];
+    return [r[0], r[1] !== '' && r[1] !== null && r[1] !== undefined ? r[1] : blank_(w.name),
+      blank_(numOrNull_(w.totalWeight)), blank_(numOrNull_(w.contract))];
+  });
+  Object.keys(works).sort().forEach(function (wn) {
+    const w = works[wn];
+    if (seen[wn] || !w || (numOrNull_(w.totalWeight) === null && numOrNull_(w.contract) === null)) return;
+    rows.push([wn, blank_(w.name), blank_(numOrNull_(w.totalWeight)), blank_(numOrNull_(w.contract))]);
+  });
+  return rows;
+}
+
 function blank_(v) { return v === null || v === undefined ? '' : v; }
 
 function saveSettings_(s) {
@@ -301,10 +325,14 @@ function saveSettings_(s) {
       const v = path.length === 2 ? (s[path[0]] || {})[path[1]] : s[path[0]];
       return [k[0], blank_(v === undefined ? k[2] : v)];
     }), 2);
-    const works = s.works || {};
-    writeRows_(sheet_(SHEETS.WORKS, ['工事No', '工事名', '総重量上書き(t)', '契約金額(円)']), Object.keys(works).sort()
-      .filter(function (wn) { const w = works[wn]; return w && (numOrNull_(w.totalWeight) !== null || numOrNull_(w.contract) !== null); })
-      .map(function (wn) { const w = works[wn]; return [wn, blank_(w.name), blank_(numOrNull_(w.totalWeight)), blank_(numOrNull_(w.contract))]; }), 4);
+    const wsh = sheet_(SHEETS.WORKS, ['工事No', '工事名', '契約総重量(t)', '契約金額(円)']);
+    const wLast = wsh.getLastRow();
+    const existing = wLast >= 2 ? wsh.getRange(2, 1, wLast - 1, 4).getValues() : [];
+    const merged = mergeWorkRows_(existing, s.works || {});
+    if (merged.length) {
+      wsh.getRange(2, 1, merged.length, 1).setNumberFormat('@');
+      wsh.getRange(2, 1, merged.length, 4).setValues(merged);
+    }
     const costs = s.costs || {};
     writeRows_(sheet_(SHEETS.COSTS, ['工場', '人件費単価(円/人工)', '月固定費(円)', '変動費単価(円/t)']), Object.keys(costs)
       .map(function (site) { const c = costs[site]; return [site, blank_(numOrNull_(c.laborRate)), blank_(numOrNull_(c.fixedMonthly)), blank_(numOrNull_(c.variablePerTon))]; }), 4);
