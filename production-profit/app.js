@@ -423,19 +423,6 @@ function renderBepSvg(id) {
   h += `<line class="lSales" x1="${X(0)}" y1="${Y(0)}" x2="${X(maxX)}" y2="${Y(sales(maxX))}"/>`;
   h += `<text class="lbl lineLbl" x="${X(maxX) - 4}" y="${Y(sales(maxX)) + 26}" text-anchor="end">売上</text>`;
   h += `<text class="lbl cost lineLbl" x="${X(maxX) - 4}" y="${Y(cost(maxX)) + 26}" text-anchor="end">総費用</text>`;
-  // 利益目標達成点
-  if (o.goalTons !== null && o.goalTons !== undefined && o.goalTons <= maxX) {
-    const gx = X(o.goalTons), gy = Y(sales(o.goalTons));
-    // ★印(2倍)と「目標生産量/目標利益額」(2倍・黄色背景がゆっくり点滅。背景の大きさは描画後に文字に合わせる)
-    const star = Array.from({ length: 10 }, (_, i) => {
-      const r = i % 2 ? 6 : 15, a = -Math.PI / 2 + i * Math.PI / 5;
-      return `${(gx + r * Math.cos(a)).toFixed(1)},${(gy + r * Math.sin(a)).toFixed(1)}`;
-    }).join(' ');
-    const left = gx > g.l + 290, up = gy - 76 > g.t;
-    const tx = left ? gx - 22 : gx + 22, ty = up ? gy - 44 : gy + 34;
-    h += `<rect class="goalBg" rx="6"/><text class="lbl good goalLbl" x="${tx}" y="${ty}" text-anchor="${left ? 'end' : 'start'}">目標生産量 ${ton(o.goalTons)}t<tspan x="${tx}" dy="28">目標利益額 ${yen(sales(o.goalTons) * (o.profitRate || 0))}円</tspan></text>`;
-    h += `<circle class="goalBg" cx="${gx}" cy="${gy}" r="22.5"/><polygon class="mGoal" points="${star}"/>`; // ★の背景に1.5倍の〇(黄色・点滅)
-  }
   // 損益分岐生産量(軸への補助線付き)
   if (be !== null) {
     const bx = X(be), by = Y(sales(be));
@@ -465,6 +452,19 @@ function renderBepSvg(id) {
   const hw = hl.length * 7.5 + 18;
   const hx = Math.min(W - 4 - hw / 2, Math.max(4 + hw / 2, cx));
   h += `<g class="handle"><rect x="${hx - hw / 2}" y="${g.t - 34}" width="${hw}" height="24" rx="12"/><text x="${hx}" y="${g.t - 17}" text-anchor="middle">${hl}</text></g>`;
+  // 利益目標達成点(★・目標表示は最前面に描く。試算の破線やバーは裏側を通る)
+  if (o.goalTons !== null && o.goalTons !== undefined && o.goalTons <= maxX) {
+    const gx = X(o.goalTons), gy = Y(sales(o.goalTons));
+    // ★印(2倍)と「目標生産量/目標利益額」(2倍・黄色背景がゆっくり点滅。背景の大きさは描画後に文字に合わせる)
+    const star = Array.from({ length: 10 }, (_, i) => {
+      const r = i % 2 ? 6 : 15, a = -Math.PI / 2 + i * Math.PI / 5;
+      return `${(gx + r * Math.cos(a)).toFixed(1)},${(gy + r * Math.sin(a)).toFixed(1)}`;
+    }).join(' ');
+    const left = gx > g.l + 290, up = gy - 76 > g.t;
+    const tx = left ? gx - 22 : gx + 22, ty = up ? gy - 44 : gy + 34;
+    h += `<rect class="goalBg" rx="6"/><text class="lbl good goalLbl" x="${tx}" y="${ty}" text-anchor="${left ? 'end' : 'start'}">目標生産量 ${ton(o.goalTons)}t<tspan x="${tx}" dy="28">目標利益額 ${yen(sales(o.goalTons) * (o.profitRate || 0))}円</tspan></text>`;
+    h += `<circle class="goalBg" cx="${gx}" cy="${gy}" r="22.5"/><polygon class="mGoal" points="${star}"/>`; // ★の背景に1.5倍の〇(黄色・点滅)
+  }
   box.innerHTML = `<svg class="bepSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="損益分岐生産量グラフ">${h}</svg>`;
   const gl = box.querySelector('.goalLbl'), gb = box.querySelector('rect.goalBg');
   if (gl && gb) {
