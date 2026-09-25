@@ -258,3 +258,11 @@ td input[type="number"] { width: 130px; }
 @media (max-height: 820px) and (min-width: 801px) { #tab-sim .btnRow .muted { display: none; } }
 .simNum { width: 100%; text-align: right; font-variant-numeric: tabular-nums; }
 .simGridWrap .simRow .simNum { font-size: 15px; padding: 5px 8px; }
+/* 桁の一番多いトン単価(例: 999,999)に合わせ、入力欄3つと工事ごとの列をそれぞれ同じ幅にそろえる */
+#tab-sim .simGridWrap .simRow, .simGridWrap .simRow { grid-template-columns: 104px 11ch; }
+.simFixed { width: auto; }
+.simGridWrap .simRow .simNum { width: 11ch; box-sizing: content-box; }
+.simCol { flex: 0 0 auto; width: calc(9ch + 16px); min-width: 0; max-width: none; }
+.simCell { font-size: 13px; }
+@media (max-width: 800px) { .simFixed { width: 100%; } }
+.simCol .simHead b, .simCol .simHead span { display: block; width: 100%; }
