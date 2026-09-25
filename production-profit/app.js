@@ -88,6 +88,7 @@ function onData(data) {
   state.cache.sites = C.DEFAULT_SITES.slice();
   state.cache.rec = (state.cache.rec || []).filter((r) => C.DEFAULT_SITES.indexOf(r[1]) >= 0);
   state.settings = Object.assign(C.defaultSettings(), data.settings || {});
+  state.lastYmd = C.lastDataYmd(state.cache);
   const w = document.getElementById('warnings');
   const list = state.cache.warnings || [];
   w.hidden = !list.length;
@@ -240,9 +241,12 @@ function selection() {
   const r = mode === 'period' ? C.periodRange(selPer.value) : C.fiscalRange(Number(document.getElementById('f-fiscal').value));
   const site = document.getElementById('f-site').value;
   const sites = site ? [site] : state.cache.sites;
-  document.getElementById('f-range-text').textContent = r.from.replace(/-/g, '/') + ' 〜 ' + r.to.replace(/-/g, '/');
+  // 計算は実績の最終日まで(期・月度の途中では、まだ来ていない日の固定費を入れない)。fullToは期間本来の終わり
+  const to = state.lastYmd && state.lastYmd >= r.from && state.lastYmd < r.to ? state.lastYmd : r.to;
+  document.getElementById('f-range-text').textContent = r.from.replace(/-/g, '/') + ' 〜 ' + r.to.replace(/-/g, '/') +
+    (to < r.to ? `(実績〜${Number(to.slice(5, 7))}/${Number(to.slice(8))})` : '');
   const work = refreshWorkList(r.from, r.to, sites);
-  return { mode, from: r.from, to: r.to, site, sites, work, periodKey: mode === 'period' ? selPer.value : null };
+  return { mode, from: r.from, to, fullTo: r.to, site, sites, work, periodKey: mode === 'period' ? selPer.value : null };
 }
 
 function renderAll() {
@@ -293,6 +297,7 @@ function renderDash(sel, an) {
   const firstKey = state.cache.rec.length ? C.periodKeyOf(state.cache.rec[0][0]) : startKey;
   if (startKey < firstKey && firstKey <= endKey) startKey = firstKey; // データの無い月度は並べない
   const tr = { from: C.periodRange(startKey).from, to: C.periodRange(endKey).to };
+  if (sel.to < tr.to) tr.to = sel.to; // 実績の最終日まで
   const trAll = C.analyze(state.cache, state.settings, tr.from, tr.to, sel.sites, sel.work || undefined);
   const labels = trAll.byPeriod.map((p) => C.periodLabel(p.period).replace(/^\d{2}(\d{2})年/, '$1/').replace('月度', ''));
   const perSite = sel.sites.map((s) => ({ site: s, an: C.analyze(state.cache, state.settings, tr.from, tr.to, [s], sel.work || undefined) }));
@@ -675,6 +680,14 @@ function renderSim(sel, an) {
   const frac = fm.reduce((a, m) => a + m.frac, 0), fix = fm.reduce((a, m) => a + m.fixed, 0);
   const months = sel.sites.length ? frac / sel.sites.length : 0;
   state.simFixedNote = frac > 0 ? `${yen(fix / frac)}円/月 × ${sel.sites.length}工場 × ${fmt(months, Math.abs(months - Math.round(months)) < 0.05 ? 0 : 1)}か月` + (sel.work ? '(工事へ売上比で配賦)' : '') : '';
+  // 期間の途中なら、期間全体(残りの月の固定費を含む)で目標利益率に届くのに必要な、残り期間の生産量
+  state.simRemain = null;
+  if (sel.to < sel.fullTo) {
+    const full = C.analyze(state.cache, state.settings, sel.from, sel.fullTo, sel.sites, sel.work || undefined).total;
+    const fracOf = (from, to) => C.periodsInRange(from, to).reduce((a, x) => a + x.frac, 0);
+    const done = fracOf(sel.from, sel.to), left = fracOf(sel.from, sel.fullTo) - done;
+    state.simRemain = Object.assign(C.remainingNeed(t, full, state.settings), { done, left, end: sel.fullTo });
+  }
   renderSimWorks(an);
   if (!state.simBase) {
     state.simBase = base;
@@ -745,6 +758,7 @@ function updateSim() {
     sRow('<span class="subLbl">└ 人件費</span>', yen(r.labor), '円', `${yen(r.laborRate)}円/人工`),
     sRow('<span class="subLbl">└ その他固定費</span>', yen(r.fixed), '円', state.simFixedNote),
   ].join('');
+  renderSimAdvice(r, t, W, P);
   // つまみのドラッグで試算の生産重量を動かせる(スライダー・数値欄と連動)
   // 人件費は試算の生産重量での額を固定費に含め、固定費線を水平にする(つまみのドラッグ中に縮尺が変わらないよう、署名は基準値で作る)
   drawBep('c-sim', { fixed: r.fixed + r.labor, unitPrice: P, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: state.settings.rates.profit / 100,
@@ -756,6 +770,46 @@ function updateSim() {
       updateSim();
       simDragging = false;
     } });
+}
+
+/* 現状分析: 目標利益率に届くには(ほかの条件は同じとして1つずつ)。トン単価は受注時に決まっているため変えない */
+function renderSimAdvice(r, t, W, P) {
+  const box = document.getElementById('sim-advice');
+  const g = state.settings.rates.profit;
+  const gl = fmt(g, g % 1 ? 1 : 0) + '%';
+  if (!(r.sales > 0)) { box.innerHTML = ''; return; }
+  const a = C.advise(r, state.settings);
+  const ok = a.gap <= 0.5;
+  const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
+  // 1つの施策の行: 必要な変化量(+/−)と、変更前→変更後・変化率
+  const line = (label, need, unit, digits, from, sign) => {
+    if (need === null) return `<li><b>${label}</b>：<span class="neg">到達不能</span></li>`;
+    const to = from + sign * need;
+    if (sign < 0 && to < 0) return `<li><b>${label}</b>：<span class="neg">これだけでは達成できません</span>（${fmt(need, digits)}${unit}必要）</li>`;
+    return `<li><b>${label}</b>：<span class="${ok ? 'pos' : 'neg'} big">${sign > 0 ? '＋' : '−'}${fmt(need, digits)}</span>${unit}` +
+      `<span class="muted">（${fmt(from, digits)} → ${fmt(to, digits)}${unit}、${sign > 0 ? '＋' : '−'}${pct(from > 0 ? need / from : null)}）</span></li>`;
+  };
+  let html = `<div class="advHead">現状分析：目標利益率${gl}を達成するには</div>`;
+  if (ok) {
+    html += `<div class="advOk">目標を達成しています（利益目標額より <span class="pos big">${yen(-a.gap)}</span>円 多い）。</div>`;
+  } else {
+    html += `<div class="muted small">不足額 <b class="neg">${yen(a.gap)}</b>円。ほかの条件は同じとして、どれか1つで達成するには：</div><ul class="advList">` +
+      line('生産量を増やす（今の時間のまま）', a.addTons, 't', 1, W, 1) +
+      line('時間を減らす（今の生産量のまま）', a.cutHours, 'h', 0, r.hours, -1) +
+      line('変動費を下げる（1tあたり）', a.cutVarPerTon, '円/t', 0, r.varPerTon, -1) + '</ul>';
+  }
+  html += `<div class="advSub"><b>目安</b>：1t多く作ると利益 <b>+${yen(a.perTon)}</b>円 ／ 1時間減らすと <b>+${yen(a.perHour)}</b>円 ／ 変動費1,000円/t下げると <b>+${yen(a.perVar1000)}</b>円</div>`;
+  html += `<div class="advSub"><b>今後の見積もりの目安単価</b>：利益率${gl}になる <b class="big">${yen(a.goalPrice)}</b>円/t ／ 損益0になる ${yen(a.bePrice)}円/t（今 ${yen(P)}円/t）</div>`;
+  const m = state.simRemain;
+  if (m) {
+    const avgT = m.done > 0 ? t.weight / m.done : 0;
+    const body = m.tons === null ? '<span class="neg">今の条件では到達不能</span>'
+      : m.tons <= 0 ? '<span class="pos">残り期間の生産量に関わらず達成見込み</span>'
+      : `残り約${fmt(m.left, 1)}か月（〜${md(m.end)}）で <b class="neg big">${ton(m.tons)}</b>t（月あたり <b>${ton(m.left > 0 ? m.tons / m.left : null)}</b>t）が必要` +
+        `<span class="muted">（これまでの月平均 ${ton(avgT)}t）</span>`;
+    html += `<div class="advSub"><b>期間全体で達成するには</b>（残りの月の固定費 ${yen(m.extraFixed)}円込み）：${body}</div>`;
+  }
+  box.innerHTML = html;
 }
 
 /* ===================== 工事別分析 ===================== */

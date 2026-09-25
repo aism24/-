@@ -331,6 +331,50 @@
     };
   }
 
+  /* 実績データ(rec)の最終日。固定費は期間の終わりではなく、この日までの日数分で計算する
+     (期・月度の途中で、まだ来ていない月の固定費が入って損益が悪く見えないように)。 */
+  function lastDataYmd(data) {
+    var last = null;
+    (data.rec || []).forEach(function (r) { if (!last || r[0] > last) last = r[0]; });
+    return last;
+  }
+
+  /* 現状分析: シミュレーション結果rで、目標利益率(売上×利益率)に届くには何をどれだけ変えればよいか。
+     ほかの条件は同じとして1つずつ変えた場合。値が0以下なら既に達成(余裕の量)。
+       生産量: 工数(人件費)は同じまま増産 → simulateの目標生産量(goalTons)
+       時間  : 生産量・トン単価は同じまま、不足額 ÷ 1h当たり人件費
+       変動費: 生産量・トン単価は同じまま、不足額 ÷ 生産重量
+     見積もりの目安単価: 今の生産量・工数・費用のままで目標利益率/損益0になるトン単価。 */
+  function advise(r, settings) {
+    var p = ((settings.rates || {}).profit || 0) / 100;
+    var W = r.weight || 0;
+    var cost = r.labor + r.variable + r.fixed;
+    var gap = r.profitGoal - r.profit; // 目標までの不足額(マイナスなら余裕)
+    var perHour = (r.laborRate || 0) / HOURS_PER_NINKU;
+    return {
+      gap: gap,
+      addTons: r.goalTons !== null ? r.goalTons - W : null,
+      cutHours: perHour > 0 ? gap / perHour : null,
+      cutVarPerTon: W > 0 ? gap / W : null,
+      perTon: r.unitPrice - (r.varPerTon || 0), // 工数そのままで1t多く作ったときの利益増
+      perHour: perHour,                         // 1h減らしたときの利益増
+      perVar1000: W * 1000,                     // 変動費を1,000円/t下げたときの利益増
+      goalPrice: W > 0 && p < 1 ? cost / (W * (1 - p)) : null,
+      bePrice: W > 0 ? cost / W : null,
+    };
+  }
+
+  /* 残り期間の必要生産量。actual=実績の日までの分析(total)、full=期間全体の分析(total、固定費が全月分)。
+     残りの生産は実績と同じトン単価・変動費単価・1t当たり人件費で行う前提で、期間全体の損益が
+     売上×利益率に届く生産量を返す。1t当たりの利益が0以下なら到達不能(null)。 */
+  function remainingNeed(actual, full, settings) {
+    var p = ((settings.rates || {}).profit || 0) / 100;
+    var margin = (actual.unitPrice || 0) * (1 - p) - (actual.varPerTon || 0) - (actual.laborPerTon || 0);
+    var extraFixed = full.fixed - actual.fixed;
+    var need = p * actual.sales - actual.profit + extraFixed;
+    return { extraFixed: extraFixed, tons: margin > 0 ? need / margin : null };
+  }
+
   var api = {
     HOURS_PER_NINKU: HOURS_PER_NINKU, COMMON_WORK: COMMON_WORK, DEFAULT_SITES: DEFAULT_SITES,
     defaultSettings: defaultSettings,
@@ -339,6 +383,7 @@
     periodsInRange: periodsInRange, daysInclusive: daysInclusive, utcToYmd: utcToYmd,
     unitPriceOf: unitPriceOf, commonWorkSet: commonWorkSet, aggregate: aggregate, cellModel: cellModel, summarize: summarize,
     breakEven: breakEven, analyze: analyze, workBreakdown: workBreakdown, simulate: simulate,
+    lastDataYmd: lastDataYmd, advise: advise, remainingNeed: remainingNeed,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PPCalc = api;
