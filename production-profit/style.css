@@ -266,3 +266,10 @@ td input[type="number"] { width: 130px; }
 .simCell { font-size: 13px; }
 @media (max-width: 800px) { .simFixed { width: 100%; } }
 .simCol .simHead b, .simCol .simHead span { display: block; width: 100%; }
+/* 工事ごとの列: 罫線で区切り、工事番号・工事名は中央揃え */
+.simWorks { gap: 0; border-left: 1px solid var(--border); }
+.simCol { border-right: 1px solid var(--border); }
+.simCol .simHead { text-align: center; align-items: center; border-bottom: 1px solid var(--border); padding: 0 6px 3px; }
+.simCol .simHead b, .simCol .simHead span { text-align: center; }
+.simFixed .simHead { border-bottom: 1px solid transparent; padding-bottom: 3px; }
+#tab-sim .simGridWrap .simRow, .simGridWrap .simRow { grid-template-columns: 104px auto; }
