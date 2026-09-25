@@ -13,6 +13,7 @@
   --bad: #d03b3b;
   --warn-bg: #fff4d6;
   --grid: #e8e7e2;
+  --g-period: #e3f4e6; --g-site: #fce6ee; --g-work: #e3eefc;
   --bep-cost: #c8423b; --bep-fixed: #5b63b0; --bep-labor: #8a5cc2; --bep-var: #1a9a8c; --bep-be: #d99a00;
 }
 @media (prefers-color-scheme: dark) {
@@ -20,6 +21,7 @@
     --bg: #111110; --surface: #1a1a19; --border: #383835; --text: #ffffff; --text2: #c3c2b7;
     --muted: #9a998f; --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
     --good: #0ca30c; --bad: #e66767; --warn-bg: #3a3220; --grid: #2c2c2a;
+    --g-period: #1d3324; --g-site: #3a2230; --g-work: #1d2a40;
     --bep-cost: #e66767; --bep-fixed: #8a91e0; --bep-labor: #b48ae6; --bep-var: #3cc0b1; --bep-be: #f0b429;
   }
 }
@@ -27,6 +29,7 @@
   --bg: #111110; --surface: #1a1a19; --border: #383835; --text: #ffffff; --text2: #c3c2b7;
   --muted: #9a998f; --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
   --good: #0ca30c; --bad: #e66767; --warn-bg: #3a3220; --grid: #2c2c2a;
+    --g-period: #1d3324; --g-site: #3a2230; --g-work: #1d2a40;
     --bep-cost: #e66767; --bep-fixed: #8a91e0; --bep-labor: #b48ae6; --bep-var: #3cc0b1; --bep-be: #f0b429;
 }
 
@@ -50,7 +53,9 @@ button:disabled { opacity: .5; cursor: default; }
 .lock { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .lockBox { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 28px; width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 12px; }
 
-.topbar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.topbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.topCenter { grid-column: 2; display: flex; align-items: center; justify-content: center; gap: 12px; }
+.topRight { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 /* 会社ロゴ: 赤いマークは固定色、「masamiz」文字はcurrentColorで文字色(--text)に追従し、
    ライト背景では黒・ダーク背景では白に切り替わる。 */
 .brand { display: flex; align-items: center; gap: 8px; }
@@ -61,8 +66,13 @@ button:disabled { opacity: .5; cursor: default; }
 .lockBox .brandLogo { width: 48px; height: 53px; }
 .lockBox .companyName { font-size: 20px; }
 .lockBox h1 { text-align: center; }
-.topbar #refresh-btn { margin-left: auto; }
-.filters { display: flex; flex-direction: column; gap: 8px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+/* 絞り込み: 期間=薄い緑、工場=薄いピンク、工事=薄い青 を1行に並べる */
+.fGroup { display: flex; align-items: center; gap: 8px 12px; padding: 6px 12px; border-radius: 8px; flex-wrap: wrap; }
+.gPeriod { background: var(--g-period); }
+.gSite { background: var(--g-site); }
+.gWork { background: var(--g-work); flex: 1 1 320px; min-width: 0; }
+.gWork #f-price-warn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 120px; }
 .fRow { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
 .fLabel { color: var(--text); }
 .segBtns { display: inline-flex; flex-wrap: wrap; gap: 6px; }
@@ -79,6 +89,18 @@ button:disabled { opacity: .5; cursor: default; }
 
 .tab { display: none; padding: 16px; max-width: 1400px; margin: 0 auto; }
 .tab.active { display: block; }
+/* 画面全体: ヘッダー(会社名・タブ・絞り込み)を固定し、その下をタブの表示領域にする */
+#screen-main { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+.appHead { flex: none; }
+#screen-main > .tab.active { flex: 1; min-height: 0; overflow: auto; width: 100%; }
+/* 目標シミュレーター: 画面いっぱい(上下左右ともスクロールしない) */
+#tab-sim { max-width: none; }
+#screen-main > #tab-sim.active { display: flex; flex-direction: column; overflow: hidden; padding: 12px 16px; }
+#tab-sim .simLayout { flex: 1; min-height: 0; }
+#tab-sim .simLeft { min-height: 0; overflow: auto; }
+#tab-sim .simLeft .panel { margin-bottom: 12px; }
+#tab-sim .simLeft .panel:last-child { margin-bottom: 0; }
+.bepBox svg { position: absolute; top: 0; left: 0; }
 .warnbox, .note { margin: 12px 16px 0; padding: 8px 12px; background: var(--warn-bg); border-radius: 6px; font-size: 12px; }
 .tab .note { margin: 0 0 12px; }
 
@@ -115,7 +137,7 @@ td input[type="number"] { width: 130px; }
 .simLeft .panel:last-child { flex: 1; margin-bottom: 0; }
 .simLeft .kpis.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .simChart { display: flex; flex-direction: column; margin-bottom: 0; }
-.simChart .chartBox { flex: 1; min-height: 420px; height: auto; }
+.simChart .chartBox { flex: 1; min-height: 0; height: auto; overflow: hidden; }
 .simRow { display: grid; grid-template-columns: 140px minmax(0, 220px); gap: 10px; align-items: center; margin-bottom: 14px; }
 .simRow input[type="number"] { width: 100%; font-size: 16px; }
 .btnRow { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -132,6 +154,11 @@ td input[type="number"] { width: 130px; }
 @media (max-width: 800px) {
   .grid2, .simGrid, .simLayout { grid-template-columns: 1fr; }
   .simChart .chartBox { min-height: 360px; }
+  /* スマホ: 画面に収まらないため通常の縦スクロールにする(ヘッダーを固定すると画面の半分近くを占めるため固定しない) */
+  #screen-main { display: block; height: auto; }
+  #screen-main > .tab.active, #screen-main > #tab-sim.active { overflow: visible; display: block; }
+  .topbar { grid-template-columns: 1fr; }
+  .topCenter, .topRight { grid-column: 1; justify-content: center; }
   .simRow { grid-template-columns: 130px minmax(0, 1fr); }
   .tab { padding: 12px 16px; }
 }
@@ -170,3 +197,25 @@ td input[type="number"] { width: 130px; }
 .bepSvg .bLoss { fill: var(--bad); }
 .bepSvg .handle rect { fill: var(--text); }
 .bepSvg .handle text { fill: var(--surface); font-weight: 600; }
+.appHead { background: var(--surface); }
+.appHead .warnbox { margin: 0; border-radius: 0; padding: 4px 16px; }
+.appHead .tabs { padding-top: 4px; }
+/* 目標シミュレーター: 画面の高さに合わせて左列を詰め、スクロールを出さない */
+#tab-sim .panel { padding: 10px 14px; }
+#tab-sim .simRow { margin-bottom: 8px; }
+#tab-sim .kpis.compact { gap: 2px 10px; }
+#tab-sim .kpi { padding: 3px 4px; }
+#tab-sim .kpi .value { font-size: clamp(15px, 2.6vh, 30px); margin: 2px 0 0; }
+#tab-sim .kpi .label, #tab-sim .kpi .sub { font-size: 11px; }
+#tab-sim .btnRow { align-items: center; }
+.gWork { flex-wrap: nowrap; }
+@media (max-width: 800px) { .gWork { flex-wrap: wrap; } }
+@media (max-height: 760px) and (min-width: 801px) {
+  #tab-sim .btnRow .muted { display: none; }
+  #tab-sim .kpi .sub { font-size: 10px; }
+  .fGroup { padding: 4px 10px; }
+}
+.fGroup label, .fLabel { white-space: nowrap; }
+.gWork label { flex: 1 1 auto; min-width: 0; }
+.gWork .workSelect { flex: 1 1 auto; min-width: 140px; width: 100%; max-width: 520px; }
+.gWork #f-work-note { white-space: nowrap; }
