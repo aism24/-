@@ -357,3 +357,4 @@ td input[type="number"] { width: 130px; }
 .bepSvg .beBg { fill: var(--surface); fill-opacity: .88; stroke: var(--bep-be); stroke-width: 1; }
 .bepSvg .beBg, .bepSvg .beLead { pointer-events: none; }
 #s-reset { background: #d6efff; border-color: #9fd3f5; } /* 「現在値に戻す」は水色 */
+.bepSvg .lbl.be.bT { font-weight: 800; } /* 見出し「損益分岐値」 */
