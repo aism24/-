@@ -387,7 +387,7 @@ function drawBep(id, o) {
 function renderBepSvg(id) {
   const box = document.getElementById(id), st = bepState[id], o = st.o;
   const W = box.clientWidth || 600, H = box.clientHeight || 380;
-  const g = st.geom = { l: 76, r: 16, t: 40, b: 36 }; // 上の余白につまみ、左の余白に固定費ラベルを置く
+  const g = st.geom = { l: 76, r: 16, t: 54, b: 36 }; // 上の余白につまみ、左の余白に固定費ラベルを置く
   g.w = W - g.l - g.r; g.h = H - g.t - g.b;
   const P = o.unitPrice || 0, lab = o.laborPerTon || 0, vr = o.varPerTon || 0, F = o.fixed || 0;
   const maxX = st.maxX;
@@ -450,10 +450,11 @@ function renderBepSvg(id) {
   const right = cx < g.l + g.w * 0.62;
   labels.forEach((lb) => { h += `<text class="lbl seg ${lb.cls}" x="${right ? cx + 10 : cx - 10}" y="${lb.y}" text-anchor="${right ? 'start' : 'end'}">${lb.text}</text>`; });
   // つまみ(グラフの上端。左右の端でははみ出さないように寄せる)
-  const hl = `${o.handleLabel || '生産重量'} ◀▶ ${ton(x)}t`;
-  const hw = hl.length * 7.5 + 18;
+  // 2行(ラベル / 重量)・中央揃え
+  const hl1 = o.handleLabel || '生産重量', hl2 = `${ton(x)}t`;
+  const hw = Math.max(hl1.length * 13, hl2.length * 7.5) + 22;
   const hx = Math.min(W - 4 - hw / 2, Math.max(4 + hw / 2, cx));
-  h += `<g class="handle"><rect x="${hx - hw / 2}" y="${g.t - 34}" width="${hw}" height="24" rx="12"/><text x="${hx}" y="${g.t - 17}" text-anchor="middle">${hl}</text></g>`;
+  h += `<g class="handle"><rect x="${hx - hw / 2}" y="${g.t - 50}" width="${hw}" height="40" rx="10"/><text x="${hx}" y="${g.t - 34}" text-anchor="middle">${hl1}<tspan x="${hx}" dy="16">${hl2}</tspan></text></g>`;
   // 利益目標達成点(★・目標表示は最前面に描く。試算の破線やバーは裏側を通る)
   if (o.goalTons !== null && o.goalTons !== undefined && o.goalTons <= maxX) {
     const gx = X(o.goalTons), gy = Y(sales(o.goalTons));
