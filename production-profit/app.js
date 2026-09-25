@@ -358,6 +358,8 @@ function stackedOpts(unit) {
 }
 function drawChart(id, cfg) {
   if (state.charts[id]) state.charts[id].destroy();
+  // ダッシュボードのグラフ(Chart.js)も画面と同じフォント(英数字はInter・等幅数字)にする
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
   state.charts[id] = new Chart(document.getElementById(id), cfg);
 }
 
