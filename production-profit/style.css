@@ -14,7 +14,7 @@
   --warn-bg: #fff4d6;
   --grid: #e8e7e2;
   --g-period: #e3f4e6; --g-site: #fce6ee; --g-work: #e3eefc;
-  --bep-cost: #c8423b; --bep-fixed: #5b63b0; --bep-var: #1a9a8c; --bep-be: #d99a00;
+  --bep-cost: #c8423b; --bep-fixed: #5b63b0; --bep-var: #2e9bd6; --bep-be: #d99a00; /* 変動費=水色(利益の緑と区別) */
   --goal: #e0287d; /* 利益目標(★・目標表示・目標%)のピンク */
 }
 @media (prefers-color-scheme: dark) {
@@ -23,7 +23,7 @@
     --muted: #9a998f; --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
     --good: #0ca30c; --bad: #e66767; --warn-bg: #3a3220; --grid: #2c2c2a;
     --g-period: #1d3324; --g-site: #3a2230; --g-work: #1d2a40;
-    --bep-cost: #e66767; --bep-fixed: #8a91e0; --bep-var: #3cc0b1; --bep-be: #f0b429;
+    --bep-cost: #e66767; --bep-fixed: #8a91e0; --bep-var: #5bb8ec; --bep-be: #f0b429;
   }
 }
 :root[data-theme="dark"] {
@@ -31,7 +31,7 @@
   --muted: #9a998f; --accent: #3987e5; --s1: #3987e5; --s2: #d95926; --s3: #199e70;
   --good: #0ca30c; --bad: #e66767; --warn-bg: #3a3220; --grid: #2c2c2a;
   --g-period: #1d3324; --g-site: #3a2230; --g-work: #1d2a40;
-  --bep-cost: #e66767; --bep-fixed: #8a91e0; --bep-var: #3cc0b1; --bep-be: #f0b429;
+  --bep-cost: #e66767; --bep-fixed: #8a91e0; --bep-var: #5bb8ec; --bep-be: #f0b429;
 }
 
 /* ===================== 基本 ===================== */
@@ -149,25 +149,31 @@ td input[type="number"] { width: 130px; }
 .spinner { width: 28px; height: 28px; border: 3px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ===================== 目標シミュレーター ===================== */
-/* 画面いっぱい(上下左右ともスクロールしない)。左=試算表(上)と各数値(下)、右=グラフ(左列の高さいっぱい) */
-#tab-sim { max-width: none; }
-#screen-main > #tab-sim.active { display: flex; flex-direction: column; overflow: hidden; padding: 12px 16px; }
+/* ===================== 目標シミュレーター・損益分岐生産量(左右2列の画面いっぱい表示) ===================== */
+/* 画面いっぱい(上下左右ともスクロールしない)。左=表(上下)、右=グラフ(左列の高さいっぱい) */
+.fullTab { max-width: none; }
+#screen-main > .fullTab.active { display: flex; flex-direction: column; overflow: hidden; padding: 12px 16px; }
 .simLayout { display: grid; grid-template-columns: minmax(360px, 1.25fr) 1.25fr; gap: 16px; align-items: stretch; }
-#tab-sim .simLayout { flex: 1; min-height: 0; }
+.fullTab .simLayout { flex: 1; min-height: 0; }
 .simLeft { display: flex; flex-direction: column; min-width: 0; }
-#tab-sim .simLeft { min-height: 0; overflow: auto; }
-#tab-sim .panel { padding: 10px 14px; }
-#tab-sim .simLeft .panel { margin-bottom: 12px; }
-#tab-sim .simLeft .panel:last-child { flex: 1; margin-bottom: 0; }
+.fullTab .simLeft { min-height: 0; overflow: auto; }
+.fullTab .panel { padding: 10px 14px; }
+.fullTab .simLeft .panel { margin-bottom: 12px; }
+.fullTab .simLeft .panel:last-child { flex: 1; margin-bottom: 0; }
 .simChart { display: flex; flex-direction: column; margin-bottom: 0; }
 .simChart .chartBox { flex: 1; min-height: 0; height: auto; overflow: hidden; }
-/* 試算表の下: 説明文と「現在値に戻す」(水色)を右寄せ(ボタンが右端) */
-#tab-sim .btnRow { align-items: center; }
-.simInputs .btnRow { justify-content: flex-end; }
-.simInputs .btnRow .muted { order: 1; text-align: right; }
-.simInputs .btnRow #s-reset { order: 2; }
-#s-reset { background: #d6efff; border-color: #9fd3f5; }
+/* 試算表の下の説明文(右寄せ) */
+#tab-sim .btnRow { align-items: center; justify-content: flex-end; text-align: right; }
+/* グラフ見出しの右に「現在値に戻す」: 黄色背景、縁が光ってゆっくり点滅 */
+.chartHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.chartHead h2 { margin: 0; }
+.resetGlow { background: #ffe45c; color: #0b0b0b; border: 2px solid #f0b400; font-weight: 700; padding: 5px 14px; animation: resetGlow 1.6s ease-in-out infinite alternate; }
+.resetGlow:hover { background: #ffd81f; }
+@keyframes resetGlow { from { box-shadow: 0 0 0 0 rgba(240, 180, 0, .15); border-color: #f0b400; } to { box-shadow: 0 0 10px 3px rgba(255, 200, 0, .9); border-color: #ff9800; } }
+/* 損益分岐生産量タブ: 左上に数値カード(2列)、その下に計算の内訳 */
+.bepKpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; flex: none; }
+.bepTable td.muted { white-space: normal; }
+.bepHelp { margin: 6px 0 0; }
 
 /* 試算表: 全体を罫線で囲う。左=項目名と入力欄、右=工事ごとの実績(行の高さをそろえて横に並べる) */
 .simGridWrap { display: flex; gap: 0; align-items: flex-start; margin-bottom: 8px; border: 1px solid var(--border); width: fit-content; max-width: 100%; }
@@ -265,7 +271,7 @@ td input[type="number"] { width: 130px; }
 .bepSvg .mGoal { fill: var(--goal); stroke: var(--surface); stroke-width: 1.5; }
 .bepSvg .goalBg { fill: #ffe45c; animation: goalBlink 2.4s ease-in-out infinite alternate; }
 @keyframes goalBlink { from { opacity: 1; } to { opacity: 0.15; } }
-@media (prefers-reduced-motion: reduce) { .bepSvg .goalBg { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .bepSvg .goalBg, .resetGlow { animation: none; } }
 /* 最前面の表示でもつまみのドラッグ操作を妨げない */
 .bepSvg .goalBg, .bepSvg .goalLbl, .bepSvg .mGoal, .bepSvg .lbl.be, .bepSvg .beBg, .bepSvg .beLead { pointer-events: none; }
 
@@ -281,7 +287,7 @@ td input[type="number"] { width: 130px; }
   .grid2, .simLayout, .filters { grid-template-columns: 1fr; }
   .simChart .chartBox { min-height: 360px; }
   #screen-main { display: block; height: auto; }
-  #screen-main > .tab.active, #screen-main > #tab-sim.active { overflow: visible; display: block; }
+  #screen-main > .tab.active, #screen-main > .fullTab.active { overflow: visible; display: block; }
   .topbar { grid-template-columns: 1fr; }
   .topCenter, .topRight { grid-column: 1; justify-content: center; }
   .tab { padding: 12px 16px; }
