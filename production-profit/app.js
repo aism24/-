@@ -871,8 +871,7 @@ function renderSimAdvice(r, t, W, P) {
     const now = r.hours / dd.days, after = (r.hours - c.need) / dd.days;
     let h = `<div class="advDaily">1日 ${fmt(now, 0)}→<b>${fmt(after, 0)}</b>h（−${fmt(now - after, 0)}h・約${fmt((now - after) / 8, 0)}人分）</div>`;
     if (dd.min !== null) {
-      h += `<div class="advDaily muted2" title="直近12か月度の1出勤日あたり工数。最少=${esc(C.periodLabel(dd.minKey))}">過去1年 平均${fmt(dd.avg, 0)}・最少${fmt(dd.min, 0)}h/日</div>`;
-      if (after < dd.min) h += `<div class="advWarn" title="過去1年で最も少なかった月の1日あたり工数を下回るため、人員配置の見直しが必要">⚠ 過去1年の最少を下回る＝時間削減だけでは困難</div>`;
+      if (after < dd.min) h += `<div class="advWarn" title="過去1年で最も少なかった月(${esc(C.periodLabel(dd.minKey))})の1日あたり工数 ${fmt(dd.min, 0)}h を下回るため、人員配置の見直しが必要">⚠ 過去1年の最少を下回る＝時間削減だけでは困難</div>`;
     }
     return h;
   };
