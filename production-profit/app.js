@@ -223,6 +223,7 @@ function refreshWorkList(from, to, sites) {
   const noPrice = list.filter((wn) => wn !== C.COMMON_WORK && found[wn].weight > 0 && C.unitPriceOf(wn, state.cache, state.settings).source === 'none');
   const warn = document.getElementById('f-price-warn');
   warn.hidden = !noPrice.length;
+  warn.title = noPrice.join('、'); // 1行に収まらず省略されたときは、マウスを乗せると全件を表示
   warn.textContent = noPrice.length ? `契約金額が未入力の工事があります(売上0円で計算): ${noPrice.slice(0, 5).join('、')}${noPrice.length > 5 ? ' ほか' + (noPrice.length - 5) + '件' : ''}` : '';
   document.getElementById('f-work-note').textContent = sel.value ? '工事に絞ると固定費は工場の固定費を売上比で配賦します' : list.length + '件';
   return sel.value;

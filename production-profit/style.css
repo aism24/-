@@ -298,3 +298,11 @@ td input[type="number"] { width: 130px; }
   .simFixed { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
   .simWorks { width: 100%; }
 }
+/* 絞り込み: 工場(ピンク)は中身の幅だけにし、工事(薄い青)を広げて1行に収める */
+@media (min-width: 1200px) {
+  .filters { grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1.8fr); }
+  .gSite { padding-left: 20px; padding-right: 20px; }
+  .gWork { flex-wrap: nowrap; justify-content: flex-start; }
+  .gWork label { flex: 0 1 360px; }
+  .gWork #f-price-warn { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+}
