@@ -337,3 +337,7 @@ td input[type="number"] { width: 130px; }
 .simTable .sVal { font-size: clamp(14px, 1.95vh, 26px); }
 .simTable .sLabel, .simTable .sNote .nv, .simTable .sNote .pos, .simTable .sNote .neg { font-size: clamp(13px, 2.05vh, 24px); }
 .bepSvg .lbl.be { pointer-events: none; }
+/* 損益の（目標xx%）: 数値と同じ大きさ、「目標xx%」はピンクの太字 */
+.simTable .sNote .goalPctWrap { font-size: clamp(13px, 2.05vh, 24px); line-height: 1.2; }
+.simTable .sNote .goalPct { color: #e0287d; font-weight: 700; }
+.simTable .sNote .goalPct .nv { color: inherit; font-size: inherit; }
