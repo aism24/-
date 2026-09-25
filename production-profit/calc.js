@@ -316,7 +316,9 @@
     var sales = W * P, ninku = W * n;
     var labor = ninku * laborRate, variable = W * varPerTon, fixed = base.fixed;
     var profit = sales - labor - variable - fixed;
-    var be = breakEven({ fixed: fixed, unitPrice: P, varPerTon: varPerTon, laborPerTon: n * laborRate, profitRate: p });
+    // 試算では人件費を固定費に含める(試算の生産重量での人件費の額を固定とみなす)。
+    // 損益分岐・目標トン数 = (その他固定費 + 人件費) ÷ (トン単価(×(1−利益率)) − 変動費単価)
+    var be = breakEven({ fixed: fixed + labor, unitPrice: P, varPerTon: varPerTon, laborPerTon: 0, profitRate: p });
     return {
       weight: W, ninkuPerTon: n, unitPrice: P, sales: sales, ninku: ninku, hours: ninku * HOURS_PER_NINKU,
       labor: labor, variable: variable, fixed: fixed, profit: profit,
