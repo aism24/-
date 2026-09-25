@@ -723,7 +723,7 @@ function renderSettingsWorks() {
     .filter((wn) => !q || (wn + ' ' + state.cache.works[wn].name).toLowerCase().includes(q))
     .filter((wn) => !onlyUnset || !(s.works[wn] && s.works[wn].contract))
     .sort().reverse();
-  document.getElementById('set-works').innerHTML = '<tr><th>工事No</th><th>工事名</th><th class="n">生産実績の総重量(t)</th><th class="n">総重量(上書き・t)</th><th class="n">契約金額(円)</th><th class="n">トン単価(円/t)</th></tr>' +
+  document.getElementById('set-works').innerHTML = '<tr><th>工事No</th><th>工事名</th><th class="n">生産実績の総重量(t)</th><th class="n">契約総重量(t)</th><th class="n">契約金額(円)</th><th class="n">トン単価(円/t)</th></tr>' +
     list.map((wn) => {
       const w = s.works[wn] || {}, info = state.cache.works[wn];
       return `<tr><td>${esc(wn)}</td><td>${esc(info.name)}</td><td class="n">${ton(info.totalWeight)}</td><td class="n">${numInput({ k: 'work', wn, f: 'totalWeight' }, w.totalWeight, 0.1)}</td><td class="n">${numInput({ k: 'work', wn, f: 'contract' }, w.contract, 10000)}</td><td class="n" id="wp-${esc(wn)}">${yen(C.unitPriceOf(wn, state.cache, s).price)}</td></tr>`;

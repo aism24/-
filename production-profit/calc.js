@@ -99,7 +99,7 @@
 
   function num(v) { return (v === null || v === undefined || v === '' || isNaN(Number(v))) ? null : Number(v); }
 
-  /* 工事ごとのトン単価。契約金額÷総重量(総重量は上書き値、無ければ生産実績の総重量)。
+  /* 工事ごとのトン単価。契約金額÷契約総重量(契約総重量が未入力なら、代わりに生産実績の総重量)。
      契約金額が無い工事は標準トン単価。 */
   function unitPriceOf(workNo, data, settings) {
     var w = (settings.works || {})[workNo] || {};
