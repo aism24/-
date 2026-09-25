@@ -274,3 +274,17 @@ td input[type="number"] { width: 130px; }
 .simFixed .simHead { border-bottom: 1px solid transparent; padding-bottom: 3px; }
 #tab-sim .simGridWrap .simRow, .simGridWrap .simRow { grid-template-columns: 104px auto; }
 .simTable .sLabel { font-size: clamp(13px, 2.2vh, 24px); line-height: 1.2; color: var(--text2); }
+/* 試算表: 全体を罫線で囲い、見出し「試算」(2倍)・「入力欄」を中央揃え */
+.simGridWrap { gap: 0; border: 1px solid var(--border); width: fit-content; max-width: 100%; box-sizing: border-box; }
+.simFixed { border-right: 1px solid var(--border); padding: 0 8px; }
+.simFixed .simRow { border-bottom: 1px solid var(--border); }
+.simFixed .simRow:last-child, .simCol .simCell:last-child { border-bottom: none; }
+.simWorks { border-left: none; padding-bottom: 0; }
+.simCol:last-child { border-right: none; }
+.simFixed .simHead.simHeadRow { display: grid; grid-template-columns: 104px auto; gap: 8px; align-items: center; justify-content: stretch; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+.simHeadRow .simTitle { font-size: 22px; font-weight: 700; color: var(--text); text-align: center; }
+.simHeadRow .simInHead { font-size: 12px; font-weight: 600; text-align: center; }
+@media (max-width: 800px) { .simGridWrap { width: 100%; } .simFixed { border-right: none; border-bottom: 1px solid var(--border); } }
+/* 備考(達成/未達・各数値)も項目名と同じく2倍に。達成=緑(OK)・未達=赤(NG) */
+.simTable .sNote { font-size: clamp(13px, 2.2vh, 24px); line-height: 1.2; color: var(--text2); white-space: nowrap; }
+.simTable .sNote .pos, .simTable .sNote .neg { font-weight: 700; }

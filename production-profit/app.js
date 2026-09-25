@@ -253,7 +253,7 @@ function renderDash(sel, an) {
     kpi('売上額', yen(t.sales), '円', ''),
     kpi('損益', yen(t.profit), '円', `利益率 ${pct(t.profitRate)}`, t.profit >= 0 ? 'pos' : 'neg'),
     goalKpi(t.profit, t.profitGoal, t.sales > 0),
-    kpi('損益分岐点', ton(t.breakEvenTons), 't', t.breakEvenTons !== null ? `実績は分岐点の ${pct(t.weight / t.breakEvenTons)}` : '限界利益がマイナスのため到達不能'),
+    kpi('損益分岐生産量', ton(t.breakEvenTons), 't', t.breakEvenTons !== null ? `実績は損益分岐生産量の ${pct(t.weight / t.breakEvenTons)}` : '限界利益がマイナスのため到達不能'),
     kpi('目標売上額(利益目標達成)', yen(t.goalSales), '円', t.goalTons !== null ? `必要生産量 ${ton(t.goalTons)}t` + (t.goalSales ? ` / 達成率 ${pct(t.sales / t.goalSales)}` : '') : '到達不能'),
   ].join('');
 
@@ -288,7 +288,7 @@ function renderDash(sel, an) {
     options: baseOpts('円', 0),
   });
 
-  const head = '<tr><th>月度</th><th class="n">生産重量(t)</th><th class="n">工数(h)</th><th class="n">人工/t</th><th class="n">トン単価</th><th class="n">売上</th><th class="n">人件費</th><th class="n">変動費</th><th class="n">固定費</th><th class="n">損益</th><th class="n">利益率</th><th class="n">分岐点(t)</th></tr>';
+  const head = '<tr><th>月度</th><th class="n">生産重量(t)</th><th class="n">工数(h)</th><th class="n">人工/t</th><th class="n">トン単価</th><th class="n">売上</th><th class="n">人件費</th><th class="n">変動費</th><th class="n">固定費</th><th class="n">損益</th><th class="n">利益率</th><th class="n">損益分岐生産量(t)</th></tr>';
   const rowHtml = (label, x, cls) => `<tr class="${cls || ''}"><td>${label}</td><td class="n">${ton(x.weight)}</td><td class="n">${fmt(x.hours, 1)}</td><td class="n">${npt(x.ninkuPerTon)}</td><td class="n">${yen(x.unitPrice)}</td><td class="n">${yen(x.sales)}</td><td class="n">${yen(x.labor)}</td><td class="n">${yen(x.variable)}</td><td class="n">${yen(x.fixed)}</td><td class="n ${x.profit >= 0 ? 'pos' : 'neg'}">${yen(x.profit)}</td><td class="n">${pct(x.profitRate)}</td><td class="n">${ton(x.breakEvenTons)}</td></tr>`;
   document.getElementById('t-trend').innerHTML = head + trAll.byPeriod.map((x) => rowHtml(C.periodLabel(x.period), x)).join('') + rowHtml('合計', trAll.total, 'total');
   document.getElementById('t-site').innerHTML = head.replace('<th>月度</th>', '<th>工場</th>') +
@@ -322,7 +322,7 @@ function drawChart(id, cfg) {
   state.charts[id] = new Chart(document.getElementById(id), cfg);
 }
 
-/* 損益分岐点グラフ(SVG。横軸=生産トン数、縦軸=金額)。
+/* 損益分岐生産量グラフ(SVG。横軸=生産トン数、縦軸=金額)。
    o: {fixed, unitPrice, laborPerTon, varPerTon, profitRate, x(つまみの初期位置t), beTons, goalTons, handleLabel, onMove(t)}
    面の塗り分け: 固定費帯 / 人件費帯 / 変動費帯 / 損失域(分岐点の左、売上線と総費用線の間) / 利益域(右)。
    つまみ(縦の点線)をドラッグすると、その重量での内訳(固定費・人件費・変動費・利益or損失)を積み上げバーで表示する。 */
@@ -410,12 +410,12 @@ function renderBepSvg(id) {
     const gx = X(o.goalTons), gy = Y(sales(o.goalTons));
     h += `<path class="mGoal" d="M${gx},${gy - 7} L${gx + 6},${gy + 4} L${gx - 6},${gy + 4} Z"/><text class="lbl good" x="${gx - 8}" y="${gy - 10}" text-anchor="end">利益目標 ${ton(o.goalTons)}t</text>`;
   }
-  // 損益分岐点(軸への補助線付き)
+  // 損益分岐生産量(軸への補助線付き)
   if (be !== null) {
     const bx = X(be), by = Y(sales(be));
     h += `<line class="lBe" x1="${bx}" x2="${bx}" y1="${by}" y2="${g.t + g.h}"/><line class="lBe" x1="${g.l}" x2="${bx}" y1="${by}" y2="${by}"/>`;
     h += `<circle class="mBeHalo" cx="${bx}" cy="${by}" r="11"/><circle class="mBe" cx="${bx}" cy="${by}" r="7"/>`;
-    h += `<text class="lbl be" x="${bx + 14}" y="${by - 10}">損益分岐点 ${ton(be)}t / ${man(sales(be))}</text>`;
+    h += `<text class="lbl be" x="${bx + 14}" y="${by - 10}">損益分岐生産量 ${ton(be)}t / ${man(sales(be))}</text>`;
   }
   // つまみ位置の内訳バー
   const x = st.x, cx = X(x), bw = 8;
@@ -439,17 +439,17 @@ function renderBepSvg(id) {
   const hw = hl.length * 7.5 + 18;
   const hx = Math.min(W - 4 - hw / 2, Math.max(4 + hw / 2, cx));
   h += `<g class="handle"><rect x="${hx - hw / 2}" y="${g.t - 34}" width="${hw}" height="24" rx="12"/><text x="${hx}" y="${g.t - 17}" text-anchor="middle">${hl}</text></g>`;
-  box.innerHTML = `<svg class="bepSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="損益分岐点グラフ">${h}</svg>`;
+  box.innerHTML = `<svg class="bepSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="損益分岐生産量グラフ">${h}</svg>`;
 }
 
-/* ===================== 損益分岐点タブ ===================== */
+/* ===================== 損益分岐生産量タブ ===================== */
 
 function renderBep(sel, an) {
   const t = an.total;
   const perTon = (t.varPerTon || 0) + (t.laborPerTon || 0);
   const p = state.settings.rates.profit / 100;
   document.getElementById('bep-kpis').innerHTML = [
-    kpi('損益分岐点トン数', ton(t.breakEvenTons), 't', '売上 ' + yen(t.breakEvenTons !== null ? t.breakEvenTons * t.unitPrice : null) + '円'),
+    kpi('損益分岐生産量', ton(t.breakEvenTons), 't', '売上 ' + yen(t.breakEvenTons !== null ? t.breakEvenTons * t.unitPrice : null) + '円'),
     kpi('利益目標達成トン数', ton(t.goalTons), 't', '目標売上額 ' + yen(t.goalSales) + '円'),
     kpi('実績生産重量', ton(t.weight), 't', t.goalTons ? `目標達成まで ${ton(Math.max(0, t.goalTons - t.weight))}t` : ''),
     kpi('1t当たり限界利益', yen(t.unitPrice !== null ? t.unitPrice - perTon : null), '円/t', `トン単価 ${yen(t.unitPrice)} − 変動費 ${yen(t.varPerTon)} − 人件費 ${yen(t.laborPerTon)}`),
@@ -462,7 +462,7 @@ function renderBep(sel, an) {
     ['変動費単価', yen(t.varPerTon) + ' 円/t', '実額未入力の工場は 基準トン単価×変動費率'],
     ['1t当たり人件費', yen(t.laborPerTon) + ' 円/t', `人工/t ${npt(t.ninkuPerTon)} × 人件費単価 ${yen(t.laborRate)}円/人工`],
     ['利益率(目標)', pct(p), '設定タブの配分率'],
-    ['損益分岐点', ton(t.breakEvenTons) + ' t', '固定費 ÷ (トン単価 − 変動費単価 − 1t当たり人件費)'],
+    ['損益分岐生産量', ton(t.breakEvenTons) + ' t', '固定費 ÷ (トン単価 − 変動費単価 − 1t当たり人件費)'],
     ['利益目標達成点', ton(t.goalTons) + ' t', '固定費 ÷ (トン単価×(1−利益率) − 変動費単価 − 1t当たり人件費)'],
   ];
   document.getElementById('t-bep').innerHTML = '<tr><th>項目</th><th class="n">値</th><th>計算方法</th></tr>' +
@@ -556,7 +556,7 @@ function updateSim() {
     sRow('損益', yen(r.profit), '円', `利益率 ${pct(r.profitRate)}`, r.profit >= 0 ? 'pos' : 'neg'),
     goalKpi(r.profit, r.profitGoal, r.sales > 0, sRow),
     sRow('目標売上額', yen(r.goalSales), '円', r.goalTons !== null ? `必要生産量 ${ton(r.goalTons)}t` : '到達不能'),
-    sRow('損益分岐点', ton(r.breakEvenTons), 't', r.breakEvenTons !== null ? `余裕 ${ton(W - r.breakEvenTons)}t` : '到達不能'),
+    sRow('損益分岐生産量', ton(r.breakEvenTons), 't', r.breakEvenTons !== null ? `余裕 ${ton(W - r.breakEvenTons)}t` : '到達不能'),
     sRow('必要人工', fmt(r.ninku, 1), '人工', `${fmt(r.hours, 0)}h`),
     sRow('人件費', yen(r.labor), '円', `${yen(r.laborRate)}円/人工`),
     sRow('変動費', yen(r.variable), '円', `${yen(r.varPerTon)}円/t`),
