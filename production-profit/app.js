@@ -141,11 +141,29 @@ function initUi() {
     document.getElementById(id).onchange = onFilterChange;
   });
   document.getElementById('refresh-btn').onclick = refresh;
+  document.getElementById('reset-btn').onclick = () => { applyDefaults(); renderAll(); };
   document.getElementById('w-search').oninput = renderWorks;
   document.getElementById('w-alloc').onchange = renderWorks;
   document.getElementById('w-csv').onclick = downloadWorksCsv;
   initSim();
   initSettings();
+  applyDefaults();
+}
+
+/* 開いたとき・リセット時の既定表示: 本日を含む「今期」・3工場・全工事・目標シミュレーター */
+function applyDefaults() {
+  const today = C.utcToYmd(Date.now() + 9 * 3600 * 1000);
+  const fy = String(C.fiscalYearOf(C.periodKeyOf(today)));
+  document.getElementById('f-mode').value = 'fiscal';
+  const selF = document.getElementById('f-fiscal');
+  selF.value = fy;
+  if (selF.value !== fy) selF.selectedIndex = 0;
+  document.getElementById('f-site').value = '';
+  document.querySelectorAll('#f-sites button').forEach((x) => x.classList.toggle('active', x.dataset.site === ''));
+  document.getElementById('f-work').value = '';
+  document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x.dataset.tab === 'sim'));
+  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-sim'));
+  state.simBase = null;
 }
 
 async function refresh() {
