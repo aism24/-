@@ -219,3 +219,40 @@ td input[type="number"] { width: 130px; }
 .gWork .workSelect { flex: 1 1 auto; min-width: 0; width: 100%; }
 .gWork #f-work-note { white-space: nowrap; }
 @media (max-width: 800px) { .filters { grid-template-columns: 1fr; } }
+/* 目標シミュレーター: 入力欄 + 工事ごとの実績(行の高さを揃えて横に並べる) */
+.simGridWrap { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
+.simFixed { flex: none; width: 290px; }
+.simGridWrap .simHead { height: 34px; display: flex; flex-direction: column; justify-content: flex-end; font-size: 11px; color: var(--text2); line-height: 1.25; overflow: hidden; }
+.simFixed .simHead { font-weight: 600; }
+#tab-sim .simGridWrap .simRow, .simGridWrap .simRow { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; height: 38px; margin: 0; }
+.simWorks { flex: 1; min-width: 0; display: flex; gap: 2px; overflow-x: auto; padding-bottom: 4px; }
+.simCol { flex: none; min-width: 92px; max-width: 120px; }
+.simCol .simHead b { color: var(--text); font-size: 12px; }
+.simCol .simHead span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.simCell { height: 38px; display: flex; align-items: center; justify-content: flex-end; padding: 0 8px; font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--border); font-size: 13px; }
+.simCol .simHead { padding: 0 8px; text-align: right; align-items: flex-end; }
+.simEmpty { padding-top: 40px; }
+@media (max-width: 800px) {
+  .simGridWrap { flex-direction: column; }
+  .simFixed { width: 100%; }
+  .simWorks { width: 100%; }
+}
+/* 工事ごとの実績を多く見せるため、入力欄を詰めて左列を広げる */
+.simLayout { grid-template-columns: minmax(360px, 1.25fr) 1.25fr; }
+.simFixed { width: 232px; }
+#tab-sim .simGridWrap .simRow, .simGridWrap .simRow { grid-template-columns: 104px 1fr; height: 36px; }
+.simCell { height: 36px; }
+.simGridWrap .simRow input[type="number"] { font-size: 15px; padding: 5px 8px; }
+.simCol { min-width: 84px; }
+.simWorks { scrollbar-width: thin; }
+@media (max-width: 800px) { .simLayout { grid-template-columns: 1fr; } .simFixed { width: 100%; } }
+/* 目標シミュレーターの各数値: 項目(左)・数値(中)・備考(右) */
+.simTable { display: grid; grid-template-columns: max-content max-content 1fr; column-gap: 16px; align-items: baseline; }
+.simTable > div { padding: 5px 0; border-bottom: 1px solid var(--border); }
+.simTable .sLabel { color: var(--text2); font-size: 12px; white-space: nowrap; }
+.simTable .sVal { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: clamp(15px, 2.3vh, 26px); }
+.simTable .sVal .unit { font-size: 11px; font-weight: 400; color: var(--text2); margin-left: 3px; }
+.simTable .sNote { color: var(--muted); font-size: 12px; }
+.simTable > div { padding: 3px 0; }
+.simTable .sVal { font-size: clamp(14px, 2.1vh, 26px); }
+@media (max-height: 820px) and (min-width: 801px) { #tab-sim .btnRow .muted { display: none; } }

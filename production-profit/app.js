@@ -233,10 +233,10 @@ function kpi(label, value, unit, sub, cls) {
   return `<div class="kpi"><div class="label">${label}</div><div class="value ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="sub">${sub || ''}</div></div>`;
 }
 /* 目標は利益目標額(売上×利益率)の1つだけ。損益がこれ以上なら達成。 */
-function goalKpi(profit, goal, hasSales) {
+function goalKpi(profit, goal, hasSales, render) {
   const ok = hasSales && profit - goal >= -1; // 1円未満の誤差は達成扱い
   const d = profit - goal;
-  return kpi('利益目標額', yen(goal), '円', hasSales ? `<span class="${ok ? 'pos' : 'neg'}">${ok ? '達成' : '未達'}</span>(損益との差 ${d >= 0 ? '+' : ''}${yen(d)}円)` : '売上なし',
+  return (render || kpi)('利益目標額', yen(goal), '円', hasSales ? `<span class="${ok ? 'pos' : 'neg'}">${ok ? '達成' : '未達'}</span>(損益との差 ${d >= 0 ? '+' : ''}${yen(d)}円)` : '売上なし',
     hasSales ? (ok ? 'pos' : 'neg') : '');
 }
 
@@ -490,6 +490,7 @@ function renderSim(sel, an) {
   };
   state.simSel = sel;
   state.simTotal = t;
+  renderSimWorks(an);
   if (!state.simBase) {
     state.simBase = base;
     state.simExact = {};
@@ -506,6 +507,21 @@ function renderSim(sel, an) {
   updateSim();
 }
 
+/* 入力欄の右に、工事ごとの実績(生産重量・人工/t・トン単価)を重量の多い順に並べる */
+function renderSimWorks(an) {
+  const rows = C.workBreakdown(an, state.cache)
+    .filter((r) => r.workNo !== C.COMMON_WORK && r.weight > 0)
+    .sort((a, b) => b.weight - a.weight);
+  const box = document.getElementById('sim-works');
+  if (!rows.length) { box.innerHTML = '<div class="muted small simEmpty">この条件で生産実績のある工事はありません</div>'; return; }
+  box.innerHTML = rows.map((r) => `<div class="simCol" title="${esc(r.workNo + ' ' + r.name)}">
+    <div class="simHead"><b>${esc(r.workNo)}</b><span>${esc(r.name)}</span></div>
+    <div class="simCell">${fmt(r.weight, 1)}</div>
+    <div class="simCell">${npt(r.ninkuPerTon)}</div>
+    <div class="simCell ${r.unitPrice ? '' : 'neg'}">${r.unitPrice ? yen(r.unitPrice) : '未入力'}</div>
+  </div>`).join('');
+}
+
 function simValue(k) {
   const v = document.getElementById('s-' + k).value, ex = (state.simExact || {})[k];
   return ex && ex.shown === v ? ex.value : (Number(v) || 0);
@@ -518,15 +534,19 @@ function updateSim() {
   const r = C.simulate(t, state.settings, W, n, P);
   const b = state.simBase;
   const diff = (v, bv, f) => { const d = v - bv; return Math.abs(d) < 0.5 ? '基準どおり' : `基準比 ${d > 0 ? '+' : ''}${f(d)}`; };
+  // 項目(左)・数値(中)・備考(右)の3列の表
+  const sRow = (label, value, unit, note, cls) =>
+    `<div class="sLabel">${label}</div><div class="sVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="sNote">${note || ''}</div>`;
   document.getElementById('sim-kpis').innerHTML = [
-    kpi('売上額', yen(r.sales), '円', diff(r.sales, b.w * b.p, yen)),
-    kpi('損益', yen(r.profit), '円', `利益率 ${pct(r.profitRate)}`, r.profit >= 0 ? 'pos' : 'neg'),
-    goalKpi(r.profit, r.profitGoal, r.sales > 0),
-    kpi('必要人工', fmt(r.ninku, 1), '人工', `${fmt(r.hours, 0)}h`),
-    kpi('損益分岐点', ton(r.breakEvenTons), 't', r.breakEvenTons !== null ? `余裕 ${ton(W - r.breakEvenTons)}t` : '到達不能'),
-    kpi('目標売上額', yen(r.goalSales), '円', r.goalTons !== null ? `必要生産量 ${ton(r.goalTons)}t` : '到達不能'),
-    kpi('人件費', yen(r.labor), '円', `${yen(r.laborRate)}円/人工`),
-    kpi('変動費+固定費', yen(r.variable + r.fixed), '円', `変動費 ${yen(r.varPerTon)}円/t・固定費 ${yen(r.fixed)}円`),
+    sRow('売上額', yen(r.sales), '円', diff(r.sales, b.w * b.p, yen)),
+    sRow('損益', yen(r.profit), '円', `利益率 ${pct(r.profitRate)}`, r.profit >= 0 ? 'pos' : 'neg'),
+    goalKpi(r.profit, r.profitGoal, r.sales > 0, sRow),
+    sRow('目標売上額', yen(r.goalSales), '円', r.goalTons !== null ? `必要生産量 ${ton(r.goalTons)}t` : '到達不能'),
+    sRow('損益分岐点', ton(r.breakEvenTons), 't', r.breakEvenTons !== null ? `余裕 ${ton(W - r.breakEvenTons)}t` : '到達不能'),
+    sRow('必要人工', fmt(r.ninku, 1), '人工', `${fmt(r.hours, 0)}h`),
+    sRow('人件費', yen(r.labor), '円', `${yen(r.laborRate)}円/人工`),
+    sRow('変動費', yen(r.variable), '円', `${yen(r.varPerTon)}円/t`),
+    sRow('固定費', yen(r.fixed), '円', '重量・工数・単価を変えても一定'),
   ].join('');
   // つまみのドラッグで試算の生産重量を動かせる(スライダー・数値欄と連動)
   drawBep('c-sim', { fixed: r.fixed, unitPrice: P, laborPerTon: n * r.laborRate, varPerTon: r.varPerTon, profitRate: state.settings.rates.profit / 100,
