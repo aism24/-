@@ -360,7 +360,7 @@ function drawBep(id, o) {
 function renderBepSvg(id) {
   const box = document.getElementById(id), st = bepState[id], o = st.o;
   const W = box.clientWidth || 600, H = box.clientHeight || 380;
-  const g = st.geom = { l: 64, r: 16, t: 40, b: 36 }; // 上の余白につまみを置く
+  const g = st.geom = { l: 76, r: 16, t: 40, b: 36 }; // 上の余白につまみ、左の余白に固定費ラベルを置く
   g.w = W - g.l - g.r; g.h = H - g.t - g.b;
   const P = o.unitPrice || 0, lab = o.laborPerTon || 0, vr = o.varPerTon || 0, F = o.fixed || 0;
   const maxX = st.maxX;
@@ -372,7 +372,11 @@ function renderBepSvg(id) {
   let h = '';
   // グリッドと目盛
   const xs = niceStep(maxX, Math.max(3, Math.floor(g.w / 90))), ys = niceStep(maxY, 5);
-  for (let v = 0; v <= maxY + 1e-9; v += ys) h += `<line class="bg" x1="${g.l}" x2="${g.l + g.w}" y1="${Y(v)}" y2="${Y(v)}"/><text class="ax" x="${g.l - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v / 10000, 0)}万</text>`;
+  for (let v = 0; v <= maxY + 1e-9; v += ys) {
+    h += `<line class="bg" x1="${g.l}" x2="${g.l + g.w}" y1="${Y(v)}" y2="${Y(v)}"/>`;
+    // 左余白の固定費ラベル(2行)と重なる目盛りの数字は出さない
+    if (Math.abs(Y(v) - Y(F)) > 22) h += `<text class="ax" x="${g.l - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v / 10000, 0)}万</text>`;
+  }
   for (let v = 0; v <= maxX + 1e-9; v += xs) h += `<line class="bg" y1="${g.t}" y2="${g.t + g.h}" x1="${X(v)}" x2="${X(v)}"/><text class="ax" x="${X(v)}" y="${g.t + g.h + 16}" text-anchor="middle">${fmt(v, 0)}</text>`;
   h += `<text class="ax" x="${g.l + g.w}" y="${H - 4}" text-anchor="end">生産重量(t)</text>`;
   // 面: 固定費帯・人件費帯・変動費帯
@@ -388,7 +392,7 @@ function renderBepSvg(id) {
   }
   // 線
   h += `<line class="lFixed" x1="${X(0)}" x2="${X(maxX)}" y1="${Y(F)}" y2="${Y(F)}"/>`;
-  h += `<text class="lbl" x="${g.l + 6}" y="${Y(F) - 6}">固定費 ${man(F)}</text>`;
+  h += `<text class="lbl fixedLbl" x="${g.l - 6}" y="${Y(F) - 3}" text-anchor="end">固定費<tspan x="${g.l - 6}" dy="14">${man(F)}</tspan></text>`;
   h += `<line class="lCost" x1="${X(0)}" y1="${Y(F)}" x2="${X(maxX)}" y2="${Y(cost(maxX))}"/>`;
   h += `<line class="lSales" x1="${X(0)}" y1="${Y(0)}" x2="${X(maxX)}" y2="${Y(sales(maxX))}"/>`;
   h += `<text class="lbl" x="${X(maxX) - 4}" y="${Y(sales(maxX)) + 14}" text-anchor="end">売上</text>`;
