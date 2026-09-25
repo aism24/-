@@ -452,7 +452,7 @@ function renderBepSvg(id) {
     const bx = X(be), by = Y(sales(be));
     h += `<line class="lBe" x1="${bx}" x2="${bx}" y1="${by}" y2="${g.t + g.h}"/><line class="lBe" x1="${g.l}" x2="${bx}" y1="${by}" y2="${by}"/>`;
     h += `<circle class="mBeHalo" cx="${bx}" cy="${by}" r="11"/><circle class="mBe" cx="${bx}" cy="${by}" r="7"/>`;
-    beLbl = `<text class="lbl be" x="${bx + 14}" y="${by - 10}">損益分岐生産量 ${ton(be)}t / ${man(sales(be))}</text>`; // 文字は最前面に描く
+    beLbl = `<text class="lbl be" x="${bx + 14}" y="${by - 30}">損益分岐生産量<tspan x="${bx + 14}" dy="20">${ton(be)}t / ${man(sales(be))}</tspan></text>`; // 文字は最前面に描く
   }
   // つまみ位置の内訳バー
   const x = st.x, cx = X(x), bw = 8;
@@ -465,11 +465,11 @@ function renderBepSvg(id) {
   segs.forEach(([name, y0, y1, cls]) => {
     if (y1 - y0 <= 0) return;
     h += `<rect class="${cls}" x="${cx - bw / 2}" width="${bw}" y="${Y(y1)}" height="${Math.max(1, Y(y0) - Y(y1))}"/>`;
-    labels.push({ text: `${name} ${man(y1 - y0)}`, y: (Y(y0) + Y(y1)) / 2 + 4, cls });
+    labels.push({ text: `${name} ${man(y1 - y0)}`, y: (Y(y0) + Y(y1)) / 2 + 6, cls });
   });
-  // ラベルの重なりを避ける(下から順に最低16px間隔)
+  // ラベルの重なりを避ける(下から順に最低24px間隔。文字は1.5倍)
   labels.sort((a, b) => b.y - a.y);
-  for (let i = 1; i < labels.length; i++) if (labels[i - 1].y - labels[i].y < 16) labels[i].y = labels[i - 1].y - 16;
+  for (let i = 1; i < labels.length; i++) if (labels[i - 1].y - labels[i].y < 24) labels[i].y = labels[i - 1].y - 24;
   const right = cx < g.l + g.w * 0.62;
   labels.forEach((lb) => { h += `<text class="lbl seg ${lb.cls}" x="${right ? cx + 10 : cx - 10}" y="${lb.y}" text-anchor="${right ? 'start' : 'end'}">${lb.text}</text>`; });
   // つまみ(グラフの上端。左右の端でははみ出さないように寄せる)
@@ -493,6 +493,15 @@ function renderBepSvg(id) {
     h += `<circle class="goalBg" cx="${gx}" cy="${gy}" r="22.5"/><polygon class="mGoal" points="${star}"/>`; // ★の背景に1.5倍の〇(黄色・点滅)
   }
   box.innerHTML = `<svg class="bepSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="損益分岐生産量グラフ">${h}</svg>`;
+  // 損益分岐生産量の文字(2行)が右端からはみ出すときは左へ寄せる
+  const bl = box.querySelector('.lbl.be');
+  if (bl) {
+    const bb = bl.getBBox();
+    if (bb.x + bb.width > W - 4) { // 右端に収まるように左へ寄せる(2行とも)
+      const nx = Math.max(4, W - 4 - bb.width);
+      bl.setAttribute('x', nx); bl.querySelector('tspan').setAttribute('x', nx);
+    }
+  }
   const gl = box.querySelector('.goalLbl'), gb = box.querySelector('rect.goalBg');
   if (gl && gb) {
     const bb = gl.getBBox();
