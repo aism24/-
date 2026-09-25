@@ -346,3 +346,4 @@ td input[type="number"] { width: 130px; }
 .monthBtn { font-size: 20px; line-height: 1; padding: 6px 12px; min-width: 44px; min-height: 38px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; }
 .monthBtn:disabled { opacity: .35; cursor: default; }
 .periodWrap[hidden] { display: none; }
+.gPeriod { justify-content: flex-start; padding-left: 24px; } /* 年度・月〆ボタンの位置を固定し、右側の期/月度の欄だけ変わるように */
