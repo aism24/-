@@ -374,6 +374,7 @@ function drawBep(id, o) {
   const sig = o.sig || [o.fixed, o.unitPrice, o.laborPerTon, o.varPerTon, o.profitRate].join('|');
   const st = bepState[id] = { o, x: (prev && prev.sig === sig && !o.forceX) ? prev.x : (o.x || 0), sig, maxX: prev && prev.sig === sig && !o.forceX ? prev.maxX : null }; // ドラッグ中以外は縮尺を取り直す
   if (!st.maxX) st.maxX = Math.max(o.x || 0, o.beTons || 0, o.goalTons || 0, 1) * 1.35;
+  box.classList.toggle('fixedX', !!o.fixedX); // fixedX: つまみを動かせない(実績の損益分岐生産量タブ)
   renderBepSvg(id);
   if (!box.dataset.bound) {
     box.dataset.bound = '1';
@@ -384,7 +385,7 @@ function drawBep(id, o) {
     };
     box.addEventListener('pointerdown', (e) => {
       const s = bepState[id], g = s.geom, r = box.getBoundingClientRect();
-      if (!g || e.clientY - r.top > g.t + g.h + 4) return;
+      if (s.o.fixedX || !g || e.clientY - r.top > g.t + g.h + 4) return;
       dragging = true; box.setPointerCapture(e.pointerId);
       s.x = toX(e); renderBepSvg(id); if (s.o.onMove) s.o.onMove(s.x);
     });
@@ -566,7 +567,7 @@ function renderBep(sel, an) {
     kpi('1t当たり限界利益', yen(t.unitPrice !== null ? t.unitPrice - perTon : null), '円/t', `トン単価 ${yen(t.unitPrice)} − 変動費 ${yen(t.varPerTon)} − 人件費 ${yen(t.laborPerTon)}`),
   ].join('');
   drawBep('c-bep', { fixed: t.fixed, unitPrice: t.unitPrice || 0, laborPerTon: t.laborPerTon || 0, varPerTon: t.varPerTon || 0, laborRate: t.laborRate,
-    profitRate: p, x: t.weight, beTons: t.breakEvenTons, goalTons: t.goalTons, handleLabel: '生産重量' });
+    profitRate: p, x: t.weight, fixedX: true, beTons: t.breakEvenTons, goalTons: t.goalTons, handleLabel: '生産重量' });
   const rows = [
     ['固定費(期間計)', yen(t.fixed) + ' 円', '費用設定の月固定費×月数、未入力の工場は 基準売上×固定費率'],
     ['トン単価(平均)', yen(t.unitPrice) + ' 円/t', '売上 ÷ 生産重量(工事ごとの契約金額÷総重量で計算した売上の合計)'],
@@ -666,6 +667,9 @@ function updateSim() {
   const r = C.simulate(t, state.settings, W, n, P);
   const b = state.simBase;
   document.getElementById('s-s').value = yen(r.sales); // 売上額(概算)は計算値のみ(入力不可)
+  // 現在値(実績)から変えたら「現在値に戻す」を黄色・点滅にして知らせる
+  const changed = Math.abs(W - b.w) > 1e-9 || Math.abs(n - b.n) > 1e-9 || Math.abs(P - b.p) > 1e-9;
+  document.getElementById('s-reset').classList.toggle('changed', changed);
   const diff = (v, bv, f) => { const d = v - bv; return Math.abs(d) < 0.5 ? '上部試算表参照' : `基準比 ${d > 0 ? '+' : ''}${f(d)}`; };
   // 項目(左)・数値(中)・備考(右)の3列の表
   const sRow = (label, value, unit, note, cls) =>
