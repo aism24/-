@@ -2,7 +2,7 @@
 'use strict';
 
 // GASのウェブアプリURL(gas/Code.gsをデプロイしたURL)。README参照。
-const GAS_API_URL = '';
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzmypFiUSkOwBsDW49EP11sagGjpwsh0DXBSrKbvJONn0MymshWeJl-WBjIx-LGrJG5/exec';
 // ?demo=1 で開くと、GAS無しでダミーデータにより画面を確認できる(保存は画面内のみ)。
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 
