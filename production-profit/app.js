@@ -542,6 +542,11 @@ function simValue(k) {
   return ex && ex.shown === v ? ex.value : parseNum(v);
 }
 
+/* 試算表の備考: 数値と「達成/未達」だけを大きく表示する(説明文・単位は小さいまま) */
+function simNote(note) {
+  return String(note || '').replace(/(^|>)([^<]*)/g, (m, a, txt) => a + txt.replace(/[+\-]?\d[\d,]*(\.\d+)?%?/g, '<span class="nv">$&</span>'));
+}
+
 function updateSim() {
   const t = state.simTotal;
   if (!t) return;
@@ -552,7 +557,7 @@ function updateSim() {
   const diff = (v, bv, f) => { const d = v - bv; return Math.abs(d) < 0.5 ? '基準どおり' : `基準比 ${d > 0 ? '+' : ''}${f(d)}`; };
   // 項目(左)・数値(中)・備考(右)の3列の表
   const sRow = (label, value, unit, note, cls) =>
-    `<div class="sLabel">${label}</div><div class="sVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="sNote">${note || ''}</div>`;
+    `<div class="sLabel">${label}</div><div class="sVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="sNote">${simNote(note)}</div>`;
   document.getElementById('sim-kpis').innerHTML = [
     sRow('売上額(概算)', yen(r.sales), '円', diff(r.sales, b.w * b.p, yen)),
     sRow('損益', yen(r.profit), '円', `利益率 ${pct(r.profitRate)}`, r.profit >= 0 ? 'pos' : 'neg'),
