@@ -554,7 +554,7 @@ function updateSim() {
   const r = C.simulate(t, state.settings, W, n, P);
   const b = state.simBase;
   document.getElementById('s-s').value = yen(r.sales); // 売上額(概算)は計算値のみ(入力不可)
-  const diff = (v, bv, f) => { const d = v - bv; return Math.abs(d) < 0.5 ? '基準どおり' : `基準比 ${d > 0 ? '+' : ''}${f(d)}`; };
+  const diff = (v, bv, f) => { const d = v - bv; return Math.abs(d) < 0.5 ? '上部試算表参照' : `基準比 ${d > 0 ? '+' : ''}${f(d)}`; };
   // 項目(左)・数値(中)・備考(右)の3列の表
   const sRow = (label, value, unit, note, cls) =>
     `<div class="sLabel">${label}</div><div class="sVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="sNote">${simNote(note)}</div>`;
