@@ -214,14 +214,14 @@ td input[type="number"] { width: 130px; }
 /* 下の表: 項目(中央揃え)・数値(右端をそろえる)・備考。1280×720でスクロールなしに収まる行間 */
 .simTable { display: grid; grid-template-columns: max-content max-content 1fr; column-gap: 16px; align-items: baseline; }
 .simTable > div { padding: 1px 0; border-bottom: 1px solid var(--border); }
-.simTable .sLabel { color: var(--text2); font-size: clamp(13px, 2.05vh, 24px); line-height: 1.2; white-space: nowrap; text-align: center; }
+.simTable .sLabel { color: var(--text2); font-size: clamp(10px, 1.54vh, 18px); /* 75% */ line-height: 1.2; white-space: nowrap; text-align: center; }
 .simTable .sLabel:has(.subLbl) { text-align: left; padding-left: 1em; } /* 内訳(└ 人件費・└ その他固定費)は左揃え */
 .simTable .sLabel .subLbl { font-size: 0.8em; }
-.simTable .sVal { text-align: right; font-weight: 700; white-space: nowrap; font-size: clamp(14px, 1.95vh, 26px); }
+.simTable .sVal { text-align: right; font-weight: 700; white-space: nowrap; font-size: clamp(10.5px, 1.46vh, 19.5px); } /* 75% */
 .simTable .sVal .unit { display: inline-block; width: 2.3em; text-align: left; font-size: 11px; font-weight: 400; color: var(--text2); margin-left: 3px; }
 /* 備考: 数値と達成/未達・超/不足だけを項目名と同じ大きさに(説明文・単位は小さいまま)。緑=OK・赤=NG */
 .simTable .sNote { color: var(--muted); font-size: 12px; white-space: nowrap; }
-.simTable .sNote .nv, .simTable .sNote .pos, .simTable .sNote .neg, .simTable .sNote .goalPctWrap { font-size: clamp(13px, 2.05vh, 24px); line-height: 1.2; }
+.simTable .sNote .nv, .simTable .sNote .pos, .simTable .sNote .neg, .simTable .sNote .goalPctWrap { font-size: clamp(10px, 1.54vh, 18px); /* 75% */ line-height: 1.2; }
 .simTable .sNote .nv { color: var(--text2); }
 .simTable .sNote .pos, .simTable .sNote .neg { font-weight: 700; }
 .simTable .sNote .pos .nv, .simTable .sNote .neg .nv, .simTable .sNote .goalPct .nv { color: inherit; font-size: inherit; }
@@ -307,12 +307,46 @@ td input[type="number"] { width: 130px; }
   .gWork #f-price-warn { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 }
 
-/* 目標シミュレーター: 現状分析(試算表の下の空きスペース) */
-.simAdvice { margin-top: 10px; font-size: clamp(11px, 1.45vh, 17px); line-height: 1.4; color: var(--text); }
+/* 目標シミュレーター: 現状分析(試算表の下の空きスペース)。②施策カード3枚 ③目安単価 ④期間全体 */
+.simAdvice { margin-top: 10px; font-size: clamp(11px, 1.35vh, 16px); line-height: 1.35; color: var(--text); --adv-w: var(--g-period); --adv-h: var(--g-work); --adv-v: var(--g-site); --adv-p: var(--warn-bg); --adv-bar: #9aa3ad; }
 .simAdvice:empty { display: none; }
-.simAdvice .advHead { font-weight: 700; font-size: 1.15em; border-left: 4px solid var(--accent, #3b82f6); padding-left: 8px; margin-bottom: 4px; }
-.simAdvice .advList { margin: 2px 0 2px; padding-left: 1.3em; }
-.simAdvice .advList li { margin: 1px 0; }
-.simAdvice .advSub { margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--border); }
-.simAdvice .big { font-size: 1.15em; font-weight: 700; }
-.simAdvice .muted { color: var(--muted); font-size: 0.9em; }
+.simAdvice .advHead { font-weight: 700; font-size: 1.15em; border-left: 4px solid var(--accent); padding-left: 8px; margin-bottom: 6px; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; }
+.simAdvice .advGap { font-weight: 400; font-size: 0.8em; color: var(--muted); }
+.simAdvice .advGap b { font-size: 1.15em; }
+.simAdvice .advCards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.simAdvice .advRow2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; margin-top: 8px; }
+.simAdvice .advCard { border-radius: 8px; padding: 6px 10px 7px; border: 1px solid var(--border); min-width: 0; }
+.simAdvice .advW { background: var(--adv-w); } .simAdvice .advH { background: var(--adv-h); } .simAdvice .advV { background: var(--adv-v); }
+.simAdvice .advPrice { background: var(--adv-p); }
+.simAdvice .advTitle { font-weight: 700; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.simAdvice .advTitle small { font-weight: 400; font-size: 0.85em; color: var(--muted); }
+.simAdvice .advBig { font-size: 1.7em; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+.simAdvice .advUnit { font-size: 0.55em; font-weight: 400; margin-left: 2px; color: var(--text2); }
+.simAdvice .advFromTo { color: var(--muted); font-size: 0.9em; white-space: nowrap; }
+.simAdvice .advNote { color: var(--text2); font-size: 0.85em; margin-top: 3px; }
+.simAdvice .advBar { position: relative; height: 1.25em; background: rgba(0,0,0,.06); border-radius: 4px; margin-top: 3px; }
+.simAdvice .advBar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--adv-bar); }
+.simAdvice .advBar span { position: absolute; left: 6px; top: 0; font-size: 0.9em; font-weight: 700; line-height: 1.25em; }
+/* ③ 目安単価の目盛り: 損益0・目標は上、今は下にラベル */
+.simAdvice .advScale { position: relative; height: 5.6em; margin: 0 1.5em; }
+.simAdvice .advLine { position: absolute; left: -1.5em; right: -1.5em; top: 50%; height: 3px; background: var(--border); border-radius: 2px; }
+.simAdvice .advMk { position: absolute; top: 50%; width: 0; }
+.simAdvice .advMk::before { content: ''; position: absolute; left: -6px; top: -5px; width: 12px; height: 12px; border-radius: 50%; background: currentColor; }
+.simAdvice .advMk span { position: absolute; left: 0; transform: translateX(-50%); white-space: nowrap; text-align: center; font-size: 0.8em; line-height: 1.15; }
+.simAdvice .advMk span b { display: block; font-size: 1.2em; }
+.simAdvice .mkBe, .simAdvice .mkGoal { } .simAdvice .mkBe span, .simAdvice .mkGoal span { bottom: 9px; }
+.simAdvice .mkNow span { top: 9px; }
+.simAdvice .mkBe { color: var(--text2); } .simAdvice .mkGoal { color: var(--goal); } .simAdvice .mkNow { color: var(--accent); }
+/* ④ 期間全体: 必要な月あたり生産量と、これまでの月平均の比較(1.2倍を超えたら赤、1倍以下は緑) */
+.simAdvice .advRemain.lvGood { background: var(--g-period); } .simAdvice .advRemain.lvWarn { background: var(--warn-bg); } .simAdvice .advRemain.lvBad { background: #fde4e1; }
+.simAdvice .advRatio { font-size: 0.5em; font-weight: 700; margin-left: 8px; color: var(--bad); }
+.simAdvice .lvGood .advRatio { color: var(--good); }
+.simAdvice .advCmp { display: grid; grid-template-columns: 4.5em 1fr max-content; align-items: center; gap: 6px; font-size: 0.85em; }
+.simAdvice .advBar2 { height: 0.8em; background: rgba(0,0,0,.06); border-radius: 3px; position: relative; }
+.simAdvice .advBar2 i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--adv-bar); }
+.simAdvice .advBar2 i.need { background: var(--bad); }
+.simAdvice .lvGood .advBar2 i.need { background: var(--good); }
+.simAdvice .lvWarn .advBar2 i.need { background: #e0a000; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .simAdvice .advRemain.lvBad { background: #3d2220; } }
+:root[data-theme="dark"] .simAdvice .advRemain.lvBad { background: #3d2220; }
+@media (max-width: 900px) { .simAdvice .advCards { grid-template-columns: 1fr; } }

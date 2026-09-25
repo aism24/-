@@ -774,7 +774,8 @@ function updateSim() {
     } });
 }
 
-/* 現状分析: 目標利益率に届くには(ほかの条件は同じとして1つずつ)。トン単価は受注時に決まっているため変えない */
+/* 現状分析: 目標利益率に届くには(ほかの条件は同じとして1つずつ)。トン単価は受注時に決まっているため変えない。
+   ②施策カード3枚(生産量・時間・変動費) ③見積もりの目安単価 ④期間全体で達成するには(期間の途中のときだけ) */
 function renderSimAdvice(r, t, W, P) {
   const box = document.getElementById('sim-advice');
   const g = state.settings.rates.profit;
@@ -783,34 +784,65 @@ function renderSimAdvice(r, t, W, P) {
   const a = C.advise(r, state.settings);
   const ok = a.gap <= 0.5;
   const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
-  // 1つの施策の行: 必要な変化量(+/−)と、変更前→変更後・変化率
-  const line = (label, need, unit, digits, from, sign) => {
-    if (need === null) return `<li><b>${label}</b>：<span class="neg">到達不能</span></li>`;
-    const to = from + sign * need;
-    if (sign < 0 && to < 0) return `<li><b>${label}</b>：<span class="neg">これだけでは達成できません</span>（${fmt(need, digits)}${unit}必要）</li>`;
-    return `<li><b>${label}</b>：<span class="${ok ? 'pos' : 'neg'} big">${sign > 0 ? '＋' : '−'}${fmt(need, digits)}</span>${unit}` +
-      `<span class="muted">（${fmt(from, digits)} → ${fmt(to, digits)}${unit}、${sign > 0 ? '＋' : '−'}${pct(from > 0 ? need / from : null)}）</span></li>`;
-  };
-  let html = `<div class="advHead">現状分析：目標利益率${gl}を達成するには</div>`;
-  if (ok) {
-    html += `<div class="advOk">目標を達成しています（利益目標額より <span class="pos big">${yen(-a.gap)}</span>円 多い）。</div>`;
-  } else {
-    html += `<div class="muted small">不足額 <b class="neg">${yen(a.gap)}</b>円。ほかの条件は同じとして、どれか1つで達成するには：</div><ul class="advList">` +
-      line('生産量を増やす（今の時間のまま）', a.addTons, 't', 1, W, 1) +
-      line('時間を減らす（今の生産量のまま）', a.cutHours, 'h', 0, r.hours, -1) +
-      line('変動費を下げる（1tあたり）', a.cutVarPerTon, '円/t', 0, r.varPerTon, -1) + '</ul>';
+  let html = `<div class="advHead">現状分析：目標利益率${gl}を達成するには` +
+    (ok ? `<span class="advGap">達成済み（目標より <b class="pos">${yen(-a.gap)}</b>円 多い）</span>`
+      : `<span class="advGap">不足額 <b class="neg">${yen(a.gap)}</b>円 ／ ほかの条件は同じとして、どれか1つで</span>`) + '</div>';
+
+  // ② 施策カード: 必要な変化量・変更前→後・変化率のバー(3枚の中で一番大きい変化率を100%とする)・1単位あたりの利益増
+  const plans = [
+    { cls: 'advW', title: '生産量を増やす', cond: '今の時間のまま', need: a.addTons, unit: 't', d: 1, from: W, sign: 1, unitNote: `1t増で 利益 +${yen(a.perTon)}円` },
+    { cls: 'advH', title: '時間を減らす', cond: '今の生産量のまま', need: a.cutHours, unit: 'h', d: 0, from: r.hours, sign: -1, unitNote: `1h減で 利益 +${yen(a.perHour)}円` },
+    { cls: 'advV', title: '変動費を下げる', cond: '1tあたり', need: a.cutVarPerTon, unit: '円/t', d: 0, from: r.varPerTon, sign: -1, unitNote: `1,000円/t減で 利益 +${yen(a.perVar1000)}円` },
+  ];
+  plans.forEach((c) => {
+    c.rate = c.need !== null && c.from > 0 ? Math.abs(c.need) / c.from : null;
+    c.ng = c.need === null || (c.sign < 0 && c.need > c.from); // 到達不能、または減らしきっても届かない
+  });
+  const maxRate = Math.max(...plans.map((c) => (!c.ng && c.rate) || 0)) || 1;
+  html += '<div class="advCards">' + plans.map((c) => {
+    let body;
+    if (c.ng) body = `<div class="advBig neg">${c.need === null ? '到達不能' : 'これだけでは不可'}</div>`;
+    else {
+      const more = c.need > 0; // false = 既に達成(余裕の量)
+      const sg = (c.sign > 0) === more ? '＋' : '−';
+      body = `<div class="advBig ${ok ? 'pos' : 'neg'}">${ok ? '余裕 ' : sg}${fmt(Math.abs(c.need), c.d)}<span class="advUnit">${c.unit}</span></div>` +
+        `<div class="advFromTo">${fmt(c.from, c.d)} → ${fmt(c.from + c.sign * c.need, c.d)}${c.unit}</div>` +
+        `<div class="advBar"><i style="width:${Math.max(2, c.rate / maxRate * 100)}%"></i><span>${ok ? '' : sg}${pct(c.rate)}</span></div>`;
+    }
+    return `<div class="advCard ${c.cls}"><div class="advTitle">${c.title}<small>（${c.cond}）</small></div>${body}<div class="advNote">${c.unitNote}</div></div>`;
+  }).join('') + '</div>';
+
+  // ③ 今後の見積もりの目安単価: 損益0・今・目標の3つの単価を1本の目盛りに並べる
+  let row2 = '';
+  if (a.goalPrice !== null && a.bePrice !== null && P > 0) {
+    const vals = [a.bePrice, P, a.goalPrice];
+    const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * 0.12 || hi * 0.05;
+    const pos = (v) => ((v - lo + pad) / (hi - lo + pad * 2) * 100).toFixed(1);
+    const mk = (v, cls, label) => `<div class="advMk ${cls}" style="left:${pos(v)}%"><span>${label}<b>${yen(v)}</b></span></div>`;
+    row2 += `<div class="advCard advPrice"><div class="advTitle">今後の見積もりの目安単価<small>（円/t）</small></div>
+      <div class="advScale"><div class="advLine"></div>${mk(a.bePrice, 'mkBe', '損益0')}${mk(a.goalPrice, 'mkGoal', '目標' + gl)}${mk(P, 'mkNow', '今')}</div>
+      <div class="advNote">利益率${gl}には、今より <b class="${a.goalPrice > P ? 'neg' : 'pos'}">${a.goalPrice > P ? '+' : ''}${yen(a.goalPrice - P)}</b>円/t</div></div>`;
   }
-  html += `<div class="advSub"><b>目安</b>：1t多く作ると利益 <b>+${yen(a.perTon)}</b>円 ／ 1時間減らすと <b>+${yen(a.perHour)}</b>円 ／ 変動費1,000円/t下げると <b>+${yen(a.perVar1000)}</b>円</div>`;
-  html += `<div class="advSub"><b>今後の見積もりの目安単価</b>：利益率${gl}になる <b class="big">${yen(a.goalPrice)}</b>円/t ／ 損益0になる ${yen(a.bePrice)}円/t（今 ${yen(P)}円/t）</div>`;
+  // ④ 期間全体で達成するには: 残り期間に月あたり何t必要か(これまでの月平均との比較)
   const m = state.simRemain;
   if (m) {
     const avgT = m.done > 0 ? t.weight / m.done : 0;
-    const body = m.tons === null ? '<span class="neg">今の条件では到達不能</span>'
-      : m.tons <= 0 ? '<span class="pos">残り期間の生産量に関わらず達成見込み</span>'
-      : `残り約${fmt(m.left, 1)}か月（〜${md(m.end)}）で <b class="neg big">${ton(m.tons)}</b>t（月あたり <b>${ton(m.left > 0 ? m.tons / m.left : null)}</b>t）が必要` +
-        `<span class="muted">（これまでの月平均 ${ton(avgT)}t）</span>`;
-    html += `<div class="advSub"><b>期間全体で達成するには</b>（残りの月の固定費 ${yen(m.extraFixed)}円込み）：${body}</div>`;
+    const perM = m.tons !== null && m.left > 0 ? m.tons / m.left : null;
+    const ratio = perM !== null && avgT > 0 ? perM / avgT : null;
+    const lv = m.tons === null ? 'lvBad' : m.tons <= 0 || (ratio !== null && ratio <= 1) ? 'lvGood' : ratio !== null && ratio <= 1.2 ? 'lvWarn' : 'lvBad';
+    let body;
+    if (m.tons === null) body = '<div class="advBig neg">今の条件では到達不能</div>';
+    else if (m.tons <= 0) body = '<div class="advBig pos">達成見込み</div><div class="advFromTo">残り期間の生産量に関わらず達成</div>';
+    else {
+      const w = (v) => Math.max(2, v / Math.max(perM, avgT) * 100).toFixed(1);
+      body = `<div class="advBig">月あたり ${ton(perM)}<span class="advUnit">t</span>${ratio !== null ? `<span class="advRatio">これまでの ${fmt(ratio, 2)}倍</span>` : ''}</div>
+        <div class="advCmp"><span>必要</span><div class="advBar2"><i class="need" style="width:${w(perM)}%"></i></div><b>${ton(perM)}t</b></div>
+        <div class="advCmp"><span>これまで</span><div class="advBar2"><i style="width:${w(avgT)}%"></i></div><b>${ton(avgT)}t</b></div>
+        <div class="advNote">残り約${fmt(m.left, 1)}か月で 計${ton(m.tons)}t（残りの月の固定費 ${yen(m.extraFixed)}円込み）</div>`;
+    }
+    row2 += `<div class="advCard advRemain ${lv}"><div class="advTitle">期間全体で達成するには<small>（〜${md(m.end)}）</small></div>${body}</div>`;
   }
+  if (row2) html += `<div class="advRow2">${row2}</div>`;
   box.innerHTML = html;
 }
 
