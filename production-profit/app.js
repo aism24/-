@@ -236,7 +236,7 @@ function kpi(label, value, unit, sub, cls) {
 function goalKpi(profit, goal, hasSales, render) {
   const ok = hasSales && profit - goal >= -1; // 1円未満の誤差は達成扱い
   const d = profit - goal;
-  return (render || kpi)('利益目標額', yen(goal), '円', hasSales ? `<span class="${ok ? 'pos' : 'neg'}">${ok ? '達成' : '未達'}</span>(損益との差 ${d >= 0 ? '+' : ''}${yen(d)}円)` : '売上なし',
+  return (render || kpi)('利益目標額', yen(goal), '円', hasSales ? `<span class="${ok ? 'pos' : 'neg'}">${ok ? '達成' : '未達'}</span>(損益との差 <span class="${d >= 0 ? 'pos' : 'neg'}">${d >= 0 ? '+' : ''}${yen(d)}</span>円)` : '売上なし',
     hasSales ? (ok ? 'pos' : 'neg') : '');
 }
 
