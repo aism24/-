@@ -418,22 +418,33 @@ function drawBep(id, o) {
   renderBepSvg(id);
   if (!box.dataset.bound) {
     box.dataset.bound = '1';
-    let dragging = false;
+    // 点線(現在・試算)の上(つまみ〜横軸、左右12px)にマウスが来たら手のカーソルにし、そこからだけドラッグで動かせる
+    // (グラフの他の場所をクリックしても動かない)。つかんだ位置と点線のずれを保って動かす
+    let dragging = false, grabDx = 0;
+    const NEAR = 12;
     const toX = (e) => {
       const s = bepState[id], g = s.geom, r = box.getBoundingClientRect();
-      return Math.min(s.maxX, Math.max(0, (e.clientX - r.left - g.l) / g.w * s.maxX));
+      return Math.min(s.maxX, Math.max(0, (e.clientX - r.left + grabDx - g.l) / g.w * s.maxX));
+    };
+    const onLine = (e) => {
+      const s = bepState[id], g = s.geom, r = box.getBoundingClientRect();
+      if (!s || s.o.fixedX || !g || s.cursorX === undefined) return false;
+      const px = e.clientX - r.left, py = e.clientY - r.top;
+      return Math.abs(px - s.cursorX) <= NEAR && py >= g.t - 50 && py <= g.t + g.h + 4;
     };
     box.addEventListener('pointerdown', (e) => {
-      const s = bepState[id], g = s.geom, r = box.getBoundingClientRect();
-      if (s.o.fixedX || !g || e.clientY - r.top > g.t + g.h + 4) return;
+      if (!onLine(e)) return;
+      const s = bepState[id];
+      grabDx = s.cursorX - (e.clientX - box.getBoundingClientRect().left);
       dragging = true; box.setPointerCapture(e.pointerId);
-      s.x = toX(e); renderBepSvg(id); if (s.o.onMove) s.o.onMove(s.x);
+      box.style.cursor = 'grabbing';
+      e.preventDefault();
     });
     box.addEventListener('pointermove', (e) => {
-      if (!dragging) return;
+      if (!dragging) { box.style.cursor = onLine(e) ? 'grab' : ''; return; }
       const s = bepState[id]; s.x = toX(e); renderBepSvg(id); if (s.o.onMove) s.o.onMove(s.x);
     });
-    const end = () => { dragging = false; };
+    const end = (e) => { dragging = false; box.style.cursor = e && onLine(e) ? 'grab' : ''; };
     box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
     window.addEventListener('resize', () => bepState[id] && renderBepSvg(id));
   }
@@ -797,7 +808,7 @@ function updateSim() {
   // 人件費は試算の生産重量での額を固定費に含め、固定費線を水平にする(つまみのドラッグ中に縮尺が変わらないよう、署名は基準値で作る)
   drawBep('c-sim', { fixed: r.fixed + r.labor, unitPrice: P, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: state.settings.rates.profit / 100,
     fixedLabel: ['固定費', '(人件費込み)'], otherFixed: r.fixed, laborRate: r.laborRate, sig: [r.fixed, P, n, r.laborRate, r.varPerTon, state.settings.rates.profit].join('|'),
-    x: W, forceX: !simDragging, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: '試算',
+    x: W, forceX: !simDragging, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: changed ? '試算' : '現在', // 実績のままは「現在」、動かしたら「試算」
     onMove: (t) => {
       simDragging = true;
       document.getElementById('s-w').value = simFmt('w', t);
