@@ -79,8 +79,10 @@
   function fiscalRange(fy) { return { from: fy + '-11-21', to: (fy + 1) + '-11-20' }; }
   function fiscalLabel(fy) { return fy + '/11/21〜' + (fy + 1) + '/11/20期'; }
 
-  /* 範囲[from,to]に掛かる月度と、その月度のうち範囲に含まれる日数の割合(frac)。 */
-  function periodsInRange(from, to) {
+  /* 範囲[from,to]に掛かる月度と、その月度のうち範囲に含まれる割合(frac)。
+     calendar(会社カレンダー)を渡すと出勤日数の割合、渡さないと暦日数の割合。
+     月度をまるごと含むときはどちらも1(締まった月の固定費は1か月分のまま)。 */
+  function periodsInRange(from, to, calendar) {
     if (from > to) return [];
     var list = [];
     var key = periodKeyOf(from);
@@ -89,7 +91,12 @@
       var r = periodRange(key);
       var s = r.from > from ? r.from : from;
       var e = r.to < to ? r.to : to;
-      list.push({ key: key, frac: daysInclusive(s, e) / daysInclusive(r.from, r.to) });
+      var frac = daysInclusive(s, e) / daysInclusive(r.from, r.to);
+      if (calendar && frac < 1) {
+        var all = workDaysIn(calendar, r.from, r.to);
+        if (all > 0) frac = workDaysIn(calendar, s, e) / all;
+      }
+      list.push({ key: key, frac: frac });
       key = shiftPeriod(key, 1);
     }
     return list;
@@ -229,7 +236,8 @@
     sites = sites || data.sites || DEFAULT_SITES;
     var cells = aggregate(data, settings, from, to, sites);
     var models = [];
-    periodsInRange(from, to).forEach(function (p) {
+    // 月度の途中の固定費は出勤日数の割合で割り振る(生産・工数は出勤日に出るため)
+    periodsInRange(from, to, settings.calendar || {}).forEach(function (p) {
       sites.forEach(function (site) {
         var m = cellModel(site, p.key, p.frac, cells[p.key + '|' + site], settings);
         models.push(workNo ? scopeToWork(m, workNo) : m);
@@ -399,6 +407,29 @@
     return out;
   }
 
+  /* 直近12か月度(endKeyまで)の「1出勤日あたり工数」。工数のある月だけを対象に、
+     平均(総工数÷総出勤日数)と、最も少なかった月(=今の体制で実際に出せた最少水準)を返す。 */
+  function dailyHoursStats(data, calendar, sites, endKey) {
+    var siteSet = {};
+    (sites || data.sites || DEFAULT_SITES).forEach(function (x) { siteSet[x] = true; });
+    var startKey = shiftPeriod(endKey, -11);
+    var hours = {};
+    (data.rec || []).forEach(function (r) {
+      if (!siteSet[r[1]]) return;
+      var k = periodKeyOf(r[0]);
+      if (k < startKey || k > endKey) return;
+      hours[k] = (hours[k] || 0) + (r[4] || 0);
+    });
+    var sumH = 0, sumD = 0, min = null, minKey = null, months = 0;
+    for (var k = startKey; k <= endKey; k = shiftPeriod(k, 1)) {
+      var rg = periodRange(k), d = workDaysIn(calendar, rg.from, rg.to), h = hours[k] || 0;
+      if (!(h > 0) || !(d > 0)) continue;
+      sumH += h; sumD += d; months++;
+      if (min === null || h / d < min) { min = h / d; minKey = k; }
+    }
+    return { months: months, avg: sumD > 0 ? sumH / sumD : null, min: min, minKey: minKey };
+  }
+
   var api = {
     HOURS_PER_NINKU: HOURS_PER_NINKU, COMMON_WORK: COMMON_WORK, DEFAULT_SITES: DEFAULT_SITES,
     defaultSettings: defaultSettings,
@@ -408,7 +439,7 @@
     unitPriceOf: unitPriceOf, commonWorkSet: commonWorkSet, aggregate: aggregate, cellModel: cellModel, summarize: summarize,
     breakEven: breakEven, analyze: analyze, workBreakdown: workBreakdown, simulate: simulate,
     lastDataYmd: lastDataYmd, advise: advise, remainingNeed: remainingNeed,
-    isWorkDay: isWorkDay, workDaysIn: workDaysIn, scaleRange: scaleRange,
+    isWorkDay: isWorkDay, workDaysIn: workDaysIn, scaleRange: scaleRange, dailyHoursStats: dailyHoursStats,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PPCalc = api;
