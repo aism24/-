@@ -516,6 +516,11 @@ function renderSim(sel, an) {
   };
   state.simSel = sel;
   state.simTotal = t;
+  // 固定費の内訳(工場1か所の月固定費 × 工場数 × 月数)。工事を選んでいるときは配賦前の工場の固定費から出す
+  const fm = (sel.work ? C.analyze(state.cache, state.settings, sel.from, sel.to, sel.sites) : an).models;
+  const frac = fm.reduce((a, m) => a + m.frac, 0), fix = fm.reduce((a, m) => a + m.fixed, 0);
+  const months = sel.sites.length ? frac / sel.sites.length : 0;
+  state.simFixedNote = frac > 0 ? `${yen(fix / frac)}円/月 × ${sel.sites.length}工場 × ${fmt(months, Math.abs(months - Math.round(months)) < 0.05 ? 0 : 1)}か月` + (sel.work ? '(工事へ売上比で配賦)' : '') : '';
   renderSimWorks(an);
   if (!state.simBase) {
     state.simBase = base;
@@ -574,14 +579,14 @@ function updateSim() {
     `<div class="sLabel">${label}</div><div class="sVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="sNote">${simNote(note)}</div>`;
   document.getElementById('sim-kpis').innerHTML = [
     sRow('売上額(概算)', yen(r.sales), '円', diff(r.sales, b.w * b.p, yen)),
-    sRow('損益', yen(r.profit), '円', `利益率 ${pct(r.profitRate)}※設定より変更可能`, r.profit >= 0 ? 'pos' : 'neg'),
+    sRow('損益', yen(r.profit), '円', `利益率 ${pct(r.profitRate)}`, r.profit >= 0 ? 'pos' : 'neg'),
     goalKpi(r.profit, r.profitGoal, r.sales > 0, sRow),
     sRow('目標売上額', yen(r.goalSales), '円', r.goalTons !== null ? `必要生産量 ${ton(r.goalTons)}t` : '到達不能'),
     sRow('損益分岐生産量', ton(r.breakEvenTons), 't', r.breakEvenTons !== null ? (W >= r.breakEvenTons ? `<span class="pos">余裕 ${ton(W - r.breakEvenTons)}</span>t` : `<span class="neg">不足 ${ton(r.breakEvenTons - W)}</span>t`) : '到達不能'),
     sRow('必要人工', fmt(r.ninku, 1), '人工', `${fmt(r.hours, 0)}h`),
     sRow('人件費', yen(r.labor), '円', `${yen(r.laborRate)}円/人工`),
     sRow('変動費', yen(r.variable), '円', `${yen(r.varPerTon)}円/t`),
-    sRow('固定費', yen(r.fixed), '円', '重量・工数・単価を変えても一定'),
+    sRow('固定費', yen(r.fixed), '円', state.simFixedNote),
   ].join('');
   // つまみのドラッグで試算の生産重量を動かせる(スライダー・数値欄と連動)
   drawBep('c-sim', { fixed: r.fixed, unitPrice: P, laborPerTon: n * r.laborRate, varPerTon: r.varPerTon, profitRate: state.settings.rates.profit / 100,
