@@ -819,6 +819,8 @@ function updateSim() {
   // 現在値(実績)から変えたら「現在値に戻す」を黄色・点滅にして知らせる
   const changed = Math.abs(W - b.w) > 1e-9 || Math.abs(n - b.n) > 1e-9 || Math.abs(P - b.p) > 1e-9;
   document.getElementById('s-reset').classList.toggle('changed', changed);
+  // 左上の表の見出しも、グラフの札と同じく実績のままは「現在」、値を変えたら「試算」
+  document.querySelector('#tab-sim .simTitle').textContent = changed ? '試算' : '現在';
   const diff = (v, bv, f) => { const d = v - bv; return Math.abs(d) < 0.5 ? '上部試算表参照' : `基準比 ${d > 0 ? '+' : ''}${f(d)}`; };
   // 項目(左)・数値(中)・備考(右)の3列の表
   const sRow = (label, value, unit, note, cls) =>

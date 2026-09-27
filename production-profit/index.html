@@ -8,7 +8,7 @@
 <!-- 数字の幅をそろえる(等幅数字)ため、英数字はInterを使う(日本語は各OSのゴシック) -->
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
-<link rel="stylesheet" href="style.css?v=20260928a">
+<link rel="stylesheet" href="style.css?v=20260928b">
 </head>
 <body>
 
@@ -106,7 +106,7 @@
           <!-- 左: 試算の入力欄 / 右: 工事ごとの実績(列=工事、工事番号の昇順。入り切らない分は横スクロール) -->
           <div class="simGridWrap">
             <div class="simFixed">
-              <div class="simHead simHeadRow"><span class="simTitle">試算</span><span class="simInHead">入力欄</span></div>
+              <div class="simHead simHeadRow"><span class="simTitle">現在</span><span class="simInHead">入力欄</span></div>
               <div class="simRow"><label>生産重量(t)</label><span class="simIn"><input type="text" inputmode="decimal" id="s-w" class="simNum" autocomplete="off"><span class="simUnit">t</span></span></div>
               <div class="simRow"><label>1t当たり人工数</label><span class="simIn"><input type="text" inputmode="decimal" id="s-n" class="simNum" autocomplete="off"><span class="simUnit">人工</span></span></div>
               <div class="simRow"><label>トン単価(円/t)</label><span class="simIn"><input type="text" inputmode="decimal" id="s-p" class="simNum" autocomplete="off"><span class="simUnit">円/t</span></span></div>
@@ -172,7 +172,7 @@
 <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">読み込み中…</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="calc.js?v=20260928a"></script>
-<script src="app.js?v=20260928a"></script>
+<script src="calc.js?v=20260928b"></script>
+<script src="app.js?v=20260928b"></script>
 </body>
 </html>
