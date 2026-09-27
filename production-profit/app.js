@@ -860,9 +860,8 @@ function renderSimAdvice(r, t, W, P) {
   const a = C.advise(r, state.settings);
   const ok = a.gap <= 0.5;
   const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
-  let html = `<div class="advHead">現状分析：目標利益率${gl}を達成するには` +
-    (ok ? `<span class="advGap">達成済み（目標より <b class="pos">${yen(-a.gap)}</b>円 多い）</span>`
-      : `<span class="advGap">不足額 <b class="neg">${yen(a.gap)}</b>円 ／ ほかの条件は同じとして、どれか1つで</span>`) + '</div>';
+  // 見出しは色帯。すぐ下に結論の1行(不足額と、一番小さい変化で届く施策)を大きく出す
+  let html = `<div class="advHead">現状分析：目標利益率${gl}を達成するには${ok ? '' : '<small>ほかの条件は同じとして、どれか1つで達成する場合</small>'}</div>`;
 
   // 「時間を減らす」を1出勤日あたりに直し、直近1年で最も少なかった月の1日あたり工数(今の体制で実際に出せた最少水準)と比べる
   const dailyNote = (c) => {
@@ -871,7 +870,7 @@ function renderSimAdvice(r, t, W, P) {
     const now = r.hours / dd.days, after = (r.hours - c.need) / dd.days;
     let h = `<div class="advDaily">1日 ${fmt(now, 0)}→<b>${fmt(after, 0)}</b>h（−${fmt(now - after, 0)}h・約${fmt((now - after) / 8, 0)}人分）</div>`;
     if (dd.min !== null) {
-      if (after < dd.min) h += `<div class="advWarn" title="過去1年で最も少なかった月(${esc(C.periodLabel(dd.minKey))})の1日あたり工数 ${fmt(dd.min, 0)}h を下回るため、人員配置の見直しが必要">⚠ 過去1年の最少を下回る＝時間削減だけでは困難</div>`;
+      if (after < dd.min) h += `<div class="advWarn" title="過去1年で最も少なかった月(${esc(C.periodLabel(dd.minKey))})の1日あたり工数 ${fmt(dd.min, 0)}h を下回るため、人員配置の見直しが必要">⚠ 過去1年の最少を下回る＝削減困難</div>`;
     }
     return h;
   };
@@ -885,7 +884,17 @@ function renderSimAdvice(r, t, W, P) {
   plans.forEach((c) => {
     c.rate = c.need !== null && c.from > 0 ? Math.abs(c.need) / c.from : null;
     c.ng = c.need === null || (c.sign < 0 && c.need > c.from); // 到達不能、または減らしきっても届かない
+    // 時間を減らす: 削減後の1日あたり工数が過去1年の最少の月を下回る(=時間削減だけでは困難)
+    const dd = state.simDaily;
+    c.hard = !!(c.daily && dd && dd.min !== null && !c.ng && !ok && c.need > 0 && (r.hours - c.need) / dd.days < dd.min);
   });
+  // 一番の近道: 実現できる施策のうち変化率が最も小さいもの(金枠と「最短」の印を付ける)
+  const cand = ok ? [] : plans.filter((c) => !c.ng && !c.hard && c.rate !== null);
+  const best = cand.length ? cand.reduce((x, y) => (y.rate < x.rate ? y : x)) : null;
+  html += ok
+    ? `<div class="advLead">✓ 目標を達成しています <span class="advLeadSub">目標より <b>${yen(-a.gap)}</b>円 超</span></div>`
+    : `<div class="advLead" title="不足額 ${yen(a.gap)}円">あと <b class="advLeadGap">${man(a.gap)}</b> 不足` +
+      (best ? ` <span class="advArrow">➜</span> 最短は <b class="advLeadKey">「${best.title} ${best.sign > 0 ? '＋' : '−'}${pct(best.rate)}」</b>` : ' <span class="advArrow">➜</span> 1つだけでは届きません（組み合わせが必要）') + '</div>';
   const maxRate = Math.max(...plans.map((c) => (!c.ng && c.rate) || 0)) || 1;
   html += '<div class="advCards">' + plans.map((c) => {
     let body;
@@ -897,7 +906,8 @@ function renderSimAdvice(r, t, W, P) {
         `<div class="advFromTo">${fmt(c.from, c.d)} → ${fmt(c.from + c.sign * c.need, c.d)}${c.unit}</div>` +
         `<div class="advBar"><i style="width:${Math.max(2, c.rate / maxRate * 100)}%"></i><span>${ok ? '' : sg}${pct(c.rate)}</span></div>`;
     }
-    return `<div class="advCard ${c.cls}"><div class="advTitle">${c.title}<small>（${c.cond}）</small></div>${body}${c.daily ? dailyNote(c) : ''}<div class="advNote">${c.unitNote}</div></div>`;
+    const mark = c === best ? ' advBest' : c.hard ? ' advHard' : '';
+    return `<div class="advCard ${c.cls}${mark}">${c === best ? '<span class="advRibbon">最短</span>' : ''}<div class="advTitle">${c.title}<small>（${c.cond}）</small></div>${body}${c.daily ? dailyNote(c) : ''}<div class="advNote">${c.unitNote}</div></div>`;
   }).join('') + '</div>';
 
   // ③ 今後の見積もりの目安単価: 損益0・今・目標の3つの単価を1本の目盛りに並べる
@@ -928,7 +938,7 @@ function renderSimAdvice(r, t, W, P) {
       body = `<div class="advBig">1出勤日あたり ${ton(perM)}<span class="advUnit">t</span>${ratio !== null ? `<span class="advRatio">これまでの ${fmt(ratio, 2)}倍</span>` : ''}</div>
         <div class="advCmp"><span>必要</span><div class="advBar2"><i class="need" style="width:${w(perM)}%"></i></div><b>${ton(perM)}t/日</b></div>
         <div class="advCmp"><span>これまで</span><div class="advBar2"><i style="width:${w(avgT)}%"></i></div><b>${ton(avgT)}t/日</b></div>
-        <div class="advNote">残りの出勤日 ${m.leftDays}日で 計${ton(m.tons)}t（残りの固定費 ${yen(m.extraFixed)}円込み）</div>`;
+        <div class="advNote" title="残りの固定費 ${yen(m.extraFixed)}円を含む">残り${m.leftDays}出勤日で 計${ton(m.tons)}t（固定費${man(m.extraFixed)}込み）</div>`;
     }
     row2 += `<div class="advCard advRemain ${lv}"><div class="advTitle">期間全体で達成するには<small>（〜${md(m.end)}）</small></div>${body}</div>`;
   }
