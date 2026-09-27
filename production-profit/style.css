@@ -350,10 +350,10 @@ td input[type="number"] { width: 130px; }
 @media (max-width: 900px) { .simAdvice .advCards { grid-template-columns: 1fr; } }
 /* 現状分析は試算表(白)とは別の黒背景の枠に置く。黒地に直接のる文字は白抜き(カード内は淡色背景のまま) */
 .fullTab .simLeft .panel.simKpiPanel { flex: none; }
-.simAdvicePanel { background: #0e3b22; border: 3px solid #9be15d; box-shadow: 0 0 16px rgba(155, 225, 93, .45); } /* 現状分析は濃い緑+光る黄緑の縁取り(黒い背景と区別) */
+.simAdvicePanel { background: #2d1650; border: 3px solid #9be15d; box-shadow: 0 0 16px rgba(155, 225, 93, .45); } /* 現状分析は濃い紫+光る黄緑の縁取り(黒い背景と区別) */
 .simAdvicePanel:has(.simAdvice:empty) { display: none; }
-.simAdvicePanel .advHead { color: #fff; background: #2e9e4f; border-left: none; border-radius: 6px; padding: 3px 12px; letter-spacing: .02em; }
-.simAdvicePanel .advHead small { font-weight: 400; font-size: 0.72em; color: #e6f7e9; margin-left: 12px; }
+.simAdvicePanel .advHead { color: #fff; background: #7b3fd0; border-left: none; border-radius: 6px; padding: 3px 12px; letter-spacing: .02em; }
+.simAdvicePanel .advHead small { font-weight: 400; font-size: 0.72em; color: #efe6fb; margin-left: 12px; }
 /* 結論の1行 */
 .simAdvice .advLead { color: #fff; font-size: 1.3em; font-weight: 700; margin: 2px 2px 8px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .simAdvice .advLeadGap { color: #ff8f85; font-size: 1.15em; }
