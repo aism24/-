@@ -131,6 +131,9 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 |---|---|---|---|
 | pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 解除(2026-09-24、関数統合版を本番デプロイ後に再解除) | |
 | daily-report (https://all-daily-report.vercel.app/) | daily-report | 解除(2026-09-24) | `daily-report/vercel.json` で `git.deploymentEnabled=false`。Ignored Build Step=`git diff HEAD^ HEAD --quiet -- .` |
+| sonekibunki (https://sonekibunki.vercel.app/) | production-profit | **連携中**(2026-09-27作成。`production-profit/vercel.json` で `git.deploymentEnabled=false` のためpush/マージでは自動デプロイされない) | 静的サイト(関数なし)。本番反映は `create_deployment` で行う。GitHub Pages版は廃止(index.htmlでVercel版へ転送) |
+
+2026-09-27、sonekibunki(production-profit)を新規作成・連携。以降 `list_projects`(repoUrl=aism24/-)は sonekibunki の1件が正常(vercel.jsonで自動デプロイ停止済み)。それ以外が返ったらマージしないこと。
 
 2026-09-24、ユーザーが全プロジェクトのGit連携を解除。`list_projects`(repoUrl=aism24/-)の結果が0件であることを確認済み(push/マージしてもデプロイされない状態)。
 

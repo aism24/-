@@ -49,6 +49,7 @@
 
 ## 公開
 
-`vercel.json` で自動デプロイを止めています(リポジトリ直下のCLAUDE.md参照)。公開時はこのフォルダを
-Root Directory にしたVercelプロジェクトを作り、`create_deployment` で本番デプロイします。
+公開URL: https://sonekibunki.vercel.app/ (Vercelプロジェクト `sonekibunki`、Root Directory=このフォルダ。2026-09-27公開)。
+`vercel.json` で自動デプロイを止めています(リポジトリ直下のCLAUDE.md参照)。本番反映は mainへマージ後に
+`create_deployment` で1回だけ行います。GitHub Pages版は廃止(開くとVercel版へ自動転送)。
 開発中の確認URL: `https://cdn.jsdelivr.net/gh/aism24/-@<branch>/production-profit/index.html?demo=1`
