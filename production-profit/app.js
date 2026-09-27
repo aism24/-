@@ -163,7 +163,7 @@ function initUi() {
   document.getElementById('reset-btn').onclick = () => { applyDefaults(); renderAll(); };
   // 月末見込み ⇔ 実績のみ(月度の途中のときだけ表示)
   document.getElementById('f-fc').onclick = () => { state.fcOff = !state.fcOff; state.simBase = null; renderAll(); };
-  document.getElementById('w-search').oninput = () => renderWorks();
+  document.getElementById('w-search').onchange = () => renderWorks();
   document.getElementById('w-alloc').onchange = () => renderWorks();
   document.getElementById('w-csv').onclick = downloadWorksCsv;
   initSim();
@@ -950,10 +950,15 @@ function renderSimAdvice(r, t, W, P) {
 
 function worksRows(sel) {
   const an = C.analyze(sel.data, state.settings, sel.from, sel.to, sel.sites);
-  const q = document.getElementById('w-search').value.trim().toLowerCase();
-  let rows = C.workBreakdown(an, state.cache);
-  if (q) rows = rows.filter((r) => (r.workNo + ' ' + r.name).toLowerCase().includes(q));
-  return rows;
+  const rows = C.workBreakdown(an, state.cache);
+  // 工事の絞り込み: 選択中の期間・工場にある工事をリストにする(既定は全工事。選択中の工事が無くなったら全工事に戻す)
+  const selW = document.getElementById('w-search');
+  const cur = selW.value;
+  const name = (r) => r.workNo === C.COMMON_WORK ? '共通(工事なし)' : `${r.workNo}　${r.name}`;
+  const list = rows.slice().sort((a, b) => (a.workNo === C.COMMON_WORK) - (b.workNo === C.COMMON_WORK) || a.workNo.localeCompare(b.workNo, 'ja', { numeric: true }));
+  selW.innerHTML = '<option value="">全工事</option>' + list.map((r) => `<option value="${esc(r.workNo)}">${esc(name(r))}</option>`).join('');
+  selW.value = list.some((r) => r.workNo === cur) ? cur : '';
+  return selW.value ? rows.filter((r) => r.workNo === selW.value) : rows;
 }
 
 function renderWorks(sel) {
@@ -964,7 +969,8 @@ function renderWorks(sel) {
   drawChart('c-works', {
     type: 'bar',
     data: { labels: top.map((r) => r.workNo), datasets: [{ label: alloc ? '人工/t(共通按分後)' : '人工/t(直接)', data: top.map(npCol), backgroundColor: css('--s1'), borderRadius: 4 }] },
-    options: Object.assign(baseOpts('人工/t', 2), { indexAxis: 'y', plugins: { legend: { display: false }, tooltip: { callbacks: {
+    // 横棒グラフなので、マウスの縦位置(y)にある工事のポップアップを出す(既定のindexモードは横位置xで探すため、別の工事が出ていた)
+    options: Object.assign(baseOpts('人工/t', 2), { indexAxis: 'y', interaction: { mode: 'index', axis: 'y', intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: {
       title: (c) => { const r = top[c[0].dataIndex]; return r.workNo + ' ' + r.name; }, label: (c) => fmt(c.parsed.x, 2) + ' 人工/t' } } },
     scales: { x: { ticks: { color: css('--text2') }, grid: { color: css('--grid') } }, y: { ticks: { color: css('--text2') }, grid: { display: false } } } }),
   });

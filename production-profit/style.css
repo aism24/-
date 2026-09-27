@@ -82,6 +82,7 @@ button:disabled { opacity: .5; cursor: default; }
 /* 3色の枠は常に均等幅(1/3ずつ)。枠の中身が入り切らないときは枠の中で改行する */
 .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: stretch; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
 .filters.inner { background: none; border: none; padding: 0 0 12px; }
+.filters.inner > label { color: #fff; } /* アプリ背景(黒)に直接のる文字は白 */
 .filters label { display: flex; align-items: center; gap: 6px; }
 .fGroup { display: flex; align-items: center; align-content: center; justify-content: center; text-align: center; gap: 6px 12px; padding: 6px 12px; border-radius: 8px; flex-wrap: wrap; min-width: 0; }
 .fGroup label, .fLabel { white-space: nowrap; }
