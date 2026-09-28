@@ -18,7 +18,7 @@
 .sRow { display: flex; align-items: stretch; justify-content: center; flex-wrap: wrap; gap: 8px; }
 .sRow select { font-size: 15px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 .sCards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.sCard { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.sCard { text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
 .sCard.big { grid-column: 1 / -1; text-align: center; }
 .sLabel { font-size: 14px; font-weight: 700; color: var(--text2); }
 .sValue { font-size: 30px; font-weight: 800; margin: 4px 0 2px; overflow-wrap: anywhere; }
