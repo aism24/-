@@ -186,19 +186,17 @@ function render() {
   $('res-note').textContent = sel.fc && sel.fc.on && !sel.fc.few ? '（月末見込み）' : sel.lastTo < sel.fullTo ? `（〜${Number(sel.lastTo.slice(5, 7))}/${Number(sel.lastTo.slice(8))}の実績）` : '（実績）';
   // 生産重量・工数は値を、売上額・損益は目標に対する割合を表示する(1行に4枚)
   const g = state.settings.rates.profit, gl = fmt(g, g % 1 ? 1 : 0) + '%';
-  let sVal = '—', sSub = '', sCls = '';
+  let sVal = '—', sCls = '';
   if (gi && gi.goalSales > 0) {
     const ratio = t.sales / gi.goalSales, rest = 1 - ratio;
     sVal = fmt(ratio * 100, 0);
-    sSub = gi.progress ? `目標値に対して（${rest > 0.005 ? '残り ' + fmt(rest * 100, 0) + '%' : '達成'}・期間の途中）`
-      : `目標値に対して（${rest > 0.005 ? fmt(rest * 100, 0) + '%不足' : '達成'}）`;
     sCls = gi.progress ? '' : (rest > 0.005 ? 'bad' : 'good');
   }
   const pr = hasSales && t.profitRate !== null ? t.profitRate * 100 : null;
   $('cards').innerHTML = [
     card('生産重量', fmt(t.weight, 1), 't', ''),
     card('1t当たり人工数', fmt(t.ninkuPerTon, 2), '人工/t', `総工数 ${fmt(t.hours, 0)}h`),
-    card('売上額（概算）', sVal, sVal === '—' ? '' : '%', sSub, sCls),
+    card('売上額（概算）', sVal, sVal === '—' ? '' : '%', '', sCls),
     card('損益（概算）', pr === null ? '—' : pr.toFixed(1), pr === null ? '' : '%', `（目標${gl}）`, pr === null ? '' : (pr >= g - 1e-9 ? 'good' : pr < 0 ? 'bad' : 'warn')),
   ].join('');
 }
