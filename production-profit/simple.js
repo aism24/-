@@ -238,7 +238,9 @@ function renderGoal(sel) {
   box.hidden = false;
   chartBox.hidden = false;
   const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
-  const row = (label, value, unit, note, cls) => `<div class="gLabel">${label}</div><div class="gVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="gNote">${note || ''}</div>`;
+  // 備考は「（」の前と「|」の位置で区切り、区切りの位置でだけ改行する(言葉の途中で折り返さない)
+  const phr = (html) => String(html || '').split(/(?=（)|\|/).filter((x) => x !== '').map((x) => `<span class="ph">${x}</span>`).join('');
+  const row = (label, value, unit, note, cls) => `<div class="gLabel">${label}</div><div class="gVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="gNote">${phr(note)}</div>`;
   const cmp = (d, unit, digits, goodWhenPlus) => {
     if (Math.abs(d) < 0.5 * Math.pow(10, -digits)) return '<span class="pos">目標どおり</span>';
     const good = goodWhenPlus ? d > 0 : d < 0;
@@ -250,7 +252,7 @@ function renderGoal(sel) {
     const pr = c.prevRate, d = pr === null ? null : pr - p;
     const add = S > 0 ? c.carry / S : null; // 先月度までの過不足を取り返すための上乗せ(利益率のポイント)
     return row('今期の先月度までの利益率', pr === null ? '—' : fmt(pr * 100, 1), pr === null ? '' : '%', d === null ? '' : `目標${gl}に対して <span class="${d >= 0 ? 'pos' : 'neg'}">${pts(d)}</span>（${d >= 0 ? '余裕' : '不足'}）`, d === null ? '' : (d >= 0 ? 'pos' : 'neg')) +
-      row('今月度に必要な利益率', add === null ? '—' : fmt((p + add) * 100, 1), add === null ? '' : '%', add === null ? '' : `目標${gl}${add >= 0 ? '＋' : '−'}先月度までの${add >= 0 ? '不足' : '余裕'}分 ${fmt(Math.abs(add) * 100, 1)}ポイント（今月度の出勤日 ${c.monthDays}日 ÷ 期末(${md(c.fyTo)})までの出勤日 ${c.restDays}日で按分）`);
+      row('今月度に必要な利益率', add === null ? '—' : fmt((p + add) * 100, 1), add === null ? '' : '%', add === null ? '' : `目標${gl}${add >= 0 ? '＋' : '−'}先月度までの${add >= 0 ? '不足' : '余裕'}分 ${fmt(Math.abs(add) * 100, 1)}ポイント（今月度の出勤日 ${c.monthDays}日 ÷|期末(${md(c.fyTo)})までの出勤日 ${c.restDays}日で按分）`);
   };
   // 月末見込みON(月度の途中で見込みを計算しているとき): 見込みの生産量・工数・損益を目標と比べる(目標シミュレーターと同じく見込みのデータで計算)
   const fcOn = cur && sel.fc && sel.fc.on && !sel.fc.few;
@@ -287,7 +289,7 @@ function renderGoal(sel) {
     if (sel.mode === 'period') {
       const fyR = C.fiscalRange(C.fiscalYearOf(sel.periodKey));
       const tf = C.analyze(state.cache, state.settings, fyR.from, sel.lastTo, sel.sites).total;
-      fyNote = `今月度の実績 ${npt(t.ninkuPerTon)}（${doneDays}日分）・今期の実績 ${npt(tf.ninkuPerTon)}`;
+      fyNote = `今月度の実績 ${npt(t.ninkuPerTon)}（${doneDays}日分）・|今期の実績 ${npt(tf.ninkuPerTon)}`;
     }
     const few = doneDays < FC_MIN_DAYS; // 実績が少ないときは「今のペースの見込み」を出さない(ぶれが大きいため)
     // トン単価・変動費単価・人件費単価: 月〆で出勤日の実績が少ないときは今期(期首〜ここまで)の実績を使う(数日分では工事の偏りでぶれるため)
@@ -326,10 +328,10 @@ function renderGoal(sel) {
           : '<span class="neg">残りの出勤日がありません</span>';
       rows = [
         row('目標生産量(期間合計)', ton(r.goalTons), 't', `実績 ${ton(t.weight)}t ＋ 残り ${ton(Math.max(0, need))}t`),
-        row('予定工数(期間合計)', fmt(H, 0), 'h', `実績 ${fmt(t.hours, 0)}h ＋ 1日 ${fmt(perDayH, 0)}h × 残り ${leftDays}日`),
+        row('予定工数(期間合計)', fmt(H, 0), 'h', `実績 ${fmt(t.hours, 0)}h ＋|1日 ${fmt(perDayH, 0)}h × 残り ${leftDays}日`),
         row('1日あたり生産量', needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `これまで ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
         row('1日あたり工数', fmt(perDayH, 0), 'h/日', hNote + (doneDays > 0 ? `（これまで ${fmt(t.hours / doneDays, 0)}h/日）` : '')),
-        row('目標の1t当たり人工数', npt(H / 8 / r.goalTons), '人工/t', `以下（${fyNote}）`),
+        row('目標の1t当たり人工数', npt(H / 8 / r.goalTons), '人工/t', `以下|（${fyNote}）`),
         few ? '' : row('今のペースの見込み', ton(Wpace), 't', '目標との差 ' + cmp(Wpace - r.goalTons, 't', 1, true), Wpace >= r.goalTons - 0.05 ? 'pos' : 'neg'),
       ].join('');
       if (carryInfo) {
@@ -358,7 +360,7 @@ function renderGoal(sel) {
     ].join('');
     chart = { r, x: t.weight, label: '実績' };
   }
-  box.querySelector('.gHead').innerHTML = head;
+  box.querySelector('.gHead').innerHTML = head.replace(/<small>([\s\S]*)<\/small>/, (m, x) => '<small>' + x.split(/(?<=・)/).map((y) => `<span class="ph">${y}</span>`).join('') + '</small>');
   box.querySelector('.gLead').innerHTML = lead;
   box.querySelector('.gTable').innerHTML = rows;
   const r = chart.r;
@@ -459,19 +461,67 @@ function renderTargets(sel, kind, p) {
   const g = fmt(p * 100, (p * 100) % 1 ? 1 : 0) + '%';
   const tr = (name, r, cls) => `<tr class="${cls || ''}"><td>${esc(name)}</td><td>${r ? ton(r.w) : '—'}</td><td>${r ? fmt(r.h, 0) : '—'}</td><td>${r && r.w > 0 ? npt(r.h / 8 / r.w) : '—'}</td></tr>`;
   el.innerHTML = `<div class="tgHead">【目標値】<small>${kind === 'past' ? 'この期間に' : '期間合計で'}${reach ? `目標利益率${g}${carry ? '（先月度までの過不足を含む）' : ''}を達成する量` : `<b class="neg">過去の実績の範囲では目標に届きません</b>（上限まで上げて利益率 ${rate === null ? '—' : fmt(rate * 100, 1) + '%'}／必要 ${fmt(need * 100, 1)}%）`}</small></div>
-    <table><tr><th>工場</th><th>生産重量(t)</th><th>工数(h)</th><th>人工数(人工/t)</th></tr>
+    <table><tr><th>工場</th><th>生産重量<br>(t)</th><th>工数<br>(h)</th><th>人工数<br>(人工/t)</th></tr>
     ${tr('3工場', tot, 'tot')}${sites.map((site) => tr(site, rows.find((r) => r.site === site))).join('')}</table>
-    <div class="tgNote">上限: 直近12か月度の各工場の最高実績（1出勤日あたり生産量・1t当たり人工数）以内</div>`;
+    <div class="tgNote">上限: 直近12か月度の各工場の最高実績（1日あたり生産量・人工数）以内</div>`;
   el.hidden = false;
   placeTargets();
   requestAnimationFrame(placeTargets); // グラフの欄の位置が描画後に決まる場合に備えて、もう一度合わせる
 }
-/* 表の位置: グラフの「損益分岐値」の欄のすぐ下(PC)。スマホはグラフの下に並べる(CSS) */
+/* 表の位置(PC): グラフ内で、線(引き出し線・売上・総費用・固定費・補助線・つまみ)や文字・欄と重ならない場所のうち、
+   「損益分岐値」の欄のすぐ下に最も近い場所に置く。どこにも空きが無いときは重なりが最も少ない場所。スマホはグラフの下(CSS) */
 function placeTargets() {
-  const el = $('goal-targets'), panel = $('goal-chart'), bg = panel.querySelector('#c-goal .beBg');
-  if (el.hidden) return;
-  const pr = panel.getBoundingClientRect(), svg = panel.querySelector('#c-goal svg');
-  if (bg) { const r = bg.getBoundingClientRect(); el.style.left = (r.left - pr.left) + 'px'; el.style.top = (r.bottom - pr.top + 10) + 'px'; }
-  else if (svg) { const r = svg.getBoundingClientRect(); el.style.left = (r.left - pr.left + 80) + 'px'; el.style.top = (r.top - pr.top + 60) + 'px'; }
+  const el = $('goal-targets'), panel = $('goal-chart'), svg = panel.querySelector('#c-goal svg');
+  if (el.hidden || !svg || getComputedStyle(el).position !== 'absolute') return;
+  const pr = panel.getBoundingClientRect(), sr = svg.getBoundingClientRect();
+  const ox = sr.left - pr.left, oy = sr.top - pr.top; // svg座標 → パネル座標
+  const w = el.offsetWidth, h = el.offsetHeight, SW = sr.width, SH = sr.height, M = 6;
+  const segs = [...svg.querySelectorAll('line')].filter((l) => !l.classList.contains('bg')).map((l) => ['x1', 'y1', 'x2', 'y2'].map((k) => +l.getAttribute(k)));
+  const rects = [...svg.querySelectorAll('text, rect, circle')].filter((e) => !e.closest('.beInfo') || e.matches('text')).map((e) => { try { const b = e.getBBox(); return b.width > 0 ? b : null; } catch (x) { return null; } }).filter(Boolean);
+  // 線分が長方形の中を通る長さ(Liang–Barsky)
+  const clipLen = (x0, y0, x1, y1, r) => {
+    let t0 = 0, t1 = 1; const dx = x1 - x0, dy = y1 - y0;
+    for (const [pp, q] of [[-dx, x0 - r.x], [dx, r.x + r.w - x0], [-dy, y0 - r.y], [dy, r.y + r.h - y0]]) {
+      if (pp === 0) { if (q < 0) return 0; continue; }
+      const t = q / pp;
+      if (pp < 0) { if (t > t1) return 0; if (t > t0) t0 = t; } else { if (t < t0) return 0; if (t < t1) t1 = t; }
+    }
+    return Math.hypot(dx, dy) * (t1 - t0);
+  };
+  const area = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.height) - Math.max(a.y, b.y));
+  if (svg.dataset.placed) return; // 同じ描画に対しては1回だけ(欄を二重に動かさない)
+  svg.dataset.placed = '1';
+  const bg = svg.querySelector('.beBg'), bb = bg ? bg.getBBox() : { x: 60, y: 40, width: 0, height: 0 };
+  // ① 表をグラフの左上に置き、「損益分岐値」の欄を表の右隣へ移す(引き出し線も付け替える)。線や文字と重ならなければこれで決定
+  const info = svg.querySelector('.beInfo'), lead = svg.querySelector('.beLead');
+  if (bg && info && lead) {
+    const tx = bb.x, ty = M + 4, tr = { x: tx - 4, y: ty - 4, w: w + 8, h: h + 8 };
+    const lx1 = +lead.getAttribute('x1'), ly1 = +lead.getAttribute('y1');
+    const others = segs.filter((q) => !(q[0] === lx1 && q[1] === ly1)); // 引き出し線以外の線
+    const textRects = [...svg.querySelectorAll('.goalLbl, .goalBg, .handle rect, .handle text, .lbl.seg, .lbl.lineLbl')].map((e) => { try { return e.getBBox(); } catch (x) { return null; } }).filter(Boolean);
+    const free = (r) => others.reduce((a, q) => a + clipLen(q[0], q[1], q[2], q[3], r), 0) === 0 && textRects.every((bx) => area(r, bx) === 0);
+    // 欄の移動先の候補: 表の右隣 → 表の下
+    const cands = [[tx + w + 14, ty], [tx, ty + h + 12]];
+    if (free(tr)) for (const [nx, ny] of cands) {
+      const dx = nx - bb.x, dy = ny - bb.y, nb = { x: nx, y: ny, w: bb.width, h: bb.height };
+      const lx2 = +lead.getAttribute('x2') + dx, ly2 = +lead.getAttribute('y2') + dy;
+      if (nb.x + nb.w > SW - M || nb.y + nb.h > SH - 24 || !free(nb) || clipLen(lx1, ly1, lx2, ly2, tr) > 0) continue;
+      info.setAttribute('transform', `translate(${dx} ${dy})`); bg.setAttribute('transform', `translate(${dx} ${dy})`);
+      lead.setAttribute('x2', lx2); lead.setAttribute('y2', ly2);
+      el.style.left = (ox + tx) + 'px'; el.style.top = (oy + ty) + 'px';
+      return;
+    }
+  }
+  // ② 移せないとき: 空いている場所を探す(引き出し線との重なりは特に避ける)
+  const px = bb.x, py = bb.y + bb.height + 10; // 希望の位置: 損益分岐値の欄の真下
+  let best = null;
+  for (let y = M; y + h <= SH - 24; y += 8) for (let x = M; x + w <= SW - M; x += 8) {
+    const r = { x: x - 4, y: y - 4, w: w + 8, h: h + 8 };
+    const hit = segs.reduce((a, q) => a + clipLen(q[0], q[1], q[2], q[3], r) * (lead && q[0] === +lead.getAttribute('x1') && q[1] === +lead.getAttribute('y1') ? 20 : 1), 0) + rects.reduce((a, b) => a + area(r, b) / 50, 0);
+    const score = hit * 1000 + Math.hypot(x - px, y - py);
+    if (!best || score < best.score) best = { score, x, y };
+  }
+  if (!best) best = { x: px, y: py };
+  el.style.left = (ox + best.x) + 'px'; el.style.top = (oy + best.y) + 'px';
 }
 window.addEventListener('resize', () => setTimeout(placeTargets, 0));
