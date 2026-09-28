@@ -136,9 +136,9 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 |---|---|---|---|
 | pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 解除(2026-09-24、関数統合版を本番デプロイ後に再解除) | |
 | daily-report (https://all-daily-report.vercel.app/) | daily-report | 解除(2026-09-24) | `daily-report/vercel.json` で `git.deploymentEnabled=false`。Ignored Build Step=`git diff HEAD^ HEAD --quiet -- .` |
-| sonekibunki (https://sonekibunki.vercel.app/) | production-profit | 連携中(2026-09-28 再連携。`vercel.json` の `git.deploymentEnabled=false` で自動デプロイは停止) | 静的サイト(関数なし)。本番反映は `create_deployment` で行う。GitHub Pages版は廃止(index.htmlでVercel版へ転送) |
+| sonekibunki (https://sonekibunki.vercel.app/) | production-profit | 解除(2026-09-29、#416〜#424を本番デプロイ後にユーザーが解除。`list_projects` 0件を確認。`vercel.json` の `git.deploymentEnabled=false` は残置) | 静的サイト(関数なし)。本番反映は `create_deployment` で行う。GitHub Pages版は廃止(index.htmlでVercel版へ転送) |
 
-2026-09-28夜時点、sonekibunkiは連携中で `list_projects`(repoUrl=aism24/-)は sonekibunki の1件(正常)。本番反映は指示があったときだけ `create_deployment` で行う。
+2026-09-29、sonekibunkiの連携も解除され、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。公開時は連携を戻してから、指示があったときだけ `create_deployment` で1回デプロイする。
 
 2026-09-27、sonekibunki(production-profit)を新規作成・連携。以降(〜9/28の解除まで) `list_projects`(repoUrl=aism24/-)は sonekibunki の1件が正常(vercel.jsonで自動デプロイ停止済み)。それ以外が返ったらマージしないこと。
 
