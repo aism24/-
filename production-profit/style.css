@@ -61,10 +61,10 @@ button:disabled { opacity: .5; cursor: default; }
 
 .appHead { flex: none; background: var(--surface); }
 /* タブ行: 左=タブ、右=特記事項(薄い黄色)。狭い画面では特記事項が下の行へ回る */
-.tabRow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; padding-right: 16px; }
+.tabRow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; padding-right: 8px; }
 .tabRow .tabs { flex: 0 1 auto; min-width: 0; }
 .appHead .warnbox { margin: 4px 0 0 auto; border-radius: 4px; padding: 2px 10px; font-size: 11px; line-height: 1.35; max-width: 100%; text-align: right; }
-.topbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.topbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: 4px 8px; background: var(--surface); border-bottom: 1px solid var(--border); } /* 余白は元8px 16pxの50% */
 .topCenter { grid-column: 2; display: flex; align-items: center; justify-content: center; gap: 12px; }
 .topRight { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 /* ヘッダーの「リセット」ボタン(会社ロゴの左、オレンジ) */
@@ -83,15 +83,15 @@ button:disabled { opacity: .5; cursor: default; }
 
 /* ===================== 絞り込み(期間=薄い緑、工場=薄いピンク、工事=薄い青 を1行に並べる) ===================== */
 /* 3色の枠は常に均等幅(1/3ずつ)。枠の中身が入り切らないときは枠の中で改行する */
-.filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: stretch; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; align-items: stretch; padding: 4px 8px; background: var(--surface); border-bottom: 1px solid var(--border); }
 .filters.inner { background: none; border: none; padding: 0 0 12px; }
 .filters.inner > label { color: #fff; } /* アプリ背景(黒)に直接のる文字は白 */
 .filters label { display: flex; align-items: center; gap: 6px; }
-.fGroup { display: flex; align-items: center; align-content: center; justify-content: center; text-align: center; gap: 6px 12px; padding: 6px 12px; border-radius: 8px; flex-wrap: wrap; min-width: 0; }
+.fGroup { display: flex; align-items: center; align-content: center; justify-content: center; text-align: center; gap: 6px 12px; padding: 3px 6px; border-radius: 8px; flex-wrap: wrap; min-width: 0; }
 .fGroup label, .fLabel { white-space: nowrap; }
 .fLabel { color: var(--text); }
 /* 期間: 年度・月〆ボタンの位置を固定し、右側の期/月度の欄だけ変わるように左寄せ */
-.gPeriod { background: var(--g-period); justify-content: flex-start; padding-left: 24px; }
+.gPeriod { background: var(--g-period); justify-content: flex-start; padding-left: 12px; }
 .gSite { background: var(--g-site); }
 .gWork { background: var(--g-work); }
 .gWork label { flex: 0 1 380px; min-width: 0; }
@@ -109,8 +109,8 @@ button:disabled { opacity: .5; cursor: default; }
 .check { display: flex; align-items: center; gap: 6px; }
 
 /* ===================== タブ・共通部品 ===================== */
-.tabs { display: flex; gap: 4px; padding: 4px 16px 0; overflow-x: auto; }
-.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--text2); white-space: nowrap; }
+.tabs { display: flex; gap: 4px; padding: 2px 8px 0; overflow-x: auto; }
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 4px 6px; color: var(--text2); white-space: nowrap; } /* 余白は元8px 12pxの50% */
 .tabs button.active { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
 
 .tab { display: none; padding: 16px; max-width: 1400px; margin: 0 auto; }
@@ -161,7 +161,7 @@ td input[type="number"] { width: 130px; }
 .fullTab .simLayout { flex: 1; min-height: 0; gap: 8px; } /* 左右カードの間(元16pxの50%) */
 .simLeft { display: flex; flex-direction: column; min-width: 0; }
 .fullTab .simLeft { min-height: 0; overflow: auto; }
-.fullTab .panel { padding: 10px 14px; }
+.fullTab .panel { padding: 5px 7px; } /* カード内の余白(元10px 14pxの50%) */
 .fullTab .simLeft .panel { margin-bottom: 6px; } /* 上下カードの間(元12pxの50%) */
 .fullTab .simLeft .panel:last-child { flex: 1; margin-bottom: 0; }
 .simChart { display: flex; flex-direction: column; margin-bottom: 0; }
@@ -181,7 +181,7 @@ td input[type="number"] { width: 130px; }
 .bepHelp { margin: 6px 0 0; }
 
 /* 試算表: 全体を罫線で囲う。左=項目名と入力欄、右=工事ごとの実績(行の高さをそろえて横に並べる) */
-.simGridWrap { display: flex; gap: 0; align-items: flex-start; margin-bottom: 8px; border: 1px solid var(--border); width: fit-content; max-width: 100%; }
+.simGridWrap { display: flex; gap: 0; align-items: flex-start; margin-bottom: 4px; border: 1px solid var(--border); width: fit-content; max-width: 100%; }
 .simGridWrap .simHead { height: 34px; display: flex; flex-direction: column; justify-content: flex-end; font-size: 11px; color: var(--text2); line-height: 1.25; overflow: hidden; }
 .simFixed { flex: none; border-right: 1px solid var(--border); padding: 0 0 0 8px; }
 .simFixed .simHead { font-weight: 600; border-bottom: 1px solid transparent; padding-bottom: 3px; }
