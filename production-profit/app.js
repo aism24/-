@@ -55,16 +55,14 @@ function siteColor(site) {
 /* ===================== 起動 ===================== */
 
 document.addEventListener('DOMContentLoaded', () => {
-  const saved = sessionStorageGet('pp-pw');
   document.getElementById('lock-btn').onclick = () => unlock(document.getElementById('lock-input').value);
   document.getElementById('lock-input').onkeydown = (e) => { if (e.key === 'Enter') unlock(e.target.value); };
   if (DEMO) unlock('demo');
-  else if (saved) unlock(saved);
+  // パスワードはブラウザに保存しない(シンプル版から移ったときも含め、開くたびに入力する)
   else if (!REQUIRE_PASSWORD) unlock(''); // パスワード解除中は入力画面を出さずに開く(失敗したときは入力画面が残る)
 });
 
-function sessionStorageGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
-function sessionStorageSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* 保存できなくても動作に支障なし */ } }
+try { sessionStorage.removeItem('pp-pw'); } catch (e) { /* 以前の版が保存したパスワードを消す */ }
 
 async function unlock(pw) {
   state.pw = pw;
@@ -73,7 +71,6 @@ async function unlock(pw) {
   showLoading('データを読み込み中…(初回は集計に1分程度かかる場合があります)');
   try {
     const data = await api('getData');
-    sessionStorageSet('pp-pw', pw);
     onData(data);
     document.getElementById('screen-lock').hidden = true;
     document.getElementById('screen-main').hidden = false;
