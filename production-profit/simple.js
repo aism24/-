@@ -166,6 +166,7 @@ function render() {
   $('f-fc').classList.toggle('active', !!(sel.fc && sel.fc.on));
   if (sel.fc && sel.fc.on && sel.fc.few) {
     renderGoal(sel); // 目標(在職中人数×8h・先月度までの過不足から出す)は、月末見込みを使わないので実績が少なくても出す
+    $('res-note').textContent = '';
     $('cards').innerHTML = `<div class="sMsg">${esc(C.periodLabel(sel.periodKey))}は、まだ出勤日${sel.fc.done}日分の実績しかないため表示していません` +
       `(出勤日${FC_MIN_DAYS}日分以上で月末見込みを表示します)。<br>「月末見込み」を押すと実績のみで表示します。目標は右（下）の欄をご覧ください。</div>`;
     return;
@@ -174,6 +175,7 @@ function render() {
   const t = C.analyze(sel.data, state.settings, sel.from, sel.to, sel.sites).total;
   const hasSales = t.sales > 0;
   const gi = renderGoal(sel);
+  $('res-note').textContent = sel.fc && sel.fc.on && !sel.fc.few ? '（月末見込み）' : sel.lastTo < sel.fullTo ? `（〜${Number(sel.lastTo.slice(5, 7))}/${Number(sel.lastTo.slice(8))}の実績）` : '（実績）';
   // 生産重量・工数は値を、売上額・損益は目標に対する割合を表示する(1行に4枚)
   const g = state.settings.rates.profit, gl = fmt(g, g % 1 ? 1 : 0) + '%';
   let sVal = '—', sSub = '', sCls = '';
