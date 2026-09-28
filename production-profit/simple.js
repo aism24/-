@@ -461,7 +461,7 @@ function renderGoal(sel) {
     return `<span class="${good ? 'pos' : 'neg'}">${d > 0 ? '+' : '−'}${fmt(Math.abs(d), digits)}${unit}</span>`;
   };
   const isAll = sel.sites.length === state.cache.sites.length;
-  const unitLbl = sel.mode === 'fiscal' ? '年度(12か月分)' : '1か月';
+  const unitLbl = sel.mode === 'fiscal' ? '年度・12か月分' : '1か月';
   const stdNote = `標準の目標: 直近12か月度の実績の単価・費用、|在職中人数×8h×標準出勤日数 ${fmt(plan.dStd, 1)}日/月`;
   const rateTxt = (x) => x === null ? '—' : fmt(x * 100, 1) + '%';
   let head, lead, rows, x, label;
@@ -470,7 +470,7 @@ function renderGoal(sel) {
   if (!cur || fcOn) {
     const word = fcOn ? '見込み' : '実績';
     const ok = A.weight >= T.W - 0.05;
-    head = `${fcOn ? '月末見込みで' : ''}目標（${unitLbl}）に届く${fcOn ? 'か' : 'たか'}<small>（${esc(sel.label)}${fcOn ? `・出勤日${sel.fc.done}/${sel.fc.total}日の実績から見込み` : ''}・${stdNote.replace('|', '')}）</small>`;
+    head = `${fcOn ? '月末見込みで' : ''}目標（${unitLbl}）に${fcOn ? '届くか' : '届いたか'}<small><span class="hl">（${esc(sel.label)}${fcOn ? `・出勤日${sel.fc.done}/${sel.fc.total}日の実績から見込み` : ''}）</span><span class="hl">${stdNote.replace('|', '')}</span></small>`;
     lead = ok ? `<span class="pos">✓ ${word}で目標生産量を達成</span><span class="gLeadSub">（${word} ${ton(A.weight)}t／目標 ${ton(T.W)}t）</span>`
       : `<span class="neg">目標生産量に <b>${ton(T.W - A.weight)}t</b> 届き${fcOn ? 'ません' : 'ませんでした'}</span><span class="gLeadSub">（${word} ${ton(A.weight)}t／目標 ${ton(T.W)}t）</span>`;
     rows = [
@@ -488,7 +488,7 @@ function renderGoal(sel) {
     const perDayH = T.people > 0 ? T.people * 8 : (doneDays > 0 ? t.hours / doneDays : 0);
     const need = Math.max(0, T.W - t.weight), needDay = leftDays > 0 ? need / leftDays : null, perDayW = doneDays > 0 ? t.weight / doneDays : 0;
     const few = doneDays < FC_MIN_DAYS;
-    head = `目標（${unitLbl}）を達成するには<small>（${esc(sel.label)}・〜${md(sel.fullTo)}・${stdNote.replace('|', '')}）</small>`;
+    head = `目標（${unitLbl}）を達成するには<small><span class="hl">（${esc(sel.label)}・〜${md(sel.fullTo)}）</span><span class="hl">${stdNote.replace('|', '')}</span></small>`;
     lead = need <= 0 ? `<span class="pos">✓ 目標生産量に到達済み</span><span class="gLeadSub">（実績 ${ton(t.weight)}t／目標 ${ton(T.W)}t）</span>`
       : leftDays > 0 ? `残り <b>${leftDays}</b>出勤日で あと <b class="gKey">${ton(need)}t</b> を <b class="gKey">${fmt(perDayH * leftDays, 0)}h</b> で`
         : '<span class="neg">残りの出勤日がありません</span>';
@@ -507,7 +507,8 @@ function renderGoal(sel) {
     }
     x = t.weight; label = '実績';
   }
-  box.querySelector('.gHead').innerHTML = head.replace(/<small>([\s\S]*)<\/small>/, (m, y) => '<small>' + y.split(/(?<=・)/).map((z) => `<span class="ph">${z}</span>`).join('') + '</small>');
+  box.querySelector('.gHead').innerHTML = head;
+  fitHeadSmall(box.querySelector('.gHead small'));
   box.querySelector('.gLead').innerHTML = lead;
   box.querySelector('.gTable').innerHTML = rows;
   // グラフ: 選んだ期間の実績(見込み)の単価・費用で描く(目標シミュレーターと同じ。点線の内訳が実際の損益と一致する)。
@@ -610,3 +611,15 @@ function placeTargets() {
   el.style.left = (ox + best.x) + 'px'; el.style.top = (oy + best.y) + 'px';
 }
 window.addEventListener('resize', () => setTimeout(placeTargets, 0));
+
+/* 見出しの（ ）内は2行目に1行で表示し、入りきらないときは文字を小さくして収める */
+function fitHeadSmall(sm) {
+  if (!sm) return;
+  sm.querySelectorAll('.hl').forEach((el) => {
+    el.style.fontSize = '';
+    if (getComputedStyle(el).whiteSpace !== 'nowrap') return; // 折り返す行は縮めない
+    let f = parseFloat(getComputedStyle(el).fontSize);
+    while (el.scrollWidth > el.clientWidth + 1 && f > 9) { f -= 0.5; el.style.fontSize = f + 'px'; }
+  });
+}
+window.addEventListener('resize', () => fitHeadSmall(document.querySelector('#goal .gHead small')));

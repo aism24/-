@@ -41,7 +41,8 @@
 /* 文字サイズは --gfs を基準にem指定(2026-09-28 2倍に拡大。狭い画面では備考を次の行へ折り返す) */
 .sGoal { --gfs: clamp(18px, 6vw, 28px); font-size: var(--gfs); background: #2d1650; border: 3px solid #9be15d; box-shadow: 0 0 16px rgba(155, 225, 93, .45); border-radius: 12px; padding: 10px 14px; margin-top: 12px; color: #fff; }
 .gHead { background: #7b3fd0; color: #fff; font-weight: 700; border-radius: 6px; padding: .2em .5em; font-size: 1em; line-height: 1.35; }
-.gHead small { font-weight: 400; font-size: .75em; color: #efe6fb; margin-left: .3em; }
+.gHead small { display: block; font-weight: 400; font-size: .75em; color: #efe6fb; margin-left: 0; }
+.gHead small .hl { display: block; white-space: nowrap; overflow: hidden; } /* 2行目=期間・工場、3行目=標準の目標の説明。各1行(入りきらないときはJSで縮小) */
 .gLead { font-size: 1.29em; font-weight: 700; margin: .35em .1em; line-height: 1.4; }
 .gLead .gLeadSub { display: block; } /* かっこ書きは改行して下に表示 */
 .gLead .gKey { color: #ff6fb5; font-size: 1.33em; }
@@ -110,3 +111,4 @@
 .sResHead { color: #bfe9ff; font-weight: 800; font-size: 15px; margin: 0 2px 6px; }
 .sResHead small { font-weight: 500; font-size: 12px; margin-left: 6px; color: #9fd8f5; }
 @media (min-width: 1000px) and (max-height: 820px) { .sTargets { font-size: clamp(12px, 1.75vh, 19.5px); } } /* 背の低い画面は少し縮めて線と重ならないように */
+@media (max-width: 700px) { .gHead small .hl:last-child { white-space: normal; } } /* スマホは説明の行だけ折り返す(1行では小さくなりすぎるため) */
