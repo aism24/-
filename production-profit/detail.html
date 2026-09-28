@@ -10,7 +10,7 @@
 <!-- 数字の幅をそろえる(等幅数字)ため、英数字はInterを使う(日本語は各OSのゴシック) -->
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
-<link rel="stylesheet" href="style.css?v=20260929s">
+<link rel="stylesheet" href="style.css?v=20260929t">
 </head>
 <body>
 
@@ -23,7 +23,7 @@
     <input type="password" id="lock-input" placeholder="閲覧用パスワード" autocomplete="current-password">
     <button id="lock-btn" class="primary">開く</button>
     <p id="lock-msg" class="err"></p>
-    <div class="lockFoot"><button type="button" id="lock-home" class="ghost">ホームに戻る</button></div>
+    <div class="lockFoot"><button type="button" id="lock-home" class="ghost homeBack">ホームに戻る</button></div>
   </div>
 </section>
 
@@ -36,7 +36,7 @@
     <h1>生産損益分析</h1></div>
     <div class="topRight"><span id="updated" class="muted small"></span>
     <button type="button" id="to-simple" class="ghost" title="今の期間・工場のまま、シンプル版に切り替えます">シンプル版へ</button>
-    <button type="button" id="to-home" class="ghost">ホームに戻る</button>
+    <button type="button" id="to-home" class="ghost homeBack">ホームに戻る</button>
     <button id="refresh-btn" class="ghost">今すぐ更新</button></div>
   </header>
   <div class="filters">
