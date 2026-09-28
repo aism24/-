@@ -36,15 +36,13 @@ function money(v) {
   if (v === null || v === undefined || !isFinite(v)) return ['—', ''];
   return Math.abs(v) >= 1e8 ? [fmt(v / 1e8, 2), '億円'] : [fmt(v / 1e4, 0), '万円'];
 }
-function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
-function ssSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* 無視 */ } }
 
 document.addEventListener('DOMContentLoaded', () => {
   $('lock-btn').onclick = () => unlock($('lock-input').value);
   $('lock-input').onkeydown = (e) => { if (e.key === 'Enter') unlock(e.target.value); };
   $('to-home').onclick = () => { location.href = 'index.html' + (DEMO ? '?demo=1' : ''); };
   $('to-detail').onclick = () => { location.href = 'detail.html' + viewQuery(); };
-  unlock(DEMO ? 'demo' : (ssGet('pp-pw') || '')); // パスワードは詳細版と共用(同じタブで入力済みなら再入力不要)
+  unlock(DEMO ? 'demo' : ''); // シンプル版は閲覧用パスワード無しで開ける(GASが app:'simple' の読み込みは確認しない)
 });
 
 async function unlock(pw) {
@@ -53,7 +51,6 @@ async function unlock(pw) {
   $('loading').hidden = false;
   try {
     const data = await api('getData');
-    ssSet('pp-pw', pw);
     state.cache = data.cache;
     state.cache.sites = C.DEFAULT_SITES.slice();
     state.cache.rec = (state.cache.rec || []).filter((r) => C.DEFAULT_SITES.indexOf(r[1]) >= 0);
@@ -82,7 +79,8 @@ function initUi() {
   const periods = [];
   for (let k = cur; k >= monthFirst; k = C.shiftPeriod(k, -1)) periods.push(k);
   $('f-period').innerHTML = periods.map((k) => `<option value="${k}">${C.periodLabel(k)}</option>`).join('');
-  $('f-period').value = periods[1] || periods[0];
+  state.defPeriod = periods[1] || periods[0]; // 先月度(直近の確定月度)。年度→月〆に切り替えたときもこの月度
+  $('f-period').value = state.defPeriod;
   const fys = [];
   for (let y = C.fiscalYearOf(cur); y >= C.fiscalYearOf(first); y--) fys.push(y);
   $('f-fiscal').innerHTML = fys.map((y) => `<option value="${y}">${C.fiscalLabel(y)}</option>`).join('');
@@ -104,7 +102,13 @@ function initUi() {
   if (q.get('fc') === '0') state.fcOff = true;
   ['w', 't'].forEach((k) => { if (q.has(k)) state.pass[k] = q.get(k); });
 
-  $('f-modes').onclick = (e) => { const b = e.target.closest('button'); if (b) { state.mode = b.dataset.mode; render(); } };
+  $('f-modes').onclick = (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.mode === 'period' && state.mode !== 'period') $('f-period').value = state.defPeriod; // 年度→月〆は常に先月度から
+    state.mode = b.dataset.mode;
+    render();
+  };
   $('f-sites').onclick = (e) => { const b = e.target.closest('button'); if (b) { state.site = b.dataset.site; render(); } };
   $('f-period').onchange = render;
   $('f-fiscal').onchange = render;
