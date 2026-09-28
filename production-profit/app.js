@@ -195,7 +195,10 @@ function applyDefaults() {
 async function refresh() {
   showLoading('最新データで集計し直しています…(1分程度かかる場合があります)');
   try {
+    // 設定タブの未保存の変更は、再集計で読み直した設定で上書きしない
+    const unsaved = document.getElementById('set-dirty').textContent === '未保存の変更があります' ? state.settings : null;
     onData(await api('refresh'));
+    if (unsaved) state.settings = Object.assign(unsaved, { calendar: state.settings.calendar });
     renderAll();
   } catch (e) {
     alert('更新に失敗しました: ' + e.message);
@@ -306,7 +309,7 @@ function kpi(label, value, unit, sub, cls) {
 }
 /* 目標は利益目標額(売上×利益率)の1つだけ。損益がこれ以上なら達成。 */
 function goalKpi(profit, goal, hasSales, render) {
-  const ok = hasSales && profit - goal >= -1; // 1円未満の誤差は達成扱い
+  const ok = hasSales && profit - goal >= -0.5; // 1円未満の誤差は達成扱い(現状分析の判定と同じ)
   const d = profit - goal;
   return (render || kpi)('利益目標額', yen(goal), '円', hasSales ? `<span class="${ok ? 'pos' : 'neg'}">${ok ? '達成' : '未達'}</span>(損益との差 <span class="${d >= 0 ? 'pos' : 'neg'}">${d >= 0 ? '+' : ''}${yen(d)}</span>円)` : '売上なし',
     hasSales ? (ok ? 'pos' : 'neg') : '');
@@ -416,7 +419,8 @@ function drawBep(id, o) {
   const prev = bepState[id];
   // 同じ条件の再描画(ドラッグ中など)ではつまみ位置を保つ。条件が変わったら初期位置に戻す。
   const sig = o.sig || [o.fixed, o.unitPrice, o.laborPerTon, o.varPerTon, o.profitRate].join('|');
-  const st = bepState[id] = { o, x: (prev && prev.sig === sig && !o.forceX) ? prev.x : (o.x || 0), sig, padL: prev && prev.sig === sig ? prev.padL : undefined, maxX: prev && prev.sig === sig && !o.forceX ? prev.maxX : null }; // ドラッグ中以外は縮尺を取り直す
+  const keep = prev && prev.sig === sig && !o.forceX && !o.fixedX; // 実績に固定のグラフ(fixedX)は毎回実績の位置に置く
+  const st = bepState[id] = { o, x: keep ? prev.x : (o.x || 0), sig, padL: prev && prev.sig === sig ? prev.padL : undefined, maxX: keep ? prev.maxX : null }; // ドラッグ中以外は縮尺を取り直す
   if (!st.maxX) st.maxX = Math.max(o.x || 0, o.beTons || 0, o.goalTons || 0, 1) * 1.35;
   box.classList.toggle('fixedX', !!o.fixedX); // fixedX: つまみを動かせない(実績の損益分岐生産量タブ)
   renderBepSvg(id);
@@ -431,7 +435,7 @@ function drawBep(id, o) {
       return Math.min(s.maxX, Math.max(0, (e.clientX - r.left + grabDx - g.l) / g.w * s.maxX));
     };
     const onLine = (e) => {
-      const s = bepState[id], g = s.geom, r = box.getBoundingClientRect();
+      const s = bepState[id], g = s && s.geom, r = box.getBoundingClientRect();
       if (!s || s.o.fixedX || !g || s.cursorX === undefined) return false;
       const px = e.clientX - r.left, py = e.clientY - r.top;
       return Math.abs(px - s.cursorX) <= NEAR && py >= g.t - 50 && py <= g.t + g.h + 4;
@@ -446,11 +450,11 @@ function drawBep(id, o) {
     });
     box.addEventListener('pointermove', (e) => {
       if (!dragging) { box.classList.toggle('canGrab', onLine(e)); return; }
-      const s = bepState[id]; s.x = toX(e); renderBepSvg(id); if (s.o.onMove) s.o.onMove(s.x);
+      const s = bepState[id]; s.x = toX(e); if (s.o.onMove) s.o.onMove(s.x); else renderBepSvg(id); // onMoveの先で描き直すので二重に描かない
     });
     const end = (e) => { dragging = false; box.classList.remove('grabbing'); box.classList.toggle('canGrab', !!(e && onLine(e))); };
     box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
-    window.addEventListener('resize', () => bepState[id] && renderBepSvg(id));
+    window.addEventListener('resize', () => bepState[id] && box.clientWidth && renderBepSvg(id)); // 非表示のタブのグラフは表示時に描く
   }
 }
 
@@ -815,7 +819,7 @@ function renderSimWorks(an) {
   </div>`).join('');
 }
 
-function parseNum(v) { return Number(String(v).replace(/[,，\s]/g, '')) || 0; }
+function parseNum(v) { return parseNumIn(v) || 0; } // 「,」・全角数字も読む(読めないときは0)
 
 function simValue(k) {
   const v = document.getElementById('s-' + k).value, ex = (state.simExact || {})[k];
@@ -1009,7 +1013,7 @@ function downloadWorksCsv() {
   const lines = [['工事No', '工事名', '重量(t)', '工数(h)', '人工', '人工/t', 'トン単価', '売上', '人件費', '変動費', '限界利益', '固定費配賦', '損益']];
   worksRows(sel).forEach((r) => {
     const h = alloc ? r.allocHours : r.hours;
-    lines.push([r.workNo, r.name, r.weight.toFixed(3), h.toFixed(2), (h / 8).toFixed(2), r.weight > 0 ? (h / 8 / r.weight).toFixed(3) : '',
+    lines.push([csvText(r.workNo), csvText(r.name), r.weight.toFixed(3), h.toFixed(2), (h / C.HOURS_PER_NINKU).toFixed(2), r.weight > 0 ? (h / C.HOURS_PER_NINKU / r.weight).toFixed(3) : '',
       r.unitPrice !== null ? Math.round(r.unitPrice) : '', Math.round(r.sales), Math.round(r.labor), Math.round(r.variable), Math.round(r.marginal), Math.round(r.fixed), Math.round(r.profit)]);
   });
   const csv = '﻿' + lines.map((l) => l.map((v) => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : v).join(',')).join('\r\n');
@@ -1017,8 +1021,10 @@ function downloadWorksCsv() {
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   a.download = `工事別分析_${sel.from}_${sel.to}${sel.site ? '_' + sel.site : ''}.csv`;
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(a.href), 0); // すぐに解放するとダウンロードが中断するブラウザがある
 }
+// 表計算ソフトで式として解釈されないよう、= + - @ で始まる文字列の先頭に ' を付ける
+function csvText(v) { const t = String(v === null || v === undefined ? '' : v); return /^[=+\-@]/.test(t) ? "'" + t : t; }
 
 /* ===================== 設定 ===================== */
 
@@ -1127,7 +1133,7 @@ function renderSettings() {
   if (!unlocked) return;
   const s = state.settings;
   document.getElementById('set-rates').innerHTML = RATE_LABELS.map(([f, l]) =>
-    `<label>${l}(%)${numInput({ k: 'rate', f }, s.rates[f], 0.1)}</label>`).join('');
+    `<label>${l}(%)${numInput({ k: 'rate', f }, s.rates[f])}</label>`).join('');
   updateRateSum();
   document.getElementById('set-common').value = s.commonWorkNos || '';
   document.getElementById('set-common').dataset.k = 'common';
@@ -1135,7 +1141,7 @@ function renderSettings() {
   document.getElementById('set-costs').innerHTML = '<tr><th>工場</th><th class="n">人件費単価(円/人工)</th><th class="n">月固定費(円)</th><th class="n">変動費単価(円/t)</th></tr>' +
     state.cache.sites.map((site) => {
       const c = s.costs[site] || {};
-      return `<tr><td>${esc(site)}</td><td class="n">${numInput({ k: 'cost', site, f: 'laborRate' }, c.laborRate, 100)}</td><td class="n">${numInput({ k: 'cost', site, f: 'fixedMonthly' }, c.fixedMonthly, 10000)}</td><td class="n">${numInput({ k: 'cost', site, f: 'variablePerTon' }, c.variablePerTon, 100)}</td></tr>`;
+      return `<tr><td>${esc(site)}</td><td class="n">${numInput({ k: 'cost', site, f: 'laborRate' }, c.laborRate)}</td><td class="n">${numInput({ k: 'cost', site, f: 'fixedMonthly' }, c.fixedMonthly)}</td><td class="n">${numInput({ k: 'cost', site, f: 'variablePerTon' }, c.variablePerTon)}</td></tr>`;
     }).join('');
 
   renderSettingsWorks();
@@ -1152,7 +1158,7 @@ function renderSettingsWorks() {
   document.getElementById('set-works').innerHTML = '<tr><th>工事No</th><th>工事名</th><th class="n">生産実績の総重量(t)</th><th class="n">契約総重量(t)</th><th class="n">契約金額(円)</th><th class="n">トン単価(円/t)</th></tr>' +
     list.map((wn) => {
       const w = s.works[wn] || {}, info = state.cache.works[wn];
-      return `<tr><td>${esc(wn)}</td><td>${esc(info.name)}</td><td class="n">${ton(info.totalWeight)}</td><td class="n">${numInput({ k: 'work', wn, f: 'totalWeight' }, w.totalWeight, 0.1)}</td><td class="n">${numInput({ k: 'work', wn, f: 'contract' }, w.contract, 10000)}</td><td class="n" id="wp-${esc(wn)}">${yen(C.unitPriceOf(wn, state.cache, s).price)}</td></tr>`;
+      return `<tr><td>${esc(wn)}</td><td>${esc(info.name)}</td><td class="n">${ton(info.totalWeight)}</td><td class="n">${numInput({ k: 'work', wn, f: 'totalWeight' }, w.totalWeight)}</td><td class="n">${numInput({ k: 'work', wn, f: 'contract' }, w.contract)}</td><td class="n" id="wp-${esc(wn)}">${yen(C.unitPriceOf(wn, state.cache, s).price)}</td></tr>`;
     }).join('');
 }
 
