@@ -167,7 +167,6 @@ td input[type="number"] { width: 130px; }
 .simChart { display: flex; flex-direction: column; margin-bottom: 0; }
 .simChart .chartBox { flex: 1; min-height: 0; height: auto; overflow: hidden; }
 /* 試算表の下の説明文(右寄せ) */
-#tab-sim .btnRow { align-items: center; justify-content: flex-end; text-align: right; }
 /* グラフ見出しの右に「現在値に戻す」: 黄色背景、縁が光ってゆっくり点滅 */
 .chartHead { display: flex; align-items: center; justify-content: flex-start; gap: 12px; margin-bottom: 8px; }
 .chartHead h2 { margin: 0; }
@@ -190,7 +189,7 @@ td input[type="number"] { width: 130px; }
 .simFixed .simHead.simHeadRow { display: grid; grid-template-columns: 104px 174px; gap: 0 8px; align-items: center; justify-content: stretch; border-bottom: 1px solid var(--border); padding-bottom: 0; }
 .simHeadRow .simTitle { font-size: 22px; font-weight: 700; color: var(--text); text-align: center; }
 .simHeadRow .simInHead { align-self: stretch; display: flex; align-items: center; justify-content: center; border-left: 1px solid var(--border); font-size: 12px; font-weight: 600; }
-.simFixed .simRow { display: grid; grid-template-columns: 104px 174px; gap: 0 8px; align-items: stretch; height: 36px; margin: 0; border-bottom: 1px solid var(--border); }
+.simFixed .simRow { display: grid; grid-template-columns: 104px 174px; gap: 0 8px; align-items: stretch; height: 25px; margin: 0; /* 行の高さ(元36pxの70%) */ border-bottom: 1px solid var(--border); }
 .simFixed .simRow:last-child { border-bottom: none; }
 .simFixed .simRow > label { align-self: center; text-align: center; }
 /* 入力欄: 枠なし・薄い黄色背景(着色部分=入力するところ)。末尾に単位(t・人工・円/t・円)。
@@ -198,7 +197,7 @@ td input[type="number"] { width: 130px; }
 .simIn { display: flex; align-items: center; height: 100%; border-left: 1px solid var(--border); background: var(--warn-bg); padding-right: 6px; }
 .simIn.simInSales { background: transparent; }
 .simIn:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
-.simNum { flex: 1; min-width: 0; height: 100%; text-align: right; font-size: 15px; padding: 5px 4px 5px 8px; border: none; border-radius: 0; background: transparent; }
+.simNum { flex: 1; min-width: 0; height: 100%; text-align: right; font-size: 15px; padding: 0 4px 0 8px; border: none; border-radius: 0; background: transparent; }
 .simNum:focus { outline: none; }
 .simNum.simSales { font-weight: 700; color: var(--text); cursor: default; }
 .simIn .simUnit { flex: none; width: 3.2em; text-align: left; padding-left: 2px; font-size: 11px; color: var(--text2); } /* 単位の幅をそろえて数値の右端を合わせる */
@@ -210,7 +209,7 @@ td input[type="number"] { width: 130px; }
 .simCol .simHead b, .simCol .simHead span { display: block; width: 100%; text-align: center; }
 .simCol .simHead b { color: var(--text); font-size: 12px; }
 .simCol .simHead span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.simCell { height: 36px; display: flex; align-items: center; justify-content: flex-end; padding: 0 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.simCell { height: 25px; display: flex; align-items: center; justify-content: flex-end; padding: 0 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
 .simCol .simCell:last-child { border-bottom: none; }
 .simCell.simSales { font-weight: 700; color: var(--text); }
 .simEmpty { padding-top: 40px; }
@@ -284,7 +283,6 @@ td input[type="number"] { width: 130px; }
 
 /* ===================== 画面サイズ別 ===================== */
 /* 高さの低い画面: 説明文を隠し、絞り込みの余白を詰める */
-@media (max-height: 820px) and (min-width: 801px) { #tab-sim .btnRow .muted { display: none; } }
 @media (max-height: 760px) and (min-width: 801px) {
   .fGroup { padding: 4px 10px; }
   .gPeriod { padding-left: 24px; }
