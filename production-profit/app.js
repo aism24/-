@@ -173,6 +173,48 @@ function initUi() {
   initSim();
   initSettings();
   applyDefaults();
+  applyUrlState();
+  document.getElementById('to-simple').onclick = () => { location.href = 'simple.html' + viewQuery(); };
+  document.getElementById('to-home').onclick = () => { location.href = 'index.html' + (DEMO ? '?demo=1' : ''); };
+}
+
+/* シンプル版・ホームとの行き来: 表示条件(期間・工場・工事・タブ・月末見込み)をURLで受け渡す。
+   m=fiscal|period, fy=期, p=月度, s=工場, w=工事No, t=タブ, fc=0(実績のみ)。URLに無い項目は既定のまま。 */
+function applyUrlState() {
+  const q = new URLSearchParams(location.search);
+  const setSel = (id, v) => {
+    const el = document.getElementById(id), old = el.value;
+    el.value = v;
+    if (el.value !== v) el.value = old; // 選択肢に無い値は無視する
+  };
+  if (q.has('m')) setSel('f-mode', q.get('m'));
+  if (q.has('fy')) setSel('f-fiscal', q.get('fy'));
+  if (q.has('p')) setSel('f-period', q.get('p'));
+  if (q.has('s') && state.cache.sites.includes(q.get('s'))) {
+    document.getElementById('f-site').value = q.get('s');
+    document.querySelectorAll('#f-sites button').forEach((x) => x.classList.toggle('active', x.dataset.site === q.get('s')));
+  }
+  if (q.has('w')) state.pendingWork = q.get('w'); // 工事の選択肢は期間・工場で作り直すため、そのときに選ぶ
+  const tab = q.get('t');
+  if (tab && document.getElementById('tab-' + tab)) {
+    document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x.dataset.tab === tab));
+    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + tab));
+  }
+  if (q.get('fc') === '0') state.fcOff = true;
+}
+
+function viewQuery() {
+  const q = new URLSearchParams();
+  if (DEMO) q.set('demo', '1');
+  q.set('m', document.getElementById('f-mode').value);
+  q.set('fy', document.getElementById('f-fiscal').value);
+  q.set('p', document.getElementById('f-period').value);
+  const site = document.getElementById('f-site').value, work = document.getElementById('f-work').value;
+  if (site) q.set('s', site);
+  if (work) q.set('w', work);
+  q.set('t', document.querySelector('.tabs button.active').dataset.tab);
+  if (state.fcOff) q.set('fc', '0');
+  return '?' + q.toString();
 }
 
 /* 開いたとき・リセット時の既定表示: 本日を含む「今期」・3工場・全工事・目標シミュレーター */
@@ -218,7 +260,8 @@ function onFilterChange() {
    (選択中の工事がリストから外れる場合は「全工事」に戻す)。 */
 function refreshWorkList(from, to, sites) {
   const sel = document.getElementById('f-work');
-  const cur = sel.value;
+  const cur = state.pendingWork !== undefined ? state.pendingWork : sel.value;
+  state.pendingWork = undefined;
   const common = C.commonWorkSet(state.settings);
   const siteSet = new Set(sites);
   const found = {};
@@ -1166,32 +1209,10 @@ function renderSettingsWorks() {
 
 function demoApi(action, extra) {
   if (!state.demoCache) {
-    state.demoCache = makeDemoCache();
+    state.demoCache = PPDemo.makeDemoCache(C);
     state.demoSettings = Object.assign(C.defaultSettings(), {
       works: { '26-01': { contract: 60000000, totalWeight: 200 }, '26-02': { contract: 45000000, totalWeight: null } } });
   }
   if (action === 'saveSettings') { state.demoSettings = JSON.parse(JSON.stringify(extra.settings)); }
   return Promise.resolve({ cache: state.demoCache, settings: state.demoSettings || null, ok: true });
-}
-
-function makeDemoCache() {
-  let seed = 7;
-  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const sites = ['本社', '夢前', '鳥取'];
-  const works = {};
-  for (let i = 1; i <= 12; i++) works['26-' + String(i).padStart(2, '0')] = { name: 'デモ工事' + i, totalWeight: 0 };
-  const rec = [];
-  const start = Date.UTC(2025, 10, 21), end = Date.now();
-  for (let t = start; t < end; t += 86400000) {
-    const ymd = C.utcToYmd(t);
-    if (new Date(t).getUTCDay() === 0) continue;
-    sites.forEach((site, si) => {
-      const wn = Object.keys(works)[Math.floor(rnd() * 12)];
-      const w = (4 + si * -1 + rnd() * 3);
-      rec.push([ymd, site, wn, +w.toFixed(3), +(w * (3 + rnd() * 2) * 8).toFixed(2)]);
-      rec.push([ymd, site, '00-00', 0, +(8 + rnd() * 16).toFixed(2)]);
-      works[wn].totalWeight += w;
-    });
-  }
-  return { generatedAt: new Date().toISOString(), sites, works, rec, warnings: ['デモデータで表示しています(?demo=1)'] };
 }

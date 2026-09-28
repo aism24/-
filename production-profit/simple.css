@@ -1,0 +1,37 @@
+/* シンプル版・ホーム画面(style.cssの色・ボタンを流用) */
+.homeBox { max-width: 440px; }
+.homeBox h1, .homeBox > p { text-align: center; margin: 0; }
+.homeBtn { display: flex; flex-direction: column; gap: 4px; padding: 18px 20px; border-radius: 10px; border: 2px solid var(--accent); background: var(--surface); color: var(--text); text-decoration: none; }
+.homeBtn b { font-size: 20px; color: var(--accent); }
+.homeBtn span { font-size: 13px; color: var(--text2); }
+.homeBtn:hover, .homeBtn:focus-visible { background: var(--accent); }
+.homeBtn:hover b, .homeBtn:hover span, .homeBtn:focus-visible b, .homeBtn:focus-visible span { color: #fff; }
+
+.simple { max-width: 760px; margin: 0 auto; padding: 0 12px 24px; }
+.sHead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 12px; margin: 0 -12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.sHead h1 { font-size: 18px; margin: 0; flex: 1; min-width: 12em; }
+.sTag { display: inline-block; font-size: 12px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 999px; padding: 2px 10px; vertical-align: middle; }
+.sNav { display: flex; gap: 8px; margin-left: auto; }
+.sFilters { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin: 12px 0; display: flex; flex-direction: column; gap: 8px; }
+.sRow { display: flex; align-items: stretch; justify-content: center; flex-wrap: wrap; gap: 8px; }
+.sRow select { font-size: 15px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.sCards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.sCard { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.sCard.big { grid-column: 1 / -1; text-align: center; }
+.sLabel { font-size: 14px; font-weight: 700; color: var(--text2); }
+.sValue { font-size: 30px; font-weight: 800; margin: 4px 0 2px; overflow-wrap: anywhere; }
+.sCard.big .sValue { font-size: 48px; }
+.sUnit { font-size: 15px; font-weight: 500; color: var(--text2); margin-left: 3px; }
+.sSub { font-size: 13px; color: var(--muted); }
+.sCard.good .sValue { color: var(--good); }
+.sCard.bad .sValue { color: var(--bad); }
+.sCard.big.good { border: 2px solid var(--good); }
+.sCard.big.bad { border: 2px solid var(--bad); }
+.sMsg { grid-column: 1 / -1; background: var(--warn-bg); border-radius: 10px; padding: 16px; line-height: 1.7; color: var(--text); }
+.sFoot { color: #bbb; text-align: center; margin: 12px 0 0; } /* 背景(黒)の上の文字 */
+@media (max-width: 480px) {
+  .sCards { grid-template-columns: 1fr; }
+  .sValue { font-size: 28px; }
+  .sCard.big .sValue { font-size: 40px; }
+  .sNav { width: 100%; justify-content: flex-end; }
+}
