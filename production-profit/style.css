@@ -60,7 +60,10 @@ button:disabled { opacity: .5; cursor: default; }
 .lockBox { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 28px; width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 12px; }
 
 .appHead { flex: none; background: var(--surface); }
-.appHead .warnbox { margin: 0; border-radius: 0; padding: 4px 16px; }
+/* タブ行: 左=タブ、右=特記事項(薄い黄色)。狭い画面では特記事項が下の行へ回る */
+.tabRow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; padding-right: 16px; }
+.tabRow .tabs { flex: 0 1 auto; min-width: 0; }
+.appHead .warnbox { margin: 4px 0 0 auto; border-radius: 4px; padding: 2px 10px; font-size: 11px; line-height: 1.35; max-width: 100%; text-align: right; }
 .topbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
 .topCenter { grid-column: 2; display: flex; align-items: center; justify-content: center; gap: 12px; }
 .topRight { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; gap: 12px; }

@@ -10,7 +10,7 @@
 <!-- 数字の幅をそろえる(等幅数字)ため、英数字はInterを使う(日本語は各OSのゴシック) -->
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap">
-<link rel="stylesheet" href="style.css?v=20260928b">
+<link rel="stylesheet" href="style.css?v=20260928c">
 </head>
 <body>
 
@@ -63,6 +63,7 @@
       <span id="f-price-warn" class="small neg" hidden></span>
     </div>
   </div>
+  <div class="tabRow">
   <nav class="tabs" role="tablist">
     <button data-tab="sim" class="active">目標シミュレーター</button>
     <button data-tab="dash">ダッシュボード</button>
@@ -70,7 +71,9 @@
     <button data-tab="works">工事別分析</button>
     <button data-tab="settings">設定</button>
   </nav>
+  <!-- 特記事項はタブ行の右側に表示(縦幅を取らないため) -->
   <div id="warnings" class="warnbox" hidden></div>
+  </div>
   </div>
   <div id="fc-block" class="fcBlock" hidden></div>
 
@@ -174,7 +177,7 @@
 <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loading-text">読み込み中…</span></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="calc.js?v=20260928b"></script>
-<script src="app.js?v=20260928b"></script>
+<script src="calc.js?v=20260928c"></script>
+<script src="app.js?v=20260928c"></script>
 </body>
 </html>
