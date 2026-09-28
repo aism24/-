@@ -564,8 +564,8 @@ function placeTargets() {
     const others = segs.filter((q) => !(q[0] === lx1 && q[1] === ly1)); // 引き出し線以外の線
     const textRects = [...svg.querySelectorAll('.goalLbl, .goalBg, .handle rect, .handle text, .lbl.seg, .lbl.lineLbl')].map((e) => { try { return e.getBBox(); } catch (x) { return null; } }).filter(Boolean);
     const free = (r) => others.reduce((a, q) => a + clipLen(q[0], q[1], q[2], q[3], r), 0) === 0 && textRects.every((bx) => area(r, bx) === 0);
-    // 欄の移動先の候補: 表の右隣 → 表の下
-    const cands = [[tx + w + 14, ty], [tx, ty + h + 12]];
+    // 欄の移動先の候補: 表の下(左端をそろえる) → 表の右隣
+    const cands = [[tx, ty + h + 12], [tx + w + 14, ty]];
     if (free(tr)) for (const [nx, ny] of cands) {
       const dx = nx - bb.x, dy = ny - bb.y, nb = { x: nx, y: ny, w: bb.width, h: bb.height };
       const lx2 = +lead.getAttribute('x2') + dx, ly2 = +lead.getAttribute('y2') + dy;
