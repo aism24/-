@@ -125,8 +125,9 @@ function initUi() {
   for (let k = cur; k >= monthFirst; k = C.shiftPeriod(k, -1)) periods.push(k);
   const selP = document.getElementById('f-period');
   selP.innerHTML = periods.map((k) => `<option value="${k}">${C.periodLabel(k)}</option>`).join('');
-  // 既定は直近の確定月度(当月度が始まったばかりの時に空の画面にならないように)
-  selP.value = periods[1] || periods[0];
+  // 既定は直近の確定月度=先月度(当月度が始まったばかりの時に空の画面にならないように)。「月〆」を押したとき・リセット時もこの月度にする
+  state.defPeriod = periods[1] || periods[0];
+  selP.value = state.defPeriod;
   const fys = [];
   for (let y = C.fiscalYearOf(cur); y >= C.fiscalYearOf(first); y--) fys.push(y);
   document.getElementById('f-fiscal').innerHTML = fys.map((y) => `<option value="${y}">${C.fiscalLabel(y)}</option>`).join('');
@@ -152,7 +153,9 @@ function initUi() {
   document.getElementById('f-modes').onclick = (e) => {
     const b = e.target.closest('button');
     if (!b) return;
-    document.getElementById('f-mode').value = b.dataset.mode;
+    const modeEl = document.getElementById('f-mode');
+    if (b.dataset.mode === 'period' && modeEl.value !== 'period') selP.value = state.defPeriod; // 年度→月〆は常に先月度から
+    modeEl.value = b.dataset.mode;
     onFilterChange();
   };
   // 月度の◀▶: 1か月ずつ移動(リストは新しい順)
@@ -222,6 +225,7 @@ function applyDefaults() {
   const today = C.utcToYmd(Date.now() + 9 * 3600 * 1000);
   const fy = String(C.fiscalYearOf(C.periodKeyOf(today)));
   document.getElementById('f-mode').value = 'fiscal';
+  if (state.defPeriod) document.getElementById('f-period').value = state.defPeriod; // 月〆に切り替えたときの月度も既定(先月度)に戻す
   const selF = document.getElementById('f-fiscal');
   selF.value = fy;
   if (selF.value !== fy) selF.selectedIndex = 0;
