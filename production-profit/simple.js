@@ -477,7 +477,8 @@ function renderGoal(sel) {
       row('生産重量', ton(T.W), 't', `${word} ${ton(A.weight)}t（${cmp(A.weight - T.W, 't', 1, true)}）`),
       row('工数', fmt(T.H, 0), 'h', `${word} ${fmt(A.hours, 0)}h（${cmp(A.hours - T.H, 'h', 0, false)}）`),
       row('1t当たり人工数', npt(T.n), '人工/t', `${word} ${npt(A.ninkuPerTon)}（${A.ninkuPerTon === null ? '—' : cmp(A.ninkuPerTon - T.n, '', 2, false)}）`),
-      row('利益率', aRate === null ? '—' : fmt(aRate * 100, 1), aRate === null ? '' : '%', isAll ? `目標 ${gl}（${aRate === null ? '—' : cmp((aRate - p) * 100, 'ポイント', 1, true)}）` : '工場単独の値（目標は3工場合計で達成）', isAll && aRate !== null ? (aRate >= p - 1e-9 ? 'pos' : 'neg') : ''),
+      // 右は目標値(他の行と同じ)。下の実績は マイナス=赤・0%以上で目標未満=オレンジ・目標以上=緑
+      row('利益率', fmt(g, g % 1 ? 1 : 0), '%', aRate === null ? `${word} —` : `${word} <span class="${aRate >= p - 1e-9 ? 'pos' : aRate < 0 ? 'neg' : 'warn'}">${fmt(aRate * 100, 1)}%</span>` + (isAll ? `（${cmp((aRate - p) * 100, 'ポイント', 1, true)}）` : '（工場単独の値・目標は3工場合計で達成）')),
     ].join('');
     x = A.weight; label = word;
   } else {

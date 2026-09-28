@@ -49,6 +49,7 @@
 .gLead .gKey { color: #ff6fb5; font-size: 1.33em; }
 .sGoal .pos { color: #8ee86b; }
 .sGoal .neg { color: #ff8f8f; }
+.sGoal .warn { color: #ffb347; }
 .gTable { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); gap: 0 .5em; align-items: stretch; line-height: 1.3; } /* 同じ行のセルの高さをそろえ、罫線を1本に */
 .gTable .ph, .gHead .ph { display: inline-block; } /* 区切りの位置でだけ改行 */
 .gTable > div { padding: .15em 0; border-bottom: 1px solid rgba(255, 255, 255, .15); }
