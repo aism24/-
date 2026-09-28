@@ -364,7 +364,11 @@ td input[type="number"], td input.numIn { width: 130px; }
 .simAdvice .advLead .advLeadSub b { color: #7fe07f; }
 /* 一番の近道のカード(金枠+「最短」)、時間削減だけでは困難なカード(赤い点線・薄く) */
 .simAdvice .advCard { position: relative; }
-.simAdvice .advBest { border: 3px solid #f5c400; box-shadow: 0 0 12px rgba(245, 196, 0, .7); }
+.simAdvice .advBest { border: 3px solid #f5c400; box-shadow: 0 0 12px rgba(245, 196, 0, .7); animation: bestGlow 0.9s ease-in-out infinite alternate; }
+.simAdvice .advCard.advBest, .simAdvice .advCard.advBest * { font-weight: 700; } /* 最短のカードは中の文字をすべて太字に */
+/* 最短のカード: 縁が光りながら点滅する */
+@keyframes bestGlow { from { border-color: #f5c400; box-shadow: 0 0 20px 6px rgba(255, 210, 0, .95); } to { border-color: rgba(245, 196, 0, .25); box-shadow: 0 0 0 0 rgba(245, 196, 0, 0); } }
+@media (prefers-reduced-motion: reduce) { .simAdvice .advBest { animation: none; } }
 .simAdvice .advRibbon { position: absolute; top: -10px; right: 10px; background: #f5c400; color: #3a2a00; font-weight: 700; font-size: 0.85em; padding: 1px 10px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
 .simAdvice .advHard { border: 2px dashed var(--bad); opacity: .8; }
 /* 月度の途中の「月末見込み」切替と、実績が少ないときの案内 */
