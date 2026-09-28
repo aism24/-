@@ -39,6 +39,10 @@ Vercelのデプロイ枠(利用制限)を消費しすぎないよう、pushの�
   (`https://cdn.jsdelivr.net/gh/aism24/-@<branch>/<フォルダ>/<ファイル>`、
   例: `.../pdf-diff-app/index.html`)を使って確認する。このURLはpushするたびに
   中身が更新される(jsDelivrのキャッシュにより反映まで数分〜のラグがある場合がある)。
+  - 【注意】2026-09-28確認: jsDelivrはHTMLを `text/plain` で返すため、画面ではなくソースが表示される
+    (JS/CSSは正しく返る)。HTMLの画面確認は raw.githack.com を使う
+    (`https://raw.githack.com/aism24/-/<branch>/<フォルダ>/<ファイル>`。text/htmlで返り、
+    相対パスのJS/CSSも読める。無料・Vercel枠を使わない。ブランチ名に「/」を含んでも可)。
 - **実装が完了し、正式にアプリを公開する段階**: Vercel側でこのリポジトリとの
   Git連携を(再)設定し、対象フォルダをRoot Directoryとしてデプロイして、
   そのVercel URLをユーザーへ案内する(上記の基本方針通り)。
