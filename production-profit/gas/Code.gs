@@ -17,6 +17,8 @@
  *   基本設定 : 項目 | 値 (A〜B列。保存時はA〜B列だけを書き換える)
  *              会社カレンダー: 同じシートのC列以降に「日付 | 出勤/休日」の2列(例: E〜F列)。
  *              画面の月度の途中の見込み(出勤日数で月末まで引き伸ばす)に使う。保存時は触らない
+ *              従業員名簿: 同じシートの「社員番号 | 工場 | 氏名 | 部署 | 状況」(例: H〜L列)。状況が「在職中」の人数を
+ *              工場別に数えて画面へ返す(氏名は返さない)。シンプル版の1日あたり工数(人数×8h)に使う。保存時は触らない
  *   工事単価 : 工事No | 工事名 | 契約総重量(t) | 契約金額(円) | (E列以降は自由。例: トン単価の計算式)
  *              保存時はA〜D列だけを工事No単位で更新・追記し、行の削除やE列以降の書き換えはしない
  *   費用設定 : 工場 | 人件費単価(円/人工) | 月固定費(円) | 変動費単価(円/t)
@@ -24,12 +26,13 @@
  * ■ パスワード(スクリプトプロパティ。リポジトリには書かない)
  *   VIEW_PASSWORD : 閲覧用(全API)
  *   EDIT_PASSWORD : 設定の保存用
- *   REQUIRE_PASSWORD を false にするとパスワードの確認を行わない(2026-09-28〜 一時解除中)。
- *   復活させるときは true に戻して「新バージョン」でデプロイし、app.js の REQUIRE_PASSWORD も true に戻す。
+ *   REQUIRE_PASSWORD を false にするとパスワードの確認を行わない(2026-09-28に一時解除 → 2026-09-29に詳細版で復活)。
+ *   シンプル版(simple.js。app:'simple' を送る)の読み込みは閲覧用パスワード無しで開ける(ユーザー指示)。
+ *   詳細版(app.js)の閲覧と、設定の保存(編集用)はパスワードが必要。
  *   (スクリプトプロパティのパスワードは消さずに残しておく)
  */
 
-const REQUIRE_PASSWORD = false;
+const REQUIRE_PASSWORD = true;
 
 const PM_API_URL = 'https://script.google.com/macros/s/AKfycbya0wgwbTuBN1laM8tWFGTJhJw--pTAOBAYVyrsOoXbrOXZgs9q3ZsErTSQZwJFT2c2/exec';
 const DR_API_URL = 'https://script.google.com/macros/s/AKfycbyiocXgXi_YEMUUq5BJPe7CUi2V-LJIBvLwceextYV-82hEArRKRaHQ5peVj5oMfTsW/exec';
@@ -71,7 +74,8 @@ function doPost(e) {
       saveSettings_(body.settings || {});
       return json_({ status: 'success', data: { settings: readSettings_() } });
     }
-    checkPassword_('VIEW_PASSWORD', body.pw);
+    // シンプル版の読み込み(getData)は閲覧用パスワード無しで開ける。詳細版・今すぐ更新などは閲覧用パスワードが必要
+    if (!(body.app === 'simple' && action === 'getData')) checkPassword_('VIEW_PASSWORD', body.pw);
     if (action === 'checkEdit') {
       checkPassword_('EDIT_PASSWORD', body.editPw);
       return json_({ status: 'success', data: { ok: true } });
@@ -310,7 +314,31 @@ function readSettings_() {
     s.costs[String(r[0]).trim()] = { laborRate: numCell_(p, 1), fixedMonthly: numCell_(p, 2), variablePerTon: numCell_(p, 3) };
   });
   s.calendar = readCalendar_(sheet_(SHEETS.BASIC, HEADERS.BASIC));
+  s.headcount = readHeadcount_(sheet_(SHEETS.BASIC, HEADERS.BASIC));
   return s;
+}
+
+/* 基本設定シートの従業員名簿(見出し「工場」「状況」の列。現在はH:L列)から、状況が「在職中」の人数を工場別に数える。
+   { '本社': 人数, ... } を返す(氏名などは返さない)。見出しが見つからなければ null。
+   シンプル版の「1日あたり工数 = 在職中の人数 × 8h(全員出勤)」に使う。 */
+function readHeadcount_(sh) {
+  const last = sh.getLastRow(), width = sh.getLastColumn();
+  if (last < 2 || width < 1) return null;
+  const vals = sh.getRange(1, 1, last, width).getValues();
+  let hr = -1, cSite = -1, cStat = -1;
+  for (let r = 0; r < Math.min(vals.length, 5) && hr < 0; r++) {
+    const row = vals[r].map(function (v) { return String(v).trim(); });
+    const st = row.indexOf('状況'), si = row.lastIndexOf('工場', st);
+    if (st >= 0 && si >= 0 && row.indexOf('社員番号') >= 0) { hr = r; cSite = si; cStat = st; }
+  }
+  if (hr < 0) return null;
+  const count = {};
+  for (let r = hr + 1; r < vals.length; r++) {
+    const site = String(vals[r][cSite]).trim();
+    if (!site || String(vals[r][cStat]).trim() !== '在職中') continue;
+    count[site] = (count[site] || 0) + 1;
+  }
+  return count;
 }
 
 /* 基本設定シートのC列以降にある会社カレンダー(日付 | 出勤/休日)を { 'YYYY-MM-DD': 1(出勤) / 0(休日) } で返す。
