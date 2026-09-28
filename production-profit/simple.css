@@ -27,6 +27,7 @@
 .sSub { font-size: 13px; color: var(--muted); }
 .sCard.good .sValue { color: var(--good); }
 .sCard.bad .sValue { color: var(--bad); }
+.sCard.warn .sValue { color: #e67e00; } /* 損益: 0%以上で目標未満 */
 .sCard.big.good { border: 2px solid var(--good); }
 .sCard.big.bad { border: 2px solid var(--bad); }
 .sMsg { grid-column: 1 / -1; background: var(--warn-bg); border-radius: 10px; padding: 16px; line-height: 1.7; color: var(--text); }

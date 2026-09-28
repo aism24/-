@@ -191,7 +191,7 @@ function render() {
     card('生産重量', fmt(t.weight, 1), 't', ''),
     card('1t当たり人工数', fmt(t.ninkuPerTon, 2), '人工/t', `総工数 ${fmt(t.ninku, 1)}人工`),
     card('売上額（概算）', sVal, sVal === '—' ? '' : '%', sSub, sCls),
-    card('損益（概算）', pr === null ? '—' : pr.toFixed(1), pr === null ? '' : '%', `（目標${gl}）`, pr === null ? '' : (pr >= g - 1e-9 ? 'good' : 'bad')),
+    card('損益（概算）', pr === null ? '—' : pr.toFixed(1), pr === null ? '' : '%', `（目標${gl}）`, pr === null ? '' : (pr >= g - 1e-9 ? 'good' : pr < 0 ? 'bad' : 'warn')),
   ].join('');
 }
 
