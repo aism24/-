@@ -4,8 +4,8 @@
 .homeBtn { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 18px 20px; border-radius: 10px; border: 2px solid var(--accent); background: var(--surface); color: var(--text); text-decoration: none; }
 .homeBtn b { font-size: 20px; color: var(--accent); }
 .homeBtn span { font-size: 13px; color: var(--text2); }
-.homeBtn:hover, .homeBtn:focus-visible { background: var(--accent); }
-.homeBtn:hover b, .homeBtn:hover span, .homeBtn:focus-visible b, .homeBtn:focus-visible span { color: #fff; }
+.homeBtn { position: relative; transition: transform .15s ease; }
+.homeBtn:hover, .homeBtn:focus-visible { transform: scale(1.25); z-index: 1; }
 
 .simple { max-width: 760px; margin: 0 auto; padding: 0 12px 24px; }
 .sHead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 12px; margin: 0 -12px; background: var(--surface); border-bottom: 1px solid var(--border); }
