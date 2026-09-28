@@ -416,7 +416,7 @@ function drawBep(id, o) {
   const prev = bepState[id];
   // 同じ条件の再描画(ドラッグ中など)ではつまみ位置を保つ。条件が変わったら初期位置に戻す。
   const sig = o.sig || [o.fixed, o.unitPrice, o.laborPerTon, o.varPerTon, o.profitRate].join('|');
-  const st = bepState[id] = { o, x: (prev && prev.sig === sig && !o.forceX) ? prev.x : (o.x || 0), sig, maxX: prev && prev.sig === sig && !o.forceX ? prev.maxX : null }; // ドラッグ中以外は縮尺を取り直す
+  const st = bepState[id] = { o, x: (prev && prev.sig === sig && !o.forceX) ? prev.x : (o.x || 0), sig, padL: prev && prev.sig === sig ? prev.padL : undefined, maxX: prev && prev.sig === sig && !o.forceX ? prev.maxX : null }; // ドラッグ中以外は縮尺を取り直す
   if (!st.maxX) st.maxX = Math.max(o.x || 0, o.beTons || 0, o.goalTons || 0, 1) * 1.35;
   box.classList.toggle('fixedX', !!o.fixedX); // fixedX: つまみを動かせない(実績の損益分岐生産量タブ)
   renderBepSvg(id);
@@ -457,7 +457,7 @@ function drawBep(id, o) {
 function renderBepSvg(id) {
   const box = document.getElementById(id), st = bepState[id], o = st.o;
   const W = box.clientWidth || 600, H = box.clientHeight || 380;
-  const g = st.geom = { l: 76, r: 16, t: o.dragHint ? 74 : 54, b: 36 }; // 上の余白につまみ(dragHintのときはその上に操作説明)、左の余白に固定費ラベルを置く
+  const g = st.geom = { l: st.padL || 76, r: 16, t: o.dragHint ? 74 : 54, b: 36 }; // 上の余白につまみ(dragHintのときはその上に操作説明)、左の余白に固定費ラベルを置く
   g.w = W - g.l - g.r; g.h = H - g.t - g.b;
   // グラフ内の文字・間隔の倍率(幅1080×高さ600程度のグラフを1倍とし、グラフの大きさに合わせて拡大縮小)
   const k = Math.min(1.3, Math.max(0.55, Math.min(g.w / 1080, g.h / 600)));
@@ -567,6 +567,15 @@ function renderBepSvg(id) {
     h += `<circle class="goalBg" cx="${gx}" cy="${gy}" r="${22.5 * k}"/><polygon class="mGoal" points="${star}"/>`; // ★の背景に1.5倍の〇(黄色・点滅)
   }
   box.innerHTML = `<svg class="bepSvg" style="--k:${k.toFixed(3)}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="損益分岐生産量グラフ">${h}</svg>`;
+  // 左余白の文字(縦軸の目盛り・固定費ラベル)が左端で切れるときは、左余白を広げて描き直す(1回だけ)
+  const leftMin = Math.min(...[...box.querySelectorAll('text.ax, text.fixedLbl')].map((el) => el.getBBox().x));
+  if (leftMin < 2 && !st.padRetry && box.clientWidth) { // 非表示のタブ(大きさ0)では測れないので何もしない
+    st.padL = g.l + Math.ceil(2 - leftMin) + 4;
+    st.padRetry = true;
+    renderBepSvg(id);
+    st.padRetry = false;
+    return;
+  }
   // 文字の重なりを避ける(描画後に実際の大きさを測って配置を決める)
   const rectOf = (el) => { const b = el.getBBox(); return { x: b.x, y: b.y, w: b.width, h: b.height }; };
   const overlap = (a, b, m = 3) => a.x - m < b.x + b.w && a.x + a.w + m > b.x && a.y - m < b.y + b.h && a.y + a.h + m > b.y;
