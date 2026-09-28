@@ -356,7 +356,7 @@ function renderGoal(sel) {
   const cy = Math.abs(cyRaw) >= 1 ? cyRaw : 0; // 先月度までの不足の今月度負担分は、グラフでは固定費に上乗せして描く(余裕分は差し引く)
   drawBep('c-goal', { fixed: r.fixed + r.labor + cy, unitPrice: r.unitPrice, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: p,
     fixedLabel: cy ? ['固定費(人件費込み)', cy > 0 ? '+先月度までの不足分' : '−先月度までの超過分'] : ['固定費', '(人件費込み)'], otherFixed: r.fixed + cy, laborRate: r.laborRate,
-    x: chart.x, fixedX: true, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: chart.label });
+    x: chart.x, fixedX: true, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: chart.label, hideMoney: true });
   // カードの「売上額(概算)」の目標: 目標生産量 × トン単価(目標の表・グラフと同じ値)
   return { goalSales: r.goalTons !== null ? r.goalTons * r.unitPrice : null, progress: cur && !fcOn };
 }

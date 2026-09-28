@@ -2,7 +2,8 @@
    書式関数 fmt / yen / ton / npt は読み込む側(app.js・simple.js)で定義する。 */
 'use strict';
 
-/* 損益分岐生産量グラフ(SVG。横軸=生産トン数、縦軸=金額)。
+/* o.hideMoney=true で金額(縦軸の目盛り・固定費の額・内訳の額・売上高・トン単価・目標利益額)を出さない(シンプル版)。
+   損益分岐生産量グラフ(SVG。横軸=生産トン数、縦軸=金額)。
    o: {fixed, unitPrice, laborPerTon, varPerTon, profitRate, x(つまみの初期位置t), beTons, goalTons, handleLabel, onMove(t)}
    面の塗り分け: 固定費帯 / 人件費帯 / 変動費帯 / 損失域(分岐点の左、売上線と総費用線の間) / 利益域(右)。
    つまみ(縦の点線)をドラッグすると、その重量での内訳(固定費・人件費・変動費・利益or損失)を積み上げバーで表示する。 */
@@ -80,7 +81,7 @@ function renderBepSvg(id) {
   for (let v = 0; v <= maxY + 1e-9; v += ys) {
     h += `<line class="bg" x1="${g.l}" x2="${g.l + g.w}" y1="${Y(v)}" y2="${Y(v)}"/>`;
     // 左余白の固定費ラベル(2行)と重なる目盛りの数字は出さない
-    if (Math.abs(Y(v) - Y(F)) > (o.fixedLabel ? 34 : 22) * Math.max(1, k)) h += `<text class="ax" x="${g.l - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v / 10000, 0)}万</text>`;
+    if (!o.hideMoney && Math.abs(Y(v) - Y(F)) > (o.fixedLabel ? 34 : 22) * Math.max(1, k)) h += `<text class="ax" x="${g.l - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v / 10000, 0)}万</text>`;
   }
   for (let v = 0; v <= maxX + 1e-9; v += xs) h += `<line class="bg" y1="${g.t}" y2="${g.t + g.h}" x1="${X(v)}" x2="${X(v)}"/><text class="ax" x="${X(v)}" y="${g.t + g.h + 16}" text-anchor="middle">${fmt(v, 0)}</text>`;
   h += `<text class="ax" x="${g.l + g.w}" y="${H - 4}" text-anchor="end">生産重量(t)</text>`;
@@ -97,7 +98,7 @@ function renderBepSvg(id) {
   }
   // 線
   h += `<line class="lFixed" x1="${X(0)}" x2="${X(maxX)}" y1="${Y(F)}" y2="${Y(F)}"/>`;
-  h += `<text class="lbl fixedLbl" x="${g.l - 6}" y="${Y(F) - 3}" text-anchor="end">${(o.fixedLabel || ['その他固定費']).map((t, i) => i ? `<tspan x="${g.l - 6}" dy="${13 * Math.max(1, k)}">${t}</tspan>` : t).join('')}<tspan x="${g.l - 6}" dy="${14 * Math.max(1, k)}">${man(F)}</tspan></text>`;
+  h += `<text class="lbl fixedLbl" x="${g.l - 6}" y="${Y(F) - 3}" text-anchor="end">${(o.fixedLabel || ['その他固定費']).map((t, i) => i ? `<tspan x="${g.l - 6}" dy="${13 * Math.max(1, k)}">${t}</tspan>` : t).join('')}${o.hideMoney ? '' : `<tspan x="${g.l - 6}" dy="${14 * Math.max(1, k)}">${man(F)}</tspan>`}</text>`;
   h += `<line class="lCost" x1="${X(0)}" y1="${Y(F)}" x2="${X(maxX)}" y2="${Y(cost(maxX))}"/>`;
   h += `<line class="lSales" x1="${X(0)}" y1="${Y(0)}" x2="${X(maxX)}" y2="${Y(sales(maxX))}"/>`;
   h += `<text class="lbl lineLbl" data-line="sales" x="${X(maxX) - 4}" y="${Y(sales(maxX)) + 26 * k}" text-anchor="end">売上</text>`;
@@ -119,7 +120,7 @@ function renderBepSvg(id) {
       ['トン単価', w > 0 ? yen(F / w + vr + lab) : '—', '円/t'],
       ['人工数', nBe !== null ? npt(nBe) : '—', '人工'],
       ['工数', nBe !== null ? fmt(nBe * w * C.HOURS_PER_NINKU, 0) : '—', 'h'],
-    ];
+    ].filter((l) => !(o.hideMoney && (l[0] === '売上高' || l[0] === 'トン単価'))); // hideMoney: 金額の項目は出さない
     st.beLh = 22 * k;
     beLbl = `<line class="beLead"/><rect class="beBg" rx="6"/><g class="beInfo"><text class="lbl be bT" text-anchor="middle">損益分岐値</text>${lines.map(([a, b, c]) =>
       `<text class="lbl be bL">${a}</text><text class="lbl be bN" text-anchor="end">${b}</text><text class="lbl be bU">${c}</text>`).join('')}</g>`; // 文字は最前面に描く
@@ -138,7 +139,7 @@ function renderBepSvg(id) {
   segs.forEach(([name, y0, y1, cls]) => {
     if (y1 - y0 <= 0) return;
     h += `<rect class="${cls}" x="${cx - bw / 2}" width="${bw}" y="${Y(y1)}" height="${Math.max(1, Y(y0) - Y(y1))}"/>`;
-    labels.push({ text: `${name} ${man(y1 - y0)}`, y: (Y(y0) + Y(y1)) / 2 + 6 * k, cls });
+    labels.push({ text: o.hideMoney ? name : `${name} ${man(y1 - y0)}`, y: (Y(y0) + Y(y1)) / 2 + 6 * k, cls });
   });
   // ラベルの重なりを避ける(下から順に最低24px×倍率の間隔)
   labels.sort((a, b) => b.y - a.y);
@@ -169,7 +170,7 @@ function renderBepSvg(id) {
     }).join(' ');
     const left = gx > g.l + 290 * k, up = gy - 76 * k > g.t;
     const tx = left ? gx - 22 * k : gx + 22 * k, ty = up ? gy - 44 * k : gy + 34 * k;
-    h += `<rect class="goalBg" rx="6"/><text class="lbl good goalLbl" x="${tx}" y="${ty}" text-anchor="${left ? 'end' : 'start'}">目標生産量 ${ton(o.goalTons)}t<tspan x="${tx}" dy="${28 * k}">目標利益額 ${oku(sales(o.goalTons) * (o.profitRate || 0))}</tspan></text>`;
+    h += `<rect class="goalBg" rx="6"/><text class="lbl good goalLbl" x="${tx}" y="${ty}" text-anchor="${left ? 'end' : 'start'}">目標生産量 ${ton(o.goalTons)}t${o.hideMoney ? '' : `<tspan x="${tx}" dy="${28 * k}">目標利益額 ${oku(sales(o.goalTons) * (o.profitRate || 0))}</tspan>`}</text>`;
     h += `<circle class="goalBg" cx="${gx}" cy="${gy}" r="${22.5 * k}"/><polygon class="mGoal" points="${star}"/>`; // ★の背景に1.5倍の〇(黄色・点滅)
   }
   box.innerHTML = `<svg class="bepSvg" style="--k:${k.toFixed(3)}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="損益分岐生産量グラフ">${h}</svg>`;
@@ -232,13 +233,13 @@ function renderBepSvg(id) {
     const cands = [['end', -dx, -44 * k], ['start', dx, -44 * k], ['end', -dx, 34 * k], ['start', dx, 34 * k]];
     let best = null;
     cands.forEach(([anc, ox, oy]) => {
-      gl.setAttribute('text-anchor', anc); gl.setAttribute('x', gx + ox); gl.setAttribute('y', gy + oy); tsp.setAttribute('x', gx + ox);
+      gl.setAttribute('text-anchor', anc); gl.setAttribute('x', gx + ox); gl.setAttribute('y', gy + oy); if (tsp) tsp.setAttribute('x', gx + ox);
       const r = rectOf(gl);
       const out = Math.max(0, g.l - r.x) + Math.max(0, r.x + r.w - (W - 2)) + Math.max(0, g.t - r.y) + Math.max(0, r.y + r.h - (g.t + g.h));
       const score = out * 1000 + obst.reduce((a, o) => a + area(r, o), 0);
       if (!best || score < best.score) best = { score, anc, ox, oy };
     });
-    gl.setAttribute('text-anchor', best.anc); gl.setAttribute('x', gx + best.ox); gl.setAttribute('y', gy + best.oy); tsp.setAttribute('x', gx + best.ox);
+    gl.setAttribute('text-anchor', best.anc); gl.setAttribute('x', gx + best.ox); gl.setAttribute('y', gy + best.oy); if (tsp) tsp.setAttribute('x', gx + best.ox);
     const bb = gl.getBBox();
     gb.setAttribute('x', bb.x - 6); gb.setAttribute('y', bb.y - 3);
     gb.setAttribute('width', bb.width + 12); gb.setAttribute('height', bb.height + 6);
