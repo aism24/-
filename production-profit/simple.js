@@ -165,13 +165,11 @@ function render() {
   $('f-fc').hidden = !sel.fc;
   $('f-fc').classList.toggle('active', !!(sel.fc && sel.fc.on));
   if (sel.fc && sel.fc.on && sel.fc.few) {
-    $('s-warn').textContent = priceWarn(sel);
     renderGoal(sel); // 目標(在職中人数×8h・先月度までの過不足から出す)は、月末見込みを使わないので実績が少なくても出す
     $('cards').innerHTML = `<div class="sMsg">${esc(C.periodLabel(sel.periodKey))}は、まだ出勤日${sel.fc.done}日分の実績しかないため表示していません` +
       `(出勤日${FC_MIN_DAYS}日分以上で月末見込みを表示します)。<br>「月末見込み」を押すと実績のみで表示します。目標は右（下）の欄をご覧ください。</div>`;
     return;
   }
-  $('s-warn').textContent = priceWarn(sel);
   $('s-note').textContent = state.pass.w ? `詳細版で選んでいた工事(${state.pass.w})の絞り込みは、シンプル版では使わず全工事で表示しています(詳細版へ戻ると元に戻ります)。` : '';
   const t = C.analyze(sel.data, state.settings, sel.from, sel.to, sel.sites).total;
   const hasSales = t.sales > 0;
@@ -195,17 +193,6 @@ function render() {
   ].join('');
 }
 
-/* 契約金額が未入力で、選択した期間・工場に生産実績がある工事(売上0円で計算される)。詳細版の警告と同じ判定 */
-function priceWarn(sel) {
-  const common = C.commonWorkSet(state.settings), siteSet = new Set(sel.sites), w = {};
-  state.cache.rec.forEach((r) => {
-    if (r[0] < sel.from || r[0] > sel.lastTo || !siteSet.has(r[1]) || !r[2] || common[r[2]]) return;
-    w[r[2]] = (w[r[2]] || 0) + r[3];
-  });
-  const list = Object.keys(w).filter((wn) => w[wn] >= 0.05 && C.unitPriceOf(wn, state.cache, state.settings).source === 'none').sort().reverse();
-  return list.length ? `⚠ 契約金額が未入力の工事があります(売上0円で計算。売上・損益・目標が実際より悪く出ます): ${list.slice(0, 5).join('、')}${list.length > 5 ? ' ほか' + (list.length - 5) + '件' : ''}` : '';
-}
-
 /* 月〆の今月度: 今期の先月度までの過不足(損益−売上×利益率)を、今月度〜期末の出勤日数で按分した今月度の負担分。
    毎月この負担分を上乗せした目標を達成すれば、期末に年間目標にも届く。carry>0 = 不足分を取り返す額、<0 = 余裕。
    期首の月度・年度表示は null */
@@ -227,16 +214,16 @@ function carryFor(sel, p) {
    - 期間の途中(今期・今月度): 残りの出勤日も、これまでと同じ1日あたり工数で働く前提で、
      期間全体(残りの月の固定費を含む)で目標に届く生産量 → 「残り◯日で あと◯t を ◯h で」
    - 締まった期間(過去): 実績の工数なら何t必要だったか / 実績の生産量なら工数は何h以内だったか */
-function renderGoal(sel) {
-  const box = $('goal');
+/* 目標の計算と表示内容を作る(DOMは触らない)。ov = { goalTons, hours }: 工場を1つ選んだとき、
+   3工場の目標を割り振った値(工場別の目標値の表と同じ)で目標生産量を置き換える */
+function buildGoal(sel, ov) {
   const g = state.settings.rates.profit, gl = fmt(g, g % 1 ? 1 : 0) + '%', p = g / 100;
   const cur = sel.lastTo < sel.fullTo; // 期間の途中
   // 実績(月末見込みにしない、実績の最終日まで)
   const t = C.analyze(state.cache, state.settings, sel.from, sel.lastTo, sel.sites).total;
-  const chartBox = $('goal-chart');
-  if (!(t.weight > 0) || !(t.unitPrice > 0)) { box.hidden = true; chartBox.hidden = true; return null; }
-  box.hidden = false;
-  chartBox.hidden = false;
+  if (!(t.weight > 0)) return null;
+  if (!(t.unitPrice > 0) && !cur) return null; // 締まった期間で売上が無いときは目標を出せない
+  const ovNote = ov ? '・3工場の目標を過去の実績の比で割り振った値' : '';
   const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
   // 備考は「（」の前と「|」の位置で区切り、区切りの位置でだけ改行する(言葉の途中で折り返さない)
   const phr = (html) => String(html || '').split(/(?=（)|\|/).filter((x) => x !== '').map((x) => `<span class="ph">${x}</span>`).join('');
@@ -259,22 +246,25 @@ function renderGoal(sel) {
   let head, lead, rows, chart;
   if (fcOn) {
     const tf = C.analyze(sel.data, state.settings, sel.from, sel.fullTo, sel.sites).total; // 月末見込み(実績を出勤日数の比で引き伸ばし)
-    const c = carryFor(sel, p), carry = c ? c.carry : 0;
+    const c = ov ? null : carryFor(sel, p), carry = c ? c.carry : 0; // 工場を選んだとき(ov)は、負担分は3工場の目標の割り振りに含まれている
     const r = C.simulate(Object.assign({}, tf, { fixed: tf.fixed + carry }), state.settings, tf.weight, tf.ninkuPerTon || 0, tf.unitPrice);
     const a = C.advise(r, state.settings);             // 不足額(先月度までの負担分を含む)
-    const ok = a.gap <= 0.5;
+    if (ov) { r.goalTons = ov.goalTons; r.goalSales = ov.goalTons * r.unitPrice; }
+    const ok = ov ? tf.weight >= ov.goalTons - 0.05 : a.gap <= 0.5;
     const profit = r.profit + carry;                    // 表示する損益は実際の見込み額(負担分を引く前)
-    const hMax = a.cutHours !== null ? r.hours - a.cutHours : null;
-    head = `月末見込みで目標利益率${gl}に届くか<small>（${esc(sel.label)}・〜${md(sel.fullTo)}・出勤日${sel.fc.done}/${sel.fc.total}日の実績から見込み${c ? '・年間目標に向けて先月度までの過不足を反映' : ''}）</small>`;
+    // 工数の上限: 工場を選んだときは目標の1t当たり人工数(表と同じ)を保つ工数
+    const hMax = ov ? (ov.goalTons > 0 ? tf.weight * r.hours / ov.goalTons : null) : (a.cutHours !== null ? r.hours - a.cutHours : null);
+    head = `月末見込みで目標利益率${gl}に届くか<small>（${esc(sel.label)}・〜${md(sel.fullTo)}・出勤日${sel.fc.done}/${sel.fc.total}日の実績から見込み${c ? '・年間目標に向けて先月度までの過不足を反映' : ''}${ovNote}）</small>`;
     const rate = tf.sales > 0 ? profit / tf.sales : null, needRate = tf.sales > 0 ? p + carry / tf.sales : p;
-    const rateTxt = `見込み利益率 ${rate === null ? '—' : fmt(rate * 100, 1) + '%'}（必要 ${fmt(needRate * 100, 1)}%）`;
+    const rateTxt = ov ? `見込み生産量 ${ton(tf.weight)}t／目標 ${ton(ov.goalTons)}t` : `見込み利益率 ${rate === null ? '—' : fmt(rate * 100, 1) + '%'}（必要 ${fmt(needRate * 100, 1)}%）`;
     lead = ok ? `<span class="pos">✓ 見込みでは目標を達成</span><span class="gLeadSub">（${rateTxt}）</span>` : `<span class="neg">見込みでは目標に届きません</span><span class="gLeadSub">（${rateTxt}）</span>`;
     rows = (c ? carryRows(c, tf.sales) : '') + [ // 見込みONは見込みの売上で割合を出す(見出しの「必要◯%」と同じ)
       row('見込み生産量', ton(tf.weight), 't', r.goalTons !== null ? `目標 ${ton(r.goalTons)}t（${cmp(tf.weight - r.goalTons, 't', 1, true)}）` : '目標: 到達不能', r.goalTons !== null && tf.weight >= r.goalTons - 0.05 ? 'pos' : 'neg'),
       row('見込み工数', fmt(r.hours, 0), 'h', hMax !== null && hMax > 0 ? `この生産量なら ${fmt(hMax, 0)}h以内（${cmp(r.hours - hMax, 'h', 0, false)}）` : ''),
       row('目標生産量<small>（見込みの工数なら）</small>', r.goalTons !== null ? ton(r.goalTons) : '到達不能', r.goalTons !== null ? 't' : '', r.goalTons !== null ? `1日あたり ${ton(r.goalTons / sel.fc.total)}t（見込み ${ton(tf.weight / sel.fc.total)}t/日）` : ''),
       row('1t当たり人工数', npt(tf.ninkuPerTon), '人工/t', hMax !== null && hMax > 0 ? `目標 ${npt(hMax / 8 / tf.weight)}以下（見込みの生産量なら）` : ''),
-      row('見込み利益率', rate === null ? '—' : fmt(rate * 100, 1), rate === null ? '' : '%', `必要 ${fmt(needRate * 100, 1)}%（${rate === null ? '—' : `<span class="${ok ? 'pos' : 'neg'}">${pts(rate - needRate)}</span>`}）`, ok ? 'pos' : 'neg'),
+      ov ? row('見込み利益率', rate === null ? '—' : fmt(rate * 100, 1), rate === null ? '' : '%', '工場単独の値（目標は3工場合計で達成）')
+        : row('見込み利益率', rate === null ? '—' : fmt(rate * 100, 1), rate === null ? '' : '%', `必要 ${fmt(needRate * 100, 1)}%（${rate === null ? '—' : `<span class="${ok ? 'pos' : 'neg'}">${pts(rate - needRate)}</span>`}）`, ok ? 'pos' : 'neg'),
     ].join('');
     r.fixed -= carry; // 表示用は実際の固定費(負担分は carry で別に描く)
     chart = { r, x: tf.weight, label: '見込み', carry };
@@ -294,10 +284,11 @@ function renderGoal(sel) {
     const few = doneDays < FC_MIN_DAYS; // 実績が少ないときは「今のペースの見込み」を出さない(ぶれが大きいため)
     // トン単価・変動費単価・人件費単価: 月〆で出勤日の実績が少ないときは今期(期首〜ここまで)の実績を使う(数日分では工事の偏りでぶれるため)
     let rate = t, rateNote = '';
-    if (few && sel.mode === 'period') {
-      const fyR = C.fiscalRange(C.fiscalYearOf(sel.periodKey));
+    if ((few && sel.mode === 'period') || !(t.unitPrice > 0)) { // 実績が少ない/今期間のトン単価が出ないときは今期の実績
+      const fyR = C.fiscalRange(C.fiscalYearOf(C.periodKeyOf(sel.from)));
       const tf = C.analyze(state.cache, state.settings, fyR.from, sel.lastTo, sel.sites).total;
-      if (tf.weight > 0 && tf.unitPrice > 0) { rate = tf; rateNote = '・今月度の実績が少ないため、トン単価・変動費・人件費単価は今期の実績で計算'; }
+      if (tf.weight > 0 && tf.unitPrice > 0) { rate = tf; rateNote = `・${t.unitPrice > 0 ? '今月度の実績が少ない' : 'この期間のトン単価が出ない'}ため、トン単価・変動費・人件費単価は今期の実績で計算`; }
+      else if (!(t.unitPrice > 0)) return null;
     }
     const rates = { unitPrice: rate.unitPrice, varPerTon: rate.varPerTon, laborRate: rate.laborRate };
     // 残り期間の1日あたり工数 = 在職中の従業員数(基本設定の名簿) × 8h(全員出勤)。名簿が読めないときはこれまでのペース
@@ -309,12 +300,13 @@ function renderGoal(sel) {
     const Wpace = t.weight + perDayW * leftDays;        // 今のペースで続けたときの生産量
     // 月〆の今月度: 今期の先月度までの過不足(損益−売上×利益率)を、今月度〜期末の出勤日数で按分して今月度の目標に上乗せする
     // (毎月この目標を達成すれば、期末に年間目標にも届く)。carry>0 = 不足分を取り返す額、<0 = 余裕
-    const carryInfo = carryFor(sel, p), carry = carryInfo ? carryInfo.carry : 0;
+    const carryInfo = ov ? null : carryFor(sel, p), carry = carryInfo ? carryInfo.carry : 0;
     if (carryInfo) carryInfo.solo = C.simulate(Object.assign({}, t, rates, { fixed: full.fixed }), state.settings, Wpace, Wpace > 0 ? H / 8 / Wpace : 0, rates.unitPrice);
     const base = Object.assign({}, t, rates, { fixed: full.fixed + carry });
     const r = C.simulate(base, state.settings, Wpace, Wpace > 0 ? H / 8 / Wpace : 0, rates.unitPrice);
     r.fixed -= carry; r.carry = carry; // 表示用の固定費は実際の額(上乗せ分は carry で別に持つ)
-    head = `目標利益率${gl}を達成するには<small>（${esc(sel.label)}・〜${md(sel.fullTo)}${carryInfo ? '・年間目標に向けて先月度までの過不足を反映' : ''}${rateNote}）</small>`;
+    if (ov) { r.goalTons = ov.goalTons; r.goalSales = ov.goalTons * r.unitPrice; }
+    head = `目標利益率${gl}を達成するには<small>（${esc(sel.label)}・〜${md(sel.fullTo)}${carryInfo ? '・年間目標に向けて先月度までの過不足を反映' : ''}${ov ? '・年間目標に向けて先月度までの過不足を反映' + ovNote : rateNote}）</small>`;
     if (r.goalTons === null) {
       lead = '<span class="neg">今のトン単価・費用では、生産量を増やしても目標に届きません</span>';
       rows = '';
@@ -346,32 +338,26 @@ function renderGoal(sel) {
   } else {
     const r = C.simulate(t, state.settings, t.weight, t.ninkuPerTon || 0, t.unitPrice);
     const a = C.advise(r, state.settings);
-    const ok = a.gap <= 0.5;
-    head = `目標利益率${gl}を達成するには、どうするべきだったか<small>（${esc(sel.label)}）</small>`;
+    if (ov) { r.goalTons = ov.goalTons; r.goalSales = ov.goalTons * r.unitPrice; }
+    const ok = ov ? t.weight >= ov.goalTons - 0.05 : a.gap <= 0.5;
+    head = `目標利益率${gl}を達成するには、どうするべきだったか<small>（${esc(sel.label)}${ovNote}）</small>`;
     const rate = t.sales > 0 ? r.profit / t.sales : null;
-    const rateTxt = `利益率 ${rate === null ? '—' : fmt(rate * 100, 1) + '%'}／目標 ${gl}`;
-    lead = ok ? `<span class="pos">✓ 目標を達成しました</span><span class="gLeadSub">（${rateTxt}）</span>` : `<span class="neg">目標利益率に <b>${rate === null ? '—' : fmt((p - rate) * 100, 1)}ポイント</b> 届きませんでした</span><span class="gLeadSub">（${rateTxt}）</span>`;
-    const hMax = a.cutHours !== null ? r.hours - a.cutHours : null; // 実績の生産量で目標に届く工数の上限
+    const rateTxt = ov ? `生産量 ${ton(t.weight)}t／目標 ${ton(ov.goalTons)}t` : `利益率 ${rate === null ? '—' : fmt(rate * 100, 1) + '%'}／目標 ${gl}`;
+    lead = ok ? `<span class="pos">✓ 目標を達成しました</span><span class="gLeadSub">（${rateTxt}）</span>`
+      : ov ? `<span class="neg">目標生産量に <b>${ton(ov.goalTons - t.weight)}t</b> 届きませんでした</span><span class="gLeadSub">（${rateTxt}）</span>`
+        : `<span class="neg">目標利益率に <b>${rate === null ? '—' : fmt((p - rate) * 100, 1)}ポイント</b> 届きませんでした</span><span class="gLeadSub">（${rateTxt}）</span>`;
+    // 実績の生産量で目標に届く工数の上限。工場を選んだときは目標の1t当たり人工数(表と同じ)を保つ工数
+    const hMax = ov ? (ov.goalTons > 0 ? t.weight * r.hours / ov.goalTons : null) : (a.cutHours !== null ? r.hours - a.cutHours : null);
     rows = [
       row('生産量<small>（実績の工数なら）</small>', r.goalTons !== null ? ton(r.goalTons) : '到達不能', r.goalTons !== null ? 't' : '', r.goalTons !== null ? `実績 ${ton(t.weight)}t（${cmp(t.weight - r.goalTons, 't', 1, true)}）` : ''),
       row('工数<small>（実績の生産量なら）</small>', hMax !== null && hMax > 0 ? fmt(hMax, 0) : '—', 'h以内', hMax !== null ? `実績 ${fmt(r.hours, 0)}h（${cmp(r.hours - hMax, 'h', 0, false)}）` : ''),
       row('1t当たり人工数', hMax !== null && hMax > 0 ? npt(hMax / 8 / t.weight) : '—', '人工/t以下', `実績 ${npt(t.ninkuPerTon)}`),
-      row('利益率', rate === null ? '—' : fmt(rate * 100, 1), rate === null ? '' : '%', `目標 ${gl}（${rate === null ? '—' : `<span class="${ok ? 'pos' : 'neg'}">${pts(rate - p)}</span>`}）`, ok ? 'pos' : 'neg'),
+      ov ? row('利益率', rate === null ? '—' : fmt(rate * 100, 1), rate === null ? '' : '%', '工場単独の値（目標は3工場合計で達成）')
+        : row('利益率', rate === null ? '—' : fmt(rate * 100, 1), rate === null ? '' : '%', `目標 ${gl}（${rate === null ? '—' : `<span class="${ok ? 'pos' : 'neg'}">${pts(rate - p)}</span>`}）`, ok ? 'pos' : 'neg'),
     ].join('');
     chart = { r, x: t.weight, label: '実績' };
   }
-  box.querySelector('.gHead').innerHTML = head.replace(/<small>([\s\S]*)<\/small>/, (m, x) => '<small>' + x.split(/(?<=・)/).map((y) => `<span class="ph">${y}</span>`).join('') + '</small>');
-  box.querySelector('.gLead').innerHTML = lead;
-  box.querySelector('.gTable').innerHTML = rows;
-  const r = chart.r;
-  const cyRaw = chart.carry !== undefined ? chart.carry : (r.carry || 0);
-  const cy = Math.abs(cyRaw) >= 1 ? cyRaw : 0; // 先月度までの不足の今月度負担分は、グラフでは固定費に上乗せして描く(余裕分は差し引く)
-  drawBep('c-goal', { fixed: r.fixed + r.labor + cy, unitPrice: r.unitPrice, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: p,
-    fixedLabel: cy ? ['固定費(人件費込み)', cy > 0 ? '+先月度までの不足分' : '−先月度までの超過分'] : ['固定費', '(人件費込み)'], otherFixed: r.fixed + cy, laborRate: r.laborRate,
-    x: chart.x, fixedX: true, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: chart.label, hideMoney: true });
-  renderTargets(sel, fcOn ? 'fc' : cur ? 'cur' : 'past', p);
-  // カードの「売上額(概算)」の目標: 目標生産量 × トン単価(目標の表・グラフと同じ値)
-  return { goalSales: r.goalTons !== null ? r.goalTons * r.unitPrice : null, progress: cur && !fcOn };
+  return { head, lead, rows, chart, fcOn, cur, p };
 }
 
 /* ===================== 工場別の目標値(グラフ内の表) =====================
@@ -410,64 +396,142 @@ function pastBest(cal) {
   return out;
 }
 
-function renderTargets(sel, kind, p) {
-  const el = $('goal-targets');
-  const cal = state.settings.calendar || {};
-  const sites = state.cache.sites, best = pastBest(cal);
-  const next = C.utcToYmd(Date.parse(sel.lastTo + 'T00:00:00Z') + 86400000);
-  const doneDays = C.workDaysIn(cal, sel.from, sel.lastTo), leftDays = kind === 'cur' ? C.workDaysIn(cal, next, sel.fullTo) : 0;
-  const totalDays = C.workDaysIn(cal, sel.from, sel.fullTo);
-  const few = kind === 'cur' && sel.mode === 'period' && doneDays < FC_MIN_DAYS;
-  const hc = state.settings.headcount || {};
-  const fs = sites.map((site) => {
-    const one = [site];
-    let t, H, F, floor = 0, Wmax;
-    const b = best[site] || {};
-    if (kind === 'fc') {
-      t = C.analyze(sel.data, state.settings, sel.from, sel.fullTo, one).total;
-      H = t.hours; F = t.fixed; Wmax = b.daily !== null && b.daily !== undefined ? b.daily * totalDays : null;
-    } else if (kind === 'cur') {
-      t = C.analyze(state.cache, state.settings, sel.from, sel.lastTo, one).total;
-      F = C.analyze(state.cache, state.settings, sel.from, sel.fullTo, one).total.fixed;
-      const perDay = hc[site] > 0 ? hc[site] * 8 : (doneDays > 0 ? t.hours / doneDays : 0);
-      H = t.hours + perDay * leftDays; floor = t.weight;
-      Wmax = b.daily !== null && b.daily !== undefined ? t.weight + b.daily * leftDays : null;
-    } else {
-      t = C.analyze(state.cache, state.settings, sel.from, sel.fullTo, one).total;
-      H = t.hours; F = t.fixed; Wmax = b.daily !== null && b.daily !== undefined ? b.daily * totalDays : null;
-    }
-    // 単価: 実績が少ない月度の途中は今期の実績(目標の表と同じ)
-    let rt = t;
-    if (few || !(t.unitPrice > 0)) {
-      const fy = C.fiscalRange(C.fiscalYearOf(C.periodKeyOf(sel.from)));
-      const tf = C.analyze(state.cache, state.settings, fy.from, sel.lastTo, one).total;
-      if (tf.unitPrice > 0) rt = tf;
-    }
-    const P = rt.unitPrice || 0, v = rt.varPerTon || 0, L = rt.laborRate || 0;
-    const cap = Wmax === null ? null : Math.max(floor, Math.min(Wmax, b.npt > 0 && H > 0 ? H / 8 / b.npt : Wmax));
-    return { site, P, v, L, H, F, floor, cap, ok: P > 0 && cap !== null && cap > 0 };
+/* 1か月あたりの標準の目標(工場別)。月〆はどの月も同じ値(同じ年度の中)、年度は12か月分。
+   - 単価・費用: 直近12か月度(締まった月度)の工場ごとの実績(トン単価・変動費単価・人件費単価・月あたり固定費)
+   - 工数: 在職中人数 × 8h × 標準出勤日数(その年度の出勤日数 ÷ 12)。名簿が無い工場は直近12か月度の月平均
+   - 生産重量: 3工場合計で 損益 = 売上 × 目標利益率 になる量を、各工場の上限(過去最高の実績)の同じ割合 θ で割り振る
+     (上限 = 1出勤日あたり生産量の過去最高 × 標準出勤日数、ただし 1t当たり人工数が過去最高(最少)を下回らない量)。
+     損益は θ について一次式なので θ は式で求まる。θ > 1 なら上限を超える(⚠) */
+function stdPlan(sel) {
+  const cal = state.settings.calendar || {}, p = state.settings.rates.profit / 100;
+  const fy = C.fiscalRange(C.fiscalYearOf(C.periodKeyOf(sel.from)));
+  const dStd = C.workDaysIn(cal, fy.from, fy.to) / 12;
+  const last = state.lastYmd;
+  if (!last || !(dStd > 0)) return null;
+  const lastKey = C.periodKeyOf(last);
+  const endKey = last === C.periodRange(lastKey).to ? lastKey : C.shiftPeriod(lastKey, -1);
+  const startKey = C.shiftPeriod(endKey, -11);
+  const wFrom = C.periodRange(startKey).from, wTo = C.periodRange(endKey).to;
+  const best = pastBest(cal), hc = state.settings.headcount || {};
+  const rows = state.cache.sites.map((site) => {
+    const a = C.analyze(state.cache, state.settings, wFrom, wTo, [site]).total, b = best[site] || {};
+    const P = a.unitPrice || 0, v = a.varPerTon || 0, L = a.laborRate || 0, F = a.fixed / 12;
+    const H = hc[site] > 0 ? hc[site] * 8 * dStd : a.hours / 12;
+    let cap = 0;
+    if (P > 0 && b.daily > 0) cap = Math.min(b.daily * dStd, b.npt > 0 && H > 0 ? H / 8 / b.npt : Infinity);
+    return { site, P, v, L, F, H, cap, people: hc[site] || 0 };
   });
-  const use = fs.filter((f) => f.ok);
-  if (!use.length) { el.hidden = true; return; }
-  // 先月度までの過不足の負担分は、目標の表と同じく期間の途中(今月度)だけ含める(過去の期間はその期間だけで評価)
-  const c = kind === 'past' ? null : carryFor(Object.assign({}, sel, { sites }), p), carry = c ? c.carry : 0;
-  const W = (f, th) => Math.max(f.floor, th * f.cap);
-  const surplus = (th) => use.reduce((a, f) => { const w = W(f, th); return a + w * (f.P * (1 - p) - f.v) - f.H / 8 * f.L - f.F; }, 0) - carry;
-  let th = 1, reach = surplus(1) >= 0;
-  if (reach) { let lo = 0, hi = 1; for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (surplus(m) >= 0) hi = m; else lo = m; } th = hi; }
-  const rows = use.map((f) => ({ site: f.site, w: W(f, th), h: f.H, sales: W(f, th) * f.P, profit: W(f, th) * (f.P - f.v) - f.H / 8 * f.L - f.F }));
-  const tot = rows.reduce((a, r) => ({ w: a.w + r.w, h: a.h + r.h, sales: a.sales + r.sales, profit: a.profit + r.profit }), { w: 0, h: 0, sales: 0, profit: 0 });
-  const rate = tot.sales > 0 ? tot.profit / tot.sales : null, need = tot.sales > 0 ? p + carry / tot.sales : p;
-  const g = fmt(p * 100, (p * 100) % 1 ? 1 : 0) + '%';
-  const tr = (name, r, cls) => `<tr class="${cls || ''}"><td>${esc(name)}</td><td>${r ? ton(r.w) : '—'}</td><td>${r ? fmt(r.h, 0) : '—'}</td><td>${r && r.w > 0 ? npt(r.h / 8 / r.w) : '—'}</td></tr>`;
-  el.innerHTML = `<div class="tgHead">【目標値】<small>${kind === 'past' ? 'この期間に' : '期間合計で'}${reach ? `目標利益率${g}${carry ? '（先月度までの過不足を含む）' : ''}を達成する量` : `<b class="neg">過去の実績の範囲では目標に届きません</b>（上限まで上げて利益率 ${rate === null ? '—' : fmt(rate * 100, 1) + '%'}／必要 ${fmt(need * 100, 1)}%）`}</small></div>
-    <table><tr><th>工場</th><th>生産重量<br>(t)</th><th>工数<br>(h)</th><th>人工数<br>(人工/t)</th></tr>
-    ${tr('3工場', tot, 'tot')}${sites.map((site) => tr(site, rows.find((r) => r.site === site))).join('')}</table>
-    <div class="tgNote">上限: 直近12か月度の各工場の最高実績（1日あたり生産量・人工数）以内</div>`;
-  el.hidden = false;
-  placeTargets();
-  requestAnimationFrame(placeTargets); // グラフの欄の位置が描画後に決まる場合に備えて、もう一度合わせる
+  const den = rows.reduce((x, r) => x + r.cap * (r.P * (1 - p) - r.v), 0);
+  const need = rows.reduce((x, r) => x + r.H / 8 * r.L + r.F, 0);
+  const th = den > 0 ? Math.max(0, need / den) : null;
+  rows.forEach((r) => { r.w = th === null ? null : th * r.cap; r.over = th !== null && th > 1.0005 && r.cap > 0; });
+  return { rows, th, dStd, reach: th !== null && th <= 1.0005, from: startKey, to: endKey };
 }
+/* 選んだ工場・期間(月〆=1か月、年度=12か月)の標準の目標をまとめる。グラフ用に平均の単価・費用も出す */
+function stdScope(plan, sel) {
+  const m = sel.mode === 'fiscal' ? 12 : 1, set = new Set(sel.sites);
+  const rs = plan.rows.filter((r) => set.has(r.site));
+  if (plan.th === null || !rs.length) return null;
+  const W = rs.reduce((x, r) => x + r.w, 0), H = rs.reduce((x, r) => x + r.H, 0);
+  if (!(W > 0)) return null;
+  const sales = rs.reduce((x, r) => x + r.w * r.P, 0), vari = rs.reduce((x, r) => x + r.w * r.v, 0);
+  const labor = rs.reduce((x, r) => x + r.H / 8 * r.L, 0), F = rs.reduce((x, r) => x + r.F, 0);
+  return { W: W * m, H: H * m, n: H / 8 / W, P: sales / W, v: vari / W, laborRate: H > 0 ? labor / (H / 8) : 0, fixedOther: F * m, labor: labor * m,
+    people: rs.reduce((x, r) => x + r.people, 0), over: rs.some((r) => r.over), mult: m };
+}
+
+/* 目標の表(紫の欄)・グラフ・工場別の目標値の表を描く。目標はすべて標準の目標(stdPlan)にそろえる */
+function renderGoal(sel) {
+  const box = $('goal'), chartBox = $('goal-chart');
+  const g = state.settings.rates.profit, gl = fmt(g, g % 1 ? 1 : 0) + '%', p = g / 100;
+  const plan = stdPlan(sel), T = plan ? stdScope(plan, sel) : null;
+  renderTargetsTable(plan, sel, p);
+  const cur = sel.lastTo < sel.fullTo, fcOn = cur && sel.fc && sel.fc.on && !sel.fc.few;
+  const t = C.analyze(state.cache, state.settings, sel.from, sel.lastTo, sel.sites).total; // 実績(ここまで)
+  if (!T || !(t.weight > 0 || cur)) { box.hidden = true; chartBox.hidden = true; return null; }
+  box.hidden = false; chartBox.hidden = false;
+  const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
+  const phr = (html) => String(html || '').split(/(?=（)|\|/).filter((x) => x !== '').map((x) => `<span class="ph">${x}</span>`).join('');
+  const row = (label, value, unit, note, cls) => `<div class="gLabel">${label}</div><div class="gVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="gNote">${phr(note)}</div>`;
+  const cmp = (d, unit, digits, goodWhenPlus) => {
+    if (Math.abs(d) < 0.5 * Math.pow(10, -digits)) return '<span class="pos">目標どおり</span>';
+    const good = goodWhenPlus ? d > 0 : d < 0;
+    return `<span class="${good ? 'pos' : 'neg'}">${d > 0 ? '+' : '−'}${fmt(Math.abs(d), digits)}${unit}</span>`;
+  };
+  const isAll = sel.sites.length === state.cache.sites.length;
+  const unitLbl = sel.mode === 'fiscal' ? '年度(12か月分)' : '1か月';
+  const stdNote = `標準の目標: 直近12か月度の実績の単価・費用、|在職中人数×8h×標準出勤日数 ${fmt(plan.dStd, 1)}日/月`;
+  const rateTxt = (x) => x === null ? '—' : fmt(x * 100, 1) + '%';
+  let head, lead, rows, x, label;
+  const A = fcOn ? C.analyze(sel.data, state.settings, sel.from, sel.fullTo, sel.sites).total : t; // 比べる実績(見込みONは月末見込み)
+  const aRate = A.sales > 0 ? A.profit / A.sales : null;
+  if (!cur || fcOn) {
+    const word = fcOn ? '見込み' : '実績';
+    const ok = A.weight >= T.W - 0.05;
+    head = `${fcOn ? '月末見込みで' : ''}目標（${unitLbl}）に届く${fcOn ? 'か' : 'たか'}<small>（${esc(sel.label)}${fcOn ? `・出勤日${sel.fc.done}/${sel.fc.total}日の実績から見込み` : ''}・${stdNote.replace('|', '')}）</small>`;
+    lead = ok ? `<span class="pos">✓ ${word}で目標生産量を達成</span><span class="gLeadSub">（${word} ${ton(A.weight)}t／目標 ${ton(T.W)}t）</span>`
+      : `<span class="neg">目標生産量に <b>${ton(T.W - A.weight)}t</b> 届き${fcOn ? 'ません' : 'ませんでした'}</span><span class="gLeadSub">（${word} ${ton(A.weight)}t／目標 ${ton(T.W)}t）</span>`;
+    rows = [
+      row('生産重量', ton(T.W), 't', `${word} ${ton(A.weight)}t（${cmp(A.weight - T.W, 't', 1, true)}）`),
+      row('工数', fmt(T.H, 0), 'h', `${word} ${fmt(A.hours, 0)}h（${cmp(A.hours - T.H, 'h', 0, false)}）`),
+      row('1t当たり人工数', npt(T.n), '人工/t', `${word} ${npt(A.ninkuPerTon)}（${A.ninkuPerTon === null ? '—' : cmp(A.ninkuPerTon - T.n, '', 2, false)}）`),
+      row('利益率', aRate === null ? '—' : fmt(aRate * 100, 1), aRate === null ? '' : '%', isAll ? `目標 ${gl}（${aRate === null ? '—' : cmp((aRate - p) * 100, 'ポイント', 1, true)}）` : '工場単独の値（目標は3工場合計で達成）', isAll && aRate !== null ? (aRate >= p - 1e-9 ? 'pos' : 'neg') : ''),
+    ].join('');
+    x = A.weight; label = word;
+  } else {
+    // 期間の途中(実績のみ・実績が少ないとき・今期): 残りの出勤日で あと何tを何時間で
+    const cal = state.settings.calendar || {};
+    const next = C.utcToYmd(Date.parse(sel.lastTo + 'T00:00:00Z') + 86400000);
+    const doneDays = C.workDaysIn(cal, sel.from, sel.lastTo), leftDays = C.workDaysIn(cal, next, sel.fullTo);
+    const perDayH = T.people > 0 ? T.people * 8 : (doneDays > 0 ? t.hours / doneDays : 0);
+    const need = Math.max(0, T.W - t.weight), needDay = leftDays > 0 ? need / leftDays : null, perDayW = doneDays > 0 ? t.weight / doneDays : 0;
+    const few = doneDays < FC_MIN_DAYS;
+    head = `目標（${unitLbl}）を達成するには<small>（${esc(sel.label)}・〜${md(sel.fullTo)}・${stdNote.replace('|', '')}）</small>`;
+    lead = need <= 0 ? `<span class="pos">✓ 目標生産量に到達済み</span><span class="gLeadSub">（実績 ${ton(t.weight)}t／目標 ${ton(T.W)}t）</span>`
+      : leftDays > 0 ? `残り <b>${leftDays}</b>出勤日で あと <b class="gKey">${ton(need)}t</b> を <b class="gKey">${fmt(perDayH * leftDays, 0)}h</b> で`
+        : '<span class="neg">残りの出勤日がありません</span>';
+    rows = [
+      row('目標生産量', ton(T.W), 't', `実績 ${ton(t.weight)}t ＋ 残り ${ton(need)}t`),
+      row('目標工数', fmt(T.H, 0), 'h', `実績 ${fmt(t.hours, 0)}h ＋|残り ${fmt(perDayH * leftDays, 0)}h（1日 ${fmt(perDayH, 0)}h × ${leftDays}日）`),
+      row('1日あたり生産量', needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `これまで ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
+      row('1日あたり工数', fmt(perDayH, 0), 'h/日', (T.people > 0 ? `全員出勤で１日８時間で計算（在職中 ${T.people}人）` : '従業員名簿が読めないため、これまでのペースで計算') + (doneDays > 0 ? `（これまで ${fmt(t.hours / doneDays, 0)}h/日）` : '')),
+      row('目標の1t当たり人工数', npt(T.n), '人工/t', `以下|（実績 ${npt(t.ninkuPerTon)}${few ? `・${doneDays}日分` : ''}）`),
+    ].join('');
+    // 参考: 先月度までの不足分を取り返して年間目標に届くための、今月度の生産量(先月度までの過不足を按分)
+    if (sel.mode === 'period') {
+      const old = buildGoal(sel, null);
+      const c = carryFor(sel, p);
+      if (old && old.chart.r.goalTons !== null && c) rows += row('参考: 先月度までの過不足を含めた目標', ton(old.chart.r.goalTons), 't', `今期の先月度までの利益率 ${rateTxt(c.prevRate)}（目標${gl}）|を期末までに取り返す場合`);
+    }
+    x = t.weight; label = '実績';
+  }
+  box.querySelector('.gHead').innerHTML = head.replace(/<small>([\s\S]*)<\/small>/, (m, y) => '<small>' + y.split(/(?<=・)/).map((z) => `<span class="ph">${z}</span>`).join('') + '</small>');
+  box.querySelector('.gLead').innerHTML = lead;
+  box.querySelector('.gTable').innerHTML = rows;
+  // グラフ: 標準の目標の単価・費用で描き、★=目標生産量(3工場なら損益=売上×目標利益率の点)、点線=実績・見込み
+  const pn = T.P - T.v, fixedAll = T.fixedOther + T.labor;
+  drawBep('c-goal', { fixed: fixedAll, unitPrice: T.P, laborPerTon: 0, varPerTon: T.v, profitRate: p,
+    fixedLabel: ['固定費', '(人件費込み)'], otherFixed: T.fixedOther, laborRate: T.laborRate,
+    x, fixedX: true, beTons: pn > 0 ? fixedAll / pn : null, goalTons: T.W, handleLabel: label, hideMoney: true });
+  placeTargets(); requestAnimationFrame(placeTargets);
+  return { goalSales: T.W * T.P, progress: cur && !fcOn };
+}
+
+function renderTargetsTable(plan, sel, p) {
+  const el = $('goal-targets');
+  if (!plan) { el.hidden = true; return; }
+  const m = sel.mode === 'fiscal' ? 12 : 1, g = fmt(p * 100, (p * 100) % 1 ? 1 : 0) + '%';
+  const tr = (name, w, h, cls, over) => `<tr class="${cls || ''}"><td>${esc(name)}</td><td>${w !== null && w > 0 ? (over ? '⚠' : '') + ton(w * m) : '—'}</td><td>${fmt(h * m, 0)}</td><td>${w > 0 ? npt(h / 8 / w) : '—'}</td></tr>`;
+  const W = plan.th === null ? null : plan.rows.reduce((x, r) => x + r.w, 0), H = plan.rows.reduce((x, r) => x + r.H, 0);
+  const head = plan.th === null ? '<b class="neg">今の単価・費用では目標に届きません</b>'
+    : `${m === 12 ? '年度（1か月×12）' : '1か月あたり'}・3工場合計で目標利益率${g}${plan.reach ? '' : '　<b class="neg">⚠ 過去の実績を超える</b>'}`;
+  el.innerHTML = `<div class="tgHead">【目標値】<small>${head}</small></div>
+    <table><tr><th>工場</th><th>生産重量<br>(t)</th><th>工数<br>(h)</th><th>人工数<br>(人工/t)</th></tr>
+    ${tr('3工場', W, H, 'tot')}${plan.rows.map((r) => tr(r.site, r.w, r.H, '', r.over)).join('')}</table>
+    <div class="tgNote">上限: 直近12か月度の各工場の最高実績（1日あたり生産量・人工数）以内${plan.reach ? '' : '。⚠は上限超え'}</div>`;
+  el.hidden = false;
+}
+
 /* 表の位置(PC): グラフ内で、線(引き出し線・売上・総費用・固定費・補助線・つまみ)や文字・欄と重ならない場所のうち、
    「損益分岐値」の欄のすぐ下に最も近い場所に置く。どこにも空きが無いときは重なりが最も少ない場所。スマホはグラフの下(CSS) */
 function placeTargets() {
