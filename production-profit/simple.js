@@ -175,13 +175,23 @@ function render() {
   $('s-note').textContent = state.pass.w ? `詳細版で選んでいた工事(${state.pass.w})の絞り込みは、シンプル版では使わず全工事で表示しています(詳細版へ戻ると元に戻ります)。` : '';
   const t = C.analyze(sel.data, state.settings, sel.from, sel.to, sel.sites).total;
   const hasSales = t.sales > 0;
-  const [pv, pu] = money(t.profit), [sv, su] = money(t.sales);
-  renderGoal(sel);
+  const gi = renderGoal(sel);
+  // 生産重量・工数は値を、売上額・損益は目標に対する割合を表示する(1行に4枚)
+  const g = state.settings.rates.profit, gl = fmt(g, g % 1 ? 1 : 0) + '%';
+  let sVal = '—', sSub = '', sCls = '';
+  if (gi && gi.goalSales > 0) {
+    const ratio = t.sales / gi.goalSales, rest = 1 - ratio;
+    sVal = fmt(ratio * 100, 0);
+    sSub = gi.progress ? `目標値に対して（${rest > 0 ? '残り ' + fmt(rest * 100, 0) + '%' : '達成'}・期間の途中）`
+      : `目標値に対して（${rest > 0.005 ? fmt(rest * 100, 0) + '%不足' : '達成'}）`;
+    sCls = gi.progress ? '' : (rest > 0.005 ? 'bad' : 'good');
+  }
+  const pr = hasSales && t.profitRate !== null ? t.profitRate * 100 : null;
   $('cards').innerHTML = [
-    card('損益（概算）', (t.profit > 0.5 ? '+' : '') + pv, pu, hasSales ? `利益率 ${t.profitRate === null ? '—' : (t.profitRate * 100).toFixed(1) + '%'}` : '売上なし', 'big ' + (t.profit >= 0 ? 'good' : 'bad')),
     card('生産重量', fmt(t.weight, 1), 't', ''),
     card('1t当たり人工数', fmt(t.ninkuPerTon, 2), '人工/t', `総工数 ${fmt(t.ninku, 1)}人工`),
-    card('売上額（概算）', sv, su, ''),
+    card('売上額（概算）', sVal, sVal === '—' ? '' : '%', sSub, sCls),
+    card('損益（概算）', pr === null ? '—' : pr.toFixed(1), pr === null ? '' : '%', `利益率：現在（目標＝${gl}）`, pr === null ? '' : (pr >= g - 1e-9 ? 'good' : 'bad')),
   ].join('');
 }
 
@@ -224,7 +234,7 @@ function renderGoal(sel) {
   // 実績(月末見込みにしない、実績の最終日まで)
   const t = C.analyze(state.cache, state.settings, sel.from, sel.lastTo, sel.sites).total;
   const chartBox = $('goal-chart');
-  if (!(t.weight > 0) || !(t.unitPrice > 0)) { box.hidden = true; chartBox.hidden = true; return; }
+  if (!(t.weight > 0) || !(t.unitPrice > 0)) { box.hidden = true; chartBox.hidden = true; return null; }
   box.hidden = false;
   chartBox.hidden = false;
   const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
@@ -347,4 +357,6 @@ function renderGoal(sel) {
   drawBep('c-goal', { fixed: r.fixed + r.labor + cy, unitPrice: r.unitPrice, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: p,
     fixedLabel: cy ? ['固定費(人件費込み)', cy > 0 ? '+先月度までの不足分' : '−先月度までの超過分'] : ['固定費', '(人件費込み)'], otherFixed: r.fixed + cy, laborRate: r.laborRate,
     x: chart.x, fixedX: true, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: chart.label });
+  // カードの「売上額(概算)」の目標: 目標生産量 × トン単価(目標の表・グラフと同じ値)
+  return { goalSales: r.goalTons !== null ? r.goalTons * r.unitPrice : null, progress: cur && !fcOn };
 }

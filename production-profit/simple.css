@@ -17,7 +17,7 @@
 .sFilters { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin: 12px 0; display: flex; flex-direction: column; gap: 8px; }
 .sRow { display: flex; align-items: stretch; justify-content: center; flex-wrap: wrap; gap: 8px; }
 .sRow select { font-size: 15px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
-.sCards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.sCards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .sCard { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
 .sCard.big { grid-column: 1 / -1; text-align: center; }
 .sLabel { font-size: 14px; font-weight: 700; color: var(--text2); }
@@ -32,7 +32,7 @@
 .sMsg { grid-column: 1 / -1; background: var(--warn-bg); border-radius: 10px; padding: 16px; line-height: 1.7; color: var(--text); }
 .sFoot { color: #bbb; text-align: center; margin: 12px 0 0; } /* 背景(黒)の上の文字 */
 @media (max-width: 480px) {
-  .sCards { grid-template-columns: 1fr; }
+  .sCards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sValue { font-size: 28px; }
   .sCard.big .sValue { font-size: 40px; }
   .sNav { width: 100%; justify-content: flex-end; }
@@ -67,7 +67,7 @@
   .sHead { margin: 0 -12px; }
   .sFilters { flex-direction: row; justify-content: center; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 8px 10px; margin: 8px 0; }
   .sBody { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 12px; align-items: stretch; }
-  .sCards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .sCards { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .sCard { padding: 8px 12px; }
   .sLabel { font-size: 13px; }
   .sValue { font-size: clamp(18px, 1.5vw, 28px); }
