@@ -87,6 +87,7 @@ button:disabled { opacity: .5; cursor: default; }
 .lockBox .brandLogo { width: 48px; height: 53px; }
 .lockBox .companyName { font-size: 20px; }
 .lockBox h1 { text-align: center; }
+@media (max-width: 400px) { .lockDesc { font-size: 12px; } } /* 説明の3行がスマホでも1行ずつ収まるように */
 .lockFoot { display: flex; justify-content: flex-end; } /* パスワード画面の右下: ホームに戻る */
 
 /* ===================== 絞り込み(期間=薄い緑、工場=薄いピンク、工事=薄い青 を1行に並べる) ===================== */
