@@ -345,11 +345,15 @@ function writeRows_(sh, rows, width) {
 
 /* 「工事単価」シートのA〜D列を、既存の行を残したまま工事No単位で更新する(純粋関数)。
    - 既存行: 工事Noがworksにあれば契約総重量・契約金額を更新(工事名は空欄のときだけ補う)
-   - worksにあってシートに無い工事: 契約総重量か契約金額が入っているものだけ末尾に追記
-   - worksに無い既存行・空行はそのまま(行の削除はしない。E列以降はそもそも触らない) */
+   - worksにあってシートに無い工事: 契約総重量か契約金額が入っているものだけ、データの最終行の直後に追記
+   - worksに無い既存行はそのまま(E列以降はそもそも触らない)
+   - A〜D列が空の行は詰め、戻り値は既存の行数以上にそろえる(余りは空行=消去)。
+     E列のARRAYFORMULA等でシートの最終行が1000行目付近になっていても、追記が最下部に行かないように
+     (以前は最下部=1001行目以降に追記され、見えない所に書かれていた。2026-09-28修正) */
 function mergeWorkRows_(existing, works) {
   const seen = {};
-  const rows = existing.map(function (r) {
+  const isBlank = function (r) { return r.slice(0, 4).every(function (v) { return v === '' || v === null || v === undefined; }); };
+  const rows = existing.filter(function (r) { return !isBlank(r); }).map(function (r) {
     const wn = String(r[0] === null || r[0] === undefined ? '' : r[0]).trim();
     if (!wn || !works[wn]) return r.slice(0, 4);
     seen[wn] = true;
@@ -362,6 +366,7 @@ function mergeWorkRows_(existing, works) {
     if (seen[wn] || !w || (numOrNull_(w.totalWeight) === null && numOrNull_(w.contract) === null)) return;
     rows.push([wn, blank_(w.name), blank_(numOrNull_(w.totalWeight)), blank_(numOrNull_(w.contract))]);
   });
+  while (rows.length < existing.length) rows.push(['', '', '', '']);
   return rows;
 }
 
