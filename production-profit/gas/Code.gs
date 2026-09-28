@@ -24,7 +24,12 @@
  * ■ パスワード(スクリプトプロパティ。リポジトリには書かない)
  *   VIEW_PASSWORD : 閲覧用(全API)
  *   EDIT_PASSWORD : 設定の保存用
+ *   REQUIRE_PASSWORD を false にするとパスワードの確認を行わない(2026-09-28〜 一時解除中)。
+ *   復活させるときは true に戻して「新バージョン」でデプロイし、app.js の REQUIRE_PASSWORD も true に戻す。
+ *   (スクリプトプロパティのパスワードは消さずに残しておく)
  */
+
+const REQUIRE_PASSWORD = false;
 
 const PM_API_URL = 'https://script.google.com/macros/s/AKfycbya0wgwbTuBN1laM8tWFGTJhJw--pTAOBAYVyrsOoXbrOXZgs9q3ZsErTSQZwJFT2c2/exec';
 const DR_API_URL = 'https://script.google.com/macros/s/AKfycbyiocXgXi_YEMUUq5BJPe7CUi2V-LJIBvLwceextYV-82hEArRKRaHQ5peVj5oMfTsW/exec';
@@ -84,6 +89,7 @@ function json_(obj) {
 }
 
 function checkPassword_(propName, given) {
+  if (!REQUIRE_PASSWORD) return; // パスワード一時解除中(上の説明参照)
   const expected = PropertiesService.getScriptProperties().getProperty(propName);
   if (!expected) throw new Error('スクリプトプロパティ ' + propName + ' が未設定です');
   if (String(given || '') !== expected) throw new Error('パスワードが違います');
