@@ -35,3 +35,23 @@
   .sCard.big .sValue { font-size: 40px; }
   .sNav { width: 100%; justify-content: flex-end; }
 }
+/* 目標(何tを何時間で) */
+.sGoal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-top: 12px; }
+.gHead { background: #6b2fbf; color: #fff; font-weight: 700; border-radius: 6px; padding: 6px 10px; }
+.gHead small { font-weight: 500; margin-left: 4px; opacity: .9; }
+.gLead { font-size: 18px; font-weight: 700; margin: 10px 2px; line-height: 1.5; }
+.gLead .gKey { color: var(--goal); font-size: 24px; }
+.gTable { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 0 12px; align-items: baseline; }
+.gTable > div { padding: 5px 0; border-bottom: 1px solid var(--grid); }
+.gLabel { font-weight: 600; color: var(--text2); }
+.gLabel small { font-weight: 400; }
+.gVal { text-align: right; font-weight: 700; font-size: 17px; white-space: nowrap; }
+.gVal .unit { font-size: 12px; font-weight: 400; color: var(--text2); margin-left: 2px; }
+.gNote { font-size: 12px; color: var(--muted); }
+.sGoalChart { position: relative; height: 380px; margin-top: 12px; }
+@media (max-width: 480px) {
+  .gTable { grid-template-columns: auto minmax(0, 1fr); }
+  .gNote { grid-column: 1 / -1; padding-top: 0 !important; }
+  .gLabel, .gVal { border-bottom: none !important; }
+  .sGoalChart { height: 380px; }
+}
