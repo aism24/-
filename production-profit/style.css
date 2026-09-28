@@ -113,7 +113,8 @@ button:disabled { opacity: .5; cursor: default; }
 .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 4px 6px; color: var(--text2); white-space: nowrap; } /* 余白は元8px 12pxの50% */
 .tabs button.active { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
 
-.tab { display: none; padding: 16px; max-width: 1400px; margin: 0 auto; }
+/* スクロール枠は画面の全幅(どこでもホイールで上下スクロールでき、スクロールバーは右端)。中身は左右の余白で最大1400px幅・中央に寄せる */
+.tab { display: none; padding: 16px max(16px, calc((100% - 1368px) / 2)); }
 .tab.active { display: block; }
 /* 画面全体: ヘッダー(会社名・タブ・絞り込み)を固定し、その下をタブの表示領域にする */
 #screen-main { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
