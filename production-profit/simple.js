@@ -153,7 +153,10 @@ function selection() {
   }
   const lastTo = state.lastYmd && state.lastYmd >= r.from && state.lastYmd < r.to ? state.lastYmd : r.to; // 実績の最終日(見込みにしない)
   const label = (mode === 'period' ? C.periodLabel(selPer.value) : C.fiscalLabel(Number($('f-fiscal').value))) + '・' + (state.site || state.cache.sites.length + '工場');
-  return { mode, from: r.from, to, fullTo: r.to, lastTo, label, sites, data, fc, note, periodKey: mode === 'period' ? selPer.value : null };
+  // 目標の欄の見出し用(令和。期は終わりの年で数える 例: 2025/11/21〜2026/11/20期=R8年度、2026年8月度=R8年8月度)
+  const pk = mode === 'period' ? selPer.value.split('-') : null;
+  const reiwa = pk ? 'R' + (Number(pk[0]) - 2018) + '年' + Number(pk[1]) + '月度' : 'R' + (Number($('f-fiscal').value) + 1 - 2018) + '年度';
+  return { mode, from: r.from, to, fullTo: r.to, lastTo, label, reiwa, sites, data, fc, note, periodKey: mode === 'period' ? selPer.value : null };
 }
 
 function card(label, value, unit, sub, cls) {
@@ -468,7 +471,6 @@ function renderGoal(sel) {
   };
   const isAll = sel.sites.length === state.cache.sites.length;
   const unitLbl = sel.mode === 'fiscal' ? '年度・12か月分' : '1か月';
-  const stdNote = `標準の目標: 直近12か月度の実績の単価・費用、|在職中人数×8h×標準出勤日数 ${fmt(plan.dStd, 1)}日/月`;
   const rateTxt = (x) => x === null ? '—' : fmt(x * 100, 1) + '%';
   let head, lead, rows, x, label;
   const A = fcOn ? C.analyze(sel.data, state.settings, sel.from, sel.fullTo, sel.sites).total : t; // 比べる実績(見込みONは月末見込み)
@@ -476,7 +478,7 @@ function renderGoal(sel) {
   if (!cur || fcOn) {
     const word = fcOn ? '見込み' : '実績';
     const ok = A.weight >= T.W - 0.05;
-    head = `${fcOn ? '月末見込みで' : ''}目標（${unitLbl}）に${fcOn ? '届くか' : '届いたか'}<small><span class="hl">（${esc(sel.label)}${fcOn ? `・出勤日${sel.fc.done}/${sel.fc.total}日の実績から見込み` : ''}）</span><span class="hl">${stdNote.replace('|', '')}</span></small>`;
+    head = `${fcOn ? '月末見込みで' : ''}目標（${unitLbl}）に${fcOn ? '届くか' : '届いたか'}（${sel.reiwa}）${fcOn ? `<small><span class="hl">（出勤日${sel.fc.done}/${sel.fc.total}日の実績から見込み）</span></small>` : ''}`;
     lead = ok ? `<span class="pos">✓ ${word}で目標生産量を達成</span><span class="gLeadSub">（${word} ${ton(A.weight)}t／目標 ${ton(T.W)}t）</span>`
       : `<span class="neg">目標生産量に <b>${ton(T.W - A.weight)}t</b> 届き${fcOn ? 'ません' : 'ませんでした'}</span><span class="gLeadSub">（${word} ${ton(A.weight)}t／目標 ${ton(T.W)}t）</span>`;
     rows = [
@@ -495,7 +497,7 @@ function renderGoal(sel) {
     const perDayH = T.people > 0 ? T.people * 8 : (doneDays > 0 ? t.hours / doneDays : 0);
     const need = Math.max(0, T.W - t.weight), needDay = leftDays > 0 ? need / leftDays : null, perDayW = doneDays > 0 ? t.weight / doneDays : 0;
     const few = doneDays < FC_MIN_DAYS;
-    head = `目標（${unitLbl}）を達成するには<small><span class="hl">（${esc(sel.label)}・〜${md(sel.fullTo)}）</span><span class="hl">${stdNote.replace('|', '')}</span></small>`;
+    head = `目標（${unitLbl}）を達成するには（${sel.reiwa}）`;
     lead = need <= 0 ? `<span class="pos">✓ 目標生産量に到達済み</span><span class="gLeadSub">（実績 ${ton(t.weight)}t／目標 ${ton(T.W)}t）</span>`
       : leftDays > 0 ? `残り <b>${leftDays}</b>出勤日で あと <b class="gKey">${ton(need)}t</b> を <b class="gKey">${fmt(perDayH * leftDays, 0)}h</b> で`
         : '<span class="neg">残りの出勤日がありません</span>';
