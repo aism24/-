@@ -57,6 +57,7 @@ function siteColor(site) {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('lock-btn').onclick = () => unlock(document.getElementById('lock-input').value);
   document.getElementById('lock-input').onkeydown = (e) => { if (e.key === 'Enter') unlock(e.target.value); };
+  document.getElementById('lock-home').onclick = () => { location.href = 'index.html' + (DEMO ? '?demo=1' : ''); };
   if (DEMO) unlock('demo');
   // パスワードはブラウザに保存しない(シンプル版から移ったときも含め、開くたびに入力する)
   else if (!REQUIRE_PASSWORD) unlock(''); // パスワード解除中は入力画面を出さずに開く(失敗したときは入力画面が残る)
