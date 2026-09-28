@@ -80,6 +80,7 @@ button:disabled { opacity: .5; cursor: default; }
 .lockBox .brandLogo { width: 48px; height: 53px; }
 .lockBox .companyName { font-size: 20px; }
 .lockBox h1 { text-align: center; }
+.lockFoot { display: flex; justify-content: flex-end; } /* パスワード画面の右下: ホームに戻る */
 
 /* ===================== 絞り込み(期間=薄い緑、工場=薄いピンク、工事=薄い青 を1行に並べる) ===================== */
 /* 3色の枠は常に均等幅(1/3ずつ)。枠の中身が入り切らないときは枠の中で改行する */

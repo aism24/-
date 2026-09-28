@@ -1,7 +1,7 @@
 /* シンプル版・ホーム画面(style.cssの色・ボタンを流用) */
 .homeBox { max-width: 440px; }
 .homeBox h1, .homeBox > p { text-align: center; margin: 0; }
-.homeBtn { display: flex; flex-direction: column; gap: 4px; padding: 18px 20px; border-radius: 10px; border: 2px solid var(--accent); background: var(--surface); color: var(--text); text-decoration: none; }
+.homeBtn { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 18px 20px; border-radius: 10px; border: 2px solid var(--accent); background: var(--surface); color: var(--text); text-decoration: none; }
 .homeBtn b { font-size: 20px; color: var(--accent); }
 .homeBtn span { font-size: 13px; color: var(--text2); }
 .homeBtn:hover, .homeBtn:focus-visible { background: var(--accent); }
