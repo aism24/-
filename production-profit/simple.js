@@ -497,6 +497,11 @@ function renderGoal(sel) {
     const perDayH = T.people > 0 ? T.people * 8 : (doneDays > 0 ? t.hours / doneDays : 0);
     const need = Math.max(0, T.W - t.weight), needDay = leftDays > 0 ? need / leftDays : null, perDayW = doneDays > 0 ? t.weight / doneDays : 0;
     const few = doneDays < FC_MIN_DAYS;
+    // 工場ごとの1日あたり生産量(工場の目標−工場の実績を残りの出勤日で割る。整数)。例: （本社52_夢前55_鳥取31）
+    const siteDay = sel.sites.length > 1 && leftDays > 0 ? '<small>（' + plan.rows.filter((r) => sel.sites.indexOf(r.site) >= 0).map((r) => {
+      const a = C.analyze(state.cache, state.settings, sel.from, sel.lastTo, [r.site]).total.weight;
+      return r.site + fmt(Math.max(0, r.w * T.mult - a) / leftDays, 0);
+    }).join('_') + '）</small>' : '';
     head = `目標（${unitLbl}）を達成するには（${sel.reiwa}）`;
     lead = need <= 0 ? `<span class="pos">✓ 目標生産量に到達済み</span><span class="gLeadSub">（実績 ${ton(t.weight)}t／目標 ${ton(T.W)}t）</span>`
       : leftDays > 0 ? `残り <b>${leftDays}</b>出勤日で あと <b class="gKey">${ton(need)}t</b> を <b class="gKey">${fmt(perDayH * leftDays, 0)}h</b> で`
@@ -504,7 +509,7 @@ function renderGoal(sel) {
     rows = [
       row('目標生産量', ton(T.W), 't', `実績 ${ton(t.weight)}t ＋ 残り ${ton(need)}t`),
       row('目標工数', fmt(T.H, 0), 'h', `実績 ${fmt(t.hours, 0)}h ＋|残り ${fmt(perDayH * leftDays, 0)}h（1日 ${fmt(perDayH, 0)}h × ${leftDays}日）`),
-      row('1日あたり生産量', needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `これまで ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
+      row('1日あたり生産量' + siteDay, needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `これまで ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
       row('1日あたり工数', fmt(perDayH, 0), 'h/日', (T.people > 0 ? `全員出勤で１日８時間で計算（在職中 ${T.people}人）` : '従業員名簿が読めないため、これまでのペースで計算') + (doneDays > 0 ? `（これまで ${fmt(t.hours / doneDays, 0)}h/日）` : '')),
       row('目標の1t当たり人工数', npt(T.n), '人工/t', `以下|（実績 ${npt(t.ninkuPerTon)}${few ? `・${doneDays}日分` : ''}）`),
     ].join('');
