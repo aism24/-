@@ -1056,7 +1056,11 @@ function initSettings() {
     const el = e.target, d = el.dataset;
     if (!d.k) return;
     const s = state.settings;
-    const v = el.type === 'number' ? (el.value === '' ? null : Number(el.value)) : el.value;
+    let v = el.value;
+    if (el.classList.contains('numIn')) { // 数値欄は3桁区切り(,)を外して数値にする。数値として読めない途中の入力は反映しない
+      v = parseNumIn(el.value);
+      if (v === undefined) return;
+    }
     if (d.k === 'rate') s.rates[d.f] = v === null ? 0 : v;
     else if (d.k === 'common') s.commonWorkNos = v;
     else if (d.k === 'cost') (s.costs[d.site] = s.costs[d.site] || {})[d.f] = v;
@@ -1068,6 +1072,13 @@ function initSettings() {
     }
     document.getElementById('set-dirty').textContent = '未保存の変更があります';
     if (d.k === 'rate') updateRateSum();
+  });
+  // 数値欄は入力を終えたら3桁区切り(,)で表示し直す
+  document.getElementById('set-body').addEventListener('focusout', (e) => {
+    const el = e.target;
+    if (!el.classList || !el.classList.contains('numIn')) return;
+    const v = parseNumIn(el.value);
+    if (v !== undefined) el.value = fmtNumIn(v);
   });
 }
 
@@ -1085,9 +1096,20 @@ async function saveSettings() {
   }
 }
 
-function numInput(attrs, v, step) {
+// 設定の数値欄: 3桁区切り(,)付きで表示する(type=numberは「,」を表示できないためtext+数字キーボード)
+function numInput(attrs, v) {
   const a = Object.keys(attrs).map((k) => `data-${k}="${esc(attrs[k])}"`).join(' ');
-  return `<input type="number" step="${step || 1}" ${a} value="${v === null || v === undefined ? '' : esc(v)}">`;
+  return `<input type="text" inputmode="decimal" class="numIn" autocomplete="off" ${a} value="${esc(fmtNumIn(v))}">`;
+}
+function fmtNumIn(v) {
+  return v === null || v === undefined || v === '' || !isFinite(v) ? '' : Number(v).toLocaleString('ja-JP', { maximumFractionDigits: 6 });
+}
+// 「1,234.5」「１２３４」などを数値に。空欄はnull、読めないときはundefined
+function parseNumIn(text) {
+  const t = String(text).replace(/[０-９．－]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[,，\s]/g, '');
+  if (t === '') return null;
+  const n = Number(t);
+  return isFinite(n) ? n : undefined;
 }
 
 function updateRateSum() {

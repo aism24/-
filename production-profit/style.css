@@ -49,7 +49,7 @@ h2 { font-size: 14px; margin: 0 0 8px; color: var(--text2); font-weight: 600; }
 
 input, select, button { font: inherit; font-variant-numeric: tabular-nums; color: var(--text); }
 input, select { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
-input[type="number"] { width: 120px; text-align: right; }
+input[type="number"], input.numIn { width: 120px; text-align: right; }
 button { cursor: pointer; border-radius: 6px; padding: 7px 14px; border: 1px solid var(--border); background: var(--surface); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.ghost:hover { border-color: var(--accent); }
@@ -142,7 +142,7 @@ th { text-align: left; font-weight: 600; color: var(--text2); font-size: 12px; b
 td.n, th.n { text-align: right; }
 tr.total td { font-weight: 700; border-top: 2px solid var(--border); }
 tr.common td { color: var(--text2); }
-td input[type="number"] { width: 130px; }
+td input[type="number"], td input.numIn { width: 130px; }
 
 .formGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 8px; }
 .formGrid label { display: flex; flex-direction: column; gap: 4px; }
