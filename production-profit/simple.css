@@ -56,7 +56,7 @@
 .sChart { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; margin-top: 12px; display: flex; flex-direction: column; }
 .sChart h2 { font-size: 15px; margin: 0 0 4px; }
 .sChart .chartBox { height: 380px; }
-@media (max-width: 700px), (min-width: 1000px) and (max-width: 1500px) {
+@media (max-width: 700px), (min-width: 1000px) and (max-width: 1899px) {
   .gTable { grid-template-columns: minmax(0, 1fr) max-content; }
   .gNote { grid-column: 1 / -1; padding-top: 0 !important; }
   .gLabel, .gVal { border-bottom: none !important; }
@@ -80,3 +80,5 @@
   .sChart .chartBox { flex: 1; height: auto; min-height: max(420px, calc(100vh - 170px)); }
   .sFoot { margin-top: 4px; }
 }
+.sWarn { margin: 0 0 8px; padding: 6px 12px; background: var(--warn-bg); color: var(--text); border-radius: 8px; font-size: 13px; }
+.sWarn:empty { display: none; }

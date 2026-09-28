@@ -165,11 +165,13 @@ function render() {
   $('f-fc').hidden = !sel.fc;
   $('f-fc').classList.toggle('active', !!(sel.fc && sel.fc.on));
   if (sel.fc && sel.fc.on && sel.fc.few) {
+    $('s-warn').textContent = priceWarn(sel);
     renderGoal(sel); // 目標(在職中人数×8h・先月度までの過不足から出す)は、月末見込みを使わないので実績が少なくても出す
     $('cards').innerHTML = `<div class="sMsg">${esc(C.periodLabel(sel.periodKey))}は、まだ出勤日${sel.fc.done}日分の実績しかないため表示していません` +
       `(出勤日${FC_MIN_DAYS}日分以上で月末見込みを表示します)。<br>「月末見込み」を押すと実績のみで表示します。目標は右（下）の欄をご覧ください。</div>`;
     return;
   }
+  $('s-warn').textContent = priceWarn(sel);
   $('s-note').textContent = state.pass.w ? `詳細版で選んでいた工事(${state.pass.w})の絞り込みは、シンプル版では使わず全工事で表示しています(詳細版へ戻ると元に戻ります)。` : '';
   const t = C.analyze(sel.data, state.settings, sel.from, sel.to, sel.sites).total;
   const hasSales = t.sales > 0;
@@ -181,6 +183,17 @@ function render() {
     card('1t当たり人工数', fmt(t.ninkuPerTon, 2), '人工/t', `総工数 ${fmt(t.ninku, 1)}人工`),
     card('売上額（概算）', sv, su, ''),
   ].join('');
+}
+
+/* 契約金額が未入力で、選択した期間・工場に生産実績がある工事(売上0円で計算される)。詳細版の警告と同じ判定 */
+function priceWarn(sel) {
+  const common = C.commonWorkSet(state.settings), siteSet = new Set(sel.sites), w = {};
+  state.cache.rec.forEach((r) => {
+    if (r[0] < sel.from || r[0] > sel.lastTo || !siteSet.has(r[1]) || !r[2] || common[r[2]]) return;
+    w[r[2]] = (w[r[2]] || 0) + r[3];
+  });
+  const list = Object.keys(w).filter((wn) => w[wn] >= 0.05 && C.unitPriceOf(wn, state.cache, state.settings).source === 'none').sort().reverse();
+  return list.length ? `⚠ 契約金額が未入力の工事があります(売上0円で計算。売上・損益・目標が実際より悪く出ます): ${list.slice(0, 5).join('、')}${list.length > 5 ? ' ほか' + (list.length - 5) + '件' : ''}` : '';
 }
 
 /* ===================== 目標(何tを何時間で) =====================
@@ -213,7 +226,22 @@ function renderGoal(sel) {
     const next = C.utcToYmd(Date.parse(sel.lastTo + 'T00:00:00Z') + 86400000);
     const doneDays = C.workDaysIn(cal, sel.from, sel.lastTo), leftDays = C.workDaysIn(cal, next, sel.fullTo);
     const perDayW = doneDays > 0 ? t.weight / doneDays : 0;
+    // 1t当たり人工数の実績: 月〆は今月度(ここまで)と今期(期首〜ここまで)を並べる(月の初めは今月度の値がぶれるため)
+    let fyNote = `実績 ${npt(t.ninkuPerTon)}`;
+    if (sel.mode === 'period') {
+      const fyR = C.fiscalRange(C.fiscalYearOf(sel.periodKey));
+      const tf = C.analyze(state.cache, state.settings, fyR.from, sel.lastTo, sel.sites).total;
+      fyNote = `今月度の実績 ${npt(t.ninkuPerTon)}（${doneDays}日分）・今期の実績 ${npt(tf.ninkuPerTon)}`;
+    }
     const few = doneDays < FC_MIN_DAYS; // 実績が少ないときは「今のペースの見込み」を出さない(ぶれが大きいため)
+    // トン単価・変動費単価・人件費単価: 月〆で出勤日の実績が少ないときは今期(期首〜ここまで)の実績を使う(数日分では工事の偏りでぶれるため)
+    let rate = t, rateNote = '';
+    if (few && sel.mode === 'period') {
+      const fyR = C.fiscalRange(C.fiscalYearOf(sel.periodKey));
+      const tf = C.analyze(state.cache, state.settings, fyR.from, sel.lastTo, sel.sites).total;
+      if (tf.weight > 0 && tf.unitPrice > 0) { rate = tf; rateNote = '・今月度の実績が少ないため、トン単価・変動費・人件費単価は今期の実績で計算'; }
+    }
+    const rates = { unitPrice: rate.unitPrice, varPerTon: rate.varPerTon, laborRate: rate.laborRate };
     // 残り期間の1日あたり工数 = 在職中の従業員数(基本設定の名簿) × 8h(全員出勤)。名簿が読めないときはこれまでのペース
     const hc = state.settings.headcount;
     const people = hc ? sel.sites.reduce((a, x) => a + (hc[x] || 0), 0) : 0;
@@ -232,13 +260,13 @@ function renderGoal(sel) {
         const diff = pv.profit - pv.sales * p;               // 先月度までの過不足(+超 / −不足)
         const monthDays = C.workDaysIn(cal, sel.from, sel.fullTo), restDays = C.workDaysIn(cal, sel.from, fy.to);
         carry = restDays > 0 ? -diff * monthDays / restDays : 0;
-        carryInfo = { diff, monthDays, restDays, fyTo: fy.to, solo: C.simulate(Object.assign({}, t, { fixed: full.fixed }), state.settings, Wpace, Wpace > 0 ? H / 8 / Wpace : 0, t.unitPrice) };
+        carryInfo = { diff, monthDays, restDays, fyTo: fy.to, solo: C.simulate(Object.assign({}, t, rates, { fixed: full.fixed }), state.settings, Wpace, Wpace > 0 ? H / 8 / Wpace : 0, rates.unitPrice) };
       }
     }
-    const base = Object.assign({}, t, { fixed: full.fixed + carry });
-    const r = C.simulate(base, state.settings, Wpace, Wpace > 0 ? H / 8 / Wpace : 0, t.unitPrice);
+    const base = Object.assign({}, t, rates, { fixed: full.fixed + carry });
+    const r = C.simulate(base, state.settings, Wpace, Wpace > 0 ? H / 8 / Wpace : 0, rates.unitPrice);
     r.fixed -= carry; r.carry = carry; // 表示用の固定費は実際の額(上乗せ分は carry で別に持つ)
-    head = `目標利益率${gl}を達成するには<small>（${esc(sel.label)}・〜${md(sel.fullTo)}${carryInfo ? '・年間目標に向けて先月度までの過不足を反映' : ''}）</small>`;
+    head = `目標利益率${gl}を達成するには<small>（${esc(sel.label)}・〜${md(sel.fullTo)}${carryInfo ? '・年間目標に向けて先月度までの過不足を反映' : ''}${rateNote}）</small>`;
     if (r.goalTons === null) {
       lead = '<span class="neg">今のトン単価・費用では、生産量を増やしても目標に届きません</span>';
       rows = '';
@@ -255,7 +283,7 @@ function renderGoal(sel) {
         row('予定工数(期間合計)', fmt(H, 0), 'h', `実績 ${fmt(t.hours, 0)}h ＋ 1日 ${fmt(perDayH, 0)}h × 残り ${leftDays}日`),
         row('1日あたり生産量', needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `これまで ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
         row('1日あたり工数', fmt(perDayH, 0), 'h/日', hNote + (doneDays > 0 ? `（これまで ${fmt(t.hours / doneDays, 0)}h/日）` : '')),
-        row('目標の1t当たり人工数', npt(H / 8 / r.goalTons), '人工/t', `以下（実績 ${npt(t.ninkuPerTon)}）`),
+        row('目標の1t当たり人工数', npt(H / 8 / r.goalTons), '人工/t', `以下（${fyNote}）`),
         few ? '' : row('今のペースの見込み', ton(Wpace), 't', '目標との差 ' + cmp(Wpace - r.goalTons, 't', 1, true), Wpace >= r.goalTons - 0.05 ? 'pos' : 'neg'),
       ].join('');
       if (carryInfo) {
@@ -266,7 +294,8 @@ function renderGoal(sel) {
           row('参考: 今月度だけの目標', c.solo.goalTons !== null ? ton(c.solo.goalTons) : '到達不能', c.solo.goalTons !== null ? 't' : '', '先月度までの過不足を入れない場合');
       }
     }
-    chart = { r, x: few ? t.weight : Wpace, label: few ? '実績' : '見込み' };
+    // 実績が少ないときは見込みがぶれるので、点線は目標の位置に置く(損益分岐値の欄が極端な値にならないように)
+    chart = { r, x: few && r.goalTons !== null ? r.goalTons : Wpace, label: few ? '目標' : '見込み' };
   } else {
     const r = C.simulate(t, state.settings, t.weight, t.ninkuPerTon || 0, t.unitPrice);
     const a = C.advise(r, state.settings);
