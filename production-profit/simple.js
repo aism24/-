@@ -165,9 +165,9 @@ function render() {
   $('f-fc').hidden = !sel.fc;
   $('f-fc').classList.toggle('active', !!(sel.fc && sel.fc.on));
   if (sel.fc && sel.fc.on && sel.fc.few) {
-    $('goal').hidden = true;
+    renderGoal(sel); // 目標(在職中人数×8h・先月度までの過不足から出す)は、月末見込みを使わないので実績が少なくても出す
     $('cards').innerHTML = `<div class="sMsg">${esc(C.periodLabel(sel.periodKey))}は、まだ出勤日${sel.fc.done}日分の実績しかないため表示していません` +
-      `(出勤日${FC_MIN_DAYS}日分以上で月末見込みを表示します)。<br>◀で前の月度を見るか、「月末見込み」を押して実績のみで表示してください。</div>`;
+      `(出勤日${FC_MIN_DAYS}日分以上で月末見込みを表示します)。<br>「月末見込み」を押すと実績のみで表示します。目標は右（下）の欄をご覧ください。</div>`;
     return;
   }
   $('s-note').textContent = state.pass.w ? `詳細版で選んでいた工事(${state.pass.w})の絞り込みは、シンプル版では使わず全工事で表示しています(詳細版へ戻ると元に戻ります)。` : '';
@@ -202,8 +202,10 @@ function renderGoal(sel) {
   const cur = sel.lastTo < sel.fullTo; // 期間の途中
   // 実績(月末見込みにしない、実績の最終日まで)
   const t = C.analyze(state.cache, state.settings, sel.from, sel.lastTo, sel.sites).total;
-  if (!(t.weight > 0) || !(t.unitPrice > 0)) { box.hidden = true; return; }
+  const chartBox = $('goal-chart');
+  if (!(t.weight > 0) || !(t.unitPrice > 0)) { box.hidden = true; chartBox.hidden = true; return; }
   box.hidden = false;
+  chartBox.hidden = false;
   const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
   const row = (label, value, unit, note, cls) => `<div class="gLabel">${label}</div><div class="gVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="gNote">${note || ''}</div>`;
   const cmp = (d, unit, digits, goodWhenPlus) => {
@@ -218,6 +220,7 @@ function renderGoal(sel) {
     const next = C.utcToYmd(Date.parse(sel.lastTo + 'T00:00:00Z') + 86400000);
     const doneDays = C.workDaysIn(cal, sel.from, sel.lastTo), leftDays = C.workDaysIn(cal, next, sel.fullTo);
     const perDayW = doneDays > 0 ? t.weight / doneDays : 0;
+    const few = doneDays < FC_MIN_DAYS; // 実績が少ないときは「今のペースの見込み」を出さない(ぶれが大きいため)
     // 残り期間の1日あたり工数 = 在職中の従業員数(基本設定の名簿) × 8h(全員出勤)。名簿が読めないときはこれまでのペース
     const hc = state.settings.headcount;
     const people = hc ? sel.sites.reduce((a, x) => a + (hc[x] || 0), 0) : 0;
@@ -260,7 +263,7 @@ function renderGoal(sel) {
         row('1日あたり生産量', needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `これまで ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
         row('1日あたり工数', fmt(perDayH, 0), 'h/日', hNote + (doneDays > 0 ? `（これまで ${fmt(t.hours / doneDays, 0)}h/日）` : '')),
         row('目標の1t当たり人工数', npt(H / 8 / r.goalTons), '人工/t', `以下（実績 ${npt(t.ninkuPerTon)}）`),
-        row('今のペースの見込み', ton(Wpace), 't', '目標との差 ' + cmp(Wpace - r.goalTons, 't', 1, true), Wpace >= r.goalTons - 0.05 ? 'pos' : 'neg'),
+        few ? '' : row('今のペースの見込み', ton(Wpace), 't', '目標との差 ' + cmp(Wpace - r.goalTons, 't', 1, true), Wpace >= r.goalTons - 0.05 ? 'pos' : 'neg'),
       ].join('');
       if (carryInfo) {
         const c = carryInfo;
@@ -270,7 +273,7 @@ function renderGoal(sel) {
           row('参考: 今月度だけの目標', c.solo.goalTons !== null ? ton(c.solo.goalTons) : '到達不能', c.solo.goalTons !== null ? 't' : '', '先月度までの過不足を入れない場合');
       }
     }
-    chart = { r, x: Wpace, label: '見込み' };
+    chart = { r, x: few ? t.weight : Wpace, label: few ? '実績' : '見込み' };
   } else {
     const r = C.simulate(t, state.settings, t.weight, t.ninkuPerTon || 0, t.unitPrice);
     const a = C.advise(r, state.settings);
