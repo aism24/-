@@ -156,13 +156,13 @@ td input[type="number"] { width: 130px; }
 /* ===================== 目標シミュレーター・損益分岐生産量(左右2列の画面いっぱい表示) ===================== */
 /* 画面いっぱい(上下左右ともスクロールしない)。左=表(上下)、右=グラフ(左列の高さいっぱい) */
 .fullTab { max-width: none; }
-#screen-main > .fullTab.active { display: flex; flex-direction: column; overflow: hidden; padding: 12px 16px; }
+#screen-main > .fullTab.active { display: flex; flex-direction: column; overflow: hidden; padding: 6px 8px; } /* カード周りの黒い余白(元12px 16pxの50%) */
 .simLayout { display: grid; grid-template-columns: minmax(360px, 1.25fr) 1.25fr; gap: 16px; align-items: stretch; }
-.fullTab .simLayout { flex: 1; min-height: 0; }
+.fullTab .simLayout { flex: 1; min-height: 0; gap: 8px; } /* 左右カードの間(元16pxの50%) */
 .simLeft { display: flex; flex-direction: column; min-width: 0; }
 .fullTab .simLeft { min-height: 0; overflow: auto; }
 .fullTab .panel { padding: 10px 14px; }
-.fullTab .simLeft .panel { margin-bottom: 12px; }
+.fullTab .simLeft .panel { margin-bottom: 6px; } /* 上下カードの間(元12pxの50%) */
 .fullTab .simLeft .panel:last-child { flex: 1; margin-bottom: 0; }
 .simChart { display: flex; flex-direction: column; margin-bottom: 0; }
 .simChart .chartBox { flex: 1; min-height: 0; height: auto; overflow: hidden; }
@@ -176,7 +176,7 @@ td input[type="number"] { width: 130px; }
 .resetBtn2.changed:hover { background: #ffd81f; }
 @keyframes resetGlow { from { box-shadow: 0 0 0 0 rgba(240, 180, 0, .15); border-color: #f0b400; } to { box-shadow: 0 0 10px 3px rgba(255, 200, 0, .9); border-color: #ff9800; } }
 /* 損益分岐生産量タブ: 左上に数値カード(2列)、その下に計算の内訳 */
-.bepKpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; flex: none; }
+.bepKpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-bottom: 6px; flex: none; }
 .bepTable td.muted { white-space: normal; }
 .bepHelp { margin: 6px 0 0; }
 
