@@ -327,7 +327,7 @@ function buildGoal(sel, ov) {
       lead = need <= 0
         ? `<span class="pos">✓ 目標の生産量に到達済み</span><span class="gLeadSub">（残り期間の生産量に関わらず達成）</span>`
         : leftDays > 0
-          ? `残り <b>${leftDays}</b>出勤日で あと <b class="gKey">${ton(need)}t</b> を <b class="gKey">${fmt(perDayH * leftDays, 0)}h</b> で`
+          ? `残り <b>${leftDays}</b>出勤日で あと <b class="gKey">${ton(need)}t</b> を <b class="gKey">${fmt(perDayH * leftDays, 0)}h</b>`
           : '<span class="neg">残りの出勤日がありません</span>';
       rows = [
         row('目標生産量(期間合計)', ton(r.goalTons), 't', `実績 ${ton(t.weight)}t ＋ 残り ${ton(Math.max(0, need))}t`),
@@ -504,7 +504,7 @@ function renderGoal(sel) {
     }).join('_') + '）</small>' : '';
     head = `目標（${unitLbl}）を達成するには（${sel.reiwa}）`;
     lead = need <= 0 ? `<span class="pos">✓ 目標生産量に到達済み</span><span class="gLeadSub">（実績 ${ton(t.weight)}t／目標 ${ton(T.W)}t）</span>`
-      : leftDays > 0 ? `残り <b>${leftDays}</b>出勤日で あと <b class="gKey">${ton(need)}t</b> を <b class="gKey">${fmt(perDayH * leftDays, 0)}h</b> で`
+      : leftDays > 0 ? `残り <b>${leftDays}</b>出勤日で あと <b class="gKey">${ton(need)}t</b> を <b class="gKey">${fmt(perDayH * leftDays, 0)}h</b>`
         : '<span class="neg">残りの出勤日がありません</span>';
     rows = [
       row('目標生産量', ton(T.W), 't', `実績 ${ton(t.weight)}t ＋ 残り ${ton(need)}t`),
