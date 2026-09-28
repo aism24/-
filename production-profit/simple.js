@@ -332,8 +332,8 @@ function buildGoal(sel, ov) {
       rows = [
         row('目標生産量(期間合計)', ton(r.goalTons), 't', `実績 ${ton(t.weight)}t ＋ 残り ${ton(Math.max(0, need))}t`),
         row('予定工数(期間合計)', fmt(H, 0), 'h', `実績 ${fmt(t.hours, 0)}h ＋|1日 ${fmt(perDayH, 0)}h × 残り ${leftDays}日`),
-        row('1日あたり生産量', needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `これまで ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
-        row('1日あたり工数', fmt(perDayH, 0), 'h/日', hNote + (doneDays > 0 ? `（これまで ${fmt(t.hours / doneDays, 0)}h/日）` : '')),
+        row('1日あたり生産量', needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `実績 ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
+        row('1日あたり工数', fmt(perDayH, 0), 'h/日', hNote + (doneDays > 0 ? `（実績 ${fmt(t.hours / doneDays, 0)}h/日）` : '')),
         row('目標の1t当たり人工数', npt(H / 8 / r.goalTons), '人工/t', `以下|（${fyNote}）`),
         few ? '' : row('今のペースの見込み', ton(Wpace), 't', '目標との差 ' + cmp(Wpace - r.goalTons, 't', 1, true), Wpace >= r.goalTons - 0.05 ? 'pos' : 'neg'),
       ].join('');
@@ -509,8 +509,8 @@ function renderGoal(sel) {
     rows = [
       row('目標生産量', ton(T.W), 't', `実績 ${ton(t.weight)}t ＋ 残り ${ton(need)}t`),
       row('目標工数', fmt(T.H, 0), 'h', `実績 ${fmt(t.hours, 0)}h ＋|残り ${fmt(perDayH * leftDays, 0)}h（1日 ${fmt(perDayH, 0)}h × ${leftDays}日）`),
-      row('1日あたり生産量' + siteDay, needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `これまで ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
-      row('1日あたり工数', fmt(perDayH, 0), 'h/日', (T.people > 0 ? `全員出勤で１日８時間で計算（在職中 ${T.people}人）` : '従業員名簿が読めないため、これまでのペースで計算') + (doneDays > 0 ? `（これまで ${fmt(t.hours / doneDays, 0)}h/日）` : '')),
+      row('1日あたり生産量' + siteDay, needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `実績 ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
+      row('1日あたり工数', fmt(perDayH, 0), 'h/日', (T.people > 0 ? `全員出勤で１日８時間で計算（在職中 ${T.people}人）` : '従業員名簿が読めないため、これまでのペースで計算') + (doneDays > 0 ? `（実績 ${fmt(t.hours / doneDays, 0)}h/日）` : '')),
       row('目標の1t当たり人工数', npt(T.n), '人工/t', `以下|（実績 ${npt(t.ninkuPerTon)}${few ? `・${doneDays}日分` : ''}）`),
     ].join('');
     // 参考: 先月度までの不足分を取り返して年間目標に届くための、今月度の生産量(先月度までの過不足を按分)
