@@ -196,6 +196,21 @@ function priceWarn(sel) {
   return list.length ? `⚠ 契約金額が未入力の工事があります(売上0円で計算。売上・損益・目標が実際より悪く出ます): ${list.slice(0, 5).join('、')}${list.length > 5 ? ' ほか' + (list.length - 5) + '件' : ''}` : '';
 }
 
+/* 月〆の今月度: 今期の先月度までの過不足(損益−売上×利益率)を、今月度〜期末の出勤日数で按分した今月度の負担分。
+   毎月この負担分を上乗せした目標を達成すれば、期末に年間目標にも届く。carry>0 = 不足分を取り返す額、<0 = 余裕。
+   期首の月度・年度表示は null */
+function carryFor(sel, p) {
+  if (sel.mode !== 'period') return null;
+  const cal = state.settings.calendar || {};
+  const fy = C.fiscalRange(C.fiscalYearOf(sel.periodKey));
+  const prevTo = C.utcToYmd(Date.parse(sel.from + 'T00:00:00Z') - 86400000);
+  if (prevTo < fy.from) return null;
+  const pv = C.analyze(state.cache, state.settings, fy.from, prevTo, sel.sites).total;
+  const diff = pv.profit - pv.sales * p;
+  const monthDays = C.workDaysIn(cal, sel.from, sel.fullTo), restDays = C.workDaysIn(cal, sel.from, fy.to);
+  return { diff, monthDays, restDays, fyTo: fy.to, carry: restDays > 0 ? -diff * monthDays / restDays : 0 };
+}
+
 /* ===================== 目標(何tを何時間で) =====================
    詳細版の目標シミュレーターと同じ前提: 人件費=工数×人件費単価(工数で決まる額を固定費に含める)、
    トン単価・変動費単価・人件費単価は実績の値。目標は「損益 ≧ 売上×利益率」。
@@ -219,8 +234,31 @@ function renderGoal(sel) {
     const good = goodWhenPlus ? d > 0 : d < 0;
     return `<span class="${good ? 'pos' : 'neg'}">${d > 0 ? '+' : '−'}${fmt(Math.abs(d), digits)}${unit}</span>`;
   };
+  const carryRows = (c) => row('今期の先月度までの過不足', (c.diff >= 0 ? '+' : '') + yen(c.diff), '円', c.diff >= 0 ? '目標より超過（余裕分）' : '目標に不足', c.diff >= 0 ? 'pos' : 'neg') +
+    row('今月度の負担分', (c.carry > 0 ? '+' : '') + yen(c.carry), '円', `過不足 × 今月度の出勤日 ${c.monthDays}日 ÷ 期末(${md(c.fyTo)})までの出勤日 ${c.restDays}日`);
+  // 月末見込みON(月度の途中で見込みを計算しているとき): 見込みの生産量・工数・損益を目標と比べる(目標シミュレーターと同じく見込みのデータで計算)
+  const fcOn = cur && sel.fc && sel.fc.on && !sel.fc.few;
   let head, lead, rows, chart;
-  if (cur) {
+  if (fcOn) {
+    const tf = C.analyze(sel.data, state.settings, sel.from, sel.fullTo, sel.sites).total; // 月末見込み(実績を出勤日数の比で引き伸ばし)
+    const c = carryFor(sel, p), carry = c ? c.carry : 0;
+    const r = C.simulate(Object.assign({}, tf, { fixed: tf.fixed + carry }), state.settings, tf.weight, tf.ninkuPerTon || 0, tf.unitPrice);
+    const a = C.advise(r, state.settings);             // 不足額(先月度までの負担分を含む)
+    const ok = a.gap <= 0.5;
+    const profit = r.profit + carry;                    // 表示する損益は実際の見込み額(負担分を引く前)
+    const hMax = a.cutHours !== null ? r.hours - a.cutHours : null;
+    head = `月末見込みで目標利益率${gl}に届くか<small>（${esc(sel.label)}・〜${md(sel.fullTo)}・出勤日${sel.fc.done}/${sel.fc.total}日の実績から見込み${c ? '・年間目標に向けて先月度までの過不足を反映' : ''}）</small>`;
+    lead = ok ? `<span class="pos">✓ 見込みでは目標を達成</span>（目標より ${man(-a.gap)} 超）` : `<span class="neg">見込みでは目標に <b>${man(a.gap)}</b> 届きません</span>`;
+    rows = (c ? carryRows(c) : '') + [
+      row('見込み生産量', ton(tf.weight), 't', r.goalTons !== null ? `目標 ${ton(r.goalTons)}t（${cmp(tf.weight - r.goalTons, 't', 1, true)}）` : '目標: 到達不能', r.goalTons !== null && tf.weight >= r.goalTons - 0.05 ? 'pos' : 'neg'),
+      row('見込み工数', fmt(r.hours, 0), 'h', hMax !== null && hMax > 0 ? `この生産量なら ${fmt(hMax, 0)}h以内（${cmp(r.hours - hMax, 'h', 0, false)}）` : ''),
+      row('目標生産量<small>（見込みの工数なら）</small>', r.goalTons !== null ? ton(r.goalTons) : '到達不能', r.goalTons !== null ? 't' : '', r.goalTons !== null ? `1日あたり ${ton(r.goalTons / sel.fc.total)}t（見込み ${ton(tf.weight / sel.fc.total)}t/日）` : ''),
+      row('1t当たり人工数', npt(tf.ninkuPerTon), '人工/t', hMax !== null && hMax > 0 ? `目標 ${npt(hMax / 8 / tf.weight)}以下（見込みの生産量なら）` : ''),
+      row('見込み損益(概算)', yen(profit), '円', `利益目標 ${yen(r.profitGoal)}円${carry ? `＋負担分 ${yen(carry)}円` : ''}（${cmp(-a.gap, '円', 0, true)}）`, ok ? 'pos' : 'neg'),
+    ].join('');
+    r.fixed -= carry; // 表示用は実際の固定費(負担分は carry で別に描く)
+    chart = { r, x: tf.weight, label: '見込み', carry };
+  } else if (cur) {
     const full = C.analyze(state.cache, state.settings, sel.from, sel.fullTo, sel.sites).total;
     const cal = state.settings.calendar || {};
     const next = C.utcToYmd(Date.parse(sel.lastTo + 'T00:00:00Z') + 86400000);
@@ -251,18 +289,8 @@ function renderGoal(sel) {
     const Wpace = t.weight + perDayW * leftDays;        // 今のペースで続けたときの生産量
     // 月〆の今月度: 今期の先月度までの過不足(損益−売上×利益率)を、今月度〜期末の出勤日数で按分して今月度の目標に上乗せする
     // (毎月この目標を達成すれば、期末に年間目標にも届く)。carry>0 = 不足分を取り返す額、<0 = 余裕
-    let carry = 0, carryInfo = null;
-    if (sel.mode === 'period') {
-      const fy = C.fiscalRange(C.fiscalYearOf(sel.periodKey));
-      const prevTo = C.utcToYmd(Date.parse(sel.from + 'T00:00:00Z') - 86400000);
-      if (prevTo >= fy.from) {
-        const pv = C.analyze(state.cache, state.settings, fy.from, prevTo, sel.sites).total;
-        const diff = pv.profit - pv.sales * p;               // 先月度までの過不足(+超 / −不足)
-        const monthDays = C.workDaysIn(cal, sel.from, sel.fullTo), restDays = C.workDaysIn(cal, sel.from, fy.to);
-        carry = restDays > 0 ? -diff * monthDays / restDays : 0;
-        carryInfo = { diff, monthDays, restDays, fyTo: fy.to, solo: C.simulate(Object.assign({}, t, rates, { fixed: full.fixed }), state.settings, Wpace, Wpace > 0 ? H / 8 / Wpace : 0, rates.unitPrice) };
-      }
-    }
+    const carryInfo = carryFor(sel, p), carry = carryInfo ? carryInfo.carry : 0;
+    if (carryInfo) carryInfo.solo = C.simulate(Object.assign({}, t, rates, { fixed: full.fixed }), state.settings, Wpace, Wpace > 0 ? H / 8 / Wpace : 0, rates.unitPrice);
     const base = Object.assign({}, t, rates, { fixed: full.fixed + carry });
     const r = C.simulate(base, state.settings, Wpace, Wpace > 0 ? H / 8 / Wpace : 0, rates.unitPrice);
     r.fixed -= carry; r.carry = carry; // 表示用の固定費は実際の額(上乗せ分は carry で別に持つ)
@@ -288,8 +316,7 @@ function renderGoal(sel) {
       ].join('');
       if (carryInfo) {
         const c = carryInfo;
-        rows = row('今期の先月度までの過不足', (c.diff >= 0 ? '+' : '') + yen(c.diff), '円', c.diff >= 0 ? '目標より超過（余裕分）' : '目標に不足', c.diff >= 0 ? 'pos' : 'neg') +
-          row('今月度の負担分', (carry > 0 ? '+' : '') + yen(carry), '円', `過不足 × 今月度の出勤日 ${c.monthDays}日 ÷ 期末(${md(c.fyTo)})までの出勤日 ${c.restDays}日`) +
+        rows = carryRows(c) +
           rows +
           row('参考: 今月度だけの目標', c.solo.goalTons !== null ? ton(c.solo.goalTons) : '到達不能', c.solo.goalTons !== null ? 't' : '', '先月度までの過不足を入れない場合');
       }
@@ -315,7 +342,8 @@ function renderGoal(sel) {
   box.querySelector('.gLead').innerHTML = lead;
   box.querySelector('.gTable').innerHTML = rows;
   const r = chart.r;
-  const cy = Math.abs(r.carry || 0) >= 1 ? r.carry : 0; // 先月度までの不足の今月度負担分は、グラフでは固定費に上乗せして描く(余裕分は差し引く)
+  const cyRaw = chart.carry !== undefined ? chart.carry : (r.carry || 0);
+  const cy = Math.abs(cyRaw) >= 1 ? cyRaw : 0; // 先月度までの不足の今月度負担分は、グラフでは固定費に上乗せして描く(余裕分は差し引く)
   drawBep('c-goal', { fixed: r.fixed + r.labor + cy, unitPrice: r.unitPrice, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: p,
     fixedLabel: cy ? ['固定費(人件費込み)', cy > 0 ? '+先月度までの不足分' : '−先月度までの超過分'] : ['固定費', '(人件費込み)'], otherFixed: r.fixed + cy, laborRate: r.laborRate,
     x: chart.x, fixedX: true, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: chart.label });
