@@ -172,21 +172,14 @@ function render() {
   }
   $('s-note').textContent = state.pass.w ? `詳細版で選んでいた工事(${state.pass.w})の絞り込みは、シンプル版では使わず全工事で表示しています(詳細版へ戻ると元に戻ります)。` : '';
   const t = C.analyze(sel.data, state.settings, sel.from, sel.to, sel.sites).total;
-  // 損益分岐生産量は目標シミュレーター(下のグラフ)と同じ計算: 工数で決まる人件費を固定費に含める
-  t.breakEvenTons = C.simulate(t, state.settings, t.weight, t.ninkuPerTon || 0, t.unitPrice || 0).breakEvenTons;
   const hasSales = t.sales > 0;
   const [pv, pu] = money(t.profit), [sv, su] = money(t.sales);
-  let beSub, beVal, beCls = '';
-  if (t.breakEvenTons === null) { beVal = '—'; beSub = '限界利益がマイナスのため到達できません'; beCls = 'bad'; }
-  else if (t.weight >= t.breakEvenTons) { beVal = fmt(t.weight - t.breakEvenTons, 1); beSub = `達成(損益分岐 ${fmt(t.breakEvenTons, 1)}t を上回り)`; beCls = 'good'; }
-  else { beVal = fmt(t.breakEvenTons - t.weight, 1); beSub = `損益分岐 ${fmt(t.breakEvenTons, 1)}t まであと`; beCls = 'bad'; }
   renderGoal(sel);
   $('cards').innerHTML = [
-    card('損益', (t.profit > 0.5 ? '+' : '') + pv, pu, hasSales ? `利益率 ${t.profitRate === null ? '—' : (t.profitRate * 100).toFixed(1) + '%'}` : '売上なし', 'big ' + (t.profit >= 0 ? 'good' : 'bad')),
+    card('損益（概算）', (t.profit > 0.5 ? '+' : '') + pv, pu, hasSales ? `利益率 ${t.profitRate === null ? '—' : (t.profitRate * 100).toFixed(1) + '%'}` : '売上なし', 'big ' + (t.profit >= 0 ? 'good' : 'bad')),
     card('生産重量', fmt(t.weight, 1), 't', ''),
     card('1t当たり人工数', fmt(t.ninkuPerTon, 2), '人工/t', `総工数 ${fmt(t.ninku, 1)}人工`),
-    card('売上額', sv, su, ''),
-    card(t.breakEvenTons !== null && t.weight >= t.breakEvenTons ? '損益分岐を超えた量' : '損益分岐まで', beVal, beVal === '—' ? '' : 't', beSub, beCls),
+    card('売上額（概算）', sv, su, ''),
   ].join('');
 }
 
