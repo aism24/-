@@ -55,3 +55,21 @@
   .gLabel, .gVal { border-bottom: none !important; }
   .sGoalChart { height: 380px; }
 }
+/* PC: 1画面に収まるよう左右に並べる(上段=絞り込み1行+数値カード横一列、下段=左に目標の表・右にグラフ) */
+@media (min-width: 1000px) {
+  .simple { max-width: 1600px; padding: 0 16px 16px; }
+  .sHead { margin: 0 -16px; }
+  .sFilters { flex-direction: row; justify-content: center; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 8px 10px; margin: 10px 0; }
+  .sCards { grid-template-columns: 1.3fr repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .sCard { padding: 10px 14px; }
+  .sCard.big { grid-column: auto; }
+  .sValue { font-size: 26px; }
+  .sCard.big .sValue { font-size: 34px; }
+  .sGoal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); grid-template-rows: auto auto 1fr;
+    grid-template-areas: "head head" "lead chart" "table chart"; gap: 0 20px; margin-top: 10px; }
+  .gHead { grid-area: head; margin-bottom: 4px; }
+  .gLead { grid-area: lead; }
+  .gTable { grid-area: table; align-self: start; }
+  .sGoalChart { grid-area: chart; height: auto; min-height: 400px; margin-top: 8px; }
+  .sFoot { margin-top: 6px; }
+}
