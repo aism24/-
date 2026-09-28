@@ -98,7 +98,7 @@ function checkPassword_(propName, given) {
 // キャッシュのJSON文字列はJSON.parseし直さずにそのまま埋め込む(数MBになりうるため)。
 function dataResponse_(forceRefresh) {
   let cacheText = forceRefresh ? null : loadCacheText_();
-  if (cacheText === null) cacheText = refreshLocked_();
+  if (cacheText === null) cacheText = refreshLocked_(!forceRefresh);
   const settingsText = JSON.stringify(readSettings_());
   return ContentService.createTextOutput('{"status":"success","data":{"cache":' + cacheText + ',"settings":' + settingsText + '}}')
     .setMimeType(ContentService.MimeType.JSON);
@@ -119,10 +119,15 @@ function setupTrigger() {
   ScriptApp.newTrigger('dailyRefresh').timeBased().everyDays(1).atHour(6).create();
 }
 
-function refreshLocked_() {
+/* reuseIfExists: 待っている間に別の要求が集計を済ませていたら、それを使う(同時アクセスで何度も集計しない) */
+function refreshLocked_(reuseIfExists) {
   const lock = LockService.getScriptLock();
   lock.waitLock(5 * 60 * 1000);
   try {
+    if (reuseIfExists) {
+      const done = loadCacheText_();
+      if (done !== null) return done;
+    }
     const cache = aggregateSources_(fetchSources_());
     const text = JSON.stringify(cache);
     saveCacheText_(text);
@@ -177,11 +182,12 @@ function aggregateSources_(src) {
     const wn = String(w.workNo);
     const info = works[wn] || (works[wn] = { name: w.workName || '', totalWeight: 0 });
     Object.keys(w.bySite || {}).forEach(function (site) {
-      if (!isTarget(String(site).trim())) return;
+      const st = String(site).trim(); // 前後の空白を除いた名前で保存する(画面側は完全一致で工場を判定するため)
+      if (!isTarget(st)) return;
       const byDate = w.bySite[site].weightByDate || {};
       Object.keys(byDate).forEach(function (ymd) {
         const wt = Number(byDate[ymd]) || 0;
-        cell(ymd, site, wn)[3] += wt;
+        cell(ymd, st, wn)[3] += wt;
         info.totalWeight += wt;
       });
     });
@@ -264,6 +270,17 @@ function rows_(sh) {
   return sh.getRange(2, 1, last - 1, sh.getLastColumn()).getDisplayValues();
 }
 
+/* 数値の列は表示形式で丸められた文字ではなく実際の値で読む(例: 123.456 が「123」表示でも 123.456)。
+   文字の列(工事No・工事名など)は表示どおりの文字で読む。戻り値は [表示の行, 値の行] の組の配列 */
+function rowsWithValues_(sh, width) {
+  const last = sh.getLastRow();
+  if (last < 2) return [];
+  const rg = sh.getRange(2, 1, last - 1, width);
+  const disp = rg.getDisplayValues(), vals = rg.getValues();
+  return disp.map(function (r, i) { return [r, vals[i]]; });
+}
+function numCell_(pair, c) { return typeof pair[1][c] === 'number' ? pair[1][c] : numOrNull_(pair[0][c]); }
+
 function numOrNull_(v) {
   // 「10,000,000」「¥10,000,000」「10,000,000円」などの表示形式でも数値として読む
   const s = String(v === null || v === undefined ? '' : v).replace(/[,¥￥円\s]/g, '').trim();
@@ -282,13 +299,15 @@ function readSettings_() {
     const path = k[1].split('.');
     if (path.length === 2) s[path[0]][path[1]] = val; else s[path[0]] = val;
   });
-  rows_(sheet_(SHEETS.WORKS, HEADERS.WORKS)).forEach(function (r) {
+  rowsWithValues_(sheet_(SHEETS.WORKS, HEADERS.WORKS), 4).forEach(function (p) {
+    const r = p[0];
     if (!r[0]) return;
-    s.works[String(r[0]).trim()] = { name: r[1], totalWeight: numOrNull_(r[2]), contract: numOrNull_(r[3]) };
+    s.works[String(r[0]).trim()] = { name: r[1], totalWeight: numCell_(p, 2), contract: numCell_(p, 3) };
   });
-  rows_(sheet_(SHEETS.COSTS, HEADERS.COSTS)).forEach(function (r) {
+  rowsWithValues_(sheet_(SHEETS.COSTS, HEADERS.COSTS), 4).forEach(function (p) {
+    const r = p[0];
     if (!r[0]) return;
-    s.costs[String(r[0]).trim()] = { laborRate: numOrNull_(r[1]), fixedMonthly: numOrNull_(r[2]), variablePerTon: numOrNull_(r[3]) };
+    s.costs[String(r[0]).trim()] = { laborRate: numCell_(p, 1), fixedMonthly: numCell_(p, 2), variablePerTon: numCell_(p, 3) };
   });
   s.calendar = readCalendar_(sheet_(SHEETS.BASIC, HEADERS.BASIC));
   return s;

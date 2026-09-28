@@ -284,6 +284,7 @@
       var common = m.byWork[COMMON_WORK];
       var commonHours = common ? common.hours : 0;
       var fixedLeft = m.fixed;
+      var allocWeight = m.weight - (m.byWork[COMMON_WORK] ? m.byWork[COMMON_WORK].weight : 0);
       Object.keys(m.byWork).forEach(function (wn) {
         var a = m.byWork[wn];
         var r = row(wn);
@@ -291,12 +292,12 @@
         r.labor += a.hours / HOURS_PER_NINKU * m.laborRate;
         r.variable += a.weight * m.varPerTon;
         if (wn === COMMON_WORK) return;
-        var share = m.weight > 0 ? a.weight / m.weight : 0;
+        var share = allocWeight > 0 ? a.weight / allocWeight : 0; // 共通工数は共通以外の工事へ重量比で配る
         r.allocHours += a.hours + commonHours * share;
         if (m.sales > 0) { var f = m.fixed * a.sales / m.sales; r.fixed += f; fixedLeft -= f; }
       });
       var c = row(COMMON_WORK);
-      if (m.weight <= 0) c.allocHours += commonHours; // 重量の無いセルの共通工数は按分先が無い
+      if (allocWeight <= 0) c.allocHours += commonHours; // 共通以外に重量の無いセルの共通工数は按分先が無い
       c.fixed += fixedLeft;
     });
     return Object.keys(rows).map(function (wn) {
