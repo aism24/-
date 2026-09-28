@@ -12,7 +12,8 @@ const $ = (id) => document.getElementById(id);
 async function api(action) {
   if (DEMO) {
     return { cache: PPDemo.makeDemoCache(C), settings: Object.assign(C.defaultSettings(), {
-      works: { '26-01': { contract: 60000000, totalWeight: 200 }, '26-02': { contract: 45000000, totalWeight: null } } }) };
+      works: { '26-01': { contract: 60000000, totalWeight: 200 }, '26-02': { contract: 45000000, totalWeight: null } },
+      headcount: { '本社': 20, '夢前': 18, '鳥取': 22 } }) };
   }
   const res = await fetch(GAS_API_URL, {
     method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -216,8 +217,13 @@ function renderGoal(sel) {
     const cal = state.settings.calendar || {};
     const next = C.utcToYmd(Date.parse(sel.lastTo + 'T00:00:00Z') + 86400000);
     const doneDays = C.workDaysIn(cal, sel.from, sel.lastTo), leftDays = C.workDaysIn(cal, next, sel.fullTo);
-    const perDayH = doneDays > 0 ? t.hours / doneDays : 0, perDayW = doneDays > 0 ? t.weight / doneDays : 0;
-    const H = t.hours + perDayH * leftDays;             // 期間全体の予定工数(今のペース)
+    const perDayW = doneDays > 0 ? t.weight / doneDays : 0;
+    // 残り期間の1日あたり工数 = 在職中の従業員数(基本設定の名簿) × 8h(全員出勤)。名簿が読めないときはこれまでのペース
+    const hc = state.settings.headcount;
+    const people = hc ? sel.sites.reduce((a, x) => a + (hc[x] || 0), 0) : 0;
+    const perDayH = people > 0 ? people * 8 : (doneDays > 0 ? t.hours / doneDays : 0);
+    const hNote = people > 0 ? `全員出勤で１日８時間で計算（在職中 ${people}人）` : '従業員名簿が読めないため、これまでのペースで計算';
+    const H = t.hours + perDayH * leftDays;             // 期間全体の予定工数(実績＋残りの出勤日×1日あたり工数)
     const Wpace = t.weight + perDayW * leftDays;        // 今のペースで続けたときの生産量
     // 月〆の今月度: 今期の先月度までの過不足(損益−売上×利益率)を、今月度〜期末の出勤日数で按分して今月度の目標に上乗せする
     // (毎月この目標を達成すれば、期末に年間目標にも届く)。carry>0 = 不足分を取り返す額、<0 = 余裕
@@ -250,9 +256,9 @@ function renderGoal(sel) {
           : '<span class="neg">残りの出勤日がありません</span>';
       rows = [
         row('目標生産量(期間合計)', ton(r.goalTons), 't', `実績 ${ton(t.weight)}t ＋ 残り ${ton(Math.max(0, need))}t`),
-        row('予定工数(期間合計)', fmt(H, 0), 'h', `これまでの1日 ${fmt(perDayH, 0)}h × 出勤日 ${doneDays + leftDays}日`),
+        row('予定工数(期間合計)', fmt(H, 0), 'h', `実績 ${fmt(t.hours, 0)}h ＋ 1日 ${fmt(perDayH, 0)}h × 残り ${leftDays}日`),
         row('1日あたり生産量', needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `これまで ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
-        row('1日あたり工数', fmt(perDayH, 0), 'h/日', 'これまでと同じペース'),
+        row('1日あたり工数', fmt(perDayH, 0), 'h/日', hNote + (doneDays > 0 ? `（これまで ${fmt(t.hours / doneDays, 0)}h/日）` : '')),
         row('目標の1t当たり人工数', npt(H / 8 / r.goalTons), '人工/t', `以下（実績 ${npt(t.ninkuPerTon)}）`),
         row('今のペースの見込み', ton(Wpace), 't', '目標との差 ' + cmp(Wpace - r.goalTons, 't', 1, true), Wpace >= r.goalTons - 0.05 ? 'pos' : 'neg'),
       ].join('');
