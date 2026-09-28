@@ -83,3 +83,20 @@
 }
 .sWarn { margin: 0 0 8px; padding: 6px 12px; background: var(--warn-bg); color: var(--text); border-radius: 8px; font-size: 13px; }
 .sWarn:empty { display: none; }
+/* 工場別の目標値の表(PCはグラフ内の「損益分岐値」の下に重ねる、スマホはグラフの下) */
+.sChart { position: relative; }
+.sTargets { margin-top: 8px; background: rgba(255, 255, 255, .94); border: 2px solid var(--bep-be); border-radius: 8px; padding: 6px 10px; color: #0b0b0b; font-size: 14px; }
+.sTargets .tgHead { font-weight: 800; color: #9a6a00; }
+.sTargets .tgHead small { font-weight: 500; color: #333; margin-left: 4px; }
+.sTargets table { border-collapse: collapse; margin-top: 4px; width: 100%; font-variant-numeric: tabular-nums; }
+.sTargets th, .sTargets td { padding: 3px 10px; border-bottom: 1px solid #e3ded0; text-align: right; white-space: nowrap; }
+.sTargets th:first-child, .sTargets td:first-child { text-align: left; }
+.sTargets th { font-size: .85em; color: #555; font-weight: 600; }
+.sTargets td { font-weight: 700; font-size: 1.05em; }
+.sTargets tr.tot td { background: #fff4d6; }
+.sTargets .tgNote { font-size: 11px; color: #666; margin-top: 3px; }
+.sTargets .neg { color: #c62828; }
+@media (min-width: 1000px) {
+  .sTargets { position: absolute; margin-top: 0; max-width: 46%; box-shadow: 0 2px 8px rgba(0, 0, 0, .15); }
+  .sTargets table { width: auto; }
+}

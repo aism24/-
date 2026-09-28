@@ -367,6 +367,111 @@ function renderGoal(sel) {
   drawBep('c-goal', { fixed: r.fixed + r.labor + cy, unitPrice: r.unitPrice, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: p,
     fixedLabel: cy ? ['固定費(人件費込み)', cy > 0 ? '+先月度までの不足分' : '−先月度までの超過分'] : ['固定費', '(人件費込み)'], otherFixed: r.fixed + cy, laborRate: r.laborRate,
     x: chart.x, fixedX: true, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: chart.label, hideMoney: true });
+  renderTargets(sel, fcOn ? 'fc' : cur ? 'cur' : 'past', p);
   // カードの「売上額(概算)」の目標: 目標生産量 × トン単価(目標の表・グラフと同じ値)
   return { goalSales: r.goalTons !== null ? r.goalTons * r.unitPrice : null, progress: cur && !fcOn };
 }
+
+/* ===================== 工場別の目標値(グラフ内の表) =====================
+   選択した期間(年度・月度)の工場別の目標(生産重量・工数・1t当たり人工数)。常に 3工場・本社・夢前・鳥取 の4行。
+   - 利益目標を達成する: 3工場合計で 損益 ≧ 売上×目標利益率(月〆の今月度は先月度までの過不足の負担分も含む)。
+     工場ごとのトン単価・変動費単価・人件費単価・固定費で計算する(目標シミュレーターと同じ前提。工数で決まる人件費を固定費扱い)
+   - 過去に実績がある値以下: 直近12か月度(締まった月度)の工場ごとの
+       生産重量の上限 = 1出勤日あたり生産量の過去最高 × 出勤日数、1t当たり人工数の下限 = 過去最高(最少)の月の値
+   - 3工場とも「上限の同じ割合 θ」で生産量を決め、目標に届く最小の θ を二分法で求める(上限まで上げても届かなければ上限を表示)
+   - 工数: 過去の期間=実績、期間の途中=実績＋在職中人数×8h×残りの出勤日、月末見込み=見込みの工数 */
+function pastBest(cal) {
+  const last = state.lastYmd;
+  if (!last) return {};
+  const lastKey = C.periodKeyOf(last);
+  const endKey = last === C.periodRange(lastKey).to ? lastKey : C.shiftPeriod(lastKey, -1);
+  const startKey = C.shiftPeriod(endKey, -11);
+  const agg = {};
+  state.cache.rec.forEach((r) => {
+    const k = C.periodKeyOf(r[0]);
+    if (k < startKey || k > endKey) return;
+    const a = (agg[r[1]] = agg[r[1]] || {}), m = (a[k] = a[k] || { w: 0, h: 0 });
+    m.w += r[3]; m.h += r[4];
+  });
+  const out = {};
+  state.cache.sites.forEach((site) => {
+    let daily = null, npt = null;
+    Object.keys(agg[site] || {}).forEach((k) => {
+      const m = agg[site][k], rg = C.periodRange(k), d = C.workDaysIn(cal, rg.from, rg.to);
+      if (!(m.w > 0) || !(d > 0)) return;
+      if (daily === null || m.w / d > daily) daily = m.w / d;
+      const n = m.h / 8 / m.w;
+      if (m.h > 0 && (npt === null || n < npt)) npt = n;
+    });
+    out[site] = { daily, npt };
+  });
+  return out;
+}
+
+function renderTargets(sel, kind, p) {
+  const el = $('goal-targets');
+  const cal = state.settings.calendar || {};
+  const sites = state.cache.sites, best = pastBest(cal);
+  const next = C.utcToYmd(Date.parse(sel.lastTo + 'T00:00:00Z') + 86400000);
+  const doneDays = C.workDaysIn(cal, sel.from, sel.lastTo), leftDays = kind === 'cur' ? C.workDaysIn(cal, next, sel.fullTo) : 0;
+  const totalDays = C.workDaysIn(cal, sel.from, sel.fullTo);
+  const few = kind === 'cur' && sel.mode === 'period' && doneDays < FC_MIN_DAYS;
+  const hc = state.settings.headcount || {};
+  const fs = sites.map((site) => {
+    const one = [site];
+    let t, H, F, floor = 0, Wmax;
+    const b = best[site] || {};
+    if (kind === 'fc') {
+      t = C.analyze(sel.data, state.settings, sel.from, sel.fullTo, one).total;
+      H = t.hours; F = t.fixed; Wmax = b.daily !== null && b.daily !== undefined ? b.daily * totalDays : null;
+    } else if (kind === 'cur') {
+      t = C.analyze(state.cache, state.settings, sel.from, sel.lastTo, one).total;
+      F = C.analyze(state.cache, state.settings, sel.from, sel.fullTo, one).total.fixed;
+      const perDay = hc[site] > 0 ? hc[site] * 8 : (doneDays > 0 ? t.hours / doneDays : 0);
+      H = t.hours + perDay * leftDays; floor = t.weight;
+      Wmax = b.daily !== null && b.daily !== undefined ? t.weight + b.daily * leftDays : null;
+    } else {
+      t = C.analyze(state.cache, state.settings, sel.from, sel.fullTo, one).total;
+      H = t.hours; F = t.fixed; Wmax = b.daily !== null && b.daily !== undefined ? b.daily * totalDays : null;
+    }
+    // 単価: 実績が少ない月度の途中は今期の実績(目標の表と同じ)
+    let rt = t;
+    if (few || !(t.unitPrice > 0)) {
+      const fy = C.fiscalRange(C.fiscalYearOf(C.periodKeyOf(sel.from)));
+      const tf = C.analyze(state.cache, state.settings, fy.from, sel.lastTo, one).total;
+      if (tf.unitPrice > 0) rt = tf;
+    }
+    const P = rt.unitPrice || 0, v = rt.varPerTon || 0, L = rt.laborRate || 0;
+    const cap = Wmax === null ? null : Math.max(floor, Math.min(Wmax, b.npt > 0 && H > 0 ? H / 8 / b.npt : Wmax));
+    return { site, P, v, L, H, F, floor, cap, ok: P > 0 && cap !== null && cap > 0 };
+  });
+  const use = fs.filter((f) => f.ok);
+  if (!use.length) { el.hidden = true; return; }
+  // 先月度までの過不足の負担分は、目標の表と同じく期間の途中(今月度)だけ含める(過去の期間はその期間だけで評価)
+  const c = kind === 'past' ? null : carryFor(Object.assign({}, sel, { sites }), p), carry = c ? c.carry : 0;
+  const W = (f, th) => Math.max(f.floor, th * f.cap);
+  const surplus = (th) => use.reduce((a, f) => { const w = W(f, th); return a + w * (f.P * (1 - p) - f.v) - f.H / 8 * f.L - f.F; }, 0) - carry;
+  let th = 1, reach = surplus(1) >= 0;
+  if (reach) { let lo = 0, hi = 1; for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (surplus(m) >= 0) hi = m; else lo = m; } th = hi; }
+  const rows = use.map((f) => ({ site: f.site, w: W(f, th), h: f.H, sales: W(f, th) * f.P, profit: W(f, th) * (f.P - f.v) - f.H / 8 * f.L - f.F }));
+  const tot = rows.reduce((a, r) => ({ w: a.w + r.w, h: a.h + r.h, sales: a.sales + r.sales, profit: a.profit + r.profit }), { w: 0, h: 0, sales: 0, profit: 0 });
+  const rate = tot.sales > 0 ? tot.profit / tot.sales : null, need = tot.sales > 0 ? p + carry / tot.sales : p;
+  const g = fmt(p * 100, (p * 100) % 1 ? 1 : 0) + '%';
+  const tr = (name, r, cls) => `<tr class="${cls || ''}"><td>${esc(name)}</td><td>${r ? ton(r.w) : '—'}</td><td>${r ? fmt(r.h, 0) : '—'}</td><td>${r && r.w > 0 ? npt(r.h / 8 / r.w) : '—'}</td></tr>`;
+  el.innerHTML = `<div class="tgHead">【目標値】<small>${kind === 'past' ? 'この期間に' : '期間合計で'}${reach ? `目標利益率${g}${carry ? '（先月度までの過不足を含む）' : ''}を達成する量` : `<b class="neg">過去の実績の範囲では目標に届きません</b>（上限まで上げて利益率 ${rate === null ? '—' : fmt(rate * 100, 1) + '%'}／必要 ${fmt(need * 100, 1)}%）`}</small></div>
+    <table><tr><th>工場</th><th>生産重量(t)</th><th>工数(h)</th><th>人工数(人工/t)</th></tr>
+    ${tr('3工場', tot, 'tot')}${sites.map((site) => tr(site, rows.find((r) => r.site === site))).join('')}</table>
+    <div class="tgNote">上限: 直近12か月度の各工場の最高実績（1出勤日あたり生産量・1t当たり人工数）以内</div>`;
+  el.hidden = false;
+  placeTargets();
+  requestAnimationFrame(placeTargets); // グラフの欄の位置が描画後に決まる場合に備えて、もう一度合わせる
+}
+/* 表の位置: グラフの「損益分岐値」の欄のすぐ下(PC)。スマホはグラフの下に並べる(CSS) */
+function placeTargets() {
+  const el = $('goal-targets'), panel = $('goal-chart'), bg = panel.querySelector('#c-goal .beBg');
+  if (el.hidden) return;
+  const pr = panel.getBoundingClientRect(), svg = panel.querySelector('#c-goal svg');
+  if (bg) { const r = bg.getBoundingClientRect(); el.style.left = (r.left - pr.left) + 'px'; el.style.top = (r.bottom - pr.top + 10) + 'px'; }
+  else if (svg) { const r = svg.getBoundingClientRect(); el.style.left = (r.left - pr.left + 80) + 'px'; el.style.top = (r.top - pr.top + 60) + 'px'; }
+}
+window.addEventListener('resize', () => setTimeout(placeTargets, 0));
