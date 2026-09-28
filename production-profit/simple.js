@@ -306,7 +306,7 @@ function buildGoal(sel, ov) {
     const hc = state.settings.headcount;
     const people = hc ? sel.sites.reduce((a, x) => a + (hc[x] || 0), 0) : 0;
     const perDayH = people > 0 ? people * 8 : (doneDays > 0 ? t.hours / doneDays : 0);
-    const hNote = people > 0 ? `全員出勤で１日８時間で計算（在職中 ${people}人）` : '従業員名簿が読めないため、これまでのペースで計算';
+    const hNote = people > 0 ? `1日８時間×${people}人＝${fmt(people * 8, 0)}h` : '従業員名簿が読めないため、これまでのペースで計算';
     const H = t.hours + perDayH * leftDays;             // 期間全体の予定工数(実績＋残りの出勤日×1日あたり工数)
     const Wpace = t.weight + perDayW * leftDays;        // 今のペースで続けたときの生産量
     // 月〆の今月度: 今期の先月度までの過不足(損益−売上×利益率)を、今月度〜期末の出勤日数で按分して今月度の目標に上乗せする
@@ -510,7 +510,7 @@ function renderGoal(sel) {
       row('目標生産量', ton(T.W), 't', `実績 ${ton(t.weight)}t ＋ 残り ${ton(need)}t`),
       row('目標工数', fmt(T.H, 0), 'h', `実績 ${fmt(t.hours, 0)}h ＋|残り ${fmt(perDayH * leftDays, 0)}h（1日 ${fmt(perDayH, 0)}h × ${leftDays}日）`),
       row('1日あたり生産量' + siteDay, needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `実績 ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
-      row('1日あたり工数', fmt(perDayH, 0), 'h/日', (T.people > 0 ? `全員出勤で１日８時間で計算（在職中 ${T.people}人）` : '従業員名簿が読めないため、これまでのペースで計算') + (doneDays > 0 ? `（実績 ${fmt(t.hours / doneDays, 0)}h/日）` : '')),
+      row('1日あたり工数', fmt(perDayH, 0), 'h/日', (T.people > 0 ? `1日８時間×${T.people}人＝${fmt(T.people * 8, 0)}h` : '従業員名簿が読めないため、これまでのペースで計算') + (doneDays > 0 ? `（実績 ${fmt(t.hours / doneDays, 0)}h/日）` : '')),
       // 今の工数のまま目標の1t当たり人工数になるには、生産重量を何t増やせばよいか(工数÷8÷目標人工/t − 実績重量)
       row('目標の1t当たり人工数', npt(T.n), '人工/t', t.ninkuPerTon === null || !(T.n > 0) ? '' : `実績 ${npt(t.ninkuPerTon)}${few ? `（${doneDays}日分）` : ''}` + (t.ninkuPerTon <= T.n + 1e-9 ? '（<span class="pos">目標達成</span>）' : `（生産 ${ton(t.hours / 8 / T.n - t.weight)}tアップで目標達成）`)),
     ].join('');
