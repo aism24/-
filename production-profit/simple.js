@@ -266,7 +266,7 @@ function renderGoal(sel) {
     head = `月末見込みで目標利益率${gl}に届くか<small>（${esc(sel.label)}・〜${md(sel.fullTo)}・出勤日${sel.fc.done}/${sel.fc.total}日の実績から見込み${c ? '・年間目標に向けて先月度までの過不足を反映' : ''}）</small>`;
     const rate = tf.sales > 0 ? profit / tf.sales : null, needRate = tf.sales > 0 ? p + carry / tf.sales : p;
     const rateTxt = `見込み利益率 ${rate === null ? '—' : fmt(rate * 100, 1) + '%'}（必要 ${fmt(needRate * 100, 1)}%）`;
-    lead = ok ? `<span class="pos">✓ 見込みでは目標を達成</span>（${rateTxt}）` : `<span class="neg">見込みでは目標に届きません</span>（${rateTxt}）`;
+    lead = ok ? `<span class="pos">✓ 見込みでは目標を達成</span><span class="gLeadSub">（${rateTxt}）</span>` : `<span class="neg">見込みでは目標に届きません</span><span class="gLeadSub">（${rateTxt}）</span>`;
     rows = (c ? carryRows(c, tf.sales) : '') + [ // 見込みONは見込みの売上で割合を出す(見出しの「必要◯%」と同じ)
       row('見込み生産量', ton(tf.weight), 't', r.goalTons !== null ? `目標 ${ton(r.goalTons)}t（${cmp(tf.weight - r.goalTons, 't', 1, true)}）` : '目標: 到達不能', r.goalTons !== null && tf.weight >= r.goalTons - 0.05 ? 'pos' : 'neg'),
       row('見込み工数', fmt(r.hours, 0), 'h', hMax !== null && hMax > 0 ? `この生産量なら ${fmt(hMax, 0)}h以内（${cmp(r.hours - hMax, 'h', 0, false)}）` : ''),
@@ -320,7 +320,7 @@ function renderGoal(sel) {
       const need = r.goalTons - t.weight;               // 残りの必要生産量
       const needDay = leftDays > 0 ? need / leftDays : null;
       lead = need <= 0
-        ? `<span class="pos">✓ 目標の生産量に到達済み</span>（残り期間の生産量に関わらず達成）`
+        ? `<span class="pos">✓ 目標の生産量に到達済み</span><span class="gLeadSub">（残り期間の生産量に関わらず達成）</span>`
         : leftDays > 0
           ? `残り <b>${leftDays}</b>出勤日で あと <b class="gKey">${ton(need)}t</b> を <b class="gKey">${fmt(perDayH * leftDays, 0)}h</b> で`
           : '<span class="neg">残りの出勤日がありません</span>';
@@ -348,7 +348,7 @@ function renderGoal(sel) {
     head = `目標利益率${gl}を達成するには、どうするべきだったか<small>（${esc(sel.label)}）</small>`;
     const rate = t.sales > 0 ? r.profit / t.sales : null;
     const rateTxt = `利益率 ${rate === null ? '—' : fmt(rate * 100, 1) + '%'}／目標 ${gl}`;
-    lead = ok ? `<span class="pos">✓ 目標を達成しました</span>（${rateTxt}）` : `<span class="neg">目標利益率に <b>${rate === null ? '—' : fmt((p - rate) * 100, 1)}ポイント</b> 届きませんでした</span>（${rateTxt}）`;
+    lead = ok ? `<span class="pos">✓ 目標を達成しました</span><span class="gLeadSub">（${rateTxt}）</span>` : `<span class="neg">目標利益率に <b>${rate === null ? '—' : fmt((p - rate) * 100, 1)}ポイント</b> 届きませんでした</span><span class="gLeadSub">（${rateTxt}）</span>`;
     const hMax = a.cutHours !== null ? r.hours - a.cutHours : null; // 実績の生産量で目標に届く工数の上限
     rows = [
       row('生産量<small>（実績の工数なら）</small>', r.goalTons !== null ? ton(r.goalTons) : '到達不能', r.goalTons !== null ? 't' : '', r.goalTons !== null ? `実績 ${ton(t.weight)}t（${cmp(t.weight - r.goalTons, 't', 1, true)}）` : ''),

@@ -43,6 +43,7 @@
 .gHead { background: #7b3fd0; color: #fff; font-weight: 700; border-radius: 6px; padding: .2em .5em; font-size: 1em; line-height: 1.35; }
 .gHead small { font-weight: 400; font-size: .75em; color: #efe6fb; margin-left: .3em; }
 .gLead { font-size: 1.29em; font-weight: 700; margin: .35em .1em; line-height: 1.4; }
+.gLead .gLeadSub { display: block; } /* かっこ書きは改行して下に表示 */
 .gLead .gKey { color: #ff6fb5; font-size: 1.33em; }
 .sGoal .pos { color: #8ee86b; }
 .sGoal .neg { color: #ff8f8f; }
