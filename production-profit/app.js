@@ -5,6 +5,9 @@
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzmypFiUSkOwBsDW49EP11sagGjpwsh0DXBSrKbvJONn0MymshWeJl-WBjIx-LGrJG5/exec';
 // ?demo=1 で開くと、GAS無しでダミーデータにより画面を確認できる(保存は画面内のみ)。
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
+// パスワード(閲覧用・編集用)を求めるか。false=一時解除中(2026-09-28〜)。
+// 復活させるときは true に戻す(gas/Code.gs の REQUIRE_PASSWORD も true に戻して新バージョンでデプロイ)。
+const REQUIRE_PASSWORD = false;
 
 const C = PPCalc;
 const SITE_COLORS = ['--s1', '--s2', '--s3'];
@@ -57,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('lock-input').onkeydown = (e) => { if (e.key === 'Enter') unlock(e.target.value); };
   if (DEMO) unlock('demo');
   else if (saved) unlock(saved);
+  else if (!REQUIRE_PASSWORD) unlock(''); // パスワード解除中は入力画面を出さずに開く(失敗したときは入力画面が残る)
 });
 
 function sessionStorageGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
@@ -1012,7 +1016,7 @@ function downloadWorksCsv() {
 const RATE_LABELS = [['labor', '人件費率'], ['variable', '変動費率(材料等)'], ['fixed', '固定費率'], ['profit', '利益率(目標)']];
 
 async function ensureEdit() {
-  if (state.editPw) return true;
+  if (state.editPw || !REQUIRE_PASSWORD) return true;
   const pw = prompt('編集用パスワードを入力してください');
   if (!pw) return false;
   return checkEdit(pw);
@@ -1086,7 +1090,7 @@ function updateRateSum() {
 }
 
 function renderSettings() {
-  const unlocked = !!state.editPw;
+  const unlocked = !!state.editPw || !REQUIRE_PASSWORD; // パスワード解除中は最初から編集できる
   document.getElementById('set-lock').hidden = unlocked;
   document.getElementById('set-body').hidden = !unlocked;
   if (!unlocked) return;
