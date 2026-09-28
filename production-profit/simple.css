@@ -86,7 +86,7 @@
 .sWarn:empty { display: none; }
 /* 工場別の目標値の表(PCはグラフ内の「損益分岐値」の下に重ねる、スマホはグラフの下) */
 .sChart { position: relative; }
-.sTargets { margin-top: 8px; background: rgba(255, 255, 255, .96); border: 3px solid #7b3fd0; /* 紫: 損益分岐値(黄)の欄と区別 */ border-radius: 8px; padding: 6px 10px; color: #0b0b0b; font-size: 14px; }
+.sTargets { margin-top: 8px; background: rgba(255, 255, 255, .96); border: 3px solid #7b3fd0; /* 紫: 損益分岐値(黄)の欄と区別 */ border-radius: 8px; padding: 6px 10px; color: #0b0b0b; font-size: clamp(13px, 3.9vw, 21px); } /* スマホは画面幅に合わせて縮める */
 .sTargets .tgHead { font-weight: 800; color: #fff; background: #7b3fd0; margin: -6px -10px 4px; padding: 3px 10px; border-radius: 4px 4px 0 0; }
 .sTargets .tgHead small { color: #efe6fb !important; }
 .sTargets .tgHead .neg { color: #ffd1d1; }
@@ -97,12 +97,13 @@
 .sTargets th { font-size: .85em; color: #555; font-weight: 600; }
 .sTargets td { font-weight: 700; font-size: 1.05em; }
 .sTargets tr.tot td { background: #efe6fb; }
-.sTargets .tgNote { font-size: 11px; color: #666; margin-top: 3px; }
-.sTargets .tgHead, .sTargets .tgNote { width: 0; min-width: 100%; } /* 見出し・注記は表の幅に合わせて折り返す(表を横に広げない) */
+.sTargets .tgNote { font-size: .6em; color: #666; margin-top: 3px; }
+.sTargets .tgNote { width: 0; min-width: 100%; }
+.sTargets .tgHead { width: 0; min-width: calc(100% + 20px); box-sizing: border-box; } /* 見出しの帯は左右の余白(10px×2)まで広げて右端まで埋める */ /* 見出し・注記は表の幅に合わせて折り返す(表を横に広げない) */
 .sTargets .tgHead small { display: block; margin-left: 0; }
 .sTargets .neg { color: #c62828; }
 @media (min-width: 1000px) {
-  .sTargets { position: absolute; margin-top: 0; box-shadow: 0 2px 8px rgba(0, 0, 0, .15); font-size: 13px; }
+  .sTargets { position: absolute; margin-top: 0; box-shadow: 0 2px 8px rgba(0, 0, 0, .15); font-size: clamp(13px, 1.9vh, 19.5px); } /* 13px の1.5倍(画面の高さが低いときは縮めて線と重ならないように) */
   .sTargets table { width: auto; }
 }
 /* 「現在までの結果」: 4枚のカードを水色の枠でまとめる */

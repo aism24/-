@@ -510,11 +510,30 @@ function renderGoal(sel) {
   box.querySelector('.gHead').innerHTML = head.replace(/<small>([\s\S]*)<\/small>/, (m, y) => '<small>' + y.split(/(?<=・)/).map((z) => `<span class="ph">${z}</span>`).join('') + '</small>');
   box.querySelector('.gLead').innerHTML = lead;
   box.querySelector('.gTable').innerHTML = rows;
-  // グラフ: 標準の目標の単価・費用で描き、★=目標生産量(3工場なら損益=売上×目標利益率の点)、点線=実績・見込み
-  const pn = T.P - T.v, fixedAll = T.fixedOther + T.labor;
-  drawBep('c-goal', { fixed: fixedAll, unitPrice: T.P, laborPerTon: 0, varPerTon: T.v, profitRate: p,
-    fixedLabel: ['固定費', '(人件費込み)'], otherFixed: T.fixedOther, laborRate: T.laborRate,
-    x, fixedX: true, beTons: pn > 0 ? fixedAll / pn : null, goalTons: T.W, handleLabel: label, hideMoney: true });
+  // グラフ: 選んだ期間の実績(見込み)の単価・費用で描く(目標シミュレーターと同じ。点線の内訳が実際の損益と一致する)。
+  //   締まった期間=実績、月末見込みON=見込み、期間の途中=期間全体の費用(実績＋残りの予定工数)で点線は今のペースの見込み。
+  //   ★=標準の目標の目標生産量(表・紫の欄と同じ値)
+  let base, cx = x, clabel = label, cn;
+  if (!cur || fcOn) {
+    base = fcOn ? A : C.analyze(state.cache, state.settings, sel.from, sel.fullTo, sel.sites).total;
+    cn = base.ninkuPerTon || 0;
+  } else {
+    const cal = state.settings.calendar || {};
+    const next = C.utcToYmd(Date.parse(sel.lastTo + 'T00:00:00Z') + 86400000);
+    const doneDays = C.workDaysIn(cal, sel.from, sel.lastTo), leftDays = C.workDaysIn(cal, next, sel.fullTo);
+    const full = C.analyze(state.cache, state.settings, sel.from, sel.fullTo, sel.sites).total;
+    let rt = t;
+    if (doneDays < FC_MIN_DAYS || !(t.unitPrice > 0)) { const fyR = C.fiscalRange(C.fiscalYearOf(C.periodKeyOf(sel.from))); const tf = C.analyze(state.cache, state.settings, fyR.from, sel.lastTo, sel.sites).total; if (tf.unitPrice > 0) rt = tf; }
+    const perDayH = T.people > 0 ? T.people * 8 : (doneDays > 0 ? t.hours / doneDays : 0);
+    const H = t.hours + perDayH * leftDays, few = doneDays < FC_MIN_DAYS;
+    const Wp = few ? T.W : t.weight + (doneDays > 0 ? t.weight / doneDays : 0) * leftDays;
+    base = Object.assign({}, t, { unitPrice: rt.unitPrice, varPerTon: rt.varPerTon, laborRate: rt.laborRate, fixed: full.fixed });
+    cx = Wp; clabel = few ? '目標' : '見込み'; cn = Wp > 0 ? H / 8 / Wp : 0;
+  }
+  const r = C.simulate(base, state.settings, cx, cn, base.unitPrice || 0);
+  drawBep('c-goal', { fixed: r.fixed + r.labor, unitPrice: r.unitPrice, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: p,
+    fixedLabel: ['固定費', '(人件費込み)'], otherFixed: r.fixed, laborRate: r.laborRate,
+    x: cx, fixedX: true, beTons: r.breakEvenTons, goalTons: T.W, handleLabel: clabel, hideMoney: true });
   placeTargets(); requestAnimationFrame(placeTargets);
   return { goalSales: T.W * T.P, progress: cur && !fcOn };
 }
