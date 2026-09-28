@@ -48,6 +48,9 @@ document.addEventListener('DOMContentLoaded', () => {
 async function unlock(pw) {
   state.pw = pw;
   $('lock-msg').textContent = '';
+  // 読み込み中は詳細版と同じく、ロゴのカードの上に読み込み表示を重ねる(パスワード欄は読み込みに失敗したときだけ出す)
+  $('lock-input').hidden = $('lock-btn').hidden = !state.pw && !$('lock-msg').dataset.failed;
+  $('screen-lock').hidden = false;
   $('loading').hidden = false;
   try {
     const data = await api('getData');
@@ -62,7 +65,8 @@ async function unlock(pw) {
     initUi();
     render();
   } catch (e) {
-    $('screen-lock').hidden = false;
+    $('lock-input').hidden = $('lock-btn').hidden = false;
+    $('lock-msg').dataset.failed = '1';
     $('lock-msg').textContent = e.message;
   } finally {
     $('loading').hidden = true;

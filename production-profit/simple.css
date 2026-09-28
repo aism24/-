@@ -9,7 +9,8 @@
 
 .simple { max-width: 760px; margin: 0 auto; padding: 0 12px 24px; }
 .sHead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 12px; margin: 0 -12px; background: var(--surface); border-bottom: 1px solid var(--border); }
-.sHead h1 { font-size: 18px; margin: 0; flex: 1; min-width: 12em; }
+.sHead h1 { font-size: 18px; margin: 0; }
+.sTitle { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 12px; width: 100%; } /* 会社ロゴ・会社名・アプリ名は中央揃え */
 .sTag { display: inline-block; font-size: 12px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 999px; padding: 2px 10px; vertical-align: middle; }
 .sNav { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .sUpdated { white-space: nowrap; }
@@ -69,7 +70,10 @@
 /* PC: 詳細版の目標シミュレーターと同じく、左にカードと目標の表・右にグラフ。画面いっぱいを使う(スマホは縦並びのまま) */
 @media (min-width: 1000px) {
   .simple { max-width: none; padding: 0 12px 8px; }
-  .sHead { margin: 0 -12px; }
+  .sHead { margin: 0 -12px; display: grid; grid-template-columns: 1fr auto 1fr; }
+  .sHead::before { content: ''; } /* 左の空き列(タイトルを画面の中央に置くため) */
+  .sTitle { width: auto; }
+  .sNav { justify-self: end; }
   .sFilters { flex-direction: row; justify-content: center; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 8px 10px; margin: 8px 0; }
   .sBody { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 12px; align-items: stretch; }
   .sCards { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
