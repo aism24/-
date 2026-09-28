@@ -182,7 +182,7 @@ function render() {
   if (gi && gi.goalSales > 0) {
     const ratio = t.sales / gi.goalSales, rest = 1 - ratio;
     sVal = fmt(ratio * 100, 0);
-    sSub = gi.progress ? `目標値に対して（${rest > 0 ? '残り ' + fmt(rest * 100, 0) + '%' : '達成'}・期間の途中）`
+    sSub = gi.progress ? `目標値に対して（${rest > 0.005 ? '残り ' + fmt(rest * 100, 0) + '%' : '達成'}・期間の途中）`
       : `目標値に対して（${rest > 0.005 ? fmt(rest * 100, 0) + '%不足' : '達成'}）`;
     sCls = gi.progress ? '' : (rest > 0.005 ? 'bad' : 'good');
   }
@@ -218,7 +218,7 @@ function carryFor(sel, p) {
   const pv = C.analyze(state.cache, state.settings, fy.from, prevTo, sel.sites).total;
   const diff = pv.profit - pv.sales * p;
   const monthDays = C.workDaysIn(cal, sel.from, sel.fullTo), restDays = C.workDaysIn(cal, sel.from, fy.to);
-  return { diff, monthDays, restDays, fyTo: fy.to, carry: restDays > 0 ? -diff * monthDays / restDays : 0 };
+  return { diff, prevRate: pv.sales > 0 ? pv.profit / pv.sales : null, monthDays, restDays, fyTo: fy.to, carry: restDays > 0 ? -diff * monthDays / restDays : 0 };
 }
 
 /* ===================== 目標(何tを何時間で) =====================
@@ -244,8 +244,14 @@ function renderGoal(sel) {
     const good = goodWhenPlus ? d > 0 : d < 0;
     return `<span class="${good ? 'pos' : 'neg'}">${d > 0 ? '+' : '−'}${fmt(Math.abs(d), digits)}${unit}</span>`;
   };
-  const carryRows = (c) => row('今期の先月度までの過不足', (c.diff >= 0 ? '+' : '') + yen(c.diff), '円', c.diff >= 0 ? '目標より超過（余裕分）' : '目標に不足', c.diff >= 0 ? 'pos' : 'neg') +
-    row('今月度の負担分', (c.carry > 0 ? '+' : '') + yen(c.carry), '円', `過不足 × 今月度の出勤日 ${c.monthDays}日 ÷ 期末(${md(c.fyTo)})までの出勤日 ${c.restDays}日`);
+  // 金額は出さず割合で表す。pts: 利益率の差(ポイント)。S: 割合の分母の売上(見込みON=見込みの売上、実績のみ=目標生産量×トン単価)
+  const pts = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmt(Math.abs(v) * 100, 1)}ポイント`;
+  const carryRows = (c, S) => {
+    const pr = c.prevRate, d = pr === null ? null : pr - p;
+    const add = S > 0 ? c.carry / S : null; // 先月度までの過不足を取り返すための上乗せ(利益率のポイント)
+    return row('今期の先月度までの利益率', pr === null ? '—' : fmt(pr * 100, 1), pr === null ? '' : '%', d === null ? '' : `目標${gl}に対して <span class="${d >= 0 ? 'pos' : 'neg'}">${pts(d)}</span>（${d >= 0 ? '余裕' : '不足'}）`, d === null ? '' : (d >= 0 ? 'pos' : 'neg')) +
+      row('今月度に必要な利益率', add === null ? '—' : fmt((p + add) * 100, 1), add === null ? '' : '%', add === null ? '' : `目標${gl}${add >= 0 ? '＋' : '−'}先月度までの${add >= 0 ? '不足' : '余裕'}分 ${fmt(Math.abs(add) * 100, 1)}ポイント（今月度の出勤日 ${c.monthDays}日 ÷ 期末(${md(c.fyTo)})までの出勤日 ${c.restDays}日で按分）`);
+  };
   // 月末見込みON(月度の途中で見込みを計算しているとき): 見込みの生産量・工数・損益を目標と比べる(目標シミュレーターと同じく見込みのデータで計算)
   const fcOn = cur && sel.fc && sel.fc.on && !sel.fc.few;
   let head, lead, rows, chart;
@@ -258,13 +264,15 @@ function renderGoal(sel) {
     const profit = r.profit + carry;                    // 表示する損益は実際の見込み額(負担分を引く前)
     const hMax = a.cutHours !== null ? r.hours - a.cutHours : null;
     head = `月末見込みで目標利益率${gl}に届くか<small>（${esc(sel.label)}・〜${md(sel.fullTo)}・出勤日${sel.fc.done}/${sel.fc.total}日の実績から見込み${c ? '・年間目標に向けて先月度までの過不足を反映' : ''}）</small>`;
-    lead = ok ? `<span class="pos">✓ 見込みでは目標を達成</span>（目標より ${man(-a.gap)} 超）` : `<span class="neg">見込みでは目標に <b>${man(a.gap)}</b> 届きません</span>`;
-    rows = (c ? carryRows(c) : '') + [
+    const rate = tf.sales > 0 ? profit / tf.sales : null, needRate = tf.sales > 0 ? p + carry / tf.sales : p;
+    const rateTxt = `見込み利益率 ${rate === null ? '—' : fmt(rate * 100, 1) + '%'}（必要 ${fmt(needRate * 100, 1)}%）`;
+    lead = ok ? `<span class="pos">✓ 見込みでは目標を達成</span>（${rateTxt}）` : `<span class="neg">見込みでは目標に届きません</span>（${rateTxt}）`;
+    rows = (c ? carryRows(c, tf.sales) : '') + [ // 見込みONは見込みの売上で割合を出す(見出しの「必要◯%」と同じ)
       row('見込み生産量', ton(tf.weight), 't', r.goalTons !== null ? `目標 ${ton(r.goalTons)}t（${cmp(tf.weight - r.goalTons, 't', 1, true)}）` : '目標: 到達不能', r.goalTons !== null && tf.weight >= r.goalTons - 0.05 ? 'pos' : 'neg'),
       row('見込み工数', fmt(r.hours, 0), 'h', hMax !== null && hMax > 0 ? `この生産量なら ${fmt(hMax, 0)}h以内（${cmp(r.hours - hMax, 'h', 0, false)}）` : ''),
       row('目標生産量<small>（見込みの工数なら）</small>', r.goalTons !== null ? ton(r.goalTons) : '到達不能', r.goalTons !== null ? 't' : '', r.goalTons !== null ? `1日あたり ${ton(r.goalTons / sel.fc.total)}t（見込み ${ton(tf.weight / sel.fc.total)}t/日）` : ''),
       row('1t当たり人工数', npt(tf.ninkuPerTon), '人工/t', hMax !== null && hMax > 0 ? `目標 ${npt(hMax / 8 / tf.weight)}以下（見込みの生産量なら）` : ''),
-      row('見込み損益(概算)', yen(profit), '円', `利益目標 ${yen(r.profitGoal)}円${carry ? `＋負担分 ${yen(carry)}円` : ''}（${cmp(-a.gap, '円', 0, true)}）`, ok ? 'pos' : 'neg'),
+      row('見込み利益率', rate === null ? '—' : fmt(rate * 100, 1), rate === null ? '' : '%', `必要 ${fmt(needRate * 100, 1)}%（${rate === null ? '—' : `<span class="${ok ? 'pos' : 'neg'}">${pts(rate - needRate)}</span>`}）`, ok ? 'pos' : 'neg'),
     ].join('');
     r.fixed -= carry; // 表示用は実際の固定費(負担分は carry で別に描く)
     chart = { r, x: tf.weight, label: '見込み', carry };
@@ -326,7 +334,7 @@ function renderGoal(sel) {
       ].join('');
       if (carryInfo) {
         const c = carryInfo;
-        rows = carryRows(c) +
+        rows = carryRows(c, r.goalTons * r.unitPrice) +
           rows +
           row('参考: 今月度だけの目標', c.solo.goalTons !== null ? ton(c.solo.goalTons) : '到達不能', c.solo.goalTons !== null ? 't' : '', '先月度までの過不足を入れない場合');
       }
@@ -338,13 +346,15 @@ function renderGoal(sel) {
     const a = C.advise(r, state.settings);
     const ok = a.gap <= 0.5;
     head = `目標利益率${gl}を達成するには、どうするべきだったか<small>（${esc(sel.label)}）</small>`;
-    lead = ok ? `<span class="pos">✓ 目標を達成しました</span>（目標より ${man(-a.gap)} 超）` : `<span class="neg">目標に <b>${man(a.gap)}</b> 届きませんでした</span>`;
+    const rate = t.sales > 0 ? r.profit / t.sales : null;
+    const rateTxt = `利益率 ${rate === null ? '—' : fmt(rate * 100, 1) + '%'}／目標 ${gl}`;
+    lead = ok ? `<span class="pos">✓ 目標を達成しました</span>（${rateTxt}）` : `<span class="neg">目標利益率に <b>${rate === null ? '—' : fmt((p - rate) * 100, 1)}ポイント</b> 届きませんでした</span>（${rateTxt}）`;
     const hMax = a.cutHours !== null ? r.hours - a.cutHours : null; // 実績の生産量で目標に届く工数の上限
     rows = [
       row('生産量<small>（実績の工数なら）</small>', r.goalTons !== null ? ton(r.goalTons) : '到達不能', r.goalTons !== null ? 't' : '', r.goalTons !== null ? `実績 ${ton(t.weight)}t（${cmp(t.weight - r.goalTons, 't', 1, true)}）` : ''),
       row('工数<small>（実績の生産量なら）</small>', hMax !== null && hMax > 0 ? fmt(hMax, 0) : '—', 'h以内', hMax !== null ? `実績 ${fmt(r.hours, 0)}h（${cmp(r.hours - hMax, 'h', 0, false)}）` : ''),
       row('1t当たり人工数', hMax !== null && hMax > 0 ? npt(hMax / 8 / t.weight) : '—', '人工/t以下', `実績 ${npt(t.ninkuPerTon)}`),
-      row('利益目標額', yen(r.profitGoal), '円', `損益 ${yen(r.profit)}円（${cmp(r.profit - r.profitGoal, '円', 0, true)}）`),
+      row('利益率', rate === null ? '—' : fmt(rate * 100, 1), rate === null ? '' : '%', `目標 ${gl}（${rate === null ? '—' : `<span class="${ok ? 'pos' : 'neg'}">${pts(rate - p)}</span>`}）`, ok ? 'pos' : 'neg'),
     ].join('');
     chart = { r, x: t.weight, label: '実績' };
   }
