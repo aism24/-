@@ -5,9 +5,9 @@
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzmypFiUSkOwBsDW49EP11sagGjpwsh0DXBSrKbvJONn0MymshWeJl-WBjIx-LGrJG5/exec';
 // ?demo=1 で開くと、GAS無しでダミーデータにより画面を確認できる(保存は画面内のみ)。
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
-// パスワード(閲覧用・編集用)を求めるか。false=一時解除中(2026-09-28〜)。
-// 復活させるときは true に戻す(gas/Code.gs の REQUIRE_PASSWORD も true に戻して新バージョンでデプロイ)。
-const REQUIRE_PASSWORD = false;
+// パスワード(閲覧用・編集用)を求めるか。2026-09-28に一時解除 → 2026-09-29に復活(true)。
+// gas/Code.gs の REQUIRE_PASSWORD と合わせること(シンプル版は閲覧用パスワード無しで開ける)。
+const REQUIRE_PASSWORD = true;
 
 const C = PPCalc;
 const SITE_COLORS = ['--s1', '--s2', '--s3'];

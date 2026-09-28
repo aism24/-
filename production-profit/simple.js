@@ -17,7 +17,7 @@ async function api(action) {
   }
   const res = await fetch(GAS_API_URL, {
     method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action: action, pw: state.pw }),
+    body: JSON.stringify({ action: action, pw: state.pw, app: 'simple' }), // app: GASはシンプル版の読み込みに閲覧用パスワードを求めない
   });
   const body = await res.json();
   if (body.status !== 'success') throw new Error(body.message || 'エラー');
