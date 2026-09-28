@@ -453,7 +453,7 @@ function drawBep(id, o) {
 function renderBepSvg(id) {
   const box = document.getElementById(id), st = bepState[id], o = st.o;
   const W = box.clientWidth || 600, H = box.clientHeight || 380;
-  const g = st.geom = { l: 76, r: 16, t: 54, b: 36 }; // 上の余白につまみ、左の余白に固定費ラベルを置く
+  const g = st.geom = { l: 76, r: 16, t: o.dragHint ? 74 : 54, b: 36 }; // 上の余白につまみ(dragHintのときはその上に操作説明)、左の余白に固定費ラベルを置く
   g.w = W - g.l - g.r; g.h = H - g.t - g.b;
   // グラフ内の文字・間隔の倍率(幅1080×高さ600程度のグラフを1倍とし、グラフの大きさに合わせて拡大縮小)
   const k = Math.min(1.3, Math.max(0.55, Math.min(g.w / 1080, g.h / 600)));
@@ -542,6 +542,11 @@ function renderBepSvg(id) {
   const hw = Math.max(hl1.length * 13, hl2.length * 7.5) + 22;
   const hx = Math.min(W - 4 - hw / 2, Math.max(4 + hw / 2, cx));
   h += `<g class="handle"><rect x="${hx - hw / 2}" y="${g.t - 50}" width="${hw}" height="40" rx="10"/><text x="${hx}" y="${g.t - 34}" text-anchor="middle">${hl1}<tspan x="${hx}" dy="16">${hl2}</tspan></text></g>`;
+  // 操作説明「ドラッグで移動可能」: つまみの上に中央揃え。つまみと一緒に動き、点滅は再描画しても途切れないよう位相を合わせる
+  if (o.dragHint) {
+    const dw = 128, dx = Math.min(W - 4 - dw / 2, Math.max(4 + dw / 2, cx));
+    h += `<text class="dragHint" x="${dx}" y="${g.t - 58}" text-anchor="middle" style="animation-delay:-${((performance.now() % 4800) / 1000).toFixed(2)}s">ドラッグで移動可能</text>`;
+  }
   h += beLbl;
   // 利益目標達成点(★・目標表示は最前面に描く。試算の破線やバーは裏側を通る)
   if (o.goalTons !== null && o.goalTons !== undefined && o.goalTons <= maxX) {
@@ -843,7 +848,7 @@ function updateSim() {
   // 人件費は試算の生産重量での額を固定費に含め、固定費線を水平にする(つまみのドラッグ中に縮尺が変わらないよう、署名は基準値で作る)
   drawBep('c-sim', { fixed: r.fixed + r.labor, unitPrice: P, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: state.settings.rates.profit / 100,
     fixedLabel: ['固定費', '(人件費込み)'], otherFixed: r.fixed, laborRate: r.laborRate, sig: [r.fixed, P, n, r.laborRate, r.varPerTon, state.settings.rates.profit].join('|'),
-    x: W, forceX: !simDragging, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: changed ? '試算' : '現在', // 実績のままは「現在」、動かしたら「試算」
+    x: W, forceX: !simDragging, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: changed ? '試算' : '現在', dragHint: true, // 実績のままは「現在」、動かしたら「試算」
     onMove: (t) => {
       simDragging = true;
       document.getElementById('s-w').value = simFmt('w', t);
