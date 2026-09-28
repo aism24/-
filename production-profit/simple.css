@@ -23,23 +23,18 @@
 .sRow select { font-size: 15px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 .sCards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .sCard { text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
-.sCard.big { grid-column: 1 / -1; text-align: center; }
 .sLabel { font-size: 14px; font-weight: 700; color: var(--text2); }
 .sValue { font-size: 30px; font-weight: 800; margin: 4px 0 2px; overflow-wrap: anywhere; }
-.sCard.big .sValue { font-size: 48px; }
 .sUnit { font-size: 15px; font-weight: 500; color: var(--text2); margin-left: 3px; }
 .sSub { font-size: 13px; color: var(--muted); }
 .sCard.good .sValue { color: var(--good); }
 .sCard.bad .sValue { color: var(--bad); }
 .sCard.warn .sValue { color: #e67e00; } /* 損益: 0%以上で目標未満 */
-.sCard.big.good { border: 2px solid var(--good); }
-.sCard.big.bad { border: 2px solid var(--bad); }
 .sMsg { grid-column: 1 / -1; background: var(--warn-bg); border-radius: 10px; padding: 16px; line-height: 1.7; color: var(--text); }
 .sFoot { color: #bbb; text-align: center; margin: 12px 0 0; } /* 背景(黒)の上の文字 */
 @media (max-width: 480px) {
   .sCards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sValue { font-size: 28px; }
-  .sCard.big .sValue { font-size: 40px; }
   .sNav { width: 100%; justify-content: flex-end; }
 }
 /* 目標(何tを何時間で)。詳細版の現状分析と同じ濃い紫+光る黄緑の縁取り */
@@ -47,7 +42,7 @@
 .sGoal { --gfs: clamp(18px, 6vw, 28px); font-size: var(--gfs); background: #2d1650; border: 3px solid #9be15d; box-shadow: 0 0 16px rgba(155, 225, 93, .45); border-radius: 12px; padding: 10px 14px; margin-top: 12px; color: #fff; }
 .gHead { background: #7b3fd0; color: #fff; font-weight: 700; border-radius: 6px; padding: .2em .5em; font-size: 1em; line-height: 1.35; }
 .gHead small { display: block; font-weight: 400; font-size: .75em; color: #efe6fb; margin-left: 0; }
-.gHead small .hl { display: block; white-space: nowrap; overflow: hidden; } /* 2行目=期間・工場、3行目=標準の目標の説明。各1行(入りきらないときはJSで縮小) */
+.gHead small .hl { display: block; white-space: nowrap; overflow: hidden; } /* 2行目=月末見込みの説明。1行(入りきらないときはJSで縮小) */
 .gLead { font-size: 1.29em; font-weight: 700; margin: .35em .1em; line-height: 1.4; }
 .gLead .gLeadSub { display: block; } /* かっこ書きは改行して下に表示 */
 .gLead .gKey { color: #ff6fb5; font-size: 1.33em; }
@@ -83,8 +78,6 @@
   .sCard { padding: 8px 12px; }
   .sLabel { font-size: 13px; }
   .sValue { font-size: clamp(18px, 1.5vw, 28px); }
-  .sCard.big { padding: 6px 12px; }
-  .sCard.big .sValue { font-size: 38px; margin: 0; }
   .sSub { font-size: 11px; }
   .sGoal { margin-top: 10px; }
   .sGoal { --gfs: clamp(16px, 2.6vh, 28px); }
@@ -92,8 +85,6 @@
   .sChart .chartBox { flex: 1; height: auto; min-height: max(420px, calc(100vh - 170px)); }
   .sFoot { margin-top: 4px; }
 }
-.sWarn { margin: 0 0 8px; padding: 6px 12px; background: var(--warn-bg); color: var(--text); border-radius: 8px; font-size: 13px; }
-.sWarn:empty { display: none; }
 /* 工場別の目標値の表(PCはグラフ内の「損益分岐値」の下に重ねる、スマホはグラフの下) */
 .sChart { position: relative; }
 .sTargets { margin-top: 8px; background: rgba(255, 255, 255, .96); border: 3px solid #7b3fd0; /* 紫: 損益分岐値(黄)の欄と区別 */ border-radius: 8px; padding: 6px 10px; color: #0b0b0b; font-size: clamp(13px, 3.9vw, 21px); } /* スマホは画面幅に合わせて縮める */
@@ -120,4 +111,4 @@
 .sResHead { color: #bfe9ff; font-weight: 800; font-size: 15px; margin: 0 2px 6px; }
 .sResHead small { font-weight: 500; font-size: 12px; margin-left: 6px; color: #9fd8f5; }
 @media (min-width: 1000px) and (max-height: 820px) { .sTargets { font-size: clamp(12px, 1.75vh, 19.5px); } } /* 背の低い画面は少し縮めて線と重ならないように */
-@media (max-width: 700px) { .gHead small .hl:last-child { white-space: normal; } } /* スマホは説明の行だけ折り返す(1行では小さくなりすぎるため) */
+@media (max-width: 700px) { .gHead small .hl:last-child { white-space: normal; } } /* スマホは折り返す(1行では小さくなりすぎるため) */
