@@ -511,7 +511,8 @@ function renderGoal(sel) {
       row('目標工数', fmt(T.H, 0), 'h', `実績 ${fmt(t.hours, 0)}h ＋|残り ${fmt(perDayH * leftDays, 0)}h（1日 ${fmt(perDayH, 0)}h × ${leftDays}日）`),
       row('1日あたり生産量' + siteDay, needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `実績 ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
       row('1日あたり工数', fmt(perDayH, 0), 'h/日', (T.people > 0 ? `全員出勤で１日８時間で計算（在職中 ${T.people}人）` : '従業員名簿が読めないため、これまでのペースで計算') + (doneDays > 0 ? `（実績 ${fmt(t.hours / doneDays, 0)}h/日）` : '')),
-      row('目標の1t当たり人工数', npt(T.n), '人工/t', `以下|（実績 ${npt(t.ninkuPerTon)}${few ? `・${doneDays}日分` : ''}）`),
+      // 今の工数のまま目標の1t当たり人工数になるには、生産重量を何t増やせばよいか(工数÷8÷目標人工/t − 実績重量)
+      row('目標の1t当たり人工数', npt(T.n), '人工/t', t.ninkuPerTon === null || !(T.n > 0) ? '' : `実績 ${npt(t.ninkuPerTon)}${few ? `（${doneDays}日分）` : ''}` + (t.ninkuPerTon <= T.n + 1e-9 ? '（<span class="pos">目標達成</span>）' : `（生産 ${ton(t.hours / 8 / T.n - t.weight)}tアップで目標達成）`)),
     ].join('');
     // 参考: 先月度までの不足分を取り返して年間目標に届くための、今月度の生産量(先月度までの過不足を按分)
     if (sel.mode === 'period') {
