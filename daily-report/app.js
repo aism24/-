@@ -14,6 +14,25 @@ const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyiocXgXi_YEMUUq5BJ
 // Content-Type は "text/plain" にすることでCORSプリフライト(OPTIONS)を回避している
 // (hot-heart等、他アプリと同じ方式。GASはOPTIONSに対応していないため)。
 async function apiPost(action, params) {
+  // GASの応答取得先(script.googleusercontent.com/macros/echo)が起動時の並列リクエスト中に
+  // 断続的に404を返すことがある(2026-09-29ユーザー報告。同じリクエストを再送すると成功する)。
+  // 読み取り系は最大3回まで再試行する。書き込み系(logFactorySelection)は二重記録を避けるため再試行しない。
+  const maxTry = NO_RETRY_ACTIONS.indexOf(action) === -1 ? 4 : 1;
+  let lastErr;
+  for (let i = 0; i < maxTry; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 1000 * i));
+    try {
+      return await apiPostOnce_(action, params);
+    } catch (e) {
+      lastErr = e;
+      if (e && e.noRetry) break;
+    }
+  }
+  throw lastErr;
+}
+const NO_RETRY_ACTIONS = ['logFactorySelection'];
+
+async function apiPostOnce_(action, params) {
   const res = await fetch(GAS_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -21,7 +40,11 @@ async function apiPost(action, params) {
   });
   if (!res.ok) throw new Error('サーバーエラー（HTTP ' + res.status + '）');
   const json = await res.json();
-  if (json.status !== 'success') throw new Error(json.message || 'データの取得に失敗しました');
+  if (json.status !== 'success') {
+    const err = new Error(json.message || 'データの取得に失敗しました');
+    err.noRetry = true; // GAS側が明示的に返したエラーは再送しても同じため再試行しない
+    throw err;
+  }
   return json.data;
 }
 
