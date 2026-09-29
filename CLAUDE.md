@@ -178,6 +178,7 @@ Previewデプロイが発生する)
 | アプリ | 保存先フォルダ(会社アカウント) | parentId |
 |---|---|---|
 | 生産損益分析アプリ(損益分岐。production-profit / sonekibunki) | https://drive.google.com/drive/folders/1Ly54tAkSLk5zFTmohHrj2thy7BNPTaWg | `1Ly54tAkSLk5zFTmohHrj2thy7BNPTaWg` |
+| 実行予算まとめアプリ(管理用スプレッドシート「実行予算」は別の場所。2026-09-29登録) | https://drive.google.com/drive/folders/1EwfXNOal_AdY6MzARgEGV_aKAcf6HjWN | `1EwfXNOal_AdY6MzARgEGV_aKAcf6HjWN` |
 | 上記以外のアプリ | 未登録(ユーザーがアプリごとに指示する。指示されたらこの表に追記する) | - |
 
 - **保存先フォルダはユーザーがアプリごとに指示する。** 指示が無いアプリは、推測で決めずにユーザーに聞く。
