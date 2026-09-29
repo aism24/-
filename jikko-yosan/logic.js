@@ -118,7 +118,7 @@
 
   function buildWorkbook(ExcelJS, view) {
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('Sheet1', { views: [{ state: 'frozen', xSplit: 2, ySplit: 1 }] });
+    const ws = wb.addWorksheet('Sheet1', { views: [{ state: 'frozen', xSplit: 5, ySplit: 1 }] });
     const head = ['工事No', '工事名'].concat(FIELDS.map(f => f.label), ['状態']);
     ws.addRow(head);
     ws.getRow(1).font = { bold: true };
