@@ -56,6 +56,9 @@
   }
   function pad(n) { return String(n).padStart(2, '0'); }
 
+  const NF0 = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 0 });
+  const NF3 = new Intl.NumberFormat('ja-JP', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+
   function fmt(kind, v) {
     if (kind === 'str') return v === null || v === undefined ? '' : String(v);
     if (kind === 'date') {
@@ -65,10 +68,10 @@
     }
     const n = num(v);
     if (n === null) return '';
-    if (kind === 't') return n.toLocaleString('ja-JP', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+    if (kind === 't') return NF3.format(n);
     if (kind === 'pct') return Math.round(n * 100) + '%';
     if (kind === 'rate') return (n * 100).toFixed(1) + '%';
-    return Math.round(n).toLocaleString('ja-JP');
+    return NF0.format(Math.round(n));
   }
 
   function cmpNo(a, b) {
@@ -117,7 +120,7 @@
       return {
         key: key, no: r.no || r.fileNo || '', name: r.name || r.c2 || key,
         rowClass: r.missing ? 'missing' : isNew ? 'new' : '',
-        status: status, warn: r.warn || '', changed: changed, cells: cells, src: r,
+        status: status, warn: r.warn || '', changed: changed, cells: cells,
       };
     });
     rows.sort((a, b) => cmpNo(a.no, b.no) || cmpNo(a.key, b.key));
@@ -191,7 +194,7 @@
     return wb;
   }
 
-  const api = { CATS, PROFITS, FIELDS, buildView, buildWorkbook, fmt, colName };
+  const api = { CATS, PROFITS, buildView, buildWorkbook, fmt };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.JY = api;
 })(typeof window !== 'undefined' ? window : this);

@@ -37,11 +37,14 @@ const DATA_FILE_NAME = '実行予算まとめデータ.json';
 const TZ = 'Asia/Tokyo';
 const PRICE_SS_ID = '1OnFx_JegSzXZo6lqMOw4yZ30xvmptA5HRdB6Cv1hgpY'; // 損益分岐点生産重量
 const PRICE_SHEET = '工事単価';
+const CACHE_KEY = 'state_v1'; // 画面の読み込み用に保存データの本文をキャッシュ(受信のたびに更新)
+const EMPTY_STATE_TEXT = '{"version":1,"baseline":null,"today":null}';
 
 function doGet() {
   try {
-    const state = loadState_();
-    return json_({ status: 'success', data: { baseline: state.baseline, today: state.today } });
+    // 保存データの本文をそのまま埋め込んで返す(JSONの解析・再生成をしない)
+    return ContentService.createTextOutput('{"status":"success","data":' + loadStateText_() + '}')
+      .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return json_({ status: 'error', message: String(err && err.message || err) });
   }
@@ -81,7 +84,7 @@ function doPost(e) {
 // data.json の中身から1工事ずつの配列を取り出す(配列 / {rows:[…]} / {key:行} のどれでも受ける)
 function normalizeRows(data) {
   if (!data) return [];
-  let list = Array.isArray(data) ? data
+  const list = Array.isArray(data) ? data
     : Array.isArray(data.rows) ? data.rows
     : Array.isArray(data.items) ? data.items
     : Array.isArray(data.data) ? data.data
@@ -106,7 +109,7 @@ function mergeState(state, incoming, day, at) {
       row.warn = r.warn || '';
       row.locked = !!r.locked;
     } else {
-      row = JSON.parse(JSON.stringify(r));
+      row = r; // 受信データは毎回新しく解析したものなので複製不要
     }
     delete row.missing;
     rows[r.key] = row;
@@ -185,22 +188,62 @@ function syncPriceSheet_(rows) {
 
 /* ===================== ファイル入出力 ===================== */
 
+// データファイル。IDをスクリプトプロパティ(DATA_FILE_ID)に覚えて、フォルダ内の名前検索を初回だけにする
 function getFile_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('DATA_FILE_ID');
+  if (id) {
+    try {
+      const f = DriveApp.getFileById(id);
+      if (!f.isTrashed()) return f;
+    } catch (ignore) {}
+  }
   const it = DriveApp.getFolderById(FOLDER_ID).getFilesByName(DATA_FILE_NAME);
-  return it.hasNext() ? it.next() : null;
+  if (!it.hasNext()) return null;
+  const f = it.next();
+  props.setProperty('DATA_FILE_ID', f.getId());
+  return f;
 }
 
-function loadState_() {
+function readFileText_() {
   const f = getFile_();
-  if (!f) return { version: 1, baseline: null, today: null };
-  return JSON.parse(f.getBlob().getDataAsString('UTF-8') || '{}');
+  return (f && f.getBlob().getDataAsString('UTF-8')) || EMPTY_STATE_TEXT;
+}
+
+// 画面の読み込み用: キャッシュにあればDriveを読まない
+function loadStateText_() {
+  const cached = CacheService.getScriptCache().get(CACHE_KEY);
+  if (cached) return cached;
+  const text = readFileText_();
+  putCache_(text);
+  return text;
+}
+
+// 受信時の更新用: 正はファイル(キャッシュは使わない)
+function loadState_() {
+  return JSON.parse(readFileText_());
 }
 
 function saveState_(state) {
   const text = JSON.stringify(state);
   const f = getFile_();
   if (f) f.setContent(text);
-  else DriveApp.getFolderById(FOLDER_ID).createFile(DATA_FILE_NAME, text, 'application/json');
+  else {
+    const nf = DriveApp.getFolderById(FOLDER_ID).createFile(DATA_FILE_NAME, text, 'application/json');
+    PropertiesService.getScriptProperties().setProperty('DATA_FILE_ID', nf.getId());
+  }
+  putCache_(text);
+}
+
+// CacheServiceは1件100KBまで・最長6時間。入らない大きさなら消して、毎回ファイルを読む
+function putCache_(text) {
+  const cache = CacheService.getScriptCache();
+  try {
+    if (text.length < 90000) cache.put(CACHE_KEY, text, 21600);
+    else cache.remove(CACHE_KEY);
+  } catch (ignore) {
+    try { cache.remove(CACHE_KEY); } catch (ignore2) {}
+  }
 }
 
 function json_(obj) {
