@@ -11,17 +11,17 @@
     { id: 'amount', label: '契約金額(円)', kind: 'yen', get: r => r.amount },
     { id: 'sheet', label: '参照シート', kind: 'str', get: r => r.sheet },
   ];
-  CATS.forEach(c => {
-    FIELDS.push({ id: c + ':b', cat: c, label: c + ' 予算', kind: 'yen', get: r => pair(r, c)[0] });
-    FIELDS.push({ id: c + ':a', cat: c, label: c + ' 実際', kind: 'yen', get: r => pair(r, c)[1] });
-    FIELDS.push({ id: c + ':r', cat: c, label: c + ' 割合', kind: 'pct', get: r => ratio(pair(r, c)) });
-  });
   // 粗利益・営業利益: 額はシートのF列(予算)/L列(実際)、率はG列/M列の値そのまま(PC側で抽出済み)
   PROFITS.forEach(p => {
     FIELDS.push({ id: p + ':b', label: p + ' 予算', kind: 'yen', get: r => prof(r, 'profit', p)[0] });
     FIELDS.push({ id: p + ':br', label: p + ' 予算率', kind: 'rate', get: r => prof(r, 'profitRate', p)[0] });
     FIELDS.push({ id: p + ':a', label: p + ' 実際', kind: 'yen', get: r => prof(r, 'profit', p)[1] });
     FIELDS.push({ id: p + ':ar', label: p + ' 実際率', kind: 'rate', get: r => prof(r, 'profitRate', p)[1] });
+  });
+  CATS.forEach(c => {
+    FIELDS.push({ id: c + ':b', cat: c, label: c + ' 予算', kind: 'yen', get: r => pair(r, c)[0] });
+    FIELDS.push({ id: c + ':a', cat: c, label: c + ' 実際', kind: 'yen', get: r => pair(r, c)[1] });
+    FIELDS.push({ id: c + ':r', cat: c, label: c + ' 割合', kind: 'pct', get: r => ratio(pair(r, c)) });
   });
   FIELDS.push({ id: 'author', label: '前回の保存者', kind: 'str', get: r => r.author });
   FIELDS.push({ id: 'saved', label: '保存日時', kind: 'date', get: r => r.saved });
