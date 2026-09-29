@@ -2,6 +2,7 @@
 (function (root) {
   'use strict';
 
+  const PROFITS = ['粗利益', '営業利益'];
   const CATS = ['材料費', '工場加工費', '事務図面費', '外注加工費', 'メッキ費', '運送費', '塗装費', '現場費', 'その他', '計'];
 
   // 黄色判定の対象(表示・Excelの列順と同じ)
@@ -15,12 +16,23 @@
     FIELDS.push({ id: c + ':a', cat: c, label: c + ' 実際', kind: 'yen', get: r => pair(r, c)[1] });
     FIELDS.push({ id: c + ':r', cat: c, label: c + ' 割合', kind: 'pct', get: r => ratio(pair(r, c)) });
   });
+  // 粗利益・営業利益: 額はシートのF列(予算)/L列(実際)、率はG列/M列の値そのまま(PC側で抽出済み)
+  PROFITS.forEach(p => {
+    FIELDS.push({ id: p + ':b', label: p + ' 予算', kind: 'yen', get: r => prof(r, 'profit', p)[0] });
+    FIELDS.push({ id: p + ':br', label: p + ' 予算率', kind: 'rate', get: r => prof(r, 'profitRate', p)[0] });
+    FIELDS.push({ id: p + ':a', label: p + ' 実際', kind: 'yen', get: r => prof(r, 'profit', p)[1] });
+    FIELDS.push({ id: p + ':ar', label: p + ' 実際率', kind: 'rate', get: r => prof(r, 'profitRate', p)[1] });
+  });
   FIELDS.push({ id: 'author', label: '前回の保存者', kind: 'str', get: r => r.author });
   FIELDS.push({ id: 'saved', label: '保存日時', kind: 'date', get: r => r.saved });
 
   function pair(r, c) {
     const p = r && r.cats && r.cats[c];
     return Array.isArray(p) ? p : [null, null];
+  }
+  function prof(r, k, p) {
+    const v = r && r[k] && r[k][p];
+    return Array.isArray(v) ? v : [null, null];
   }
   function num(v) { return v === null || v === undefined || v === '' || !isFinite(Number(v)) ? null : Number(v); }
   function ratio(p) {
@@ -34,7 +46,7 @@
     const n = num(v);
     if (n === null) return '';
     if (kind === 't') return n.toFixed(3);
-    if (kind === 'pct') return n.toFixed(6);
+    if (kind === 'pct' || kind === 'rate') return n.toFixed(6);
     return String(Math.round(n));
   }
 
@@ -55,6 +67,7 @@
     if (n === null) return '';
     if (kind === 't') return n.toLocaleString('ja-JP', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
     if (kind === 'pct') return Math.round(n * 100) + '%';
+    if (kind === 'rate') return (n * 100).toFixed(1) + '%';
     return Math.round(n).toLocaleString('ja-JP');
   }
 
@@ -132,7 +145,7 @@
     ws.getColumn(1).width = 9;
     ws.getColumn(2).width = 26;
     FIELDS.forEach((f, i) => {
-      ws.getColumn(i + 3).width = f.kind === 'pct' ? 8 : f.kind === 'date' ? 17 : f.id === 'sheet' ? 10 : f.kind === 'str' ? 14 : 13;
+      ws.getColumn(i + 3).width = f.kind === 'pct' ? 8 : f.kind === 'rate' ? 9 : f.kind === 'date' ? 17 : f.id === 'sheet' ? 10 : f.kind === 'str' ? 14 : 13;
     });
     ws.getColumn(head.length).width = 16;
 
@@ -144,7 +157,9 @@
       vr.cells.forEach((c, i) => {
         const cell = row.getCell(i + 3);
         const n = num(c.v);
-        if (c.kind === 'pct') {
+        if (c.kind === 'rate') {
+          cell.value = n; cell.numFmt = '0.0%';
+        } else if (c.kind === 'pct') {
           const bCol = colName(i + 1), aCol = colName(i + 2);
           cell.value = { formula: 'IF(' + bCol + rn + '=0,"",' + aCol + rn + '/' + bCol + rn + ')', result: n === null ? '' : n };
           cell.numFmt = '0%';
@@ -176,7 +191,7 @@
     return wb;
   }
 
-  const api = { CATS, FIELDS, buildView, buildWorkbook, fmt, colName };
+  const api = { CATS, PROFITS, FIELDS, buildView, buildWorkbook, fmt, colName };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.JY = api;
 })(typeof window !== 'undefined' ? window : this);
