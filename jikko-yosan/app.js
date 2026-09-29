@@ -57,10 +57,10 @@ function render() {
 
   let h = '<thead><tr><th rowspan="2" class="c-st">状態</th><th rowspan="2" class="c-no">工事No</th><th rowspan="2" class="c-name">工事名</th>' +
     '<th rowspan="2" class="c-w">契約総重量(t)</th><th rowspan="2" class="c-a">契約金額(円)</th><th rowspan="2" class="c-s">参照シート</th>';
-  JY.PROFITS.forEach(p => { h += '<th colspan="4" class="grp">' + esc(p.label) + '</th>'; });
+  JY.PROFITS.forEach(p => { h += '<th colspan="3" class="grp">' + esc(p.label) + '</th>'; });
   JY.CATS.forEach(c => { h += '<th colspan="3" class="grp">' + esc(c) + '</th>'; });
   h += '<th rowspan="2">前回の保存者</th><th rowspan="2">保存日時</th></tr><tr>';
-  JY.PROFITS.forEach(() => { h += '<th class="grp-l">予算</th><th>予算率</th><th>実際</th><th>実際率</th>'; });
+  JY.PROFITS.forEach(() => { h += '<th class="grp-l">予算</th><th>実際</th><th>割合</th>'; });
   JY.CATS.forEach(() => { h += '<th class="grp-l">予算</th><th>実際</th><th>割合</th>'; });
   h += '</tr></thead><tbody>';
 

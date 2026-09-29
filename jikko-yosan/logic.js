@@ -2,7 +2,7 @@
 (function (root) {
   'use strict';
 
-  // 利益項目: key = PC側データ(profit/profitRate)の名前、label = 画面・Excelの表示名
+  // 利益項目: key = PC側データ(profit)の名前、label = 画面・Excelの表示名
   const PROFITS = [{ key: '粗利益', label: '粗利益' }, { key: '営業利益', label: '営業損益' }];
   const CATS = ['材料費', '工場加工費', '事務図面費', '外注加工費', 'メッキ費', '運送費', '塗装費', '現場費', 'その他', '計'];
 
@@ -12,12 +12,11 @@
     { id: 'amount', label: '契約金額(円)', kind: 'yen', get: r => r.amount },
     { id: 'sheet', label: '参照シート', kind: 'str', get: r => r.sheet },
   ];
-  // 粗利益・営業損益: 額はシートのF列(予算)/L列(実際)、率はG列/M列の値そのまま(PC側で抽出済み)
+  // 粗利益・営業損益: 額はシートのF列(予算)/L列(実際)。割合は費目と同じく 実際÷予算
   PROFITS.forEach(({ key: p, label: l }) => {
-    FIELDS.push({ id: p + ':b', profit: p, label: l + ' 予算', kind: 'yen', get: r => prof(r, 'profit', p)[0] });
-    FIELDS.push({ id: p + ':br', profit: p, label: l + ' 予算率', kind: 'rate', get: r => prof(r, 'profitRate', p)[0] });
-    FIELDS.push({ id: p + ':a', profit: p, label: l + ' 実際', kind: 'yen', get: r => prof(r, 'profit', p)[1] });
-    FIELDS.push({ id: p + ':ar', profit: p, label: l + ' 実際率', kind: 'rate', get: r => prof(r, 'profitRate', p)[1] });
+    FIELDS.push({ id: p + ':b', profit: p, label: l + ' 予算', kind: 'yen', get: r => prof(r, p)[0] });
+    FIELDS.push({ id: p + ':a', profit: p, label: l + ' 実際', kind: 'yen', get: r => prof(r, p)[1] });
+    FIELDS.push({ id: p + ':r', profit: p, label: l + ' 割合', kind: 'pct', get: r => ratio(prof(r, p)) });
   });
   CATS.forEach(c => {
     FIELDS.push({ id: c + ':b', cat: c, label: c + ' 予算', kind: 'yen', get: r => pair(r, c)[0] });
@@ -31,8 +30,8 @@
     const p = r && r.cats && r.cats[c];
     return Array.isArray(p) ? p : [null, null];
   }
-  function prof(r, k, p) {
-    const v = r && r[k] && r[k][p];
+  function prof(r, p) {
+    const v = r && r.profit && r.profit[p];
     return Array.isArray(v) ? v : [null, null];
   }
   function num(v) { return v === null || v === undefined || v === '' || !isFinite(Number(v)) ? null : Number(v); }
@@ -47,7 +46,7 @@
     const n = num(v);
     if (n === null) return '';
     if (kind === 't') return n.toFixed(3);
-    if (kind === 'pct' || kind === 'rate') return n.toFixed(6);
+    if (kind === 'pct') return n.toFixed(6);
     return String(Math.round(n));
   }
 
@@ -71,7 +70,6 @@
     if (n === null) return '';
     if (kind === 't') return NF3.format(n);
     if (kind === 'pct') return Math.round(n * 100) + '%';
-    if (kind === 'rate') return (n * 100).toFixed(1) + '%';
     return NF0.format(Math.round(n));
   }
 
@@ -95,12 +93,12 @@
       const cells = FIELDS.map(f => {
         const v = f.get(r);
         const cell = { id: f.id, kind: f.kind, v: v, text: fmt(f.kind, v), changed: false, prev: null, over: false };
-        // 赤字: 費目は予算超過(実際 > 予算)で「実際」「割合」、利益は予算未達(実際 < 予算)で「実際」「実際率」
+        // 赤字: 費目は予算超過(実際 > 予算)、利益は予算未達(実際 < 予算)で、それぞれ「実際」「割合」
         if (f.cat && !f.id.endsWith(':b')) {
           const p = pair(r, f.cat), b = num(p[0]), a = num(p[1]);
           cell.over = b !== null && a !== null && a > b;
-        } else if (f.profit && (f.id.endsWith(':a') || f.id.endsWith(':ar'))) {
-          const p = prof(r, 'profit', f.profit), b = num(p[0]), a = num(p[1]);
+        } else if (f.profit && !f.id.endsWith(':b')) {
+          const p = prof(r, f.profit), b = num(p[0]), a = num(p[1]);
           cell.over = b !== null && a !== null && a < b;
         }
         if (compare) {
@@ -155,7 +153,7 @@
     ws.getColumn(2).width = 9;
     ws.getColumn(3).width = 26;
     FIELDS.forEach((f, i) => {
-      ws.getColumn(i + FIRST).width = f.kind === 'pct' ? 8 : f.kind === 'rate' ? 9 : f.kind === 'date' ? 17 : f.id === 'sheet' ? 10 : f.kind === 'str' ? 14 : 13;
+      ws.getColumn(i + FIRST).width = f.kind === 'pct' ? 8 : f.kind === 'date' ? 17 : f.id === 'sheet' ? 10 : f.kind === 'str' ? 14 : 13;
     });
 
     view.rows.forEach((vr, idx) => {
@@ -168,10 +166,8 @@
       vr.cells.forEach((c, i) => {
         const cell = row.getCell(i + FIRST);
         const n = num(c.v);
-        if (c.kind === 'rate') {
-          cell.value = n; cell.numFmt = '0.0%';
-        } else if (c.kind === 'pct') {
-          const bCol = colName(i + FIRST - 2), aCol = colName(i + FIRST - 1); // 同じ費目の予算・実際
+        if (c.kind === 'pct') {
+          const bCol = colName(i + FIRST - 2), aCol = colName(i + FIRST - 1); // 同じ費目・利益項目の予算・実際
           cell.value = { formula: 'IF(' + bCol + rn + '=0,"",' + aCol + rn + '/' + bCol + rn + ')', result: n === null ? '' : n };
           cell.numFmt = '0%';
         } else if (c.kind === 'yen') {
