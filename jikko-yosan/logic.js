@@ -12,11 +12,10 @@
     { id: 'amount', label: '契約金額(円)', kind: 'yen', get: r => r.amount },
     { id: 'sheet', label: '参照シート', kind: 'str', get: r => r.sheet },
   ];
-  // 粗利益・営業損益: 額はシートのF列(予算)/L列(実際)。割合は費目と同じく 実際÷予算
+  // 粗利益・営業損益: 額はシートのF列(予算)/L列(実際)。割合は出さない
   PROFITS.forEach(({ key: p, label: l }) => {
     FIELDS.push({ id: p + ':b', profit: p, label: l + ' 予算', kind: 'yen', get: r => prof(r, p)[0] });
     FIELDS.push({ id: p + ':a', profit: p, label: l + ' 実際', kind: 'yen', get: r => prof(r, p)[1] });
-    FIELDS.push({ id: p + ':r', profit: p, label: l + ' 割合', kind: 'pct', get: r => ratio(prof(r, p)) });
   });
   CATS.forEach(c => {
     FIELDS.push({ id: c + ':b', cat: c, label: c + ' 予算', kind: 'yen', get: r => pair(r, c)[0] });
@@ -93,11 +92,11 @@
       const cells = FIELDS.map(f => {
         const v = f.get(r);
         const cell = { id: f.id, kind: f.kind, v: v, text: fmt(f.kind, v), changed: false, prev: null, over: false };
-        // 赤字: 費目は予算超過(実際 > 予算)、利益は予算未達(実際 < 予算)で、それぞれ「実際」「割合」
+        // 赤字: 費目は予算超過(実際 > 予算)で「実際」「割合」、利益は予算未達(実際 < 予算)で「実際」
         if (f.cat && !f.id.endsWith(':b')) {
           const p = pair(r, f.cat), b = num(p[0]), a = num(p[1]);
           cell.over = b !== null && a !== null && a > b;
-        } else if (f.profit && !f.id.endsWith(':b')) {
+        } else if (f.profit && f.id.endsWith(':a')) {
           const p = prof(r, f.profit), b = num(p[0]), a = num(p[1]);
           cell.over = b !== null && a !== null && a < b;
         }
@@ -167,7 +166,7 @@
         const cell = row.getCell(i + FIRST);
         const n = num(c.v);
         if (c.kind === 'pct') {
-          const bCol = colName(i + FIRST - 2), aCol = colName(i + FIRST - 1); // 同じ費目・利益項目の予算・実際
+          const bCol = colName(i + FIRST - 2), aCol = colName(i + FIRST - 1); // 同じ費目の予算・実際
           cell.value = { formula: 'IF(' + bCol + rn + '=0,"",' + aCol + rn + '/' + bCol + rn + ')', result: n === null ? '' : n };
           cell.numFmt = '0%';
         } else if (c.kind === 'yen') {
