@@ -6,11 +6,24 @@ const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyun0FKHcFSvu5j8RRY
 // ?demo=1 でダミーデータ表示(動作確認用。実データは使わない)
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 
+const EXCELJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+
 let view = null;
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error(src + ' を読み込めませんでした'));
+    document.head.appendChild(s);
+  });
+}
 
 async function load() {
   let payload;
   if (DEMO) {
+    await loadScript('demo.js');
     payload = window.JY_DEMO;
   } else {
     if (!GAS_API_URL) throw new Error('GAS_API_URLが未設定です(app.js)。動作確認は URL の末尾に ?demo=1 を付けてください');
@@ -69,6 +82,7 @@ function render() {
 }
 
 async function downloadXlsx() {
+  if (!window.ExcelJS) await loadScript(EXCELJS_URL);
   const wb = JY.buildWorkbook(ExcelJS, view);
   const buf = await wb.xlsx.writeBuffer();
   const d = new Date(Date.now() + 9 * 3600000);
@@ -83,7 +97,12 @@ async function downloadXlsx() {
 }
 
 document.getElementById('btn-xlsx').addEventListener('click', () => {
-  downloadXlsx().catch(err => alert('Excelの作成に失敗しました: ' + err.message));
+  const btn = document.getElementById('btn-xlsx');
+  btn.disabled = true;
+  btn.textContent = '作成中…';
+  downloadXlsx()
+    .catch(err => alert('Excelの作成に失敗しました: ' + err.message))
+    .finally(() => { btn.disabled = false; btn.textContent = 'Excelダウンロード'; });
 });
 
 load().catch(err => {
