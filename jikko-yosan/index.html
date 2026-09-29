@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>実行予算まとめ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>実行予算まとめ</h1>
+  <div class="meta" id="meta">読み込み中…</div>
+  <div class="actions">
+    <button id="btn-xlsx" disabled>Excelダウンロード</button>
+  </div>
+</header>
+<div class="legend">
+  <span class="lg chg">変更あり(前回値を表示)</span>
+  <span class="lg new">新規の工事</span>
+  <span class="lg missing">元ファイルなし</span>
+</div>
+<main>
+  <div id="msg" class="msg" hidden></div>
+  <div class="table-wrap"><table id="tbl"></table></div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="logic.js"></script>
+<script src="demo.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
