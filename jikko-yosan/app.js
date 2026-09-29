@@ -2,7 +2,7 @@
 'use strict';
 
 // GAS WebアプリのURL(gas/Code.gs をデプロイしたURL)
-const GAS_API_URL = '';
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyun0FKHcFSvu5j8RRYpevoZfMC3F2WUkd3vC7_PopGvuv3i2ecwfRy3aiPOaXb9K1G3A/exec';
 // ?demo=1 でダミーデータ表示(動作確認用。実データは使わない)
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 
