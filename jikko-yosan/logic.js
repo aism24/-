@@ -148,7 +148,7 @@
     ws.addRow(head);
     ws.getRow(1).font = { bold: true };
     ws.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    ws.getColumn(1).width = 16;
+    ws.getColumn(1).width = 12;
     ws.getColumn(2).width = 9;
     ws.getColumn(3).width = 26;
     FIELDS.forEach((f, i) => {

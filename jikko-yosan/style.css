@@ -42,12 +42,13 @@ thead th { position: sticky; top: 0; z-index: 2; background: #eef1f5; font-weigh
 thead tr:nth-child(2) th { top: 23px; }
 /* 固定列(状態〜参照シート)。left は左の列の幅の合計なので、幅は固定にする */
 .c-st, .c-no, .c-name, .c-w, .c-a, .c-s { position: sticky; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
-.c-st { left: 0; width: 150px; min-width: 150px; max-width: 150px; }
-.c-no { left: 150px; width: 64px; min-width: 64px; max-width: 64px; }
-.c-name { left: 214px; width: 200px; min-width: 200px; max-width: 200px; }
-.c-w { left: 414px; width: 100px; min-width: 100px; max-width: 100px; }
-.c-a { left: 514px; width: 124px; min-width: 124px; max-width: 124px; }
-.c-s { left: 638px; width: 80px; min-width: 80px; max-width: 80px; border-right: 2px solid #bbb; }
+.c-st { left: 0; width: 104px; min-width: 104px; max-width: 104px; }
+td.c-st { font-size: 12px; line-height: 1.25; } /* 「（編集中）」は app.js で2行目に回す */
+.c-no { left: 104px; width: 64px; min-width: 64px; max-width: 64px; }
+.c-name { left: 168px; width: 200px; min-width: 200px; max-width: 200px; }
+.c-w { left: 368px; width: 100px; min-width: 100px; max-width: 100px; }
+.c-a { left: 468px; width: 124px; min-width: 124px; max-width: 124px; }
+.c-s { left: 592px; width: 80px; min-width: 80px; max-width: 80px; border-right: 2px solid #bbb; }
 thead .c-st, thead .c-no, thead .c-name, thead .c-w, thead .c-a, thead .c-s { z-index: 3; white-space: normal; }
 .grp, .grp-l { border-left: 2px solid #bbb; }
 td.num { text-align: right; }
