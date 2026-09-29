@@ -40,7 +40,7 @@ function esc(s) {
   return String(s === null || s === undefined ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
-// 横スクロールしても固定する列(工事No・工事名に加えて参照シートまで。Excelの固定範囲と同じ)
+// 横スクロールしても固定する列(状態〜参照シート。Excelの固定範囲と同じ)。状態・工事No・工事名はrender内で指定
 const STICKY = { weight: 'c-w', amount: 'c-a', sheet: 'c-s' };
 
 function render() {
@@ -55,27 +55,28 @@ function render() {
     ' / 比較の基準: ' + esc(view.baselineAt ? JY.fmt('date', view.baselineAt) : 'なし(初回)') +
     ' / ' + view.rows.length + '件';
 
-  let h = '<thead><tr><th rowspan="2" class="c-no">工事No</th><th rowspan="2" class="c-name">工事名</th>' +
+  let h = '<thead><tr><th rowspan="2" class="c-st">状態</th><th rowspan="2" class="c-no">工事No</th><th rowspan="2" class="c-name">工事名</th>' +
     '<th rowspan="2" class="c-w">契約総重量(t)</th><th rowspan="2" class="c-a">契約金額(円)</th><th rowspan="2" class="c-s">参照シート</th>';
   JY.PROFITS.forEach(p => { h += '<th colspan="4" class="grp">' + esc(p.label) + '</th>'; });
   JY.CATS.forEach(c => { h += '<th colspan="3" class="grp">' + esc(c) + '</th>'; });
-  h += '<th rowspan="2">前回の保存者</th><th rowspan="2">保存日時</th><th rowspan="2">状態</th></tr><tr>';
+  h += '<th rowspan="2">前回の保存者</th><th rowspan="2">保存日時</th></tr><tr>';
   JY.PROFITS.forEach(() => { h += '<th class="grp-l">予算</th><th>予算率</th><th>実際</th><th>実際率</th>'; });
   JY.CATS.forEach(() => { h += '<th class="grp-l">予算</th><th>実際</th><th>割合</th>'; });
   h += '</tr></thead><tbody>';
 
   view.rows.forEach(r => {
-    h += '<tr class="' + r.rowClass + '"><td class="c-no">' + esc(r.no) + '</td><td class="c-name">' + esc(r.name) + '</td>';
+    h += '<tr class="' + r.rowClass + '"><td class="txt st c-st"' + (r.warn ? ' title="' + esc(r.warn) + '"' : '') + '>' + esc(r.status) + '</td><td class="c-no">' + esc(r.no) + '</td><td class="c-name">' + esc(r.name) + '</td>';
     r.cells.forEach(c => {
       const cls = [c.kind === 'str' || c.kind === 'date' ? 'txt' : 'num'];
       if (c.id.endsWith(':b')) cls.push('grp-l');
       if (STICKY[c.id]) cls.push(STICKY[c.id]);
+      if (c.id === 'author') cls.push('ctr');
       if (c.changed) cls.push('chg');
       if (c.over) cls.push('over');
       h += '<td class="' + cls.join(' ') + '"' + (c.changed ? ' title="前回：' + esc(c.prev) + '"' : '') + '>' + esc(c.text) +
         (c.changed ? '<div class="prev">前回：' + esc(c.prev) + '</div>' : '') + '</td>';
     });
-    h += '<td class="txt st"' + (r.warn ? ' title="' + esc(r.warn) + '"' : '') + '>' + esc(r.status) + '</td></tr>';
+    h += '</tr>';
   });
   document.getElementById('tbl').innerHTML = h + '</tbody>';
   document.getElementById('btn-xlsx').disabled = false;
