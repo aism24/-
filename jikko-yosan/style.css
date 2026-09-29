@@ -4,17 +4,21 @@
   :root { --page-bg: #1b1d21; --header-bg: #26292e; --header-text: #f2f2f2; --meta-text: #c4c7cc; --logo-text: #fff; }
 }
 body { margin: 0; font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif; font-size: 13px; color: #222; background: var(--page-bg); }
-header { padding: 10px 16px 8px; background: var(--header-bg); color: var(--header-text); border-bottom: 1px solid #ddd; }
-.brand { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
-.logo { height: 40px; width: auto; }
+header { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding: 8px 16px; background: var(--header-bg); color: var(--header-text); border-bottom: 1px solid #ddd; }
+.hd-side { flex: 1 1 0; display: flex; }
+.hd-right { justify-content: flex-end; }
+.brand { display: flex; align-items: center; justify-content: center; gap: 10px 12px; flex-wrap: wrap; }
+.logo { height: 52px; width: auto; }
 .logo-mark { fill: #e74155; }
 .logo-text { fill: var(--logo-text); }
-.company { font-size: 18px; font-weight: 700; padding-right: 10px; border-right: 2px solid #ccc; }
-h1 { font-size: 18px; margin: 0; font-weight: 600; }
-.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 6px; }
-.meta { flex: 1; color: var(--meta-text); min-width: 200px; }
+.company { font-size: 27px; font-weight: 700; padding-right: 12px; border-right: 2px solid #ccc; }
+h1 { font-size: 27px; margin: 0; font-weight: 600; }
+.meta { color: var(--meta-text); }
+/* 狭い画面では左の空きをなくして折り返す */
+@media (max-width: 1100px) { header > .hd-side:first-child { display: none; } }
 .meta .demo { color: #c00; }
-button { font: inherit; padding: 6px 14px; border: 1px solid #1a73e8; background: #1a73e8; color: #fff; border-radius: 4px; cursor: pointer; }
+button { font: inherit; padding: 6px 14px; border: 1px solid #1e8e3e; background: #1e8e3e; color: #fff; border-radius: 4px; cursor: pointer; }
+button:hover:not(:disabled) { background: #188038; }
 button:disabled { opacity: .5; cursor: default; }
 .legend { padding: 6px 16px; display: flex; flex-wrap: wrap; gap: 8px; }
 .lg { padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px; font-size: 12px; }
