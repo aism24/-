@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>実行予算まとめ</title>
 <!-- ?v= は .js/.css を変更するたびに更新する(ブラウザ・CDNのキャッシュ対策) -->
-<link rel="stylesheet" href="style.css?v=20260929b">
+<link rel="stylesheet" href="style.css?v=20260929c">
 </head>
 <body>
 <header>
@@ -19,14 +19,14 @@
   <span class="lg chg">変更あり(前回値を表示)</span>
   <span class="lg new">新規の工事</span>
   <span class="lg missing">元ファイルなし</span>
-  <span class="lg over">予算超過(実際・割合を赤字)</span>
+  <span class="lg over">赤字: 費目は予算超過 / 利益は予算未達</span>
 </div>
 <main>
   <div id="msg" class="msg" hidden></div>
   <div class="table-wrap"><table id="tbl"></table></div>
 </main>
 <!-- ExcelJS(約950KB)はダウンロードボタンを押したときに、demo.js は ?demo=1 のときだけ読み込む(app.js) -->
-<script src="logic.js?v=20260929b"></script>
-<script src="app.js?v=20260929b"></script>
+<script src="logic.js?v=20260929c"></script>
+<script src="app.js?v=20260929c"></script>
 </body>
 </html>
