@@ -103,6 +103,15 @@ async function downloadXlsx() {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 
+// セルをクリックすると、その行を強調(二重罫線+薄い黄色)。同じ行をもう一度クリックで解除
+document.getElementById('tbl').addEventListener('click', e => {
+  const tr = e.target.closest('tbody tr');
+  if (!tr) return;
+  const cur = document.querySelector('#tbl tr.sel');
+  if (cur) cur.classList.remove('sel');
+  if (cur !== tr) tr.classList.add('sel');
+});
+
 document.getElementById('btn-xlsx').addEventListener('click', () => {
   const btn = document.getElementById('btn-xlsx');
   btn.disabled = true;
