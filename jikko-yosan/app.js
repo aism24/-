@@ -71,7 +71,7 @@ function render() {
   h += '</tr></thead><tbody>';
 
   view.rows.forEach(r => {
-    h += '<tr class="' + r.rowClass + '"><td class="txt st c-st"' + (r.warn ? ' title="' + esc(r.warn) + '"' : '') + '>' + esc(r.status) + '</td><td class="c-no">' + esc(r.no) + '</td><td class="c-name">' + esc(r.name) + '</td>';
+    h += '<tr class="' + r.rowClass + '"><td class="txt st c-st"' + (r.warn ? ' title="' + esc(r.warn) + '"' : '') + '>' + esc(r.status).replace('（', '<br>（') + '</td><td class="c-no">' + esc(r.no) + '</td><td class="c-name">' + esc(r.name) + '</td>';
     r.cells.forEach(c => {
       const cls = [c.kind === 'str' || c.kind === 'date' ? 'txt' : 'num'];
       if (c.id.endsWith(':b')) cls.push('grp-l');
