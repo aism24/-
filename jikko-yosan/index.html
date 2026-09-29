@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>実行予算まとめ</title>
 <!-- ?v= は .js/.css を変更するたびに更新する(ブラウザ・CDNのキャッシュ対策) -->
-<link rel="stylesheet" href="style.css?v=20260929e">
+<link rel="stylesheet" href="style.css?v=20260929f">
 </head>
 <body>
 <header>
@@ -16,7 +16,7 @@
     <h1>実行予算まとめ</h1>
   </div>
   <div class="toolbar">
-    <div class="meta" id="meta">読み込み中…</div>
+    <div class="meta" id="meta"></div>
     <button id="btn-xlsx" disabled>Excelダウンロード</button>
   </div>
 </header>
@@ -30,8 +30,15 @@
   <div id="msg" class="msg" hidden></div>
   <div class="table-wrap"><table id="tbl"></table></div>
 </main>
+<!-- 読み込み中のポップアップ(最初から表示し、読み込みが終わったら app.js で消す)。バーが動いていればフリーズしていない -->
+<div id="loading" class="overlay" role="status" aria-live="polite">
+  <div class="dialog">
+    <div id="loading-text">データ読込中</div>
+    <div class="bar"><div class="bar-fill"></div></div>
+  </div>
+</div>
 <!-- ExcelJS(約950KB)はダウンロードボタンを押したときに、demo.js は ?demo=1 のときだけ読み込む(app.js) -->
-<script src="logic.js?v=20260929e"></script>
-<script src="app.js?v=20260929e"></script>
+<script src="logic.js?v=20260929f"></script>
+<script src="app.js?v=20260929f"></script>
 </body>
 </html>

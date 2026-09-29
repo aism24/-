@@ -20,6 +20,12 @@ function loadScript(src) {
   });
 }
 
+function showLoading(text) {
+  document.getElementById('loading-text').textContent = text;
+  document.getElementById('loading').hidden = false;
+}
+function hideLoading() { document.getElementById('loading').hidden = true; }
+
 async function load() {
   let payload;
   if (DEMO) {
@@ -57,10 +63,10 @@ function render() {
 
   let h = '<thead><tr><th rowspan="2" class="c-st">状態</th><th rowspan="2" class="c-no">工事No</th><th rowspan="2" class="c-name">工事名</th>' +
     '<th rowspan="2" class="c-w">契約総重量(t)</th><th rowspan="2" class="c-a">契約金額(円)</th><th rowspan="2" class="c-s">参照シート</th>';
-  JY.PROFITS.forEach(p => { h += '<th colspan="3" class="grp">' + esc(p.label) + '</th>'; });
+  JY.PROFITS.forEach(p => { h += '<th colspan="2" class="grp">' + esc(p.label) + '</th>'; });
   JY.CATS.forEach(c => { h += '<th colspan="3" class="grp">' + esc(c) + '</th>'; });
   h += '<th rowspan="2">前回の保存者</th><th rowspan="2">保存日時</th></tr><tr>';
-  JY.PROFITS.forEach(() => { h += '<th class="grp-l">予算</th><th>実際</th><th>割合</th>'; });
+  JY.PROFITS.forEach(() => { h += '<th class="grp-l">予算</th><th>実際</th>'; });
   JY.CATS.forEach(() => { h += '<th class="grp-l">予算</th><th>実際</th><th>割合</th>'; });
   h += '</tr></thead><tbody>';
 
@@ -100,10 +106,10 @@ async function downloadXlsx() {
 document.getElementById('btn-xlsx').addEventListener('click', () => {
   const btn = document.getElementById('btn-xlsx');
   btn.disabled = true;
-  btn.textContent = '作成中…';
+  showLoading('Excel作成中');
   downloadXlsx()
     .catch(err => alert('Excelの作成に失敗しました: ' + err.message))
-    .finally(() => { btn.disabled = false; btn.textContent = 'Excelダウンロード'; });
+    .finally(() => { btn.disabled = false; hideLoading(); });
 });
 
 load().catch(err => {
@@ -111,4 +117,4 @@ load().catch(err => {
   const m = document.getElementById('msg');
   m.textContent = '読み込みに失敗しました: ' + err.message;
   m.hidden = false;
-});
+}).finally(hideLoading);
