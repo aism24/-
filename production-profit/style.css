@@ -53,6 +53,13 @@ input[type="number"], input.numIn { width: 120px; text-align: right; }
 button { cursor: pointer; border-radius: 6px; padding: 7px 14px; border: 1px solid var(--border); background: var(--surface); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.ghost:hover { border-color: var(--accent); }
+button.homeBack { background: #e8710a; border-color: #e8710a; color: #fff; }
+button.homeBack:hover, button.homeBack:focus-visible { background: #c85f06; border-color: #c85f06; }
+button.blinkBtn { background: #ffd83a; border-color: #e0b400; color: #1a1a19; animation: blinkBtn 2.4s ease-in-out infinite; }
+button.blinkBtn:hover { border-color: #b38f00; }
+button.blinkBtn:disabled { animation: none; }
+@keyframes blinkBtn { 0%, 100% { background: #ffd83a; } 50% { background: #fff6c4; } }
+@media (prefers-reduced-motion: reduce) { button.blinkBtn { animation: none; } }
 button:disabled { opacity: .5; cursor: default; }
 
 /* ===================== ロック画面・ヘッダー ===================== */
@@ -80,6 +87,7 @@ button:disabled { opacity: .5; cursor: default; }
 .lockBox .brandLogo { width: 48px; height: 53px; }
 .lockBox .companyName { font-size: 20px; }
 .lockBox h1 { text-align: center; }
+@media (max-width: 400px) { .lockDesc { font-size: 12px; } } /* 説明の3行がスマホでも1行ずつ収まるように */
 .lockFoot { display: flex; justify-content: flex-end; } /* パスワード画面の右下: ホームに戻る */
 
 /* ===================== 絞り込み(期間=薄い緑、工場=薄いピンク、工事=薄い青 を1行に並べる) ===================== */

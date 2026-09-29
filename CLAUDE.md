@@ -127,6 +127,15 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 | 2026-09-24 | 5.74GB → 5.80GB(+約60MB) | pdf-diff-app関数統合版(PR #306)を本番デプロイ |
 | 2026-09-28 8:10 | 5.8GB(変化なし) | 9/23以前の古いデプロイを削除した後の値(9/24分の17件は残置)。削除の反映待ちの可能性あり |
 | 2026-09-28 16:30頃 | (Functions Storageの項目が表示されない) | 同日8時には「Functions Storage 5.8GB」「Deployment Storage 277.41MB」が別々に表示されていたが、16:30頃はFunctions Storageの行が消え、Deployment Storageは1.39MBに(All Projects)。この時点でpdf-diff-pythonappの9/24分のデプロイ17件は残っており、容量が空いた根拠は無い。原因不明(Vercel側の表示・集計の変化の可能性)のため、再び表示されるまで約5.8GBとみなして管理する |
+| 2026-09-29 | 9/28: 2.2GB、9/29: ほぼ0(集計途中の可能性) | Usage → Functions Storage(All Projects・Last 30 Days)のグラフで確認。9/27まで約5.8GBで横ばい→9/28に2.2GB→9/29にほぼ0。9/28朝の古いデプロイ(9/23以前)削除が遅れて反映されたとみられる(削除から反映まで約1日)。pdf-diff-pythonappの9/24分17件は残っているので、9/29の確定値は翌日以降に再確認 |
+
+【古いデプロイの削除とFunctions Storageの反映】(2026-09-29確認)
+- 古いデプロイを削除すれば、30日の保持期間を待たずにFunctions Storageは減る。ただし**すぐには数字に出ず、数時間〜1日遅れて反映される**
+  (9/28 8:10に9/23以前の分を削除 → 直後は5.8GBのまま → 16:30頃はFunctions Storageの行が一時的に非表示 → 翌日のグラフで9/28の値が2.2GBに減少)。
+  削除直後に確認して「消しても減らない」と判断しないこと。削除したら翌日以降に Usage → Functions Storage(All Projects)のグラフで確認する。
+- 削除してよいのは「現在の本番(Production・Current)以外」のデプロイ。本番のデプロイを消すとアプリが表示されなくなる。
+  本番以外を消しても、アプリ(本番URL)は正常に動く(2026-09-29、削除後に pdf-diff-pythonapp・sonekibunki・daily-report の本番URLと
+  pdf-diff-appの関数 /api/diff の応答を確認済み)。消したデプロイへのロールバック(Instant Rollback)はできなくなる。
 
 ※既存分はHobbyの30日保持により、最初のデプロイ(2026-09-19)から30日後の10月19日頃から順次減っていく見込み。
 
@@ -136,9 +145,9 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 |---|---|---|---|
 | pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 解除(2026-09-24、関数統合版を本番デプロイ後に再解除) | |
 | daily-report (https://all-daily-report.vercel.app/) | daily-report | 解除(2026-09-24) | `daily-report/vercel.json` で `git.deploymentEnabled=false`。Ignored Build Step=`git diff HEAD^ HEAD --quiet -- .` |
-| sonekibunki (https://sonekibunki.vercel.app/) | production-profit | 解除(2026-09-28、シンプル版追加の開発中にユーザーが解除。`list_projects` 0件を確認。`vercel.json` の `git.deploymentEnabled=false` は残置) | 静的サイト(関数なし)。本番反映は `create_deployment` で行う。GitHub Pages版は廃止(index.htmlでVercel版へ転送) |
+| sonekibunki (https://sonekibunki.vercel.app/) | production-profit | 解除(2026-09-29、#416〜#424を本番デプロイ後にユーザーが解除。`list_projects` 0件を確認。`vercel.json` の `git.deploymentEnabled=false` は残置) | 静的サイト(関数なし)。本番反映は `create_deployment` で行う。GitHub Pages版は廃止(index.htmlでVercel版へ転送) |
 
-2026-09-28、sonekibunkiの連携も解除され、`list_projects`(repoUrl=aism24/-)は0件。公開時は連携を戻してから `create_deployment` で1回だけデプロイする。
+2026-09-29、sonekibunkiの連携も解除され、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。公開時は連携を戻してから、指示があったときだけ `create_deployment` で1回デプロイする。
 
 2026-09-27、sonekibunki(production-profit)を新規作成・連携。以降(〜9/28の解除まで) `list_projects`(repoUrl=aism24/-)は sonekibunki の1件が正常(vercel.jsonで自動デプロイ停止済み)。それ以外が返ったらマージしないこと。
 
