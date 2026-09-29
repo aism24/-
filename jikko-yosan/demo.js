@@ -10,8 +10,11 @@
       cats[c] = [b, a]; tb += b; ta += a;
     });
     cats['計'] = [tb, ta];
+    const gb = amount - tb, ga = amount - ta, pr = v => amount ? v / amount : null;
+    const profit = { '粗利益': [gb, ga], '営業利益': [gb - amount * 0.1, ga - amount * 0.1] };
+    const profitRate = { '粗利益': [pr(gb), pr(ga)], '営業利益': [pr(profit['営業利益'][0]), pr(profit['営業利益'][1])] };
     return Object.assign({ key, folder: 'R8', fileNo: no, no, name, matchedBy: '工事名', c2: name, sheet, weight, amount,
-      cats, author: '担当A', saved: '2026-09-28T17:30:00+09:00', mtimeMs: 0, locked: false, status: 'ok', warn: '' }, extra || {});
+      cats, profit, profitRate, author: '担当A', saved: '2026-09-28T17:30:00+09:00', mtimeMs: 0, locked: false, status: 'ok', warn: '' }, extra || {});
   }
   const b1 = row('90-11サンプル工事A　実行予算.xlsx', '90-11', 'サンプル工事A', 1234.5678, 456000000, '8.9.1', 400000, 0.5);
   const b2 = row('90-12サンプル工事B　実行予算.xlsx', '90-12', 'サンプル工事B', 800, 250000000, '8.8.20', 220000, 0.8);
@@ -24,6 +27,7 @@
   // 当日: Aは実際・参照シート・保存者が変更、Bは変更なし(編集中)、Cは元ファイルなし、Dは読み取りエラー、E・Fは新規
   const t1 = JSON.parse(JSON.stringify(b1));
   t1.sheet = '8.9.28'; t1.cats['材料費'][1] += 5000000; t1.cats['計'][1] += 5000000; t1.weight = 1240.001;
+  ['粗利益', '営業利益'].forEach(p => { t1.profit[p][1] -= 5000000; t1.profitRate[p][1] = t1.profit[p][1] / t1.amount; });
   t1.author = '担当B'; t1.saved = '2026-09-29T09:12:00+09:00';
   const t2 = Object.assign(JSON.parse(JSON.stringify(b2)), { locked: true });
   const t3 = Object.assign(JSON.parse(JSON.stringify(b3)), { missing: true });
