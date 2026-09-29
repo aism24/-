@@ -129,6 +129,14 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 | 2026-09-28 16:30頃 | (Functions Storageの項目が表示されない) | 同日8時には「Functions Storage 5.8GB」「Deployment Storage 277.41MB」が別々に表示されていたが、16:30頃はFunctions Storageの行が消え、Deployment Storageは1.39MBに(All Projects)。この時点でpdf-diff-pythonappの9/24分のデプロイ17件は残っており、容量が空いた根拠は無い。原因不明(Vercel側の表示・集計の変化の可能性)のため、再び表示されるまで約5.8GBとみなして管理する |
 | 2026-09-29 | 9/28: 2.2GB、9/29: ほぼ0(集計途中の可能性) | Usage → Functions Storage(All Projects・Last 30 Days)のグラフで確認。9/27まで約5.8GBで横ばい→9/28に2.2GB→9/29にほぼ0。9/28朝の古いデプロイ(9/23以前)削除が遅れて反映されたとみられる(削除から反映まで約1日)。pdf-diff-pythonappの9/24分17件は残っているので、9/29の確定値は翌日以降に再確認 |
 
+【古いデプロイの削除とFunctions Storageの反映】(2026-09-29確認)
+- 古いデプロイを削除すれば、30日の保持期間を待たずにFunctions Storageは減る。ただし**すぐには数字に出ず、数時間〜1日遅れて反映される**
+  (9/28 8:10に9/23以前の分を削除 → 直後は5.8GBのまま → 16:30頃はFunctions Storageの行が一時的に非表示 → 翌日のグラフで9/28の値が2.2GBに減少)。
+  削除直後に確認して「消しても減らない」と判断しないこと。削除したら翌日以降に Usage → Functions Storage(All Projects)のグラフで確認する。
+- 削除してよいのは「現在の本番(Production・Current)以外」のデプロイ。本番のデプロイを消すとアプリが表示されなくなる。
+  本番以外を消しても、アプリ(本番URL)は正常に動く(2026-09-29、削除後に pdf-diff-pythonapp・sonekibunki・daily-report の本番URLと
+  pdf-diff-appの関数 /api/diff の応答を確認済み)。消したデプロイへのロールバック(Instant Rollback)はできなくなる。
+
 ※既存分はHobbyの30日保持により、最初のデプロイ(2026-09-19)から30日後の10月19日頃から順次減っていく見込み。
 
 ### 現在のGit連携状態(変更したらここを更新する)
