@@ -77,7 +77,12 @@
       let changed = 0;
       const cells = FIELDS.map(f => {
         const v = f.get(r);
-        const cell = { id: f.id, kind: f.kind, v: v, text: fmt(f.kind, v), changed: false, prev: null };
+        const cell = { id: f.id, kind: f.kind, v: v, text: fmt(f.kind, v), changed: false, prev: null, over: false };
+        // 予算超過(実際 > 予算)なら、その費目の「実際」「割合」を赤字にする
+        if (f.cat && !f.id.endsWith(':b')) {
+          const p = pair(r, f.cat), b = num(p[0]), a = num(p[1]);
+          cell.over = b !== null && a !== null && a > b;
+        }
         if (compare) {
           const pv = f.get(base);
           if (norm(f.kind, v) !== norm(f.kind, pv)) {
@@ -109,6 +114,7 @@
   /* ===================== Excel書き出し(ExcelJS) ===================== */
 
   const FILL = { changed: 'FFFFFF00', new: 'FFCCFFFF', missing: 'FFD9D9D9' };
+  const OVER_FONT = 'FFFF0000';
 
   function colName(n) {
     let s = '';
@@ -151,6 +157,7 @@
         } else {
           cell.value = c.v === undefined ? null : c.v;
         }
+        if (c.over) cell.font = { color: { argb: OVER_FONT } };
         if (c.changed) {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL.changed } };
           cell.note = '前回：' + c.prev;

@@ -11,6 +11,7 @@ button:disabled { opacity: .5; cursor: default; }
 .lg.chg { background: #ffff00; }
 .lg.new { background: #ccffff; }
 .lg.missing { background: #d9d9d9; }
+.lg.over { color: #e00000; font-weight: 600; background: #fff; }
 main { padding: 0 16px 16px; }
 .msg { padding: 10px; background: #fdecea; color: #a00; border: 1px solid #f5c2c0; border-radius: 4px; margin-bottom: 8px; }
 .table-wrap { overflow: auto; max-height: calc(100vh - 110px); background: #fff; border: 1px solid #ccc; }
@@ -28,5 +29,7 @@ td.txt { text-align: left; }
 tr.new td { background: #ccffff; }
 tr.missing td { background: #d9d9d9; color: #555; }
 td.chg { background: #ffff00 !important; }
+td.over { color: #e00000; font-weight: 600; }
+td.over .prev { font-weight: normal; }
 .prev { font-size: 10px; color: #7a5a00; }
 td.st { font-weight: 600; }

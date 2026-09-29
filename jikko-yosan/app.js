@@ -52,6 +52,7 @@ function render() {
       const cls = [c.kind === 'str' || c.kind === 'date' ? 'txt' : 'num'];
       if (c.id.endsWith(':b')) cls.push('grp-l');
       if (c.changed) cls.push('chg');
+      if (c.over) cls.push('over');
       h += '<td class="' + cls.join(' ') + '"' + (c.changed ? ' title="前回：' + esc(c.prev) + '"' : '') + '>' + esc(c.text) +
         (c.changed ? '<div class="prev">前回：' + esc(c.prev) + '</div>' : '') + '</td>';
     });
