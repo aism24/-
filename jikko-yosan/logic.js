@@ -144,31 +144,34 @@
 
   function buildWorkbook(ExcelJS, view) {
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('Sheet1', { views: [{ state: 'frozen', xSplit: 5, ySplit: 1 }] });
-    const head = ['工事No', '工事名'].concat(FIELDS.map(f => f.label), ['状態']);
+    // 列: A 状態 / B 工事No / C 工事名 / D〜 FIELDS(参照シートまでの A〜F列と1行目を固定)
+    const FIRST = 4; // FIELDS の先頭列
+    const ws = wb.addWorksheet('Sheet1', { views: [{ state: 'frozen', xSplit: 6, ySplit: 1 }] });
+    const head = ['状態', '工事No', '工事名'].concat(FIELDS.map(f => f.label));
     ws.addRow(head);
     ws.getRow(1).font = { bold: true };
     ws.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    ws.getColumn(1).width = 9;
-    ws.getColumn(2).width = 26;
+    ws.getColumn(1).width = 16;
+    ws.getColumn(2).width = 9;
+    ws.getColumn(3).width = 26;
     FIELDS.forEach((f, i) => {
-      ws.getColumn(i + 3).width = f.kind === 'pct' ? 8 : f.kind === 'rate' ? 9 : f.kind === 'date' ? 17 : f.id === 'sheet' ? 10 : f.kind === 'str' ? 14 : 13;
+      ws.getColumn(i + FIRST).width = f.kind === 'pct' ? 8 : f.kind === 'rate' ? 9 : f.kind === 'date' ? 17 : f.id === 'sheet' ? 10 : f.kind === 'str' ? 14 : 13;
     });
-    ws.getColumn(head.length).width = 16;
 
     view.rows.forEach((vr, idx) => {
       const rn = idx + 2;
       const row = ws.getRow(rn);
-      row.getCell(1).value = vr.no;
-      row.getCell(1).alignment = { horizontal: 'center' };
-      row.getCell(2).value = vr.name;
+      row.getCell(1).value = vr.status;
+      row.getCell(2).value = vr.no;
+      row.getCell(2).alignment = { horizontal: 'center' };
+      row.getCell(3).value = vr.name;
       vr.cells.forEach((c, i) => {
-        const cell = row.getCell(i + 3);
+        const cell = row.getCell(i + FIRST);
         const n = num(c.v);
         if (c.kind === 'rate') {
           cell.value = n; cell.numFmt = '0.0%';
         } else if (c.kind === 'pct') {
-          const bCol = colName(i + 1), aCol = colName(i + 2);
+          const bCol = colName(i + FIRST - 2), aCol = colName(i + FIRST - 1); // 同じ費目の予算・実際
           cell.value = { formula: 'IF(' + bCol + rn + '=0,"",' + aCol + rn + '/' + bCol + rn + ')', result: n === null ? '' : n };
           cell.numFmt = '0%';
         } else if (c.kind === 'yen') {
@@ -180,14 +183,13 @@
         } else {
           cell.value = c.v === undefined ? null : c.v;
         }
-        if (c.id === 'sheet') cell.alignment = { horizontal: 'center' };
+        if (c.id === 'sheet' || c.id === 'author') cell.alignment = { horizontal: 'center' };
         if (c.over) cell.font = { color: { argb: OVER_FONT } };
         if (c.changed) {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL.changed } };
           cell.note = '前回：' + c.prev;
         }
       });
-      row.getCell(head.length).value = vr.status;
       if (vr.rowClass) {
         for (let col = 1; col <= head.length; col++) {
           const cell = row.getCell(col);

@@ -1,8 +1,18 @@
 * { box-sizing: border-box; }
-body { margin: 0; font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif; font-size: 13px; color: #222; background: #f5f6f8; }
-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; background: #fff; border-bottom: 1px solid #ddd; }
-h1 { font-size: 18px; margin: 0; }
-.meta { flex: 1; color: #555; min-width: 200px; }
+:root { --page-bg: #f5f6f8; --header-bg: #fff; --header-text: #222; --meta-text: #555; --logo-text: #000; }
+@media (prefers-color-scheme: dark) {
+  :root { --page-bg: #1b1d21; --header-bg: #26292e; --header-text: #f2f2f2; --meta-text: #c4c7cc; --logo-text: #fff; }
+}
+body { margin: 0; font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif; font-size: 13px; color: #222; background: var(--page-bg); }
+header { padding: 10px 16px 8px; background: var(--header-bg); color: var(--header-text); border-bottom: 1px solid #ddd; }
+.brand { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.logo { height: 40px; width: auto; }
+.logo-mark { fill: #e74155; }
+.logo-text { fill: var(--logo-text); }
+.company { font-size: 18px; font-weight: 700; padding-right: 10px; border-right: 2px solid #ccc; }
+h1 { font-size: 18px; margin: 0; font-weight: 600; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 6px; }
+.meta { flex: 1; color: var(--meta-text); min-width: 200px; }
 .meta .demo { color: #c00; }
 button { font: inherit; padding: 6px 14px; border: 1px solid #1a73e8; background: #1a73e8; color: #fff; border-radius: 4px; cursor: pointer; }
 button:disabled { opacity: .5; cursor: default; }
@@ -14,23 +24,24 @@ button:disabled { opacity: .5; cursor: default; }
 .lg.over { color: #e00000; font-weight: 600; background: #fff; }
 main { padding: 0 16px 16px; }
 .msg { padding: 10px; background: #fdecea; color: #a00; border: 1px solid #f5c2c0; border-radius: 4px; margin-bottom: 8px; }
-.table-wrap { overflow: auto; max-height: calc(100vh - 110px); background: #fff; border: 1px solid #ccc; }
+.table-wrap { overflow: auto; max-height: calc(100vh - 150px); background: #fff; border: 1px solid #ccc; }
 table { border-collapse: separate; border-spacing: 0; white-space: nowrap; }
 th, td { border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; padding: 3px 6px; background: #fff; }
 thead th { position: sticky; top: 0; z-index: 2; background: #eef1f5; font-weight: 600; text-align: center; }
 thead tr:nth-child(2) th { top: 23px; }
-/* 固定列(工事No〜参照シート)。left は左の列の幅の合計なので、幅は固定にする */
-.c-no, .c-name, .c-w, .c-a, .c-s { position: sticky; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
-.c-no { left: 0; width: 64px; min-width: 64px; max-width: 64px; }
-.c-name { left: 64px; width: 200px; min-width: 200px; max-width: 200px; }
-.c-w { left: 264px; width: 100px; min-width: 100px; max-width: 100px; }
-.c-a { left: 364px; width: 124px; min-width: 124px; max-width: 124px; }
-.c-s { left: 488px; width: 80px; min-width: 80px; max-width: 80px; border-right: 2px solid #bbb; }
-thead .c-no, thead .c-name, thead .c-w, thead .c-a, thead .c-s { z-index: 3; white-space: normal; }
+/* 固定列(状態〜参照シート)。left は左の列の幅の合計なので、幅は固定にする */
+.c-st, .c-no, .c-name, .c-w, .c-a, .c-s { position: sticky; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
+.c-st { left: 0; width: 150px; min-width: 150px; max-width: 150px; }
+.c-no { left: 150px; width: 64px; min-width: 64px; max-width: 64px; }
+.c-name { left: 214px; width: 200px; min-width: 200px; max-width: 200px; }
+.c-w { left: 414px; width: 100px; min-width: 100px; max-width: 100px; }
+.c-a { left: 514px; width: 124px; min-width: 124px; max-width: 124px; }
+.c-s { left: 638px; width: 80px; min-width: 80px; max-width: 80px; border-right: 2px solid #bbb; }
+thead .c-st, thead .c-no, thead .c-name, thead .c-w, thead .c-a, thead .c-s { z-index: 3; white-space: normal; }
 .grp, .grp-l { border-left: 2px solid #bbb; }
 td.num { text-align: right; }
 td.txt { text-align: left; }
-td.c-no, td.c-s { text-align: center; }
+td.c-no, td.c-s, td.ctr { text-align: center; }
 tr.new td { background: #ccffff; }
 tr.missing td { background: #d9d9d9; color: #555; }
 td.chg { background: #ffff00 !important; }
