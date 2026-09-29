@@ -160,6 +160,7 @@
       const row = ws.getRow(rn);
       row.getCell(1).value = vr.status;
       row.getCell(1).alignment = { horizontal: 'center' };
+      if (vr.status.startsWith('変更あり')) row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL.changed } };
       row.getCell(2).value = vr.no;
       row.getCell(2).alignment = { horizontal: 'center' };
       row.getCell(3).value = vr.name;
