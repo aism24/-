@@ -2,7 +2,8 @@
 (function (root) {
   'use strict';
 
-  const PROFITS = ['粗利益', '営業利益'];
+  // 利益項目: key = PC側データ(profit/profitRate)の名前、label = 画面・Excelの表示名
+  const PROFITS = [{ key: '粗利益', label: '粗利益' }, { key: '営業利益', label: '営業損益' }];
   const CATS = ['材料費', '工場加工費', '事務図面費', '外注加工費', 'メッキ費', '運送費', '塗装費', '現場費', 'その他', '計'];
 
   // 黄色判定の対象(表示・Excelの列順と同じ)
@@ -11,12 +12,12 @@
     { id: 'amount', label: '契約金額(円)', kind: 'yen', get: r => r.amount },
     { id: 'sheet', label: '参照シート', kind: 'str', get: r => r.sheet },
   ];
-  // 粗利益・営業利益: 額はシートのF列(予算)/L列(実際)、率はG列/M列の値そのまま(PC側で抽出済み)
-  PROFITS.forEach(p => {
-    FIELDS.push({ id: p + ':b', label: p + ' 予算', kind: 'yen', get: r => prof(r, 'profit', p)[0] });
-    FIELDS.push({ id: p + ':br', label: p + ' 予算率', kind: 'rate', get: r => prof(r, 'profitRate', p)[0] });
-    FIELDS.push({ id: p + ':a', label: p + ' 実際', kind: 'yen', get: r => prof(r, 'profit', p)[1] });
-    FIELDS.push({ id: p + ':ar', label: p + ' 実際率', kind: 'rate', get: r => prof(r, 'profitRate', p)[1] });
+  // 粗利益・営業損益: 額はシートのF列(予算)/L列(実際)、率はG列/M列の値そのまま(PC側で抽出済み)
+  PROFITS.forEach(({ key: p, label: l }) => {
+    FIELDS.push({ id: p + ':b', profit: p, label: l + ' 予算', kind: 'yen', get: r => prof(r, 'profit', p)[0] });
+    FIELDS.push({ id: p + ':br', profit: p, label: l + ' 予算率', kind: 'rate', get: r => prof(r, 'profitRate', p)[0] });
+    FIELDS.push({ id: p + ':a', profit: p, label: l + ' 実際', kind: 'yen', get: r => prof(r, 'profit', p)[1] });
+    FIELDS.push({ id: p + ':ar', profit: p, label: l + ' 実際率', kind: 'rate', get: r => prof(r, 'profitRate', p)[1] });
   });
   CATS.forEach(c => {
     FIELDS.push({ id: c + ':b', cat: c, label: c + ' 予算', kind: 'yen', get: r => pair(r, c)[0] });
@@ -94,10 +95,13 @@
       const cells = FIELDS.map(f => {
         const v = f.get(r);
         const cell = { id: f.id, kind: f.kind, v: v, text: fmt(f.kind, v), changed: false, prev: null, over: false };
-        // 予算超過(実際 > 予算)なら、その費目の「実際」「割合」を赤字にする
+        // 赤字: 費目は予算超過(実際 > 予算)で「実際」「割合」、利益は予算未達(実際 < 予算)で「実際」「実際率」
         if (f.cat && !f.id.endsWith(':b')) {
           const p = pair(r, f.cat), b = num(p[0]), a = num(p[1]);
           cell.over = b !== null && a !== null && a > b;
+        } else if (f.profit && (f.id.endsWith(':a') || f.id.endsWith(':ar'))) {
+          const p = prof(r, 'profit', f.profit), b = num(p[0]), a = num(p[1]);
+          cell.over = b !== null && a !== null && a < b;
         }
         if (compare) {
           const pv = f.get(base);
@@ -156,6 +160,7 @@
       const rn = idx + 2;
       const row = ws.getRow(rn);
       row.getCell(1).value = vr.no;
+      row.getCell(1).alignment = { horizontal: 'center' };
       row.getCell(2).value = vr.name;
       vr.cells.forEach((c, i) => {
         const cell = row.getCell(i + 3);
@@ -175,6 +180,7 @@
         } else {
           cell.value = c.v === undefined ? null : c.v;
         }
+        if (c.id === 'sheet') cell.alignment = { horizontal: 'center' };
         if (c.over) cell.font = { color: { argb: OVER_FONT } };
         if (c.changed) {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL.changed } };
