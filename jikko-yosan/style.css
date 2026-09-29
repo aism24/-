@@ -19,10 +19,14 @@ table { border-collapse: separate; border-spacing: 0; white-space: nowrap; }
 th, td { border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; padding: 3px 6px; background: #fff; }
 thead th { position: sticky; top: 0; z-index: 2; background: #eef1f5; font-weight: 600; text-align: center; }
 thead tr:nth-child(2) th { top: 23px; }
-.c-no, .c-name { position: sticky; z-index: 1; }
-.c-no { left: 0; min-width: 64px; }
-.c-name { left: 64px; min-width: 180px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; border-right: 2px solid #bbb; }
-thead .c-no, thead .c-name { z-index: 3; }
+/* 固定列(工事No〜参照シート)。left は左の列の幅の合計なので、幅は固定にする */
+.c-no, .c-name, .c-w, .c-a, .c-s { position: sticky; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
+.c-no { left: 0; width: 64px; min-width: 64px; max-width: 64px; }
+.c-name { left: 64px; width: 200px; min-width: 200px; max-width: 200px; }
+.c-w { left: 264px; width: 100px; min-width: 100px; max-width: 100px; }
+.c-a { left: 364px; width: 124px; min-width: 124px; max-width: 124px; }
+.c-s { left: 488px; width: 80px; min-width: 80px; max-width: 80px; border-right: 2px solid #bbb; }
+thead .c-no, thead .c-name, thead .c-w, thead .c-a, thead .c-s { z-index: 3; white-space: normal; }
 .grp, .grp-l { border-left: 2px solid #bbb; }
 td.num { text-align: right; }
 td.txt { text-align: left; }
