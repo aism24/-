@@ -24,7 +24,8 @@
  *   - 3行目から: A 工事No | B 工事名 | C 完了 | D 年度。A・B列には書き込まない。
  *   - doGet のたびにシートから読む(キャッシュしない)。シートを直接編集した分もすぐ画面に出る。
  *   - 画面の「更新を保存」で POST {action:'settings', changes:[{no, done?, year?}]}(秘密キー不要。誰でも編集可)。
- *     行は工事Noで探し、変更のあったセルだけ書く(完了='完了' / 未完=空欄、年度='R8' / 未設定=空欄)。
+ *     行は工事Noで探し、送られてきた項目(画面で変更したセル)だけ書く(完了='完了' / 未完=空欄、年度='R8' / 未設定=空欄)。
+ *     シートは1回だけ読み、書き込みは1行につき1回。応答の rows は書き込んだ後の値(読み直さない)。
  *     同じ工事Noの行が複数あれば上の行に書き、応答の dup で知らせる。最後に保存した内容が正。
  *
  * ■ 工事単価シートへの反映(受信のたびに実行)
@@ -101,14 +102,10 @@ function doPost(e) {
 
 /* ===================== 保存データの更新(純粋関数。Nodeでテストする) ===================== */
 
-// data.json の中身から1工事ずつの配列を取り出す(配列 / {rows:[…]} / {key:行} のどれでも受ける)
+// data.json の中身から1工事ずつの配列を取り出す({rows:[…]}。配列そのものも受ける)
 function normalizeRows(data) {
   if (!data) return [];
-  const list = Array.isArray(data) ? data
-    : Array.isArray(data.rows) ? data.rows
-    : Array.isArray(data.items) ? data.items
-    : Array.isArray(data.data) ? data.data
-    : Object.keys(data).map(function (k) { return data[k]; });
+  const list = Array.isArray(data) ? data : Array.isArray(data.rows) ? data.rows : [];
   return list.filter(function (r) { return r && typeof r === 'object' && r.key; });
 }
 
@@ -215,21 +212,43 @@ function infoSheet_() {
 
 // [[工事No, 完了, 年度], …](値はシートのまま。表記の揃えは画面側 logic.js で行う)
 function readInfoSettings_() {
-  const sh = infoSheet_();
+  return infoRows_(readInfoValues_(infoSheet_()));
+}
+
+// 「情報」シートの A〜D列(INFO_FIRST_ROW行目から)
+function readInfoValues_(sh) {
   const last = sh.getLastRow();
-  if (last < INFO_FIRST_ROW) return [];
-  return sh.getRange(INFO_FIRST_ROW, 1, last - INFO_FIRST_ROW + 1, 4).getValues()
-    .filter(function (v) { return String(v[0]).trim(); })
+  return last < INFO_FIRST_ROW ? [] : sh.getRange(INFO_FIRST_ROW, 1, last - INFO_FIRST_ROW + 1, 4).getValues();
+}
+
+// A〜D列の値 → [[工事No, 完了, 年度], …](A列が空の行は除く)
+function infoRows_(values) {
+  return values.filter(function (v) { return String(v[0]).trim(); })
     .map(function (v) { return [String(v[0]).trim(), v[2], v[3]]; });
+}
+
+// 書き込み内容を行ごとにまとめる → [{row, col, values:[[…]]}](完了・年度の両方なら C:D を1回で書く)
+function groupInfoWrites(writes) {
+  const byRow = {};
+  writes.forEach(function (w) { (byRow[w.row] = byRow[w.row] || {})[w.col] = w.value; });
+  return Object.keys(byRow).map(function (row) {
+    const c = byRow[row];
+    if (3 in c && 4 in c) return { row: Number(row), col: 3, values: [[c[3], c[4]]] };
+    const col = 3 in c ? 3 : 4;
+    return { row: Number(row), col: col, values: [[c[col]]] };
+  });
 }
 
 function saveInfoSettings_(changes) {
   const sh = infoSheet_();
-  const last = sh.getLastRow();
-  const colA = last >= INFO_FIRST_ROW ? sh.getRange(INFO_FIRST_ROW, 1, last - INFO_FIRST_ROW + 1, 1).getValues().map(function (v) { return v[0]; }) : [];
-  const plan = computeInfoWrites(colA, changes);
-  plan.writes.forEach(function (w) { sh.getRange(w.row, w.col).setValue(w.value); });
-  return { updated: plan.updated, notFound: plan.notFound, dup: plan.dup, rows: readInfoSettings_() };
+  const values = readInfoValues_(sh);
+  const plan = computeInfoWrites(values.map(function (v) { return v[0]; }), changes);
+  groupInfoWrites(plan.writes).forEach(function (g) {
+    sh.getRange(g.row, g.col, 1, g.values[0].length).setValues(g.values);
+  });
+  // 応答用: 読み直さず、読んだ値に書き込み分を反映する
+  plan.writes.forEach(function (w) { values[w.row - INFO_FIRST_ROW][w.col - 1] = w.value; });
+  return { updated: plan.updated, notFound: plan.notFound, dup: plan.dup, rows: infoRows_(values) };
 }
 
 function numOrNull_(v) {
