@@ -16,13 +16,15 @@ header { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; pad
 .home { display: flex; justify-content: center; gap: 32px; flex-wrap: wrap; padding: 64px 16px; }
 .home-btn { min-width: 280px; padding: 28px 24px; font-size: 22px; font-weight: 700; border-radius: 10px; }
 /* 抽出画面の絞り込み */
-.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 16px 0; }
+/* 1行: 絞り込みボタンを中央、凡例を右端(狭い画面では折り返す) */
+.filter-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 8px 16px 6px; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
+@media (max-width: 1100px) { .filter-row { grid-template-columns: 1fr; } .filter-row > div:first-child { display: none; } .filter-row .legend { justify-content: center; } }
 .filters .sep { margin: 0 4px 0 12px; font-weight: 600; }
 .chip { background: #fff; color: #333; border-color: #999; padding: 5px 14px; }
 .chip:hover:not(:disabled) { background: #eef1f5; }
 .chip.on { background: #1a73e8; border-color: #1a73e8; color: #fff; }
 .chip.on:hover:not(:disabled) { background: #1765cc; }
-.note { padding: 8px 16px 6px; color: var(--meta-text); }
 .brand { display: flex; align-items: center; justify-content: center; gap: 10px 12px; flex-wrap: wrap; }
 .logo { height: 52px; width: auto; }
 .logo-mark { fill: #e74155; }
@@ -36,13 +38,10 @@ h1 { font-size: 27px; margin: 0; font-weight: 600; }
 button { font: inherit; padding: 6px 14px; border: 1px solid #1e8e3e; background: #1e8e3e; color: #fff; border-radius: 4px; cursor: pointer; }
 button:hover:not(:disabled) { background: #188038; }
 button:disabled { opacity: .5; cursor: default; }
-.legend { padding: 6px 16px; display: flex; flex-wrap: wrap; gap: 8px; }
+.legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .lg { padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px; font-size: 12px; }
 .lg.chg { background: #ffff00; }
 .lg.new { background: #ccffff; }
-.lg.missing { background: #d9d9d9; }
-.lg.over { color: #e00000; font-weight: 600; background: #fff; }
-.lg.zero { color: #e00000; font-weight: 600; animation: zero-blink 1.2s ease-in-out infinite alternate; }
 main { padding: 0 16px 16px; }
 /* 読み込み中のポップアップ。バーは transform で動かす(描画が軽く、止まって見えたら固まっている目安) */
 .overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .3); }
@@ -98,6 +97,9 @@ td.over .prev { font-weight: normal; }
 .prev { font-size: 10px; color: #7a5a00; }
 td.st { font-weight: 600; }
 /* 完了設定｜年度設定 */
+/* 表を画面の中央に置く */
+#scr-settings main { padding-top: 12px; }
+#scr-settings .table-wrap { width: fit-content; max-width: 100%; margin: 0 auto; }
 table.set td { cursor: default; }
 table.set th, table.set td { padding: 4px 8px; }
 table.set td.ctr { text-align: center; }
@@ -106,8 +108,18 @@ table.set tr.unlisted td { color: #888; }
 .seg button { background: #fff; color: #333; border-color: #999; border-radius: 0; padding: 3px 12px; }
 .seg button:first-child { border-radius: 4px 0 0 4px; }
 .seg button:last-child { border-radius: 0 4px 4px 0; margin-left: -1px; }
-.seg button.on { background: #1a73e8; border-color: #1a73e8; color: #fff; position: relative; }
+/* 完了=紫、未完=薄いオレンジ */
+.seg button.on { position: relative; }
+.seg button.on[data-done="1"] { background: #7b3fa0; border-color: #7b3fa0; color: #fff; }
+.seg button.on[data-done="0"] { background: #ffd8a8; border-color: #f0a050; color: #5a3000; }
 .seg button:hover:not(:disabled):not(.on) { background: #eef1f5; }
-table.set select { font: inherit; padding: 3px 6px; min-width: 88px; }
-table.set td.edited { background: #fff4d6; }
+table.set select { font: inherit; padding: 3px 6px; min-width: 88px; text-align: center; text-align-last: center; background: #fff; }
+/* 年度ごとの色(R番号の4色周期。未設定は白のまま) */
+table.set select.y0 { background: #d6e9ff; }
+table.set select.y1 { background: #d8f3dc; }
+table.set select.y2 { background: #ffd9e6; }
+table.set select.y3 { background: #d4f1f1; }
+table.set select option { background: #fff; }
+/* 変更したが未保存のセル(未完の薄いオレンジと区別するため赤枠) */
+table.set td.edited { box-shadow: inset 0 0 0 3px #d93025; }
 .unlisted-note { font-size: 12px; color: #a00; }

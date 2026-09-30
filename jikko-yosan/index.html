@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>実行予算まとめ</title>
 <!-- ?v= は .js/.css を変更するたびに更新する(ブラウザ・CDNのキャッシュ対策) -->
-<link rel="stylesheet" href="style.css?v=20260930a">
+<link rel="stylesheet" href="style.css?v=20260930b">
 </head>
 <body>
 <header>
@@ -34,20 +34,20 @@
 
 <!-- 実行予算抽出 -->
 <section id="scr-extract" hidden>
-  <div class="filters" id="filters"></div>
-  <div class="legend">
-    <span class="lg chg">変更あり(前回値を表示)</span>
-    <span class="lg new">新規の工事</span>
-    <span class="lg missing">元ファイルなし</span>
-    <span class="lg over">赤字: 費目は予算超過 / 利益は予算未達</span>
-    <span class="lg zero">未完成(0): 黄色点滅・赤字</span>
+  <!-- 1行: [空き] [絞り込みボタン](中央) [凡例](右端) -->
+  <div class="filter-row">
+    <div></div>
+    <div class="filters" id="filters"></div>
+    <div class="legend">
+      <span class="lg chg">変更あり(前回値を表示)</span>
+      <span class="lg new">新規の工事</span>
+    </div>
   </div>
   <main><div class="table-wrap"><table id="tbl"></table></div></main>
 </section>
 
 <!-- 完了設定｜年度設定 -->
 <section id="scr-settings" hidden>
-  <div class="note">完了・年度は、スプレッドシート「実行予算」の「情報」シートに保存されます。</div>
   <main><div class="table-wrap"><table id="tbl-set" class="set"></table></div></main>
 </section>
 <!-- 読み込み中のポップアップ(最初から表示し、読み込みが終わったら app.js で消す)。バーが動いていればフリーズしていない -->
@@ -58,7 +58,7 @@
   </div>
 </div>
 <!-- ExcelJS(約950KB)はダウンロードボタンを押したときに、demo.js は ?demo=1 のときだけ読み込む(app.js) -->
-<script src="logic.js?v=20260930a"></script>
-<script src="app.js?v=20260930a"></script>
+<script src="logic.js?v=20260930b"></script>
+<script src="app.js?v=20260930b"></script>
 </body>
 </html>
