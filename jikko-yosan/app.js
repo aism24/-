@@ -40,7 +40,7 @@ function showMsg(text, ok) {
 async function load() {
   let settingRows;
   if (DEMO) {
-    await loadScript('demo.js?v=20260930b');
+    await loadScript('demo.js?v=20260930c');
     payload = window.JY_DEMO;
     settingRows = window.JY_DEMO_SETTINGS;
   } else {
@@ -239,7 +239,7 @@ function renderSettings() {
 }
 
 // 変更を記録(元の値に戻したら変更なし)
-// 年度リストの色(R8=青・R9=緑・R10=ピンク・R7=水色…の4色周期。未設定は色なし)
+// 年度リストの色(R8=青・R9=緑・R10=ピンク・R7=黄…の4色周期。未設定は色なし)
 function yearCls(y) {
   const m = /^R(\d+)$/.exec(y || '');
   return m ? ' class="y' + (Number(m[1]) % 4) + '"' : '';
