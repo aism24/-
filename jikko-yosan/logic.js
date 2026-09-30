@@ -380,30 +380,65 @@
     const sum = cats => cats.reduce((acc, c) => v[c + ':a'] === null || v[c + ':a'] === undefined ? acc : (acc || 0) + v[c + ':a'], null);
     return [v.amount, sum(PURCHASE), sum(LABOR), v['粗利益:a'], v['営業利益:a']];
   }
+  //   見出し2行(1行目 項目名・2行目 金額/対売比率)。対売比率 = 金額 ÷ 売上(売上0なら空欄)。項目ごとに列の背景色を付ける
+  const TRIAL_GROUPS = [
+    { label: '仕入', fill: 'FFFFCCFF' },
+    { label: '労務費等', fill: 'FFA6D8FF' },
+    { label: '粗利', fill: 'FF8EE39E' },
+    { label: '営業損益', fill: 'FFFFFFCC' },
+  ];
   function addTrialSheet(wb, rows, filter) {
-    const ws = wb.addWorksheet(sheetTitle('試算', filter), { views: [{ state: 'frozen', ySplit: 1 }] });
-    ws.addRow(['工事No', '工事名', '売上', '仕入', '労務費等', '粗利', '営業損益']);
-    ws.getRow(1).font = { bold: true };
-    ws.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
-    [9, 26, 15, 15, 15, 15, 15].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
-    const FMT = '#,##0;[Red]-#,##0';
+    const ws = wb.addWorksheet(sheetTitle('試算', filter), { views: [{ state: 'frozen', ySplit: 2 }] });
+    const YEN = '#,##0;[Red]-#,##0', PCT = '0.0%;[Red]-0.0%';
+    const NCOL = 3 + TRIAL_GROUPS.length * 2;
+    const fillOf = col => col < 4 ? null : TRIAL_GROUPS[Math.floor((col - 4) / 2)].fill;
+    const h1 = ['工事No', '工事名', '売上'], h2 = ['', '', '金額'];
+    TRIAL_GROUPS.forEach(g => { h1.push(g.label, ''); h2.push('金額', '対売比率'); });
+    ws.addRow(h1); ws.addRow(h2);
+    ws.mergeCells('A1:A2'); ws.mergeCells('B1:B2');
+    TRIAL_GROUPS.forEach((g, i) => ws.mergeCells(1, 4 + i * 2, 1, 5 + i * 2));
+    [1, 2].forEach(r => {
+      ws.getRow(r).font = { bold: true };
+      ws.getRow(r).alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+    [9, 26, 15].concat(TRIAL_GROUPS.map(() => [15, 10]).flat()).forEach((w, i) => { ws.getColumn(i + 1).width = w; });
     const sums = [0, 0, 0, 0, 0];
-    rows.forEach(vr => {
+    rows.forEach((vr, idx) => {
+      const rn = idx + 3;
       const vals = trialValues(vr);
-      const row = ws.addRow([vr.no, vr.name].concat(vals));
+      const row = ws.getRow(rn);
+      row.getCell(1).value = vr.no;
       row.getCell(1).alignment = { horizontal: 'center' };
-      vals.forEach((n, i) => { row.getCell(i + 3).numFmt = FMT; if (n !== null) sums[i] += n; });
+      row.getCell(2).value = vr.name;
+      row.getCell(3).value = vals[0];
+      row.getCell(3).numFmt = YEN;
+      if (vals[0] !== null) sums[0] += vals[0];
+      vals.slice(1).forEach((n, i) => {
+        const col = 4 + i * 2, amt = row.getCell(col), pct = row.getCell(col + 1);
+        amt.value = n; amt.numFmt = YEN;
+        const sales = vals[0];
+        pct.value = { formula: 'IF(C' + rn + '=0,"",' + colName(col) + rn + '/C' + rn + ')', result: sales && n !== null ? n / sales : '' };
+        pct.numFmt = PCT;
+        if (n !== null) sums[i + 1] += n;
+      });
     });
-    const last = rows.length + 1;
-    const tot = ws.addRow(['合計（' + rows.length + '件）', '']);
+    const tr = rows.length + 3, last = rows.length + 2;
+    const tot = ws.getRow(tr);
+    tot.getCell(1).value = '合計（' + rows.length + '件）';
+    ws.mergeCells(tr, 1, tr, 2);
     tot.font = { bold: true };
-    tot.getCell(1).alignment = { horizontal: 'center' };
     sums.forEach((n, i) => {
-      const col = colName(i + 3), cell = tot.getCell(i + 3);
-      cell.value = rows.length ? { formula: 'SUM(' + col + '2:' + col + last + ')', result: n } : 0;
-      cell.numFmt = FMT;
+      const col = i === 0 ? 3 : 2 + i * 2, cell = tot.getCell(col);
+      cell.value = rows.length ? { formula: 'SUM(' + colName(col) + '3:' + colName(col) + last + ')', result: n } : 0;
+      cell.numFmt = YEN;
     });
-    for (let col = 1; col <= 7; col++) tot.getCell(col).border = { top: { style: 'double' } };
+    for (let r = 1; r <= tr; r++) {
+      for (let col = 1; col <= NCOL; col++) {
+        const cell = ws.getRow(r).getCell(col), f = fillOf(col);
+        if (f) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: f } };
+        if (r === tr) cell.border = { top: { style: 'double' } };
+      }
+    }
   }
 
   // 状態欄の「未完成」は赤字(リッチテキスト)
