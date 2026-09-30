@@ -41,6 +41,13 @@
     if (!bd) return null;
     return LABOR_PARTS.reduce((acc, k) => acc + (num(Array.isArray(bd[k]) ? bd[k][1] : null) || 0), 0);
   }
+  // 赤字: 費目は予算超過(実際 > 予算)で「実際」「割合」、利益は予算未達(実際 < 予算)で「実際」
+  function isOver(f, b, a) {
+    if (b === null || a === null) return false;
+    if (f.cat) return !f.id.endsWith(':b') && a > b;
+    if (f.profit) return f.id.endsWith(':a') && a < b;
+    return false;
+  }
   function num(v) { return v === null || v === undefined || v === '' || !isFinite(Number(v)) ? null : Number(v); }
   function ratio(p) {
     const b = num(p[0]), a = num(p[1]);
@@ -149,13 +156,9 @@
       const cells = FIELDS.map(f => {
         const v = f.get(r);
         const cell = { id: f.id, kind: f.kind, v: v, text: fmt(f.kind, v), changed: false, prev: null, over: false };
-        // 赤字: 費目は予算超過(実際 > 予算)で「実際」「割合」、利益は予算未達(実際 < 予算)で「実際」
-        if (f.cat && !f.id.endsWith(':b')) {
-          const p = pair(r, f.cat), b = num(p[0]), a = num(p[1]);
-          cell.over = b !== null && a !== null && a > b;
-        } else if (f.profit && f.id.endsWith(':a')) {
-          const p = prof(r, f.profit), b = num(p[0]), a = num(p[1]);
-          cell.over = b !== null && a !== null && a < b;
+        if (f.cat || f.profit) {
+          const p = f.cat ? pair(r, f.cat) : prof(r, f.profit);
+          cell.over = isOver(f, num(p[0]), num(p[1]));
         }
         // 未完成: 契約総重量・契約金額が0(空欄も)。元ファイルなし・読み取りエラーは対象外
         if ((f.id === 'weight' || f.id === 'amount') && !r.missing && r.status !== 'error' && !num(v)) cell.zero = true;
@@ -237,10 +240,8 @@
       if (f.kind === 'pct') v = ratio([byId[f.cat + ':b'], byId[f.cat + ':a']]);
       else if (f.kind === 'str' || f.kind === 'date') v = null;
       const cell = { id: f.id, kind: f.kind, v: v, text: fmt(f.kind, v), over: false };
-      const b = f.cat ? byId[f.cat + ':b'] : f.profit ? byId[f.profit + ':b'] : null;
-      const a = f.cat ? byId[f.cat + ':a'] : f.profit ? byId[f.profit + ':a'] : null;
-      if (f.cat && !f.id.endsWith(':b')) cell.over = b !== null && a !== null && a > b;
-      else if (f.profit && f.id.endsWith(':a')) cell.over = b !== null && a !== null && a < b;
+      const g = f.cat || f.profit;
+      if (g) cell.over = isOver(f, byId[g + ':b'], byId[g + ':a']);
       return cell;
     });
     return { count: rows.length, cells: cells };

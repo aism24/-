@@ -44,7 +44,6 @@ async function load() {
     payload = window.JY_DEMO;
     settingRows = window.JY_DEMO_SETTINGS;
   } else {
-    if (!GAS_API_URL) throw new Error('GAS_API_URLが未設定です(app.js)。動作確認は URL の末尾に ?demo=1 を付けてください');
     const res = await fetch(GAS_API_URL + '?t=' + Date.now());
     const body = await res.json();
     if (body.status !== 'success') throw new Error(body.message || 'エラー');
@@ -119,7 +118,7 @@ function cellHtml(c, tag) {
   if (c.changed) cls.push('chg');
   if (c.zero) cls.push('zero');
   if (c.over) cls.push('over');
-  return '<' + tag + ' class="' + cls.join(' ') + '"' + (c.changed ? ' title="前回：' + esc(c.prev) + '"' : '') + '>' + esc(c.text) +
+  return '<' + tag + ' class="' + cls.join(' ') + '">' + esc(c.text) +
     (c.changed ? '<div class="prev">前回：' + esc(c.prev) + '</div>' : '') + '</' + tag + '>';
 }
 
@@ -212,9 +211,11 @@ function current(r) {
   return { done: 'done' in e ? e.done : r.done, year: 'year' in e ? e.year : r.year };
 }
 
+let setList = []; // 設定画面の行(renderSettings で作り、setEdit で使い回す)
+
 function renderSettings() {
   setMeta();
-  const list = JY.settingRows(view ? view.rows : []);
+  const list = setList = JY.settingRows(view ? view.rows : []);
   const opts = JY.yearOptions(settings);
   let h = '<thead><tr><th>工事No</th><th>工事名</th><th>完了</th><th>年度</th><th>契約重量(t)</th><th>契約金額(円)</th>' +
     '<th>粗利益(実際)</th><th>営業損益(実際)</th></tr></thead><tbody>';
@@ -238,15 +239,15 @@ function renderSettings() {
   document.getElementById('btn-save').hidden = !isDirty();
 }
 
-// 変更を記録(元の値に戻したら変更なし)
 // 年度リストの色(R8=青・R9=緑・R10=ピンク・R7=黄…の4色周期。未設定は色なし)
 function yearCls(y) {
   const m = /^R(\d+)$/.exec(y || '');
   return m ? ' class="y' + (Number(m[1]) % 4) + '"' : '';
 }
 
+// 変更を記録(元の値に戻したら変更なし)
 function setEdit(no, field, value) {
-  const r = JY.settingRows(view.rows).find(x => x.no === no);
+  const r = setList.find(x => x.no === no);
   if (!r) return;
   const e = edits[no] || {};
   if (r[field] === value) delete e[field]; else e[field] = value;
