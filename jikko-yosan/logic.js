@@ -12,7 +12,7 @@
     { id: 'amount', label: '契約金額(円)', kind: 'yen', get: r => r.amount },
     { id: 'sheet', label: '参照シート', kind: 'str', get: r => r.sheet },
   ];
-  // 粗利益・営業損益: 額はシートのF列(予算)/L列(実際)。割合は出さない
+  // 粗利益・営業損益: PC側の正しい計算(profitCalc。労務の仕訳から計算)。無い古いデータはシートの値(profit)。割合は出さない
   PROFITS.forEach(({ key: p, label: l }) => {
     FIELDS.push({ id: p + ':b', profit: p, label: l + ' 予算', kind: 'yen', get: r => prof(r, p)[0] });
     FIELDS.push({ id: p + ':a', profit: p, label: l + ' 実際', kind: 'yen', get: r => prof(r, p)[1] });
@@ -30,8 +30,16 @@
     return Array.isArray(p) ? p : [null, null];
   }
   function prof(r, p) {
-    const v = r && r.profit && r.profit[p];
+    const src = r && (r.profitCalc || r.profit);
+    const v = src && src[p];
     return Array.isArray(v) ? v : [null, null];
+  }
+  // 労務(実際) = 工場労務費 + 事務図面労務費 + 現場労務費(PC側の仕訳 breakdown)。無い古いデータは null
+  const LABOR_PARTS = ['工場労務費', '事務図面労務費', '現場労務費'];
+  function labor(r) {
+    const bd = r && r.breakdown;
+    if (!bd) return null;
+    return LABOR_PARTS.reduce((acc, k) => acc + (num(Array.isArray(bd[k]) ? bd[k][1] : null) || 0), 0);
   }
   function num(v) { return v === null || v === undefined || v === '' || !isFinite(Number(v)) ? null : Number(v); }
   function ratio(p) {
@@ -174,12 +182,15 @@
       if (incomplete) tags.push('未完成');
       if (r.locked && !r.missing) tags.push('編集中');
       if (noCount[String(no).trim()] > 1) tags.push('同じ工事Noあり');
+      const laborWarn = (r.laborCheck || []).filter(c => c && c.level === 'warn').map(c => c.msg);
+      if (laborWarn.length && !r.missing) tags.push('式の確認');
       if (tags.length) status += '（' + tags.join('・') + '）';
       const st = settings[String(no).trim()] || { done: false, year: '' };
       return {
         key: key, no: no, name: r.name || r.c2 || key,
         rowClass: r.missing ? 'missing' : isNew ? 'new' : '',
-        status: status, warn: r.warn || '', changed: changed, cells: cells,
+        status: status, warn: [r.warn].concat(laborWarn).filter((m, i, a) => m && a.indexOf(m) === i).join('\n'),
+        changed: changed, cells: cells, labor: labor(r),
         incomplete: incomplete, unlisted: r.matchedBy === '一覧に未登録',
         done: st.done, year: st.year, saved: r.saved || '',
       };
@@ -370,14 +381,19 @@
   }
 
   // 「試算」シート: 工事ごとに 売上・仕入・労務費等・粗利・営業損益(すべて実際)、一番下に合計
-  //   売上=契約金額 / 労務費等=工場加工費+事務図面費 / 仕入=その他の費目(材料費・外注加工費・メッキ費・運送費・塗装費・現場費・その他)
-  //   粗利・営業損益は表の「粗利益」「営業損益」の実際をそのまま使う
+  //   売上=契約金額 / 労務費等=労務(工場労務費+事務図面労務費+現場労務費) / 仕入=計−労務費等
+  //   粗利・営業損益は表の「粗利益」「営業損益」の実際(profitCalc = 売上−仕入 / 粗利−労務費等)
+  //   労務の仕訳(breakdown)が無い古いデータは従来の分け方: 労務費等=工場加工費+事務図面費 / 仕入=その他の費目
   const LABOR = ['工場加工費', '事務図面費'];
   const PURCHASE = CATS.filter(c => c !== '計' && LABOR.indexOf(c) < 0);
   function trialValues(vr) {
     const v = {};
     vr.cells.forEach(c => { v[c.id] = num(c.v); });
     const sum = cats => cats.reduce((acc, c) => v[c + ':a'] === null || v[c + ':a'] === undefined ? acc : (acc || 0) + v[c + ':a'], null);
+    if (vr.labor !== null && vr.labor !== undefined) {
+      const total = v['計:a'];
+      return [v.amount, total === null || total === undefined ? null : total - vr.labor, vr.labor, v['粗利益:a'], v['営業利益:a']];
+    }
     return [v.amount, sum(PURCHASE), sum(LABOR), v['粗利益:a'], v['営業利益:a']];
   }
   //   見出し2行(1行目 項目名・2行目 金額/対売比率)。対売比率 = 金額 ÷ 売上(売上0なら空欄)。項目ごとに列の背景色を付ける
