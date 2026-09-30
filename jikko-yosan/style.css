@@ -1,7 +1,7 @@
 * { box-sizing: border-box; }
-:root { --page-bg: #f5f6f8; --header-bg: #fff; --header-text: #222; --meta-text: #555; --logo-text: #000; }
+:root { --page-bg: #2b2c2f; --header-bg: #fff; --header-text: #222; --meta-text: #555; --logo-text: #000; }
 @media (prefers-color-scheme: dark) {
-  :root { --page-bg: #1b1d21; --header-bg: #26292e; --header-text: #f2f2f2; --meta-text: #c4c7cc; --logo-text: #fff; }
+  :root { --page-bg: #2b2c2f; --header-bg: #26292e; --header-text: #f2f2f2; --meta-text: #c4c7cc; --logo-text: #fff; }
 }
 body { margin: 0; font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif; font-size: 13px; color: #222; background: var(--page-bg); }
 header { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding: 8px 16px; background: var(--header-bg); color: var(--header-text); border-bottom: 1px solid #ddd; }
@@ -20,7 +20,7 @@ header { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; pad
 .filter-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 8px 16px 6px; }
 .filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
 @media (max-width: 1100px) { .filter-row { grid-template-columns: 1fr; } .filter-row > div:first-child { display: none; } .filter-row .legend { justify-content: center; } }
-.filters .sep { margin: 0 4px 0 12px; font-weight: 600; }
+.filters .sep { margin: 0 4px 0 12px; font-weight: 600; color: #f2f2f2; }
 .chip { background: #fff; color: #333; border-color: #999; padding: 5px 14px; }
 .chip:hover:not(:disabled) { background: #eef1f5; }
 .chip.on { background: #1a73e8; border-color: #1a73e8; color: #fff; }
@@ -52,7 +52,12 @@ main { padding: 0 16px 16px; }
 @keyframes bar-move { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 .msg { padding: 10px; background: #fdecea; color: #a00; border: 1px solid #f5c2c0; border-radius: 4px; margin: 8px 16px 0; }
 .msg.ok { background: #e6f4ea; color: #137333; border-color: #b7dfc3; }
-.table-wrap { overflow: auto; max-height: calc(100vh - 150px); background: #fff; border: 1px solid #ccc; }
+.table-wrap { overflow: auto; max-height: 100%; background: #fff; border: 1px solid #ccc; }
+/* 画面の高さに収める: ヘッダー・絞り込み行は動かさず、表の枠の中だけスクロール(見出し行は枠の上に固定) */
+body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+#scr-extract, #scr-settings { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#scr-extract main, #scr-settings main { flex: 1 1 auto; min-height: 0; }
+#scr-home { flex: 1 1 auto; overflow: auto; align-items: flex-start; align-content: flex-start; }
 /* スクロールバーを太く(Edge/Chrome)。横バーの太さ = height */
 .table-wrap::-webkit-scrollbar { height: 24px; width: 14px; }
 .table-wrap::-webkit-scrollbar-track { background: #eef1f5; }
@@ -69,7 +74,7 @@ thead tr.total th.over { color: #e00000; }
 /* 固定列(状態〜参照シート)。left は左の列の幅の合計なので、幅は固定にする */
 #tbl .c-st, #tbl .c-y, #tbl .c-d, #tbl .c-no, #tbl .c-name, #tbl .c-w, #tbl .c-a, #tbl .c-s { position: sticky; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
 .c-st { left: 0; width: 104px; min-width: 104px; max-width: 104px; }
-td.c-st { font-size: 12px; line-height: 1.25; } /* 「（未完成・編集中）」は app.js で2行目に回す */
+td.c-st { font-size: 12px; line-height: 1.25; white-space: normal; } /* 「（未完成・編集中）」は app.js で2行目に回す */
 .st .inc { color: #e00000; }
 .c-y { left: 104px; width: 56px; min-width: 56px; max-width: 56px; }
 .c-d { left: 160px; width: 48px; min-width: 48px; max-width: 48px; }
@@ -80,6 +85,8 @@ td.c-st { font-size: 12px; line-height: 1.25; } /* 「（未完成・編集中�
 .c-s { left: 696px; width: 80px; min-width: 80px; max-width: 80px; border-right: 2px solid #bbb; }
 #tbl thead .c-st, #tbl thead .c-y, #tbl thead .c-d, #tbl thead .c-no, #tbl thead .c-name, #tbl thead .c-w, #tbl thead .c-a, #tbl thead .c-s { z-index: 3; white-space: normal; }
 .grp, .grp-l { border-left: 2px solid #bbb; }
+/* 工事の行: 高さは従来(約25px)の1.5倍を下限にし、状態が2行以上なら内容に合わせる。文字は縦方向の中央 */
+#tbl tbody td { height: 38px; vertical-align: middle; }
 td.num { text-align: right; }
 td.txt { text-align: left; }
 td.c-st, td.c-y, td.c-d, td.c-no, td.c-s, td.ctr, th.c-st { text-align: center; }
