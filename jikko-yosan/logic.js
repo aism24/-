@@ -72,16 +72,65 @@
     return NF0.format(Math.round(n));
   }
 
+  /* ===================== 完了・年度 ===================== */
+
+  const UNSET = '未設定';
+
+  // 年度の表記を「R8」に揃える(r8・R８・令和8・令和８年度 など)。読めない値はそのまま
+  function normYear(v) {
+    const s = String(v === null || v === undefined ? '' : v).trim()
+      .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+    if (!s) return '';
+    const m = s.match(/^(?:[rR]|令和)\s*(\d{1,3})\s*(?:年度?)?$/);
+    return m ? 'R' + Number(m[1]) : s;
+  }
+  function normDone(v) { return v === true || String(v === null || v === undefined ? '' : v).trim() === '完了'; }
+
+  // 会社の年度: 11/21始まり・11/20決算。決算の年で呼ぶ(2025/11/21〜2026/11/20 = R8)
+  function fiscalYearOf(t) {
+    const d = jst(t);
+    const y = d.getUTCFullYear(), m = d.getUTCMonth() + 1, day = d.getUTCDate();
+    return 'R' + ((m > 11 || (m === 11 && day >= 21) ? y + 1 : y) - 2018);
+  }
+  function yearNum(y) { const m = /^R(\d+)$/.exec(y); return m ? Number(m[1]) : Infinity; }
+  function sortYears(list) { return list.slice().sort((a, b) => yearNum(a) - yearNum(b) || a.localeCompare(b, 'ja')); }
+
+  // GASの settings.rows([[工事No, 完了, 年度], …])→ { 工事No: {done, year} }。同じ工事Noは上の行
+  function buildSettings(list) {
+    const map = {};
+    (Array.isArray(list) ? list : []).forEach(v => {
+      const no = String(v && v[0] || '').trim();
+      if (no && !map[no]) map[no] = { done: normDone(v[1]), year: normYear(v[2]) };
+    });
+    return map;
+  }
+
+  // 設定画面の年度の選択肢: シートにある年度 + 今年度 + 来年度(未設定は画面側で最後に付ける)
+  function yearOptions(settings, now) {
+    const set = {};
+    Object.keys(settings || {}).forEach(no => { if (settings[no].year) set[settings[no].year] = true; });
+    const cur = fiscalYearOf(now === undefined ? Date.now() : now);
+    set[cur] = true;
+    set['R' + (yearNum(cur) + 1)] = true;
+    return sortYears(Object.keys(set));
+  }
+
   function cmpNo(a, b) {
     return String(a || '').localeCompare(String(b || ''), 'ja', { numeric: true });
   }
 
-  // GASの {baseline, today} から画面・Excel用の行を作る
-  function buildView(payload) {
+  // GASの {baseline, today} と完了・年度の設定から画面・Excel用の行を作る
+  function buildView(payload, settings) {
     const today = payload && payload.today;
     const baseline = payload && payload.baseline;
     if (!today || !today.rows) return { rows: [], todayAt: null, baselineAt: null };
     const baseRows = baseline && baseline.rows ? baseline.rows : null;
+    settings = settings || {};
+    const noCount = {};
+    Object.keys(today.rows).forEach(key => {
+      const no = String(today.rows[key].no || today.rows[key].fileNo || '').trim();
+      if (no) noCount[no] = (noCount[no] || 0) + 1;
+    });
 
     const rows = Object.keys(today.rows).map(key => {
       const r = today.rows[key];
@@ -100,6 +149,8 @@
           const p = prof(r, f.profit), b = num(p[0]), a = num(p[1]);
           cell.over = b !== null && a !== null && a < b;
         }
+        // 未完成: 契約総重量・契約金額が0(空欄も)。元ファイルなし・読み取りエラーは対象外
+        if ((f.id === 'weight' || f.id === 'amount') && !r.missing && r.status !== 'error' && !num(v)) cell.zero = true;
         if (compare) {
           const pv = f.get(base);
           if (norm(f.kind, v) !== norm(f.kind, pv)) {
@@ -117,15 +168,86 @@
       else if (isNew) status = '新規';
       else if (changed) status = '変更あり';
       else status = '変更なし';
-      if (r.locked && !r.missing) status += '（編集中）';
+      const no = r.no || r.fileNo || '';
+      const incomplete = cells.some(c => c.zero);
+      const tags = [];
+      if (incomplete) tags.push('未完成');
+      if (r.locked && !r.missing) tags.push('編集中');
+      if (noCount[String(no).trim()] > 1) tags.push('同じ工事Noあり');
+      if (tags.length) status += '（' + tags.join('・') + '）';
+      const st = settings[String(no).trim()] || { done: false, year: '' };
       return {
-        key: key, no: r.no || r.fileNo || '', name: r.name || r.c2 || key,
+        key: key, no: no, name: r.name || r.c2 || key,
         rowClass: r.missing ? 'missing' : isNew ? 'new' : '',
         status: status, warn: r.warn || '', changed: changed, cells: cells,
+        incomplete: incomplete, unlisted: r.matchedBy === '一覧に未登録',
+        done: st.done, year: st.year, saved: r.saved || '',
       };
     });
     rows.sort((a, b) => cmpNo(a.no, b.no) || cmpNo(a.key, b.key));
     return { rows: rows, todayAt: today.at || null, baselineAt: baseline ? baseline.at : null };
+  }
+
+  /* ===================== 絞り込み・合計 ===================== */
+
+  // filter: { done: true/false, years: ['R8', '未設定', …] }。どちらも無ければ全て表示
+  function isFiltered(filter) { return !!(filter && (filter.done || (filter.years && filter.years.length))); }
+  function filterRows(rows, filter) {
+    if (!isFiltered(filter)) return rows;
+    const years = filter.years || [];
+    return rows.filter(r => (!filter.done || r.done) && (!years.length || years.indexOf(r.year || UNSET) >= 0));
+  }
+  function filterLabel(filter) {
+    if (!isFiltered(filter)) return '全て';
+    const parts = [];
+    if (filter.done) parts.push('完了');
+    if (filter.years && filter.years.length) parts.push(sortYears(filter.years.filter(y => y !== UNSET)).concat(filter.years.indexOf(UNSET) >= 0 ? [UNSET] : []).join('・'));
+    return parts.join('_');
+  }
+  // 抽出画面の年度ボタン: データにある年度 + 未設定
+  function yearsInRows(rows) {
+    const set = {};
+    rows.forEach(r => { if (r.year) set[r.year] = true; });
+    return sortYears(Object.keys(set)).concat([UNSET]);
+  }
+
+  // 合計行(表示中の行すべて)。割合は 合計の実際 ÷ 合計の予算
+  function computeTotals(rows) {
+    const sums = FIELDS.map(() => null);
+    rows.forEach(r => r.cells.forEach((c, i) => {
+      if (c.kind !== 'yen' && c.kind !== 't') return;
+      const n = num(c.v);
+      if (n !== null) sums[i] = (sums[i] || 0) + n;
+    }));
+    const byId = {};
+    FIELDS.forEach((f, i) => { byId[f.id] = sums[i]; });
+    const cells = FIELDS.map((f, i) => {
+      let v = sums[i];
+      if (f.kind === 'pct') v = ratio([byId[f.cat + ':b'], byId[f.cat + ':a']]);
+      else if (f.kind === 'str' || f.kind === 'date') v = null;
+      const cell = { id: f.id, kind: f.kind, v: v, text: fmt(f.kind, v), over: false };
+      const b = f.cat ? byId[f.cat + ':b'] : f.profit ? byId[f.profit + ':b'] : null;
+      const a = f.cat ? byId[f.cat + ':a'] : f.profit ? byId[f.profit + ':a'] : null;
+      if (f.cat && !f.id.endsWith(':b')) cell.over = b !== null && a !== null && a > b;
+      else if (f.profit && f.id.endsWith(':a')) cell.over = b !== null && a !== null && a < b;
+      return cell;
+    });
+    return { count: rows.length, cells: cells };
+  }
+
+  // 設定画面の行: 工事Noごとに1行(同じ工事Noが複数なら保存日時の新しい方の値)
+  function settingRows(rows) {
+    const byNo = {};
+    rows.forEach(r => {
+      const no = String(r.no || '').trim();
+      if (!no) return;
+      const prev = byNo[no];
+      if (prev && String(prev.saved) >= String(r.saved)) { prev.unlisted = prev.unlisted && r.unlisted; return; }
+      byNo[no] = { no: no, name: r.name, done: r.done, year: r.year, saved: r.saved,
+        unlisted: prev ? prev.unlisted && r.unlisted : r.unlisted,
+        cells: r.cells.filter(c => c.id === 'weight' || c.id === 'amount' || c.id === '粗利益:a' || c.id === '営業利益:a') };
+    });
+    return Object.keys(byNo).sort(cmpNo).map(no => byNo[no]);
   }
 
   /* ===================== Excel書き出し(ExcelJS) ===================== */
@@ -139,31 +261,74 @@
     return s;
   }
 
-  function buildWorkbook(ExcelJS, view) {
+  // Excelのシート名: 使えない文字を除いて31文字まで
+  function sheetName(label) {
+    const s = String(label || '').replace(/[\\/?*[\]:]/g, '・').slice(0, 31);
+    return s || 'Sheet1';
+  }
+
+  // opts: { filter } 絞り込み中なら 2行目に合計行(SUBTOTAL)を入れ、シート名に条件を入れる
+  function buildWorkbook(ExcelJS, view, opts) {
+    const filter = opts && opts.filter;
+    const filtered = isFiltered(filter);
+    const rows = filterRows(view.rows, filter);
     const wb = new ExcelJS.Workbook();
-    // 列: A 状態 / B 工事No / C 工事名 / D〜 FIELDS(参照シートまでの A〜F列と1行目を固定)
-    const FIRST = 4; // FIELDS の先頭列
-    const ws = wb.addWorksheet('Sheet1', { views: [{ state: 'frozen', xSplit: 6, ySplit: 1 }] });
-    const head = ['状態', '工事No', '工事名'].concat(FIELDS.map(f => f.label));
+    // 列: A 状態 / B 年度 / C 完了 / D 工事No / E 工事名 / F〜 FIELDS(参照シートまでの A〜H列と見出し・合計行を固定)
+    const FIRST = 6; // FIELDS の先頭列
+    const top = filtered ? 3 : 2; // 最初の工事の行
+    const ws = wb.addWorksheet(filtered ? sheetName(filterLabel(filter)) : 'Sheet1', { views: [{ state: 'frozen', xSplit: 8, ySplit: top - 1 }] });
+    const head = ['状態', '年度', '完了', '工事No', '工事名'].concat(FIELDS.map(f => f.label));
     ws.addRow(head);
     ws.getRow(1).font = { bold: true };
     ws.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     ws.getColumn(1).width = 12;
-    ws.getColumn(2).width = 9;
-    ws.getColumn(3).width = 26;
+    ws.getColumn(2).width = 7;
+    ws.getColumn(3).width = 6;
+    ws.getColumn(4).width = 9;
+    ws.getColumn(5).width = 26;
     FIELDS.forEach((f, i) => {
       ws.getColumn(i + FIRST).width = f.kind === 'pct' ? 8 : f.kind === 'date' ? 17 : f.id === 'sheet' ? 10 : f.kind === 'str' ? 14 : 13;
     });
 
-    view.rows.forEach((vr, idx) => {
-      const rn = idx + 2;
+    if (filtered) {
+      const tot = computeTotals(rows);
+      const row = ws.getRow(2);
+      const last = top + rows.length - 1;
+      row.getCell(1).value = '合計（' + tot.count + '件）';
+      row.getCell(1).alignment = { horizontal: 'center' };
+      tot.cells.forEach((c, i) => {
+        const col = colName(i + FIRST), cell = row.getCell(i + FIRST);
+        if (c.kind === 'pct') {
+          const bCol = colName(i + FIRST - 2), aCol = colName(i + FIRST - 1);
+          cell.value = { formula: 'IF(' + bCol + '2=0,"",' + aCol + '2/' + bCol + '2)', result: c.v === null ? '' : c.v };
+          cell.numFmt = '0%';
+        } else if (c.kind === 'yen' || c.kind === 't') {
+          const res = c.v === null ? 0 : c.kind === 't' ? Math.round(c.v * 1000) / 1000 : c.v;
+          cell.value = rows.length ? { formula: 'SUBTOTAL(109,' + col + top + ':' + col + last + ')', result: res } : 0;
+          cell.numFmt = c.kind === 't' ? '#,##0.000' : '#,##0';
+        }
+        if (c.over) cell.font = { bold: true, color: { argb: OVER_FONT } };
+      });
+      for (let col = 1; col <= head.length; col++) {
+        const cell = row.getCell(col);
+        if (!cell.font) cell.font = { bold: true };
+        cell.border = { bottom: { style: 'double' } };
+      }
+    }
+
+    rows.forEach((vr, idx) => {
+      const rn = idx + top;
       const row = ws.getRow(rn);
-      row.getCell(1).value = vr.status;
+      row.getCell(1).value = statusValue(vr.status);
       row.getCell(1).alignment = { horizontal: 'center' };
       if (vr.status.startsWith('変更あり')) row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL.changed } };
-      row.getCell(2).value = vr.no;
+      row.getCell(2).value = vr.year || UNSET;
       row.getCell(2).alignment = { horizontal: 'center' };
-      row.getCell(3).value = vr.name;
+      row.getCell(3).value = vr.done ? '完了' : '未完';
+      row.getCell(3).alignment = { horizontal: 'center' };
+      row.getCell(4).value = vr.no;
+      row.getCell(4).alignment = { horizontal: 'center' };
+      row.getCell(5).value = vr.name;
       vr.cells.forEach((c, i) => {
         const cell = row.getCell(i + FIRST);
         const n = num(c.v);
@@ -181,7 +346,8 @@
           cell.value = c.v === undefined ? null : c.v;
         }
         if (c.id === 'sheet' || c.id === 'author') cell.alignment = { horizontal: 'center' };
-        if (c.over) cell.font = { color: { argb: OVER_FONT } };
+        if (c.over || c.zero) cell.font = { color: { argb: OVER_FONT } };
+        if (c.zero) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL.changed } };
         if (c.changed) {
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: FILL.changed } };
           cell.note = '前回：' + c.prev;
@@ -199,7 +365,15 @@
     return wb;
   }
 
-  const api = { CATS, PROFITS, buildView, buildWorkbook, fmt };
+  // 状態欄の「未完成」は赤字(リッチテキスト)
+  function statusValue(status) {
+    const i = status.indexOf('未完成');
+    if (i < 0) return status;
+    return { richText: [{ text: status.slice(0, i) }, { text: '未完成', font: { color: { argb: OVER_FONT } } }, { text: status.slice(i + 3) }] };
+  }
+
+  const api = { CATS, PROFITS, UNSET, buildView, buildWorkbook, fmt, normYear, normDone, fiscalYearOf, buildSettings, yearOptions,
+    isFiltered, filterRows, filterLabel, yearsInRows, computeTotals, settingRows };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.JY = api;
 })(typeof window !== 'undefined' ? window : this);
