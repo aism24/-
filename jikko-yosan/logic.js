@@ -72,6 +72,7 @@
 
   const NF0 = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 0 });
   const NF3 = new Intl.NumberFormat('ja-JP', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const NF1 = new Intl.NumberFormat('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
   function fmt(kind, v) {
     if (kind === 'str') return v === null || v === undefined ? '' : String(v);
@@ -83,6 +84,7 @@
     const n = num(v);
     if (n === null) return '';
     if (kind === 't') return NF3.format(n);
+    if (kind === 't1') return NF1.format(n); // 画面表示用の重量(##,###.0)。Excelは 't' のまま
     if (kind === 'pct') return Math.round(n * 100) + '%';
     return NF0.format(Math.round(n));
   }
@@ -167,6 +169,7 @@
           if (norm(f.kind, v) !== norm(f.kind, pv)) {
             cell.changed = true;
             cell.prev = fmt(f.kind, pv) || '(空欄)';
+            cell.pv = pv;
             changed++;
           }
         }
