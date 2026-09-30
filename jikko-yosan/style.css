@@ -126,6 +126,11 @@ table.set select.y0 { background: #d6e9ff; }
 table.set select.y1 { background: #d8f3dc; }
 table.set select.y2 { background: #ffd9e6; }
 table.set select.y3 { background: #fff3a8; }
+/* 抽出画面の年度セルも設定画面と同じ色(新規・選択行の色より優先) */
+#tbl td.c-y.y0 { background: #d6e9ff; }
+#tbl td.c-y.y1 { background: #d8f3dc; }
+#tbl td.c-y.y2 { background: #ffd9e6; }
+#tbl td.c-y.y3 { background: #fff3a8; }
 table.set select option { background: #fff; }
 /* 変更したが未保存のセル(未完の薄いオレンジと区別するため赤枠) */
 table.set td.edited { box-shadow: inset 0 0 0 3px #d93025; }

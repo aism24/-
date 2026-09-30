@@ -40,7 +40,7 @@ function showMsg(text, ok) {
 async function load() {
   let settingRows;
   if (DEMO) {
-    await loadScript('demo.js?v=20260930j');
+    await loadScript('demo.js?v=20260930k');
     payload = window.JY_DEMO;
     settingRows = window.JY_DEMO_SETTINGS;
   } else {
@@ -125,6 +125,14 @@ function statusHtml(status) {
   return esc(status).replace('（', '<br>（').replace('未完成', '<span class="inc">未完成</span>');
 }
 
+// 画面の表示文字。重量は画面だけ小数1桁(##,###.0)。Excelは小数3桁のまま
+function cellText(c) {
+  return c.kind === 't' ? JY.fmt('t1', c.v) : c.text;
+}
+function prevText(c) {
+  return c.kind === 't' ? JY.fmt('t1', c.pv) || '(空欄)' : c.prev;
+}
+
 function cellHtml(c, tag) {
   const cls = [c.kind === 'str' || c.kind === 'date' ? 'txt' : 'num'];
   if (c.id.endsWith(':b')) cls.push('grp-l');
@@ -133,8 +141,8 @@ function cellHtml(c, tag) {
   if (c.changed) cls.push('chg');
   if (c.zero) cls.push('zero');
   if (c.over) cls.push('over');
-  return '<' + tag + ' class="' + cls.join(' ') + '">' + esc(c.text) +
-    (c.changed ? '<div class="prev">前回：' + esc(c.prev) + '</div>' : '') + '</' + tag + '>';
+  return '<' + tag + ' class="' + cls.join(' ') + '">' + esc(cellText(c)) +
+    (c.changed ? '<div class="prev">前回：' + esc(prevText(c)) + '</div>' : '') + '</' + tag + '>';
 }
 
 function renderExtract() {
@@ -166,7 +174,7 @@ function renderExtract() {
 
   rows.forEach(r => {
     h += '<tr class="' + r.rowClass + '"><td class="txt st c-st' + (r.status.startsWith('変更あり') ? ' chg' : '') + '"' + (r.warn ? ' title="' + esc(r.warn) + '"' : '') + '>' + statusHtml(r.status) + '</td>' +
-      '<td class="c-y">' + esc(r.year || JY.UNSET) + '</td><td class="c-d">' + (r.done ? '完了' : '未完') + '</td>' +
+      '<td class="c-y' + yearTag(r.year) + '">' + esc(r.year || JY.UNSET) + '</td><td class="c-d">' + (r.done ? '完了' : '') + '</td>' +
       '<td class="c-no">' + esc(r.no) + '</td><td class="c-name">' + esc(r.name) + '</td>';
     r.cells.forEach(c => { h += cellHtml(c, 'td'); });
     h += '</tr>';
@@ -246,7 +254,7 @@ function renderSettings() {
       '<td class="ctr' + ('year' in e ? ' edited' : '') + '"><select' + yearCls(cur.year) + dis + '>' +
       yOpts.map(y => '<option value="' + esc(y) + '"' + (y === cur.year ? ' selected' : '') + '>' + esc(y) + '</option>').join('') +
       '<option value=""' + (cur.year ? '' : ' selected') + '>' + JY.UNSET + '</option></select></td>';
-    r.cells.forEach(c => { h += '<td class="num">' + esc(c.text) + '</td>'; });
+    r.cells.forEach(c => { h += '<td class="num">' + esc(cellText(c)) + '</td>'; });
     h += '</tr>';
   });
   if (!list.length) h += '<tr><td class="txt" colspan="8">工事がありません</td></tr>';
@@ -255,9 +263,13 @@ function renderSettings() {
 }
 
 // 年度リストの色(R8=青・R9=緑・R10=ピンク・R7=黄…の4色周期。未設定は色なし)
-function yearCls(y) {
+function yearTag(y) {
   const m = /^R(\d+)$/.exec(y || '');
-  return m ? ' class="y' + (Number(m[1]) % 4) + '"' : '';
+  return m ? ' y' + (Number(m[1]) % 4) : '';
+}
+function yearCls(y) {
+  const t = yearTag(y);
+  return t ? ' class="' + t.trim() + '"' : '';
 }
 
 // 変更を記録(元の値に戻したら変更なし)
