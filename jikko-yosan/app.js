@@ -40,7 +40,7 @@ function showMsg(text, ok) {
 async function load() {
   let settingRows;
   if (DEMO) {
-    await loadScript('demo.js?v=20260930a');
+    await loadScript('demo.js?v=20260930b');
     payload = window.JY_DEMO;
     settingRows = window.JY_DEMO_SETTINGS;
   } else {
@@ -227,7 +227,7 @@ function renderSettings() {
       '<td class="ctr' + ('done' in e ? ' edited' : '') + '"><span class="seg">' +
       '<button data-done="1" class="' + (cur.done ? 'on' : '') + '"' + dis + '>完了</button>' +
       '<button data-done="0" class="' + (cur.done ? '' : 'on') + '"' + dis + '>未完</button></span></td>' +
-      '<td class="ctr' + ('year' in e ? ' edited' : '') + '"><select' + dis + '>' +
+      '<td class="ctr' + ('year' in e ? ' edited' : '') + '"><select' + yearCls(cur.year) + dis + '>' +
       yOpts.map(y => '<option value="' + esc(y) + '"' + (y === cur.year ? ' selected' : '') + '>' + esc(y) + '</option>').join('') +
       '<option value=""' + (cur.year ? '' : ' selected') + '>' + JY.UNSET + '</option></select></td>';
     r.cells.forEach(c => { h += '<td class="num">' + esc(c.text) + '</td>'; });
@@ -239,6 +239,12 @@ function renderSettings() {
 }
 
 // 変更を記録(元の値に戻したら変更なし)
+// 年度リストの色(R8=青・R9=緑・R10=ピンク・R7=水色…の4色周期。未設定は色なし)
+function yearCls(y) {
+  const m = /^R(\d+)$/.exec(y || '');
+  return m ? ' class="y' + (Number(m[1]) % 4) + '"' : '';
+}
+
 function setEdit(no, field, value) {
   const r = JY.settingRows(view.rows).find(x => x.no === no);
   if (!r) return;
