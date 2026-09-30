@@ -263,8 +263,11 @@
 
   // Excelのシート名: 使えない文字を除いて31文字まで
   function sheetName(label) {
-    const s = String(label || '').replace(/[\\/?*[\]:]/g, '・').slice(0, 31);
-    return s || 'Sheet1';
+    return String(label || '').replace(/[\\/?*[\]:]/g, '・').slice(0, 31);
+  }
+  // 絞り込み中は「まとめ_完了_R8・R9」のように条件を付ける
+  function sheetTitle(base, filter) {
+    return isFiltered(filter) ? sheetName(base + '_' + filterLabel(filter)) : base;
   }
 
   // opts: { filter } 絞り込み中なら 2行目に合計行(SUBTOTAL)を入れ、シート名に条件を入れる
@@ -276,7 +279,7 @@
     // 列: A 状態 / B 年度 / C 完了 / D 工事No / E 工事名 / F〜 FIELDS(参照シートまでの A〜H列と見出し・合計行を固定)
     const FIRST = 6; // FIELDS の先頭列
     const top = filtered ? 3 : 2; // 最初の工事の行
-    const ws = wb.addWorksheet(filtered ? sheetName(filterLabel(filter)) : 'Sheet1', { views: [{ state: 'frozen', xSplit: 8, ySplit: top - 1 }] });
+    const ws = wb.addWorksheet(sheetTitle('まとめ', filter), { views: [{ state: 'frozen', xSplit: 8, ySplit: top - 1 }] });
     const head = ['状態', '年度', '完了', '工事No', '工事名'].concat(FIELDS.map(f => f.label));
     ws.addRow(head);
     ws.getRow(1).font = { bold: true };
@@ -362,7 +365,45 @@
         }
       }
     });
+    addTrialSheet(wb, rows, filter);
     return wb;
+  }
+
+  // 「試算」シート: 工事ごとに 売上・仕入・労務費等・粗利・営業損益(すべて実際)、一番下に合計
+  //   売上=契約金額 / 労務費等=工場加工費+事務図面費 / 仕入=その他の費目(材料費・外注加工費・メッキ費・運送費・塗装費・現場費・その他)
+  //   粗利・営業損益は表の「粗利益」「営業損益」の実際をそのまま使う
+  const LABOR = ['工場加工費', '事務図面費'];
+  const PURCHASE = CATS.filter(c => c !== '計' && LABOR.indexOf(c) < 0);
+  function trialValues(vr) {
+    const v = {};
+    vr.cells.forEach(c => { v[c.id] = num(c.v); });
+    const sum = cats => cats.reduce((acc, c) => v[c + ':a'] === null || v[c + ':a'] === undefined ? acc : (acc || 0) + v[c + ':a'], null);
+    return [v.amount, sum(PURCHASE), sum(LABOR), v['粗利益:a'], v['営業利益:a']];
+  }
+  function addTrialSheet(wb, rows, filter) {
+    const ws = wb.addWorksheet(sheetTitle('試算', filter), { views: [{ state: 'frozen', ySplit: 1 }] });
+    ws.addRow(['工事No', '工事名', '売上', '仕入', '労務費等', '粗利', '営業損益']);
+    ws.getRow(1).font = { bold: true };
+    ws.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+    [9, 26, 15, 15, 15, 15, 15].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    const FMT = '#,##0;[Red]-#,##0';
+    const sums = [0, 0, 0, 0, 0];
+    rows.forEach(vr => {
+      const vals = trialValues(vr);
+      const row = ws.addRow([vr.no, vr.name].concat(vals));
+      row.getCell(1).alignment = { horizontal: 'center' };
+      vals.forEach((n, i) => { row.getCell(i + 3).numFmt = FMT; if (n !== null) sums[i] += n; });
+    });
+    const last = rows.length + 1;
+    const tot = ws.addRow(['合計（' + rows.length + '件）', '']);
+    tot.font = { bold: true };
+    tot.getCell(1).alignment = { horizontal: 'center' };
+    sums.forEach((n, i) => {
+      const col = colName(i + 3), cell = tot.getCell(i + 3);
+      cell.value = rows.length ? { formula: 'SUM(' + col + '2:' + col + last + ')', result: n } : 0;
+      cell.numFmt = FMT;
+    });
+    for (let col = 1; col <= 7; col++) tot.getCell(col).border = { top: { style: 'double' } };
   }
 
   // 状態欄の「未完成」は赤字(リッチテキスト)
@@ -372,7 +413,7 @@
     return { richText: [{ text: status.slice(0, i) }, { text: '未完成', font: { color: { argb: OVER_FONT } } }, { text: status.slice(i + 3) }] };
   }
 
-  const api = { CATS, PROFITS, UNSET, buildView, buildWorkbook, fmt, normYear, normDone, fiscalYearOf, buildSettings, yearOptions,
+  const api = { CATS, PROFITS, UNSET, buildView, buildWorkbook, trialValues, fmt, normYear, normDone, fiscalYearOf, buildSettings, yearOptions,
     isFiltered, filterRows, filterLabel, yearsInRows, computeTotals, settingRows };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.JY = api;
