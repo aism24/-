@@ -40,19 +40,34 @@ function showMsg(text, ok) {
 async function load() {
   let settingRows;
   if (DEMO) {
-    await loadScript('demo.js?v=20260930i');
+    await loadScript('demo.js?v=20260930j');
     payload = window.JY_DEMO;
     settingRows = window.JY_DEMO_SETTINGS;
   } else {
-    const res = await fetch(GAS_API_URL + '?t=' + Date.now());
-    const body = await res.json();
-    if (body.status !== 'success') throw new Error(body.message || 'エラー');
+    const body = await fetchData();
     payload = body.data;
     if (body.settings && body.settings.error) showMsg('完了・年度を読み込めませんでした: ' + body.settings.error);
     settingRows = body.settings && body.settings.rows;
   }
   settings = JY.buildSettings(settingRows);
   rebuild();
+}
+
+// GASの応答をJSONとして読む。JSONでなければ(Googleのエラーページ等)ページのタイトルを付けてエラーにする
+async function readJson(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    const t = /<title>([^<]*)<\/title>/i.exec(text);
+    throw new Error('GASの応答を読めませんでした(HTTP ' + res.status + (t ? '・' + t[1].trim() : '') + ')');
+  }
+}
+
+async function fetchData() {
+  const body = await readJson(await fetch(GAS_API_URL + '?t=' + Date.now()));
+  if (body.status !== 'success') throw new Error(body.message || 'エラー');
+  return body;
 }
 
 // 完了・年度が変わったら行を作り直す(抽出画面にもすぐ反映)
@@ -280,19 +295,53 @@ async function saveSettings() {
     res = { updated: changes.map(c => c.no), notFound: [], dup: [], rows: rows };
   } else {
     // text/plain で送る(GASはCORSの事前確認に対応しないため)
-    const r = await fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: 'settings', changes: changes }) });
-    const body = await r.json();
-    if (body.status !== 'success') throw new Error(body.message || 'エラー');
-    res = body.data;
+    let body;
+    try {
+      body = await readJson(await fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: 'settings', changes: changes }) }));
+    } catch (err) {
+      // 応答が読めない・通信エラー: シートには保存できていることがある(GASの転送先でGoogleのエラーページが返る等)。
+      // シートを読み直し、変更がすべて反映されていれば保存成功とする
+      res = await verifySaved(changes, err);
+    }
+    if (body) {
+      if (body.status !== 'success') throw new Error(body.message || 'エラー');
+      res = body.data;
+    }
   }
   settings = JY.buildSettings(res.rows);
   edits = {};
   rebuild();
   renderSettings();
-  let msg = '保存しました(' + res.updated.length + '件)';
+  let msg = '保存しました(' + res.updated.length + '件' + (res.verified ? '。シートを読み直して確認済み' : '') + ')';
   if (res.notFound.length) msg += '。情報シートに無い工事No: ' + res.notFound.join(', ');
   if (res.dup.length) msg += '。情報シートに同じ工事Noの行が複数あるため上の行に保存: ' + res.dup.join(', ');
   showMsg(msg, !res.notFound.length && !res.dup.length);
+}
+
+// 保存の応答が読めなかったとき: 読み込み直して、変更した完了・年度がシートの値と一致するか確かめる
+async function verifySaved(changes, err) {
+  let body;
+  try {
+    body = await fetchData();
+  } catch (e) {
+    throw new Error(err.message + '。保存できたか確認できませんでした(' + e.message + ')。ページを再読み込みして確認してください');
+  }
+  const rows = body.settings && body.settings.rows;
+  if (!rows) throw new Error(err.message + '。保存できたか確認できませんでした。ページを再読み込みして確認してください');
+  payload = body.data;
+  const now = JY.buildSettings(rows);
+  const ng = changes.filter(c => {
+    const s = now[c.no];
+    return !s || ('done' in c && s.done !== c.done) || ('year' in c && s.year !== c.year);
+  }).map(c => c.no);
+  if (ng.length) {
+    // 保存されていない。画面は最新のシートの値にし、未保存の変更は残す
+    settings = JY.buildSettings(rows);
+    rebuild();
+    renderSettings();
+    throw new Error(err.message + '。シートに反映されていない工事No: ' + ng.join(', '));
+  }
+  return { updated: changes.map(c => c.no), notFound: [], dup: [], rows: rows, verified: true };
 }
 
 document.getElementById('btn-save').addEventListener('click', () => {
