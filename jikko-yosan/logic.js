@@ -431,6 +431,11 @@
       const col = i === 0 ? 3 : 2 + i * 2, cell = tot.getCell(col);
       cell.value = rows.length ? { formula: 'SUM(' + colName(col) + '3:' + colName(col) + last + ')', result: n } : 0;
       cell.numFmt = YEN;
+      if (i === 0) return;
+      // 合計の対売比率 = 合計金額 ÷ 合計売上
+      const pct = tot.getCell(col + 1);
+      pct.value = { formula: 'IF(C' + tr + '=0,"",' + colName(col) + tr + '/C' + tr + ')', result: sums[0] ? n / sums[0] : '' };
+      pct.numFmt = PCT;
     });
     for (let r = 1; r <= tr; r++) {
       for (let col = 1; col <= NCOL; col++) {

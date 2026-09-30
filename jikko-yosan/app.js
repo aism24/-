@@ -40,7 +40,7 @@ function showMsg(text, ok) {
 async function load() {
   let settingRows;
   if (DEMO) {
-    await loadScript('demo.js?v=20260930e');
+    await loadScript('demo.js?v=20260930f');
     payload = window.JY_DEMO;
     settingRows = window.JY_DEMO_SETTINGS;
   } else {
