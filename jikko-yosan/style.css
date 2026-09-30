@@ -6,7 +6,23 @@
 body { margin: 0; font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif; font-size: 13px; color: #222; background: var(--page-bg); }
 header { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding: 8px 16px; background: var(--header-bg); color: var(--header-text); border-bottom: 1px solid #ddd; }
 .hd-side { flex: 1 1 0; display: flex; }
-.hd-right { justify-content: flex-end; }
+.hd-right { justify-content: flex-end; gap: 8px; }
+.hd-right button { white-space: nowrap; }
+[hidden] { display: none !important; }
+/* ホームへ戻る: 絞り込みボタン等と見た目を分ける(どの画面でも右上の同じ位置) */
+.btn-home { background: #fff; color: #1e8e3e; }
+.btn-home:hover:not(:disabled) { background: #e6f4ea; }
+/* ホーム */
+.home { display: flex; justify-content: center; gap: 32px; flex-wrap: wrap; padding: 64px 16px; }
+.home-btn { min-width: 280px; padding: 28px 24px; font-size: 22px; font-weight: 700; border-radius: 10px; }
+/* 抽出画面の絞り込み */
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 16px 0; }
+.filters .sep { margin: 0 4px 0 12px; font-weight: 600; }
+.chip { background: #fff; color: #333; border-color: #999; padding: 5px 14px; }
+.chip:hover:not(:disabled) { background: #eef1f5; }
+.chip.on { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+.chip.on:hover:not(:disabled) { background: #1765cc; }
+.note { padding: 8px 16px 6px; color: var(--meta-text); }
 .brand { display: flex; align-items: center; justify-content: center; gap: 10px 12px; flex-wrap: wrap; }
 .logo { height: 52px; width: auto; }
 .logo-mark { fill: #e74155; }
@@ -26,6 +42,7 @@ button:disabled { opacity: .5; cursor: default; }
 .lg.new { background: #ccffff; }
 .lg.missing { background: #d9d9d9; }
 .lg.over { color: #e00000; font-weight: 600; background: #fff; }
+.lg.zero { color: #e00000; font-weight: 600; animation: zero-blink 1.2s ease-in-out infinite alternate; }
 main { padding: 0 16px 16px; }
 /* 読み込み中のポップアップ。バーは transform で動かす(描画が軽く、止まって見えたら固まっている目安) */
 .overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .3); }
@@ -34,7 +51,8 @@ main { padding: 0 16px 16px; }
 .bar { position: relative; height: 8px; margin-top: 14px; border-radius: 4px; background: #dde3ea; overflow: hidden; }
 .bar-fill { position: absolute; top: 0; left: 0; width: 40%; height: 100%; border-radius: 4px; background: #1a73e8; animation: bar-move 1.2s ease-in-out infinite; }
 @keyframes bar-move { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
-.msg { padding: 10px; background: #fdecea; color: #a00; border: 1px solid #f5c2c0; border-radius: 4px; margin-bottom: 8px; }
+.msg { padding: 10px; background: #fdecea; color: #a00; border: 1px solid #f5c2c0; border-radius: 4px; margin: 8px 16px 0; }
+.msg.ok { background: #e6f4ea; color: #137333; border-color: #b7dfc3; }
 .table-wrap { overflow: auto; max-height: calc(100vh - 150px); background: #fff; border: 1px solid #ccc; }
 /* スクロールバーを太く(Edge/Chrome)。横バーの太さ = height */
 .table-wrap::-webkit-scrollbar { height: 24px; width: 14px; }
@@ -45,28 +63,51 @@ main { padding: 0 16px 16px; }
 table { border-collapse: separate; border-spacing: 0; white-space: nowrap; }
 th, td { border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; padding: 3px 6px; background: #fff; }
 thead th { position: sticky; top: 0; z-index: 2; background: #eef1f5; font-weight: 600; text-align: center; }
-thead tr:nth-child(2) th { top: 23px; }
+/* 見出し2行目・合計行の top は app.js で見出しの高さから設定する */
+thead tr.total th { background: #f7f7f2; font-weight: 700; border-bottom: 3px double #888; }
+thead tr.total th.num { text-align: right; }
+thead tr.total th.over { color: #e00000; }
 /* 固定列(状態〜参照シート)。left は左の列の幅の合計なので、幅は固定にする */
-.c-st, .c-no, .c-name, .c-w, .c-a, .c-s { position: sticky; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
+#tbl .c-st, #tbl .c-y, #tbl .c-d, #tbl .c-no, #tbl .c-name, #tbl .c-w, #tbl .c-a, #tbl .c-s { position: sticky; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
 .c-st { left: 0; width: 104px; min-width: 104px; max-width: 104px; }
-td.c-st { font-size: 12px; line-height: 1.25; } /* 「（編集中）」は app.js で2行目に回す */
-.c-no { left: 104px; width: 64px; min-width: 64px; max-width: 64px; }
-.c-name { left: 168px; width: 200px; min-width: 200px; max-width: 200px; }
-.c-w { left: 368px; width: 100px; min-width: 100px; max-width: 100px; }
-.c-a { left: 468px; width: 124px; min-width: 124px; max-width: 124px; }
-.c-s { left: 592px; width: 80px; min-width: 80px; max-width: 80px; border-right: 2px solid #bbb; }
-thead .c-st, thead .c-no, thead .c-name, thead .c-w, thead .c-a, thead .c-s { z-index: 3; white-space: normal; }
+td.c-st { font-size: 12px; line-height: 1.25; } /* 「（未完成・編集中）」は app.js で2行目に回す */
+.st .inc { color: #e00000; }
+.c-y { left: 104px; width: 56px; min-width: 56px; max-width: 56px; }
+.c-d { left: 160px; width: 48px; min-width: 48px; max-width: 48px; }
+.c-no { left: 208px; width: 64px; min-width: 64px; max-width: 64px; }
+.c-name { left: 272px; width: 200px; min-width: 200px; max-width: 200px; }
+.c-w { left: 472px; width: 100px; min-width: 100px; max-width: 100px; }
+.c-a { left: 572px; width: 124px; min-width: 124px; max-width: 124px; }
+.c-s { left: 696px; width: 80px; min-width: 80px; max-width: 80px; border-right: 2px solid #bbb; }
+#tbl thead .c-st, #tbl thead .c-y, #tbl thead .c-d, #tbl thead .c-no, #tbl thead .c-name, #tbl thead .c-w, #tbl thead .c-a, #tbl thead .c-s { z-index: 3; white-space: normal; }
 .grp, .grp-l { border-left: 2px solid #bbb; }
 td.num { text-align: right; }
 td.txt { text-align: left; }
-td.c-st, td.c-no, td.c-s, td.ctr { text-align: center; }
+td.c-st, td.c-y, td.c-d, td.c-no, td.c-s, td.ctr, th.c-st { text-align: center; }
 tr.new td { background: #ccffff; }
 tr.missing td { background: #d9d9d9; color: #555; }
-/* クリックで選んだ行: 二重罫線+薄い黄色(変更セルの黄色・赤字はそのまま) */
-tbody tr { cursor: pointer; }
-tr.sel td { background: #fff8d6; border-top: 3px double #c99a00; border-bottom: 3px double #c99a00; }
-td.chg { background: #ffff00 !important; }
+/* クリックで選んだ行: 二重罫線+薄い緑(変更セルの黄色・赤字はそのまま) */
+#tbl tbody tr { cursor: pointer; }
+tr.sel td { background: #e3f4e1; border-top: 3px double #2e8b57; border-bottom: 3px double #2e8b57; }
+td.chg:not(.zero) { background: #ffff00 !important; }
+/* 未完成(契約総重量・契約金額が0): 黄色でゆっくり点滅+赤字 */
+td.zero { color: #e00000; font-weight: 600; animation: zero-blink 1.2s ease-in-out infinite alternate; }
+@keyframes zero-blink { from { background: #fffbd0; } to { background: #ffe600; } }
 td.over { color: #e00000; font-weight: 600; }
 td.over .prev { font-weight: normal; }
 .prev { font-size: 10px; color: #7a5a00; }
 td.st { font-weight: 600; }
+/* 完了設定｜年度設定 */
+table.set td { cursor: default; }
+table.set th, table.set td { padding: 4px 8px; }
+table.set td.ctr { text-align: center; }
+table.set tr.unlisted td { color: #888; }
+.seg { display: inline-flex; }
+.seg button { background: #fff; color: #333; border-color: #999; border-radius: 0; padding: 3px 12px; }
+.seg button:first-child { border-radius: 4px 0 0 4px; }
+.seg button:last-child { border-radius: 0 4px 4px 0; margin-left: -1px; }
+.seg button.on { background: #1a73e8; border-color: #1a73e8; color: #fff; position: relative; }
+.seg button:hover:not(:disabled):not(.on) { background: #eef1f5; }
+table.set select { font: inherit; padding: 3px 6px; min-width: 88px; }
+table.set td.edited { background: #fff4d6; }
+.unlisted-note { font-size: 12px; color: #a00; }

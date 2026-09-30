@@ -18,7 +18,14 @@
  *     → 基準は常に「前日までの最後の値」。同じ日に何度受信しても基準は変わらない。
  *   - 今回の受信に無い工事は、最後の値のまま missing:true で残す(画面では灰色「元ファイルなし」)。
  *   - 読み取りエラーの工事は、前回の値を引き継いで status:'error' にする(誤って黄色にしないため)。
- *   マスタのスプレッドシート「実行予算」には一切書き込まない(工事No・工事名の対応付けはPC側で済んでいる)。
+ *   工事No・工事名の対応付けはPC側で済んでいる。
+ *
+ * ■ 完了・年度(スプレッドシート「実行予算」のシート「情報」C列=完了・D列=年度)
+ *   - 3行目から: A 工事No | B 工事名 | C 完了 | D 年度。A・B列には書き込まない。
+ *   - doGet のたびにシートから読む(キャッシュしない)。シートを直接編集した分もすぐ画面に出る。
+ *   - 画面の「更新を保存」で POST {action:'settings', changes:[{no, done?, year?}]}(秘密キー不要。誰でも編集可)。
+ *     行は工事Noで探し、変更のあったセルだけ書く(完了='完了' / 未完=空欄、年度='R8' / 未設定=空欄)。
+ *     同じ工事Noの行が複数あれば上の行に書き、応答の dup で知らせる。最後に保存した内容が正。
  *
  * ■ 工事単価シートへの反映(受信のたびに実行)
  *   生産損益分析アプリの管理用スプレッドシート「損益分岐点生産重量」のシート「工事単価」の
@@ -37,13 +44,22 @@ const DATA_FILE_NAME = '実行予算まとめデータ.json';
 const TZ = 'Asia/Tokyo';
 const PRICE_SS_ID = '1OnFx_JegSzXZo6lqMOw4yZ30xvmptA5HRdB6Cv1hgpY'; // 損益分岐点生産重量
 const PRICE_SHEET = '工事単価';
+const MASTER_SS_ID = '1qkpckNHiVmRgviPllwR6QnkW9RI5-5S9URyF-A3vow8'; // 実行予算(シート「情報」)
+const INFO_SHEET = '情報';
+const INFO_FIRST_ROW = 3; // 1行目: 表題、2行目: 見出し
 const CACHE_KEY = 'state_v1'; // 画面の読み込み用に保存データの本文をキャッシュ(受信のたびに更新)
 const EMPTY_STATE_TEXT = '{"version":1,"baseline":null,"today":null}';
 
 function doGet() {
   try {
-    // 保存データの本文をそのまま埋め込んで返す(JSONの解析・再生成をしない)
-    return ContentService.createTextOutput('{"status":"success","data":' + loadStateText_() + '}')
+    // 保存データの本文をそのまま埋め込んで返す(JSONの解析・再生成をしない)。完了・年度は毎回シートから読む
+    let settings;
+    try {
+      settings = { rows: readInfoSettings_() };
+    } catch (err) {
+      settings = { error: String(err && err.message || err) };
+    }
+    return ContentService.createTextOutput('{"status":"success","data":' + loadStateText_() + ',"settings":' + JSON.stringify(settings) + '}')
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return json_({ status: 'error', message: String(err && err.message || err) });
@@ -54,6 +70,10 @@ function doPost(e) {
   const lock = LockService.getScriptLock();
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    if (body.action === 'settings') {
+      lock.waitLock(30000);
+      return json_({ status: 'success', data: saveInfoSettings_(body.changes) });
+    }
     const secret = PropertiesService.getScriptProperties().getProperty('SECRET');
     if (!secret || body.secret !== secret) return json_({ status: 'error', message: '秘密キーが違います' });
     const rows = normalizeRows(body.data);
@@ -156,6 +176,62 @@ function computePriceUpdates(existing, rows) {
   return { updates: updates, appends: appends, lastRow: lastRow };
 }
 
+// 「情報」シートへの完了・年度の書き込み内容を決める
+//   colA: A列の値(INFO_FIRST_ROW行目から順)、changes: [{no, done?:true/false, year?:'R8'/''}]
+//   戻り値: { writes:[{row, col:3|4, value}], updated:[no], notFound:[no], dup:[no] }
+function computeInfoWrites(colA, changes) {
+  const rowOf = {}, dupOf = {};
+  colA.forEach(function (v, i) {
+    const no = String(v === null || v === undefined ? '' : v).trim();
+    if (!no) return;
+    if (rowOf[no]) dupOf[no] = true;
+    else rowOf[no] = i + INFO_FIRST_ROW;
+  });
+  const res = { writes: [], updated: [], notFound: [], dup: [] };
+  (Array.isArray(changes) ? changes : []).forEach(function (c) {
+    const no = String(c && c.no || '').trim();
+    if (!no) return;
+    const row = rowOf[no];
+    if (!row) { res.notFound.push(no); return; }
+    let n = 0;
+    if (typeof c.done === 'boolean') { res.writes.push({ row: row, col: 3, value: c.done ? '完了' : '' }); n++; }
+    if (typeof c.year === 'string') {
+      const y = c.year.trim();
+      if (y && !/^R\d{1,3}$/.test(y)) throw new Error('年度の形式が違います: ' + y);
+      res.writes.push({ row: row, col: 4, value: y }); n++;
+    }
+    if (!n) return;
+    res.updated.push(no);
+    if (dupOf[no]) res.dup.push(no);
+  });
+  return res;
+}
+
+function infoSheet_() {
+  const sh = SpreadsheetApp.openById(MASTER_SS_ID).getSheetByName(INFO_SHEET);
+  if (!sh) throw new Error('シート「' + INFO_SHEET + '」が見つかりません');
+  return sh;
+}
+
+// [[工事No, 完了, 年度], …](値はシートのまま。表記の揃えは画面側 logic.js で行う)
+function readInfoSettings_() {
+  const sh = infoSheet_();
+  const last = sh.getLastRow();
+  if (last < INFO_FIRST_ROW) return [];
+  return sh.getRange(INFO_FIRST_ROW, 1, last - INFO_FIRST_ROW + 1, 4).getValues()
+    .filter(function (v) { return String(v[0]).trim(); })
+    .map(function (v) { return [String(v[0]).trim(), v[2], v[3]]; });
+}
+
+function saveInfoSettings_(changes) {
+  const sh = infoSheet_();
+  const last = sh.getLastRow();
+  const colA = last >= INFO_FIRST_ROW ? sh.getRange(INFO_FIRST_ROW, 1, last - INFO_FIRST_ROW + 1, 1).getValues().map(function (v) { return v[0]; }) : [];
+  const plan = computeInfoWrites(colA, changes);
+  plan.writes.forEach(function (w) { sh.getRange(w.row, w.col).setValue(w.value); });
+  return { updated: plan.updated, notFound: plan.notFound, dup: plan.dup, rows: readInfoSettings_() };
+}
+
 function numOrNull_(v) {
   if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
@@ -256,6 +332,7 @@ function checkSetup() {
   const secret = PropertiesService.getScriptProperties().getProperty('SECRET');
   Logger.log('保存先フォルダ: ' + folder.getName());
   Logger.log('データファイル: ' + (getFile_() ? 'あり' : 'なし(初回受信で作成)'));
+  Logger.log('情報シート: ' + (SpreadsheetApp.openById(MASTER_SS_ID).getSheetByName(INFO_SHEET) ? 'あり' : '見つかりません'));
   Logger.log('工事単価シート: ' + (SpreadsheetApp.openById(PRICE_SS_ID).getSheetByName(PRICE_SHEET) ? 'あり' : '見つかりません'));
   Logger.log('秘密キー(SECRET): ' + (secret ? '設定済み' : '未設定 ← スクリプトプロパティに設定してください'));
 }
