@@ -12,8 +12,9 @@
   const SITE_LIST = ['本社', '夢前', '鳥取'];
   const FIXED_BASE = 12; // 目標の基準にする直近の月度数
   // 月額のその他固定費(人件費以外の固定費。3工場合計・円)。決算に合わせた値(2026-10-01 ユーザー指示: 月2,500万円)。
-  // 工場へは在職人数(工数)の比で配分する。変えるときはここの値だけ直す。
+  // 工場へは 本社:夢前:鳥取 = 1:1:2 で配分する(鳥取だけ規模が倍。2026-10-01 ユーザー指示)。変えるときはここの値だけ直す。
   const OTHER_FIXED_MONTHLY = 25000000;
+  const FIXED_SPLIT = { '本社': 1, '夢前': 1, '鳥取': 2 };
   const $ = (id) => document.getElementById(id);
   const S = { mode: 'fiscal', site: '', inited: false, lastYmd: null, defPeriod: null };
 
@@ -39,11 +40,10 @@
   const headcount = () => (state.data.settings && state.data.settings.headcount) || {};
 
   /* ---------- その他固定費 ---------- */
-  // 工場の配分比(在職人数。名簿が無ければ均等)
+  // 選んだ工場の配分比(本社:夢前:鳥取 = 1:1:2 → 25%・25%・50%)
   function siteShare(sites) {
-    const hc = headcount(), all = SITE_LIST.reduce((a, s) => a + (hc[s] || 0), 0);
-    if (!(all > 0)) return sites.length / SITE_LIST.length;
-    return sites.reduce((a, s) => a + (hc[s] || 0), 0) / all;
+    const all = SITE_LIST.reduce((a, s) => a + FIXED_SPLIT[s], 0);
+    return sites.reduce((a, s) => a + (FIXED_SPLIT[s] || 0), 0) / all;
   }
   // 期間[from,to]のその他固定費。締まった月度は月額そのまま、途中の月度は出勤日数の割合
   function fixedFor(from, to, sites) {
@@ -230,9 +230,8 @@
       if (P > 0 && b.daily > 0) cap = Math.min(b.daily * dStd, b.npt > 0 && H > 0 ? H / 8 / b.npt : Infinity);
       return { site, P, v, L, F: 0, H, cap, people: hc[site] || 0 };
     });
-    // 月額のその他固定費を、工数(在職人数)の比で工場へ配分
-    const sumH = rows.reduce((x, r) => x + r.H, 0);
-    rows.forEach((r) => { r.F = sumH > 0 ? OTHER_FIXED_MONTHLY * r.H / sumH : OTHER_FIXED_MONTHLY / rows.length; });
+    // 月額のその他固定費を、本社:夢前:鳥取 = 1:1:2 で工場へ配分
+    rows.forEach((r) => { r.F = OTHER_FIXED_MONTHLY * siteShare([r.site]); });
     const den = rows.reduce((x, r) => x + r.cap * (r.P * (1 - p) - r.v), 0);
     const need = rows.reduce((x, r) => x + r.H / 8 * r.L + r.F, 0);
     const th = den > 0 ? Math.max(0, need / den) : null;
