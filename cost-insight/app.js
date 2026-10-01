@@ -47,22 +47,29 @@ function startLoadingBar() {
   };
 }
 
+async function gasGet(action) {
+  const res = await fetch(GAS_API_URL + '?action=' + action);
+  const text = await res.text();
+  let body;
+  try { body = JSON.parse(text); } catch (e) { throw new Error('GASの応答を読めませんでした(HTTP ' + res.status + ')'); }
+  if (body.status !== 'success') throw new Error(body.message || 'GASのエラー');
+  return body.data;
+}
+
+// 受け取ったデータを画面の状態に入れ、受信時刻の表示を更新する
+function applyData(d) {
+  state.data = d;
+  state.model = CICalc.build(d);
+  const b = d.budget;
+  document.getElementById('status').textContent = '生産・日報の集計: ' + new Date(d.cache.generatedAt).toLocaleString('ja-JP')
+    + ' / 実行予算の受信: ' + (b ? new Date(b.at).toLocaleString('ja-JP') : 'まだ受信していません');
+  document.getElementById('budget').textContent = b ? '最終受信: ' + new Date(b.at).toLocaleString('ja-JP') + '(' + Object.keys(b.rows || {}).length + 'ファイル)' : '最終受信: まだ受信していません';
+}
+
 async function load() {
-  const st = document.getElementById('status');
   const bar = startLoadingBar();
   try {
-    const res = await fetch(GAS_API_URL + '?action=getData');
-    const text = await res.text();
-    let body;
-    try { body = JSON.parse(text); } catch (e) { throw new Error('GASの応答を読めませんでした(HTTP ' + res.status + ')'); }
-    if (body.status !== 'success') throw new Error(body.message || 'GASのエラー');
-    const d = body.data;
-    state.data = d;
-    state.model = CICalc.build(d);
-    const b = d.budget;
-    st.textContent = '生産・日報の集計: ' + new Date(d.cache.generatedAt).toLocaleString('ja-JP')
-      + ' / 実行予算の受信: ' + (b ? new Date(b.at).toLocaleString('ja-JP') : 'まだ受信していません');
-    document.getElementById('budget').textContent = b ? '最終受信: ' + new Date(b.at).toLocaleString('ja-JP') + '(' + Object.keys(b.rows || {}).length + 'ファイル)' : '最終受信: まだ受信していません';
+    applyData(await gasGet('getData'));
     setupFilters();
     setupYearFilter();
     renderSettings();
@@ -71,6 +78,54 @@ async function load() {
     document.querySelectorAll('.menu-btn').forEach(b => { b.disabled = false; });
   } catch (e) {
     bar.fail(e.message + '(ページを再読み込みしてください)');
+  }
+}
+
+/* ===================== 実行予算の取込の完了を待って自動で反映 ===================== */
+
+// ［実行予算取込］を押したら、GASの最終受信時刻(?action=budget)を10秒おきに確認し、
+// 変わったら(＝取込が終わったら)データを取り直して画面に反映する。30分で待つのをやめる。
+const WATCH = { timer: null, t0: 0, baseAt: null, busy: false };
+function startImportWatch() {
+  WATCH.baseAt = state.data && state.data.budget ? state.data.budget.at : null;
+  WATCH.t0 = Date.now();
+  if (WATCH.timer) clearInterval(WATCH.timer);
+  WATCH.timer = setInterval(checkImport, 10000);
+  showImportStatus('', '取込を待っています…(黒い画面が閉じると、自動でこの画面に反映されます)');
+}
+
+function showImportStatus(cls, text) {
+  const el = document.getElementById('imp-status');
+  el.hidden = false;
+  el.className = 'imp-status' + (cls ? ' ' + cls : '');
+  el.textContent = text;
+}
+
+async function checkImport() {
+  if (WATCH.busy) return;
+  const sec = Math.floor((Date.now() - WATCH.t0) / 1000);
+  if (sec > 30 * 60) {
+    clearInterval(WATCH.timer); WATCH.timer = null;
+    showImportStatus('ng', '30分たっても取込の結果が届きませんでした。黒い画面にエラーが出ていないか確認し、もう一度［実行予算取込］を押してください(何も起きない場合は①の初期設定を行ってください)。');
+    return;
+  }
+  WATCH.busy = true;
+  try {
+    const t = (await gasGet('budget')).today;
+    if (t && t.at !== WATCH.baseAt) {
+      clearInterval(WATCH.timer); WATCH.timer = null;
+      showImportStatus('', '取込結果を読み込んでいます…');
+      applyData(await gasGet('getData'));
+      renderSettings();
+      render();
+      showImportStatus('ok', '取込結果を反映しました(' + new Date(t.at).toLocaleString('ja-JP') + ' 受信・' + (t.rows || []).length + 'ファイル)');
+    } else {
+      showImportStatus('', '取込を待っています…(経過 ' + Math.floor(sec / 60) + '分' + (sec % 60) + '秒。黒い画面が閉じると、自動でこの画面に反映されます)');
+    }
+  } catch (e) {
+    showImportStatus('ng', '確認に失敗しました。再確認します…(' + e.message + ')');
+  } finally {
+    WATCH.busy = false;
   }
 }
 

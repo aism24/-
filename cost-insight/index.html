@@ -95,6 +95,9 @@
   .menu-btn:disabled small { color:#ddd; }
   .back { font:inherit; font-size:14px; background:#fff; color:#222; border:0; border-radius:6px; padding:8px 16px; margin:0 0 12px; cursor:pointer; }
   .step { border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-top:12px; }
+  .imp-status { font-size:14px; font-weight:bold; margin:6px 0 0; padding:8px 12px; border-radius:6px; background:#eef4ff; color:#1f3a8a; }
+  .imp-status.ok { background:#e8f7ee; color:#166534; }
+  .imp-status.ng { background:#fff4e5; color:#9a3412; }
   .step h3 { font-size:15px; margin:0 0 6px; }
 </style>
 </head>
@@ -128,9 +131,10 @@
       </div>
       <div class="step">
         <h3>② 実行予算取込</h3>
-        <p><a class="btn" href="costinsight://update">実行予算取込</a><button class="btn sub" type="button" onclick="location.reload()">画面を再読み込み</button></p>
+        <p><a class="btn" href="costinsight://update" onclick="startImportWatch()">実行予算取込</a></p>
+        <p id="imp-status" class="imp-status" hidden></p>
         <p class="note">「開きますか？」で［開く］を押すと、会社サーバーの 実行予算更新.bat が動きます(黒い画面に進み具合が出ます。数分かかることがあります)。
-          終わったら［画面を再読み込み］を押してください。<br>
+          取込が終わると、この画面に自動で反映されます(再読み込みは不要です)。<br>
           <b>押しても何も起きないときは、そのPCでまだ①をしていません。</b>
           社内ネットワークのPCでのみ動きます。会社サーバーの「コストインサイト\参照資料（削除厳禁）\実行予算更新.bat」をダブルクリックしても同じ取込ができます。</p>
       </div>
