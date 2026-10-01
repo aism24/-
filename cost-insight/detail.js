@@ -23,7 +23,7 @@
     return isFinite(v) ? v : 0;
   }
 
-  /* ---------- 計算(production-profit の PPCalc と同じ式。固定費=人件費のみ) ---------- */
+  /* ---------- 計算(production-profit の PPCalc と同じ式。固定費は人件費+その他固定費=基本設定の月額概算固定費) ---------- */
   function simulate(t, W, n, P) {
     const p = K.goalRate() / 100, L = t.laborRate || 0, v = t.varPerTon || 0;
     const fixed = t.fixed || 0;
@@ -149,7 +149,7 @@
     D.total = t;
     const monthly = K.otherFixed() * K.siteShare(sel.sites), mo = monthly > 0 ? t.fixed / monthly : 0;
     D.fixedNote = `${yen(monthly)}円/月 × ${fmt(mo, Math.abs(mo - Math.round(mo)) < 0.05 ? 0 : 1)}か月（${sel.sites.length === SITE_LIST.length ? '3工場合計' : sel.sites.join('・')}）`;
-    // 期間の途中なら、期間の終わりまでに目標利益率に届くのに必要な、残り期間の生産量(その他の固定費が無いので固定費の上乗せは0)
+    // 期間の途中なら、期間の終わりまでに目標利益率に届くのに必要な、残り期間の生産量(固定費の上乗せは、期間全体のその他固定費と現在までの分の差)
     D.remain = null;
     if (sel.to < sel.fullTo) {
       const cal = K.calendar(), next = K.utcToYmd(K.ymdToUtc(sel.to) + 86400000);

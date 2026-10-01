@@ -11,9 +11,9 @@
   const C = CICalc;
   const SITE_LIST = ['本社', '夢前', '鳥取'];
   const FIXED_BASE = 12; // 目標の基準にする直近の月度数
-  // 月額のその他固定費(人件費以外の固定費。3工場合計・円)。決算に合わせた値(2026-10-01 ユーザー指示: 月2,500万円)。
+  // 月額のその他固定費=基本設定の「月額概算固定費（鉄構部）」(人件費以外の固定費。3工場合計・円)。決算に合わせた値(2026-10-01 ユーザー指示: 月2,500万円)。
   // 工場へは 本社:夢前:鳥取 = 1:1:2 で配分する(鳥取だけ規模が倍。2026-10-01 ユーザー指示)。月額は基本設定シート(画面の「設定」から変更)の値を使う。
-  const DEFAULT_FIXED_MONTHLY = 25000000; // 基本設定シートの「月額その他固定費」が空のときの既定値
+  const DEFAULT_FIXED_MONTHLY = 25000000; // 基本設定シートの「月額概算固定費」が空のときの既定値
   const otherFixed = () => { const v = Number((state.data.settings || {}).otherFixedMonthly); return isFinite(v) && v >= 0 && (state.data.settings || {}).otherFixedMonthly !== null && (state.data.settings || {}).otherFixedMonthly !== undefined ? v : DEFAULT_FIXED_MONTHLY; };
   const FIXED_SPLIT = { '本社': 1, '夢前': 1, '鳥取': 2 };
   const $ = (id) => document.getElementById(id);
@@ -71,7 +71,7 @@
     return t;
   }
 
-  /* 目標利益率・単価から損益分岐生産量と目標生産量を出す(人件費を固定費扱い。その他の固定費は無い) */
+  /* 目標利益率・単価から損益分岐生産量と目標生産量を出す(人件費とその他固定費を合わせて固定費扱い) */
   function simulate(base, W, n, P, p) {
     const L = base.laborRate || 0, v = base.varPerTon || 0, labor = W * n * L, fixed = base.fixed || 0;
     const dBe = P - v, dGoal = P * (1 - p) - v;
