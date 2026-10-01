@@ -21,6 +21,16 @@
  *     対象外: 元ファイルなし・読み取りエラー・一覧に未登録・契約総重量と契約金額がどちらも0/空欄の工事。
  *     同じ工事Noのファイルが複数あれば保存日時の新しい方。
  *
+ * ■ 第3段階: 生産重量の履歴(_history_production.json。工事マスタA列の工事だけ、削除せず全期間を残す)
+ *   生産管理ダッシュボードは「本日から13か月前まで」しか返さないため、コストインサイト側で履歴を持つ。
+ *   - 毎朝の集計: 生産管理APIの範囲内の日付は、その日のAPIに出てくる工事だけ最新値で置き換える。
+ *     範囲より前の日付・APIに出てこない工事(枠の入れ替えで外れた工事)・「完了」の工事は履歴のまま(上書きしない)。
+ *   - importHistory()(エディタから手動で実行): Excelマスタ一覧(生産管理ダッシュボードの索引)のC列の工事のうち、
+ *     工事マスタA列にあり、まだ取り込んでいない工事か未完了の工事のマスターファイルを全期間読み、履歴を置き換える。
+ *     元ファイルは読み取りのみ(Excelは読み取り用の一時コピーをこのフォルダに作り、読んだらすぐゴミ箱へ)。
+ *     サービス「Drive API」の追加が必要。約5分で区切り、続きは同じ関数をもう一度実行する。
+ *   - 生産管理ダッシュボードのコード・Excelマスタ一覧・元のExcelファイルには一切書き込まない。
+ *
  * ■ シート(値の読み方)
  *   工事マスタ    : 工事No | 工事名 | 契約総重量(t) | 契約金額(円) | トン単価 | 完了 | 年度 | 労務費の締め
  *                   (A・B列は日報アプリからIMPORTRANGE、C〜H列は「工事データ」からのVLOOKUP式。GASは読むだけ)
@@ -45,6 +55,11 @@ const PM_API_URL = 'https://script.google.com/macros/s/AKfycbya0wgwbTuBN1laM8tWF
 const DR_API_URL = 'https://script.google.com/macros/s/AKfycbyiocXgXi_YEMUUq5BJPe7CUi2V-LJIBvLwceextYV-82hEArRKRaHQ5peVj5oMfTsW/exec';
 const CACHE_FILE_NAME = '_cache_production.json';
 const BUDGET_FILE_NAME = '_cache_budget.json';
+const HISTORY_FILE_NAME = '_history_production.json';
+// 生産管理ダッシュボードの索引「Excelマスタ一覧」(読み取りのみ)。C 工事番号 / D ファイル名 / E URL
+const INDEX_SHEET_ID = '14Wgpkny7wIboiRKLyp7wZ8hxzUVevKmXdVJGIpV7A3c';
+const IMPORT_TIME_LIMIT_MS = 5 * 60 * 1000; // GASの6分制限の手前で区切る
+const TEMP_COPY_PREFIX = '_一時コピー_読み取り用_';
 const TZ = 'Asia/Tokyo';
 // 集計対象の工場。これ以外(「中止」「高馬」など)の加工先・所属のデータは集計から除外する
 const SITE_ORDER = ['本社', '夢前', '鳥取'];
@@ -170,7 +185,9 @@ function refreshLocked_(reuseIfExists) {
       const done = loadCacheText_();
       if (done !== null) return done;
     }
-    const text = JSON.stringify(aggregateSources_(fetchSources_()));
+    const src = fetchSources_();
+    src.history = updateHistoryFromPm_(src.pm);
+    const text = JSON.stringify(aggregateSources_(src));
     saveCacheText_(text);
     return text;
   } finally {
@@ -219,7 +236,7 @@ function aggregateSources_(src) {
     return map[key] || (map[key] = [ymd, site, workNo, 0, 0]);
   }
 
-  (pm.works || []).forEach(function (w) {
+  (applyHistoryToPmWorks(pm.works || [], src.history)).forEach(function (w) {
     const wn = String(w.workNo);
     const info = works[wn] || (works[wn] = { name: w.workName || '', totalWeight: 0 });
     Object.keys(w.bySite || {}).forEach(function (site) {
@@ -266,10 +283,228 @@ function aggregateSources_(src) {
     works: works,
     rec: rec,
     warnings: warnings,
+    // マスターファイルから全期間を取り込み済みの工事No(画面の注意書きの表示に使う)
+    historyImported: Object.keys((src.history && src.history.works) || {}).filter(function (no) { return src.history.works[no].imported; }).sort(),
   };
 }
 
 function round_(v, d) { const f = Math.pow(10, d); return Math.round(v * f) / f; }
+
+// ========== 生産重量の履歴(純粋関数。Nodeでテストする) ==========
+// history = { v:1, works:{ 工事No: { byDate:{ 'yyyy-MM-dd': { 工場: 重量t } }, imported:'取込日時'|'' , files:[ファイル名] } } }
+
+// 生産管理APIの範囲の始まり(カレンダーと重量の日付のうち早い方)
+function pmWindowStart(pm) {
+  let min = '';
+  Object.keys((pm && pm.calendar) || {}).forEach(function (k) { if (!min || k < min) min = k; });
+  ((pm && pm.works) || []).forEach(function (w) {
+    Object.keys(w.bySite || {}).forEach(function (site) {
+      Object.keys(w.bySite[site].weightByDate || {}).forEach(function (k) { if (!min || k < min) min = k; });
+    });
+  });
+  return min;
+}
+
+// 毎朝の生産管理APIの値を履歴に反映した新しい履歴を返す(元の history は変えない)。
+// masterNos: 工事マスタA列の工事No → true、doneNos: 「完了」の工事No → true
+function mergeHistory(history, pm, masterNos, doneNos) {
+  const next = { v: 1, works: {} };
+  const old = (history && history.works) || {};
+  Object.keys(old).forEach(function (no) { next.works[no] = JSON.parse(JSON.stringify(old[no])); });
+  const from = pmWindowStart(pm);
+  if (!from) return next;
+  ((pm && pm.works) || []).forEach(function (w) {
+    const no = String(w.workNo).trim();
+    if (!masterNos[no] || doneNos[no]) return; // 工事マスタに無い工事・完了の工事は上書きしない
+    const h = next.works[no] || (next.works[no] = { byDate: {}, imported: '', files: [] });
+    // 範囲内の日付はAPIの値で置き換える(範囲より前はそのまま残す)
+    Object.keys(h.byDate).forEach(function (k) { if (k >= from) delete h.byDate[k]; });
+    Object.keys(w.bySite || {}).forEach(function (site) {
+      const st = String(site).trim();
+      const byDate = w.bySite[site].weightByDate || {};
+      Object.keys(byDate).forEach(function (k) {
+        if (k < from) return;
+        const wt = Number(byDate[k]) || 0;
+        if (!wt) return;
+        const d = h.byDate[k] || (h.byDate[k] = {});
+        d[st] = (d[st] || 0) + wt; // 丸めない(集計結果を生産管理の値と完全に一致させるため)
+      });
+    });
+  });
+  return next;
+}
+
+// 生産管理APIの works のうち、履歴のある工事は履歴の重量(全期間)に差し替える。
+// 履歴だけにある工事(APIの範囲から外れた工事)も加える。履歴の無い工事はAPIの値のまま。
+function applyHistoryToPmWorks(pmWorks, history) {
+  const hw = (history && history.works) || {};
+  const out = [];
+  const seen = {};
+  pmWorks.forEach(function (w) {
+    const no = String(w.workNo).trim();
+    if (!hw[no]) { out.push(w); return; }
+    if (seen[no]) return;
+    seen[no] = true;
+    out.push(historyToPmWork_(no, hw[no], w.workName));
+  });
+  Object.keys(hw).forEach(function (no) {
+    if (!seen[no]) out.push(historyToPmWork_(no, hw[no], ''));
+  });
+  return out;
+}
+
+function historyToPmWork_(no, h, name) {
+  const bySite = {};
+  Object.keys(h.byDate || {}).forEach(function (k) {
+    const d = h.byDate[k];
+    Object.keys(d).forEach(function (site) {
+      const s = bySite[site] || (bySite[site] = { weightByDate: {} });
+      s.weightByDate[k] = (s.weightByDate[k] || 0) + (Number(d[site]) || 0);
+    });
+  });
+  return { workNo: no, workName: name || '', bySite: bySite };
+}
+
+// マスターファイル(1シート目)の値から { 'yyyy-MM-dd': { 工場: 重量 } } を作る(生産管理ダッシュボードと同じ読み方:
+// 見出し「部位」「加工先」「加工」「重量」、部位・加工先・加工日がある行だけ。期間の絞り込みはしない)。
+// toYmd: Date → 'yyyy-MM-dd'(JST)
+function byDateFromValues(values, toYmd) {
+  const byDate = {};
+  if (!values || values.length < 2) return byDate;
+  const header = values[0].map(function (h) { return String(h === null || h === undefined ? '' : h).trim(); });
+  const col = { part: header.indexOf('部位'), site: header.indexOf('加工先'), date: header.indexOf('加工'), weight: header.indexOf('重量') };
+  if (col.part < 0 || col.site < 0 || col.date < 0) return byDate;
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    const site = String(r[col.site] || '').trim(), part = String(r[col.part] || '').trim(), dv = r[col.date];
+    if (!site || !part || !(dv instanceof Date) || isNaN(dv.getTime())) continue;
+    const wt = col.weight >= 0 ? (Number(r[col.weight]) || 0) : 0;
+    if (!wt) continue;
+    const k = toYmd(dv);
+    const d = byDate[k] || (byDate[k] = {});
+    d[site] = (d[site] || 0) + wt;
+  }
+  return byDate;
+}
+
+function mergeByDate(a, b) {
+  const out = JSON.parse(JSON.stringify(a || {}));
+  Object.keys(b || {}).forEach(function (k) {
+    const d = out[k] || (out[k] = {});
+    Object.keys(b[k]).forEach(function (site) { d[site] = (d[site] || 0) + b[k][site]; });
+  });
+  return out;
+}
+
+// Excelマスタ一覧の行(A〜E列の値)から、工事Noごとのファイル一覧を作る(工事番号が空・00-00・URLが無い行は除く)。
+// マスタNo(B列)が S で始まればGoogleスプレッドシート、それ以外はExcel(生産管理ダッシュボードと同じ判定)。
+function indexFilesByWork(rows) {
+  const out = {};
+  rows.forEach(function (row) {
+    const no = String(row[2] || '').trim(), name = String(row[3] || '').trim(), url = String(row[4] || '').trim();
+    if (!no || no === '00-00' || !name || !url) return;
+    const m = /\/d\/([-\w]{25,})/.exec(url) || /[?&]id=([-\w]{25,})/.exec(url);
+    if (!m) return;
+    (out[no] || (out[no] = [])).push({ masterNo: String(row[1] || '').trim(), name: name, id: m[1], sheet: /^s/i.test(String(row[1] || '').trim()) });
+  });
+  return out;
+}
+
+// ========== 生産重量の履歴(GAS側) ==========
+
+function loadHistory_() {
+  const it = folder_().getFilesByName(HISTORY_FILE_NAME);
+  if (!it.hasNext()) return { v: 1, works: {} };
+  try { return JSON.parse(it.next().getBlob().getDataAsString('UTF-8')); } catch (e) { return { v: 1, works: {} }; }
+}
+
+function saveHistory_(h) {
+  h.savedAt = new Date().toISOString();
+  saveFileText_(HISTORY_FILE_NAME, JSON.stringify(h));
+}
+
+// 工事マスタA列の工事No と 「完了」の工事No
+function masterAndDone_() {
+  const works = readWorks_(sheet_(SHEETS.MASTER));
+  const masterNos = {}, doneNos = {};
+  Object.keys(works).forEach(function (no) { masterNos[no] = true; if (works[no].done) doneNos[no] = true; });
+  return { masterNos: masterNos, doneNos: doneNos };
+}
+
+// 毎朝の集計で呼ぶ。生産管理APIの値を履歴に反映して保存し、反映後の履歴を返す
+function updateHistoryFromPm_(pm) {
+  const md = masterAndDone_();
+  const next = mergeHistory(loadHistory_(), pm, md.masterNos, md.doneNos);
+  saveHistory_(next);
+  return next;
+}
+
+/* エディタから手動で実行する: マスターファイルから全期間の生産重量を履歴に取り込む。
+   対象: Excelマスタ一覧C列の工事のうち、工事マスタA列にあり、(まだ取り込んでいない or 完了でない)工事。
+   約5分で区切る。「続きがあります」とログに出たら、もう一度実行する(取り込み済みの工事は飛ばす)。 */
+function importHistory() {
+  const t0 = Date.now();
+  const props = PropertiesService.getScriptProperties();
+  let runStart = props.getProperty('IMPORT_RUN_START');
+  if (!runStart) { runStart = new Date().toISOString(); props.setProperty('IMPORT_RUN_START', runStart); }
+
+  const md = masterAndDone_();
+  const idxSh = SpreadsheetApp.openById(INDEX_SHEET_ID).getSheets()[0];
+  const last = idxSh.getLastRow();
+  const files = indexFilesByWork(last >= 2 ? idxSh.getRange(2, 1, last - 1, 5).getValues() : []);
+  const history = loadHistory_();
+  const nos = Object.keys(files).filter(function (no) { return md.masterNos[no]; }).sort();
+  const done = [], skipped = [], failed = [];
+  let remaining = 0;
+
+  for (let i = 0; i < nos.length; i++) {
+    const no = nos[i], h = history.works[no];
+    if (h && h.imported && (md.doneNos[no] || h.imported >= runStart)) { skipped.push(no); continue; }
+    if (Date.now() - t0 > IMPORT_TIME_LIMIT_MS) { remaining = nos.length - i; break; }
+    try {
+      let byDate = {};
+      files[no].forEach(function (f) { byDate = mergeByDate(byDate, readMasterFileByDate_(f)); });
+      const nh = history.works[no] || (history.works[no] = { byDate: {}, imported: '', files: [] });
+      nh.byDate = byDate;
+      nh.imported = new Date().toISOString();
+      nh.files = files[no].map(function (f) { return f.name; });
+      saveHistory_(history); // 1工事ごとに保存(途中で止まっても取り込んだ分は残る)
+      done.push(no + '(' + nh.files.length + 'ファイル・' + round_(sumByDate_(byDate), 1) + 't)');
+    } catch (err) {
+      failed.push(no + ': ' + (err && err.message || err));
+    }
+  }
+  Logger.log('取り込み: ' + (done.join('、') || 'なし'));
+  Logger.log('取り込み済み・完了のため飛ばした工事: ' + (skipped.join('、') || 'なし'));
+  if (failed.length) Logger.log('読み取れなかった工事: ' + failed.join(' / '));
+  if (remaining) {
+    Logger.log('続きがあります(残り ' + remaining + ' 工事)。もう一度 importHistory を実行してください。');
+    return;
+  }
+  props.deleteProperty('IMPORT_RUN_START');
+  refreshLocked_(false); // 画面用の集計を作り直す
+  Logger.log('すべて終わりました。画面用の集計も作り直しました。');
+}
+
+function sumByDate_(byDate) {
+  let t = 0;
+  Object.keys(byDate).forEach(function (k) { Object.keys(byDate[k]).forEach(function (s) { t += byDate[k][s]; }); });
+  return t;
+}
+
+// 1つのマスターファイルを読み取りのみで読む。Excelは読み取り用の一時コピー(スプレッドシート形式)を
+// このフォルダに作って読み、読み終えたらすぐゴミ箱へ移す(元ファイルは開かず、変更もしない)。
+function readMasterFileByDate_(f) {
+  const toYmd = function (d) { return Utilities.formatDate(d, TZ, 'yyyy-MM-dd'); };
+  if (f.sheet) return byDateFromValues(SpreadsheetApp.openById(f.id).getSheets()[0].getDataRange().getValues(), toYmd);
+  const blob = DriveApp.getFileById(f.id).getBlob();
+  const tmp = Drive.Files.create({ name: TEMP_COPY_PREFIX + f.name, mimeType: MimeType.GOOGLE_SHEETS, parents: [folder_().getId()] }, blob);
+  try {
+    return byDateFromValues(SpreadsheetApp.openById(tmp.id).getSheets()[0].getDataRange().getValues(), toYmd);
+  } finally {
+    try { DriveApp.getFileById(tmp.id).setTrashed(true); } catch (ignore) {}
+  }
+}
 
 // ========== 実行予算の受け取り(純粋関数。Nodeでテストする) ==========
 

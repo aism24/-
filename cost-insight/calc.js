@@ -20,7 +20,8 @@
  *   (生産重量・工数は生産管理・日報の実績だけを使う。実行予算Excelの加工重量・工数は使わない)
  *
  * ■ 分析できる期間
- *   生産重量(生産管理)は日報より後から始まる(2025/8/21〜)。期間別・工場別・損益は analysisFrom 以降に限る
+ *   生産重量は生産管理の値と履歴(工事マスタの工事は全期間)。期間別・工場別・損益は analysisFrom
+ *   (生産重量と日報の工数の両方が揃っている最初の月度の初日)以降に限る
  *   (画面で強制)。時間単価の計算には、それより前の工数・労務費も使う。
  *   analysisFrom より前に工数がある工事で、生産重量が契約総重量に届かないものは dataShort(生産重量のデータ不足)。
  *   単価が無い工事(実行予算なし・契約金額なし等)のセルは、損益(profit)の合計に入れない。
@@ -115,14 +116,16 @@
     var rec = cache.rec || [];
     var budget = budgetByWork(data.budget);
 
-    // 日報・生産データが揃っている最初の月度(最初の日が月度の初日=21日ならその月度、途中からなら次の月度)
-    var minYmd = rec.reduce(function (m, r) { return !m || r[0] < m ? r[0] : m; }, '');
+    // 日報(工数)が揃っている最初の月度(最初の日が月度の初日=21日ならその月度、途中からなら次の月度)。
+    // 生産重量は履歴で日報より前の日付もあるため、工数のある日だけで決める(労務費の割り算の開始に使う)
+    var minYmd = rec.reduce(function (m, r) { return r[4] > 0 && (!m || r[0] < m) ? r[0] : m; }, '');
     var firstPeriod = minYmd ? (periodRange(periodKeyOf(minYmd)).from === minYmd ? periodKeyOf(minYmd) : shiftPeriod(periodKeyOf(minYmd), 1)) : '';
 
     // 生産重量のデータが月度の初日から揃っている最初の月度の初日(これより前は重量が無い)
     var minW = rec.reduce(function (m, r) { return r[3] > 0 && (!m || r[0] < m) ? r[0] : m; }, '');
     var wp = minW ? periodKeyOf(minW) : '';
     if (wp && periodRange(wp).from !== minW) wp = shiftPeriod(wp, 1);
+    if (wp && firstPeriod && wp < firstPeriod) wp = firstPeriod; // 工数(日報)が無い期間は分析しない
     var analysisFrom = wp ? periodRange(wp).from : '';
 
     // 1) 共通の工数の按分: 工場×月度ごとに 工事の工数 と 共通の工数 を集計
