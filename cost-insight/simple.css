@@ -1,0 +1,176 @@
+/* 工場別進捗分析(シンプル版)。生産損益分析(production-profit)のシンプル版と同じ見た目。色は明るいテーマ固定 */
+#v-simple {
+  --surface: #fcfcfb; --border: #dddcd6; --text: #0b0b0b; --text2: #52514e; --muted: #7a7974; --accent: #2a78d6;
+  --good: #0ca30c; --bad: #d03b3b; --warn-bg: #fff4d6; --grid: #e8e7e2;
+  --bep-cost: #c8423b; --bep-fixed: #5b63b0; --bep-var: #2e9bd6; --bep-be: #d99a00; --goal: #e0287d;
+  font-family: "Inter", system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; font-variant-numeric: tabular-nums;
+}
+#v-simple button { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 6px; padding: 6px 14px; }
+#v-simple .muted { color: var(--muted); }
+#v-simple .small { font-size: 12px; }
+#v-simple .sTop { color: #fff; font-size: 20px; font-weight: 800; margin: 0 0 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+#v-simple .sTop .btn { font-size: 14px; padding: 8px 18px; margin: 0; }
+.segBtns { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.segBtns button { min-width: 72px; padding: 6px 14px; }
+.segBtns button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.periodWrap { display: inline-flex; align-items: stretch; gap: 6px; }
+.monthBtn { display: inline-flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1; padding: 0 12px; min-width: 40px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; }
+.monthBtn:disabled { opacity: .35; cursor: default; }
+.chartBox { position: relative; height: 280px; }
+.bepBox { touch-action: pan-y; user-select: none; } /* 点線の上だけ手のカーソル(app.jsで設定) */
+.bepBox.fixedX { cursor: default; }
+.bepBox svg { position: absolute; top: 0; left: 0; }
+.bepSvg { display: block; font-size: calc(12px * var(--k, 1)); } /* --k: グラフの大きさに合わせた文字の倍率(app.jsで設定) */
+.bepSvg .bg { stroke: var(--grid); stroke-width: 1; }
+.bepSvg .ax { fill: var(--text2); font-size: calc(11px * max(1, var(--k, 1))); } /* 目盛りは小さくしない */
+.bepSvg .lbl { fill: var(--text); font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.bepSvg .lbl.fixedLbl { fill: var(--bep-fixed); font-size: calc(11px * max(1, var(--k, 1))); }
+.bepSvg .lbl.cost { fill: var(--bep-cost); }
+.bepSvg .lbl.good, .bepSvg .lbl.bProfit { fill: var(--good); }
+.bepSvg .lbl.bLoss { fill: var(--bad); }
+.bepSvg .lbl.bVar { fill: var(--bep-var); }
+.bepSvg .lbl.bFixed { fill: var(--bep-fixed); }
+.bepSvg .lbl.seg { font-size: calc(18px * var(--k, 1)); } /* 内訳の文字は1.5倍 */
+.bepSvg .lbl.lineLbl { font-size: calc(24px * var(--k, 1)); font-weight: 800; stroke-width: 4px; } /* 「売上」「総費用」は2倍・太字 */
+/* 面: 人件費は固定費に含めて表示するため、人件費帯も固定費と同じ色 */
+.bepSvg .fFixed, .bepSvg .fLabor { fill: var(--bep-fixed); fill-opacity: .16; }
+.bepSvg .fVar { fill: var(--bep-var); fill-opacity: .16; }
+.bepSvg .fLoss { fill: var(--bad); fill-opacity: .18; }
+.bepSvg .fProfit { fill: var(--good); fill-opacity: .16; }
+.bepSvg .lFixed { stroke: var(--bep-fixed); stroke-width: 2; }
+.bepSvg .lCost { stroke: var(--bep-cost); stroke-width: 2; }
+.bepSvg .lSales { stroke: var(--text); stroke-width: 2; }
+.bepSvg .lBe { stroke: var(--bep-be); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.bepSvg .mBe { fill: var(--bep-be); stroke: var(--surface); stroke-width: 2; }
+.bepSvg .mBeHalo { fill: var(--bep-be); fill-opacity: .25; }
+.bepSvg .lCursor { stroke: var(--text); stroke-width: 1.2; stroke-dasharray: 5 4; }
+.bepSvg .bFixed { fill: var(--bep-fixed); }
+.bepSvg .bVar { fill: var(--bep-var); }
+.bepSvg .bProfit { fill: var(--good); }
+.bepSvg .bLoss { fill: var(--bad); }
+.bepSvg .handle rect { fill: var(--text); }
+.bepSvg .handle text { fill: var(--surface); font-weight: 600; font-size: 12px; } /* つまみは操作部品なので大きさ固定 */
+/* 損益分岐値(引き出し線+背景。見出し「損益分岐値」は太字) */
+.bepSvg .lbl.be { fill: var(--bep-be); font-size: calc(18px * var(--k, 1)); }
+.bepSvg .lbl.be.bT { font-weight: 800; }
+.bepSvg .beLead { stroke: var(--bep-be); stroke-width: 1.5; }
+.bepSvg .beBg { fill: var(--surface); fill-opacity: .88; stroke: var(--bep-be); stroke-width: 1; }
+/* 利益目標: ★と「目標生産量/目標利益額」はピンク・2倍・太字、黄色背景がゆっくり点滅 */
+.bepSvg .lbl.goalLbl { font-size: calc(24px * var(--k, 1)); font-weight: 800; fill: var(--goal); }
+.bepSvg .mGoal { fill: var(--goal); stroke: var(--surface); stroke-width: 1.5; }
+.bepSvg .goalBg { fill: #ffe45c; animation: goalBlink 2.4s ease-in-out infinite alternate; }
+@keyframes goalBlink { from { opacity: 1; } to { opacity: 0.15; } }
+@media (prefers-reduced-motion: reduce) { .bepSvg .goalBg, .resetBtn2.changed { animation: none; } }
+/* 最前面の表示でもつまみのドラッグ操作を妨げない */
+.bepSvg .goalBg, .bepSvg .goalLbl, .bepSvg .mGoal, .bepSvg .lbl.be, .bepSvg .beBg, .bepSvg .beLead { pointer-events: none; }
+/* グラフ内の操作説明「ドラッグで移動可能」(つまみの上。太字・ゆっくり点滅) */
+.bepSvg .dragHint { fill: var(--text2); font-size: 13px; font-weight: 700; animation: hintBlink 2.4s ease-in-out infinite alternate; pointer-events: none; }
+@keyframes hintBlink { from { opacity: 1; } to { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .bepSvg .dragHint { animation: none; } }
+/* 点線の上の手のカーソル: 通常の約2倍(48px)・オレンジ。ドラッグ中は握った手(画像が使えないブラウザは標準の手) */
+.bepBox.canGrab { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='-1 -1 26 26'%3E%3Cpath d='M23 5.5V20c0 2.2-1.8 4-4 4h-7.3c-1.08 0-2.1-.43-2.85-1.19L1 14.83s1.26-1.23 1.3-1.25c.22-.19.49-.29.79-.29.22 0 .42.06.6.16.04.01 4.31 2.46 4.31 2.46V4c0-.83.67-1.5 1.5-1.5S11 3.17 11 4v7h1V1.5c0-.83.67-1.5 1.5-1.5S15 .67 15 1.5V11h1V2.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5V11h1V5.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5z' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round'/%3E%3C/svg%3E") 24 24, grab; }
+.bepBox.grabbing { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24'%3E%3Crect x='4.5' y='9' width='15' height='12' rx='4.5' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round'/%3E%3Crect x='5.2' y='5.5' width='3.4' height='8' rx='1.7' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round'/%3E%3Crect x='8.6' y='5.5' width='3.4' height='8' rx='1.7' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round'/%3E%3Crect x='12' y='5.5' width='3.4' height='8' rx='1.7' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round'/%3E%3Crect x='15.4' y='5.5' width='3.4' height='8' rx='1.7' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round'/%3E%3Crect x='1.8' y='11.5' width='7' height='3.4' rx='1.7' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round' transform='rotate(-25 5.3 13.2)'/%3E%3C/svg%3E") 24 24, grabbing; } /* ドラッグ中はつかんだ形(握った手) */
+
+.sFoot:empty { display: none; }
+.sFilters { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin: 12px 0; display: flex; flex-direction: column; gap: 8px; }
+.sRow { display: flex; align-items: stretch; justify-content: center; flex-wrap: wrap; gap: 8px; }
+.sRow select { font-size: 15px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.sCards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.sCard { text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.sLabel { font-size: 14px; font-weight: 700; color: var(--text2); }
+.sValue { font-size: 30px; font-weight: 800; margin: 4px 0 2px; overflow-wrap: anywhere; }
+.sUnit { font-size: 15px; font-weight: 500; color: var(--text2); margin-left: 3px; }
+.sSub { font-size: 13px; color: var(--muted); }
+.sCard.good .sValue { color: var(--good); }
+.sCard.bad .sValue { color: var(--bad); }
+.sCard.warn .sValue { color: #e67e00; } /* 損益: 0%以上で目標未満 */
+.sMsg { grid-column: 1 / -1; background: var(--warn-bg); border-radius: 10px; padding: 16px; line-height: 1.7; color: var(--text); }
+.sFoot { color: #bbb; text-align: center; margin: 12px 0 0; } /* 背景(黒)の上の文字 */
+@media (max-width: 480px) {
+  .sCards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sValue { font-size: 28px; }
+  .sNav { width: 100%; justify-content: flex-end; }
+}
+/* 目標(何tを何時間で)。詳細版の現状分析と同じ濃い紫+光る黄緑の縁取り */
+/* 文字サイズは --gfs を基準にem指定(2026-09-28 2倍に拡大。狭い画面では備考を次の行へ折り返す) */
+.sGoal { --gfs: clamp(18px, 6vw, 28px); font-size: var(--gfs); background: #2d1650; border: 3px solid #9be15d; box-shadow: 0 0 16px rgba(155, 225, 93, .45); border-radius: 12px; padding: 10px 14px; margin-top: 12px; color: #fff; }
+.gHead { background: #7b3fd0; color: #fff; font-weight: 700; border-radius: 6px; padding: .2em .5em; font-size: 1em; line-height: 1.35; }
+.gHead small { display: block; font-weight: 400; font-size: .75em; color: #efe6fb; margin-left: 0; }
+.gHead small .hl { display: block; white-space: nowrap; overflow: hidden; } /* 2行目=月末見込みの説明。1行(入りきらないときはJSで縮小) */
+.gLead { font-size: 1.29em; font-weight: 700; margin: .35em .1em; line-height: 1.4; }
+.gLead .gLeadSub { display: block; } /* かっこ書きは改行して下に表示 */
+.gLead .gKey { color: #ff6fb5; font-size: 1.33em; }
+.sGoal .pos { color: #8ee86b; }
+.sGoal .neg { color: #ff8f8f; }
+.sGoal .warn { color: #ffb347; }
+.gTable { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); gap: 0 .5em; align-items: stretch; line-height: 1.3; } /* 同じ行のセルの高さをそろえ、罫線を1本に */
+.gTable .ph, .gHead .ph { display: inline-block; } /* 区切りの位置でだけ改行 */
+.gTable > div { padding: .15em 0; border-bottom: 1px solid rgba(255, 255, 255, .15); }
+.gLabel { font-weight: 600; color: #e6dcf5; font-size: 1em; }
+.gLabel small { font-weight: 400; font-size: .8em; }
+.gVal { text-align: right; font-weight: 700; font-size: 1.21em; white-space: nowrap; }
+.gVal .unit { font-size: .6em; font-weight: 400; color: #d8cdea; margin-left: 2px; }
+.gNote { font-size: .86em; color: #cbbfe0; overflow-wrap: anywhere; }
+.sChart { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; margin-top: 12px; display: flex; flex-direction: column; }
+.sChart h2 { font-size: 15px; margin: 0 0 4px; }
+.sChart .chartBox { height: 380px; }
+@media (max-width: 700px), (min-width: 1000px) {
+  .gTable { grid-template-columns: minmax(0, 1fr) max-content; }
+  .gNote { grid-column: 1 / -1; padding-top: 0 !important; }
+  .gLabel, .gVal { border-bottom: none !important; }
+}
+/* PC: 詳細版の目標シミュレーターと同じく、左にカードと目標の表・右にグラフ。画面いっぱいを使う(スマホは縦並びのまま) */
+@media (min-width: 1000px) {
+  .simple { max-width: none; padding: 0 12px 8px; }
+  .sHead { margin: 0 -12px; display: grid; grid-template-columns: 1fr auto 1fr; }
+  .sHead::before { content: ''; } /* 左の空き列(タイトルを画面の中央に置くため) */
+  .sTitle { width: auto; }
+  .sNav { justify-self: end; }
+  .sFilters { flex-direction: row; justify-content: center; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 8px 10px; margin: 8px 0; }
+  .sBody { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 12px; align-items: stretch; }
+  .sCards { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .sCard { padding: 8px 12px; }
+  .sLabel { font-size: 13px; }
+  .sValue { font-size: clamp(18px, 1.5vw, 28px); }
+  .sSub { font-size: 11px; }
+  .sGoal { margin-top: 10px; }
+  .sGoal { --gfs: clamp(16px, 2.6vh, 28px); }
+  .sChart { margin-top: 0; }
+  .sChart .chartBox { flex: 1; height: auto; min-height: max(420px, calc(100vh - 170px)); }
+  .sFoot { margin-top: 4px; }
+}
+/* 工場別の目標値の表(PCはグラフ内の「損益分岐値」の下に重ねる、スマホはグラフの下) */
+.sChart { position: relative; }
+.sTargets { margin-top: 8px; background: rgba(255, 255, 255, .96); border: 3px solid #7b3fd0; /* 紫: 損益分岐値(黄)の欄と区別 */ border-radius: 8px; padding: 6px 10px; color: #0b0b0b; font-size: clamp(13px, 3.9vw, 21px); } /* スマホは画面幅に合わせて縮める */
+.sTargets .tgHead { font-weight: 800; color: #fff; background: #7b3fd0; margin: -6px -10px 4px; padding: 3px 10px; border-radius: 4px 4px 0 0; }
+.sTargets .tgHead small { color: #efe6fb !important; }
+.sTargets .tgHead .neg { color: #ffd1d1; }
+.sTargets .tgHead small { font-weight: 500; color: #333; margin-left: 4px; }
+.sTargets table { border-collapse: collapse; margin-top: 4px; width: 100%; font-variant-numeric: tabular-nums; }
+.sTargets th, .sTargets td { padding: 2px 6px; border-bottom: 1px solid #e3ded0; text-align: right; white-space: nowrap; }
+.sTargets th:first-child, .sTargets td:first-child { text-align: left; }
+.sTargets th { font-size: .85em; color: #555; font-weight: 600; }
+.sTargets td { font-weight: 700; font-size: 1.05em; }
+.sTargets tr.tot td { background: #efe6fb; }
+.sTargets .tgNote { font-size: .6em; color: #666; margin-top: 3px; }
+.sTargets .tgNote, .sTargets .tgHead, .sTargets .tgHead small { white-space: nowrap; } /* 改行せず1行に(表の枠を横に伸ばす) */
+.sTargets .tgHead small { display: block; margin-left: 0; }
+.sTargets .neg { color: #c62828; }
+@media (min-width: 1000px) {
+  .sTargets { position: absolute; margin-top: 0; box-shadow: 0 2px 8px rgba(0, 0, 0, .15); font-size: clamp(13px, 1.9vh, 19.5px); } /* 13px の1.5倍(画面の高さが低いときは縮めて線と重ならないように) */
+  .sTargets table { width: auto; }
+}
+/* 「現在までの結果」: 4枚のカードを水色の枠でまとめる */
+.sResult { border: 3px solid #4fc3f7; border-radius: 12px; padding: 6px 8px 8px; background: rgba(79, 195, 247, .08); }
+.sResHead { color: #bfe9ff; font-weight: 800; font-size: 15px; margin: 0 2px 6px; }
+.sResHead small { font-weight: 500; font-size: 12px; margin-left: 6px; color: #9fd8f5; }
+@media (min-width: 1000px) and (max-height: 820px) { .sTargets { font-size: clamp(12px, 1.75vh, 19.5px); } } /* 背の低い画面は少し縮めて線と重ならないように */
+@media (max-width: 700px) { .gHead small .hl:last-child { white-space: normal; } } /* スマホは折り返す(1行では小さくなりすぎるため) */
+#v-simple .pos, #v-simple .sGoal .pos { color: #8ee86b; }
+#v-simple .sTargets .pos { color: var(--good); }
+#v-simple .neg { color: var(--bad); }
+.sFoot { color: #ddd; }
+.sFilters .fcBtn { display: none; }
+.sMsg { color: #000; }
+#v-simple [hidden] { display: none !important; }
+main.wide { max-width: none; margin-top: 8px; }

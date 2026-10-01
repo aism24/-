@@ -138,14 +138,28 @@ function showView(name) {
   state.view = name;
   document.querySelectorAll('.view').forEach(v => { v.hidden = v.id !== 'v-' + name; });
   window.scrollTo(0, 0);
-  if (name === 'progress') render(); // グラフは表示されてから描く(非表示のままだと大きさが決まらない)
+  document.querySelector('main').classList.toggle('wide', name === 'simple'); // シンプル版は画面いっぱいに使う
+  if (name === 'progress') {
+    document.querySelector('#v-progress .home-row button').dataset.go = state.tab === 'site' ? 'sitemode' : 'analysis';
+    render(); // グラフは表示されてから描く(非表示のままだと大きさが決まらない)
+  }
+  if (name === 'simple' && window.SimpleView) SimpleView.show();
 }
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => showView(b.dataset.go)));
 // 進捗・結果確認 → 分析の種類(工事別結果分析 / 工場別進捗分析)を選んで分析画面へ
 const AN_TITLE = { work: '工事別結果分析', site: '工場別進捗分析' };
 document.querySelectorAll('[data-analysis]').forEach(b => b.addEventListener('click', () => {
+  if (b.dataset.analysis === 'site') { showView('sitemode'); return; } // 工場別は 詳細版/シンプル版 を先に選ぶ
   state.tab = b.dataset.analysis;
   document.getElementById('an-title').textContent = AN_TITLE[state.tab];
+  showView('progress');
+}));
+
+// 工場別進捗分析 → 詳細版(従来の表とグラフ) / シンプル版(simple.js)
+document.querySelectorAll('[data-sitemode]').forEach(b => b.addEventListener('click', () => {
+  if (b.dataset.sitemode === 'simple') { showView('simple'); return; }
+  state.tab = 'site';
+  document.getElementById('an-title').textContent = AN_TITLE.site;
   showView('progress');
 }));
 
