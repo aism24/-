@@ -1,12 +1,12 @@
-/* 損益分岐生産量グラフ(SVG)。詳細版(app.js)・シンプル版(simple.js)で共用。
-   書式関数 fmt / yen / ton / npt は読み込む側(app.js・simple.js)で定義する。 */
+/* 損益分岐生産量グラフ(SVG)。詳細版(detail.js)・シンプル版(simple.js)で共用。
+   書式関数 fmt(app.js)・yen / ton / npt(simple.js)に依存する(simple.js が先に読み込まれる)。 */
 'use strict';
 
 /* o.hideMoney=true で金額(縦軸の目盛り・固定費の額・内訳の額・売上高・トン単価・目標利益額)を出さない(シンプル版)。
    損益分岐生産量グラフ(SVG。横軸=生産トン数、縦軸=金額)。
    o: {fixed, unitPrice, laborPerTon, varPerTon, profitRate, x(つまみの初期位置t), beTons, goalTons, handleLabel, onMove(t)}
-   面の塗り分け: 固定費帯 / 人件費帯 / 変動費帯 / 損失域(分岐点の左、売上線と総費用線の間) / 利益域(右)。
-   つまみ(縦の点線)をドラッグすると、その重量での内訳(固定費・人件費・変動費・利益or損失)を積み上げバーで表示する。 */
+   面の塗り分け: 固定費帯(人件費込み) / 変動費帯 / 損失域(分岐点の左、売上線と総費用線の間) / 利益域(右)。
+   つまみ(縦の点線)をドラッグすると、その重量での内訳(固定費・変動費・利益or損失)を積み上げバーで表示する。 */
 const bepState = {};
 function niceStep(range, count) {
   const raw = range / Math.max(count, 1), mag = Math.pow(10, Math.floor(Math.log10(raw || 1)));

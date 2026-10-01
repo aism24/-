@@ -341,9 +341,9 @@ function renderNotes(cells) {
   document.getElementById('notes').innerHTML = items.map(t => '<li>' + t + '</li>').join('');
 }
 
-/* ===================== 設定(目標利益率・月額その他固定費=基本設定シート / 完了・年度=工事データ D・E 列) ===================== */
+/* ===================== 設定(目標利益率（対売比率）・月額概算固定費=基本設定シート / 完了・年度=工事データ D・E 列) ===================== */
 
-// 基本設定シートの値(画面の入力欄の元の値)。月額その他固定費が空のときは simple.js の既定値(2,500万円)
+// 基本設定シートの値(画面の入力欄の元の値)。月額概算固定費が空のときは simple.js の既定値(2,500万円)
 const basicOrig = () => {
   const s = state.data.settings, f = Number(s.otherFixedMonthly);
   return { targetProfitRate: CIKit.goalRate(), otherFixedMonthly: s.otherFixedMonthly === null || s.otherFixedMonthly === undefined || !isFinite(f) ? CIKit.otherFixed() : f };

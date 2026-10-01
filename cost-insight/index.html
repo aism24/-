@@ -31,9 +31,6 @@
   #filters { display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; font-size:14px; }
   #filters select, #filters input[type=date] { font:inherit; padding:3px 6px; }
   #filters fieldset { border:0; padding:0; margin:0; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-  .tabs { display:flex; gap:4px; margin:14px 0 0; border-bottom:2px solid #e60012; }
-  .tab { font:inherit; font-size:15px; font-weight:bold; padding:8px 22px; border:0; border-radius:6px 6px 0 0; background:#eee; color:#444; cursor:pointer; }
-  .tab.on { background:#e60012; color:#fff; }
   /* KPI */
   #kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:10px; }
   .kpi { border:1px solid var(--line); border-radius:6px; padding:10px 12px; }
@@ -51,7 +48,6 @@
   .charts { display:grid; grid-template-columns:1fr; gap:14px; }
   .chart-box h3 { font-size:14px; margin:0 0 6px; }
   .chart-wrap { position:relative; height:220px; }
-  .chart-box.wide { grid-column:1 / -1; }
   /* 表 */
   .tbl-wrap { overflow:auto; max-height:70vh; margin-top:8px; }
   table { border-collapse:collapse; font-size:13px; }
@@ -81,7 +77,6 @@
   #set-table select.y1 { background:#d8f3dc; }
   #set-table select.y2 { background:#ffd9e6; }
   #set-table select.y3 { background:#fff3a8; }
-  #set-box summary { cursor:pointer; font-size:15px; }
   .btn:disabled { background:#bbb; cursor:default; }
   .est { display:inline-block; font-size:10px; color:#a15c00; border:1px solid #e0b060; border-radius:3px; padding:0 3px; margin-left:4px; vertical-align:1px; }
   #notes { font-size:12px; color:var(--sub); margin:10px 0 0; padding-left:1.3em; line-height:1.7; }
@@ -134,8 +129,6 @@
   .menu-btn.m3 { background:#ede9fe; border-color:#c4b5fd; }
   .menu-btn:hover:not(:disabled) { filter:brightness(1.04); transform:translateY(-2px); }
   .menu-btn:disabled { background:#999; border-color:#999; color:#ddd; cursor:default; }
-  .back { font:inherit; font-size:14px; background:#fff; color:#222; border:0; border-radius:6px; padding:8px 16px; margin:0 0 12px; cursor:pointer; }
-  .step { border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-top:12px; }
   .imp-status { font-size:14px; font-weight:bold; margin:6px 0 0; padding:8px 12px; border-radius:6px; background:#eef4ff; color:#1f3a8a; }
   .imp-status.ok { background:#e8f7ee; color:#166534; }
   .imp-status.ng { background:#fff4e5; color:#9a3412; }
@@ -156,7 +149,6 @@
   .btn-row { align-self:stretch; display:flex; gap:10px; margin:4px 0 8px; }
   .btn-row .btn { flex:1 1 0; margin:0; padding:4px 10px; font-size:14px; line-height:1.4; }
   .budget-stack .imp-status { width:min(340px, 100%); }
-  .step h3 { font-size:15px; margin:0 0 6px; }
 </style>
 </head>
 <body>
