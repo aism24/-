@@ -36,6 +36,9 @@
  *   GET ?action=master  : { status, data:{ works:[{no, name}] } }(工事マスタの工事No・工事名だけ。PC側の工事の対応付け用)
  *   GET ?action=budget  : { status, data:{ today:{ at, rows:[key…] } } }(実行予算の最終受信時刻。PC側の保存確認用)
  *   POST(秘密キー必須) : 実行予算の受け取り(上の第2段階)
+ *   POST {action:'settings', changes:[{no, done?:true/false, year?:'R8'/''}]}(秘密キー不要。画面の「完了・年度の設定」から誰でも保存できる)
+ *     工事データの D 完了('完了'/空欄)・E 年度 を工事No単位で書く(送られてきた項目だけ)。工事データに無い工事Noは末尾に追加する。
+ *     同じ工事Noの行が複数あれば上の行に書き、応答の dup で知らせる。最後に保存した内容が正。
  */
 
 const PM_API_URL = 'https://script.google.com/macros/s/AKfycbya0wgwbTuBN1laM8tWFGTJhJw--pTAOBAYVyrsOoXbrOXZgs9q3ZsErTSQZwJFT2c2/exec';
@@ -73,6 +76,11 @@ function doPost(e) {
   let locked = false;
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    if (body.action === 'settings') {
+      lock.waitLock(30000);
+      locked = true;
+      return json_({ status: 'success', data: saveWorkSettings_(body.changes) });
+    }
     const secret = PropertiesService.getScriptProperties().getProperty('SECRET');
     if (!secret || body.secret !== secret) return json_({ status: 'error', message: '秘密キーが違います' });
     const rows = normalizeBudgetRows(body.data);
@@ -328,6 +336,45 @@ function computeWorkDataUpdates(existing, rows) {
   return { updates: updates, appends: appends };
 }
 
+// 工事データへの完了・年度の書き込み内容を決める
+//   colA: A列の値(2行目から順)、changes: [{no, done?:true/false, year?:'R8'/''}]
+//   戻り値: { writes:[{row, col:4|5, value}], appends:[{no, done, year}], updated:[no], dup:[no] }
+function computeSettingsWrites(colA, changes) {
+  const rowOf = {}, dupOf = {};
+  colA.forEach(function (v, i) {
+    const no = String(v === null || v === undefined ? '' : v).trim();
+    if (!no) return;
+    if (rowOf[no]) dupOf[no] = true;
+    else rowOf[no] = i + 2;
+  });
+  const res = { writes: [], appends: [], updated: [], dup: [] };
+  const appendOf = {};
+  (Array.isArray(changes) ? changes : []).forEach(function (c) {
+    const no = String(c && c.no || '').trim();
+    if (!no) return;
+    let done = null, year = null;
+    if (typeof c.done === 'boolean') done = c.done ? '完了' : '';
+    if (typeof c.year === 'string') {
+      year = c.year.trim();
+      if (year && !/^R\d{1,3}$/.test(year)) throw new Error('年度の形式が違います: ' + year);
+    }
+    if (done === null && year === null) return;
+    const row = rowOf[no];
+    if (row) {
+      if (done !== null) res.writes.push({ row: row, col: 4, value: done });
+      if (year !== null) res.writes.push({ row: row, col: 5, value: year });
+      if (dupOf[no]) res.dup.push(no);
+    } else {
+      const a = appendOf[no] || (appendOf[no] = { no: no, done: '', year: '' });
+      if (done !== null) a.done = done;
+      if (year !== null) a.year = year;
+    }
+    if (res.updated.indexOf(no) < 0) res.updated.push(no);
+  });
+  res.appends = Object.keys(appendOf).map(function (no) { return appendOf[no]; });
+  return res;
+}
+
 function sameNum_(cur, nv, tol) {
   const c = numOrNull_(cur);
   if (nv === '' || nv === null) return c === null;
@@ -374,6 +421,21 @@ function loadBudget_() {
 function budgetSummary_() {
   const b = loadBudget_();
   return b ? { at: b.at, rows: Object.keys(b.rows || {}) } : null;
+}
+
+// 画面からの完了・年度の保存(工事データ D・E 列)
+function saveWorkSettings_(changes) {
+  const sh = sheet_(SHEETS.WORKDATA);
+  const last = sh.getLastRow();
+  const colA = last >= 2 ? sh.getRange(2, 1, last - 1, 1).getDisplayValues().map(function (r) { return r[0]; }) : [];
+  const plan = computeSettingsWrites(colA, changes);
+  plan.writes.forEach(function (w) { sh.getRange(w.row, w.col).setValue(w.value); });
+  if (plan.appends.length) {
+    let end = colA.length;
+    while (end > 0 && !String(colA[end - 1]).trim()) end--;
+    sh.getRange(end + 2, 1, plan.appends.length, 5).setValues(plan.appends.map(function (a) { return [a.no, '', '', a.done, a.year]; }));
+  }
+  return { updated: plan.updated, appended: plan.appends.map(function (a) { return a.no; }), dup: plan.dup };
 }
 
 // 工事データ シートの B・C・F 列を受信値に合わせる(D 完了・E 年度には触らない)

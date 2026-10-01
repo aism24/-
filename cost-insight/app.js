@@ -11,7 +11,7 @@ const SITES = ['本社', '夢前', '鳥取'];
 // 系列の色(識別用。順番固定)。加工単価=青、仕入単価=オレンジ、時間単価=アクア。損益は 黒字=青 / 赤字=赤
 const COLOR = { proc: '#2a78d6', purchase: '#eb6834', hour: '#1baf7a', plus: '#2a78d6', minus: '#e34948', grid: '#e1e0d9', muted: '#898781' };
 
-const state = { model: null, tab: 'work', charts: [] };
+const state = { data: null, model: null, tab: 'work', charts: [], edits: {} };
 
 const fmt = (v, d) => (v === null || v === undefined || !isFinite(v)) ? '—' : Number(v).toLocaleString('ja-JP', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 });
 const man = v => (v === null || v === undefined || !isFinite(v)) ? '—' : fmt(v / 1e4); // 万円
@@ -32,6 +32,7 @@ async function load() {
     try { body = JSON.parse(text); } catch (e) { throw new Error('GASの応答を読めませんでした(HTTP ' + res.status + ')'); }
     if (body.status !== 'success') throw new Error(body.message || 'GASのエラー');
     const d = body.data;
+    state.data = d;
     state.model = CICalc.build(d);
     const b = d.budget;
     st.textContent = '生産・日報の集計: ' + new Date(d.cache.generatedAt).toLocaleString('ja-JP')
@@ -39,6 +40,7 @@ async function load() {
     document.getElementById('budget').textContent = b ? '最終受信: ' + new Date(b.at).toLocaleString('ja-JP') + '(' + Object.keys(b.rows || {}).length + 'ファイル)' : '最終受信: まだ受信していません';
     setupFilters();
     render();
+    renderSettings();
   } catch (e) {
     st.textContent = '読み込みに失敗しました: ' + e.message + '(ページを再読み込みしてください)';
   }
@@ -224,6 +226,79 @@ function renderNotes(cells) {
   items.push('共通の工数(基本設定の共通扱い工事No・工事No不明)は、同じ工場・同じ月度の各工事に工数比で按分しています。');
   items.push('生産重量のデータは ' + m.analysisFrom.replace(/-/g, '/') + ' からのため、それより前の期間は選べません(時間単価の計算には前の工数・労務費も使っています)。');
   document.getElementById('notes').innerHTML = items.map(t => '<li>' + t + '</li>').join('');
+}
+
+/* ===================== 完了・年度の設定(工事データ D・E 列) ===================== */
+
+function yearOptions() {
+  const set = {};
+  for (let i = 6; i <= new Date().getFullYear() - 2018 + 1; i++) set['R' + i] = true; // R6〜来年度
+  Object.values(state.data.settings.works).forEach(w => { if (w.year) set[w.year] = true; });
+  return [''].concat(Object.keys(set).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))));
+}
+
+function renderSettings() {
+  const works = state.data.settings.works, years = yearOptions();
+  const nos = Object.keys(works).sort();
+  document.getElementById('set-table').innerHTML = '<tr><th>工事No</th><th>工事名</th><th>完了</th><th>年度</th></tr>'
+    + nos.map(no => {
+      const w = works[no], e = state.edits[no] || {};
+      const done = 'done' in e ? e.done : w.done, year = 'year' in e ? e.year : (w.year || '');
+      const changed = Object.keys(e).length ? ' class="changed"' : '';
+      return `<tr${changed} data-no="${esc(no)}"><td>${esc(no)}</td><td>${esc(w.name)}</td>`
+        + `<td class="c"><input type="checkbox" data-k="done"${done ? ' checked' : ''}></td>`
+        + `<td><select data-k="year">${years.map(y => `<option value="${y}"${y === year ? ' selected' : ''}>${y || '(未設定)'}</option>`).join('')}</select></td></tr>`;
+    }).join('');
+  document.querySelectorAll('#set-table input, #set-table select').forEach(el => el.addEventListener('change', onSettingChange));
+  updateSaveButton();
+}
+
+function onSettingChange(ev) {
+  const tr = ev.target.closest('tr'), no = tr.dataset.no, k = ev.target.dataset.k;
+  const w = state.data.settings.works[no];
+  const v = k === 'done' ? ev.target.checked : ev.target.value;
+  const orig = k === 'done' ? w.done : (w.year || '');
+  const e = state.edits[no] || (state.edits[no] = {});
+  if (v === orig) delete e[k]; else e[k] = v;
+  if (!Object.keys(e).length) delete state.edits[no];
+  tr.classList.toggle('changed', !!state.edits[no]);
+  updateSaveButton();
+}
+
+function updateSaveButton() {
+  const n = Object.keys(state.edits).length;
+  const btn = document.getElementById('set-save');
+  btn.disabled = !n;
+  btn.textContent = n ? `更新を保存(${n}件)` : '更新を保存';
+}
+
+async function saveSettings() {
+  const msg = document.getElementById('set-msg'), btn = document.getElementById('set-save');
+  const changes = Object.keys(state.edits).map(no => Object.assign({ no }, state.edits[no]));
+  if (!changes.length) return;
+  btn.disabled = true;
+  msg.textContent = '保存中…';
+  try {
+    // text/plain で送り、CORSのプリフライトを発生させない
+    const res = await fetch(GAS_API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'settings', changes }) });
+    const body = await res.json();
+    if (body.status !== 'success') throw new Error(body.message || 'GASのエラー');
+    // 保存した内容を画面のデータにも反映して計算し直す
+    changes.forEach(c => {
+      const w = state.data.settings.works[c.no];
+      if ('done' in c) w.done = c.done;
+      if ('year' in c) w.year = c.year;
+    });
+    state.edits = {};
+    state.model = CICalc.build(state.data);
+    render();
+    renderSettings();
+    const dup = (body.data && body.data.dup) || [];
+    msg.textContent = `保存しました(${changes.length}件)` + (dup.length ? `。工事データに同じ工事Noの行が複数あります(上の行に保存): ${dup.join('、')}` : '');
+  } catch (e) {
+    msg.textContent = '保存に失敗しました: ' + e.message + '(もう一度押してください)';
+    updateSaveButton();
+  }
 }
 
 /* ===================== 実行予算の取り込み(登録ファイル) ===================== */

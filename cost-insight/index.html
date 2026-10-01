@@ -52,6 +52,10 @@
   td.note-cell { white-space:normal; min-width:260px; max-width:420px; font-size:12px; color:#a15c00; }
   tr.warnrow td { background:#fffbe6; }
   tr.total td { font-weight:bold; background:#f7f7f7; }
+  #set-table tr.changed td { background:#fff3c4; }
+  #set-table td.c { text-align:center; }
+  #set-box summary { cursor:pointer; font-size:15px; }
+  .btn:disabled { background:#bbb; cursor:default; }
   .est { display:inline-block; font-size:10px; color:#a15c00; border:1px solid #e0b060; border-radius:3px; padding:0 3px; margin-left:4px; vertical-align:1px; }
   #notes { font-size:12px; color:var(--sub); margin:10px 0 0; padding-left:1.3em; line-height:1.7; }
   /* 実行予算の取り込み */
@@ -107,6 +111,14 @@
     <ul id="notes"></ul>
   </div>
   <div class="card">
+    <details id="set-box">
+      <summary><b>完了・年度の設定</b>(工事ごとの「完了」と「年度」。変更した行は黄色になります)</summary>
+      <p><button id="set-save" class="btn" type="button" onclick="saveSettings()" disabled>更新を保存</button><span id="set-msg" class="note"></span></p>
+      <div class="tbl-wrap"><table id="set-table"></table></div>
+      <p class="note">「完了」にした工事は、仕入単価に実際の値(請求計)を使います。未完の工事は予算の値(見込み)です。保存するとスプレッドシート「コストインサイト」の工事データ(D 完了・E 年度)に書き込まれます。</p>
+    </details>
+  </div>
+  <div class="card">
     <h2>実行予算の取り込み</h2>
     <p><a class="btn" href="costinsight://update">実行予算を更新</a><button class="btn sub" type="button" onclick="location.reload()">画面を再読み込み</button><button id="regBtn" class="btn sub" type="button" onclick="downloadReg()">初めて使うPC：登録ファイルをダウンロード</button></p>
     <p id="budget" class="note">最終受信: 確認中…</p>
@@ -119,7 +131,7 @@
   <div class="card">
     <h2>開発の進み具合</h2>
     <p class="note">完了: スプレッドシート・GAS(生産重量・工数の読み取り、実行予算の受け取り)・実行予算の更新プログラム・計算部分。
-      <b>いま: 画面(3タブ・グラフ・表・絞り込み)</b> / このあと: 完了・年度の設定画面、Excel・PDFの出力、公開(Vercel)・旧アプリの廃止。
+      画面(3タブ・グラフ・表・絞り込み)。<b>いま: 完了・年度の設定</b> / このあと: 公開(Vercel)・旧アプリの廃止(Excel・PDFの出力は指示があったときに追加)。
       このページは開発中の確認用です(GitHub 上のファイルを raw.githack 経由で表示しています)。</p>
   </div>
 </main>
