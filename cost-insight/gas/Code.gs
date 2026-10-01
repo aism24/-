@@ -35,7 +35,7 @@
  *   工事マスタ    : 工事No | 工事名 | 契約総重量(t) | 契約金額(円) | トン単価 | 完了 | 年度 | 労務費の締め
  *                   (A・B列は日報アプリからIMPORTRANGE、C〜H列は「工事データ」からのVLOOKUP式。GASは読むだけ)
  *   工事データ    : 工事No | 契約総重量(t) | 契約金額(円) | 完了 | 年度 | 労務費の締め(第2段階からGASが書く)
- *   基本設定      : 項目 | 値 (項目名で読む: 共通扱い工事No・目標利益率(%))
+ *   基本設定      : 項目 | 値 (項目名で読む: 共通扱い工事No・目標利益率(%)・月額その他固定費(円)。後ろの2つは画面の「設定」から書き換える)
  *   会社カレンダー: A〜B列 日付 | 出勤・休日、D列以降に従業員名簿(見出し 社員番号・工場・氏名・部署・状況)
  *                   名簿は「在職中」の人数を工場別に数えて返すだけ(氏名は返さない)
  *
@@ -46,7 +46,7 @@
  *   GET ?action=master  : { status, data:{ works:[{no, name}] } }(工事マスタの工事No・工事名だけ。PC側の工事の対応付け用)
  *   GET ?action=budget  : { status, data:{ today:{ at, rows:[key…] } } }(実行予算の最終受信時刻。PC側の保存確認用)
  *   POST(秘密キー必須) : 実行予算の受け取り(上の第2段階)
- *   POST {action:'settings', changes:[{no, done?:true/false, year?:'R8'/''}]}(秘密キー不要。画面の「完了・年度の設定」から誰でも保存できる)
+ *   POST {action:'settings', changes:[{no, done?:true/false, year?:'R8'/''}], basic?:{targetProfitRate?, otherFixedMonthly?}}(秘密キー不要。画面の「完了・年度の設定」から誰でも保存できる)
  *     工事データの D 完了('完了'/空欄)・E 年度 を工事No単位で書く(送られてきた項目だけ)。工事データに無い工事Noは末尾に追加する。
  *     同じ工事Noの行が複数あれば上の行に書き、応答の dup で知らせる。最後に保存した内容が正。
  */
@@ -69,6 +69,7 @@ const SHEETS = { MASTER: '工事マスタ', WORKDATA: '工事データ', BASIC: 
 const BASIC_KEYS = [
   ['共通扱い工事No', 'commonWorkNos', ''],
   ['目標利益率(%)', 'targetProfitRate', null],
+  ['月額その他固定費', 'otherFixedMonthly', null], // シートの項目名は「月額その他固定費(円)」など、この文字で始まっていればよい
 ];
 
 // ========== エントリーポイント ==========
@@ -94,7 +95,9 @@ function doPost(e) {
     if (body.action === 'settings') {
       lock.waitLock(30000);
       locked = true;
-      return json_({ status: 'success', data: saveWorkSettings_(body.changes) });
+      const data = saveWorkSettings_(body.changes || []);
+      if (body.basic) data.basic = saveBasicSettings_(body.basic);
+      return json_({ status: 'success', data: data });
     }
     const secret = PropertiesService.getScriptProperties().getProperty('SECRET');
     if (!secret || body.secret !== secret) return json_({ status: 'error', message: '秘密キーが違います' });
@@ -661,6 +664,27 @@ function budgetSummary_() {
   return b ? { at: b.at, rows: Object.keys(b.rows || {}) } : null;
 }
 
+// 画面からの目標利益率(%)・月額その他固定費(円)の保存(基本設定 B列。項目名は前方一致、無ければ末尾に追加)
+function saveBasicSettings_(basic) {
+  const sh = sheet_(SHEETS.BASIC);
+  const labels = { targetProfitRate: '目標利益率(%)', otherFixedMonthly: '月額その他固定費(円)' };
+  const done = {};
+  Object.keys(labels).forEach(function (key) {
+    if (!(key in basic)) return;
+    const v = numOrNull_(basic[key]);
+    if (v === null || v < 0) throw new Error(labels[key] + 'は0以上の数値で入力してください');
+    const last = sh.getLastRow();
+    const colA = last >= 2 ? sh.getRange(2, 1, last - 1, 1).getDisplayValues() : [];
+    const base = labels[key].replace(/\(.*$/, '');
+    let row = 0;
+    for (let i = 0; i < colA.length; i++) if (String(colA[i][0]).trim().indexOf(base) === 0) { row = i + 2; break; }
+    if (!row) { row = Math.max(last, 1) + 1; sh.getRange(row, 1).setValue(labels[key]); }
+    sh.getRange(row, 2).setValue(v);
+    done[key] = v;
+  });
+  return done;
+}
+
 // 画面からの完了・年度の保存(工事データ D・E 列)
 function saveWorkSettings_(changes) {
   const sh = sheet_(SHEETS.WORKDATA);
@@ -729,8 +753,10 @@ function readSettings_() {
     });
   }
   BASIC_KEYS.forEach(function (k) {
-    const raw = basic[k[0]];
-    s[k[1]] = (raw === undefined || raw === '') ? k[2] : (k[1] === 'targetProfitRate' ? numOrNull_(raw) : raw);
+    let raw = basic[k[0]];
+    if (raw === undefined) Object.keys(basic).some(function (name) { if (name.indexOf(k[0]) === 0) { raw = basic[name]; return true; } return false; });
+    const isNum = k[1] === 'targetProfitRate' || k[1] === 'otherFixedMonthly';
+    s[k[1]] = (raw === undefined || raw === '') ? k[2] : (isNum ? numOrNull_(raw) : raw);
   });
   s.works = readWorks_(sheet_(SHEETS.MASTER));
   const calSh = sheet_(SHEETS.CALENDAR);
