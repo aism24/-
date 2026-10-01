@@ -95,13 +95,13 @@
     $('d-next').onclick = () => step(-1);
     Object.keys(SIM_DIGITS).forEach((k) => {
       const el = $('s-' + k);
-      el.oninput = updateSim;
+      el.oninput = () => onInput(k);
       // 入力中は自由に打てるようにし、欄を離れたら「,」区切りの形に整える
       el.onchange = () => {
         const v = parseNumIn(el.value), ex = D.exact[k];
         if (ex && Math.abs(v - parseNumIn(ex.shown)) < 1e-9) { el.value = ex.shown; return; }
         el.value = simFmt(k, v);
-        updateSim();
+        onInput(k);
       };
     });
     $('s-reset').onclick = () => { D.base = null; render(); };
@@ -167,6 +167,7 @@
     renderWorks(sel);
     if (!D.base) {
       D.base = { w: t.weight, n: t.ninkuPerTon || 0, p: t.unitPrice || 0 };
+      D.hours = D.base.w * D.base.n * 8;
       D.exact = {};
       ['w', 'n', 'p'].forEach((k) => {
         const el = $('s-' + k);
@@ -176,6 +177,23 @@
       });
     }
     updateSim();
+  }
+
+  /* 入力欄の変更。総工数(=必要人工)は生産重量を変えても変わらない人員体制として固定し、
+     生産重量を増やすと 1t当たり人工数が減る(減らすと増える)。1t当たり人工数を直接入れたときは、その値で総工数を決め直す */
+  function onInput(k) {
+    if (k === 'w') {
+      const W = simValue('w');
+      if (W > 0 && D.hours > 0) setNpt(D.hours / 8 / W);
+    } else if (k === 'n') {
+      D.hours = simValue('w') * simValue('n') * 8;
+    }
+    updateSim();
+  }
+  function setNpt(n) {
+    const el = $('s-n');
+    el.value = simFmt('n', n);
+    D.exact.n = { shown: el.value, value: n };
   }
 
   /* 入力欄の右に、工事ごとの実績(生産重量・人工/t・トン単価・売上額(概算))を工事番号の昇順に並べる */
@@ -233,9 +251,9 @@
     renderAdvice(r, t, W, P);
     // 人件費は試算の生産重量での額を固定費に含め、固定費線を水平にする(つまみのドラッグ中に縮尺が変わらないよう、署名は基準値で作る)
     drawBep('c-sim', { fixed: r.fixed + r.labor, unitPrice: P, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: g / 100,
-      fixedLabel: ['固定費', '(人件費込み)'], otherFixed: r.fixed, laborRate: r.laborRate, sig: [r.fixed, P, n, r.laborRate, r.varPerTon, g].join('|'),
+      fixedLabel: ['固定費', '(人件費込み)'], otherFixed: r.fixed, laborRate: r.laborRate, sig: [r.fixed, P, D.hours, r.laborRate, r.varPerTon, g].join('|'),
       x: W, forceX: !D.dragging, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: changed ? '試算' : '現在', dragHint: true,
-      onMove: (x) => { D.dragging = true; $('s-w').value = simFmt('w', x); updateSim(); D.dragging = false; } });
+      onMove: (x) => { D.dragging = true; $('s-w').value = simFmt('w', x); D.exact.w = { shown: $('s-w').value, value: x }; onInput('w'); D.dragging = false; } });
   }
 
   /* 現状分析: 目標利益率に届くには(ほかの条件は同じとして1つずつ)。トン単価は受注時に決まっているため変えない */
