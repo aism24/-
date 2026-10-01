@@ -9,7 +9,7 @@
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbwDhzAWpmCmwrLoFM6gS1GDWYWcc7OvqjdGa7HNObCTednh-FttOPdF3JZlOQVe-Y3Q0A/exec';
 const SITES = ['本社', '夢前', '鳥取'];
 // 系列の色(識別用。順番固定)。加工単価=青、仕入単価=オレンジ、時間単価=アクア。損益は 黒字=青 / 赤字=赤
-const COLOR = { proc: '#2a78d6', purchase: '#eb6834', hour: '#1baf7a', plus: '#2a78d6', minus: '#e34948', grid: '#e1e0d9', muted: '#898781' };
+const COLOR = { proc: '#2a78d6', purchase: '#eb6834', hour: '#1baf7a', plus: '#2a78d6', minus: '#e34948', grid: '#e1e0d9', muted: '#333' };
 
 const state = { data: null, model: null, tab: 'work', charts: [], edits: {}, basicEdits: {}, view: 'menu' };
 
