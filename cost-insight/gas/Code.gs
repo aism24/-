@@ -30,7 +30,8 @@
  *                   名簿は「在職中」の人数を工場別に数えて返すだけ(氏名は返さない)
  *
  * ■ API(パスワードなし)
- *   GET ?action=getData : { status, data:{ cache, settings } }(キャッシュが無ければ集計してから返す)
+ *   GET ?action=getData : { status, data:{ cache, settings, budget } }(キャッシュが無ければ集計してから返す。
+ *                         budget は _cache_budget.json の中身(まだ受信していなければ null))
  *   GET ?action=refresh : 集計し直してから同じ形で返す
  *   GET ?action=master  : { status, data:{ works:[{no, name}] } }(工事マスタの工事No・工事名だけ。PC側の工事の対応付け用)
  *   GET ?action=budget  : { status, data:{ today:{ at, rows:[key…] } } }(実行予算の最終受信時刻。PC側の保存確認用)
@@ -105,7 +106,8 @@ function dataResponse_(forceRefresh) {
   let cacheText = forceRefresh ? null : loadCacheText_();
   if (cacheText === null) cacheText = refreshLocked_(!forceRefresh);
   const settingsText = JSON.stringify(readSettings_());
-  return ContentService.createTextOutput('{"status":"success","data":{"cache":' + cacheText + ',"settings":' + settingsText + '}}')
+  const budgetText = loadBudgetText_() || 'null';
+  return ContentService.createTextOutput('{"status":"success","data":{"cache":' + cacheText + ',"settings":' + settingsText + ',"budget":' + budgetText + '}}')
     .setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -357,10 +359,15 @@ function saveFileText_(name, text) {
   else folder.createFile(name, text, MimeType.PLAIN_TEXT);
 }
 
-function loadBudget_() {
+function loadBudgetText_() {
   const it = folder_().getFilesByName(BUDGET_FILE_NAME);
   if (!it.hasNext()) return null;
   const text = it.next().getBlob().getDataAsString('UTF-8');
+  return /^\s*\{[\s\S]*\}\s*$/.test(text) ? text : null;
+}
+
+function loadBudget_() {
+  const text = loadBudgetText_();
   return text ? JSON.parse(text) : null;
 }
 
