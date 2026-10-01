@@ -134,8 +134,17 @@ async function checkImport() {
 
 /* ===================== 画面の切り替え(メニュー / 3つのモード) ===================== */
 
+// 固定する上部(アプリ名+操作バー)の高さを CSS 変数に入れる(グラフ・カードの高さと固定位置の計算用)
+function syncStickyOffsets() {
+  const hdr = document.querySelector('header'), bar = document.querySelector('.view:not([hidden]) .sBar');
+  const h = hdr.offsetHeight, b = bar ? bar.offsetHeight : 0;
+  document.documentElement.style.setProperty('--hdrH', h + 'px');
+  document.documentElement.style.setProperty('--stickyH', (h + b) + 'px');
+}
+window.addEventListener('resize', syncStickyOffsets);
 function showView(name) {
   state.view = name;
+  document.body.dataset.view = name; // ホームへ戻るボタンをホーム画面では隠す(CSS)
   document.querySelectorAll('.view').forEach(v => { v.hidden = v.id !== 'v-' + name; });
   window.scrollTo(0, 0);
   document.querySelector('main').classList.toggle('wide', name === 'simple' || name === 'detail'); // シンプル版は画面いっぱいに使う
@@ -143,6 +152,7 @@ function showView(name) {
     document.querySelector('#v-progress .home-row button').dataset.go = state.tab === 'site' ? 'sitemode' : 'analysis';
     render(); // グラフは表示されてから描く(非表示のままだと大きさが決まらない)
   }
+  syncStickyOffsets();
   if (name === 'simple' && window.SimpleView) SimpleView.show();
   if (name === 'detail' && window.DetailView) DetailView.show();
 }

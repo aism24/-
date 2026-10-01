@@ -183,3 +183,23 @@ main.wide { max-width: none; margin-top: 8px; }
 .sBar .sTop { margin: 0; flex-wrap: nowrap; white-space: nowrap; font-size: clamp(15px, 1.25vw, 20px); }
 .sBar .sFilters { flex: 1 1 auto; min-width: 0; margin: 8px 0; padding: 6px 10px; }
 @media (min-width: 1000px) { .sBar { flex-wrap: nowrap; } .sBar .sFilters { gap: 6px 14px; } }
+
+/* ===== 上部(アプリ名+操作バー)を固定し、ボタンの大きさをそろえる(PC)。値は app.js の syncStickyOffsets が設定 ===== */
+.sBar .sFilters { margin: 0; }
+@media (min-width: 1000px) {
+  body:has(main.wide) header { position: sticky; top: 0; z-index: 50; }
+  main.wide { margin-top: 0; margin-bottom: 0; }
+  #v-simple .sBar .sTop, #v-detail .sBar .sTop { margin: 0; }
+  .sBar { position: sticky; top: var(--hdrH, 64px); z-index: 40; background: var(--bg); padding: 8px 0; /* アプリ名の下・バーの下とも、ほかの隙間と同じ8px */ }
+  /* 戻る・リセット・年度/月〆・期間・3工場/本社/夢前/鳥取: 高さ26px(従来の約70%)、同じ大きさ */
+  #v-simple .sBar button, #v-detail .sBar button, #v-simple .sBar select, #v-detail .sBar select { box-sizing: border-box; height: 26px; padding: 0 8px; font-size: 13px; line-height: 1; border-radius: 5px; }
+  #v-simple .sBar .sTop button.btn, #v-detail .sBar .sTop button.btn, #v-simple .sBar .resetBtn, #v-detail .sBar .resetBtn, .sBar .segBtns button { width: 72px; min-width: 0; white-space: nowrap; }
+  #v-simple .sBar .resetBtn, #v-detail .sBar .resetBtn { border-width: 1px; }
+  .sBar .monthBtn { width: 28px; min-width: 0; padding: 0; }
+  .sBar .sFilters { padding: 4px 10px; }
+  /* 左の紫(緑縁)のカードと右のグラフは、下端をそろえて画面の下まで伸ばす */
+  body #v-simple .sBody, body #v-detail .simLayout { align-items: stretch; min-height: calc(100vh - var(--stickyH, 120px) - 8px); }
+  body #v-simple .sLeft, body #v-detail .simLeft { display: flex; flex-direction: column; }
+  #v-simple .sGoal { flex: 1; }
+  body #v-simple .sChart, body #v-detail .panel.simChart { position: sticky; top: var(--stickyH, 120px); align-self: start; height: calc(100vh - var(--stickyH, 120px) - 8px); min-height: 0; }
+}
