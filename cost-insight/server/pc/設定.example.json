@@ -1,0 +1,14 @@
+{
+  "サーバーフォルダ": "\\\\192.168.1.2\\share\\@正光共有\\実行予算(原価試算)\\実行予算",
+  "対象年度の下限": 8,
+  "工事一覧URL": "https://script.google.com/macros/s/AKfycbwDhzAWpmCmwrLoFM6gS1GDWYWcc7OvqjdGa7HNObCTednh-FttOPdF3JZlOQVe-Y3Q0A/exec?action=master",
+  "ファイル名の例外": {
+    "24-18大阪医科大Ⅱ期(渡り廊下)": "26-13",
+    "26-18堺データセンター153MW（後期）": "26-23"
+  },
+  "送信先URL": [
+    "https://script.google.com/macros/s/AKfycbyun0FKHcFSvu5j8RRYpevoZfMC3F2WUkd3vC7_PopGvuv3i2ecwfRy3aiPOaXb9K1G3A/exec",
+    "https://script.google.com/macros/s/AKfycbwDhzAWpmCmwrLoFM6gS1GDWYWcc7OvqjdGa7HNObCTednh-FttOPdF3JZlOQVe-Y3Q0A/exec"
+  ],
+  "秘密キー": ""
+}
