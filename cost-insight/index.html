@@ -22,6 +22,16 @@
   ol { margin:0; padding-left:1.4em; line-height:1.9; }
   .now { background:#fff3c4; font-weight:bold; }
   .note { color:var(--sub); font-size:13px; margin-top:12px; }
+  .card + .card { margin-top:16px; }
+  table { border-collapse:collapse; font-size:13px; margin-top:8px; }
+  th, td { border:1px solid #ddd; padding:4px 8px; text-align:left; white-space:nowrap; }
+  th { background:#f3f3f3; }
+  td.n { text-align:right; }
+  .kv th { width:140px; }
+  .tbl-wrap { overflow:auto; max-height:60vh; }
+  .tbl-wrap th { position:sticky; top:0; }
+  tr.miss td { background:#fff3c4; }
+  .warn { color:#a15c00; font-size:13px; }
 </style>
 </head>
 <body>
@@ -32,10 +42,19 @@
 </header>
 <main>
   <div class="card">
+    <h2>データの読み取り確認(開発中)</h2>
+    <p id="status" class="note">読み込み中…(初回は30秒ほどかかることがあります)</p>
+    <div id="summary"></div>
+  </div>
+  <div class="card">
+    <h2>工事別(生産重量・工数の累計と工事マスタ)</h2>
+    <div class="tbl-wrap"><table id="works"></table></div>
+  </div>
+  <div class="card">
     <h2>準備中(開発の進み具合)</h2>
     <ol>
-      <li class="now">スプレッドシートの準備(シート・列を1つずつ作成)</li>
-      <li>GAS(データの受け取り・集計)</li>
+      <li>スプレッドシートの準備 … 完了</li>
+      <li class="now">GAS(データの受け取り・集計)… 第1段階(生産重量・工数の読み取り)</li>
       <li>計算部分(工事別・工場別・期間別の3つの単価)</li>
       <li>画面(グラフ・表)</li>
       <li>Excel・PDFの出力</li>
@@ -45,5 +64,67 @@
     <p class="note">このページは開発中の確認用です。完成までは GitHub 上のファイルを raw.githack 経由で表示しています。</p>
   </div>
 </main>
+<script>
+// GAS(スプレッドシート「コストインサイト」のウェブアプリ)
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbwDhzAWpmCmwrLoFM6gS1GDWYWcc7OvqjdGa7HNObCTednh-FttOPdF3JZlOQVe-Y3Q0A/exec';
+const SITES = ['本社', '夢前', '鳥取'];
+const fmt = (v, d) => (v === null || v === undefined || v === '') ? '' : Number(v).toLocaleString('ja-JP', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 });
+const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+async function load() {
+  const st = document.getElementById('status');
+  try {
+    const res = await fetch(GAS_API_URL + '?action=getData');
+    const text = await res.text();
+    let body;
+    try { body = JSON.parse(text); } catch (e) { throw new Error('GASの応答を読めませんでした(HTTP ' + res.status + ')'); }
+    if (body.status !== 'success') throw new Error(body.message || 'GASのエラー');
+    render(body.data.cache, body.data.settings);
+    st.textContent = '集計日時: ' + new Date(body.data.cache.generatedAt).toLocaleString('ja-JP');
+  } catch (e) {
+    st.textContent = '読み込みに失敗しました: ' + e.message + '(ページを再読み込みしてください)';
+  }
+}
+
+function render(cache, s) {
+  const by = {}, perWork = {};
+  let minD = '', maxD = '';
+  SITES.forEach(k => by[k] = { w: 0, h: 0 });
+  cache.rec.forEach(r => {
+    const b = by[r[1]] || (by[r[1]] = { w: 0, h: 0 });
+    b.w += r[3]; b.h += r[4];
+    if (!minD || r[0] < minD) minD = r[0];
+    if (!maxD || r[0] > maxD) maxD = r[0];
+    const key = r[2] || '(工事No不明)';
+    const p = perWork[key] || (perWork[key] = { w: 0, h: 0 });
+    p.w += r[3]; p.h += r[4];
+  });
+  const days = Object.values(s.calendar), work = days.filter(v => v === 1).length;
+  const hc = s.headcount || {};
+  let html = '<table class="kv">'
+    + '<tr><th>データの期間</th><td>' + minD + ' 〜 ' + maxD + '(' + fmt(cache.rec.length) + '行)</td></tr>'
+    + '<tr><th>工事マスタ</th><td>' + Object.keys(s.works).length + '件</td></tr>'
+    + '<tr><th>会社カレンダー</th><td>' + days.length + '日(うち出勤 ' + work + '日)</td></tr>'
+    + '<tr><th>在職中の人数</th><td>' + SITES.map(k => k + ' ' + (hc[k] || 0) + '人').join(' / ') + '</td></tr>'
+    + '<tr><th>共通扱い工事No</th><td>' + esc(s.commonWorkNos) + '</td></tr>'
+    + '<tr><th>目標利益率</th><td>' + (s.targetProfitRate === null ? '(未設定)' : s.targetProfitRate + '%') + '</td></tr>'
+    + '</table><table class="grid"><tr><th>工場</th><th>生産重量(t)</th><th>工数(h)</th></tr>'
+    + Object.keys(by).map(k => '<tr><td>' + esc(k) + '</td><td class="n">' + fmt(by[k].w, 1) + '</td><td class="n">' + fmt(by[k].h, 1) + '</td></tr>').join('')
+    + '</table>';
+  if ((cache.warnings || []).length) html += '<ul class="warn">' + cache.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul>';
+  document.getElementById('summary').innerHTML = html;
+
+  const nos = Array.from(new Set(Object.keys(s.works).concat(Object.keys(perWork)))).sort();
+  document.getElementById('works').innerHTML = '<tr><th>工事No</th><th>工事名</th><th>生産重量(t)</th><th>工数(h)</th><th>契約総重量(t)</th><th>契約金額(円)</th><th>完了</th><th>年度</th></tr>'
+    + nos.map(no => {
+      const m = s.works[no] || {}, p = perWork[no] || { w: 0, h: 0 };
+      const name = m.name || (cache.works[no] || {}).name || '';
+      return '<tr' + (s.works[no] ? '' : ' class="miss" title="工事マスタに無い工事No"') + '><td>' + esc(no) + '</td><td>' + esc(name) + '</td><td class="n">' + fmt(p.w, 1)
+        + '</td><td class="n">' + fmt(p.h, 1) + '</td><td class="n">' + fmt(m.totalWeight, 1) + '</td><td class="n">' + fmt(m.contract)
+        + '</td><td>' + (m.done ? '完了' : '') + '</td><td>' + esc(m.year) + '</td></tr>';
+    }).join('');
+}
+load();
+</script>
 </body>
 </html>
