@@ -83,11 +83,16 @@
   /* メニュー(3つのボタン)と各モード */
   .view[hidden] { display:none; }
   .menu { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:16px; }
-  .menu-btn { font:inherit; font-size:18px; font-weight:bold; color:#fff; background:#e60012; border:0; border-radius:10px;
-              padding:34px 16px; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.25); }
-  .menu-btn:hover:not(:disabled) { filter:brightness(1.08); }
-  .menu-btn:disabled { background:#999; cursor:default; }
-  .menu-btn small { display:block; font-size:12px; font-weight:normal; margin-top:6px; opacity:.9; }
+  /* メニューのボタンは薄い色で色分け(赤は危険を表す色として使わない) */
+  .menu-btn { font:inherit; font-size:18px; font-weight:bold; color:#1f2a37; border:2px solid transparent; border-radius:10px;
+              padding:34px 16px; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.25); transition:filter .15s, transform .15s; }
+  .menu-btn.m1 { background:#dbeafe; border-color:#93c5fd; }
+  .menu-btn.m2 { background:#dcfce7; border-color:#86efac; }
+  .menu-btn.m3 { background:#ede9fe; border-color:#c4b5fd; }
+  .menu-btn:hover:not(:disabled) { filter:brightness(1.04); transform:translateY(-2px); }
+  .menu-btn:disabled { background:#999; border-color:#999; color:#ddd; cursor:default; }
+  .menu-btn small { display:block; font-size:12px; font-weight:normal; margin-top:6px; color:#4b5563; }
+  .menu-btn:disabled small { color:#ddd; }
   .back { font:inherit; font-size:14px; background:#fff; color:#222; border:0; border-radius:6px; padding:8px 16px; margin:0 0 12px; cursor:pointer; }
   .step { border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-top:12px; }
   .step h3 { font-size:15px; margin:0 0 6px; }
@@ -103,9 +108,9 @@
   <!-- メニュー(読み込みが終わるまでボタンは押せない) -->
   <section id="v-menu" class="view">
     <div class="menu">
-      <button class="menu-btn" type="button" data-go="budget" disabled>実行予算取込モード<small>実行予算Excelを読み取って送る</small></button>
-      <button class="menu-btn" type="button" data-go="settings" disabled>工事別＿完了｜年度設定モード<small>工事ごとの完了・年度</small></button>
-      <button class="menu-btn" type="button" data-go="progress" disabled>進捗確認<small>単価・損益のグラフと表</small></button>
+      <button class="menu-btn m1" type="button" data-go="budget" disabled>① 実行予算取込モード<small>実行予算Excelを読み取って送る</small></button>
+      <button class="menu-btn m2" type="button" data-go="settings" disabled>② 工事別＿完了｜年度設定モード<small>工事ごとの完了・年度</small></button>
+      <button class="menu-btn m3" type="button" data-go="progress" disabled>③ 進捗確認<small>単価・損益のグラフと表</small></button>
     </div>
   </section>
 
