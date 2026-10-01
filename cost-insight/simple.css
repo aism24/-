@@ -174,3 +174,9 @@
 .sMsg { color: #000; }
 #v-simple [hidden] { display: none !important; }
 main.wide { max-width: none; margin-top: 8px; }
+/* PC: 右のグラフは画面の高さに収める(上下にスクロールしない)。左が長くてもグラフは画面内に残る */
+@media (min-width: 1000px) {
+  #v-simple .sBody { align-items: start; }
+  #v-simple .sChart { position: sticky; top: 8px; height: calc(100vh - 190px); min-height: 380px; }
+  #v-simple .sChart .chartBox { flex: 1; height: auto; min-height: 0; }
+}
