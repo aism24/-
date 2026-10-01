@@ -313,12 +313,13 @@ function mergeHistory(history, pm, masterNos, doneNos) {
   Object.keys(old).forEach(function (no) { next.works[no] = JSON.parse(JSON.stringify(old[no])); });
   const from = pmWindowStart(pm);
   if (!from) return next;
+  const touched = {}; // 今回APIの値を入れた 工事No|日付|工場(同じ工事がAPIに複数回出ても足し合わせる)
   ((pm && pm.works) || []).forEach(function (w) {
     const no = String(w.workNo).trim();
     if (!masterNos[no] || doneNos[no]) return; // 工事マスタに無い工事・完了の工事は上書きしない
     const h = next.works[no] || (next.works[no] = { byDate: {}, imported: '', files: [] });
-    // 範囲内の日付はAPIの値で置き換える(範囲より前はそのまま残す)
-    Object.keys(h.byDate).forEach(function (k) { if (k >= from) delete h.byDate[k]; });
+    // APIが値を返した「日付×工場」だけAPIの値で置き換える。APIが返さない日付(APIに未反映の期間)は履歴のまま残す
+    // (範囲内の履歴を先に全削除すると、マスターから取り込んだ値がAPIに無いだけで消える。25-14で約1,051t消えた)
     Object.keys(w.bySite || {}).forEach(function (site) {
       const st = String(site).trim();
       const byDate = w.bySite[site].weightByDate || {};
@@ -327,7 +328,9 @@ function mergeHistory(history, pm, masterNos, doneNos) {
         const wt = Number(byDate[k]) || 0;
         if (!wt) return;
         const d = h.byDate[k] || (h.byDate[k] = {});
-        d[st] = (d[st] || 0) + wt; // 丸めない(集計結果を生産管理の値と完全に一致させるため)
+        const tk = no + '|' + k + '|' + st;
+        d[st] = touched[tk] ? (d[st] || 0) + wt : wt;
+        touched[tk] = true; // 丸めない(集計結果を生産管理の値と完全に一致させるため)
       });
     });
   });
