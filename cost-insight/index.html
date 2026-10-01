@@ -62,6 +62,13 @@
   .btn { display:inline-block; background:#e60012; color:#fff; text-decoration:none; font-weight:bold;
          padding:10px 20px; border-radius:6px; margin:4px 8px 4px 0; border:0; font-size:14px; cursor:pointer; font-family:inherit; }
   .btn.sub { background:#555; }
+  .btn.pink { background:#ec4899; }
+  .btn.pink:hover { background:#db2777; }
+  /* 取込完了のお知らせ(2秒表示してホームへ戻る) */
+  #toast { position:fixed; inset:0; background:rgba(40,40,40,.45); display:flex; align-items:center; justify-content:center; z-index:110; }
+  #toast[hidden] { display:none; }
+  #toast div { background:#fff; border-radius:10px; padding:26px 34px; font-size:18px; font-weight:bold; color:#166534;
+               border:3px solid #86efac; box-shadow:0 8px 30px rgba(0,0,0,.35); max-width:calc(100% - 32px); text-align:center; }
   .reg-next { display:inline-block; background:#fff200; color:#222; font-weight:bold; padding:10px 16px;
               border:2px solid #ff9800; border-radius:6px; font-size:14px; vertical-align:middle; margin:4px 0;
               animation:reg-blink 1s ease-in-out infinite; }
@@ -131,10 +138,10 @@
       </div>
       <div class="step">
         <h3>② 実行予算取込</h3>
-        <p><a class="btn" href="costinsight://update" onclick="startImportWatch()">実行予算取込</a></p>
+        <p><a class="btn pink" href="costinsight://update" onclick="startImportWatch()">実行予算取込</a></p>
         <p id="imp-status" class="imp-status" hidden></p>
         <p class="note">「開きますか？」で［開く］を押すと、会社サーバーの 実行予算更新.bat が動きます(黒い画面に進み具合が出ます。数分かかることがあります)。
-          取込が終わると、この画面に自動で反映されます(再読み込みは不要です)。<br>
+          取込が終わると自動で反映され、「実行予算取込完了＿ホームに戻ります」と出てホーム画面に戻ります(再読み込みは不要です)。<br>
           <b>押しても何も起きないときは、そのPCでまだ①をしていません。</b>
           社内ネットワークのPCでのみ動きます。会社サーバーの「コストインサイト\参照資料（削除厳禁）\実行予算更新.bat」をダブルクリックしても同じ取込ができます。</p>
       </div>
@@ -191,6 +198,8 @@
     </div>
   </section>
 </main>
+<!-- 取込完了のお知らせ -->
+<div id="toast" role="alert" hidden><div>実行予算取込完了＿ホームに戻ります</div></div>
 <!-- 読み込み中のポップアップ -->
 <div id="loading" role="dialog" aria-live="polite">
   <div class="ld-box">

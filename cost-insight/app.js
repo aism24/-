@@ -91,7 +91,7 @@ function startImportWatch() {
   WATCH.t0 = Date.now();
   if (WATCH.timer) clearInterval(WATCH.timer);
   WATCH.timer = setInterval(checkImport, 10000);
-  showImportStatus('', '取込を待っています…(黒い画面が閉じると、自動でこの画面に反映されます)');
+  showImportStatus('', '取込を待っています…(黒い画面が閉じると、自動で反映してホームに戻ります)');
 }
 
 function showImportStatus(cls, text) {
@@ -118,9 +118,13 @@ async function checkImport() {
       applyData(await gasGet('getData'));
       renderSettings();
       render();
-      showImportStatus('ok', '取込結果を反映しました(' + new Date(t.at).toLocaleString('ja-JP') + ' 受信・' + (t.rows || []).length + 'ファイル)');
+      // 「実行予算取込完了＿ホームに戻ります」を2秒出してからホーム(メニュー)へ戻る
+      document.getElementById('imp-status').hidden = true;
+      const toast = document.getElementById('toast');
+      toast.hidden = false;
+      setTimeout(() => { toast.hidden = true; showView('menu'); }, 2000);
     } else {
-      showImportStatus('', '取込を待っています…(経過 ' + Math.floor(sec / 60) + '分' + (sec % 60) + '秒。黒い画面が閉じると、自動でこの画面に反映されます)');
+      showImportStatus('', '取込を待っています…(経過 ' + Math.floor(sec / 60) + '分' + (sec % 60) + '秒。黒い画面が閉じると、自動で反映してホームに戻ります)');
     }
   } catch (e) {
     showImportStatus('ng', '確認に失敗しました。再確認します…(' + e.message + ')');
