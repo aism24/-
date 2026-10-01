@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>コスト-インサイト</title>
 <link rel="stylesheet" href="simple.css">
+<link rel="stylesheet" href="detail.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root { --bg:#2b2c2f; --card:#fff; --ink:#000; --sub:#222; --muted:#555; --line:#e1e0d9; }
@@ -224,6 +225,43 @@
     <p id="s-note" class="sFoot small"></p>
   </section>
 
+  <!-- 工場別進捗分析(詳細版)= 目標シミュレーター: 期間と工場のボタン → 試算の入力・試算表・現状分析・つまみで動かせるグラフ -->
+  <section id="v-detail" class="view fullTab" hidden>
+    <div class="sTop"><button class="btn" type="button" data-go="sitemode">戻る</button><span>工場別進捗分析 詳細版(目標シミュレーター)</span></div>
+    <div class="sFilters">
+      <div class="sRow">
+        <div id="d-modes" class="segBtns" role="group" aria-label="期間">
+          <button type="button" data-mode="fiscal">年度</button>
+          <button type="button" data-mode="period">月〆</button>
+        </div>
+        <span id="d-period-wrap" class="periodWrap"><button type="button" id="d-prev" class="monthBtn" title="前の月度">◀</button><select id="d-period" aria-label="月度"></select><button type="button" id="d-next" class="monthBtn" title="次の月度">▶</button></span>
+        <span id="d-fiscal-wrap" hidden><select id="d-fiscal" aria-label="期"></select></span>
+      </div>
+      <div class="sRow"><div id="d-sites" class="segBtns" role="group" aria-label="工場"></div></div>
+      <div class="sRow small muted"><span id="d-range"></span></div>
+    </div>
+    <div class="simLayout">
+      <div class="simLeft">
+        <div class="panel simInputs">
+          <!-- 左: 試算の入力欄 / 右: 工事ごとの実績(列=工事、工事番号の昇順。入り切らない分は横スクロール) -->
+          <div class="simGridWrap">
+            <div class="simFixed">
+              <div class="simHead simHeadRow"><span class="simTitle">現在</span><span class="simInHead">入力欄</span></div>
+              <div class="simRow"><label>生産重量(t)</label><span class="simIn"><input type="text" inputmode="decimal" id="s-w" class="simNum" autocomplete="off"><span class="simUnit">t</span></span></div>
+              <div class="simRow"><label>1t当たり人工数</label><span class="simIn"><input type="text" inputmode="decimal" id="s-n" class="simNum" autocomplete="off"><span class="simUnit">人工</span></span></div>
+              <div class="simRow"><label>トン単価(円/t)</label><span class="simIn"><input type="text" inputmode="decimal" id="s-p" class="simNum" autocomplete="off"><span class="simUnit">円/t</span></span></div>
+              <div class="simRow"><label>売上額(概算)</label><span class="simIn simInSales"><input type="text" id="s-s" class="simNum simSales" readonly tabindex="-1" title="生産重量×トン単価(自動計算)"><span class="simUnit">円</span></span></div>
+            </div>
+            <div class="simWorks" id="sim-works"></div>
+          </div>
+        </div>
+        <div class="panel simKpiPanel"><div id="sim-kpis" class="simTable"></div></div>
+        <div class="panel simAdvicePanel"><div id="sim-advice" class="simAdvice"></div></div>
+      </div>
+      <div class="panel simChart"><div class="chartHead"><h2>試算の損益分岐生産量</h2><button id="s-reset" class="resetBtn2" type="button">現在値に戻す</button></div><div class="chartBox bepBox" id="c-sim"></div></div>
+    </div>
+  </section>
+
   <!-- 実行予算取込モード -->
   <section id="v-budget" class="view" hidden>
     <!-- 3つのボタンを縦に並べ、上合わせ・中央揃え -->
@@ -303,5 +341,6 @@
 <script src="bepchart.js"></script>
 <script src="app.js"></script>
 <script src="simple.js"></script>
+<script src="detail.js"></script>
 </body>
 </html>

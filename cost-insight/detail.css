@@ -1,0 +1,205 @@
+/* 工場別進捗分析(詳細版=目標シミュレーター)。生産損益分析の目標シミュレーターと同じ見た目。色は明るいテーマ固定 */
+#v-detail {
+  --surface: #fcfcfb; --border: #dddcd6; --text: #0b0b0b; --text2: #52514e; --muted: #7a7974; --accent: #2a78d6;
+  --good: #0ca30c; --bad: #d03b3b; --warn-bg: #fff4d6; --grid: #e8e7e2;
+  --g-period: #e3f4e6; --g-site: #fce6ee; --g-work: #e3eefc;
+  --bep-cost: #c8423b; --bep-fixed: #5b63b0; --bep-var: #2e9bd6; --bep-be: #d99a00; --goal: #e0287d;
+  font-variant-numeric: tabular-nums;
+}
+#v-detail button { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 6px; padding: 6px 14px; }
+#v-detail input { font: inherit; color: var(--text); }
+#v-detail .muted { color: var(--muted); } #v-detail .small { font-size: 12px; }
+#v-detail .pos { color: var(--good); } #v-detail .neg { color: var(--bad); }
+#v-detail [hidden] { display: none !important; }
+#v-detail .sTop { color: #fff; font-size: 20px; font-weight: 800; margin: 0 0 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+#v-detail .sTop button.btn { background: #f97316; color: #fff; border: 0; font-weight: bold; font-size: 14px; padding: 8px 18px; margin: 0; }
+#v-detail .segBtns button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+@keyframes hintBlink { from { opacity: 1; } to { opacity: .25; } }
+@keyframes resetGlow { from { box-shadow: 0 0 0 0 rgba(240, 180, 0, .15); border-color: #f0b400; } to { box-shadow: 0 0 10px 3px rgba(255, 200, 0, .9); border-color: #ff9800; } }
+@keyframes bestGlow { from { box-shadow: 0 0 6px rgba(245, 196, 0, .5); } to { box-shadow: 0 0 16px rgba(245, 196, 0, 1); } }
+.chartHead { display: flex; align-items: center; justify-content: flex-start; gap: 12px; margin-bottom: 8px; }
+.chartHead h2 { margin: 0; font-size: 15px; }
+#v-detail .resetBtn2 { background: #d6efff; color: #0b0b0b; border: 2px solid #9fd3f5; font-weight: 700; padding: 5px 14px; }
+#v-detail .resetBtn2.changed { background: #ffe45c; border-color: #f0b400; animation: resetGlow 1.6s ease-in-out infinite alternate; }
+#v-detail .resetBtn2.changed:hover { background: #ffd81f; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 16px; min-width: 0; }
+.tableWrap { overflow-x: auto; }
+.fullTab { max-width: none; }
+.simLayout { display: grid; grid-template-columns: minmax(360px, 1.25fr) 1.25fr; gap: 16px; align-items: stretch; }
+.fullTab .simLayout { flex: 1; min-height: 0; gap: 8px; } /* 左右カードの間(元16pxの50%) */
+.simLeft { display: flex; flex-direction: column; min-width: 0; }
+.fullTab .simLeft { min-height: 0; overflow: auto; }
+.fullTab .panel { padding: 5px 7px; } /* カード内の余白(元10px 14pxの50%) */
+.fullTab .simLeft .panel { margin-bottom: 6px; } /* 上下カードの間(元12pxの50%) */
+.fullTab .simLeft .panel:last-child { flex: 1; margin-bottom: 0; }
+.simChart { display: flex; flex-direction: column; margin-bottom: 0; }
+.simChart .chartBox { flex: 1; min-height: 0; height: auto; overflow: hidden; }
+/* 試算表の下の説明文(右寄せ) */
+/* グラフ見出しの右に「現在値に戻す」: 黄色背景、縁が光ってゆっくり点滅 */
+.chartHead { display: flex; align-items: center; justify-content: flex-start; gap: 12px; margin-bottom: 8px; }
+.chartHead h2 { margin: 0; }
+/* 「現在値に戻す」: ふだんは水色。試算の値を現在値(実績)から変えると黄色になり、縁が光ってゆっくり点滅 */
+.resetBtn2 { background: #d6efff; color: #0b0b0b; border: 2px solid #9fd3f5; font-weight: 700; padding: 5px 14px; }
+.resetBtn2.changed { background: #ffe45c; border-color: #f0b400; animation: resetGlow 1.6s ease-in-out infinite alternate; }
+.resetBtn2.changed:hover { background: #ffd81f; }
+@keyframes resetGlow { from { box-shadow: 0 0 0 0 rgba(240, 180, 0, .15); border-color: #f0b400; } to { box-shadow: 0 0 10px 3px rgba(255, 200, 0, .9); border-color: #ff9800; } }
+/* 損益分岐生産量タブ: 左上に数値カード(2列)、その下に計算の内訳 */
+.bepKpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-bottom: 6px; flex: none; }
+.bepTable td.muted { white-space: normal; }
+.bepHelp { margin: 6px 0 0; }
+
+/* 試算表: 全体を罫線で囲う。左=項目名と入力欄、右=工事ごとの実績(行の高さをそろえて横に並べる) */
+.simGridWrap { display: flex; gap: 0; align-items: flex-start; margin-bottom: 4px; border: 1px solid var(--border); width: fit-content; max-width: 100%; }
+.simGridWrap .simHead { height: 34px; display: flex; flex-direction: column; justify-content: flex-end; font-size: 11px; color: var(--text2); line-height: 1.25; overflow: hidden; }
+.simFixed { flex: none; border-right: 1px solid var(--border); padding: 0 0 0 8px; }
+.simFixed .simHead { font-weight: 600; border-bottom: 1px solid transparent; padding-bottom: 3px; }
+/* 列幅: 入力欄の列は売上額(概算)が10億円台(9,999,999,999)でも収まる幅 */
+.simFixed .simHead.simHeadRow { display: grid; grid-template-columns: 104px 174px; gap: 0 8px; align-items: center; justify-content: stretch; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+.simHeadRow .simTitle { font-size: 22px; font-weight: 700; color: var(--text); text-align: center; }
+.simHeadRow .simInHead { align-self: stretch; display: flex; align-items: center; justify-content: center; border-left: 1px solid var(--border); font-size: 12px; font-weight: 600; }
+.simFixed .simRow { display: grid; grid-template-columns: 104px 174px; gap: 0 8px; align-items: stretch; height: 25px; margin: 0; /* 行の高さ(元36pxの70%) */ border-bottom: 1px solid var(--border); }
+.simFixed .simRow:last-child { border-bottom: none; }
+.simFixed .simRow > label { align-self: center; text-align: center; }
+/* 入力欄: 枠なし・薄い黄色背景(着色部分=入力するところ)。末尾に単位(t・人工・円/t・円)。
+   4行目の売上額(概算)は自動計算で入力不可(着色なし・黒太字) */
+.simIn { display: flex; align-items: center; height: 100%; border-left: 1px solid var(--border); background: var(--warn-bg); padding-right: 6px; }
+.simIn.simInSales { background: transparent; }
+.simIn:focus-within { outline: 2px solid var(--accent); outline-offset: -2px; }
+.simNum { flex: 1; min-width: 0; height: 100%; text-align: right; font-size: 15px; padding: 0 4px 0 8px; border: none; border-radius: 0; background: transparent; }
+.simNum:focus { outline: none; }
+.simNum.simSales { font-weight: 700; color: var(--text); cursor: default; }
+.simIn .simUnit { flex: none; width: 3.2em; text-align: left; padding-left: 2px; font-size: 11px; color: var(--text2); } /* 単位の幅をそろえて数値の右端を合わせる */
+/* 工事ごとの列: 罫線で区切り、工事番号・工事名は中央揃え。列幅は10億円台の売上額が収まる幅 */
+.simWorks { flex: 1; min-width: 0; display: flex; overflow-x: auto; scrollbar-width: thin; }
+.simCol { flex: 0 0 auto; width: calc(13ch + 16px); border-right: 1px solid var(--border); }
+.simCol:last-child { border-right: none; }
+.simCol .simHead { text-align: center; align-items: center; border-bottom: 1px solid var(--border); padding: 0 6px 3px; }
+.simCol .simHead b, .simCol .simHead span { display: block; width: 100%; text-align: center; }
+.simCol .simHead b { color: var(--text); font-size: 12px; }
+.simCol .simHead span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.simCell { height: 25px; display: flex; align-items: center; justify-content: flex-end; padding: 0 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.simCol .simCell:last-child { border-bottom: none; }
+.simCell.simSales { font-weight: 700; color: var(--text); }
+.simEmpty { padding-top: 40px; }
+
+/* 下の表: 項目(中央揃え)・数値(右端をそろえる)・備考。1280×720でスクロールなしに収まる行間 */
+.simTable { display: grid; grid-template-columns: max-content max-content 1fr; column-gap: 16px; align-items: baseline; }
+.simTable > div { padding: 1px 0; border-bottom: 1px solid var(--border); }
+.simTable .dLabel { color: var(--text2); font-size: clamp(10px, 1.54vh, 18px); /* 75% */ line-height: 1.2; white-space: nowrap; text-align: center; }
+.simTable .dLabel:has(.subLbl) { text-align: left; padding-left: 1em; } /* 内訳(└ 人件費・└ その他固定費)は左揃え */
+.simTable .dLabel .subLbl { font-size: 0.8em; }
+.simTable .dVal { text-align: right; font-weight: 700; white-space: nowrap; font-size: clamp(10.5px, 1.46vh, 19.5px); } /* 75% */
+.simTable .dVal .unit { display: inline-block; width: 2.3em; text-align: left; font-size: 11px; font-weight: 400; color: var(--text2); margin-left: 3px; }
+/* 備考: 数値と達成/未達・超/不足だけを項目名と同じ大きさに(説明文・単位は小さいまま)。緑=OK・赤=NG */
+.simTable .dNote { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.simTable .dNote .nv, .simTable .dNote .pos, .simTable .dNote .neg, .simTable .dNote .goalPctWrap { font-size: clamp(10px, 1.54vh, 18px); /* 75% */ line-height: 1.2; }
+.simTable .dNote .nv { color: var(--text2); }
+.simTable .dNote .pos, .simTable .dNote .neg { font-weight: 700; }
+.simTable .dNote .pos .nv, .simTable .dNote .neg .nv, .simTable .dNote .goalPct .nv { color: inherit; font-size: inherit; }
+.simTable .dNote .goalPct { color: var(--goal); font-weight: 700; } /* 損益の（目標xx%）の「目標xx%」はピンクの太字 */
+
+/* 広い画面は左40%・右60%(グラフを大きく)。狭い画面は下の表が収まる比率 */
+@media (min-width: 1500px) { .simLayout { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); } }
+@media (max-width: 800px) {
+  .grid2, .simLayout, .filters { grid-template-columns: 1fr; }
+  .simChart .chartBox { min-height: 360px; }
+  .topbar { grid-template-columns: 1fr; }
+  .topCenter, .topRight { grid-column: 1; justify-content: center; }
+  .tab { padding: 12px 16px; }
+  .simGridWrap { flex-direction: column; width: 100%; }
+  .simFixed { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+  .simWorks { width: 100%; }
+}
+/* 絞り込み: 工場(ピンク)は中身の幅だけにし、工事(薄い青)を広げて1行に収める */
+@media (min-width: 1200px) {
+.simAdvice { margin-top: 0; font-size: clamp(11px, 1.35vh, 16px); line-height: 1.35; color: var(--text); --adv-w: var(--g-period); --adv-h: var(--g-work); --adv-v: var(--g-site); --adv-p: var(--warn-bg); --adv-bar: #9aa3ad; }
+.simAdvice:empty { display: none; }
+.simAdvice .advHead { font-weight: 700; font-size: 1.15em; border-left: 4px solid var(--accent); padding-left: 8px; margin-bottom: 6px; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; }
+.simAdvice .advCards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.simAdvice .advRow2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; margin-top: 10px; }
+.simAdvice .advCard { border-radius: 8px; padding: 5px 10px 5px; border: 1px solid var(--border); min-width: 0; }
+.simAdvice .advW { background: var(--adv-w); } .simAdvice .advH { background: var(--adv-h); } .simAdvice .advV { background: var(--adv-v); }
+.simAdvice .advPrice { background: var(--adv-p); }
+.simAdvice .advTitle { font-weight: 700; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.simAdvice .advTitle small { font-weight: 400; font-size: 0.85em; color: var(--muted); }
+.simAdvice .advBig { font-size: 1.55em; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+.simAdvice .advUnit { font-size: 0.55em; font-weight: 400; margin-left: 2px; color: var(--text2); }
+.simAdvice .advFromTo { color: var(--muted); font-size: 0.9em; white-space: nowrap; }
+.simAdvice .advNote { color: var(--text2); font-size: 0.85em; margin-top: 3px; }
+.simAdvice .advBar { position: relative; height: 1.25em; background: rgba(0,0,0,.06); border-radius: 4px; margin-top: 3px; }
+.simAdvice .advBar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--adv-bar); }
+.simAdvice .advBar span { position: absolute; left: 6px; top: 0; font-size: 0.9em; font-weight: 700; line-height: 1.25em; }
+/* ③ 目安単価の目盛り: 損益0・目標は上、今は下にラベル */
+.simAdvice .advScale { position: relative; height: 5.6em; margin: 0 1.5em; }
+.simAdvice .advLine { position: absolute; left: -1.5em; right: -1.5em; top: 50%; height: 3px; background: var(--border); border-radius: 2px; }
+.simAdvice .advMk { position: absolute; top: 50%; width: 0; }
+.simAdvice .advMk::before { content: ''; position: absolute; left: -6px; top: -5px; width: 12px; height: 12px; border-radius: 50%; background: currentColor; }
+.simAdvice .advMk span { position: absolute; left: 0; transform: translateX(-50%); white-space: nowrap; text-align: center; font-size: 0.8em; line-height: 1.15; }
+.simAdvice .advMk span b { display: block; font-size: 1.2em; }
+.simAdvice .mkBe, .simAdvice .mkGoal { } .simAdvice .mkBe span, .simAdvice .mkGoal span { bottom: 9px; }
+.simAdvice .mkNow span { top: 9px; }
+.simAdvice .mkBe { color: var(--text2); } .simAdvice .mkGoal { color: var(--goal); } .simAdvice .mkNow { color: var(--accent); }
+/* ④ 期間全体: 必要な月あたり生産量と、これまでの月平均の比較(1.2倍を超えたら赤、1倍以下は緑) */
+.simAdvice .advRemain.lvGood { background: var(--g-period); } .simAdvice .advRemain.lvWarn { background: var(--warn-bg); } .simAdvice .advRemain.lvBad { background: #fde4e1; }
+.simAdvice .advRatio { font-size: 0.5em; font-weight: 700; margin-left: 8px; color: var(--bad); }
+.simAdvice .lvGood .advRatio { color: var(--good); }
+.simAdvice .advCmp { display: grid; grid-template-columns: 4.5em 1fr max-content; align-items: center; gap: 6px; font-size: 0.85em; }
+.simAdvice .advBar2 { height: 0.8em; background: rgba(0,0,0,.06); border-radius: 3px; position: relative; }
+.simAdvice .advBar2 i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--adv-bar); }
+.simAdvice .advBar2 i.need { background: var(--bad); }
+.simAdvice .lvGood .advBar2 i.need { background: var(--good); }
+.simAdvice .lvWarn .advBar2 i.need { background: #e0a000; }
+@media (max-width: 900px) { .simAdvice .advCards { grid-template-columns: 1fr; } }
+/* 現状分析は試算表(白)とは別の黒背景の枠に置く。黒地に直接のる文字は白抜き(カード内は淡色背景のまま) */
+.fullTab .simLeft .panel.simKpiPanel { flex: none; }
+.simAdvicePanel { background: #2d1650; border: 3px solid #9be15d; box-shadow: 0 0 16px rgba(155, 225, 93, .45); } /* 現状分析は濃い紫+光る黄緑の縁取り(黒い背景と区別) */
+.simAdvicePanel:has(.simAdvice:empty) { display: none; }
+.simAdvicePanel .advHead { color: #fff; background: #7b3fd0; border-left: none; border-radius: 6px; padding: 3px 12px; letter-spacing: .02em; }
+.simAdvicePanel .advHead small { font-weight: 400; font-size: 0.72em; color: #efe6fb; margin-left: 12px; }
+/* 結論の1行 */
+.simAdvice .advLead { color: #fff; font-size: 1.3em; font-weight: 700; margin: 2px 2px 8px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.simAdvice .advLeadGap { color: #ff8f85; font-size: 1.15em; }
+.simAdvice .advLeadKey { color: #ffe45c; }
+.simAdvice .advArrow { color: #9be15d; margin: 0 4px; }
+.simAdvice .advLeadSub { font-size: 0.6em; font-weight: 400; color: #d6d5cf; }
+.simAdvice .advLead .advLeadSub b { color: #7fe07f; }
+/* 一番の近道のカード(金枠+「最短」)、時間削減だけでは困難なカード(赤い点線・薄く) */
+.simAdvice .advCard { position: relative; }
+.simAdvice .advBest { border: 3px solid #f5c400; box-shadow: 0 0 12px rgba(245, 196, 0, .7); animation: bestGlow 0.9s ease-in-out infinite alternate; }
+.simAdvice .advCard.advBest, .simAdvice .advCard.advBest * { font-weight: 700; } /* 最短のカードは中の文字をすべて太字に */
+/* 最短のカード: 縁が光りながら点滅する */
+@keyframes bestGlow { from { border-color: #f5c400; box-shadow: 0 0 20px 6px rgba(255, 210, 0, .95); } to { border-color: rgba(245, 196, 0, .25); box-shadow: 0 0 0 0 rgba(245, 196, 0, 0); } }
+@media (prefers-reduced-motion: reduce) { .simAdvice .advBest { animation: none; } }
+.simAdvice .advRibbon { position: absolute; top: -10px; right: 10px; background: #f5c400; color: #3a2a00; font-weight: 700; font-size: 0.85em; padding: 1px 10px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.simAdvice .advHard { border: 2px dashed var(--bad); opacity: .8; }
+/* 月度の途中の「月末見込み」切替と、実績が少ないときの案内 */
+.fcBtn { border: 1px solid var(--border); background: var(--surface); color: var(--text2); border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.fcBtn.active { background: #f08c00; border-color: #f08c00; color: #fff; font-weight: 700; }
+.fcBlock { margin: 24px 16px; padding: 20px 24px; background: var(--warn-bg); border-radius: 8px; font-size: 15px; line-height: 1.7; }
+.fcBlock button { margin-right: 8px; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-weight: 700; }
+/* グラフ内の操作説明「ドラッグで移動可能」(つまみの上。太字・ゆっくり点滅) */
+.bepSvg .dragHint { fill: var(--text2); font-size: 13px; font-weight: 700; animation: hintBlink 2.4s ease-in-out infinite alternate; pointer-events: none; }
+@keyframes hintBlink { from { opacity: 1; } to { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .bepSvg .dragHint { animation: none; } }
+/* 点線の上の手のカーソル: 通常の約2倍(48px)・オレンジ。ドラッグ中は握った手(画像が使えないブラウザは標準の手) */
+.bepBox.canGrab { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='-1 -1 26 26'%3E%3Cpath d='M23 5.5V20c0 2.2-1.8 4-4 4h-7.3c-1.08 0-2.1-.43-2.85-1.19L1 14.83s1.26-1.23 1.3-1.25c.22-.19.49-.29.79-.29.22 0 .42.06.6.16.04.01 4.31 2.46 4.31 2.46V4c0-.83.67-1.5 1.5-1.5S11 3.17 11 4v7h1V1.5c0-.83.67-1.5 1.5-1.5S15 .67 15 1.5V11h1V2.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5V11h1V5.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5z' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round'/%3E%3C/svg%3E") 24 24, grab; }
+.bepBox.grabbing { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24'%3E%3Crect x='4.5' y='9' width='15' height='12' rx='4.5' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round'/%3E%3Crect x='5.2' y='5.5' width='3.4' height='8' rx='1.7' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round'/%3E%3Crect x='8.6' y='5.5' width='3.4' height='8' rx='1.7' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round'/%3E%3Crect x='12' y='5.5' width='3.4' height='8' rx='1.7' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round'/%3E%3Crect x='15.4' y='5.5' width='3.4' height='8' rx='1.7' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round'/%3E%3Crect x='1.8' y='11.5' width='7' height='3.4' rx='1.7' fill='%23f08c00' stroke='%235a3200' stroke-width='1' stroke-linejoin='round' transform='rotate(-25 5.3 13.2)'/%3E%3C/svg%3E") 24 24, grabbing; } /* ドラッグ中はつかんだ形(握った手) */
+/* 「時間を減らす」の1出勤日あたり表示と、過去1年の最少水準を下回るときの注意 */
+.simAdvice .advDaily { font-size: 0.85em; color: var(--text2); margin-top: 3px; }
+.simAdvice .advWarn { font-size: 0.85em; font-weight: 700; color: var(--bad); margin-top: 2px; animation: hintBlink 1.6s ease-in-out infinite alternate; } /* 注意はゆっくり点滅 */
+
+/* 画面の大きさに合わせた配置: PCは左に入力・試算表・現状分析、右にグラフ(グラフは画面の高さに収める) */
+#v-detail .simLayout { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); align-items: start; }
+#v-detail .simLeft { overflow: visible; }
+#v-detail .panel.simChart { position: sticky; top: 8px; height: calc(100vh - 190px); min-height: 380px; }
+#v-detail .simChart .chartBox { flex: 1; min-height: 0; height: auto; }
+@media (max-width: 1000px) {
+  #v-detail .simLayout { grid-template-columns: 1fr; }
+  #v-detail .panel.simChart { position: static; height: auto; }
+  #v-detail .simChart .chartBox { min-height: 360px; }
+  #v-detail .simGridWrap { flex-direction: column; width: 100%; }
+  #v-detail .simFixed { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+  #v-detail .simWorks { width: 100%; }
+}
+#v-detail .simFixed .simRow > label { font-size: 13px; white-space: nowrap; line-height: 1.1; }
+#v-detail .simFixed .simHead.simHeadRow .simTitle { white-space: nowrap; }
