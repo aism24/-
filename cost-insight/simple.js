@@ -388,5 +388,6 @@
     el.style.left = (ox + best.x) + 'px'; el.style.top = (oy + best.y) + 'px';
   }
 
+  window.CIKit = { SITE_LIST, analyze, workDaysIn, ymdToUtc, utcToYmd, calendar, goalRate, lastDataYmd };
   window.SimpleView = { show };
 })();
