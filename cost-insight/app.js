@@ -63,7 +63,7 @@ function applyData(d) {
   const b = d.budget;
   document.getElementById('status').textContent = '生産・日報の集計: ' + new Date(d.cache.generatedAt).toLocaleString('ja-JP')
     + ' / 実行予算の受信: ' + (b ? new Date(b.at).toLocaleString('ja-JP') : 'まだ受信していません');
-  document.getElementById('budget').textContent = b ? '最終受信: ' + new Date(b.at).toLocaleString('ja-JP') + '(' + Object.keys(b.rows || {}).length + 'ファイル)' : '最終受信: まだ受信していません';
+  document.getElementById('budget').textContent = b ? '前回取込: ' + new Date(b.at).toLocaleString('ja-JP') + '(' + Object.keys(b.rows || {}).length + 'ファイル)' : '前回取込: まだ取り込んでいません';
 }
 
 async function load() {
