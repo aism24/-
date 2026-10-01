@@ -105,13 +105,24 @@
       };
     });
     $('s-reset').onclick = () => { D.base = null; render(); };
+    $('d-reset').onclick = () => { resetView(); render(); };
     D.inited = true;
+  }
+
+  // 年度・今期・3工場の表示に戻す(画面を開いたときと「リセット」ボタン)
+  function resetView() {
+    const cur = D.lastYmd ? C.periodKeyOf(D.lastYmd) : C.periodKeyOf(state.model.analysisFrom);
+    D.mode = 'fiscal';
+    D.site = '';
+    $('d-fiscal').value = String(C.fiscalYearOf(cur));
+    $('d-period').value = D.defPeriod;
+    D.base = null;
   }
 
   function show() {
     if (!state.model) return;
     if (!D.inited) init();
-    D.base = null;
+    resetView();
     render();
   }
 

@@ -180,3 +180,7 @@ main.wide { max-width: none; margin-top: 8px; }
   #v-simple .sChart { position: sticky; top: 8px; height: calc(100vh - 190px); min-height: 380px; }
   #v-simple .sChart .chartBox { flex: 1; height: auto; min-height: 0; }
 }
+#v-simple .resetBtn, #v-detail .resetBtn { background: #f08c00; color: #fff; border: none; border-radius: 6px; padding: 6px 16px; font-weight: 700; margin-left: 8px; }
+#v-simple .resetBtn:hover, #v-detail .resetBtn:hover { background: #d97a00; }
+#v-simple .sTop button.btn { background: #f97316; color: #fff; border: 0; font-weight: bold; }
+#v-simple .sTop button.btn:hover { background: #ea580c; }

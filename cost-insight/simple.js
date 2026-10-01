@@ -114,13 +114,24 @@
     const step = (d) => { const s = $('f-speriod'), i = s.selectedIndex + d; if (i >= 0 && i < s.options.length) { s.selectedIndex = i; render(); } };
     $('f-prev').onclick = () => step(1);
     $('f-next').onclick = () => step(-1);
+    $('f-reset').onclick = () => { resetView(); render(); };
     window.addEventListener('resize', () => setTimeout(placeTargets, 0));
     S.inited = true;
+  }
+
+  // 年度・今期・3工場の表示に戻す(画面を開いたときと「リセット」ボタン)
+  function resetView() {
+    const cur = S.lastYmd ? C.periodKeyOf(S.lastYmd) : C.periodKeyOf(state.model.analysisFrom);
+    S.mode = 'fiscal';
+    S.site = '';
+    $('f-sfiscal').value = String(C.fiscalYearOf(cur));
+    $('f-speriod').value = S.defPeriod;
   }
 
   function show() {
     if (!state.model) return;
     if (!S.inited) init();
+    resetView();
     render();
   }
 
