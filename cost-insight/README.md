@@ -22,6 +22,8 @@
   画面の［実行予算を更新］(`costinsight://update`)→ 各PCに登録した .reg → cmd で .bat を実行。リンクの中身は使わない(決まった .bat だけを動かす)。
   `pc/update.js` は旧 実行予算まとめ の pc/update.js を移したもの(工事一覧を新GASから読む・送信先を複数に・月度ごとの労務費と労務費の締め・同時実行防止を追加)。
   移行期間は旧 実行予算まとめ と コストインサイト の両方へ送る(旧アプリ廃止時に 設定.json の送信先URLから旧GASを消す)
+- `calc.js`: 計算部分(3つの単価・共通工数の按分・労務費の締めと見込み)。純粋関数で、ブラウザ(CICalc)とNodeの両方から使う。
+  月度(20日締め)・期(11/21始まり)・加工単価の決め方は旧 生産損益分析(production-profit/calc.js)と同じ(売上・重量・工数は全工事で一致を確認)
 - 開発中の確認URL: https://raw.githack.com/aism24/-/main/cost-insight/index.html
 - `vercel.json` で自動デプロイを停止済み(公開時に create_deployment で反映)。
 
