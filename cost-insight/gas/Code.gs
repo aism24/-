@@ -624,8 +624,11 @@ function sameNum_(cur, nv, tol) {
 
 // ========== キャッシュファイル ==========
 
+// 1回の実行の中では同じフォルダなので、最初の1回だけDriveに問い合わせる
+let folderMemo_ = null;
 function folder_() {
-  return DriveApp.getFileById(SpreadsheetApp.getActive().getId()).getParents().next();
+  if (!folderMemo_) folderMemo_ = DriveApp.getFileById(SpreadsheetApp.getActive().getId()).getParents().next();
+  return folderMemo_;
 }
 
 function loadCacheText_() {
@@ -761,8 +764,9 @@ function readSettings_() {
   });
   s.works = readWorks_(sheet_(SHEETS.MASTER));
   const calSh = sheet_(SHEETS.CALENDAR);
-  s.calendar = readCalendar_(calSh);
-  s.headcount = readHeadcount_(calSh);
+  const calVals = calSh.getLastRow() >= 1 && calSh.getLastColumn() >= 1 ? calSh.getRange(1, 1, calSh.getLastRow(), calSh.getLastColumn()).getValues() : []; // 同じ範囲を2回読まない
+  s.calendar = readCalendar_(calVals);
+  s.headcount = readHeadcount_(calVals);
   return s;
 }
 
@@ -798,11 +802,9 @@ function readWorks_(sh) {
 
 /* 会社カレンダー(日付 | 出勤・休日)を { 'YYYY-MM-DD': 1(出勤) / 0(休日) } で返す。
    日付のセルの右隣が「出勤」「休日」の組を探すので、列の位置が変わっても読める。 */
-function readCalendar_(sh) {
-  const last = sh.getLastRow(), width = sh.getLastColumn();
+function readCalendar_(vals) {
   const cal = {};
-  if (last < 1 || width < 2) return cal;
-  const vals = sh.getRange(1, 1, last, width).getValues();
+  if (vals.length < 1 || vals[0].length < 2) return cal;
   const tz = Session.getScriptTimeZone();
   vals.forEach(function (r) {
     for (let c = 0; c + 1 < r.length; c++) {
@@ -817,10 +819,8 @@ function readCalendar_(sh) {
 
 /* 従業員名簿(見出し「社員番号」「工場」「状況」の列)から、状況が「在職中」の人数を工場別に数える。
    { '本社': 人数, ... } を返す(氏名などは返さない)。見出しが見つからなければ null。 */
-function readHeadcount_(sh) {
-  const last = sh.getLastRow(), width = sh.getLastColumn();
-  if (last < 2 || width < 1) return null;
-  const vals = sh.getRange(1, 1, last, width).getValues();
+function readHeadcount_(vals) {
+  if (vals.length < 2 || vals[0].length < 1) return null;
   let hr = -1, cSite = -1, cStat = -1;
   for (let r = 0; r < Math.min(vals.length, 5) && hr < 0; r++) {
     const row = vals[r].map(function (v) { return String(v).trim(); });
