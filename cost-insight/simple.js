@@ -357,8 +357,7 @@
       : `${m === 12 ? '年度（1か月×12）' : '1か月あたり'}・3工場合計で目標利益率${g}${plan.reach ? '' : '　<b class="neg">⚠ 過去の実績を超える</b>'}`;
     el.innerHTML = `<div class="tgHead">【目標値】<small>${head}</small></div>
       <table><tr><th>工場</th><th>生産重量(t)</th><th>工数(h)</th><th>人工数(人工/t)</th></tr>
-      ${tr('3工場', W, H, 'tot')}${plan.rows.map((r) => tr(r.site, r.w, r.H, '', r.over)).join('')}</table>
-      <div class="tgNote">上限: 直近${FIXED_BASE}か月度の各工場の最高実績（1日あたり生産量・人工数）以内${plan.reach ? '' : '。⚠は上限超え'}</div>`;
+      ${tr('3工場', W, H, 'tot')}${plan.rows.map((r) => tr(r.site, r.w, r.H, '', r.over)).join('')}</table>`;
     el.hidden = false;
   }
 
