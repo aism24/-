@@ -148,15 +148,14 @@
       if (works[no]) return works[no];
       var m = sw[no] || {}, info = (cache.works || {})[no] || {};
       var contract = num(m.contract), tw = num(m.totalWeight);
-      var weightBasis = tw !== null ? '契約総重量' : '生産実績の総重量';
       var total = tw !== null ? tw : (num(info.totalWeight) || 0);
       var w = works[no] = {
-        no: no, name: m.name || info.name || '', done: !!m.done, year: m.year || '', inMaster: !!sw[no],
-        contract: contract, totalWeight: total, weightBasis: weightBasis,
+        no: no, name: m.name || info.name || '', done: !!m.done, year: m.year || '',
+        contract: contract, totalWeight: total,
         procUnit: contract !== null && total > 0 ? contract / total : null,
         hasBudget: false, purchaseActual: null, purchaseBudget: null, purchase: null, purchaseEst: !m.done, purchaseUnit: null,
-        laborAll: 0, laborUsed: 0, laborBeforeData: 0, cutoff: '', hoursToCutoff: 0, hourRate: null,
-        weight: 0, hours: 0, hoursOwn: 0, hoursBeforeAnalysis: 0, coverage: null, dataShort: false, notes: [],
+        laborUsed: 0, laborBeforeData: 0, cutoff: '', hoursToCutoff: 0, hourRate: null,
+        weight: 0, hours: 0, hoursBeforeAnalysis: 0, coverage: null, dataShort: false, notes: [],
       };
       var b = budget[no];
       if (b) {
@@ -186,7 +185,7 @@
       var f = ps[period + '|' + r[1]].factor;
       var w = work(no);
       var cell = { ymd: r[0], period: period, site: r[1], no: no, weight: r[3] || 0, hoursOwn: r[4] || 0, hours: (r[4] || 0) * f };
-      w.weight += cell.weight; w.hours += cell.hours; w.hoursOwn += cell.hoursOwn;
+      w.weight += cell.weight; w.hours += cell.hours;
       if (analysisFrom && cell.ymd < analysisFrom) w.hoursBeforeAnalysis += cell.hours;
       if (w.cutoff && period >= firstPeriod && period <= w.cutoff) w.hoursToCutoff += cell.hours;
       cells.push(cell);
@@ -198,7 +197,6 @@
       if (!w.hasBudget) return;
       Object.keys(w.laborByPeriod).forEach(function (p) {
         var v = w.laborByPeriod[p];
-        w.laborAll += v;
         if (p < firstPeriod) w.laborBeforeData += v;
         else if (w.cutoff && p <= w.cutoff) w.laborUsed += v;
       });
@@ -250,20 +248,19 @@
      単価 = 金額 ÷ (金額が分かるセルの)重量・工数。
      損益(profit)・利益率は、3つの金額がすべて分かるセルだけで計算する(分からないセルの重量・工数は ngWeight・ngHours) */
   function summarize(cells) {
-    var t = { weight: 0, hours: 0, sales: 0, purchase: 0, labor: 0, laborEstimated: 0, profit: 0, profitSales: 0, ngWeight: 0, ngHours: 0,
-      wSales: 0, wPurchase: 0, hLabor: 0, missingSales: 0, missingPurchase: 0, missingLabor: 0, purchaseEst: false, laborEst: false };
+    var t = { weight: 0, hours: 0, sales: 0, purchase: 0, labor: 0, profit: 0, profitSales: 0, ngWeight: 0, ngHours: 0,
+      wSales: 0, wPurchase: 0, hLabor: 0, purchaseEst: false, laborEst: false };
     cells.forEach(function (c) {
       t.weight += c.weight; t.hours += c.hours;
-      if (c.sales !== null) { t.sales += c.sales; t.wSales += c.weight; } else if (c.weight) t.missingSales++;
-      if (c.purchase !== null) { t.purchase += c.purchase; t.wPurchase += c.weight; if (c.purchaseEst && c.weight) t.purchaseEst = true; } else if (c.weight) t.missingPurchase++;
-      if (c.labor !== null) { t.labor += c.labor; t.hLabor += c.hours; if (c.laborEst && c.hours) { t.laborEst = true; t.laborEstimated += c.labor; } } else if (c.hours) t.missingLabor++;
+      if (c.sales !== null) { t.sales += c.sales; t.wSales += c.weight; }
+      if (c.purchase !== null) { t.purchase += c.purchase; t.wPurchase += c.weight; if (c.purchaseEst && c.weight) t.purchaseEst = true; }
+      if (c.labor !== null) { t.labor += c.labor; t.hLabor += c.hours; if (c.laborEst && c.hours) t.laborEst = true; }
       if (c.ok) { t.profit += c.sales - c.purchase - c.labor; t.profitSales += c.sales; } else { t.ngWeight += c.weight; t.ngHours += c.hours; }
     });
     t.procUnit = t.wSales > 0 ? t.sales / t.wSales : null;
     t.purchaseUnit = t.wPurchase > 0 ? t.purchase / t.wPurchase : null;
     t.hourRate = t.hLabor > 0 ? t.labor / t.hLabor : null;
     t.profitRate = t.profitSales > 0 ? t.profit / t.profitSales : null;
-    t.complete = !t.missingSales && !t.missingPurchase && !t.missingLabor;
     return t;
   }
 

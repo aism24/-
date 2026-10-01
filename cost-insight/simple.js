@@ -72,11 +72,15 @@
   }
 
   /* 目標利益率・単価から損益分岐生産量と目標生産量を出す(人件費とその他固定費を合わせて固定費扱い) */
+  // 損益分岐生産量 = 固定費÷(単価−変動費)、目標生産量 = 固定費÷(単価×(1−目標利益率)−変動費)(詳細版 detail.js と共用)
+  function solve(fixedAll, P, v, p) {
+    const dBe = P - v, dGoal = P * (1 - p) - v;
+    return { be: dBe > 0 ? fixedAll / dBe : null, goal: dGoal > 0 ? fixedAll / dGoal : null };
+  }
   function simulate(base, W, n, P, p) {
     const L = base.laborRate || 0, v = base.varPerTon || 0, labor = W * n * L, fixed = base.fixed || 0;
-    const dBe = P - v, dGoal = P * (1 - p) - v;
-    return { labor, fixed, unitPrice: P, varPerTon: v, laborRate: L,
-      breakEvenTons: dBe > 0 ? (fixed + labor) / dBe : null, goalTons: dGoal > 0 ? (fixed + labor) / dGoal : null };
+    const s = solve(fixed + labor, P, v, p);
+    return { labor, fixed, unitPrice: P, varPerTon: v, laborRate: L, breakEvenTons: s.be, goalTons: s.goal };
   }
 
   /* ---------- 画面の準備 ---------- */
@@ -142,12 +146,10 @@
     const r = mode === 'period' ? C.periodRange(selPer.value) : C.fiscalRange(Number($('f-sfiscal').value));
     const sites = S.site ? [S.site] : SITE_LIST;
     const lastTo = S.lastYmd && S.lastYmd >= r.from && S.lastYmd < r.to ? S.lastYmd : r.to;
-    const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
-    const note = lastTo < r.to ? `(実績〜${md(lastTo)})` : '';
     // 目標の欄の見出し用(令和。期は終わりの年で数える 例: 2025/11/21〜2026/11/20期=R8年度、2026年8月度=R8年8月度)
     const pk = mode === 'period' ? selPer.value.split('-') : null;
     const reiwa = pk ? 'R' + (Number(pk[0]) - 2018) + '年' + Number(pk[1]) + '月度' : 'R' + (Number($('f-sfiscal').value) + 1 - 2018) + '年度';
-    return { mode, from: r.from, to: lastTo, fullTo: r.to, lastTo, reiwa, sites, note, periodKey: mode === 'period' ? selPer.value : null };
+    return { mode, from: r.from, to: lastTo, fullTo: r.to, lastTo, reiwa, sites };
   }
 
   function card(label, value, unit, sub, cls) {
@@ -198,7 +200,7 @@
     let startKey = C.shiftPeriod(endKey, -(FIXED_BASE - 1));
     if (startKey < first) startKey = first;
     if (endKey < startKey) return null;
-    return { startKey, endKey, n: 0 };
+    return { startKey, endKey };
   }
 
   function pastBest(cal, win) {
@@ -265,7 +267,7 @@
   /* 目標の表(紫の欄)・グラフ・工場別の目標値の表を描く */
   function renderGoal(sel) {
     const box = $('goal'), chartBox = $('goal-chart');
-    const g = goalRate(), gl = fmt(g, g % 1 ? 1 : 0) + '%', p = g / 100;
+    const g = goalRate(), p = g / 100;
     const plan = stdPlan(sel), T = plan ? stdScope(plan, sel) : null;
     renderTargetsTable(plan, sel, p);
     const cur = sel.lastTo < sel.fullTo;
@@ -337,7 +339,7 @@
       cx = few ? T.W : t.weight + (doneDays > 0 ? t.weight / doneDays : 0) * leftDays;
       clabel = few ? '目標' : '見込み';
     }
-    const base = { unitPrice: T.P, varPerTon: T.v, laborRate: T.laborRate, fixed: T.fixedOther };
+    const base = { varPerTon: T.v, laborRate: T.laborRate, fixed: T.fixedOther };
     const r = simulate(base, T.W, T.n, T.P, p); // 標準の目標の工数・生産量での人件費
     drawBep('c-goal', { fixed: r.fixed + r.labor, unitPrice: r.unitPrice, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: p,
       fixedLabel: ['固定費', '(人件費込み)'], otherFixed: r.fixed, laborRate: r.laborRate,
@@ -415,6 +417,6 @@
     el.style.left = (ox + best.x) + 'px'; el.style.top = (oy + best.y) + 'px';
   }
 
-  window.CIKit = { SITE_LIST, otherFixed, fixedFor, siteShare, analyze, workDaysIn, ymdToUtc, utcToYmd, calendar, goalRate, lastDataYmd };
+  window.CIKit = { SITE_LIST, otherFixed, solve, fixedFor, siteShare, analyze, workDaysIn, ymdToUtc, utcToYmd, calendar, goalRate, lastDataYmd };
   window.SimpleView = { show };
 })();
