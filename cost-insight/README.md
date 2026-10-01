@@ -1,4 +1,4 @@
-# コストインサイト(cost-insight)— 原価管理・生産進捗分析
+# コストインサイト(cost-insight)— 生産・原価の進捗管理
 
 「生産損益分析(production-profit)」と「実行予算まとめ(jikko-yosan)」を1本にまとめる新アプリ(開発中)。
 完成後、旧2アプリ(GitHub・Vercel・スプレッドシート・GAS・.bat)は廃止する予定。
