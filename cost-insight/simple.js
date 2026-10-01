@@ -164,7 +164,6 @@
     $('f-prev').disabled = selPer.selectedIndex >= selPer.options.length - 1;
     $('f-next').disabled = selPer.selectedIndex <= 0;
     const sel = selection();
-    $('f-range').textContent = sel.from.replace(/-/g, '/') + ' 〜 ' + sel.fullTo.replace(/-/g, '/') + sel.note;
     const t = analyze(sel.from, sel.to, sel.sites);
     const g = goalRate();
     const gi = renderGoal(sel);

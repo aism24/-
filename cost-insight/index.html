@@ -198,6 +198,7 @@
 
   <!-- 工場別進捗分析(シンプル版): 期間と工場のボタン → 現在までの結果・目標・損益分岐生産量グラフ -->
   <section id="v-simple" class="view" hidden>
+    <div class="sBar">
     <div class="sTop"><button class="btn orange" type="button" data-go="sitemode">戻る</button><span>工場別進捗分析 シンプル版</span></div>
     <div class="sFilters">
       <button type="button" id="f-reset" class="resetBtn" title="年度・今期・3工場の表示に戻します">リセット</button>
@@ -210,7 +211,7 @@
         <span id="f-fiscal-wrap" hidden><select id="f-sfiscal" aria-label="期"></select></span>
       </div>
       <div class="sRow"><div id="f-ssites" class="segBtns" role="group" aria-label="工場"></div></div>
-      <div class="sRow small muted"><span id="f-range"></span></div>
+    </div>
     </div>
     <div class="sBody">
       <div class="sLeft">
@@ -233,6 +234,7 @@
 
   <!-- 工場別進捗分析(詳細版)= 目標シミュレーター: 期間と工場のボタン → 試算の入力・試算表・現状分析・つまみで動かせるグラフ -->
   <section id="v-detail" class="view fullTab" hidden>
+    <div class="sBar">
     <div class="sTop"><button class="btn" type="button" data-go="sitemode">戻る</button><span>工場別進捗分析 詳細版(目標シミュレーター)</span></div>
     <div class="sFilters">
       <button type="button" id="d-reset" class="resetBtn" title="年度・今期・3工場の表示に戻します">リセット</button>
@@ -245,7 +247,7 @@
         <span id="d-fiscal-wrap" hidden><select id="d-fiscal" aria-label="期"></select></span>
       </div>
       <div class="sRow"><div id="d-sites" class="segBtns" role="group" aria-label="工場"></div></div>
-      <div class="sRow small muted"><span id="d-range"></span></div>
+    </div>
     </div>
     <div class="simLayout">
       <div class="simLeft">
