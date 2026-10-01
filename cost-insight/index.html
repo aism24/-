@@ -75,6 +75,10 @@
   .btn.sub { background:#555; }
   .btn.pink { background:#ec4899; }
   .btn.blue { background:#2563eb; }
+  .btn.orange { background:#f97316; }
+  .btn.orange:hover { background:#ea580c; }
+  .home-row { text-align:center; margin:0 0 12px; }
+  .home-row .stack-btn { width:min(340px, 100%); font-size:16px; padding:14px 20px; margin:0; }
   .btn.blue:disabled { background:#bbb; }
   .btn.pink:hover { background:#db2777; }
   /* 取込完了のお知らせ(2秒表示してホームへ戻る) */
@@ -119,7 +123,9 @@
   .imp-status { font-size:14px; font-weight:bold; margin:6px 0 0; padding:8px 12px; border-radius:6px; background:#eef4ff; color:#1f3a8a; }
   .imp-status.ok { background:#e8f7ee; color:#166534; }
   .imp-status.ng { background:#fff4e5; color:#9a3412; }
-  .budget-stack { display:flex; flex-direction:column; align-items:center; justify-content:flex-start; text-align:center; }
+  /* 白いカードは中身(ボタン・表)+余白の幅にして中央に置く */
+  .budget-stack { display:flex; flex-direction:column; align-items:center; justify-content:flex-start; text-align:center;
+                  width:fit-content; min-width:min(380px, 100%); max-width:100%; margin-left:auto; margin-right:auto; }
   .budget-stack h2 { align-self:stretch; text-align:left; }
   .budget-stack .stack-btn, .budget-stack .reg-next { width:min(340px, 100%); margin:6px 0; text-align:center; font-size:16px; padding:14px 20px; }
   .budget-stack .imp-status { width:min(340px, 100%); }
@@ -149,7 +155,7 @@
     <!-- 3つのボタンを縦に並べ、上合わせ・中央揃え -->
     <div class="card budget-stack">
       <h2>実行予算取込</h2>
-      <button class="btn sub stack-btn" type="button" data-go="menu">ホームへ戻る</button>
+      <button class="btn orange stack-btn" type="button" data-go="menu">ホームへ戻る</button>
       <button id="regBtn" class="btn sub stack-btn" type="button" onclick="downloadReg()" title="PCごとに1回だけ。ダウンロードした 正光コストインサイト登録.reg をダブルクリックで開き、［はい］→［OK］">①初期設定をダウンロード</button>
       <a class="btn pink stack-btn" href="costinsight://update" onclick="startImportWatch()" title="会社サーバーの 実行予算更新.bat を実行します(社内ネットワークのPCのみ)">②実行予算取込</a>
       <p id="imp-status" class="imp-status" hidden></p>
@@ -162,7 +168,7 @@
     <!-- ホームへ戻る・更新を保存(中央揃え)の下に表 -->
     <div class="card budget-stack">
       <h2>完了年度設定</h2>
-      <button class="btn sub stack-btn" type="button" data-go="menu">ホームへ戻る</button>
+      <button class="btn orange stack-btn" type="button" data-go="menu">ホームへ戻る</button>
       <button id="set-save" class="btn blue stack-btn" type="button" onclick="saveSettings()" disabled>更新を保存</button>
       <span id="set-msg" class="note"></span>
       <div class="tbl-wrap"><table id="set-table"></table></div>
@@ -171,7 +177,7 @@
 
   <!-- 進捗確認 -->
   <section id="v-progress" class="view" hidden>
-    <button class="back" type="button" data-go="menu">← メニューへ戻る</button>
+    <p class="home-row"><button class="btn orange stack-btn" type="button" data-go="menu">ホームへ戻る</button></p>
     <div class="card">
       <div id="filters">
         <fieldset><b>期間</b>
