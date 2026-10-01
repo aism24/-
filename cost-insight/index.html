@@ -35,6 +35,14 @@
   .btn { display:inline-block; background:#e60012; color:#fff; text-decoration:none; font-weight:bold;
          padding:10px 20px; border-radius:6px; margin-right:8px; border:0; font-size:14px; cursor:pointer; font-family:inherit; }
   .btn.sub { background:#555; }
+  /* 登録ファイルをダウンロードした後の案内(ダウンロードだけで終わらないよう目立たせる) */
+  .reg-next { display:inline-block; background:#fff200; color:#222; font-weight:bold; padding:10px 16px;
+              border:2px solid #ff9800; border-radius:6px; font-size:14px; vertical-align:middle; margin:4px 0;
+              animation:reg-blink 1s ease-in-out infinite; }
+  @keyframes reg-blink {
+    0%, 100% { background:#fff200; border-color:#ff9800; box-shadow:0 0 4px 1px #ffb300, 0 0 14px 5px rgba(255,152,0,.85); }
+    50% { background:#fffbd0; border-color:#ffe0a0; box-shadow:0 0 0 0 rgba(255,152,0,0); }
+  }
 </style>
 </head>
 <body>
@@ -51,7 +59,7 @@
   </div>
   <div class="card">
     <h2>実行予算の取り込み</h2>
-    <p><a class="btn" href="costinsight://update">実行予算を更新</a><button class="btn sub" type="button" onclick="location.reload()">画面を再読み込み</button><button class="btn sub" type="button" onclick="downloadReg()">初めて使うPC：登録ファイルをダウンロード</button></p>
+    <p><a class="btn" href="costinsight://update">実行予算を更新</a><button class="btn sub" type="button" onclick="location.reload()">画面を再読み込み</button><button id="regBtn" class="btn sub" type="button" onclick="downloadReg()">初めて使うPC：登録ファイルをダウンロード</button></p>
     <p id="budget" class="note">最終受信: 確認中…</p>
     <p class="note">［実行予算を更新］→「開きますか？」で［開く］を押すと、会社サーバーの 実行予算更新.bat が動きます(黒い画面に進み具合が出ます。数分かかることがあります)。
       終わったら［画面を再読み込み］を押してください。<br>
@@ -155,6 +163,14 @@ function downloadReg() {
   a.download = '正光コストインサイト登録.reg';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  // ボタンを、次にやることの案内(黄色・縁が光って点滅)に置き換える
+  const btn = document.getElementById('regBtn');
+  if (btn) {
+    const note = document.createElement('span');
+    note.className = 'reg-next';
+    note.textContent = 'ダウンロードフォルダよりダブルクリックで実行してください';
+    btn.replaceWith(note);
+  }
 }
 
 async function loadBudget() {
