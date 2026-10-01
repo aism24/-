@@ -51,11 +51,13 @@
   </div>
   <div class="card">
     <h2>実行予算の取り込み</h2>
-    <p><a class="btn" href="costinsight://update">実行予算を更新</a><button class="btn sub" type="button" onclick="location.reload()">画面を再読み込み</button></p>
+    <p><a class="btn" href="costinsight://update">実行予算を更新</a><button class="btn sub" type="button" onclick="location.reload()">画面を再読み込み</button><button class="btn sub" type="button" onclick="downloadReg()">初めて使うPC：登録ファイルをダウンロード</button></p>
     <p id="budget" class="note">最終受信: 確認中…</p>
     <p class="note">［実行予算を更新］→「開きますか？」で［開く］を押すと、会社サーバーの 実行予算更新.bat が動きます(黒い画面に進み具合が出ます。数分かかることがあります)。
       終わったら［画面を再読み込み］を押してください。<br>
-      初めて使うPCでは、先に会社サーバーの「コストインサイト\参照資料（削除厳禁）\costinsight登録.reg」を1回だけダブルクリックしてください。社内ネットワークのPCでのみ動きます。</p>
+      <b>押しても何も起きないときは、そのPCでまだ登録していません。</b>［初めて使うPC：登録ファイルをダウンロード］を押し、ダウンロードした costinsight-touroku.reg を開いて［はい］→［OK］(PCごとに1回だけ。管理者の権限はいりません)。
+      ブラウザに「危険なファイル」などと出たら［保存］(または［継続］)を選んでください。<br>
+      社内ネットワークのPCでのみ動きます。会社サーバーの「コストインサイト\参照資料（削除厳禁）\実行予算更新.bat」をダブルクリックしても同じ更新ができます。</p>
   </div>
   <div class="card">
     <h2>工事別(生産重量・工数の累計と工事マスタ)</h2>
@@ -135,6 +137,26 @@ function render(cache, s) {
         + '</td><td>' + (m.done ? '完了' : '') + '</td><td>' + esc(m.year) + '</td><td>' + esc(m.laborCutoff) + '</td></tr>';
     }).join('');
 }
+// 登録ファイル(server/costinsight登録.reg と同じ内容)をその場で作ってダウンロードさせる。
+// リンクの中身は使わず、決まった .bat だけを起動する登録にしている。
+const BAT_PATH = '\\\\192.168.3.2\\share_01\\⑰その他\\Claude(sumi)\\コストインサイト\\参照資料（削除厳禁）\\実行予算更新.bat';
+function downloadReg() {
+  const cmd = 'cmd.exe /c ""' + BAT_PATH + '""';
+  const regEsc = cmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const K = 'HKEY_CURRENT_USER\\Software\\Classes\\costinsight';
+  const text = ['Windows Registry Editor Version 5.00', '', '[' + K + ']', '@="URL:Cost Insight Protocol"', '"URL Protocol"=""', '',
+    '[' + K + '\\shell]', '', '[' + K + '\\shell\\open]', '', '[' + K + '\\shell\\open\\command]', '@="' + regEsc + '"', '', ''].join('\r\n');
+  // .reg は UTF-16LE(BOM付き)で保存する(日本語のパスを正しく読ませるため)
+  const buf = new Uint8Array(2 + text.length * 2);
+  buf[0] = 0xFF; buf[1] = 0xFE;
+  for (let i = 0; i < text.length; i++) { const c = text.charCodeAt(i); buf[2 + i * 2] = c & 255; buf[3 + i * 2] = c >> 8; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([buf], { type: 'application/octet-stream' }));
+  a.download = 'costinsight-touroku.reg'; // 日本語の名前だとブラウザによって「download」になるため英字
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
 async function loadBudget() {
   const el = document.getElementById('budget');
   try {
