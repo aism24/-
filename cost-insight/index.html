@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>コストインサイト</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-  :root { --bg:#2b2c2f; --card:#fff; --ink:#222; --sub:#666; }
+  :root { --bg:#2b2c2f; --card:#fff; --ink:#222; --sub:#666; --muted:#898781; --line:#e1e0d9; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
          font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif; }
@@ -16,26 +17,47 @@
   .company { font-size:14px; color:var(--sub); }
   h1 { font-size:20px; margin:0; }
   h1 small { font-size:12px; color:var(--sub); font-weight:normal; margin-left:6px; }
-  main { max-width:760px; margin:24px auto; padding:0 16px; }
-  .card { background:var(--card); border-radius:8px; padding:20px; }
-  .card h2 { font-size:16px; margin:0 0 12px; }
-  ol { margin:0; padding-left:1.4em; line-height:1.9; }
-  .now { background:#fff3c4; font-weight:bold; }
-  .note { color:var(--sub); font-size:13px; margin-top:12px; }
+  main { max-width:1280px; margin:20px auto; padding:0 16px; }
+  .card { background:var(--card); border-radius:8px; padding:16px 20px; }
   .card + .card { margin-top:16px; }
-  table { border-collapse:collapse; font-size:13px; margin-top:8px; }
-  th, td { border:1px solid #ddd; padding:4px 8px; text-align:left; white-space:nowrap; }
-  th { background:#f3f3f3; }
-  td.n { text-align:right; }
-  .kv th { width:140px; }
-  .tbl-wrap { overflow:auto; max-height:60vh; }
-  .tbl-wrap th { position:sticky; top:0; }
-  tr.miss td { background:#fff3c4; }
-  .warn { color:#a15c00; font-size:13px; }
+  .card h2 { font-size:16px; margin:0 0 10px; }
+  .note { color:var(--sub); font-size:13px; margin:8px 0 0; }
+  /* 絞り込み(1行) */
+  #filters { display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; font-size:14px; }
+  #filters select, #filters input[type=date] { font:inherit; padding:3px 6px; }
+  #filters fieldset { border:0; padding:0; margin:0; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .tabs { display:flex; gap:4px; margin:14px 0 0; border-bottom:2px solid #e60012; }
+  .tab { font:inherit; font-size:15px; font-weight:bold; padding:8px 22px; border:0; border-radius:6px 6px 0 0; background:#eee; color:#444; cursor:pointer; }
+  .tab.on { background:#e60012; color:#fff; }
+  /* KPI */
+  #kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:10px; }
+  .kpi { border:1px solid var(--line); border-radius:6px; padding:10px 12px; }
+  .kpi-l { font-size:12px; color:var(--sub); }
+  .kpi-v { font-size:22px; font-weight:bold; margin-top:2px; }
+  .kpi-v small { font-size:12px; font-weight:normal; color:var(--sub); margin-left:3px; }
+  .kpi-s { font-size:12px; color:var(--sub); margin-top:2px; }
+  /* グラフ */
+  .charts { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .chart-box h3 { font-size:14px; margin:0 0 6px; }
+  .chart-wrap { position:relative; height:280px; }
+  .chart-box.wide { grid-column:1 / -1; }
+  @media (max-width: 800px) { .charts { grid-template-columns:1fr; } }
+  /* 表 */
+  .tbl-wrap { overflow:auto; max-height:70vh; margin-top:8px; }
+  table { border-collapse:collapse; font-size:13px; }
+  th, td { border:1px solid #ddd; padding:4px 8px; white-space:nowrap; text-align:left; }
+  th { background:#f3f3f3; position:sticky; top:0; z-index:1; }
+  td.n, th.n { text-align:right; }
+  td.neg { color:#c62828; }
+  td.note-cell { white-space:normal; min-width:260px; max-width:420px; font-size:12px; color:#a15c00; }
+  tr.warnrow td { background:#fffbe6; }
+  tr.total td { font-weight:bold; background:#f7f7f7; }
+  .est { display:inline-block; font-size:10px; color:#a15c00; border:1px solid #e0b060; border-radius:3px; padding:0 3px; margin-left:4px; vertical-align:1px; }
+  #notes { font-size:12px; color:var(--sub); margin:10px 0 0; padding-left:1.3em; line-height:1.7; }
+  /* 実行予算の取り込み */
   .btn { display:inline-block; background:#e60012; color:#fff; text-decoration:none; font-weight:bold;
-         padding:10px 20px; border-radius:6px; margin-right:8px; border:0; font-size:14px; cursor:pointer; font-family:inherit; }
+         padding:10px 20px; border-radius:6px; margin:4px 8px 4px 0; border:0; font-size:14px; cursor:pointer; font-family:inherit; }
   .btn.sub { background:#555; }
-  /* 登録ファイルをダウンロードした後の案内(ダウンロードだけで終わらないよう目立たせる) */
   .reg-next { display:inline-block; background:#fff200; color:#222; font-weight:bold; padding:10px 16px;
               border:2px solid #ff9800; border-radius:6px; font-size:14px; vertical-align:middle; margin:4px 0;
               animation:reg-blink 1s ease-in-out infinite; }
@@ -53,9 +75,36 @@
 </header>
 <main>
   <div class="card">
-    <h2>データの読み取り確認(開発中)</h2>
+    <div id="filters">
+      <fieldset><b>期間</b>
+        <label><input type="radio" name="f-mode" value="fy" checked> 期</label><select id="f-fy"></select>
+        <label><input type="radio" name="f-mode" value="period"> 月度</label><select id="f-period"></select>
+        <label><input type="radio" name="f-mode" value="range"> 任意</label><input type="date" id="f-from"> 〜 <input type="date" id="f-to">
+      </fieldset>
+      <fieldset><b>工場</b> <span id="f-sites"></span></fieldset>
+      <label><input type="checkbox" id="f-done"> 完了の工事のみ</label>
+    </div>
+    <p class="note"><span id="range-note"></span> (<span id="f-min"></span> より前は生産重量のデータが無いため選べません)</p>
+    <div class="tabs">
+      <button class="tab on" type="button" data-tab="work">工事別</button>
+      <button class="tab" type="button" data-tab="site">工場別</button>
+      <button class="tab" type="button" data-tab="period">期間別</button>
+    </div>
+  </div>
+  <div class="card">
+    <div id="kpis"></div>
     <p id="status" class="note">読み込み中…(初回は30秒ほどかかることがあります)</p>
-    <div id="summary"></div>
+  </div>
+  <div class="card">
+    <div class="charts">
+      <div class="chart-box"><h3>1t当たり単価(加工単価・仕入単価)</h3><div class="chart-wrap"><canvas id="c-ton"></canvas></div></div>
+      <div class="chart-box"><h3>1時間当たり単価</h3><div class="chart-wrap"><canvas id="c-hour"></canvas></div></div>
+      <div class="chart-box wide"><h3>損益(万円)</h3><div class="chart-wrap"><canvas id="c-profit"></canvas></div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="tbl-wrap"><table id="table"></table></div>
+    <ul id="notes"></ul>
   </div>
   <div class="card">
     <h2>実行予算の取り込み</h2>
@@ -68,124 +117,13 @@
       社内ネットワークのPCでのみ動きます。会社サーバーの「コストインサイト\参照資料（削除厳禁）\実行予算更新.bat」をダブルクリックしても同じ更新ができます。</p>
   </div>
   <div class="card">
-    <h2>工事別(生産重量・工数の累計と工事マスタ)</h2>
-    <div class="tbl-wrap"><table id="works"></table></div>
-  </div>
-  <div class="card">
-    <h2>準備中(開発の進み具合)</h2>
-    <ol>
-      <li>スプレッドシートの準備 … 完了</li>
-      <li>GAS 第1段階(生産重量・工数の読み取り)… 完了</li>
-      <li class="now">GAS 第2段階・更新プログラム(実行予算の取り込み。会社サーバーの.batを画面のボタンから実行)</li>
-      <li>計算部分(工事別・工場別・期間別の3つの単価)</li>
-      <li>画面(グラフ・表)</li>
-      <li>Excel・PDFの出力</li>
-      <li>公開(Vercel)・旧アプリ(実行予算まとめ・生産損益分析)の廃止</li>
-    </ol>
-    <p class="note">このページは開発中の確認用です。完成までは GitHub 上のファイルを raw.githack 経由で表示しています。</p>
+    <h2>開発の進み具合</h2>
+    <p class="note">完了: スプレッドシート・GAS(生産重量・工数の読み取り、実行予算の受け取り)・実行予算の更新プログラム・計算部分。
+      <b>いま: 画面(3タブ・グラフ・表・絞り込み)</b> / このあと: 完了・年度の設定画面、Excel・PDFの出力、公開(Vercel)・旧アプリの廃止。
+      このページは開発中の確認用です(GitHub 上のファイルを raw.githack 経由で表示しています)。</p>
   </div>
 </main>
-<script>
-// GAS(スプレッドシート「コストインサイト」のウェブアプリ)
-const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbwDhzAWpmCmwrLoFM6gS1GDWYWcc7OvqjdGa7HNObCTednh-FttOPdF3JZlOQVe-Y3Q0A/exec';
-const SITES = ['本社', '夢前', '鳥取'];
-const fmt = (v, d) => (v === null || v === undefined || v === '') ? '' : Number(v).toLocaleString('ja-JP', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 });
-const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-
-async function load() {
-  const st = document.getElementById('status');
-  try {
-    const res = await fetch(GAS_API_URL + '?action=getData');
-    const text = await res.text();
-    let body;
-    try { body = JSON.parse(text); } catch (e) { throw new Error('GASの応答を読めませんでした(HTTP ' + res.status + ')'); }
-    if (body.status !== 'success') throw new Error(body.message || 'GASのエラー');
-    render(body.data.cache, body.data.settings);
-    st.textContent = '集計日時: ' + new Date(body.data.cache.generatedAt).toLocaleString('ja-JP');
-  } catch (e) {
-    st.textContent = '読み込みに失敗しました: ' + e.message + '(ページを再読み込みしてください)';
-  }
-}
-
-function render(cache, s) {
-  const by = {}, perWork = {};
-  let minD = '', maxD = '';
-  SITES.forEach(k => by[k] = { w: 0, h: 0 });
-  cache.rec.forEach(r => {
-    const b = by[r[1]] || (by[r[1]] = { w: 0, h: 0 });
-    b.w += r[3]; b.h += r[4];
-    if (!minD || r[0] < minD) minD = r[0];
-    if (!maxD || r[0] > maxD) maxD = r[0];
-    const key = r[2] || '(工事No不明)';
-    const p = perWork[key] || (perWork[key] = { w: 0, h: 0 });
-    p.w += r[3]; p.h += r[4];
-  });
-  const days = Object.values(s.calendar), work = days.filter(v => v === 1).length;
-  const hc = s.headcount || {};
-  let html = '<table class="kv">'
-    + '<tr><th>データの期間</th><td>' + minD + ' 〜 ' + maxD + '(' + fmt(cache.rec.length) + '行)</td></tr>'
-    + '<tr><th>工事マスタ</th><td>' + Object.keys(s.works).length + '件</td></tr>'
-    + '<tr><th>会社カレンダー</th><td>' + days.length + '日(うち出勤 ' + work + '日)</td></tr>'
-    + '<tr><th>在職中の人数</th><td>' + SITES.map(k => k + ' ' + (hc[k] || 0) + '人').join(' / ') + '</td></tr>'
-    + '<tr><th>共通扱い工事No</th><td>' + esc(s.commonWorkNos) + '</td></tr>'
-    + '<tr><th>目標利益率</th><td>' + (s.targetProfitRate === null ? '(未設定)' : s.targetProfitRate + '%') + '</td></tr>'
-    + '</table><table class="grid"><tr><th>工場</th><th>生産重量(t)</th><th>工数(h)</th></tr>'
-    + Object.keys(by).map(k => '<tr><td>' + esc(k) + '</td><td class="n">' + fmt(by[k].w, 1) + '</td><td class="n">' + fmt(by[k].h, 1) + '</td></tr>').join('')
-    + '</table>';
-  if ((cache.warnings || []).length) html += '<ul class="warn">' + cache.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul>';
-  document.getElementById('summary').innerHTML = html;
-
-  const nos = Array.from(new Set(Object.keys(s.works).concat(Object.keys(perWork)))).sort();
-  document.getElementById('works').innerHTML = '<tr><th>工事No</th><th>工事名</th><th>生産重量(t)</th><th>工数(h)</th><th>契約総重量(t)</th><th>契約金額(円)</th><th>完了</th><th>年度</th><th>労務費の締め</th></tr>'
-    + nos.map(no => {
-      const m = s.works[no] || {}, p = perWork[no] || { w: 0, h: 0 };
-      const name = m.name || (cache.works[no] || {}).name || '';
-      return '<tr' + (s.works[no] ? '' : ' class="miss" title="工事マスタに無い工事No"') + '><td>' + esc(no) + '</td><td>' + esc(name) + '</td><td class="n">' + fmt(p.w, 1)
-        + '</td><td class="n">' + fmt(p.h, 1) + '</td><td class="n">' + fmt(m.totalWeight, 1) + '</td><td class="n">' + fmt(m.contract)
-        + '</td><td>' + (m.done ? '完了' : '') + '</td><td>' + esc(m.year) + '</td><td>' + esc(m.laborCutoff) + '</td></tr>';
-    }).join('');
-}
-// 登録ファイル(server/costinsight登録.reg と同じ内容)をその場で作ってダウンロードさせる。
-// リンクの中身は使わず、決まった .bat だけを起動する登録にしている。
-const BAT_PATH = '\\\\192.168.3.2\\share_01\\⑰その他\\Claude(sumi)\\コストインサイト\\参照資料（削除厳禁）\\実行予算更新.bat';
-function downloadReg() {
-  const cmd = 'cmd.exe /c ""' + BAT_PATH + '""';
-  const regEsc = cmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  const K = 'HKEY_CURRENT_USER\\Software\\Classes\\costinsight';
-  const text = ['Windows Registry Editor Version 5.00', '', '[' + K + ']', '@="URL:Cost Insight Protocol"', '"URL Protocol"=""', '',
-    '[' + K + '\\shell]', '', '[' + K + '\\shell\\open]', '', '[' + K + '\\shell\\open\\command]', '@="' + regEsc + '"', '', ''].join('\r\n');
-  // .reg は UTF-16LE(BOM付き)で保存する(日本語のパスを正しく読ませるため)
-  const buf = new Uint8Array(2 + text.length * 2);
-  buf[0] = 0xFF; buf[1] = 0xFE;
-  for (let i = 0; i < text.length; i++) { const c = text.charCodeAt(i); buf[2 + i * 2] = c & 255; buf[3 + i * 2] = c >> 8; }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([buf], { type: 'application/octet-stream' }));
-  a.download = '正光コストインサイト登録.reg';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-  // ボタンを、次にやることの案内(黄色・縁が光って点滅)に置き換える
-  const btn = document.getElementById('regBtn');
-  if (btn) {
-    const note = document.createElement('span');
-    note.className = 'reg-next';
-    note.textContent = 'ダウンロードフォルダよりダブルクリックで実行してください';
-    btn.replaceWith(note);
-  }
-}
-
-async function loadBudget() {
-  const el = document.getElementById('budget');
-  try {
-    const body = await (await fetch(GAS_API_URL + '?action=budget')).json();
-    if (body.status !== 'success') throw new Error(body.message || '');
-    const t = body.data.today;
-    el.textContent = t ? '最終受信: ' + new Date(t.at).toLocaleString('ja-JP') + '(' + t.rows.length + 'ファイル)' : '最終受信: まだ受信していません';
-  } catch (e) {
-    el.textContent = '最終受信: 確認できませんでした(' + e.message + ')';
-  }
-}
-load();
-loadBudget();
-</script>
+<script src="calc.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
