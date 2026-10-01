@@ -133,8 +133,11 @@
   .budget-stack .stack-btn, .budget-stack .reg-next { width:min(340px, 100%); margin:6px 0; text-align:center; font-size:16px; padding:14px 20px; }
   /* 完了年度設定: 左 更新を保存・右 ホームへ戻る(同じ幅、高さは縦並びのときの半分) */
   /* 注意書き: 赤文字・黄色の背景で点滅 */
-  .warn-blink { align-self:stretch; margin:0 0 10px; padding:6px 10px; border-radius:6px; text-align:center;
-                color:#d00000; font-weight:bold; font-size:14px; border:2px solid #ffb300; animation:warn-blink 1s ease-in-out infinite; }
+  .warn-blink { align-self:stretch; margin:0; padding:4px 8px; border-radius:4px 4px 0 0; text-align:left;
+                color:#d00000; font-weight:bold; font-size:14px; animation:warn-blink 1s ease-in-out infinite; }
+  .warn-blink + .tbl-wrap { margin-top:0; }
+  #set-msg { margin:0 0 6px; }
+  #set-msg:empty { display:none; }
   @keyframes warn-blink { 0%, 100% { background:#fff200; } 50% { background:#fffbd0; } }
   .btn-row { align-self:stretch; display:flex; gap:10px; margin:4px 0 8px; }
   .btn-row .btn { flex:1 1 0; margin:0; padding:4px 10px; font-size:14px; line-height:1.4; }
@@ -182,8 +185,8 @@
         <button id="set-save" class="btn blue" type="button" onclick="saveSettings()" disabled>更新を保存</button>
         <button class="btn orange" type="button" data-go="menu">ホームへ戻る</button>
       </div>
-      <p class="warn-blink">生産管理のデータは2025/8/21からしかありません。</p>
       <span id="set-msg" class="note"></span>
+      <p class="warn-blink">生産管理のデータは2025/8/21からしかありません。</p>
       <div class="tbl-wrap"><table id="set-table"></table></div>
     </div>
   </section>
