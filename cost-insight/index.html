@@ -109,7 +109,7 @@
   .ld-err { color:#c62828; font-size:14px; margin:12px 0 0; }
   /* メニュー(3つのボタン)と各モード */
   .view[hidden] { display:none; }
-  /* 1行目: 進捗確認(2列分の幅・大きめ) / 2行目: 実行予算取込・完了年度設定(同じ幅) */
+  /* 1行目: 進捗・結果確認(2列分の幅・大きめ) / 2行目: 実行予算取込・完了年度設定(同じ幅) */
   .menu { display:grid; grid-template-columns:1fr 1fr; gap:12px; max-width:620px; margin:0 auto; }
   .menu-btn.wide { grid-column:1 / -1; font-size:22px; padding:24px 12px; }
   @media (max-width: 520px) { .menu { grid-template-columns:1fr; } }
@@ -158,7 +158,7 @@
   <!-- メニュー(読み込みが終わるまでボタンは押せない) -->
   <section id="v-menu" class="view">
     <div class="menu">
-      <button class="menu-btn m3 wide" type="button" data-go="progress" disabled>進捗確認</button>
+      <button class="menu-btn m3 wide" type="button" data-go="progress" disabled>進捗・結果確認</button>
       <button class="menu-btn m1" type="button" data-go="budget" disabled>実行予算取込</button>
       <button class="menu-btn m2" type="button" data-go="settings" disabled>完了年度設定</button>
     </div>
@@ -192,7 +192,7 @@
     </div>
   </section>
 
-  <!-- 進捗確認 -->
+  <!-- 進捗・結果確認 -->
   <section id="v-progress" class="view" hidden>
     <p class="home-row"><button class="btn orange stack-btn" type="button" data-go="menu">ホームへ戻る</button></p>
     <div class="card">
