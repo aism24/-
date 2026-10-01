@@ -54,6 +54,14 @@
   tr.total td { font-weight:bold; background:#f7f7f7; }
   #set-table tr.changed td { background:#fff3c4; }
   #set-table td.c { text-align:center; }
+  #set-table { margin:0 auto; }
+  #set-table th { text-align:center; }
+  #set-table select { font:inherit; padding:2px 6px; border:1px solid #bbb; border-radius:4px; text-align:center; text-align-last:center; }
+  /* 年度の色(実行予算まとめと同じ: R8=青・R9=緑・R10=ピンク・R7=黄 の4色周期。未設定は色なし) */
+  #set-table select.y0 { background:#d6e9ff; }
+  #set-table select.y1 { background:#d8f3dc; }
+  #set-table select.y2 { background:#ffd9e6; }
+  #set-table select.y3 { background:#fff3a8; }
   #set-box summary { cursor:pointer; font-size:15px; }
   .btn:disabled { background:#bbb; cursor:default; }
   .est { display:inline-block; font-size:10px; color:#a15c00; border:1px solid #e0b060; border-radius:3px; padding:0 3px; margin-left:4px; vertical-align:1px; }
@@ -63,6 +71,8 @@
          padding:10px 20px; border-radius:6px; margin:4px 8px 4px 0; border:0; font-size:14px; cursor:pointer; font-family:inherit; }
   .btn.sub { background:#555; }
   .btn.pink { background:#ec4899; }
+  .btn.blue { background:#2563eb; }
+  .btn.blue:disabled { background:#bbb; }
   .btn.pink:hover { background:#db2777; }
   /* 取込完了のお知らせ(2秒表示してホームへ戻る) */
   #toast { position:fixed; inset:0; background:rgba(40,40,40,.45); display:flex; align-items:center; justify-content:center; z-index:110; }
@@ -144,14 +154,13 @@
 
   <!-- 工事別＿完了｜年度設定モード -->
   <section id="v-settings" class="view" hidden>
-    <button class="back" type="button" data-go="menu">← メニューへ戻る</button>
-    <div class="card">
+    <!-- ホームへ戻る・更新を保存(中央揃え)の下に表 -->
+    <div class="card budget-stack">
       <h2>完了年度設定</h2>
-      <p><label><b>年度</b> <select id="set-year"></select></label>
-        <button id="set-save" class="btn" type="button" onclick="saveSettings()" disabled>更新を保存</button><span id="set-msg" class="note"></span></p>
+      <button class="btn sub stack-btn" type="button" data-go="menu">ホームへ戻る</button>
+      <button id="set-save" class="btn blue stack-btn" type="button" onclick="saveSettings()" disabled>更新を保存</button>
+      <span id="set-msg" class="note"></span>
       <div class="tbl-wrap"><table id="set-table"></table></div>
-      <p class="note">変更した行は黄色になります。「完了」にした工事は、仕入単価に実際の値(請求計)を使います。未完の工事は予算の値(見込み)です。
-        実行予算がまだ取り込まれていない工事(契約総重量・契約金額が空欄)は表示しません。保存するとスプレッドシート「コストインサイト」の工事データ(D 完了・E 年度)に書き込まれます。</p>
     </div>
   </section>
 
