@@ -144,6 +144,7 @@ function syncStickyOffsets() {
 window.addEventListener('resize', syncStickyOffsets);
 function showView(name) {
   state.view = name;
+  document.body.dataset.view = name; // ホームへ戻るボタンをホーム画面では隠す(CSS)
   document.querySelectorAll('.view').forEach(v => { v.hidden = v.id !== 'v-' + name; });
   window.scrollTo(0, 0);
   document.querySelector('main').classList.toggle('wide', name === 'simple' || name === 'detail'); // シンプル版は画面いっぱいに使う
