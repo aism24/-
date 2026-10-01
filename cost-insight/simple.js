@@ -325,29 +325,20 @@
     box.querySelector('.gLead').innerHTML = lead;
     box.querySelector('.gTable').innerHTML = rows;
 
-    // グラフ: 選んだ期間の実績の単価・費用で描く。期間の途中は今のペースの見込み(点線)。★=標準の目標の目標生産量
-    let base, cx = x, clabel = label, cn;
-    if (!cur) {
-      base = analyze(sel.from, sel.fullTo, sel.sites);
-      cn = base.ninkuPerTon || 0;
-    } else {
+    // グラフ: 紫の表と同じ「標準の目標」の前提(直近12か月度の単価・費用、目標工数)で線を引く。
+    //   ★=目標生産量(表と同じ値)、損益分岐値もこの前提で出すので、損益分岐値は必ず★より左になる。
+    //   つまみ(縦の点線)=選んだ期間の実績の生産重量。期間の途中は、今のペースの見込み。
+    let cx = x, clabel = label;
+    if (cur) {
       const cal = calendar();
       const next = utcToYmd(ymdToUtc(sel.lastTo) + 86400000);
       const doneDays = workDaysIn(cal, sel.from, sel.lastTo), leftDays = workDaysIn(cal, next, sel.fullTo);
-      let rt = t;
-      if (doneDays < 3 || !(t.unitPrice > 0)) {
-        const fyR = C.fiscalRange(C.fiscalYearOf(C.periodKeyOf(sel.from)));
-        const tf = analyze(fyR.from, sel.lastTo, sel.sites);
-        if (tf.unitPrice > 0) rt = tf;
-      }
-      const perDayH = T.people > 0 ? T.people * 8 : (doneDays > 0 ? t.hours / doneDays : 0);
-      const H = t.hours + perDayH * leftDays, few = doneDays < 3;
-      const Wp = few ? T.W : t.weight + (doneDays > 0 ? t.weight / doneDays : 0) * leftDays;
-      base = { unitPrice: rt.unitPrice, varPerTon: rt.varPerTon, laborRate: rt.laborRate, fixed: fixedFor(sel.from, sel.fullTo, sel.sites) };
-      cx = Wp; clabel = few ? '目標' : '見込み'; cn = Wp > 0 ? H / 8 / Wp : 0;
+      const few = doneDays < 3;
+      cx = few ? T.W : t.weight + (doneDays > 0 ? t.weight / doneDays : 0) * leftDays;
+      clabel = few ? '目標' : '見込み';
     }
-    const P = base.unitPrice || 0;
-    const r = simulate(base, cx, cn, P, p);
+    const base = { unitPrice: T.P, varPerTon: T.v, laborRate: T.laborRate, fixed: T.fixedOther };
+    const r = simulate(base, T.W, T.n, T.P, p); // 標準の目標の工数・生産量での人件費
     drawBep('c-goal', { fixed: r.fixed + r.labor, unitPrice: r.unitPrice, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: p,
       fixedLabel: ['固定費', '(人件費込み)'], otherFixed: r.fixed, laborRate: r.laborRate,
       x: cx, fixedX: true, beTons: r.breakEvenTons, goalTons: T.W, handleLabel: clabel, hideMoney: true });
