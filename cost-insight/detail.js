@@ -3,7 +3,7 @@
  *   生産損益分析(production-profit)の「目標シミュレーター」と同じ画面。
  *   「現在」の入力欄(生産重量・1t当たり人工数・トン単価)を変えるか、グラフのつまみをドラッグすると、
  *   売上・損益・損益分岐生産量・目標生産量・現状分析(目標利益率に届くには)が再計算される。
- *   コストインサイトの数字で計算する: 売上=加工単価×重量 / 変動費=仕入 / 人件費=労務費(工数×時間単価)。その他の固定費は無い(0)。
+ *   コストインサイトの数字で計算する: 売上=加工単価×重量 / 変動費=仕入 / 人件費=労務費(工数×時間単価)。その他固定費は simple.js の月額(OTHER_FIXED_MONTHLY)。
  */
 (function () {
   'use strict';
@@ -26,11 +26,12 @@
   /* ---------- 計算(production-profit の PPCalc と同じ式。固定費=人件費のみ) ---------- */
   function simulate(t, W, n, P) {
     const p = K.goalRate() / 100, L = t.laborRate || 0, v = t.varPerTon || 0;
+    const fixed = t.fixed || 0;
     const sales = W * P, ninku = W * n, labor = ninku * L, variable = W * v;
-    const profit = sales - labor - variable;
+    const profit = sales - labor - variable - fixed;
     const dBe = P - v, dGoal = P * (1 - p) - v;
-    const be = dBe > 0 ? labor / dBe : null, goal = dGoal > 0 ? labor / dGoal : null;
-    return { weight: W, ninkuPerTon: n, unitPrice: P, sales, ninku, hours: ninku * 8, labor, variable, fixed: 0, profit,
+    const be = dBe > 0 ? (fixed + labor) / dBe : null, goal = dGoal > 0 ? (fixed + labor) / dGoal : null;
+    return { weight: W, ninkuPerTon: n, unitPrice: P, sales, ninku, hours: ninku * 8, labor, variable, fixed, profit,
       profitRate: sales > 0 ? profit / sales : null, profitGoal: sales * p, breakEvenTons: be, goalTons: goal, goalSales: goal === null ? null : goal * P,
       laborRate: L, varPerTon: v };
   }
@@ -136,11 +137,13 @@
     $('d-range').textContent = sel.from.replace(/-/g, '/') + ' 〜 ' + sel.fullTo.replace(/-/g, '/') + sel.note;
     const t = K.analyze(sel.from, sel.to, sel.sites);
     D.total = t;
+    const monthly = K.OTHER_FIXED_MONTHLY * K.siteShare(sel.sites), mo = monthly > 0 ? t.fixed / monthly : 0;
+    D.fixedNote = `${yen(monthly)}円/月 × ${fmt(mo, Math.abs(mo - Math.round(mo)) < 0.05 ? 0 : 1)}か月（${sel.sites.length === SITE_LIST.length ? '3工場合計' : sel.sites.join('・')}）`;
     // 期間の途中なら、期間の終わりまでに目標利益率に届くのに必要な、残り期間の生産量(その他の固定費が無いので固定費の上乗せは0)
     D.remain = null;
     if (sel.to < sel.fullTo) {
       const cal = K.calendar(), next = K.utcToYmd(K.ymdToUtc(sel.to) + 86400000);
-      D.remain = Object.assign(remainingNeed(t, 0), { doneDays: K.workDaysIn(cal, sel.from, sel.to), leftDays: K.workDaysIn(cal, next, sel.fullTo), end: sel.fullTo });
+      D.remain = Object.assign(remainingNeed(t, K.fixedFor(sel.from, sel.fullTo, sel.sites) - t.fixed), { doneDays: K.workDaysIn(cal, sel.from, sel.to), leftDays: K.workDaysIn(cal, next, sel.fullTo), end: sel.fullTo });
     }
     // 「時間を減らす」の判定用: 期間の出勤日数と、直近12か月度の1出勤日あたり工数
     D.daily = null;
@@ -212,8 +215,9 @@
       sRow('損益分岐生産量', ton(r.breakEvenTons), 't', r.breakEvenTons !== null ? (W >= r.breakEvenTons ? `<span class="pos">超 ${ton(W - r.breakEvenTons)}</span>t` : `<span class="neg">不足 ${ton(r.breakEvenTons - W)}</span>t`) : '到達不能'),
       sRow('必要人工', fmt(r.ninku, 1), '人工', `${fmt(r.hours, 0)}h`),
       sRow('変動費(仕入)', yen(r.variable), '円', `${yen(r.varPerTon)}円/t`),
-      sRow('固定費(人件費込み)', yen(r.fixed + r.labor), '円', '人件費(その他の固定費はなし)'),
+      sRow('固定費(人件費込み)', yen(r.fixed + r.labor), '円', '人件費 + その他固定費'),
       sRow('<span class="subLbl">└ 人件費</span>', yen(r.labor), '円', `${yen(r.laborRate)}円/人工`),
+      sRow('<span class="subLbl">└ その他固定費</span>', yen(r.fixed), '円', D.fixedNote),
     ].join('');
     renderAdvice(r, t, W, P);
     // 人件費は試算の生産重量での額を固定費に含め、固定費線を水平にする(つまみのドラッグ中に縮尺が変わらないよう、署名は基準値で作る)
