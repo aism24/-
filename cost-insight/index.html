@@ -55,7 +55,7 @@
     <p id="budget" class="note">最終受信: 確認中…</p>
     <p class="note">［実行予算を更新］→「開きますか？」で［開く］を押すと、会社サーバーの 実行予算更新.bat が動きます(黒い画面に進み具合が出ます。数分かかることがあります)。
       終わったら［画面を再読み込み］を押してください。<br>
-      <b>押しても何も起きないときは、そのPCでまだ登録していません。</b>［初めて使うPC：登録ファイルをダウンロード］を押し、ダウンロードした costinsight-touroku.reg を開いて［はい］→［OK］(PCごとに1回だけ。管理者の権限はいりません)。
+      <b>押しても何も起きないときは、そのPCでまだ登録していません。</b>［初めて使うPC：登録ファイルをダウンロード］を押し、ダウンロードした 正光コストインサイト登録.reg を開いて［はい］→［OK］(PCごとに1回だけ。管理者の権限はいりません)。
       ブラウザに「危険なファイル」などと出たら［保存］(または［継続］)を選んでください。<br>
       社内ネットワークのPCでのみ動きます。会社サーバーの「コストインサイト\参照資料（削除厳禁）\実行予算更新.bat」をダブルクリックしても同じ更新ができます。</p>
   </div>
@@ -152,7 +152,7 @@ function downloadReg() {
   for (let i = 0; i < text.length; i++) { const c = text.charCodeAt(i); buf[2 + i * 2] = c & 255; buf[3 + i * 2] = c >> 8; }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([buf], { type: 'application/octet-stream' }));
-  a.download = 'costinsight-touroku.reg'; // 日本語の名前だとブラウザによって「download」になるため英字
+  a.download = '正光コストインサイト登録.reg';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
