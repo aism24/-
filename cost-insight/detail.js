@@ -13,7 +13,6 @@
   const D = { mode: 'fiscal', site: '', inited: false, lastYmd: null, defPeriod: null, base: null, exact: {}, total: null, remain: null, daily: null, dragging: false };
   const SIM_DIGITS = { w: 1, n: 2, p: 0 };
   const simFmt = (k, v) => fmt(v, SIM_DIGITS[k]);
-  const manU = (v) => Math.abs(v) >= 10000 ? fmt(v / 10000, 0) + '万円' : fmt(v, 0) + '円';
 
   function parseNumIn(text) {
     const s = String(text === null || text === undefined ? '' : text)
@@ -29,8 +28,7 @@
     const fixed = t.fixed || 0;
     const sales = W * P, ninku = W * n, labor = ninku * L, variable = W * v;
     const profit = sales - labor - variable - fixed;
-    const dBe = P - v, dGoal = P * (1 - p) - v;
-    const be = dBe > 0 ? (fixed + labor) / dBe : null, goal = dGoal > 0 ? (fixed + labor) / dGoal : null;
+    const { be, goal } = K.solve(fixed + labor, P, v, p);
     return { weight: W, ninkuPerTon: n, unitPrice: P, sales, ninku, hours: ninku * 8, labor, variable, fixed, profit,
       profitRate: sales > 0 ? profit / sales : null, profitGoal: sales * p, breakEvenTons: be, goalTons: goal, goalSales: goal === null ? null : goal * P,
       laborRate: L, varPerTon: v };
@@ -47,7 +45,7 @@
     const lpt = actual.weight > 0 ? actual.labor / actual.weight : 0;
     const margin = (actual.unitPrice || 0) * (1 - p) - (actual.varPerTon || 0) - lpt;
     const need = p * actual.sales - actual.profit + extraFixed;
-    return { extraFixed, tons: margin > 0 ? need / margin : null };
+    return { tons: margin > 0 ? need / margin : null };
   }
   /* 直近12か月度(締まった月度)の1出勤日あたり工数: 平均と最少の月 */
   function dailyHoursStats(cal, sites, endKey) {
@@ -131,8 +129,7 @@
     const r = mode === 'period' ? C.periodRange(selPer.value) : C.fiscalRange(Number($('d-fiscal').value));
     const sites = D.site ? [D.site] : SITE_LIST;
     const lastTo = D.lastYmd && D.lastYmd >= r.from && D.lastYmd < r.to ? D.lastYmd : r.to;
-    const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
-    return { mode, from: r.from, to: lastTo, fullTo: r.to, sites, note: lastTo < r.to ? `(実績〜${md(lastTo)})` : '' };
+    return { mode, from: r.from, to: lastTo, fullTo: r.to, sites };
   }
 
   function render() {
@@ -285,7 +282,7 @@
     const best = cand.length ? cand.reduce((x, y) => (y.rate < x.rate ? y : x)) : null;
     html += ok
       ? `<div class="advLead">✓ 目標を達成しています <span class="advLeadSub">目標より <b>${yen(-a.gap)}</b>円 超</span></div>`
-      : `<div class="advLead" title="不足額 ${yen(a.gap)}円">あと <b class="advLeadGap">${manU(a.gap)}</b> 不足` +
+      : `<div class="advLead" title="不足額 ${yen(a.gap)}円">あと <b class="advLeadGap">${bepMan(a.gap)}</b> 不足` +
         (best ? ` <span class="advArrow">➜</span> 最短は <b class="advLeadKey">「${best.title} ${best.sign > 0 ? '＋' : '−'}${pct(best.rate)}」</b>` : ' <span class="advArrow">➜</span> 1つだけでは届きません（組み合わせが必要）') + '</div>';
     const maxRate = Math.max(...plans.map((c) => (!c.ng && c.rate) || 0)) || 1;
     html += '<div class="advCards">' + plans.map((c) => {
