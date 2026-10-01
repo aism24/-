@@ -3,7 +3,7 @@
  *   生産損益分析(production-profit)のシンプル版と同じ画面。期間(年度/月〆)と工場のボタンで絞り込み、
  *   「現在までの結果」「目標を達成するには」「損益分岐生産量グラフ」「工場別の目標値」を出す。
  *   コストインサイトの数字(calc.js のセル)で計算する。
- *   売上 = 加工単価×重量 / 変動費 = 仕入 / 人件費 = 労務費(工数×時間単価) / その他固定費 = 月額2,500万円(3工場合計、下の OTHER_FIXED_MONTHLY)。
+ *   売上 = 加工単価×重量 / 変動費 = 仕入 / 人件費 = 労務費(工数×時間単価) / その他固定費 = 月額(3工場合計。基本設定シートの値)。
  *   → 損益分岐 = (人件費+その他固定費) ÷ (単価 − 仕入単価) 、目標は 単価×(1−目標利益率) で計算する。
  */
 (function () {
@@ -12,8 +12,9 @@
   const SITE_LIST = ['本社', '夢前', '鳥取'];
   const FIXED_BASE = 12; // 目標の基準にする直近の月度数
   // 月額のその他固定費(人件費以外の固定費。3工場合計・円)。決算に合わせた値(2026-10-01 ユーザー指示: 月2,500万円)。
-  // 工場へは 本社:夢前:鳥取 = 1:1:2 で配分する(鳥取だけ規模が倍。2026-10-01 ユーザー指示)。変えるときはここの値だけ直す。
-  const OTHER_FIXED_MONTHLY = 25000000;
+  // 工場へは 本社:夢前:鳥取 = 1:1:2 で配分する(鳥取だけ規模が倍。2026-10-01 ユーザー指示)。月額は基本設定シート(画面の「設定」から変更)の値を使う。
+  const DEFAULT_FIXED_MONTHLY = 25000000; // 基本設定シートの「月額その他固定費」が空のときの既定値
+  const otherFixed = () => { const v = Number((state.data.settings || {}).otherFixedMonthly); return isFinite(v) && v >= 0 && (state.data.settings || {}).otherFixedMonthly !== null && (state.data.settings || {}).otherFixedMonthly !== undefined ? v : DEFAULT_FIXED_MONTHLY; };
   const FIXED_SPLIT = { '本社': 1, '夢前': 1, '鳥取': 2 };
   const $ = (id) => document.getElementById(id);
   const S = { mode: 'fiscal', site: '', inited: false, lastYmd: null, defPeriod: null };
@@ -52,7 +53,7 @@
     for (let k = C.periodKeyOf(from); k <= C.periodKeyOf(to); k = C.shiftPeriod(k, 1)) {
       const r = C.periodRange(k), a = r.from < from ? from : r.from, b = r.to > to ? to : r.to;
       const total = workDaysIn(cal, r.from, r.to);
-      if (total > 0 && b >= a) sum += OTHER_FIXED_MONTHLY * share * workDaysIn(cal, a, b) / total;
+      if (total > 0 && b >= a) sum += otherFixed() * share * workDaysIn(cal, a, b) / total;
     }
     return sum;
   }
@@ -241,7 +242,7 @@
       return { site, P, v, L, F: 0, H, cap, people: hc[site] || 0 };
     });
     // 月額のその他固定費を、本社:夢前:鳥取 = 1:1:2 で工場へ配分
-    rows.forEach((r) => { r.F = OTHER_FIXED_MONTHLY * siteShare([r.site]); });
+    rows.forEach((r) => { r.F = otherFixed() * siteShare([r.site]); });
     const den = rows.reduce((x, r) => x + r.cap * (r.P * (1 - p) - r.v), 0);
     const need = rows.reduce((x, r) => x + r.H / 8 * r.L + r.F, 0);
     const th = den > 0 ? Math.max(0, need / den) : null;
@@ -416,6 +417,6 @@
     el.style.left = (ox + best.x) + 'px'; el.style.top = (oy + best.y) + 'px';
   }
 
-  window.CIKit = { SITE_LIST, OTHER_FIXED_MONTHLY, fixedFor, siteShare, analyze, workDaysIn, ymdToUtc, utcToYmd, calendar, goalRate, lastDataYmd };
+  window.CIKit = { SITE_LIST, otherFixed, fixedFor, siteShare, analyze, workDaysIn, ymdToUtc, utcToYmd, calendar, goalRate, lastDataYmd };
   window.SimpleView = { show };
 })();

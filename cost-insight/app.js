@@ -11,7 +11,7 @@ const SITES = ['本社', '夢前', '鳥取'];
 // 系列の色(識別用。順番固定)。加工単価=青、仕入単価=オレンジ、時間単価=アクア。損益は 黒字=青 / 赤字=赤
 const COLOR = { proc: '#2a78d6', purchase: '#eb6834', hour: '#1baf7a', plus: '#2a78d6', minus: '#e34948', grid: '#e1e0d9', muted: '#898781' };
 
-const state = { data: null, model: null, tab: 'work', charts: [], edits: {}, view: 'menu' };
+const state = { data: null, model: null, tab: 'work', charts: [], edits: {}, basicEdits: {}, view: 'menu' };
 
 const fmt = (v, d) => (v === null || v === undefined || !isFinite(v)) ? '—' : Number(v).toLocaleString('ja-JP', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 });
 const man = v => (v === null || v === undefined || !isFinite(v)) ? '—' : fmt(v / 1e4); // 万円
@@ -341,7 +341,32 @@ function renderNotes(cells) {
   document.getElementById('notes').innerHTML = items.map(t => '<li>' + t + '</li>').join('');
 }
 
-/* ===================== 完了・年度の設定(工事データ D・E 列) ===================== */
+/* ===================== 設定(目標利益率・月額その他固定費=基本設定シート / 完了・年度=工事データ D・E 列) ===================== */
+
+// 基本設定シートの値(画面の入力欄の元の値)。月額その他固定費が空のときは simple.js の既定値(2,500万円)
+const basicOrig = () => {
+  const s = state.data.settings, f = Number(s.otherFixedMonthly);
+  return { targetProfitRate: CIKit.goalRate(), otherFixedMonthly: s.otherFixedMonthly === null || s.otherFixedMonthly === undefined || !isFinite(f) ? CIKit.otherFixed() : f };
+};
+
+function renderBasic() {
+  const o = basicOrig(), e = state.basicEdits;
+  const val = k => (k in e ? e[k] : o[k]);
+  document.getElementById('set-basic').innerHTML = '<table><tr><th>項目</th><th>値</th></tr>'
+    + `<tr data-b="targetProfitRate"${'targetProfitRate' in e ? ' class="changed"' : ''}><td>目標利益率(%)</td><td><input type="text" inputmode="decimal" data-bk="targetProfitRate" value="${esc(val('targetProfitRate'))}"></td></tr>`
+    + `<tr data-b="otherFixedMonthly"${'otherFixedMonthly' in e ? ' class="changed"' : ''}><td>月額その他固定費(円・3工場合計)</td><td><input type="text" inputmode="numeric" data-bk="otherFixedMonthly" value="${esc(fmt(val('otherFixedMonthly'), 0))}"></td></tr></table>`;
+  document.querySelectorAll('#set-basic input').forEach(el => el.addEventListener('change', onBasicChange));
+}
+
+function onBasicChange(ev) {
+  const k = ev.target.dataset.bk, o = basicOrig();
+  const v = Number(String(ev.target.value).replace(/[,¥￥円%％\s]/g, ''));
+  if (ev.target.value.trim() === '' || !isFinite(v) || v < 0) { document.getElementById('set-msg').textContent = '0以上の数値で入力してください'; ev.target.value = k in state.basicEdits ? state.basicEdits[k] : o[k]; return; }
+  document.getElementById('set-msg').textContent = '';
+  if (v === o[k]) delete state.basicEdits[k]; else state.basicEdits[k] = v;
+  renderBasic();
+  updateSaveButton();
+}
 
 function yearOptions() {
   const set = {};
@@ -377,6 +402,7 @@ function renderSettings() {
     }).join('')
     + (nos.length ? '' : '<tr><td colspan="6">該当する工事がありません</td></tr>');
   document.querySelectorAll('#set-table input, #set-table select').forEach(el => el.addEventListener('change', onSettingChange));
+  renderBasic();
   updateSaveButton();
 }
 
@@ -394,7 +420,7 @@ function onSettingChange(ev) {
 }
 
 function updateSaveButton() {
-  const n = Object.keys(state.edits).length;
+  const n = Object.keys(state.edits).length + Object.keys(state.basicEdits).length;
   const btn = document.getElementById('set-save');
   btn.disabled = !n;
   btn.textContent = n ? `更新を保存(${n}件)` : '更新を保存';
@@ -403,12 +429,13 @@ function updateSaveButton() {
 async function saveSettings() {
   const msg = document.getElementById('set-msg'), btn = document.getElementById('set-save');
   const changes = Object.keys(state.edits).map(no => Object.assign({ no }, state.edits[no]));
-  if (!changes.length) return;
+  const basic = Object.assign({}, state.basicEdits);
+  if (!changes.length && !Object.keys(basic).length) return;
   btn.disabled = true;
   msg.textContent = '保存中…';
   try {
     // text/plain で送り、CORSのプリフライトを発生させない
-    const res = await fetch(GAS_API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'settings', changes }) });
+    const res = await fetch(GAS_API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'settings', changes, basic: Object.keys(basic).length ? basic : undefined }) });
     const body = await res.json();
     if (body.status !== 'success') throw new Error(body.message || 'GASのエラー');
     // 保存した内容を画面のデータにも反映して計算し直す
@@ -417,12 +444,14 @@ async function saveSettings() {
       if ('done' in c) w.done = c.done;
       if ('year' in c) w.year = c.year;
     });
+    Object.assign(state.data.settings, basic);
     state.edits = {};
+    state.basicEdits = {};
     state.model = CICalc.build(state.data);
     render();
     renderSettings();
     const dup = (body.data && body.data.dup) || [];
-    msg.textContent = `保存しました(${changes.length}件)` + (dup.length ? `。工事データに同じ工事Noの行が複数あります(上の行に保存): ${dup.join('、')}` : '');
+    msg.textContent = `保存しました(${changes.length + Object.keys(basic).length}件)` + (dup.length ? `。工事データに同じ工事Noの行が複数あります(上の行に保存): ${dup.join('、')}` : '');
   } catch (e) {
     msg.textContent = '保存に失敗しました: ' + e.message + '(もう一度押してください)';
     updateSaveButton();
