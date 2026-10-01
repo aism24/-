@@ -180,7 +180,14 @@ main.wide { max-width: none; margin-top: 8px; }
   #v-simple .sChart { position: sticky; top: 8px; height: calc(100vh - 190px); min-height: 380px; }
   #v-simple .sChart .chartBox { flex: 1; height: auto; min-height: 0; }
 }
-#v-simple .resetBtn, #v-detail .resetBtn { background: #f08c00; color: #fff; border: none; border-radius: 6px; padding: 6px 16px; font-weight: 700; margin-left: 8px; }
-#v-simple .resetBtn:hover, #v-detail .resetBtn:hover { background: #d97a00; }
 #v-simple .sTop button.btn { background: #f97316; color: #fff; border: 0; font-weight: bold; }
 #v-simple .sTop button.btn:hover { background: #ea580c; }
+/* リセット: 黄色の背景で、期間・工場ボタンの一番左 */
+#v-simple .resetBtn, #v-detail .resetBtn { background: #ffd83a; color: #1a1a19; border: 2px solid #e0b400; border-radius: 6px; padding: 6px 16px; font-weight: 700; align-self: center; }
+#v-simple .resetBtn:hover, #v-detail .resetBtn:hover { background: #ffe680; }
+/* リセットだけ左端(他のボタンは中央揃えのまま) */
+#v-simple .sFilters, #v-detail .sFilters { position: relative; }
+#v-simple .resetBtn, #v-detail .resetBtn { align-self: flex-start; }
+@media (min-width: 1000px) {
+  #v-simple .resetBtn, #v-detail .resetBtn { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); }
+}
