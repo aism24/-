@@ -353,8 +353,8 @@ function renderBasic() {
   const o = basicOrig(), e = state.basicEdits;
   const val = k => (k in e ? e[k] : o[k]);
   document.getElementById('set-basic').innerHTML = '<table><tr><th>項目</th><th>値</th></tr>'
-    + `<tr data-b="targetProfitRate"${'targetProfitRate' in e ? ' class="changed"' : ''}><td>目標利益率(%)</td><td><input type="text" inputmode="decimal" data-bk="targetProfitRate" value="${esc(val('targetProfitRate'))}"></td></tr>`
-    + `<tr data-b="otherFixedMonthly"${'otherFixedMonthly' in e ? ' class="changed"' : ''}><td>月額その他固定費(円・3工場合計)</td><td><input type="text" inputmode="numeric" data-bk="otherFixedMonthly" value="${esc(fmt(val('otherFixedMonthly'), 0))}"></td></tr></table>`;
+    + `<tr data-b="targetProfitRate"${'targetProfitRate' in e ? ' class="changed"' : ''}><td>目標利益率（対売比率）</td><td><input type="text" inputmode="decimal" data-bk="targetProfitRate" value="${esc(val('targetProfitRate'))}"></td></tr>`
+    + `<tr data-b="otherFixedMonthly"${'otherFixedMonthly' in e ? ' class="changed"' : ''}><td>月額概算固定費（鉄構部）</td><td><input type="text" inputmode="numeric" data-bk="otherFixedMonthly" value="${esc(fmt(val('otherFixedMonthly'), 0))}"></td></tr></table>`;
   document.querySelectorAll('#set-basic input').forEach(el => el.addEventListener('change', onBasicChange));
 }
 
