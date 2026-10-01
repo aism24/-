@@ -40,11 +40,16 @@
   .kpi-v small { font-size:12px; font-weight:normal; color:var(--sub); margin-left:3px; }
   .kpi-s { font-size:12px; color:var(--sub); margin-top:2px; }
   /* グラフ */
-  .charts { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .an-title { font-size:20px; margin:0 0 12px; }
+  .an-body { margin-top:16px; display:grid; grid-template-columns:minmax(0,3fr) minmax(0,2fr); gap:16px; align-items:start; }
+  .an-body .card + .card { margin-top:0; }
+  .an-left .tbl-wrap { margin-top:0; }
+  .an-right { position:sticky; top:8px; }
+  @media (max-width: 1000px) { .an-body { grid-template-columns:1fr; } .an-right { position:static; } }
+  .charts { display:grid; grid-template-columns:1fr; gap:14px; }
   .chart-box h3 { font-size:14px; margin:0 0 6px; }
-  .chart-wrap { position:relative; height:280px; }
+  .chart-wrap { position:relative; height:220px; }
   .chart-box.wide { grid-column:1 / -1; }
-  @media (max-width: 800px) { .charts { grid-template-columns:1fr; } }
   /* 表 */
   .tbl-wrap { overflow:auto; max-height:70vh; margin-top:8px; }
   table { border-collapse:collapse; font-size:13px; }
@@ -158,9 +163,18 @@
   <!-- メニュー(読み込みが終わるまでボタンは押せない) -->
   <section id="v-menu" class="view">
     <div class="menu">
-      <button class="menu-btn m3 wide" type="button" data-go="progress" disabled>進捗・結果確認</button>
+      <button class="menu-btn m3 wide" type="button" data-go="analysis" disabled>進捗・結果確認</button>
       <button class="menu-btn m1" type="button" data-go="budget" disabled>実行予算取込</button>
       <button class="menu-btn m2" type="button" data-go="settings" disabled>完了年度設定</button>
+    </div>
+  </section>
+
+  <!-- 進捗・結果確認: 分析の種類を選ぶ -->
+  <section id="v-analysis" class="view" hidden>
+    <p class="home-row"><button class="btn orange stack-btn" type="button" data-go="menu">ホームへ戻る</button></p>
+    <div class="menu">
+      <button class="menu-btn m3" type="button" data-analysis="work">工事別結果分析</button>
+      <button class="menu-btn m1" type="button" data-analysis="site">工場別進捗分析</button>
     </div>
   </section>
 
@@ -194,7 +208,8 @@
 
   <!-- 進捗・結果確認 -->
   <section id="v-progress" class="view" hidden>
-    <p class="home-row"><button class="btn orange stack-btn" type="button" data-go="menu">ホームへ戻る</button></p>
+    <p class="home-row"><button class="btn orange stack-btn" type="button" data-go="analysis">戻る</button></p>
+    <h2 id="an-title" class="an-title"></h2>
     <div class="card">
       <div id="filters">
         <fieldset><b>期間</b>
@@ -206,26 +221,23 @@
         <label><input type="checkbox" id="f-done"> 完了の工事のみ</label>
       </div>
       <p class="note"><span id="range-note"></span> (<span id="f-min"></span> より前は生産重量のデータが無いため選べません)</p>
-      <div class="tabs">
-        <button class="tab on" type="button" data-tab="work">工事別</button>
-        <button class="tab" type="button" data-tab="site">工場別</button>
-        <button class="tab" type="button" data-tab="period">期間別</button>
-      </div>
     </div>
     <div class="card">
       <div id="kpis"></div>
       <p id="status" class="note"></p>
     </div>
-    <div class="card">
-      <div class="charts">
-        <div class="chart-box"><h3>1t当たり単価(加工単価・仕入単価)</h3><div class="chart-wrap"><canvas id="c-ton"></canvas></div></div>
-        <div class="chart-box"><h3>1時間当たり単価</h3><div class="chart-wrap"><canvas id="c-hour"></canvas></div></div>
-        <div class="chart-box wide"><h3>損益(万円)</h3><div class="chart-wrap"><canvas id="c-profit"></canvas></div></div>
+    <div class="an-body">
+      <div class="card an-left">
+        <div class="tbl-wrap"><table id="table"></table></div>
+        <ul id="notes"></ul>
       </div>
-    </div>
-    <div class="card">
-      <div class="tbl-wrap"><table id="table"></table></div>
-      <ul id="notes"></ul>
+      <div class="card an-right">
+        <div class="charts">
+          <div class="chart-box"><h3>1t当たり単価(加工単価・仕入単価)</h3><div class="chart-wrap"><canvas id="c-ton"></canvas></div></div>
+          <div class="chart-box"><h3>1時間当たり単価</h3><div class="chart-wrap"><canvas id="c-hour"></canvas></div></div>
+          <div class="chart-box"><h3>損益(万円)</h3><div class="chart-wrap"><canvas id="c-profit"></canvas></div></div>
+        </div>
+      </div>
     </div>
   </section>
 </main>

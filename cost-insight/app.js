@@ -141,6 +141,13 @@ function showView(name) {
   if (name === 'progress') render(); // グラフは表示されてから描く(非表示のままだと大きさが決まらない)
 }
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => showView(b.dataset.go)));
+// 進捗・結果確認 → 分析の種類(工事別結果分析 / 工場別進捗分析)を選んで分析画面へ
+const AN_TITLE = { work: '工事別結果分析', site: '工場別進捗分析' };
+document.querySelectorAll('[data-analysis]').forEach(b => b.addEventListener('click', () => {
+  state.tab = b.dataset.analysis;
+  document.getElementById('an-title').textContent = AN_TITLE[state.tab];
+  showView('progress');
+}));
 
 /* ===================== 絞り込み ===================== */
 
@@ -163,8 +170,7 @@ function setupFilters() {
   document.getElementById('f-min').textContent = from.replace(/-/g, '/');
   document.getElementById('f-sites').innerHTML = SITES.map(s => `<label><input type="checkbox" value="${s}" checked> ${s}</label>`).join(' ');
   document.querySelectorAll('#filters select, #filters input').forEach(el => el.addEventListener('change', render));
-  document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => { state.tab = b.dataset.tab; render(); }));
-}
+  }
 
 function currentRange() {
   const m = state.model, mode = document.querySelector('input[name="f-mode"]:checked').value;
@@ -191,8 +197,7 @@ function currentFilter() {
 function render() {
   const m = state.model;
   if (!m || state.view !== 'progress') return;
-  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === state.tab));
-  const mode = document.querySelector('input[name="f-mode"]:checked').value;
+    const mode = document.querySelector('input[name="f-mode"]:checked').value;
   document.getElementById('f-fy').disabled = mode !== 'fy';
   document.getElementById('f-period').disabled = mode !== 'period';
   document.getElementById('f-from').disabled = document.getElementById('f-to').disabled = mode !== 'range';
