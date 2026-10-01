@@ -18,6 +18,12 @@
  *     - 締めより後の工数は、その工事の時間単価 × 工数 で労務費を見込む(「見込み」)
  *   損益 = 生産重量 ×(加工単価 − 仕入単価)− 工数 × 時間単価
  *   (生産重量・工数は生産管理・日報の実績だけを使う。実行予算Excelの加工重量・工数は使わない)
+ *
+ * ■ 分析できる期間
+ *   生産重量(生産管理)は日報より後から始まる(2025/8/21〜)。期間別・工場別・損益は analysisFrom 以降に限る
+ *   (画面で強制)。時間単価の計算には、それより前の工数・労務費も使う。
+ *   analysisFrom より前に工数がある工事で、生産重量が契約総重量に届かないものは dataShort(生産重量のデータ不足)。
+ *   単価が無い工事(実行予算なし・契約金額なし等)のセルは、損益(profit)の合計に入れない。
  */
 (function (root) {
   'use strict';
@@ -113,6 +119,12 @@
     var minYmd = rec.reduce(function (m, r) { return !m || r[0] < m ? r[0] : m; }, '');
     var firstPeriod = minYmd ? (periodRange(periodKeyOf(minYmd)).from === minYmd ? periodKeyOf(minYmd) : shiftPeriod(periodKeyOf(minYmd), 1)) : '';
 
+    // 生産重量のデータが月度の初日から揃っている最初の月度の初日(これより前は重量が無い)
+    var minW = rec.reduce(function (m, r) { return r[3] > 0 && (!m || r[0] < m) ? r[0] : m; }, '');
+    var wp = minW ? periodKeyOf(minW) : '';
+    if (wp && periodRange(wp).from !== minW) wp = shiftPeriod(wp, 1);
+    var analysisFrom = wp ? periodRange(wp).from : '';
+
     // 1) 共通の工数の按分: 工場×月度ごとに 工事の工数 と 共通の工数 を集計
     var ps = {};
     rec.forEach(function (r) {
@@ -141,7 +153,7 @@
         procUnit: contract !== null && total > 0 ? contract / total : null,
         hasBudget: false, purchaseActual: null, purchaseBudget: null, purchase: null, purchaseEst: !m.done, purchaseUnit: null,
         laborAll: 0, laborUsed: 0, laborBeforeData: 0, cutoff: '', hoursToCutoff: 0, hourRate: null,
-        weight: 0, hours: 0, hoursOwn: 0, notes: [],
+        weight: 0, hours: 0, hoursOwn: 0, hoursBeforeAnalysis: 0, coverage: null, dataShort: false, notes: [],
       };
       var b = budget[no];
       if (b) {
@@ -157,7 +169,7 @@
       } else w.notes.push('実行予算のデータなし');
       if (contract === null) w.notes.push('契約金額なし');
       else if (tw === null) w.notes.push('契約総重量が無いため生産実績の総重量で加工単価を計算');
-      else if (!(tw > 0)) w.notes.push('契約総重量が0のため単価なし');
+      else if (!(tw > 0)) w.notes.push('契約総重量が0のため単価なし(実行予算Excelの入力が未完了の可能性)');
       return w;
     }
     Object.keys(sw).forEach(work);
@@ -172,6 +184,7 @@
       var w = work(no);
       var cell = { ymd: r[0], period: period, site: r[1], no: no, weight: r[3] || 0, hoursOwn: r[4] || 0, hours: (r[4] || 0) * f };
       w.weight += cell.weight; w.hours += cell.hours; w.hoursOwn += cell.hoursOwn;
+      if (analysisFrom && cell.ymd < analysisFrom) w.hoursBeforeAnalysis += cell.hours;
       if (w.cutoff && period >= firstPeriod && period <= w.cutoff) w.hoursToCutoff += cell.hours;
       cells.push(cell);
     });
@@ -191,6 +204,14 @@
       else if (w.laborUsed > 0) w.notes.push('労務費の締めまでの工数が無いため時間単価なし');
     });
 
+    // 生産重量の割合と、データ不足の判定
+    Object.keys(works).forEach(function (no) {
+      var w = works[no];
+      w.coverage = w.totalWeight > 0 ? w.weight / w.totalWeight : null;
+      w.dataShort = w.hoursBeforeAnalysis > 0 && (w.coverage === null || w.coverage < 0.95);
+      if (w.dataShort) w.notes.push('生産重量のデータ不足(' + analysisFrom.replace(/-/g, '/') + 'より前の生産重量が無い)');
+    });
+
     // 5) セルの金額
     cells.forEach(function (c) {
       var w = works[c.no];
@@ -199,9 +220,10 @@
       c.purchaseEst = w.purchaseEst;
       c.labor = w.hourRate !== null ? c.hours * w.hourRate : null;
       c.laborEst = !w.cutoff || c.period > w.cutoff;
+      c.ok = c.sales !== null && c.purchase !== null && c.labor !== null;
     });
 
-    return { works: works, cells: cells, firstPeriod: firstPeriod, unallocated: unallocated };
+    return { works: works, cells: cells, firstPeriod: firstPeriod, analysisFrom: analysisFrom, unallocated: unallocated };
   }
 
   /* ===================== 集計(画面の絞り込み) ===================== */
@@ -222,20 +244,22 @@
   }
 
   /* セルの合計と単価。金額が分からないセル(単価が無い工事)は件数を数え、金額の合計には入れない。
-     単価 = 金額 ÷ (金額が分かるセルの)重量・工数 */
+     単価 = 金額 ÷ (金額が分かるセルの)重量・工数。
+     損益(profit)・利益率は、3つの金額がすべて分かるセルだけで計算する(分からないセルの重量・工数は ngWeight・ngHours) */
   function summarize(cells) {
-    var t = { weight: 0, hours: 0, sales: 0, purchase: 0, labor: 0, laborEstimated: 0,
+    var t = { weight: 0, hours: 0, sales: 0, purchase: 0, labor: 0, laborEstimated: 0, profit: 0, profitSales: 0, ngWeight: 0, ngHours: 0,
       wSales: 0, wPurchase: 0, hLabor: 0, missingSales: 0, missingPurchase: 0, missingLabor: 0, purchaseEst: false, laborEst: false };
     cells.forEach(function (c) {
       t.weight += c.weight; t.hours += c.hours;
       if (c.sales !== null) { t.sales += c.sales; t.wSales += c.weight; } else if (c.weight) t.missingSales++;
       if (c.purchase !== null) { t.purchase += c.purchase; t.wPurchase += c.weight; if (c.purchaseEst && c.weight) t.purchaseEst = true; } else if (c.weight) t.missingPurchase++;
       if (c.labor !== null) { t.labor += c.labor; t.hLabor += c.hours; if (c.laborEst && c.hours) { t.laborEst = true; t.laborEstimated += c.labor; } } else if (c.hours) t.missingLabor++;
+      if (c.ok) { t.profit += c.sales - c.purchase - c.labor; t.profitSales += c.sales; } else { t.ngWeight += c.weight; t.ngHours += c.hours; }
     });
     t.procUnit = t.wSales > 0 ? t.sales / t.wSales : null;
     t.purchaseUnit = t.wPurchase > 0 ? t.purchase / t.wPurchase : null;
     t.hourRate = t.hLabor > 0 ? t.labor / t.hLabor : null;
-    t.profit = t.sales - t.purchase - t.labor;
+    t.profitRate = t.profitSales > 0 ? t.profit / t.profitSales : null;
     t.complete = !t.missingSales && !t.missingPurchase && !t.missingLabor;
     return t;
   }
