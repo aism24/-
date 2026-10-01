@@ -189,3 +189,9 @@ main.wide { max-width: none; margin-top: 8px; }
 @media (min-width: 1000px) {
   #v-simple .resetBtn, #v-detail .resetBtn { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); }
 }
+
+/* 上部: 戻る・タイトル・フィルターを1行に(PC)。狭い画面では折り返す */
+.sBar { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; }
+.sBar .sTop { margin: 0; flex-wrap: nowrap; white-space: nowrap; font-size: clamp(15px, 1.25vw, 20px); }
+.sBar .sFilters { flex: 1 1 auto; min-width: 0; margin: 8px 0; padding: 6px 10px; }
+@media (min-width: 1000px) { .sBar { flex-wrap: nowrap; } .sBar .sFilters { gap: 6px 14px; } }

@@ -145,7 +145,6 @@
     $('d-prev').disabled = selPer.selectedIndex >= selPer.options.length - 1;
     $('d-next').disabled = selPer.selectedIndex <= 0;
     const sel = selection();
-    $('d-range').textContent = sel.from.replace(/-/g, '/') + ' 〜 ' + sel.fullTo.replace(/-/g, '/') + sel.note;
     const t = K.analyze(sel.from, sel.to, sel.sites);
     D.total = t;
     const monthly = K.otherFixed() * K.siteShare(sel.sites), mo = monthly > 0 ? t.fixed / monthly : 0;
