@@ -135,6 +135,7 @@
   /* 注意書き: 赤文字・黄色の背景で点滅 */
   .warn-blink { align-self:stretch; margin:0; padding:4px 8px; border-radius:4px 4px 0 0; text-align:left;
                 color:#d00000; font-weight:bold; font-size:14px; animation:warn-blink 1s ease-in-out infinite; }
+  .warn-blink[hidden] { display:none; }
   .warn-blink + .tbl-wrap { margin-top:0; }
   #set-msg { margin:0 0 6px; }
   #set-msg:empty { display:none; }
@@ -186,7 +187,7 @@
         <button class="btn orange" type="button" data-go="menu">ホームへ戻る</button>
       </div>
       <span id="set-msg" class="note"></span>
-      <p class="warn-blink">生産管理のデータは2025/8/21からしかありません。</p>
+      <p id="warn-hist" class="warn-blink" hidden>生産管理のデータは2025/8/21からしかありません。</p>
       <div class="tbl-wrap"><table id="set-table"></table></div>
     </div>
   </section>

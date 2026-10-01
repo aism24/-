@@ -343,6 +343,8 @@ const yearClass = y => { const m = /^R(\d+)$/.exec(y || ''); return m ? 'y' + (N
 const prodWeight = no => { const i = (state.data.cache.works || {})[no]; return i && isFinite(i.totalWeight) ? Number(i.totalWeight) : null; };
 
 function renderSettings() {
+  // 過去の生産重量(マスターファイルの全期間)をまだ取り込んでいない間だけ注意書きを出す
+  document.getElementById('warn-hist').hidden = ((state.data.cache || {}).historyImported || []).length > 0;
   const works = state.data.settings.works, years = yearOptions();
   const nos = Object.keys(works).sort().filter(no => hasContract(works[no]));
   document.getElementById('set-table').innerHTML = '<tr><th>工事No</th><th>工事名</th><th>完了</th><th>年度</th><th class="n">契約重量(t)</th><th class="n">生産重量(t)</th></tr>'
