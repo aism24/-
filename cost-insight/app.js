@@ -11,7 +11,7 @@ const SITES = ['本社', '夢前', '鳥取'];
 // 系列の色(識別用。順番固定)。加工単価=青、仕入単価=オレンジ、時間単価=アクア。損益は 黒字=青 / 赤字=赤
 const COLOR = { proc: '#2a78d6', purchase: '#eb6834', hour: '#1baf7a', plus: '#2a78d6', minus: '#e34948', grid: '#e1e0d9', muted: '#898781' };
 
-const state = { data: null, model: null, tab: 'work', charts: [], edits: {} };
+const state = { data: null, model: null, tab: 'work', charts: [], edits: {}, view: 'menu' };
 
 const fmt = (v, d) => (v === null || v === undefined || !isFinite(v)) ? '—' : Number(v).toLocaleString('ja-JP', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 });
 const man = v => (v === null || v === undefined || !isFinite(v)) ? '—' : fmt(v / 1e4); // 万円
@@ -21,10 +21,35 @@ const est = on => on ? '<span class="est" title="見込みを含む">見込</spa
 const pad2 = n => (n < 10 ? '0' : '') + n;
 const todayYmd = () => { const d = new Date(); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); };
 
-/* ===================== 読み込み ===================== */
+/* ===================== 読み込み(ポップアップに進み具合を出す) ===================== */
+
+// GASの応答は途中経過が取れないため、経過時間で 90% に近づくように進め、受信したら 100% にする
+function startLoadingBar() {
+  const fill = document.getElementById('ld-fill'), sub = document.getElementById('ld-sub');
+  const t0 = Date.now();
+  const tick = () => {
+    const sec = (Date.now() - t0) / 1000;
+    const p = Math.floor(90 * (1 - Math.exp(-sec / 10)));
+    fill.style.width = p + '%';
+    sub.textContent = p + '% ・ ' + Math.floor(sec) + '秒';
+  };
+  tick();
+  const timer = setInterval(tick, 300);
+  return {
+    done() { clearInterval(timer); fill.style.width = '100%'; sub.textContent = '100% ・ 読み込み完了'; },
+    fail(msg) {
+      clearInterval(timer);
+      document.getElementById('ld-title').textContent = '読み込みに失敗しました';
+      const err = document.getElementById('ld-err');
+      err.hidden = false;
+      err.innerHTML = esc(msg) + '<br><button class="btn" type="button" onclick="location.reload()">再読み込み</button>';
+    },
+  };
+}
 
 async function load() {
   const st = document.getElementById('status');
+  const bar = startLoadingBar();
   try {
     const res = await fetch(GAS_API_URL + '?action=getData');
     const text = await res.text();
@@ -39,12 +64,25 @@ async function load() {
       + ' / 実行予算の受信: ' + (b ? new Date(b.at).toLocaleString('ja-JP') : 'まだ受信していません');
     document.getElementById('budget').textContent = b ? '最終受信: ' + new Date(b.at).toLocaleString('ja-JP') + '(' + Object.keys(b.rows || {}).length + 'ファイル)' : '最終受信: まだ受信していません';
     setupFilters();
-    render();
+    setupYearFilter();
     renderSettings();
+    bar.done();
+    setTimeout(() => document.getElementById('loading').classList.add('done'), 300);
+    document.querySelectorAll('.menu-btn').forEach(b => { b.disabled = false; });
   } catch (e) {
-    st.textContent = '読み込みに失敗しました: ' + e.message + '(ページを再読み込みしてください)';
+    bar.fail(e.message + '(ページを再読み込みしてください)');
   }
 }
+
+/* ===================== 画面の切り替え(メニュー / 3つのモード) ===================== */
+
+function showView(name) {
+  state.view = name;
+  document.querySelectorAll('.view').forEach(v => { v.hidden = v.id !== 'v-' + name; });
+  window.scrollTo(0, 0);
+  if (name === 'progress') render(); // グラフは表示されてから描く(非表示のままだと大きさが決まらない)
+}
+document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => showView(b.dataset.go)));
 
 /* ===================== 絞り込み ===================== */
 
@@ -94,7 +132,7 @@ function currentFilter() {
 
 function render() {
   const m = state.model;
-  if (!m) return;
+  if (!m || state.view !== 'progress') return;
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === state.tab));
   const mode = document.querySelector('input[name="f-mode"]:checked').value;
   document.getElementById('f-fy').disabled = mode !== 'fy';
@@ -237,9 +275,24 @@ function yearOptions() {
   return [''].concat(Object.keys(set).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))));
 }
 
+// 実行予算が取り込まれている(契約総重量か契約金額が入っている)工事だけを設定の対象にする
+const hasContract = w => (w.totalWeight !== null && w.totalWeight !== undefined) || (w.contract !== null && w.contract !== undefined);
+
+// 年度の絞り込み('' = すべて、'-' = 未設定)
+function setupYearFilter() {
+  const sel = document.getElementById('set-year');
+  sel.innerHTML = '<option value="">すべて</option>'
+    + yearOptions().filter(y => y).map(y => `<option value="${y}">${y}</option>`).join('')
+    + '<option value="-">(未設定)</option>';
+  sel.addEventListener('change', renderSettings);
+}
+
 function renderSettings() {
   const works = state.data.settings.works, years = yearOptions();
-  const nos = Object.keys(works).sort();
+  const fy = document.getElementById('set-year').value;
+  // 年度の絞り込みは保存済みの年度で判定する(行の年度を変えても、保存するまでは表から消えない)
+  const nos = Object.keys(works).sort().filter(no => hasContract(works[no])
+    && (!fy || (fy === '-' ? !works[no].year : works[no].year === fy)));
   document.getElementById('set-table').innerHTML = '<tr><th>工事No</th><th>工事名</th><th>完了</th><th>年度</th></tr>'
     + nos.map(no => {
       const w = works[no], e = state.edits[no] || {};
@@ -248,7 +301,8 @@ function renderSettings() {
       return `<tr${changed} data-no="${esc(no)}"><td>${esc(no)}</td><td>${esc(w.name)}</td>`
         + `<td class="c"><input type="checkbox" data-k="done"${done ? ' checked' : ''}></td>`
         + `<td><select data-k="year">${years.map(y => `<option value="${y}"${y === year ? ' selected' : ''}>${y || '(未設定)'}</option>`).join('')}</select></td></tr>`;
-    }).join('');
+    }).join('')
+    + (nos.length ? '' : '<tr><td colspan="4">該当する工事がありません</td></tr>');
   document.querySelectorAll('#set-table input, #set-table select').forEach(el => el.addEventListener('change', onSettingChange));
   updateSaveButton();
 }
