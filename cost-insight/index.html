@@ -130,6 +130,9 @@
                   width:fit-content; min-width:min(380px, 100%); max-width:100%; margin-left:auto; margin-right:auto; }
   .budget-stack h2 { align-self:stretch; text-align:left; }
   .budget-stack .stack-btn, .budget-stack .reg-next { width:min(340px, 100%); margin:6px 0; text-align:center; font-size:16px; padding:14px 20px; }
+  /* 完了年度設定: 左 更新を保存・右 ホームへ戻る(同じ幅、高さは縦並びのときの半分) */
+  .btn-row { align-self:stretch; display:flex; gap:10px; margin:4px 0 8px; }
+  .btn-row .btn { flex:1 1 0; margin:0; padding:4px 10px; font-size:14px; line-height:1.4; }
   .budget-stack .imp-status { width:min(340px, 100%); }
   .step h3 { font-size:15px; margin:0 0 6px; }
 </style>
@@ -170,8 +173,10 @@
     <!-- ホームへ戻る・更新を保存(中央揃え)の下に表 -->
     <div class="card budget-stack">
       <h2>完了年度設定</h2>
-      <button class="btn orange stack-btn" type="button" data-go="menu">ホームへ戻る</button>
-      <button id="set-save" class="btn blue stack-btn" type="button" onclick="saveSettings()" disabled>更新を保存</button>
+      <div class="btn-row">
+        <button id="set-save" class="btn blue" type="button" onclick="saveSettings()" disabled>更新を保存</button>
+        <button class="btn orange" type="button" data-go="menu">ホームへ戻る</button>
+      </div>
       <span id="set-msg" class="note"></span>
       <div class="tbl-wrap"><table id="set-table"></table></div>
     </div>
