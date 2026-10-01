@@ -339,19 +339,24 @@ const hasContract = w => (w.totalWeight !== null && w.totalWeight !== undefined)
 // 年度の色のクラス(R8=y0 青・R9=y1 緑・R10=y2 ピンク・R7=y3 黄。未設定は色なし)
 const yearClass = y => { const m = /^R(\d+)$/.exec(y || ''); return m ? 'y' + (Number(m[1]) % 4) : ''; };
 
+// 工事ごとの生産重量の累計(生産管理の最新の集計)
+const prodWeight = no => { const i = (state.data.cache.works || {})[no]; return i && isFinite(i.totalWeight) ? Number(i.totalWeight) : null; };
+
 function renderSettings() {
   const works = state.data.settings.works, years = yearOptions();
   const nos = Object.keys(works).sort().filter(no => hasContract(works[no]));
-  document.getElementById('set-table').innerHTML = '<tr><th>工事No</th><th>工事名</th><th>完了</th><th>年度</th></tr>'
+  document.getElementById('set-table').innerHTML = '<tr><th>工事No</th><th>工事名</th><th>完了</th><th>年度</th><th class="n">契約重量(t)</th><th class="n">生産重量(t)</th></tr>'
     + nos.map(no => {
       const w = works[no], e = state.edits[no] || {};
       const done = 'done' in e ? e.done : w.done, year = 'year' in e ? e.year : (w.year || '');
       const changed = Object.keys(e).length ? ' class="changed"' : '';
       return `<tr${changed} data-no="${esc(no)}"><td>${esc(no)}</td><td>${esc(w.name)}</td>`
         + `<td class="c"><input type="checkbox" data-k="done"${done ? ' checked' : ''}></td>`
-        + `<td class="c"><select data-k="year" class="${yearClass(year)}">${years.map(y => `<option value="${y}"${y === year ? ' selected' : ''}>${y || '(未設定)'}</option>`).join('')}</select></td></tr>`;
+        + `<td class="c"><select data-k="year" class="${yearClass(year)}">${years.map(y => `<option value="${y}"${y === year ? ' selected' : ''}>${y || '(未設定)'}</option>`).join('')}</select></td>`
+        // 契約重量は実行予算(工事データ B列)、生産重量は生産管理の最新の累計(2025/8/21以降のデータ)
+        + `<td class="n">${fmt(w.totalWeight, 1)}</td><td class="n">${fmt(prodWeight(no), 1)}</td></tr>`;
     }).join('')
-    + (nos.length ? '' : '<tr><td colspan="4">該当する工事がありません</td></tr>');
+    + (nos.length ? '' : '<tr><td colspan="6">該当する工事がありません</td></tr>');
   document.querySelectorAll('#set-table input, #set-table select').forEach(el => el.addEventListener('change', onSettingChange));
   updateSaveButton();
 }
