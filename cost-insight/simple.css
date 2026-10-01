@@ -1,6 +1,6 @@
 /* 工場別進捗分析(シンプル版)。生産損益分析(production-profit)のシンプル版と同じ見た目。色は明るいテーマ固定 */
 #v-simple {
-  --surface: #fcfcfb; --border: #dddcd6; --text: #0b0b0b; --text2: #52514e; --muted: #7a7974; --accent: #2a78d6;
+  --surface: #fcfcfb; --border: #dddcd6; --text: #0b0b0b; --text2: #0b0b0b; --muted: #666; --accent: #2a78d6;
   --good: #0ca30c; --bad: #d03b3b; --warn-bg: #fff4d6; --grid: #e8e7e2;
   --bep-cost: #c8423b; --bep-fixed: #5b63b0; --bep-var: #2e9bd6; --bep-be: #d99a00; --goal: #e0287d;
   font-family: "Inter", system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; font-variant-numeric: tabular-nums;
@@ -149,7 +149,7 @@
 .sTargets table { border-collapse: collapse; margin-top: 4px; width: 100%; font-variant-numeric: tabular-nums; }
 .sTargets th, .sTargets td { padding: 3px 8px; border-bottom: 1px solid #e3ded0; text-align: right; white-space: nowrap; }
 .sTargets th:first-child, .sTargets td:first-child { text-align: left; }
-.sTargets th { font-size: .95em; color: #555; font-weight: 600; }
+.sTargets th { font-size: .95em; color: #000; font-weight: 600; }
 .sTargets td { font-weight: 700; font-size: 1.2em; } /* 表の幅はカード(見出し)いっぱいに広げ、文字もそれに合わせて大きめ */
 .sTargets tr.tot td { background: #efe6fb; }
 .sTargets .tgHead, .sTargets .tgHead small { white-space: nowrap; } /* 改行せず1行に(表の枠を横に伸ばす) */
