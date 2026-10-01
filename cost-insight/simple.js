@@ -3,14 +3,17 @@
  *   生産損益分析(production-profit)のシンプル版と同じ画面。期間(年度/月〆)と工場のボタンで絞り込み、
  *   「現在までの結果」「目標を達成するには」「損益分岐生産量グラフ」「工場別の目標値」を出す。
  *   コストインサイトの数字(calc.js のセル)で計算する。
- *   売上 = 加工単価×重量 / 変動費 = 仕入 / 人件費 = 労務費(工数×時間単価)。その他の固定費は無い(0)。
- *   → 損益分岐・目標生産量 = 人件費 ÷ (単価 − 仕入単価) 、目標は 単価×(1−目標利益率) で計算する。
+ *   売上 = 加工単価×重量 / 変動費 = 仕入 / 人件費 = 労務費(工数×時間単価) / その他固定費 = 月額2,500万円(3工場合計、下の OTHER_FIXED_MONTHLY)。
+ *   → 損益分岐 = (人件費+その他固定費) ÷ (単価 − 仕入単価) 、目標は 単価×(1−目標利益率) で計算する。
  */
 (function () {
   'use strict';
   const C = CICalc;
   const SITE_LIST = ['本社', '夢前', '鳥取'];
   const FIXED_BASE = 12; // 目標の基準にする直近の月度数
+  // 月額のその他固定費(人件費以外の固定費。3工場合計・円)。決算に合わせた値(2026-10-01 ユーザー指示: 月2,500万円)。
+  // 工場へは在職人数(工数)の比で配分する。変えるときはここの値だけ直す。
+  const OTHER_FIXED_MONTHLY = 25000000;
   const $ = (id) => document.getElementById(id);
   const S = { mode: 'fiscal', site: '', inited: false, lastYmd: null, defPeriod: null };
 
@@ -35,9 +38,31 @@
   };
   const headcount = () => (state.data.settings && state.data.settings.headcount) || {};
 
+  /* ---------- その他固定費 ---------- */
+  // 工場の配分比(在職人数。名簿が無ければ均等)
+  function siteShare(sites) {
+    const hc = headcount(), all = SITE_LIST.reduce((a, s) => a + (hc[s] || 0), 0);
+    if (!(all > 0)) return sites.length / SITE_LIST.length;
+    return sites.reduce((a, s) => a + (hc[s] || 0), 0) / all;
+  }
+  // 期間[from,to]のその他固定費。締まった月度は月額そのまま、途中の月度は出勤日数の割合
+  function fixedFor(from, to, sites) {
+    const cal = calendar(), share = siteShare(sites);
+    let sum = 0;
+    for (let k = C.periodKeyOf(from); k <= C.periodKeyOf(to); k = C.shiftPeriod(k, 1)) {
+      const r = C.periodRange(k), a = r.from < from ? from : r.from, b = r.to > to ? to : r.to;
+      const total = workDaysIn(cal, r.from, r.to);
+      if (total > 0 && b >= a) sum += OTHER_FIXED_MONTHLY * share * workDaysIn(cal, a, b) / total;
+    }
+    return sum;
+  }
+
   /* ---------- 集計(calc.js のセルから) ---------- */
   function analyze(from, to, sites) {
     const t = C.summarize(C.filterCells(state.model, { from, to, sites }));
+    t.fixed = fixedFor(from, to, sites);                 // その他固定費(人件費は労務費として別に入っている)
+    t.profit -= t.fixed;
+    t.profitRate = t.profitSales > 0 ? t.profit / t.profitSales : null;
     t.ninkuPerTon = t.weight > 0 ? t.hours / 8 / t.weight : null;
     t.unitPrice = t.procUnit;            // 加工単価(円/t)
     t.varPerTon = t.purchaseUnit;        // 仕入単価(円/t)=変動費
@@ -47,10 +72,10 @@
 
   /* 目標利益率・単価から損益分岐生産量と目標生産量を出す(人件費を固定費扱い。その他の固定費は無い) */
   function simulate(base, W, n, P, p) {
-    const L = base.laborRate || 0, v = base.varPerTon || 0, labor = W * n * L;
+    const L = base.laborRate || 0, v = base.varPerTon || 0, labor = W * n * L, fixed = base.fixed || 0;
     const dBe = P - v, dGoal = P * (1 - p) - v;
-    return { labor, fixed: 0, unitPrice: P, varPerTon: v, laborRate: L,
-      breakEvenTons: dBe > 0 ? labor / dBe : null, goalTons: dGoal > 0 ? labor / dGoal : null };
+    return { labor, fixed, unitPrice: P, varPerTon: v, laborRate: L,
+      breakEvenTons: dBe > 0 ? (fixed + labor) / dBe : null, goalTons: dGoal > 0 ? (fixed + labor) / dGoal : null };
   }
 
   /* ---------- 画面の準備 ---------- */
@@ -146,7 +171,7 @@
       card('売上額（概算）', sVal, sVal === '—' ? '' : '%', '', sCls),
       card('損益（概算）', pr === null ? '—' : pr.toFixed(1), pr === null ? '' : '%', `（目標${fmt(g, g % 1 ? 1 : 0)}%）`, pr === null ? '' : (pr >= g - 1e-9 ? 'good' : pr < 0 ? 'bad' : 'warn')),
     ].join('');
-    $('s-note').textContent = '売上=加工単価×重量、仕入=実行予算(完了は実際・未完は予算)、人件費=労務費で概算。単価が無い工事は売上・損益に入れていません。';
+    $('s-note').textContent = '売上=加工単価×重量、仕入=実行予算(完了は実際・未完は予算)、人件費=労務費、その他固定費=月額' + fmt(OTHER_FIXED_MONTHLY / 1e4, 0) + '万円(3工場合計)で概算。単価が無い工事は売上・損益に入れていません。';
   }
 
   /* ===================== 工場別の目標値 =====================
@@ -205,6 +230,9 @@
       if (P > 0 && b.daily > 0) cap = Math.min(b.daily * dStd, b.npt > 0 && H > 0 ? H / 8 / b.npt : Infinity);
       return { site, P, v, L, F: 0, H, cap, people: hc[site] || 0 };
     });
+    // 月額のその他固定費を、工数(在職人数)の比で工場へ配分
+    const sumH = rows.reduce((x, r) => x + r.H, 0);
+    rows.forEach((r) => { r.F = sumH > 0 ? OTHER_FIXED_MONTHLY * r.H / sumH : OTHER_FIXED_MONTHLY / rows.length; });
     const den = rows.reduce((x, r) => x + r.cap * (r.P * (1 - p) - r.v), 0);
     const need = rows.reduce((x, r) => x + r.H / 8 * r.L + r.F, 0);
     const th = den > 0 ? Math.max(0, need / den) : null;
@@ -220,8 +248,8 @@
     const W = rs.reduce((x, r) => x + r.w, 0), H = rs.reduce((x, r) => x + r.H, 0);
     if (!(W > 0)) return null;
     const sales = rs.reduce((x, r) => x + r.w * r.P, 0), vari = rs.reduce((x, r) => x + r.w * r.v, 0);
-    const labor = rs.reduce((x, r) => x + r.H / 8 * r.L, 0);
-    return { W: W * m, H: H * m, n: H / 8 / W, P: sales / W, v: vari / W, laborRate: H > 0 ? labor / (H / 8) : 0, labor: labor * m,
+    const labor = rs.reduce((x, r) => x + r.H / 8 * r.L, 0), F = rs.reduce((x, r) => x + r.F, 0);
+    return { W: W * m, H: H * m, n: H / 8 / W, P: sales / W, v: vari / W, laborRate: H > 0 ? labor / (H / 8) : 0, labor: labor * m, fixedOther: F * m,
       people: rs.reduce((x, r) => x + r.people, 0), over: rs.some((r) => r.over), mult: m };
   }
 
@@ -306,7 +334,7 @@
       const perDayH = T.people > 0 ? T.people * 8 : (doneDays > 0 ? t.hours / doneDays : 0);
       const H = t.hours + perDayH * leftDays, few = doneDays < 3;
       const Wp = few ? T.W : t.weight + (doneDays > 0 ? t.weight / doneDays : 0) * leftDays;
-      base = { unitPrice: rt.unitPrice, varPerTon: rt.varPerTon, laborRate: rt.laborRate };
+      base = { unitPrice: rt.unitPrice, varPerTon: rt.varPerTon, laborRate: rt.laborRate, fixed: fixedFor(sel.from, sel.fullTo, sel.sites) };
       cx = Wp; clabel = few ? '目標' : '見込み'; cn = Wp > 0 ? H / 8 / Wp : 0;
     }
     const P = base.unitPrice || 0;
@@ -388,6 +416,6 @@
     el.style.left = (ox + best.x) + 'px'; el.style.top = (oy + best.y) + 'px';
   }
 
-  window.CIKit = { SITE_LIST, analyze, workDaysIn, ymdToUtc, utcToYmd, calendar, goalRate, lastDataYmd };
+  window.CIKit = { SITE_LIST, OTHER_FIXED_MONTHLY, fixedFor, siteShare, analyze, workDaysIn, ymdToUtc, utcToYmd, calendar, goalRate, lastDataYmd };
   window.SimpleView = { show };
 })();
