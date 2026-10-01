@@ -15,7 +15,13 @@
 
 ## データ
 - スプレッドシート「コストインサイト」(会社フォルダ。シート: 工事マスタ・工事データ・基本設定・会社カレンダー)
-- `gas/Code.gs`: スプレッドシートにコンテナバインド。第1段階は生産重量・工数の読み取りと集約(`_cache_production.json`)
+- `gas/Code.gs`: スプレッドシートにコンテナバインド。第1段階は生産重量・工数の読み取りと集約(`_cache_production.json`)。
+  第2段階で実行予算の受け取り(doPost → `_cache_budget.json`、工事データ B・C・F 列)と `?action=master`・`?action=budget` を追加
+- `server/`: 会社サーバー `\\192.168.3.2\share_01\⑰その他\Claude(sumi)\コストインサイト\参照資料（削除厳禁）` に置くファイル一式
+  (実行予算更新.bat・costinsight登録.reg・使い方.txt・pc/update.js・pc/設定.example.json)。
+  画面の［実行予算を更新］(`costinsight://update`)→ 各PCに登録した .reg → cmd で .bat を実行。リンクの中身は使わない(決まった .bat だけを動かす)。
+  `pc/update.js` は旧 実行予算まとめ の pc/update.js を移したもの(工事一覧を新GASから読む・送信先を複数に・月度ごとの労務費と労務費の締め・同時実行防止を追加)。
+  移行期間は旧 実行予算まとめ と コストインサイト の両方へ送る(旧アプリ廃止時に 設定.json の送信先URLから旧GASを消す)
 - 開発中の確認URL: https://raw.githack.com/aism24/-/main/cost-insight/index.html
 - `vercel.json` で自動デプロイを停止済み(公開時に create_deployment で反映)。
 
@@ -23,3 +29,16 @@
 1. スプレッドシート「コストインサイト」→ 拡張機能 → Apps Script。`gas/Code.gs` を全文貼り付けて保存。
 2. エディタで `checkSetup` を実行して権限を承認(ログに件数が出ればOK)。続けて `setupTrigger` を実行(毎朝6時台の自動更新)。
 3. デプロイ → 新しいデプロイ → 種類「ウェブアプリ」、次のユーザーとして実行「自分」、アクセス「全員」。発行URLを画面側に設定する。
+
+## GASの更新(第2段階)
+1. `gas/Code.gs` を全文貼り替えて保存。
+2. プロジェクトの設定 → スクリプト プロパティ に `SECRET` を追加(値は旧 実行予算まとめ のGASと同じ秘密キー。PC側 設定.json の「秘密キー」と一致させる)。
+3. `checkSetup` を実行(工事データ・秘密キーの確認がログに出る)。
+4. デプロイを管理 → 編集 → バージョン「新バージョン」→ デプロイ(URLは変わらない)。
+
+## 会社サーバーへの設置
+1. 上記フォルダに `server/` の 実行予算更新.bat・costinsight登録.reg・使い方.txt を置く。
+2. 今の会社PCの `pc` フォルダ(node_modules を含む)をフォルダ内の `pc` にコピーし、`pc/update.js` を `server/pc/update.js` で置き換える。
+3. `pc/設定.json` を `server/pc/設定.example.json` の内容にして、「秘密キー」を記入する。
+4. Node公式の Windows 版 zip(https://nodejs.org/ の LTS、Windows x64 の .zip)から `node.exe` だけを `pc` に置く。
+5. 全員が `pc\出力` に書き込めること(前回の結果の共有・同時実行防止の目印に使う)。
