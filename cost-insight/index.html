@@ -106,6 +106,10 @@
   .imp-status { font-size:14px; font-weight:bold; margin:6px 0 0; padding:8px 12px; border-radius:6px; background:#eef4ff; color:#1f3a8a; }
   .imp-status.ok { background:#e8f7ee; color:#166534; }
   .imp-status.ng { background:#fff4e5; color:#9a3412; }
+  .budget-stack { display:flex; flex-direction:column; align-items:center; justify-content:flex-start; text-align:center; }
+  .budget-stack h2 { align-self:stretch; text-align:left; }
+  .budget-stack .stack-btn, .budget-stack .reg-next { width:min(340px, 100%); margin:6px 0; text-align:center; font-size:16px; padding:14px 20px; }
+  .budget-stack .imp-status { width:min(340px, 100%); }
   .step h3 { font-size:15px; margin:0 0 6px; }
 </style>
 </head>
@@ -127,25 +131,14 @@
 
   <!-- 実行予算取込モード -->
   <section id="v-budget" class="view" hidden>
-    <button class="back" type="button" data-go="menu">← メニューへ戻る</button>
-    <div class="card">
+    <!-- 3つのボタンを縦に並べ、上合わせ・中央揃え -->
+    <div class="card budget-stack">
       <h2>実行予算取込</h2>
+      <button class="btn sub stack-btn" type="button" data-go="menu">ホームへ戻る</button>
+      <button id="regBtn" class="btn sub stack-btn" type="button" onclick="downloadReg()" title="PCごとに1回だけ。ダウンロードした 正光コストインサイト登録.reg をダブルクリックで開き、［はい］→［OK］">①初期設定をダウンロード</button>
+      <a class="btn pink stack-btn" href="costinsight://update" onclick="startImportWatch()" title="会社サーバーの 実行予算更新.bat を実行します(社内ネットワークのPCのみ)">②実行予算取込</a>
+      <p id="imp-status" class="imp-status" hidden></p>
       <p id="budget" class="note">最終受信: 確認中…</p>
-      <div class="step">
-        <h3>① 初めて取り込むPC(初期設定をダウンロード)</h3>
-        <p><button id="regBtn" class="btn sub" type="button" onclick="downloadReg()">初期設定をダウンロード</button></p>
-        <p class="note">PCごとに1回だけ。ダウンロードした 正光コストインサイト登録.reg をダブルクリックで開き、［はい］→［OK］(管理者の権限はいりません)。
-          ブラウザに「危険なファイル」などと出たら［保存］(または［継続］)を選んでください。</p>
-      </div>
-      <div class="step">
-        <h3>② 実行予算取込</h3>
-        <p><a class="btn pink" href="costinsight://update" onclick="startImportWatch()">実行予算取込</a></p>
-        <p id="imp-status" class="imp-status" hidden></p>
-        <p class="note">「開きますか？」で［開く］を押すと、会社サーバーの 実行予算更新.bat が動きます(黒い画面に進み具合が出ます。数分かかることがあります)。
-          取込が終わると自動で反映され、「実行予算取込完了＿ホームに戻ります」と出てホーム画面に戻ります(再読み込みは不要です)。<br>
-          <b>押しても何も起きないときは、そのPCでまだ①をしていません。</b>
-          社内ネットワークのPCでのみ動きます。会社サーバーの「コストインサイト\参照資料（削除厳禁）\実行予算更新.bat」をダブルクリックしても同じ取込ができます。</p>
-      </div>
     </div>
   </section>
 
