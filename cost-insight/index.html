@@ -6,7 +6,7 @@
 <title>コスト-インサイト</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-  :root { --bg:#2b2c2f; --card:#fff; --ink:#222; --sub:#666; --muted:#898781; --line:#e1e0d9; }
+  :root { --bg:#2b2c2f; --card:#fff; --ink:#000; --sub:#222; --muted:#555; --line:#e1e0d9; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
          font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif; }
@@ -58,8 +58,10 @@
   #set-table tr.changed td { background:#fff3c4; }
   #set-table td.c { text-align:center; }
   #set-table { margin:0 auto; }
+  /* 文字は黒(グレーは見にくいため) */
+  table, th, td, select, .note { color:#000; }
   #set-table th { text-align:center; }
-  #set-table select { font:inherit; padding:2px 6px; border:1px solid #bbb; border-radius:4px; text-align:center; text-align-last:center; }
+  #set-table select { font:inherit; color:#000; padding:2px 6px; border:1px solid #888; border-radius:4px; text-align:center; text-align-last:center; }
   /* 年度の色(実行予算まとめと同じ: R8=青・R9=緑・R10=ピンク・R7=黄 の4色周期。未設定は色なし) */
   #set-table select.y0 { background:#d6e9ff; }
   #set-table select.y1 { background:#d8f3dc; }
