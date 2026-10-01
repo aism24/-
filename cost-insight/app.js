@@ -71,7 +71,6 @@ async function load() {
   try {
     applyData(await gasGet('getData'));
     setupFilters();
-    setupYearFilter();
     renderSettings();
     bar.done();
     setTimeout(() => document.getElementById('loading').classList.add('done'), 300);
@@ -337,21 +336,12 @@ function yearOptions() {
 // 実行予算が取り込まれている(契約総重量か契約金額が入っている)工事だけを設定の対象にする
 const hasContract = w => (w.totalWeight !== null && w.totalWeight !== undefined) || (w.contract !== null && w.contract !== undefined);
 
-// 年度の絞り込み('' = すべて、'-' = 未設定)
-function setupYearFilter() {
-  const sel = document.getElementById('set-year');
-  sel.innerHTML = '<option value="">すべて</option>'
-    + yearOptions().filter(y => y).map(y => `<option value="${y}">${y}</option>`).join('')
-    + '<option value="-">(未設定)</option>';
-  sel.addEventListener('change', renderSettings);
-}
+// 年度の色のクラス(R8=y0 青・R9=y1 緑・R10=y2 ピンク・R7=y3 黄。未設定は色なし)
+const yearClass = y => { const m = /^R(\d+)$/.exec(y || ''); return m ? 'y' + (Number(m[1]) % 4) : ''; };
 
 function renderSettings() {
   const works = state.data.settings.works, years = yearOptions();
-  const fy = document.getElementById('set-year').value;
-  // 年度の絞り込みは保存済みの年度で判定する(行の年度を変えても、保存するまでは表から消えない)
-  const nos = Object.keys(works).sort().filter(no => hasContract(works[no])
-    && (!fy || (fy === '-' ? !works[no].year : works[no].year === fy)));
+  const nos = Object.keys(works).sort().filter(no => hasContract(works[no]));
   document.getElementById('set-table').innerHTML = '<tr><th>工事No</th><th>工事名</th><th>完了</th><th>年度</th></tr>'
     + nos.map(no => {
       const w = works[no], e = state.edits[no] || {};
@@ -359,7 +349,7 @@ function renderSettings() {
       const changed = Object.keys(e).length ? ' class="changed"' : '';
       return `<tr${changed} data-no="${esc(no)}"><td>${esc(no)}</td><td>${esc(w.name)}</td>`
         + `<td class="c"><input type="checkbox" data-k="done"${done ? ' checked' : ''}></td>`
-        + `<td><select data-k="year">${years.map(y => `<option value="${y}"${y === year ? ' selected' : ''}>${y || '(未設定)'}</option>`).join('')}</select></td></tr>`;
+        + `<td class="c"><select data-k="year" class="${yearClass(year)}">${years.map(y => `<option value="${y}"${y === year ? ' selected' : ''}>${y || '(未設定)'}</option>`).join('')}</select></td></tr>`;
     }).join('')
     + (nos.length ? '' : '<tr><td colspan="4">該当する工事がありません</td></tr>');
   document.querySelectorAll('#set-table input, #set-table select').forEach(el => el.addEventListener('change', onSettingChange));
@@ -370,6 +360,7 @@ function onSettingChange(ev) {
   const tr = ev.target.closest('tr'), no = tr.dataset.no, k = ev.target.dataset.k;
   const w = state.data.settings.works[no];
   const v = k === 'done' ? ev.target.checked : ev.target.value;
+  if (k === 'year') ev.target.className = yearClass(v);
   const orig = k === 'done' ? w.done : (w.year || '');
   const e = state.edits[no] || (state.edits[no] = {});
   if (v === orig) delete e[k]; else e[k] = v;
