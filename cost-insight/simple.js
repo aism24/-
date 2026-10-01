@@ -168,7 +168,7 @@
     const sel = selection();
     const t = analyze(sel.from, sel.to, sel.sites);
     const g = goalRate();
-    const gi = renderGoal(sel);
+    const gi = renderGoal(sel, t);
     $('res-note').textContent = sel.lastTo < sel.fullTo ? `（〜${Number(sel.lastTo.slice(5, 7))}/${Number(sel.lastTo.slice(8))}の実績）` : '（実績）';
     // 生産重量・工数は値を、売上額・損益は目標に対する割合を表示する(1行に4枚)
     let sVal = '—', sCls = '';
@@ -265,13 +265,13 @@
   }
 
   /* 目標の表(紫の欄)・グラフ・工場別の目標値の表を描く */
-  function renderGoal(sel) {
+  function renderGoal(sel, tNow) {
     const box = $('goal'), chartBox = $('goal-chart');
     const g = goalRate(), p = g / 100;
     const plan = stdPlan(sel), T = plan ? stdScope(plan, sel) : null;
     renderTargetsTable(plan, sel, p);
     const cur = sel.lastTo < sel.fullTo;
-    const t = analyze(sel.from, sel.lastTo, sel.sites); // 実績(ここまで)
+    const t = tNow || analyze(sel.from, sel.lastTo, sel.sites); // 実績(ここまで)。selection() は to と lastTo が同じなので、render() で求めた結果を使い回す
     if (!T || !(t.weight > 0 || cur)) { box.hidden = true; chartBox.hidden = true; return null; }
     box.hidden = false; chartBox.hidden = false;
     const phr = (html) => String(html || '').split(/(?=（)|\|/).filter((x) => x !== '').map((x) => `<span class="ph">${x}</span>`).join('');
@@ -366,6 +366,7 @@
   function placeTargets() {
     const el = $('goal-targets'), panel = $('goal-chart'), svg = panel.querySelector('#c-goal svg');
     if (el.hidden || !svg || getComputedStyle(el).position !== 'absolute') return;
+    if (svg.dataset.placed) return; // 同じ描画に対しては1回だけ(欄を二重に動かさない。重い測定の前に判定する)
     const pr = panel.getBoundingClientRect(), sr = svg.getBoundingClientRect();
     const ox = sr.left - pr.left, oy = sr.top - pr.top; // svg座標 → パネル座標
     const w = el.offsetWidth, h = el.offsetHeight, SW = sr.width, SH = sr.height, M = 6;
@@ -382,7 +383,6 @@
       return Math.hypot(dx, dy) * (t1 - t0);
     };
     const area = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.height) - Math.max(a.y, b.y));
-    if (svg.dataset.placed) return; // 同じ描画に対しては1回だけ(欄を二重に動かさない)
     svg.dataset.placed = '1';
     const bg = svg.querySelector('.beBg'), bb = bg ? bg.getBBox() : { x: 60, y: 40, width: 0, height: 0 };
     // ① 表をグラフの左上に置き、「損益分岐値」の欄を表の右隣へ移す(引き出し線も付け替える)。線や文字と重ならなければこれで決定
