@@ -30,7 +30,8 @@ Excelでダウンロードする静的アプリ(画面=静的ページ + GAS JSO
 
 ## セットアップ
 1. 「鳥取梁ロボ管理データ」→拡張機能→Apps Script に `gas/Code.gs` を貼り付け、サービスに「Drive API」を追加。
-2. `checkSetup` を実行して構成を確認 → `createDailyTrigger` を実行(毎日5時にマスター更新)。
+2. `checkSetup` を実行して構成を確認 → `createDailyTrigger` を実行(毎朝9時に更新確認。前日分の記録は毎朝8時以降に更新されるため)。
+   集計結果はDriveの `_snapshot_tori_robo.json` に保存され、画面はそれを表示する。「最新のデータを読み込む」ボタンで随時更新確認もできる。
 3. 「デプロイ→新しいデプロイ→ウェブアプリ(自分として実行/全員)」のURLを `app.js` の `GAS_API_URL` に設定。
 
 ## 確認URL(GitHubのみ・Vercelを使わない)

@@ -843,14 +843,13 @@ function refreshMasters_() {
 // トリガーから呼ばれる更新確認(元データが変わっていれば作り直して保存する)。
 function dailyRefresh() { refreshSnapshot_(false); }
 
-// エディタから1回だけ実行する。毎朝9時と、1時間おきに更新確認を行う(変更が無ければ何もしない)。
+// エディタから1回だけ実行する。毎朝9時に更新確認を行う(前日分の記録は毎朝8時以降に更新されるため、9時で足りる)。
 function createDailyTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'dailyRefresh') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('dailyRefresh').timeBased().atHour(9).nearMinute(0).everyDays(1).create();
-  ScriptApp.newTrigger('dailyRefresh').timeBased().everyHours(1).create();
-  Logger.log('毎朝9時と1時間おきに更新確認するトリガーを設定しました。');
+  Logger.log('毎朝9時に更新確認するトリガーを設定しました。');
 }
 
 // Apps Scriptエディタから手動で実行して、構成を確認する。
