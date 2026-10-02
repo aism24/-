@@ -18,11 +18,11 @@
   <div id="warnings" class="warnings"></div>
 
   <section class="card">
-    <h2>1. 期間(年・月・20日〆)</h2>
+    <h2>1. 期間(年・月・〆日)</h2>
     <div class="row">
       <select id="yearSel" aria-label="年"></select>
       <select id="monthSel" aria-label="月"></select>
-      <button type="button" class="btn toggle" id="closeBtn" aria-pressed="false">20日〆</button>
+      <span class="seg"><button type="button" class="btn toggle" id="modeCalendar" aria-pressed="true">普通月〆</button><button type="button" class="btn toggle" id="modeClose" aria-pressed="false">20日〆</button></span>
       <span id="periodText" class="period"></span>
       <button class="btn" id="reloadBtn">最新のデータを読み込む</button>
     </div>

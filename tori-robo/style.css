@@ -42,3 +42,4 @@ tr.fixed td { background:var(--fixed); }
 
 .btn.toggle[aria-pressed=true] { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:bold; }
 .period { color:var(--muted); font-variant-numeric:tabular-nums; }
+.seg { display:inline-flex; } .seg .btn:first-child { border-radius:4px 0 0 4px; } .seg .btn:last-child { border-radius:0 4px 4px 0; border-left:0; }

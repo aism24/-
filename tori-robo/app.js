@@ -212,7 +212,8 @@ if (typeof document !== 'undefined') {
       st.end = p.end;
       $('yearSel').value = String(st.y);
       $('monthSel').value = String(st.m);
-      $('closeBtn').setAttribute('aria-pressed', st.mode === 'close20' ? 'true' : 'false');
+      $('modeCalendar').setAttribute('aria-pressed', st.mode === 'calendar' ? 'true' : 'false');
+      $('modeClose').setAttribute('aria-pressed', st.mode === 'close20' ? 'true' : 'false');
       $('periodText').textContent = '期間: ' + p.start.replace(/-/g, '/') + ' 〜 ' + p.end.replace(/-/g, '/');
     }
 
@@ -354,11 +355,8 @@ if (typeof document !== 'undefined') {
 
     $('yearSel').addEventListener('change', function () { st.y = Number(this.value); syncPeriod(); render(); });
     $('monthSel').addEventListener('change', function () { st.m = Number(this.value); syncPeriod(); render(); });
-    $('closeBtn').addEventListener('click', function () {
-      st.mode = st.mode === 'close20' ? 'calendar' : 'close20';
-      syncPeriod();
-      render();
-    });
+    $('modeCalendar').addEventListener('click', function () { st.mode = 'calendar'; syncPeriod(); render(); });
+    $('modeClose').addEventListener('click', function () { st.mode = 'close20'; syncPeriod(); render(); });
     $('costInput').addEventListener('change', function () { st.cost = Number(this.value) || 0; render(); });
     $('reloadBtn').addEventListener('click', load);
     $('dlBtn').addEventListener('click', function () {

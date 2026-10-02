@@ -30,7 +30,11 @@
 const INFO_SHEET_NAME = '各種情報';
 const CACHE_FOLDER_PROP = 'CACHE_FOLDER_ID';
 const MASTER_CACHE_FILE_NAME = '_cache_tottori_robot_masters.json';
-const MASTER_CACHE_VERSION = 3;
+const MASTER_CACHE_VERSION = 4;
+// 実寸法師のリンク(図番のハイパーリンク)入りマスターExcelの置き場所(毎日更新される。鳥取以外の工事も含む)。
+// 「各種情報」D列のファイル名と同じ名前(「_マスタのまま」の有無・拡張子は無視)のファイルだけを使う。
+const LINK_FOLDER_ID = '1HuBr3qZnO4N6BA6Zm_aU8BkVM45Q1K5q';
+const LINK_FILE_SUFFIX = /_?マスタのまま/g;
 const WORK_COPY_PREFIX = '_作業用_梁ロボ_';
 const TIMEZONE = 'Asia/Tokyo';
 const IGNORE_WORK_NO = '00-00';
@@ -72,6 +76,11 @@ function normName_(s) {
     .normalize('NFKC')
     .replace(/[\s　()（）【】\[\]「」・._\-]/g, '')
     .toUpperCase();
+}
+
+// ファイル名から拡張子と「_マスタのまま」を除いた名前(突き合わせ用に正規化)。
+function baseKey_(fileName) {
+  return normName_(String(fileName || '').replace(/\.(xlsx?|xlsm)$/i, '').replace(LINK_FILE_SUFFIX, ''));
 }
 
 // 製品マークの正規化(大文字小文字・全角半角・空白を吸収。記号は区別する)。
@@ -473,21 +482,44 @@ function parseMasterSheet_(convertedSheetId, hyperlinkMap) {
   return out;
 }
 
+// リンク用フォルダ内のExcelを { 正規化した名前: {id, name} } で返す(読み取りのみ)。
+function readLinkFiles_(warnings) {
+  const map = {};
+  try {
+    const it = DriveApp.getFolderById(LINK_FOLDER_ID).getFiles();
+    while (it.hasNext()) {
+      const f = it.next();
+      if (!/\.(xlsx?|xlsm)$/i.test(f.getName())) continue;
+      const key = baseKey_(f.getName());
+      if (!map[key]) map[key] = { id: f.getId(), name: f.getName() };
+    }
+  } catch (err) {
+    warnings.push('リンク用フォルダを開けません: ' + err.message);
+  }
+  return map;
+}
+
 // 工事別マスターの記録をキャッシュ付きで読む。{ workNo: [records] }, warnings
 function loadMasters_(folder, masterList) {
   const cache = loadMasterCache_(folder);
   const next = {};
   const result = {};
   const warnings = [];
+  const linkedWorks = {};
   let changed = false;
+  const linkFiles = readLinkFiles_(warnings);
   masterList.forEach(function (m) {
+    // リンク入りマスター(同名のファイル)があればそれを読む。無ければ「各種情報」のURLのファイル(リンクなし)。
+    const lk = linkFiles[baseKey_(m.fileName)] || linkFiles[baseKey_(m.workName || '')];
+    const src = lk ? { fileId: lk.id, fileName: lk.name, linked: true } : { fileId: m.fileId, fileName: m.fileName, linked: false };
+    if (!lk) warnings.push('【確認用】「' + m.fileName + '」: リンク用フォルダに同名のファイルが無いため、図面リンクなしで読み込みます');
     let file;
-    try { file = DriveApp.getFileById(m.fileId); } catch (err) {
-      warnings.push('「' + m.fileName + '」を開けません: ' + err.message);
+    try { file = DriveApp.getFileById(src.fileId); } catch (err) {
+      warnings.push('「' + src.fileName + '」を開けません: ' + err.message);
       return;
     }
     const mtime = String(file.getLastUpdated().getTime());
-    const c = cache[m.fileId];
+    const c = cache[src.fileId];
     let records;
     if (c && c.mtime === mtime && c.v === MASTER_CACHE_VERSION) {
       records = c.records;
@@ -496,20 +528,21 @@ function loadMasters_(folder, masterList) {
       try {
         const blob = file.getBlob();
         const links = extractHyperlinks_(blob);
-        if (links.__error) warnings.push('「' + m.fileName + '」の図面リンク取得エラー: ' + links.__error);
-        const sheetId = convertToSheet_(m.fileId, m.workNo + '_' + m.fileName, folder, mtime, file);
+        if (links.__error) warnings.push('「' + src.fileName + '」の図面リンク取得エラー: ' + links.__error);
+        const sheetId = convertToSheet_(src.fileId, m.workNo + '_' + m.fileName, folder, mtime, file);
         records = parseMasterSheet_(sheetId, links);
         warnings.push('【確認用】「' + m.fileName + '」: 製品' + records.length + '件 / 図面リンク' + records.filter(function (r) { return r.l; }).length + '件(xlsx内のリンク' + Object.keys(links).filter(function (k) { return k !== '__error'; }).length + '件 / ' + (links.__diag || links.__error || '診断なし') + ')');
       } catch (err) {
-        warnings.push('「' + m.fileName + '」の読み込みに失敗: ' + err.message);
+        warnings.push('「' + src.fileName + '」の読み込みに失敗: ' + err.message);
         return;
       }
     }
-    next[m.fileId] = { mtime: mtime, v: MASTER_CACHE_VERSION, records: records };
+    next[src.fileId] = { mtime: mtime, v: MASTER_CACHE_VERSION, records: records };
     result[m.workNo] = (result[m.workNo] || []).concat(records);
+    if (src.linked) linkedWorks[m.workNo] = true;
   });
   if (changed || Object.keys(cache).sort().join() !== Object.keys(next).sort().join()) saveMasterCache_(folder, next);
-  return { records: result, warnings: warnings };
+  return { records: result, warnings: warnings, linkedWorks: linkedWorks };
 }
 
 // ========== ロボ稼動実績の読み取り(読み取りのみ・毎回最新を読む) ==========
@@ -560,6 +593,7 @@ function getData_() {
   const alias = readAlias_(rows);
   const folder = getCacheFolder_();
 
+  masterList.forEach(function (m) { m.workName = workNames[m.workNo] || ''; });
   const loaded = loadMasters_(folder, masterList);
   const warnings = loaded.warnings.slice();
 
