@@ -254,3 +254,17 @@ Git連携の接続/解除はClaudeのVercelツールではできない(ユーザ
   このフォルダ(GitHub Pages版)は使わない。容量影響がほぼ無いため削除せず残しているだけ。
   新規の作業・Vercel化・ランチャー登録の対象にしないこと。
   (ただし `gas/Code.gs` は稼働中GASのソースの可能性があるため、参照用としては有効)
+
+## 【方針】GASのJSONを速く配るには、Vercelの中継API+CDNキャッシュを第一候補にする(2026-10-02〜、ユーザー指示)
+
+- ブラウザからGAS(`script.google.com/.../exec`)を直接呼ぶと、Google側の転送(302)の連鎖・ログイン状態の差で、
+  遅い(22秒超の例)/エラーになるユーザーが出る。GAS単体の処理は2〜3秒でも、通信側が遅い。
+  ドライブにキャッシュJSONを置いても、取りに行く通信は変わらないので解決しない。
+- 「キャッシュを使って速くしたい」ときは、悩まずにまずこの構成にする(tori-robo で採用):
+  1. アプリのフォルダに `api/data.js`(Node関数)を置き、Vercelのサーバー側でGASを取得(最大3回リトライ)。
+  2. 応答に `Cache-Control: public, s-maxage=300, stale-while-revalidate=86400` を付けてCDNに載せる。
+  3. 画面は `api/data` を呼び、失敗時だけGAS直接へフォールバック。「最新を読み込む」(refresh)や保存直後はGAS直接。
+  4. 画面側にも前回結果をlocalStorageに保存して即表示→裏で更新、を併用する。
+- 注意: Vercel関数は動かすのに本番デプロイが必要(deploymentEnabled=falseでも create_deployment は「デプロイして」の指示時のみ)。
+  raw.githack の確認用URLには関数が無いため、フォールバックでGAS直接になる(速さの確認は本番デプロイ後)。
+  関数が小さいNodeなら Functions Storage への影響はほぼ無い(Python+重いライブラリのpdf-diff-appとは別扱い)。
