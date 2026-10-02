@@ -33,6 +33,7 @@ const MASTER_CACHE_FILE_NAME = '_cache_tottori_robot_masters.json';
 const MASTER_CACHE_VERSION = 4;
 // 実寸法師のリンク(図番のハイパーリンク)入りマスターExcelの置き場所(毎日更新される。鳥取以外の工事も含む)。
 // 「各種情報」D列のファイル名と同じ名前(「_マスタのまま」の有無・拡張子は無視)のファイルだけを使う。
+const ARCHIVE_FILE_NAME = '_archive_tori_robo_products.json';
 const LINK_FOLDER_ID = '1HuBr3qZnO4N6BA6Zm_aU8BkVM45Q1K5q';
 const LINK_FILE_SUFFIX = /_?マスタのまま/g;
 const WORK_COPY_PREFIX = '_作業用_梁ロボ_';
@@ -482,6 +483,21 @@ function parseMasterSheet_(convertedSheetId, hyperlinkMap) {
   return out;
 }
 
+// 工事の差し替え(同じURLのExcelが別の工事に入れ替わる)で古い工事のデータが失われないよう、
+// 読み込んだ工事ごとの製品データを工事番号ごとに保存し続ける(消さない)。
+function loadArchive_(folder) {
+  const files = folder.getFilesByName(ARCHIVE_FILE_NAME);
+  if (!files.hasNext()) return {};
+  try { return JSON.parse(files.next().getBlob().getDataAsString()); } catch (e) { return {}; }
+}
+
+function saveArchive_(folder, archive) {
+  const content = JSON.stringify(archive);
+  const files = folder.getFilesByName(ARCHIVE_FILE_NAME);
+  if (files.hasNext()) files.next().setContent(content);
+  else folder.createFile(ARCHIVE_FILE_NAME, content, MimeType.PLAIN_TEXT);
+}
+
 // リンク用フォルダ内のExcelを { 正規化した名前: {id, name} } で返す(読み取りのみ)。
 function readLinkFiles_(warnings) {
   const map = {};
@@ -506,6 +522,8 @@ function loadMasters_(folder, masterList) {
   const result = {};
   const warnings = [];
   const linkedWorks = {};
+  const archive = loadArchive_(folder);
+  let archiveDirty = false;
   let changed = false;
   const linkFiles = readLinkFiles_(warnings);
   masterList.forEach(function (m) {
@@ -540,9 +558,15 @@ function loadMasters_(folder, masterList) {
     next[src.fileId] = { mtime: mtime, v: MASTER_CACHE_VERSION, records: records };
     result[m.workNo] = (result[m.workNo] || []).concat(records);
     if (src.linked) linkedWorks[m.workNo] = true;
+    const ar = archive[m.workNo];
+    if (!ar || ar.mtime !== mtime || ar.fileName !== m.fileName) {
+      archive[m.workNo] = { fileName: m.fileName, workName: m.workName || '', mtime: mtime, savedAt: Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm'), records: records };
+      archiveDirty = true;
+    }
   });
   if (changed || Object.keys(cache).sort().join() !== Object.keys(next).sort().join()) saveMasterCache_(folder, next);
-  return { records: result, warnings: warnings, linkedWorks: linkedWorks };
+  if (archiveDirty) saveArchive_(folder, archive);
+  return { records: result, warnings: warnings, linkedWorks: linkedWorks, archive: archive };
 }
 
 // ========== ロボ稼動実績の読み取り(読み取りのみ・毎回最新を読む) ==========
@@ -619,6 +643,24 @@ function getData_() {
       });
       masterIndex[m.workNo] = { byMark: byMark, marks: marks };
     }
+  });
+
+  // 工事の差し替えで「各種情報」から消えた工事も、保存済みの製品データで突き合わせを続ける(過去の期間を再現するため)。
+  Object.keys(loaded.archive || {}).forEach(function (workNo) {
+    if (works.some(function (w) { return w.workNo === workNo; })) return;
+    const a = loaded.archive[workNo];
+    const names = [baseKey_(a.fileName)];
+    if (a.workName) names.push(normName_(a.workName));
+    if (workNames[workNo]) names.push(normName_(workNames[workNo]));
+    works.push({ workNo: workNo, names: names });
+    workInfo.push({ workNo: workNo, workName: workNames[workNo] || a.workName || a.fileName, fileName: a.fileName, archived: true });
+    const byMark = {};
+    const marks = [];
+    (a.records || []).forEach(function (r) {
+      const key = normMark_(r.m);
+      if (!byMark[key]) { byMark[key] = r; marks.push({ key: key, mark: r.m }); }
+    });
+    masterIndex[workNo] = { byMark: byMark, marks: marks };
   });
 
   // ロボ稼動実績 → 突き合わせ
