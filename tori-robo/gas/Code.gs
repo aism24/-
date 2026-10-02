@@ -30,7 +30,7 @@
 const INFO_SHEET_NAME = '各種情報';
 const CACHE_FOLDER_PROP = 'CACHE_FOLDER_ID';
 const MASTER_CACHE_FILE_NAME = '_cache_tottori_robot_masters.json';
-const MASTER_CACHE_VERSION = 1;
+const MASTER_CACHE_VERSION = 2;
 const WORK_COPY_PREFIX = '_作業用_梁ロボ_';
 const TIMEZONE = 'Asia/Tokyo';
 const IGNORE_WORK_NO = '00-00';
@@ -431,6 +431,24 @@ function parseMasterSheet_(convertedSheetId, hyperlinkMap) {
   const display = sh.getRange(2, 1, n, maxCol).getDisplayValues();
   const raw = sh.getRange(2, 1, n, maxCol).getValues();
   const drawingLetter = col.drawingNo >= 0 ? columnIndexToLetter_(col.drawingNo) : '';
+  // 変換後のシートに残っているリンク(HYPERLINK関数・リッチテキストのリンク)も補助的に拾う。
+  let drawFormulas = null;
+  let drawRich = null;
+  if (col.drawingNo >= 0) {
+    const rng = sh.getRange(2, col.drawingNo + 1, n, 1);
+    drawFormulas = rng.getFormulas();
+    try { drawRich = rng.getRichTextValues(); } catch (e) { drawRich = null; }
+  }
+  const linkOf = function (i) {
+    if (!drawingLetter) return '';
+    const fromXml = hyperlinkMap[drawingLetter + (i + 2)];
+    if (fromXml) return fromXml;
+    const f = drawFormulas && drawFormulas[i][0];
+    const m = f && String(f).match(/HYPERLINK\(\s*"([^"]+)"/i);
+    if (m) return m[1];
+    const u = drawRich && drawRich[i][0] && drawRich[i][0].getLinkUrl();
+    return u || '';
+  };
   const out = [];
   for (let i = 0; i < n; i++) {
     const mark = String(display[i][col.mark] || '').trim();
@@ -446,7 +464,7 @@ function parseMasterSheet_(convertedSheetId, hyperlinkMap) {
       p: col.part >= 0 ? String(display[i][col.part] || '').trim() : '',
       k: col.processed >= 0 ? dateCellToYmd_(raw[i][col.processed]) : '',
       v: col.welded >= 0 ? dateCellToYmd_(raw[i][col.welded]) : '',
-      l: drawingLetter ? hyperlinkMap[drawingLetter + (i + 2)] || '' : '',
+      l: linkOf(i),
     });
   }
   return out;
@@ -478,6 +496,7 @@ function loadMasters_(folder, masterList) {
         if (links.__error) warnings.push('「' + m.fileName + '」の図面リンク取得エラー: ' + links.__error);
         const sheetId = convertToSheet_(m.fileId, m.workNo + '_' + m.fileName, folder, mtime, file);
         records = parseMasterSheet_(sheetId, links);
+        warnings.push('【確認用】「' + m.fileName + '」: 製品' + records.length + '件 / 図面リンク' + records.filter(function (r) { return r.l; }).length + '件(xlsx内のリンク' + Object.keys(links).filter(function (k) { return k !== '__error'; }).length + '件)');
       } catch (err) {
         warnings.push('「' + m.fileName + '」の読み込みに失敗: ' + err.message);
         return;

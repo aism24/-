@@ -5,7 +5,7 @@
  */
 
 // GASのウェブアプリURL(デプロイ後に設定する)。空のあいだは sample.json(ダミーデータ)を表示する。
-const GAS_API_URL = '';
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzLhyh3XzvJ-95n-VV7r7Upx_0AfGsqoPAaySmFSpwKdsqfP_EwjOTNzuyJgdTQvMxS/exec';
 const HOURLY_COST_DEFAULT = 4000;
 const LS_KEY = 'tori-robo-overrides-v1';
 
