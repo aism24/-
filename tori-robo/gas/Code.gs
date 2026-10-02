@@ -840,8 +840,33 @@ function refreshMasters_() {
   return { masters: Object.keys(loaded.records).length, warnings: loaded.warnings };
 }
 
+// 作業用スプレッドシート(_作業用_梁ロボ_*)のうち、今の読み込みで使っていない古いものをゴミ箱へ移す(完全削除はしない)。
+// 使用中 = スクリプトプロパティ rconv_<ファイルID>_<工事番号> に記録されているもの。毎朝の更新確認の最後にも実行する。
+function cleanupWorkCopies() {
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties();
+  const used = {};
+  Object.keys(all).forEach(function (k) {
+    if (/^rconv_.+_\d{2}-\d{1,2}[A-Za-z]{0,2}$/.test(k)) used[all[k]] = true;
+    else if (/^(rconv_|rmtime_)/.test(k) && !/^rmtime_.+_\d{2}-\d{1,2}[A-Za-z]{0,2}$/.test(k)) props.deleteProperty(k); // 旧形式の記録
+  });
+  const it = getCacheFolder_().getFiles();
+  const trashed = [];
+  while (it.hasNext()) {
+    const f = it.next();
+    if (f.getName().indexOf(WORK_COPY_PREFIX) !== 0 || used[f.getId()]) continue;
+    f.setTrashed(true);
+    trashed.push(f.getName());
+  }
+  Logger.log('ゴミ箱へ移した古い作業用シート: ' + trashed.length + '件');
+  return trashed;
+}
+
 // トリガーから呼ばれる更新確認(元データが変わっていれば作り直して保存する)。
-function dailyRefresh() { refreshSnapshot_(false); }
+function dailyRefresh() {
+  refreshSnapshot_(false);
+  cleanupWorkCopies();
+}
 
 // エディタから1回だけ実行する。毎朝9時に更新確認を行う(前日分の記録は毎朝8時以降に更新されるため、9時で足りる)。
 function createDailyTrigger() {
