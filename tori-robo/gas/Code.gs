@@ -584,7 +584,6 @@ function loadMasters_(folder, masterList) {
     // リンク入りマスター(同名のファイル)があればそれを読む。無ければ「各種情報」のURLのファイル(リンクなし)。
     const lk = linkFiles[baseKey_(m.fileName)] || linkFiles[baseKey_(m.workName || '')];
     const src = lk ? { fileId: lk.id, fileName: lk.name, linked: true } : { fileId: m.fileId, fileName: m.fileName, linked: false };
-    if (!lk) warnings.push('【確認用】「' + m.fileName + '」: リンク用フォルダに同名のファイルが無いため、図面リンクなしで読み込みます');
     let file;
     try { file = DriveApp.getFileById(src.fileId); } catch (err) {
       warnings.push('「' + src.fileName + '」を開けません: ' + err.message);
@@ -603,7 +602,6 @@ function loadMasters_(folder, masterList) {
         if (links.__error) warnings.push('「' + src.fileName + '」の図面リンク取得エラー: ' + links.__error);
         const sheetId = convertToSheet_(src.fileId, m.workNo + '_' + m.fileName, folder, mtime, file, m.workNo);
         records = parseMasterSheet_(sheetId, links);
-        warnings.push('【確認用】「' + m.fileName + '」: 製品' + records.length + '件 / 図面リンク' + records.filter(function (r) { return r.l; }).length + '件(xlsx内のリンク' + Object.keys(links).filter(function (k) { return k !== '__error'; }).length + '件 / ' + (links.__diag || links.__error || '診断なし') + ')');
       } catch (err) {
         warnings.push('「' + src.fileName + '」の読み込みに失敗: ' + err.message);
         return;
