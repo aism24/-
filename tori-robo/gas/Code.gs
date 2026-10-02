@@ -31,6 +31,7 @@ const INFO_SHEET_NAME = '各種情報';
 const CACHE_FOLDER_PROP = 'CACHE_FOLDER_ID';
 const MASTER_CACHE_FILE_NAME = '_cache_tottori_robot_masters.json';
 const MASTER_CACHE_VERSION = 5;
+const SNAPSHOT_LOGIC_VERSION = 2; // 集計ロジック(判定方法・出力項目)を変えたら上げる。元データが同じでも保存結果を作り直す(マスター全読み直しの MASTER_CACHE_VERSION とは別)
 // 実寸法師のリンク(図番のハイパーリンク)入りマスターExcelの置き場所(毎日更新される。鳥取以外の工事も含む)。
 // 「各種情報」D列のファイル名と同じ名前(「_マスタのまま」の有無・拡張子は無視)のファイルだけを使う。
 const SNAPSHOT_FILE_NAME = '_snapshot_tori_robo.json';
@@ -856,6 +857,7 @@ function computeFingerprint_() {
   readMasterIndex_(rows).forEach(function (m) {
     try { parts.push(DriveApp.getFileById(m.fileId).getLastUpdated().getTime()); } catch (e) { parts.push('x'); }
   });
+  parts.push('logic' + SNAPSHOT_LOGIC_VERSION);
   return parts.join('|');
 }
 
