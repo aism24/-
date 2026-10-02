@@ -117,14 +117,31 @@ function groupByProduct(rows, products) {
   });
 }
 
-if (typeof module !== 'undefined') module.exports = { monthKey, monthLabel, aggregate, groupByProduct, applyOverride, finish };
+// 年・月と20日〆の指定から期間を求める。close20=trueなら前月21日〜指定月20日、falseなら1日〜末日。
+function periodFor(y, m, close20) {
+  const last = new Date(y, m, 0).getDate();
+  if (!close20) return { start: y + '-' + pad2(m) + '-01', end: y + '-' + pad2(m) + '-' + pad2(last) };
+  const py = m === 1 ? y - 1 : y;
+  const pm = m === 1 ? 12 : m - 1;
+  return { start: py + '-' + pad2(pm) + '-21', end: y + '-' + pad2(m) + '-20' };
+}
+
+// 既定の指定月=今日の前月
+function defaultYearMonth(today) {
+  let y = today.getFullYear();
+  let m = today.getMonth(); // 0始まりなので、これが前月の1始まり
+  if (m === 0) { m = 12; y -= 1; }
+  return { y: y, m: m };
+}
+
+if (typeof module !== 'undefined') module.exports = { periodFor, defaultYearMonth, monthKey, monthLabel, aggregate, groupByProduct, applyOverride, finish };
 
 // ========== 画面 ==========
 
 if (typeof document !== 'undefined') {
   (function () {
     const $ = function (id) { return document.getElementById(id); };
-    const st = { data: null, overrides: {}, selected: null, mode: 'calendar', start: '', end: '', cost: HOURLY_COST_DEFAULT, sample: false };
+    const st = { data: null, overrides: {}, selected: null, mode: 'calendar', y: 0, m: 0, start: '', end: '', cost: HOURLY_COST_DEFAULT, sample: false };
 
     function loadOverrides() {
       try { st.overrides = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { st.overrides = {}; }
@@ -166,22 +183,37 @@ if (typeof document !== 'undefined') {
     function init() {
       const d = st.data;
       if (!st.selected) st.selected = new Set(d.works.map(function (w) { return w.workNo; }));
-      if (!st.start) {
-        // 初期値: 直近データの月(一般の月の1日〜末日)
-        const last = d.rows.reduce(function (m, r) { return r.sd > m ? r.sd : m; }, d.calendarMin || '2024-11-21');
-        const y = Number(last.slice(0, 4)), m = Number(last.slice(5, 7));
-        st.start = y + '-' + pad2(m) + '-01';
-        st.end = y + '-' + pad2(m) + '-' + pad2(new Date(y, m, 0).getDate());
+      if (!st.y) {
+        const ym = defaultYearMonth(new Date());
+        st.y = ym.y;
+        st.m = ym.m;
       }
-      $('startDate').min = $('endDate').min = d.calendarMin || '';
-      $('startDate').value = st.start;
-      $('endDate').value = st.end;
+      const y0 = Number((d.calendarMin || '2024-11-21').slice(0, 4));
+      const y1 = Math.max(Number((d.calendarMax || '2027-01-04').slice(0, 4)), st.y);
+      let yo = '';
+      for (let y = y0; y <= y1; y++) yo += '<option value="' + y + '">' + y + '年</option>';
+      $('yearSel').innerHTML = yo;
+      let mo = '';
+      for (let m = 1; m <= 12; m++) mo += '<option value="' + m + '">' + m + '月</option>';
+      $('monthSel').innerHTML = mo;
+      syncPeriod();
       $('costInput').value = st.cost;
       $('updatedAt').textContent = (st.sample ? '【サンプルデータ】 ' : '') + '更新: ' + (d.generatedAt || '').replace('T', ' ').slice(0, 16);
       const w = (d.warnings || []).filter(Boolean);
       $('warnings').innerHTML = w.length ? w.map(function (x) { return '<div>⚠ ' + esc(x) + '</div>'; }).join('') : '';
       setStatus('');
       render();
+    }
+
+    // 年・月・20日〆ボタンの状態から期間を決め、画面に反映する。
+    function syncPeriod() {
+      const p = periodFor(st.y, st.m, st.mode === 'close20');
+      st.start = p.start;
+      st.end = p.end;
+      $('yearSel').value = String(st.y);
+      $('monthSel').value = String(st.m);
+      $('closeBtn').setAttribute('aria-pressed', st.mode === 'close20' ? 'true' : 'false');
+      $('periodText').textContent = '期間: ' + p.start.replace(/-/g, '/') + ' 〜 ' + p.end.replace(/-/g, '/');
     }
 
     function esc(s) {
@@ -320,12 +352,14 @@ if (typeof document !== 'undefined') {
         }).catch(function (err) { setStatus('登録に失敗しました: ' + err.message, true); });
     }
 
-    $('startDate').addEventListener('change', function () { st.start = this.value; render(); });
-    $('endDate').addEventListener('change', function () { st.end = this.value; render(); });
-    $('costInput').addEventListener('change', function () { st.cost = Number(this.value) || 0; render(); });
-    document.querySelectorAll('input[name=mode]').forEach(function (r) {
-      r.addEventListener('change', function () { st.mode = this.value; render(); });
+    $('yearSel').addEventListener('change', function () { st.y = Number(this.value); syncPeriod(); render(); });
+    $('monthSel').addEventListener('change', function () { st.m = Number(this.value); syncPeriod(); render(); });
+    $('closeBtn').addEventListener('click', function () {
+      st.mode = st.mode === 'close20' ? 'calendar' : 'close20';
+      syncPeriod();
+      render();
     });
+    $('costInput').addEventListener('change', function () { st.cost = Number(this.value) || 0; render(); });
     $('reloadBtn').addEventListener('click', load);
     $('dlBtn').addEventListener('click', function () {
       try { downloadExcel(); } catch (err) { setStatus('Excelの作成に失敗しました: ' + err.message, true); }

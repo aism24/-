@@ -18,11 +18,12 @@
   <div id="warnings" class="warnings"></div>
 
   <section class="card">
-    <h2>1. 期間と月の区切り</h2>
+    <h2>1. 期間(年・月・20日〆)</h2>
     <div class="row">
-      <label>期間 <input type="date" id="startDate"> 〜 <input type="date" id="endDate"></label>
-      <label class="radio"><input type="radio" name="mode" value="calendar" checked> 一般の月(1日〜末日)</label>
-      <label class="radio"><input type="radio" name="mode" value="close20"> 20日〆(前月21日〜当月20日)</label>
+      <select id="yearSel" aria-label="年"></select>
+      <select id="monthSel" aria-label="月"></select>
+      <button type="button" class="btn toggle" id="closeBtn" aria-pressed="false">20日〆</button>
+      <span id="periodText" class="period"></span>
       <button class="btn" id="reloadBtn">最新のデータを読み込む</button>
     </div>
   </section>
