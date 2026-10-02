@@ -455,6 +455,7 @@ if (typeof document !== 'undefined') {
       ws.getCell('G' + (r + 1)).value = '稼動時間(時間)';
       ws.getCell('G' + (r + 2)).value = '単価(円/時間)';
       ws.getCell('H' + (r + 2)).value = st.cost;
+      ws.getCell('H' + (r + 2)).numFmt = '#,##0';
       ws.getCell('G' + (r + 3)).value = '費用(円)';
       ws.getCell('H' + (r + 3)).value = Math.round(hours * st.cost);
       ws.getCell('H' + (r + 3)).numFmt = '#,##0';
