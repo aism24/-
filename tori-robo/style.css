@@ -47,3 +47,4 @@ tr.fixed td { background:var(--fixed); }
 .brandLogo { width:34px; height:38px; flex:none; color:#000; }
 .companyName { font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic",Meiryo,sans-serif; font-weight:900; font-size:16px; color:#000; white-space:nowrap; }
 .app-header { align-items:center; }
+#works td.ctr { text-align:center; }

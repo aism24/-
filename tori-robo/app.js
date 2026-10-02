@@ -141,7 +141,7 @@ if (typeof module !== 'undefined') module.exports = { periodFor, defaultYearMont
 if (typeof document !== 'undefined') {
   (function () {
     const $ = function (id) { return document.getElementById(id); };
-    const st = { data: null, overrides: {}, selected: null, mode: 'calendar', y: 0, m: 0, start: '', end: '', cost: HOURLY_COST_DEFAULT, sample: false };
+    const st = { editing: {}, data: null, overrides: {}, selected: null, mode: 'calendar', y: 0, m: 0, start: '', end: '', cost: HOURLY_COST_DEFAULT, sample: false };
 
     function loadOverrides() {
       try { st.overrides = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { st.overrides = {}; }
@@ -251,16 +251,17 @@ if (typeof document !== 'undefined') {
       const works = {};
       d.works.forEach(function (w) { works[w.workNo] = w.workName; });
       if (!keys.length) { $('works').innerHTML = '<p class="hint">この期間のデータがありません。</p>'; return; }
-      const head = '<tr><th>梁ロボ入力工事名</th><th>正式工事名</th><th>工事番号</th><th>保存</th></tr>';
+      const head = '<tr><th>梁ロボ入力工事名</th><th>工事番号</th><th>正式工事名</th><th>保存</th></tr>';
       const body = keys.map(function (k) {
         const o = names[k];
+        const saved = !!o.no && !st.editing[k];
         const opts = '<option value="">工事を選択…</option>' + d.works.map(function (w) {
           return '<option value="' + esc(w.workNo) + '"' + (w.workNo === o.no ? ' selected' : '') + '>' + esc(w.workName) + '</option>';
         }).join('');
-        return '<tr class="' + (o.no ? '' : 'warn') + '"><td><b>' + esc(k || '(空欄)') + '</b> <span class="cnt">' + o.n + '件</span></td>' +
-          '<td><select data-name="' + esc(k) + '">' + opts + '</select></td>' +
-          '<td class="wkno" data-wkno="' + esc(k) + '">' + esc(o.no || (works[o.no] ? '' : '未判定')) + '</td>' +
-          '<td><button class="btn small" data-alias="' + esc(k) + '">保存</button></td></tr>';
+        return '<tr class="' + (o.no ? '' : 'warn') + '"><td class="ctr"><b>' + esc(k || '(空欄)') + '</b> <span class="cnt">' + o.n + '件</span></td>' +
+          '<td class="ctr wkno" data-wkno="' + esc(k) + '">' + esc(o.no || '未判定') + '</td>' +
+          '<td>' + (saved ? esc(works[o.no] || '') : '<select data-name="' + esc(k) + '">' + opts + '</select>') + '</td>' +
+          '<td class="ctr">' + (saved ? '<button class="btn small" data-edit="' + esc(k) + '">再編集</button>' : '<button class="btn small" data-alias="' + esc(k) + '">保存</button>') + '</td></tr>';
       }).join('');
       $('works').innerHTML = '<p class="hint">梁ロボに入力された工事名が正式な工事名に合っているか確認し、違う場合は選び直して「保存」してください(スプレッドシートの別名表にも記録され、次回から自動で判定されます)。未判定(黄色)の工事は集計から除外されます。</p><table>' + head + body + '</table>';
     }
@@ -359,9 +360,13 @@ if (typeof document !== 'undefined') {
     document.addEventListener('click', function (e) {
       const t = e.target;
       if (!t.dataset) return;
-      if (t.dataset.alias !== undefined) {
+      if (t.dataset.edit !== undefined) {
+        st.editing[t.dataset.edit] = true;
+        render();
+      } else if (t.dataset.alias !== undefined) {
         const sel = document.querySelector('select[data-name="' + CSS.escape(t.dataset.alias) + '"]');
         if (!sel || !sel.value) { alert('工事を選択してください。'); return; }
+        delete st.editing[t.dataset.alias];
         registerAlias(t.dataset.alias, sel.value);
       }
     });
