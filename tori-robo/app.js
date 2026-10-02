@@ -157,13 +157,13 @@ if (typeof document !== 'undefined') {
       });
     }
 
-    function load() {
-      setStatus('データを読み込み中…');
+    function load(refresh) {
+      setStatus(refresh === true ? '最新のデータを確認中…(数十秒かかることがあります)' : 'データを読み込み中…');
       const useSample = !GAS_API_URL || /[?&]sample=1/.test(location.search);
       st.sample = useSample;
       const p = useSample
         ? fetchJson('sample.json').then(function (d) { return { status: 'success', data: d }; })
-        : fetchJson(GAS_API_URL + '?action=getData');
+        : fetchJson(GAS_API_URL + '?action=' + (refresh === true ? 'refresh' : 'getData'));
       p.then(function (res) {
         if (res.status !== 'success') throw new Error(res.message || '読み込みに失敗しました');
         st.data = res.data;
@@ -358,7 +358,7 @@ if (typeof document !== 'undefined') {
     $('modeCalendar').addEventListener('click', function () { st.mode = 'calendar'; syncPeriod(); render(); });
     $('modeClose').addEventListener('click', function () { st.mode = 'close20'; syncPeriod(); render(); });
     $('costInput').addEventListener('change', function () { st.cost = Number(this.value) || 0; render(); });
-    $('reloadBtn').addEventListener('click', load);
+    $('reloadBtn').addEventListener('click', function () { load(true); });
     $('dlBtn').addEventListener('click', function () {
       try { downloadExcel(); } catch (err) { setStatus('Excelの作成に失敗しました: ' + err.message, true); }
     });

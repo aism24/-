@@ -33,6 +33,7 @@ const MASTER_CACHE_FILE_NAME = '_cache_tottori_robot_masters.json';
 const MASTER_CACHE_VERSION = 5;
 // 実寸法師のリンク(図番のハイパーリンク)入りマスターExcelの置き場所(毎日更新される。鳥取以外の工事も含む)。
 // 「各種情報」D列のファイル名と同じ名前(「_マスタのまま」の有無・拡張子は無視)のファイルだけを使う。
+const SNAPSHOT_FILE_NAME = '_snapshot_tori_robo.json';
 const ARCHIVE_FILE_NAME = '_archive_tori_robo_products.json';
 const LINK_FOLDER_ID = '1HuBr3qZnO4N6BA6Zm_aU8BkVM45Q1K5q';
 const LINK_FILE_SUFFIX = /_?マスタのまま/g;
@@ -187,7 +188,8 @@ function doGet(e) {
   try {
     const p = (e && e.parameter) || {};
     const action = p.action || 'getData';
-    if (action === 'getData') return ok_(getData_());
+    if (action === 'getData') return ok_(getSnapshot_());
+    if (action === 'refresh') return ok_(refreshSnapshot_(false));
     if (action === 'refreshMasters') return ok_(refreshMasters_());
     if (action === 'saveAlias') return ok_(saveAlias_(p.name, p.workNo));
     return errRes_('不明なaction: ' + action);
@@ -329,12 +331,14 @@ function saveAlias_(name, workNo) {
   for (let i = 2; i < vals.length; i++) {
     if (normName_(vals[i][0]) === target) {
       sh.getRange(i + 1, ALIAS_COL + 1).setValue(workNo);
+      refreshSnapshot_(true);
       return { saved: true, updated: true };
     }
   }
   let row = 3;
   while (row <= vals.length && String(vals[row - 1][0] || '').trim()) row++;
   sh.getRange(row, ALIAS_COL, 1, 2).setValues([[name, workNo]]);
+  refreshSnapshot_(true);
   return { saved: true, updated: false };
 }
 
@@ -658,7 +662,7 @@ function readRobotRows_(robotNo, sheetId) {
 
 // ========== 集計本体 ==========
 
-function getData_() {
+function buildData_() {
   const sync = syncIndexRows_();
   const rows = readInfoRows_();
   const masterList = readMasterIndex_(rows);
@@ -766,6 +770,68 @@ function getData_() {
   };
 }
 
+// ========== 結果の保存(スナップショット) ==========
+// 画面を開くたびに集計し直さず、保存済みの結果を返す。更新確認(トリガー/更新ボタン)のときだけ、
+// 元データが変わっていれば作り直して保存する。
+
+function loadSnapshot_(folder) {
+  const files = folder.getFilesByName(SNAPSHOT_FILE_NAME);
+  if (!files.hasNext()) return null;
+  try { return JSON.parse(files.next().getBlob().getDataAsString()); } catch (e) { return null; }
+}
+
+function saveSnapshot_(folder, snap) {
+  const content = JSON.stringify(snap);
+  const files = folder.getFilesByName(SNAPSHOT_FILE_NAME);
+  if (files.hasNext()) files.next().setContent(content);
+  else folder.createFile(SNAPSHOT_FILE_NAME, content, MimeType.PLAIN_TEXT);
+}
+
+// 元データの「更新の目印」: 稼動実績2本・「各種情報」・リンク用フォルダ内の各Excelの最終更新日時。
+function computeFingerprint_() {
+  const parts = [];
+  const rows = readInfoRows_();
+  readRobotSheets_(rows).forEach(function (r) {
+    try { parts.push(DriveApp.getFileById(r.id).getLastUpdated().getTime()); } catch (e) { parts.push('x'); }
+  });
+  try { parts.push(DriveApp.getFileById(ss_().getId()).getLastUpdated().getTime()); } catch (e) { parts.push('x'); }
+  try {
+    const it = DriveApp.getFolderById(LINK_FOLDER_ID).getFiles();
+    const t = [];
+    while (it.hasNext()) { const f = it.next(); t.push(f.getName() + ':' + f.getLastUpdated().getTime()); }
+    parts.push(t.sort().join(','));
+  } catch (e) { parts.push('x'); }
+  readMasterIndex_(rows).forEach(function (m) {
+    try { parts.push(DriveApp.getFileById(m.fileId).getLastUpdated().getTime()); } catch (e) { parts.push('x'); }
+  });
+  return parts.join('|');
+}
+
+// 画面表示用: 保存済みの結果をそのまま返す(無ければ初回のみ作る)。
+function getSnapshot_() {
+  const folder = getCacheFolder_();
+  const snap = loadSnapshot_(folder);
+  if (snap && snap.data) return snap.data;
+  return refreshSnapshot_(true);
+}
+
+// 更新確認: 元データが変わっていれば作り直して保存、変わっていなければ保存済みをそのまま返す。
+function refreshSnapshot_(force) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(240000);
+  try {
+    const folder = getCacheFolder_();
+    const fp = computeFingerprint_();
+    const snap = loadSnapshot_(folder);
+    if (!force && snap && snap.fp === fp && snap.data) return snap.data;
+    const data = buildData_();
+    saveSnapshot_(folder, { fp: fp, data: data });
+    return data;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 // マスター(Excel)の再読み込みだけを行う(キャッシュ更新用。毎日のトリガーからも呼ぶ)。
 function refreshMasters_() {
   syncIndexRows_();
@@ -774,14 +840,17 @@ function refreshMasters_() {
   return { masters: Object.keys(loaded.records).length, warnings: loaded.warnings };
 }
 
-function dailyRefresh() { refreshMasters_(); }
+// トリガーから呼ばれる更新確認(元データが変わっていれば作り直して保存する)。
+function dailyRefresh() { refreshSnapshot_(false); }
 
+// エディタから1回だけ実行する。毎朝9時と、1時間おきに更新確認を行う(変更が無ければ何もしない)。
 function createDailyTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'dailyRefresh') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('dailyRefresh').timeBased().atHour(5).nearMinute(0).everyDays(1).create();
-  Logger.log('毎日5:00頃にマスターを更新するトリガーを設定しました。');
+  ScriptApp.newTrigger('dailyRefresh').timeBased().atHour(9).nearMinute(0).everyDays(1).create();
+  ScriptApp.newTrigger('dailyRefresh').timeBased().everyHours(1).create();
+  Logger.log('毎朝9時と1時間おきに更新確認するトリガーを設定しました。');
 }
 
 // Apps Scriptエディタから手動で実行して、構成を確認する。
