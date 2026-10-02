@@ -21,7 +21,7 @@
  *
  * ■ 突き合わせ
  *   ロボ側の「工事名称」(手入力)→工事、「柱番号」(手入力)=工事マスターの「製品マーク」。
- *   工事名称は、別名表→ファイル名/工事名との部分一致の順で判定する。
+ *   工事名称は、別名表(V:W)に登録されたものだけ判定する(部分一致の自動判定はしない。未登録は画面2.で選択して保存)。
  *   製品マークがマスターに無い場合は誤入力の可能性があるため、近い製品マークを候補にする。
  */
 
@@ -148,17 +148,10 @@ function suggestMarks_(entered, marks) {
 // 工事名称(手入力)から工事番号の候補を求める。
 // works: [{workNo, names:[正規化済みの名称...]}], alias: { 正規化した入力名: workNo }
 function matchWorkNos_(enteredName, works, alias) {
+  // 別名表(V:W)に登録された入力名だけを工事に結び付ける。部分一致などの自動判定はしない(画面2.で人が指定する)
   const n = normName_(enteredName);
   if (!n) return [];
-  if (alias && alias[n]) return [alias[n]];
-  const hits = [];
-  works.forEach(function (w) {
-    const ok = w.names.some(function (nm) {
-      return nm && (nm === n || (n.length >= 2 && nm.indexOf(n) >= 0) || (nm.length >= 2 && n.indexOf(nm) >= 0));
-    });
-    if (ok) hits.push(w.workNo);
-  });
-  return hits;
+  return alias && alias[n] ? [alias[n]] : [];
 }
 
 // ロボ1行分を解決する。
