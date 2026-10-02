@@ -263,7 +263,7 @@ if (typeof document !== 'undefined') {
           '<td>' + (saved ? esc(works[o.no] || '') : '<select data-name="' + esc(k) + '">' + opts + '</select>') + '</td>' +
           '<td class="ctr">' + (saved ? '<button class="btn small" data-edit="' + esc(k) + '">再編集</button>' : '<button class="btn small" data-alias="' + esc(k) + '">保存</button>') + '</td></tr>';
       }).join('');
-      $('works').innerHTML = '<p class="hint">梁ロボに入力された工事名が正式な工事名に合っているか確認し、違う場合は選び直して「保存」してください(スプレッドシートの別名表にも記録され、次回から自動で判定されます)。未判定(黄色)の工事は集計から除外されます。</p><table>' + head + body + '</table>';
+      $('works').innerHTML = '<table>' + head + body + '</table>';
     }
 
     function renderUnknown() {
