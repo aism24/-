@@ -468,17 +468,23 @@ if (typeof document !== 'undefined') {
       dh.forEach(function (h, i) { const c = dr.getCell(i + 1); c.value = h; c.fill = blue; c.font = { bold: true }; c.alignment = { wrapText: true, vertical: 'middle' }; });
       const works = {};
       st.data.works.forEach(function (w) { works[w.workNo] = w.workName; });
+      // 日付列(I:L)は実際の日付値にして m/d 表示にする(時刻は表示しない)
+      const toDate = function (v) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v || '');
+        return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : '';
+      };
       st.groups.forEach(function (g, i) {
         const p = g.product;
         const row = wd.getRow(i + 2);
         const note = g.status === 'suggest' ? '要確認: 製品名候補 ' + g.suggestions.join(' / ') : g.status === 'nomark' ? '要確認: マスタに無い製品名' : g.corrected ? '修正済(入力: ' + g.enteredMark + ')' : '';
-        const vals = [g.workNo, works[g.workNo] || g.enteredName, p ? p.d : '', p ? p.m : g.enteredMark, p ? p.s : '', p ? Math.round(p.w * 100) / 100 : '', g.robot + '号機', g.count, p ? p.k : '', g.last.slice(0, 10), g.first, g.last,
+        const vals = [g.workNo, works[g.workNo] || g.enteredName, p ? p.d : '', p ? p.m : g.enteredMark, p ? p.s : '', p ? Math.round(p.w * 100) / 100 : '', g.robot + '号機', g.count, toDate(p ? p.k : ''), toDate(g.last), toDate(g.first), toDate(g.last),
           Math.round(g.run / 60), Math.round(g.arc / 60), Math.max(0, Math.round((g.run - g.arc) / 60)), Math.round(g.wire * 10) / 10, Math.round(g.len), note];
         vals.forEach(function (v, j) { row.getCell(j + 1).value = v; });
+        for (let j = 9; j <= 12; j++) row.getCell(j).numFmt = 'm/d';
         if (p && p.l) { row.getCell(3).value = { text: p.d || p.m, hyperlink: p.l }; row.getCell(3).font = { color: { argb: 'FF0563C1' }, underline: true }; }
         if (g.status !== 'ok') for (let j = 1; j <= dh.length; j++) row.getCell(j).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: g.status === 'suggest' ? 'FFFFF2CC' : 'FFF8CBAD' } };
       });
-      [10, 22, 16, 18, 20, 9, 9, 9, 11, 11, 18, 18, 11, 11, 12, 11, 11, 30].forEach(function (w, i) { wd.getColumn(i + 1).width = w; });
+      [10, 22, 16, 18, 20, 9, 9, 9, 11, 11, 11, 11, 11, 11, 12, 11, 11, 30].forEach(function (w, i) { wd.getColumn(i + 1).width = w; });
       wd.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: dh.length } };
 
       wb.xlsx.writeBuffer().then(function (buf) {
