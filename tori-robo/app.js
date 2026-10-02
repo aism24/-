@@ -274,11 +274,13 @@ if (typeof document !== 'undefined') {
       const d = st.data;
       const names = {};
       inPeriod.forEach(function (r) {
-        const o = names[r.wn] || (names[r.wn] = { n: 0, no: '' });
+        const o = names[r.wn] || (names[r.wn] = { n: 0, no: '', al: false });
         o.n++;
         if (!o.no && r.no) o.no = r.no;
+        if (r.al) o.al = true;
       });
       const keys = Object.keys(names);
+      const hasAl = inPeriod.some(function (r) { return r.al !== undefined; });
       const works = {};
       d.works.forEach(function (w) { works[w.workNo] = w.workName; });
       const optBase = d.works.map(function (w) { return '<option value="' + esc(w.workNo) + '">' + esc(w.workName) + '</option>'; });
@@ -286,11 +288,11 @@ if (typeof document !== 'undefined') {
       const head = '<tr><th>梁ロボ入力工事名</th><th>工事番号</th><th>正式工事名</th><th>保存</th></tr>';
       const body = keys.map(function (k) {
         const o = names[k];
-        const saved = !!o.no && !st.editing[k];
+        const saved = !!o.no && (hasAl ? o.al : true) && !st.editing[k]; // 別名表に登録済み(al)だけ確定表示。未登録は自動判定でも選択式(旧GASデータにalが無い場合は従来どおり)
         const opts = '<option value="">工事を選択…</option>' + (saved ? '' : d.works.map(function (w, i) {
           return o.no && w.workNo === o.no ? optBase[i].replace('<option ', '<option selected ') : optBase[i];
         }).join(''));
-        return '<tr class="' + (o.no ? '' : 'warn') + '"><td class="ctr"><b>' + esc(k || '(空欄)') + '</b> <span class="cnt">' + o.n + '件</span></td>' +
+        return '<tr class="' + (saved ? '' : 'warn') + '"><td class="ctr"><b>' + esc(k || '(空欄)') + '</b> <span class="cnt">' + o.n + '件</span></td>' +
           '<td class="ctr wkno" data-wkno="' + esc(k) + '">' + esc(o.no || '未判定') + '</td>' +
           '<td>' + (saved ? esc(works[o.no] || '') : '<select data-name="' + esc(k) + '">' + opts + '</select>') + '</td>' +
           '<td class="ctr">' + (saved ? '<button class="btn small" data-edit="' + esc(k) + '">再編集</button>' : '<button class="btn small" data-alias="' + esc(k) + '">保存</button>') + '</td></tr>';
