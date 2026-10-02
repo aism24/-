@@ -192,11 +192,11 @@ if (typeof document !== 'undefined') {
       const MANUAL_PAGES = 9;
       let page = 1;
       function show() {
-        $('manualImg').src = 'manual/p-' + page + '.jpg';
+        $('manualImg').src = 'manual/p-' + page + '.jpg?v=2';
         $('manualPage').textContent = page + ' / ' + MANUAL_PAGES;
         $('manualPrev').disabled = page <= 1; // 1ページ目は「前ページ」をグレーアウト
         $('manualNext').disabled = page >= MANUAL_PAGES; // 最終ページは「次ページ」をグレーアウト
-        if (page < MANUAL_PAGES) new Image().src = 'manual/p-' + (page + 1) + '.jpg';
+        if (page < MANUAL_PAGES) new Image().src = 'manual/p-' + (page + 1) + '.jpg?v=2';
       }
       function open() { page = 1; $('manual').style.display = 'flex'; show(); }
       function close() { $('manual').style.display = 'none'; }
