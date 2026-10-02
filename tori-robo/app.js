@@ -426,7 +426,7 @@ if (typeof document !== 'undefined') {
 
       // --- 出力用(A4横) ---
       const ws = wb.addWorksheet('出力用', {
-        pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 } },
+        pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 1, margins: { left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 } },
       });
       ws.getCell('A1').value = title;
       ws.getCell('A1').font = { size: 14, bold: true };
@@ -460,6 +460,7 @@ if (typeof document !== 'undefined') {
       ws.getCell('H' + (r + 3)).numFmt = '#,##0';
       [14, 8, 14, 11, 16, 18, 16, 14].forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
       ws.getRow(3).height = 32;
+      ws.pageSetup.printArea = 'A1:H' + (r + 3); // 印刷範囲はA:H・A4横1ページに収める
 
       // --- 全て抽出(製品ごと1行) ---
       const wd = wb.addWorksheet('全て抽出', { views: [{ state: 'frozen', ySplit: 1 }], pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
