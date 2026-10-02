@@ -174,7 +174,8 @@ if (typeof document !== 'undefined') {
       else setStatus(refresh === true ? '最新のデータを確認中…(数十秒かかることがあります)' : 'データを読み込み中…');
       const p = useSample
         ? fetchJson('sample.json').then(function (d) { return { status: 'success', data: d }; })
-        : fetchJson(GAS_API_URL + '?action=' + (refresh === true ? 'refresh' : 'getData'));
+        : (refresh === true || fresh) ? fetchJson(GAS_API_URL + '?action=' + (refresh === true ? 'refresh' : 'getData'))
+          : fetchJson('api/data').catch(function () { return fetchJson(GAS_API_URL + '?action=getData'); }); // 通常はVercel中継(CDNキャッシュ)。失敗時はGASへ直接
       p.then(function (res) {
         if (res.status !== 'success') throw new Error(res.message || '読み込みに失敗しました');
         if (!useSample) saveCachedData(res.data);
