@@ -55,3 +55,7 @@ button[data-edit] { background:#ffd9e2; }
 .pair .card { margin:12px 0; }
 @media (max-width:1000px) { .pair { grid-template-columns:minmax(0,1fr); } }
 #markCheckInfo { font-size:inherit; }
+.app-header { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; }
+.app-header h1 { grid-column:2; grid-row:1; text-align:center; }
+.app-header .updated-at { grid-column:1; grid-row:1; }
+.app-header .brand { grid-column:3; grid-row:1; justify-self:end; margin-left:0; }
