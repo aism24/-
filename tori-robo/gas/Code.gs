@@ -189,7 +189,7 @@ function doGet(e) {
   try {
     const p = (e && e.parameter) || {};
     const action = p.action || 'getData';
-    if (action === 'getData') return ok_(getSnapshot_());
+    if (action === 'getData') return okRaw_(getSnapshotText_());
     if (action === 'refresh') return ok_(refreshSnapshot_(false));
     if (action === 'refreshMasters') return ok_(refreshMasters_());
     if (action === 'saveAlias') return ok_(saveAlias_(p.name, p.workNo));
@@ -201,6 +201,10 @@ function doGet(e) {
 
 function jsonResponse_(payload) {
   return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
+}
+// 保存済みの結果(JSON文字列)をそのまま返す。parse→stringifyの無駄を省く
+function okRaw_(dataText) {
+  return ContentService.createTextOutput('{"status":"success","data":' + dataText + '}').setMimeType(ContentService.MimeType.JSON);
 }
 function ok_(data) { return jsonResponse_({ status: 'success', data: data }); }
 function errRes_(message) { return jsonResponse_({ status: 'error', message: message }); }
@@ -742,7 +746,6 @@ function buildData_() {
   // ロボ稼動実績 → 突き合わせ
   const outRows = [];
   const products = {}; // 'workNo|mark' → 製品情報
-  const unknownNames = {}; // 判定できなかった工事名称 → 件数
   robotSheets.slice(0, 2).forEach(function (rs, idx) {
     let rr;
     try { rr = readRobotRows_(idx + 1, rs.id); } catch (err) {
@@ -758,8 +761,6 @@ function buildData_() {
         if (!products[o.pk]) products[o.pk] = res.product;
       } else if (res.status === 'suggest') {
         o.sg = res.suggestions;
-      } else if (res.status === 'nowork') {
-        unknownNames[row.wn] = (unknownNames[row.wn] || 0) + 1;
       }
       outRows.push(o);
     });
@@ -783,8 +784,6 @@ function buildData_() {
     works: workInfo,
     rows: outRows,
     products: products,
-    unknownNames: unknownNames,
-    aliasCount: Object.keys(alias).length,
     warnings: warnings,
   };
 }
@@ -793,17 +792,58 @@ function buildData_() {
 // 画面を開くたびに集計し直さず、保存済みの結果を返す。更新確認(トリガー/更新ボタン)のときだけ、
 // 元データが変わっていれば作り直して保存する。
 
-function loadSnapshot_(folder) {
+const SNAP_ID_PROP = 'SNAPSHOT_FILE_ID';
+const SNAP_CACHE_KEY = 'snapData';
+const SNAP_CHUNK = 30000; // CacheServiceは1キー100KBまで(日本語は3バイト/字)
+
+function getSnapshotFile_(folder) {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty(SNAP_ID_PROP);
+  if (id) { try { return DriveApp.getFileById(id); } catch (e) { /* 無効なら検索し直す */ } }
   const files = folder.getFilesByName(SNAPSHOT_FILE_NAME);
   if (!files.hasNext()) return null;
-  try { return JSON.parse(files.next().getBlob().getDataAsString()); } catch (e) { return null; }
+  const f = files.next();
+  props.setProperty(SNAP_ID_PROP, f.getId());
+  return f;
+}
+
+function loadSnapshot_(folder) {
+  const f = getSnapshotFile_(folder);
+  if (!f) return null;
+  try { return JSON.parse(f.getBlob().getDataAsString()); } catch (e) { return null; }
 }
 
 function saveSnapshot_(folder, snap) {
   const content = JSON.stringify(snap);
-  const files = folder.getFilesByName(SNAPSHOT_FILE_NAME);
-  if (files.hasNext()) files.next().setContent(content);
-  else folder.createFile(SNAPSHOT_FILE_NAME, content, MimeType.PLAIN_TEXT);
+  const f = getSnapshotFile_(folder);
+  if (f) f.setContent(content);
+  else PropertiesService.getScriptProperties().setProperty(SNAP_ID_PROP, folder.createFile(SNAPSHOT_FILE_NAME, content, MimeType.PLAIN_TEXT).getId());
+  putSnapshotCache_(JSON.stringify(snap.data));
+}
+
+function putSnapshotCache_(text) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const n = Math.ceil(text.length / SNAP_CHUNK);
+    const obj = {};
+    for (let i = 0; i < n; i++) obj[SNAP_CACHE_KEY + i] = text.substr(i * SNAP_CHUNK, SNAP_CHUNK);
+    obj[SNAP_CACHE_KEY + 'n'] = String(n);
+    cache.putAll(obj, 21600);
+  } catch (e) { /* キャッシュできなくても動作は続ける */ }
+}
+
+function getSnapshotCache_() {
+  try {
+    const cache = CacheService.getScriptCache();
+    const n = Number(cache.get(SNAP_CACHE_KEY + 'n'));
+    if (!n) return null;
+    const keys = [];
+    for (let i = 0; i < n; i++) keys.push(SNAP_CACHE_KEY + i);
+    const got = cache.getAll(keys);
+    let out = '';
+    for (let i = 0; i < n; i++) { if (got[keys[i]] == null) return null; out += got[keys[i]]; }
+    return out;
+  } catch (e) { return null; }
 }
 
 // 元データの「更新の目印」: 稼動実績2本・「各種情報」・リンク用フォルダ内の各Excelの最終更新日時。
@@ -827,11 +867,14 @@ function computeFingerprint_() {
 }
 
 // 画面表示用: 保存済みの結果をそのまま返す(無ければ初回のみ作る)。
-function getSnapshot_() {
+function getSnapshotText_() {
+  const cached = getSnapshotCache_();
+  if (cached) return cached;
   const folder = getCacheFolder_();
   const snap = loadSnapshot_(folder);
-  if (snap && snap.data) return snap.data;
-  return refreshSnapshot_(true);
+  const text = JSON.stringify(snap && snap.data ? snap.data : refreshSnapshot_(true));
+  putSnapshotCache_(text);
+  return text;
 }
 
 // 更新確認: 元データが変わっていれば作り直して保存、変わっていなければ保存済みをそのまま返す。
