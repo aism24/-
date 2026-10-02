@@ -337,6 +337,12 @@ if (typeof document !== 'undefined') {
       $('costLine').textContent = rows.length ? '稼動時間 ' + fmt(hours, 1) + ' 時間 × ' + fmt(st.cost) + ' 円/時間 = ' + fmt(Math.round(hours * st.cost)) + ' 円' : '';
     }
 
+    // 日付(YYYY-MM-DD…)を m/d 表示にする(Excelの「全て抽出」と同じ)
+    function md(v) {
+      const m = /^\d{4}-(\d{2})-(\d{2})/.exec(v || '');
+      return m ? (+m[1]) + '/' + (+m[2]) : '';
+    }
+
     function renderDetail(rows) {
       const groups = groupByProduct(rows, st.data.products);
       st.groups = groups;
@@ -352,7 +358,7 @@ if (typeof document !== 'undefined') {
         if (g.status === 'suggest') cls = 'warn';
         else if (g.status === 'nomark') cls = 'bad';
         else if (g.corrected) { cls = 'fixed'; tip = esc(g.enteredMark) + ' → ' + esc(p ? p.m : ''); }
-        return '<tr class="' + cls + '"' + (tip ? ' data-tip="' + tip + '"' : '') + '><td class="ctr">' + esc(g.workNo) + '</td><td>' + esc(works[g.workNo] || g.enteredName) + '</td><td>' + esc(p ? p.d : '') + '</td><td>' + esc(p ? p.m : g.enteredMark) + '</td><td>' + esc(p ? p.s : '') + '</td><td class="num">' + (p ? fmt(p.w, 1) : '') + '</td><td>' + g.robot + '号機</td><td class="ctr">' + (g.count > 1 ? g.count : '') + '</td><td>' + esc(p ? p.k : '') + '</td><td>' + esc(g.last.slice(0, 10)) + '</td><td class="num">' + fmt(g.run / 60) + '</td><td class="num">' + fmt(g.arc / 60) + '</td><td class="num">' + fmt(g.wire, 1) + '</td><td class="num">' + fmt(g.len) + '</td></tr>';
+        return '<tr class="' + cls + '"' + (tip ? ' data-tip="' + tip + '"' : '') + '><td class="ctr">' + esc(g.workNo) + '</td><td>' + esc(works[g.workNo] || g.enteredName) + '</td><td>' + esc(p ? p.d : '') + '</td><td>' + esc(p ? p.m : g.enteredMark) + '</td><td>' + esc(p ? p.s : '') + '</td><td class="num">' + (p ? fmt(p.w, 1) : '') + '</td><td>' + g.robot + '号機</td><td class="ctr">' + (g.count > 1 ? g.count : '') + '</td><td>' + md(p ? p.k : '') + '</td><td>' + md(g.last) + '</td><td class="num">' + fmt(g.run / 60) + '</td><td class="num">' + fmt(g.arc / 60) + '</td><td class="num">' + fmt(g.wire, 1) + '</td><td class="num">' + fmt(g.len) + '</td></tr>';
       }).join('');
       $('detail').innerHTML = groups.length ? '<table>' + head + body + '</table>' : '';
       renderMarkCheck(groups, works);
