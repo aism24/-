@@ -564,7 +564,24 @@ if (typeof document !== 'undefined') {
       });
       [10, 22, 16, 18, 20, 9, 9, 9, 11, 11, 11, 11, 11, 11, 12, 11, 11, 30].forEach(function (w, i) { wd.getColumn(i + 1).width = w; });
       wd.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: dh.length } };
+      // 罫線: 画面のテーブルと同じく、見出し・データの全セルに黒の細線。データ行(2行目以降)の高さは20
+      const lineBorder = { style: 'thin', color: { argb: 'FF000000' } };
+      for (let ri = 1; ri <= st.groups.length + 1; ri++) {
+        const rw = wd.getRow(ri);
+        if (ri >= 2) rw.height = 20;
+        for (let j = 1; j <= dh.length; j++) {
+          const c = rw.getCell(j);
+          c.border = { top: lineBorder, left: lineBorder, bottom: lineBorder, right: lineBorder };
+          if (ri >= 2) c.alignment = Object.assign({}, c.alignment, { vertical: 'middle' });
+        }
+      }
 
+      // Excelの文字はすべて黒の太字(図面番号のリンクは下線だけ残す)
+      wb.eachSheet(function (sheet) {
+        sheet.eachRow({ includeEmpty: false }, function (row) {
+          row.eachCell({ includeEmpty: false }, function (c) { c.font = Object.assign({}, c.font, { bold: true, color: { argb: 'FF000000' } }); });
+        });
+      });
       wb.xlsx.writeBuffer().then(function (buf) {
         const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const a = document.createElement('a');
