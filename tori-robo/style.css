@@ -80,3 +80,6 @@ button[data-edit] { background:#ffd9e2; }
 .h2row h2 { margin:0; }
 #dlBtn, #dlBtn:disabled { background:#2e9e4f !important; border-color:#1f7a3a !important; color:#fff !important; }
 #dlBtn:disabled { opacity:.55; }
+.sticky-top { position:sticky; top:0; z-index:30; background:var(--bg); padding-bottom:1px; }
+.sticky-top .app-header { margin-top:0; margin-bottom:8px; }
+.sticky-top .card { margin:0 0 8px; }
