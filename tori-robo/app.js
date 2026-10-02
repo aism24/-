@@ -244,7 +244,9 @@ if (typeof document !== 'undefined') {
       const d = st.data;
       const counts = {};
       inPeriod.forEach(function (r) { if (r.no) counts[r.no] = (counts[r.no] || 0) + 1; });
-      $('works').innerHTML = d.works.map(function (w) {
+      // 指定期間に実績がある工事だけを表示(0件の工事は出さない)
+      const active = d.works.filter(function (w) { return counts[w.workNo]; });
+      $('works').innerHTML = !active.length ? '<span class="cnt">該当する工事はありません</span>' : active.map(function (w) {
         const c = counts[w.workNo] || 0;
         return '<label class="chip' + (c ? '' : ' dim') + '"><input type="checkbox" data-wk="' + esc(w.workNo) + '"' + (st.selected.has(w.workNo) ? ' checked' : '') + '> ' +
           esc(w.workNo) + ' ' + esc(w.workName) + ' <span class="cnt">' + c + '件</span></label>';
