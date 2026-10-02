@@ -307,19 +307,48 @@ if (typeof document !== 'undefined') {
         const p = g.product;
         let note = '';
         let cls = '';
-        if (g.status === 'suggest') {
-          cls = 'warn';
-          note = 'この製品名では? ' + g.suggestions.map(function (s) { return '<button class="btn small" data-fix="' + i + '" data-mark="' + esc(s) + '">' + esc(s) + '</button>'; }).join(' ');
-        } else if (g.status === 'nomark') { cls = 'bad'; note = 'マスタに無い製品名(誤入力の可能性)'; }
-        else if (g.corrected) { cls = 'fixed'; note = '修正済 (入力: ' + esc(g.enteredMark) + ') <button class="btn small" data-undo="' + i + '">元に戻す</button>'; }
+        if (g.status === 'suggest') { cls = 'warn'; note = '製品名の候補あり(4.で確認)'; }
+        else if (g.status === 'nomark') { cls = 'bad'; note = 'マスタに無い製品名(誤入力の可能性)'; }
+        else if (g.corrected) { cls = 'fixed'; note = '修正済 (入力: ' + esc(g.enteredMark) + ')'; }
         return '<tr class="' + cls + '"><td>' + esc(g.workNo) + '</td><td>' + esc(works[g.workNo] || g.enteredName) + '</td><td>' + esc(p ? p.d : '') + '</td><td>' + esc(p ? p.m : g.enteredMark) + (g.count > 1 ? ' <span class="times">×' + g.count + '回</span>' : '') + '</td><td>' + esc(p ? p.s : '') + '</td><td class="num">' + (p ? fmt(p.w, 1) : '') + '</td><td>' + g.robot + '号機</td><td class="num">' + g.count + '</td><td>' + esc(p ? p.k : '') + '</td><td>' + esc(p ? p.v : '') + '</td><td class="num">' + fmt(g.run / 60) + '</td><td class="num">' + fmt(g.arc / 60) + '</td><td class="num">' + fmt(g.wire, 1) + '</td><td class="num">' + fmt(g.len) + '</td><td>' + note + '</td></tr>';
       }).join('');
       $('detail').innerHTML = groups.length ? '<table>' + head + body + '</table>' : '';
+      renderMarkCheck(groups, works);
+    }
+
+    // 4. 製品名誤入力の確認: 工事名|製品名|確認(候補から選択)。選択結果は5.へ反映される
+    function renderMarkCheck(groups, works) {
+      const items = [];
+      groups.forEach(function (g, i) { if (g.status !== 'ok' || g.corrected) items.push(i); });
+      $('markCheckInfo').textContent = items.length ? '(' + items.length + '件)' : '';
+      if (!items.length) { $('markCheck').innerHTML = '<p class="hint">確認が必要な製品名はありません。</p>'; return; }
+      const head = '<tr><th>工事名</th><th>製品名</th><th>確認</th></tr>';
+      const body = items.map(function (i) {
+        const g = st.groups[i];
+        let cell;
+        if (g.status === 'suggest' || g.corrected) {
+          const cands = g.corrected ? [g.product && g.product.m].concat(g.suggestions || []) : g.suggestions;
+          cell = '<select data-fix="' + i + '"><option value="">' + (g.corrected ? '元の入力に戻す' : '確認してください…') + '</option>' +
+            cands.filter(function (c, k) { return c && cands.indexOf(c) === k && c !== g.enteredMark; }).map(function (c) {
+              return '<option value="' + esc(c) + '"' + (g.corrected && g.product && g.product.m === c ? ' selected' : '') + '>' + esc(c) + '</option>';
+            }).join('') + '</select>';
+          if (g.corrected && g.product) cell += ' <span class="cnt">修正済: ' + esc(g.product.m) + '</span>';
+        } else cell = 'マスタに無い製品名(候補なし)';
+        return '<tr class="' + (g.corrected ? 'fixed' : g.status === 'suggest' ? 'warn' : 'bad') + '"><td>' + esc(works[g.workNo] || g.enteredName) + '</td><td>' + esc(g.enteredMark) + '</td><td>' + cell + '</td></tr>';
+      }).join('');
+      $('markCheck').innerHTML = '<table>' + head + body + '</table>';
     }
 
     // ===== イベント =====
     document.addEventListener('change', function (e) {
       const t = e.target;
+      if (t.dataset && t.dataset.fix !== undefined && t.tagName === 'SELECT') {
+        const g = st.groups[Number(t.dataset.fix)];
+        if (t.value) st.overrides[g.overrideKey] = t.value; else delete st.overrides[g.overrideKey];
+        saveOverrides();
+        render();
+        return;
+      }
       if (t.dataset && t.dataset.name !== undefined && t.tagName === 'SELECT') {
         const cell = document.querySelector('td[data-wkno="' + CSS.escape(t.dataset.name) + '"]');
         if (cell) cell.textContent = t.value || '未判定';
@@ -332,16 +361,7 @@ if (typeof document !== 'undefined') {
     document.addEventListener('click', function (e) {
       const t = e.target;
       if (!t.dataset) return;
-      if (t.dataset.fix !== undefined) {
-        const g = st.groups[Number(t.dataset.fix)];
-        st.overrides[g.overrideKey] = t.dataset.mark;
-        saveOverrides();
-        render();
-      } else if (t.dataset.undo !== undefined) {
-        delete st.overrides[st.groups[Number(t.dataset.undo)].overrideKey];
-        saveOverrides();
-        render();
-      } else if (t.dataset.alias !== undefined) {
+      if (t.dataset.alias !== undefined) {
         const sel = document.querySelector('select[data-name="' + CSS.escape(t.dataset.alias) + '"]');
         if (!sel || !sel.value) { alert('工事を選択してください。'); return; }
         registerAlias(t.dataset.alias, sel.value);

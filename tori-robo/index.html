@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>鳥取梁ロボ管理</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="style.css?v=blk1">
+<link rel="stylesheet" href="style.css?v=blk2">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 </head>
 <body>
@@ -44,8 +44,14 @@
   </section>
 
   <section class="card">
-    <h2>4. 製品ごとの内訳(全て抽出) <span id="detailInfo" class="cnt"></span></h2>
-    <p class="hint">1つの製品を複数回溶接した場合は、1行にまとめて回数を表示しています。黄色=製品名の候補あり(ボタンで修正)、赤=マスタに無い製品名。</p>
+    <h2>4. 製品名誤入力の確認 <span id="markCheckInfo" class="cnt"></span></h2>
+    <p class="hint">梁ロボに入力された製品名がマスタに無い場合の確認です。候補から選ぶと、5.の内訳に反映されます(ブラウザ内の上書きで、ロボ側のデータは変更しません)。黄色=候補あり、赤=候補なし、緑=修正済。</p>
+    <div id="markCheck" class="table-wrap"></div>
+  </section>
+
+  <section class="card">
+    <h2>5. 製品ごとの内訳(全て抽出) <span id="detailInfo" class="cnt"></span></h2>
+    <p class="hint">1つの製品を複数回溶接した場合は、1行にまとめて回数を表示しています。4.で選んだ内容が反映されます。</p>
     <div id="detail" class="table-wrap"></div>
   </section>
 
@@ -54,6 +60,6 @@
     <span class="hint">実寸法師は、ダウンロードしたExcelの図面番号のリンクから開きます。</span>
   </div>
 </div>
-<script src="app.js?v=wkname1"></script>
+<script src="app.js?v=mk1"></script>
 </body>
 </html>
