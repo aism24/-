@@ -755,7 +755,7 @@ function buildData_() {
     rr.forEach(function (row) {
       if (row.sd < cal.min) return; // 会社カレンダーの最初の日より前は集計しない
       const res = resolveRow_(row, works, alias, masterIndex);
-      const o = { r: row.r, wn: row.wn, mk: row.mk, sd: row.sd, st: row.st, ed: row.ed, et: row.et, run: row.run, arc: row.arc, wire: row.wire, len: row.len, no: res.workNo, s: res.status };
+      const o = { r: row.r, wn: row.wn, mk: row.mk, sd: row.sd, st: row.st, ed: row.ed, et: row.et, run: row.run, arc: row.arc, wire: row.wire, len: row.len, no: res.workNo, s: res.status, al: alias[normName_(row.wn)] ? 1 : 0 }; // al=1: 別名表(V:W)に登録済みの入力名
       if (res.status === 'ok') {
         o.pk = res.workNo + '|' + res.product.m;
         if (!products[o.pk]) products[o.pk] = res.product;
