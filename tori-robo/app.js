@@ -7,7 +7,7 @@
 // GASのウェブアプリURL(デプロイ後に設定する)。空のあいだは sample.json(ダミーデータ)を表示する。
 const GAS_API_URL = '';
 const HOURLY_COST_DEFAULT = 4000;
-const LS_KEY = 'tottori-robot-overrides-v1';
+const LS_KEY = 'tori-robo-overrides-v1';
 
 // ========== 純粋関数(テストでも使う) ==========
 

@@ -1,5 +1,5 @@
 /**
- * 鳥取梁ロボ管理アプリ(tottori-robot)のGAS APIバックエンド。
+ * 鳥取梁ロボ管理アプリ(tori-robo)のGAS APIバックエンド。
  *
  * 「鳥取梁ロボ管理データ」スプレッドシートの「拡張機能→Apps Script」に貼り付けて使う
  * コンテナバインド型スクリプトです(SpreadsheetApp.getActiveSpreadsheet()で自分自身を参照)。

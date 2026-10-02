@@ -1,4 +1,4 @@
-# 鳥取梁ロボ管理(tottori-robot)
+# 鳥取梁ロボ管理(tori-robo)
 
 梁溶接ロボ(1号機・2号機)の稼動実績を工事マスターと突き合わせ、指定期間の状況をまとめて
 Excelでダウンロードする静的アプリ(画面=静的ページ + GAS JSON API)。
@@ -34,4 +34,4 @@ Excelでダウンロードする静的アプリ(画面=静的ページ + GAS JSO
 3. 「デプロイ→新しいデプロイ→ウェブアプリ(自分として実行/全員)」のURLを `app.js` の `GAS_API_URL` に設定。
 
 ## 確認URL(GitHubのみ・Vercelを使わない)
-`https://raw.githack.com/aism24/-/claude/clever-tesla-107133/tottori-robot/index.html`
+`https://raw.githack.com/aism24/-/claude/clever-tesla-107133/tori-robo/index.html`
