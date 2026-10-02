@@ -187,6 +187,19 @@ if (typeof document !== 'undefined') {
       });
     }
 
+    // 固定ヘッダーの高さを CSS 変数に反映(5.の見出し(高さ36px固定)・列見出しをその下に固定するため)
+    function updateStick() {
+      const s = document.querySelector('.sticky-top');
+      if (!s) return;
+      document.documentElement.style.setProperty('--stkH', s.getBoundingClientRect().height + 'px');
+    }
+    window.addEventListener('resize', updateStick);
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(updateStick);
+      ro.observe(document.querySelector('.sticky-top'));
+    }
+    updateStick();
+
     function setStatus(msg, isErr, first) {
       const el = $('status');
       const busy = !!msg && !isErr;

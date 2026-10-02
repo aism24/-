@@ -95,3 +95,8 @@ button[data-edit] { background:#ffd9e2; }
 
 .loading-first { margin-top:14px; padding:6px 10px; color:#d00; background:#ff0; font-weight:bold; border-radius:4px; animation:ldblink 1s steps(1,end) infinite; }
 @keyframes ldblink { 50% { background:transparent; } }
+
+/* 5. 製品ごとの内訳: 見出しと列見出しを、固定ヘッダー(1.期間まで)の下にスクロールしても残す。位置は app.js が --stkH に設定 */
+#detail { overflow-x:clip; }
+#detailTitle { position:sticky; top:var(--stkH,0px); z-index:20; background:var(--card); margin:0; padding:0; height:36px; box-sizing:border-box; display:flex; align-items:center; gap:6px; }
+#detail th { position:sticky; top:calc(var(--stkH,0px) + 36px); z-index:15; box-shadow:inset 0 1px 0 #000, 0 1px 0 #000; }
