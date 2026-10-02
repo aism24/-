@@ -50,3 +50,7 @@ tr.fixed td { background:var(--fixed); }
 #works td.ctr { text-align:center; }
 .cost { justify-content:flex-end; gap:12px; align-items:center; }
 button[data-edit] { background:#ffd9e2; }
+.page { max-width:1600px; }
+.pair { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,3fr); gap:12px; align-items:stretch; }
+.pair .card { margin:12px 0; }
+@media (max-width:1000px) { .pair { grid-template-columns:minmax(0,1fr); } }
