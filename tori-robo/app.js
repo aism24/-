@@ -199,8 +199,6 @@ if (typeof document !== 'undefined') {
       syncPeriod();
       $('costInput').value = st.cost;
       $('updatedAt').textContent = (st.sample ? '【サンプルデータ】 ' : '') + '更新: ' + (d.generatedAt || '').replace('T', ' ').slice(0, 16);
-      const w = (d.warnings || []).filter(Boolean);
-      $('warnings').innerHTML = w.length ? w.map(function (x) { return '<div>⚠ ' + esc(x) + '</div>'; }).join('') : '';
       setStatus('');
       render();
     }
