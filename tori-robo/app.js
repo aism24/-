@@ -8,6 +8,7 @@
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzLhyh3XzvJ-95n-VV7r7Upx_0AfGsqoPAaySmFSpwKdsqfP_EwjOTNzuyJgdTQvMxS/exec';
 const HOURLY_COST_DEFAULT = 4000;
 const LS_KEY = 'tori-robo-overrides-v1';
+const DATA_CACHE_KEY = 'tori-robo-data-v1'; // 前回の読み込み結果。次回の表示を即時にするため(裏で最新を取得して差し替える)
 
 // ========== 純粋関数(テストでも使う) ==========
 
@@ -151,25 +152,37 @@ if (typeof document !== 'undefined') {
     }
 
     function fetchJson(url) {
-      return fetch(url).then(function (r) {
+      return fetch(url, { credentials: 'omit' }).then(function (r) {
         if (!r.ok) throw new Error('サーバーエラー(HTTP ' + r.status + ')');
         return r.json();
       });
     }
 
-    function load(refresh) {
-      setStatus(refresh === true ? '最新のデータを確認中…(数十秒かかることがあります)' : 'データを読み込み中…');
+    function loadCachedData() {
+      try { return JSON.parse(localStorage.getItem(DATA_CACHE_KEY) || 'null'); } catch (e) { return null; }
+    }
+    function saveCachedData(data) {
+      try { localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data)); } catch (e) { /* 保存できなくても動作は続ける */ }
+    }
+
+    // refresh=true: 元データを読み直す。fresh=true: 前回の結果を使わず最新を待つ(登録直後など)
+    function load(refresh, fresh) {
       const useSample = !GAS_API_URL || /[?&]sample=1/.test(location.search);
       st.sample = useSample;
+      const cached = !useSample && !refresh && !fresh && !st.data ? loadCachedData() : null;
+      if (cached) { st.data = cached; init(); } // 前回の結果をまず表示し、裏で最新を取得する
+      else setStatus(refresh === true ? '最新のデータを確認中…(数十秒かかることがあります)' : 'データを読み込み中…');
       const p = useSample
         ? fetchJson('sample.json').then(function (d) { return { status: 'success', data: d }; })
         : fetchJson(GAS_API_URL + '?action=' + (refresh === true ? 'refresh' : 'getData'));
       p.then(function (res) {
         if (res.status !== 'success') throw new Error(res.message || '読み込みに失敗しました');
+        if (!useSample) saveCachedData(res.data);
+        if (cached && cached.generatedAt === res.data.generatedAt) return; // 変更なし
         st.data = res.data;
         init();
       }).catch(function (err) {
-        setStatus('読み込みに失敗しました: ' + err.message, true);
+        if (!cached) setStatus('読み込みに失敗しました: ' + err.message, true);
       });
     }
 
@@ -186,7 +199,10 @@ if (typeof document !== 'undefined') {
 
     function init() {
       const d = st.data;
-      if (!st.selected) st.selected = new Set(d.works.map(function (w) { return w.workNo; }));
+      if (!st.selected) st.selected = new Set();
+      d.works.forEach(function (w) { if (!st.known || !st.known[w.workNo]) st.selected.add(w.workNo); }); // 新しい工事は選択状態で追加
+      st.known = {};
+      d.works.forEach(function (w) { st.known[w.workNo] = true; });
       if (!st.y) {
         const ym = defaultYearMonth(new Date());
         st.y = ym.y;
@@ -243,10 +259,8 @@ if (typeof document !== 'undefined') {
     }
 
     function render() {
-      const d = st.data;
       const inPeriod = currentRows();
       renderWorks(inPeriod);
-      renderUnknown(inPeriod);
       const rows = inPeriod.filter(function (r) { return r.no && st.selected.has(r.no); });
       renderSummary(rows);
       renderDetail(rows);
@@ -265,24 +279,21 @@ if (typeof document !== 'undefined') {
       const keys = Object.keys(names);
       const works = {};
       d.works.forEach(function (w) { works[w.workNo] = w.workName; });
+      const optBase = d.works.map(function (w) { return '<option value="' + esc(w.workNo) + '">' + esc(w.workName) + '</option>'; });
       if (!keys.length) { $('works').innerHTML = '<p class="hint">この期間のデータがありません。</p>'; return; }
       const head = '<tr><th>梁ロボ入力工事名</th><th>工事番号</th><th>正式工事名</th><th>保存</th></tr>';
       const body = keys.map(function (k) {
         const o = names[k];
         const saved = !!o.no && !st.editing[k];
-        const opts = '<option value="">工事を選択…</option>' + d.works.map(function (w) {
-          return '<option value="' + esc(w.workNo) + '"' + (w.workNo === o.no ? ' selected' : '') + '>' + esc(w.workName) + '</option>';
-        }).join('');
+        const opts = '<option value="">工事を選択…</option>' + (saved ? '' : d.works.map(function (w, i) {
+          return o.no && w.workNo === o.no ? optBase[i].replace('<option ', '<option selected ') : optBase[i];
+        }).join(''));
         return '<tr class="' + (o.no ? '' : 'warn') + '"><td class="ctr"><b>' + esc(k || '(空欄)') + '</b> <span class="cnt">' + o.n + '件</span></td>' +
           '<td class="ctr wkno" data-wkno="' + esc(k) + '">' + esc(o.no || '未判定') + '</td>' +
           '<td>' + (saved ? esc(works[o.no] || '') : '<select data-name="' + esc(k) + '">' + opts + '</select>') + '</td>' +
           '<td class="ctr">' + (saved ? '<button class="btn small" data-edit="' + esc(k) + '">再編集</button>' : '<button class="btn small" data-alias="' + esc(k) + '">保存</button>') + '</td></tr>';
       }).join('');
       $('works').innerHTML = '<table>' + head + body + '</table>';
-    }
-
-    function renderUnknown() {
-      $('unknown').style.display = 'none';
     }
 
     function fmt(n, dec) {
@@ -404,7 +415,7 @@ if (typeof document !== 'undefined') {
       fetchJson(GAS_API_URL + '?action=saveAlias&name=' + encodeURIComponent(name) + '&workNo=' + encodeURIComponent(workNo))
         .then(function (res) {
           if (res.status !== 'success') throw new Error(res.message);
-          load();
+          load(false, true);
         }).catch(function (err) { setStatus('登録に失敗しました: ' + err.message, true); });
     }
 
