@@ -141,7 +141,7 @@ if (typeof module !== 'undefined') module.exports = { periodFor, defaultYearMont
 if (typeof document !== 'undefined') {
   (function () {
     const $ = function (id) { return document.getElementById(id); };
-    const st = { editing: {}, data: null, overrides: {}, selected: null, mode: 'calendar', y: 0, m: 0, start: '', end: '', cost: HOURLY_COST_DEFAULT, sample: false };
+    const st = { editing: {}, data: null, overrides: {}, selected: null, mode: 'calendar', multi: false, y: 0, m: 0, y2: 0, m2: 0, start: '', end: '', cost: HOURLY_COST_DEFAULT, sample: false };
 
     function loadOverrides() {
       try { st.overrides = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { st.overrides = {}; }
@@ -191,15 +191,19 @@ if (typeof document !== 'undefined') {
         const ym = defaultYearMonth(new Date());
         st.y = ym.y;
         st.m = ym.m;
+        st.y2 = ym.y;
+        st.m2 = ym.m;
       }
       const y0 = Number((d.calendarMin || '2024-11-21').slice(0, 4));
       const y1 = Math.max(Number((d.calendarMax || '2027-01-04').slice(0, 4)), st.y);
       let yo = '';
       for (let y = y0; y <= y1; y++) yo += '<option value="' + y + '">' + y + '年</option>';
       $('yearSel').innerHTML = yo;
+      $('yearSel2').innerHTML = yo;
       let mo = '';
       for (let m = 1; m <= 12; m++) mo += '<option value="' + m + '">' + m + '月</option>';
       $('monthSel').innerHTML = mo;
+      $('monthSel2').innerHTML = mo;
       syncPeriod();
       setCostText();
       $('updatedAt').textContent = (st.sample ? '【サンプルデータ】 ' : '') + '更新: ' + (d.generatedAt || '').replace('T', ' ').slice(0, 16);
@@ -209,9 +213,16 @@ if (typeof document !== 'undefined') {
 
     // 年・月・20日〆ボタンの状態から期間を決め、画面に反映する。
     function syncPeriod() {
+      if (!st.multi || st.y2 * 12 + st.m2 < st.y * 12 + st.m) { st.y2 = st.y; st.m2 = st.m; } // 終了月は開始月以降
       const p = periodFor(st.y, st.m, st.mode === 'close20');
+      const pe = periodFor(st.multi ? st.y2 : st.y, st.multi ? st.m2 : st.m, st.mode === 'close20');
+      p.end = pe.end;
       st.start = p.start;
       st.end = p.end;
+      $('yearSel2').value = String(st.y2);
+      $('monthSel2').value = String(st.m2);
+      ['multiTo', 'yearSel2', 'monthSel2'].forEach(function (id) { $(id).style.display = st.multi ? '' : 'none'; });
+      $('modeMulti').setAttribute('aria-pressed', st.multi ? 'true' : 'false');
       $('yearSel').value = String(st.y);
       $('monthSel').value = String(st.m);
       $('modeCalendar').setAttribute('aria-pressed', st.mode === 'calendar' ? 'true' : 'false');
@@ -288,7 +299,7 @@ if (typeof document !== 'undefined') {
       let body = '';
       agg.months.forEach(function (m) {
         m.robots.forEach(function (r, i) {
-          body += '<tr><td class="ctr">' + (i === 0 ? esc(monthLabel(m.key, st.mode)) : '') + '</td><td class="ctr">' + r.robot + '号機</td>' + line(r.v) + '</tr>';
+          body += '<tr><td class="ctr">' + (i === 0 || st.multi ? esc(monthLabel(m.key, st.mode)) : '') + '</td><td class="ctr">' + r.robot + '号機</td>' + line(r.v) + '</tr>';
         });
         body += '<tr class="sub"><td class="ctr" colspan="2">' + esc(monthLabel(m.key, st.mode)) + ' 集計</td>' + line(m.sub) + '</tr>';
       });
@@ -399,6 +410,9 @@ if (typeof document !== 'undefined') {
 
     $('yearSel').addEventListener('change', function () { st.y = Number(this.value); syncPeriod(); render(); });
     $('monthSel').addEventListener('change', function () { st.m = Number(this.value); syncPeriod(); render(); });
+    $('yearSel2').addEventListener('change', function () { st.y2 = Number(this.value); syncPeriod(); render(); });
+    $('monthSel2').addEventListener('change', function () { st.m2 = Number(this.value); syncPeriod(); render(); });
+    $('modeMulti').addEventListener('click', function () { st.multi = !st.multi; syncPeriod(); render(); });
     $('modeCalendar').addEventListener('click', function () { st.mode = 'calendar'; syncPeriod(); render(); });
     $('modeClose').addEventListener('click', function () { st.mode = 'close20'; syncPeriod(); render(); });
     // 時間単価: 「￥ 4,000」表示(#,##0)、▲▼・↑↓キーは50円単位
@@ -446,7 +460,7 @@ if (typeof document !== 'undefined') {
         if (cls) for (let i = 1; i <= 8; i++) { const c = row.getCell(i); c.fill = blue; c.font = { bold: true }; c.border = { top: thin }; }
       };
       st.agg.months.forEach(function (m) {
-        m.robots.forEach(function (rb, i) { put(i === 0 ? monthLabel(m.key, st.mode) : '', rb.robot + '号機', rb.v, false); });
+        m.robots.forEach(function (rb, i) { put(i === 0 || st.multi ? monthLabel(m.key, st.mode) : '', rb.robot + '号機', rb.v, false); });
         put(monthLabel(m.key, st.mode) + ' 集計', '', m.sub, true);
       });
       put('総計', '', st.agg.total, true);

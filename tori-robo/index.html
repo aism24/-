@@ -20,7 +20,11 @@
       <h2 style="margin:0">1. 期間(年・月・〆日)</h2>
       <select id="yearSel" aria-label="年"></select>
       <select id="monthSel" aria-label="月"></select>
+      <span id="multiTo" style="display:none">～</span>
+      <select id="yearSel2" aria-label="終了年" style="display:none"></select>
+      <select id="monthSel2" aria-label="終了月" style="display:none"></select>
       <span class="seg"><button type="button" class="btn toggle" id="modeCalendar" aria-pressed="true">普通月〆</button><button type="button" class="btn toggle" id="modeClose" aria-pressed="false">20日〆</button></span>
+      <button type="button" class="btn toggle" id="modeMulti" aria-pressed="false">複数月</button>
       <span id="periodText" class="period"></span>
       <button class="btn" id="reloadBtn">最新のデータを読み込む</button>
     </div>
@@ -58,6 +62,6 @@
 
 </div>
 <div id="loading" class="loading-overlay" style="display:none" role="alert" aria-live="polite"><div class="loading-box"><div id="loadingMsg" class="loading-msg"></div><div class="loading-bar"><span></span></div></div></div>
-<script src="app.js?v=pr2"></script>
+<script src="app.js?v=mm1"></script>
 </body>
 </html>
