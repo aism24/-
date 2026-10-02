@@ -319,8 +319,9 @@ if (typeof document !== 'undefined') {
     function renderMarkCheck(groups, works) {
       const items = [];
       groups.forEach(function (g, i) { if (g.status !== 'ok' || g.corrected) items.push(i); });
-      $('markCheckInfo').textContent = items.length ? '(' + items.length + '件)' : '';
-      if (!items.length) { $('markCheck').innerHTML = '<p class="hint">確認が必要な製品名はありません。</p>'; return; }
+      $('markCheckInfo').textContent = items.length ? '(' + items.length + '件)' : '＝指定月無し';
+      $('markCheckHint').style.display = items.length ? '' : 'none';
+      if (!items.length) { $('markCheck').innerHTML = ''; return; }
       const head = '<tr><th>工事名</th><th>製品名</th><th>確認</th></tr>';
       const body = items.map(function (i) {
         const g = st.groups[i];

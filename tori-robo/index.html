@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>鳥取梁ロボ管理</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="style.css?v=pair1">
+<link rel="stylesheet" href="style.css?v=pair2">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 </head>
 <body>
@@ -47,7 +47,7 @@
 
   <section class="card">
     <h2>4. 製品名誤入力の確認 <span id="markCheckInfo" class="cnt"></span></h2>
-    <p class="hint">梁ロボに入力された製品名がマスタに無い場合の確認です。候補から選ぶと、5.の内訳に反映されます(ブラウザ内の上書きで、ロボ側のデータは変更しません)。黄色=候補あり、赤=候補なし、緑=修正済。</p>
+    <p class="hint" id="markCheckHint">梁ロボに入力された製品名がマスタに無い場合の確認です。候補から選ぶと、5.の内訳に反映されます(ブラウザ内の上書きで、ロボ側のデータは変更しません)。黄色=候補あり、赤=候補なし、緑=修正済。</p>
     <div id="markCheck" class="table-wrap"></div>
   </section>
 
@@ -62,6 +62,6 @@
     <span class="hint">実寸法師は、ダウンロードしたExcelの図面番号のリンクから開きます。</span>
   </div>
 </div>
-<script src="app.js?v=cost1"></script>
+<script src="app.js?v=mk2"></script>
 </body>
 </html>

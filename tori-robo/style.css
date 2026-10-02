@@ -54,3 +54,4 @@ button[data-edit] { background:#ffd9e2; }
 .pair { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,3fr); gap:12px; align-items:stretch; }
 .pair .card { margin:12px 0; }
 @media (max-width:1000px) { .pair { grid-template-columns:minmax(0,1fr); } }
+#markCheckInfo { font-size:inherit; }
