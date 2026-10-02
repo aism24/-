@@ -65,3 +65,9 @@ button[data-edit] { background:#ffd9e2; }
 .btn.primary { padding:6px 14px; }
 .page { padding-bottom:16px; }
 .app-header { background:var(--card); border-radius:8px; padding:10px 16px; margin-top:12px; }
+.app-header { grid-template-columns:1fr auto 1fr; }
+.app-header .hdr-center { grid-column:2; grid-row:1; display:flex; align-items:baseline; justify-content:center; gap:12px; white-space:nowrap; }
+.app-header .hdr-right { flex-wrap:nowrap; }
+.btn.primary { background:#2e9e4f; border-color:#1f7a3a; color:#fff; height:38px; padding:0 16px; font-size:14px; white-space:nowrap; }
+.btn.primary:disabled { opacity:.5; }
+@media (max-width:900px) { .app-header { grid-template-columns:1fr; row-gap:8px; } .app-header .hdr-center, .app-header .hdr-right { grid-column:1; } .app-header .hdr-center { grid-row:1; } .app-header .hdr-right { grid-row:2; justify-self:end; } }
