@@ -72,3 +72,4 @@ button[data-edit] { background:#ffd9e2; }
 .btn.primary:disabled { opacity:.5; }
 @media (max-width:900px) { .app-header { grid-template-columns:1fr; row-gap:8px; } .app-header .hdr-center, .app-header .hdr-right { grid-column:1; } .app-header .hdr-center { grid-row:1; } .app-header .hdr-right { grid-row:2; justify-self:end; } }
 #markCheck td.ctr { text-align:center; }
+#summary td.ctr { text-align:center; }

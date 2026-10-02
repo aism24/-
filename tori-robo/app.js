@@ -284,11 +284,11 @@ if (typeof document !== 'undefined') {
       let body = '';
       agg.months.forEach(function (m) {
         m.robots.forEach(function (r, i) {
-          body += '<tr><td>' + (i === 0 ? esc(monthLabel(m.key, st.mode)) : '') + '</td><td>' + r.robot + '号機</td>' + line(r.v) + '</tr>';
+          body += '<tr><td class="ctr">' + (i === 0 ? esc(monthLabel(m.key, st.mode)) : '') + '</td><td class="ctr">' + r.robot + '号機</td>' + line(r.v) + '</tr>';
         });
-        body += '<tr class="sub"><td colspan="2">' + esc(monthLabel(m.key, st.mode)) + ' 集計</td>' + line(m.sub) + '</tr>';
+        body += '<tr class="sub"><td class="ctr" colspan="2">' + esc(monthLabel(m.key, st.mode)) + ' 集計</td>' + line(m.sub) + '</tr>';
       });
-      body += '<tr class="total"><td colspan="2">総計</td>' + line(agg.total) + '</tr>';
+      body += '<tr class="total"><td class="ctr" colspan="2">総計</td>' + line(agg.total) + '</tr>';
       $('summary').innerHTML = rows.length ? '<table>' + head + body + '</table>' : '<p class="hint">この期間・工事のデータがありません。</p>';
       const hours = agg.total.elapsedMin / 60;
       $('costLine').textContent = rows.length ? '稼動時間 ' + fmt(hours, 1) + ' 時間 × ' + fmt(st.cost) + ' 円/時間 = ' + fmt(Math.round(hours * st.cost)) + ' 円' : '';
