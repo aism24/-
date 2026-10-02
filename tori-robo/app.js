@@ -167,7 +167,6 @@ if (typeof document !== 'undefined') {
       p.then(function (res) {
         if (res.status !== 'success') throw new Error(res.message || '読み込みに失敗しました');
         st.data = res.data;
-        if (!useSample && res.data.overrides) st.overrides = res.data.overrides; // 製品名の修正はスプレッドシートで全員共通
         init();
       }).catch(function (err) {
         setStatus('読み込みに失敗しました: ' + err.message, true);
@@ -361,7 +360,7 @@ if (typeof document !== 'undefined') {
       if (t.dataset && t.dataset.fix !== undefined && t.tagName === 'SELECT') {
         const g = st.groups[Number(t.dataset.fix)];
         if (t.value) st.overrides[g.overrideKey] = t.value; else delete st.overrides[g.overrideKey];
-        if (st.sample) saveOverrides(); else saveOverrideRemote(g, t.value);
+        saveOverrides();
         render();
         return;
       }
@@ -387,13 +386,6 @@ if (typeof document !== 'undefined') {
         registerAlias(t.dataset.alias, sel.value);
       }
     });
-
-    function saveOverrideRemote(g, value) {
-      fetchJson(GAS_API_URL + '?action=saveOverride&robot=' + encodeURIComponent(g.robot) + '&name=' + encodeURIComponent(g.enteredName) +
-        '&mark=' + encodeURIComponent(g.enteredMark) + '&value=' + encodeURIComponent(value || ''))
-        .then(function (res) { if (res.status !== 'success') throw new Error(res.message); })
-        .catch(function (err) { setStatus('修正の保存に失敗しました(他の人には反映されません): ' + err.message, true); });
-    }
 
     function registerAlias(name, workNo) {
       if (st.sample) { alert('サンプル表示中のため登録できません。'); return; }

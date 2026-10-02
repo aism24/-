@@ -41,7 +41,6 @@ const WORK_COPY_PREFIX = '_作業用_梁ロボ_';
 const TIMEZONE = 'Asia/Tokyo';
 const IGNORE_WORK_NO = '00-00';
 const MIRROR_COL = 25; // Y列。Y=入力工事名 / Z=正式工事名(別名表の名前版。人が読む用)
-const OVR_COL = 28; // AB列。AB=号機 / AC=梁ロボ入力工事名 / AD=入力製品名 / AE=修正製品名(製品名誤入力の修正。全員共通)
 const ALIAS_COL = 22; // V列(1始まり)。V=入力名 / W=工事番号
 const ROBOT_SHEET_ROWS = { 1: 0, 2: 1 }; // ロボ番号 → G:H列の有効行の順番(0始まり)
 
@@ -190,9 +189,8 @@ function doGet(e) {
   try {
     const p = (e && e.parameter) || {};
     const action = p.action || 'getData';
-    if (action === 'getData') return ok_(withOverrides_(getSnapshot_()));
-    if (action === 'refresh') return ok_(withOverrides_(refreshSnapshot_(false)));
-    if (action === 'saveOverride') return ok_(saveOverride_(p.robot, p.name, p.mark, p.value));
+    if (action === 'getData') return ok_(getSnapshot_());
+    if (action === 'refresh') return ok_(refreshSnapshot_(false));
     if (action === 'refreshMasters') return ok_(refreshMasters_());
     if (action === 'saveAlias') return ok_(saveAlias_(p.name, p.workNo));
     return errRes_('不明なaction: ' + action);
@@ -308,48 +306,6 @@ function readCalendarMin_(rows) {
     if (!max || k > max) max = k;
   });
   return { min: min, max: max };
-}
-
-function withOverrides_(snap) {
-  if (snap && typeof snap === 'object') snap.overrides = readOverrides_();
-  return snap;
-}
-
-// 製品名誤入力の修正を「各種情報」AB:AE列から読む。キー = 号機|入力工事名|入力製品名(画面と同じ)
-function readOverrides_() {
-  const sh = infoSheet_();
-  const lastRow = sh.getLastRow();
-  const out = {};
-  if (lastRow < 3) return out;
-  sh.getRange(3, OVR_COL, lastRow - 2, 4).getValues().forEach(function (r) {
-    const robot = String(r[0] || '').trim();
-    if (robot && String(r[3] || '').trim()) out[robot + '|' + String(r[1]).trim() + '|' + String(r[2]).trim()] = String(r[3]).trim();
-  });
-  return out;
-}
-
-// 修正を保存(value空なら削除=元の入力に戻す)
-function saveOverride_(robot, name, mark, value) {
-  robot = String(robot || '').trim(); name = String(name || '').trim(); mark = String(mark || '').trim(); value = String(value || '').trim();
-  if (!robot || !mark) throw new Error('号機と製品名が必要です');
-  const sh = infoSheet_();
-  const lastRow = Math.max(sh.getLastRow(), 3);
-  if (!String(sh.getRange(1, OVR_COL).getValue() || '').trim()) sh.getRange(1, OVR_COL).setValue('製品名誤入力の修正');
-  if (!String(sh.getRange(2, OVR_COL).getValue() || '').trim()) sh.getRange(2, OVR_COL, 1, 4).setValues([['号機', '梁ロボ入力工事名', '入力製品名', '修正製品名']]);
-  const vals = sh.getRange(1, OVR_COL, lastRow, 4).getValues();
-  let hit = -1, empty = -1;
-  for (let i = 2; i < vals.length; i++) {
-    const r = vals[i];
-    if (!String(r[0] || '').trim()) { if (empty < 0) empty = i; continue; }
-    if (String(r[0]).trim() === robot && String(r[1]).trim() === name && String(r[2]).trim() === mark) { hit = i; break; }
-  }
-  if (hit >= 0) {
-    if (value) sh.getRange(hit + 1, OVR_COL + 3).setValue(value);
-    else sh.getRange(hit + 1, OVR_COL, 1, 4).clearContent();
-  } else if (value) {
-    sh.getRange((empty >= 0 ? empty : vals.length) + 1, OVR_COL, 1, 4).setValues([[robot, name, mark, value]]);
-  }
-  return { saved: true };
 }
 
 // 別名表(V:W=工事番号)の名前版をY:Zに書く(入力工事名→正式工事名)。Y:Zは人が見る用で、アプリはV:Wを参照する
