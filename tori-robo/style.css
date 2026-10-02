@@ -120,3 +120,6 @@ table th, table td, table .cnt { color:#000; font-weight:bold; }
 
 /* リスト(プルダウン)・入力欄・ボタンも黒の太字(緑の「Excelダウンロード」やピンクの説明書ボタンも文字は黒) */
 select, option, input, button, .btn, .btn.primary, #dlBtn, #dlBtn:disabled, .manual-btn, .manual-close, #costInput { color:#000 !important; font-weight:bold !important; }
+
+/* 濃い色の背景(緑・ピンク)のボタンは白抜きの文字の方が見やすいので、黒太字の指定を上書き */
+#dlBtn, #dlBtn:disabled, .manual-btn, .manual-close { color:#fff !important; font-weight:bold !important; }
