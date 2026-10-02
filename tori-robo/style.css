@@ -59,3 +59,8 @@ button[data-edit] { background:#ffd9e2; }
 .app-header h1 { grid-column:2; grid-row:1; text-align:center; }
 .app-header .updated-at { grid-column:1; grid-row:1; }
 .app-header .brand { grid-column:3; grid-row:1; justify-self:end; margin-left:0; }
+.app-header .hdr-right { grid-column:3; grid-row:1; justify-self:end; display:flex; align-items:center; gap:20px; }
+.dl-box { display:flex; align-items:center; gap:8px; }
+.dl-note { font-size:13px; white-space:nowrap; }
+.btn.primary { padding:6px 14px; }
+.page { padding-bottom:16px; }
