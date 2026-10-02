@@ -49,3 +49,4 @@ tr.fixed td { background:var(--fixed); }
 .app-header { align-items:center; }
 #works td.ctr { text-align:center; }
 .cost { justify-content:flex-end; gap:12px; align-items:center; }
+button[data-edit] { background:#ffd9e2; }
