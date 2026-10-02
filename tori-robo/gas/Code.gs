@@ -30,7 +30,7 @@
 const INFO_SHEET_NAME = '各種情報';
 const CACHE_FOLDER_PROP = 'CACHE_FOLDER_ID';
 const MASTER_CACHE_FILE_NAME = '_cache_tottori_robot_masters.json';
-const MASTER_CACHE_VERSION = 4;
+const MASTER_CACHE_VERSION = 5;
 // 実寸法師のリンク(図番のハイパーリンク)入りマスターExcelの置き場所(毎日更新される。鳥取以外の工事も含む)。
 // 「各種情報」D列のファイル名と同じ名前(「_マスタのまま」の有無・拡張子は無視)のファイルだけを使う。
 const ARCHIVE_FILE_NAME = '_archive_tori_robo_products.json';
@@ -82,6 +82,13 @@ function normName_(s) {
 // ファイル名から拡張子と「_マスタのまま」を除いた名前(突き合わせ用に正規化)。
 function baseKey_(fileName) {
   return normName_(String(fileName || '').replace(/\.(xlsx?|xlsm)$/i, '').replace(LINK_FILE_SUFFIX, ''));
+}
+
+// 工事フォルダ名(例: "25-11エスロジ松原" / "26-12OSAKA SAKURAJIMA")から工事番号と工事名を取り出す。
+// 工事番号は「2桁-1〜2桁」+英字(最大2文字。直後に英字が続く場合は工事名の一部とみなす)。
+function parseWorkFolderName_(name) {
+  const m = String(name || '').normalize('NFKC').trim().match(/^(\d{2}-\d{1,2})([A-Za-z]{1,2}(?![A-Za-z]))?\s*(.*)$/);
+  return m ? { workNo: m[1] + (m[2] || ''), workName: m[3].trim() } : null;
 }
 
 // 製品マークの正規化(大文字小文字・全角半角・空白を吸収。記号は区別する)。
@@ -199,6 +206,48 @@ function errRes_(message) { return jsonResponse_({ status: 'error', message: mes
 
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
 function infoSheet_() { return ss_().getSheetByName(INFO_SHEET_NAME) || ss_().getSheets()[0]; }
+
+// 「各種情報」C列(工事番号)・D列(Excelファイル名)を、E列URLの実ファイルから毎回調べて更新する。
+//   D = そのファイルの実際の名前 / C = そのファイルが入っているフォルダ名の先頭の工事番号。
+// 変わっていなければ書き込まない。変わった場合のみ書き換え、変更内容を返す。
+function syncIndexRows_() {
+  const sh = infoSheet_();
+  const lastRow = sh.getLastRow();
+  const out = { changes: [], warnings: [] };
+  if (lastRow < 2) return out;
+  const vals = sh.getRange(2, 1, lastRow - 1, 5).getValues(); // A:E
+  vals.forEach(function (r, i) {
+    const fileId = extractFileIdFromUrl_(r[4]);
+    if (!fileId) return;
+    const row = i + 2;
+    try {
+      const f = DriveApp.getFileById(fileId);
+      const name = f.getName();
+      const parents = f.getParents();
+      const folderName = parents.hasNext() ? parents.next().getName() : '';
+      let parsed = parseWorkFolderName_(folderName);
+      // 現在のC列の工事番号でフォルダ名が始まっていれば「変更なし」とみなす(例: C=24-12A、フォルダ=24-12AGLP_…。
+      // 英字付きの工事番号は工事名の英字と区別できないため、既存の値を優先する)。
+      const cur = String(r[2] || '').trim();
+      if (cur && folderName.normalize('NFKC').toUpperCase().indexOf(cur.normalize('NFKC').toUpperCase()) === 0) {
+        parsed = { workNo: cur, workName: parsed ? parsed.workName : '' };
+      }
+      if (String(r[3]).trim() !== name) {
+        sh.getRange(row, 4).setValue(name);
+        out.changes.push(row + '行目 Excelファイル名: ' + r[3] + ' → ' + name);
+      }
+      if (!parsed) {
+        out.warnings.push(row + '行目: フォルダ名から工事番号を判定できません(C列は変更しません)');
+      } else if (String(r[2]).trim() !== parsed.workNo) {
+        sh.getRange(row, 3).setValue(parsed.workNo);
+        out.changes.push(row + '行目 工事番号: ' + r[2] + ' → ' + parsed.workNo + '(' + parsed.workName + ')');
+      }
+    } catch (err) {
+      out.warnings.push(row + '行目のファイルを確認できません: ' + err.message);
+    }
+  });
+  return out;
+}
 
 function readInfoRows_() {
   const sh = infoSheet_();
@@ -400,10 +449,11 @@ function extractHyperlinks_(blob) {
 // ========== マスターExcel(変換後)の解析 ==========
 
 // 元Excelは読み取りのみ。変換結果は同フォルダの作業用スプレッドシートへ(元ファイルには触れない)。
-function convertToSheet_(sourceFileId, label, folder, currentMtime, sourceFile) {
+function convertToSheet_(sourceFileId, label, folder, currentMtime, sourceFile, workNo) {
   const props = PropertiesService.getScriptProperties();
-  const propKey = 'rconv_' + sourceFileId;
-  const mtimeKey = 'rmtime_' + sourceFileId;
+  // 工事番号ごとに別の作業用シートを作る(同じファイルでも工事が差し替わったら新しいスプレッドシートを作り、古い工事の作業用シートは残す)。
+  const propKey = 'rconv_' + sourceFileId + '_' + workNo;
+  const mtimeKey = 'rmtime_' + sourceFileId + '_' + workNo;
   const existingId = props.getProperty(propKey);
   if (existingId && props.getProperty(mtimeKey) === currentMtime) {
     try { DriveApp.getFileById(existingId); return existingId; } catch (e) { /* 再変換 */ }
@@ -537,7 +587,7 @@ function loadMasters_(folder, masterList) {
       return;
     }
     const mtime = String(file.getLastUpdated().getTime());
-    const c = cache[src.fileId];
+    const c = cache[src.fileId + '|' + m.workNo];
     let records;
     if (c && c.mtime === mtime && c.v === MASTER_CACHE_VERSION) {
       records = c.records;
@@ -547,7 +597,7 @@ function loadMasters_(folder, masterList) {
         const blob = file.getBlob();
         const links = extractHyperlinks_(blob);
         if (links.__error) warnings.push('「' + src.fileName + '」の図面リンク取得エラー: ' + links.__error);
-        const sheetId = convertToSheet_(src.fileId, m.workNo + '_' + m.fileName, folder, mtime, file);
+        const sheetId = convertToSheet_(src.fileId, m.workNo + '_' + m.fileName, folder, mtime, file, m.workNo);
         records = parseMasterSheet_(sheetId, links);
         warnings.push('【確認用】「' + m.fileName + '」: 製品' + records.length + '件 / 図面リンク' + records.filter(function (r) { return r.l; }).length + '件(xlsx内のリンク' + Object.keys(links).filter(function (k) { return k !== '__error'; }).length + '件 / ' + (links.__diag || links.__error || '診断なし') + ')');
       } catch (err) {
@@ -555,7 +605,7 @@ function loadMasters_(folder, masterList) {
         return;
       }
     }
-    next[src.fileId] = { mtime: mtime, v: MASTER_CACHE_VERSION, records: records };
+    next[src.fileId + '|' + m.workNo] = { mtime: mtime, v: MASTER_CACHE_VERSION, records: records };
     result[m.workNo] = (result[m.workNo] || []).concat(records);
     if (src.linked) linkedWorks[m.workNo] = true;
     const ar = archive[m.workNo];
@@ -609,6 +659,7 @@ function readRobotRows_(robotNo, sheetId) {
 // ========== 集計本体 ==========
 
 function getData_() {
+  const sync = syncIndexRows_();
   const rows = readInfoRows_();
   const masterList = readMasterIndex_(rows);
   const robotSheets = readRobotSheets_(rows);
@@ -620,6 +671,8 @@ function getData_() {
   masterList.forEach(function (m) { m.workName = workNames[m.workNo] || ''; });
   const loaded = loadMasters_(folder, masterList);
   const warnings = loaded.warnings.slice();
+  sync.changes.forEach(function (c) { warnings.push('【更新】' + c); });
+  sync.warnings.forEach(function (c) { warnings.push(c); });
 
   // 突き合わせ用の索引
   const works = [];
@@ -715,6 +768,7 @@ function getData_() {
 
 // マスター(Excel)の再読み込みだけを行う(キャッシュ更新用。毎日のトリガーからも呼ぶ)。
 function refreshMasters_() {
+  syncIndexRows_();
   const folder = getCacheFolder_();
   const loaded = loadMasters_(folder, readMasterIndex_(readInfoRows_()));
   return { masters: Object.keys(loaded.records).length, warnings: loaded.warnings };
