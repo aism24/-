@@ -175,9 +175,13 @@ if (typeof document !== 'undefined') {
 
     function setStatus(msg, isErr) {
       const el = $('status');
-      el.textContent = msg;
+      const busy = !!msg && !isErr;
+      // 読込中などの進行メッセージは、画面をグレーアウトして中央のポップアップ(進行バー付き)で表示。エラーだけ帯で表示
+      $('loading').style.display = busy ? 'flex' : 'none';
+      $('loadingMsg').textContent = busy ? msg : '';
+      el.textContent = isErr ? msg : '';
       el.className = 'status' + (isErr ? ' err' : '');
-      el.style.display = msg ? 'block' : 'none';
+      el.style.display = isErr && msg ? 'block' : 'none';
     }
 
     function init() {
