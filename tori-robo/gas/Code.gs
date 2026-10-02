@@ -30,7 +30,7 @@
 const INFO_SHEET_NAME = '各種情報';
 const CACHE_FOLDER_PROP = 'CACHE_FOLDER_ID';
 const MASTER_CACHE_FILE_NAME = '_cache_tottori_robot_masters.json';
-const MASTER_CACHE_VERSION = 2;
+const MASTER_CACHE_VERSION = 3;
 const WORK_COPY_PREFIX = '_作業用_梁ロボ_';
 const TIMEZONE = 'Asia/Tokyo';
 const IGNORE_WORK_NO = '00-00';
@@ -369,6 +369,9 @@ function extractHyperlinks_(blob) {
     const sheetRoot = XmlService.parse(sheetXml.getDataAsString()).getRootElement();
     const hyperlinksEl = sheetRoot.getChild('hyperlinks', sheetRoot.getNamespace());
     const map = {};
+    // 診断用: 0件のとき原因を切り分けられるよう、構造の概要を残す。
+    const hlEls = hyperlinksEl ? hyperlinksEl.getChildren('hyperlink', sheetRoot.getNamespace()) : [];
+    Object.defineProperty(map, '__diag', { enumerable: false, value: 'zip' + entries.length + '件/シート' + sheetPath + '/hyperlink要素' + hlEls.length + '件/外部rels' + Object.keys(relMap).length + '件/mime=' + blob.getContentType() });
     if (hyperlinksEl) {
       hyperlinksEl.getChildren('hyperlink', sheetRoot.getNamespace()).forEach(function (h) {
         const refAttr = h.getAttribute('ref');
@@ -496,7 +499,7 @@ function loadMasters_(folder, masterList) {
         if (links.__error) warnings.push('「' + m.fileName + '」の図面リンク取得エラー: ' + links.__error);
         const sheetId = convertToSheet_(m.fileId, m.workNo + '_' + m.fileName, folder, mtime, file);
         records = parseMasterSheet_(sheetId, links);
-        warnings.push('【確認用】「' + m.fileName + '」: 製品' + records.length + '件 / 図面リンク' + records.filter(function (r) { return r.l; }).length + '件(xlsx内のリンク' + Object.keys(links).filter(function (k) { return k !== '__error'; }).length + '件)');
+        warnings.push('【確認用】「' + m.fileName + '」: 製品' + records.length + '件 / 図面リンク' + records.filter(function (r) { return r.l; }).length + '件(xlsx内のリンク' + Object.keys(links).filter(function (k) { return k !== '__error'; }).length + '件 / ' + (links.__diag || links.__error || '診断なし') + ')');
       } catch (err) {
         warnings.push('「' + m.fileName + '」の読み込みに失敗: ' + err.message);
         return;
