@@ -1,4 +1,4 @@
-:root { --bg:#f4f6f8; --card:#fff; --fg:#000; --muted:#000; --line:#9aa5b1; --accent:#1f6feb; color-scheme:light; --warn:#fff2cc; --bad:#f8cbad; --fixed:#e2f0d9; --head:#ddebf7; }
+:root { --bg:#5a6068; --card:#fff; --fg:#000; --muted:#000; --line:#9aa5b1; --accent:#1f6feb; color-scheme:light; --warn:#fff2cc; --bad:#f8cbad; --fixed:#e2f0d9; --head:#ddebf7; }
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 -apple-system,"Hiragino Sans","Yu Gothic",Meiryo,sans-serif; }
 .page { max-width:1200px; margin:0 auto; padding:0 16px 80px; }
@@ -64,3 +64,4 @@ button[data-edit] { background:#ffd9e2; }
 .dl-note { font-size:13px; white-space:nowrap; }
 .btn.primary { padding:6px 14px; }
 .page { padding-bottom:16px; }
+.app-header { background:var(--card); border-radius:8px; padding:10px 16px; margin-top:12px; }
