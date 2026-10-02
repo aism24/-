@@ -187,6 +187,33 @@ if (typeof document !== 'undefined') {
       });
     }
 
+    // 説明書(ページ画像 manual/p-1.jpg〜)。読込中のポップアップからも、読込後のヘッダーからも開ける。読込が終わっても開いたまま
+    (function () {
+      const MANUAL_PAGES = 9;
+      let page = 1;
+      function show() {
+        $('manualImg').src = 'manual/p-' + page + '.jpg';
+        $('manualPage').textContent = page + ' / ' + MANUAL_PAGES;
+        $('manualPrev').disabled = page <= 1; // 1ページ目は「前ページ」をグレーアウト
+        $('manualNext').disabled = page >= MANUAL_PAGES; // 最終ページは「次ページ」をグレーアウト
+        if (page < MANUAL_PAGES) new Image().src = 'manual/p-' + (page + 1) + '.jpg';
+      }
+      function open() { page = 1; $('manual').style.display = 'flex'; show(); }
+      function close() { $('manual').style.display = 'none'; }
+      function move(d) { const n = page + d; if (n >= 1 && n <= MANUAL_PAGES) { page = n; show(); } }
+      $('manualBtnLoad').addEventListener('click', open);
+      $('manualBtnHdr').addEventListener('click', open);
+      $('manualClose').addEventListener('click', close);
+      $('manualPrev').addEventListener('click', function () { move(-1); });
+      $('manualNext').addEventListener('click', function () { move(1); });
+      document.addEventListener('keydown', function (e) {
+        if ($('manual').style.display === 'none') return;
+        if (e.key === 'ArrowLeft') move(-1);
+        else if (e.key === 'ArrowRight') move(1);
+        else if (e.key === 'Escape') close();
+      });
+    })();
+
     // 固定ヘッダーの高さを CSS 変数に反映(5.の見出し(高さ36px固定)・列見出しをその下に固定するため)
     function updateStick() {
       const s = document.querySelector('.sticky-top');
