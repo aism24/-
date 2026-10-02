@@ -240,36 +240,35 @@ if (typeof document !== 'undefined') {
       $('dlBtn').disabled = rows.length === 0;
     }
 
+    // 2. 梁ロボ入力工事の工事名確認: 入力名ごとに正式工事名を選んで保存(スプレッドシートの別名表へ記録)
     function renderWorks(inPeriod) {
       const d = st.data;
-      const counts = {};
-      inPeriod.forEach(function (r) { if (r.no) counts[r.no] = (counts[r.no] || 0) + 1; });
-      // 指定期間に実績がある工事だけを表示(0件の工事は出さない)
-      const active = d.works.filter(function (w) { return counts[w.workNo]; });
-      $('works').innerHTML = !active.length ? '<span class="cnt">該当する工事はありません</span>' : active.map(function (w) {
-        const c = counts[w.workNo] || 0;
-        return '<label class="chip' + (c ? '' : ' dim') + '"><input type="checkbox" data-wk="' + esc(w.workNo) + '"' + (st.selected.has(w.workNo) ? ' checked' : '') + '> ' +
-          esc(w.workNo) + ' ' + esc(w.workName) + ' <span class="cnt">' + c + '件</span></label>';
+      const names = {};
+      inPeriod.forEach(function (r) {
+        const o = names[r.wn] || (names[r.wn] = { n: 0, no: '' });
+        o.n++;
+        if (!o.no && r.no) o.no = r.no;
+      });
+      const keys = Object.keys(names);
+      const works = {};
+      d.works.forEach(function (w) { works[w.workNo] = w.workName; });
+      if (!keys.length) { $('works').innerHTML = '<p class="hint">この期間のデータがありません。</p>'; return; }
+      const head = '<tr><th>梁ロボ入力工事名</th><th>正式工事名</th><th>工事番号</th><th>保存</th></tr>';
+      const body = keys.map(function (k) {
+        const o = names[k];
+        const opts = '<option value="">工事を選択…</option>' + d.works.map(function (w) {
+          return '<option value="' + esc(w.workNo) + '"' + (w.workNo === o.no ? ' selected' : '') + '>' + esc(w.workName) + '</option>';
+        }).join('');
+        return '<tr class="' + (o.no ? '' : 'warn') + '"><td><b>' + esc(k || '(空欄)') + '</b> <span class="cnt">' + o.n + '件</span></td>' +
+          '<td><select data-name="' + esc(k) + '">' + opts + '</select></td>' +
+          '<td class="wkno" data-wkno="' + esc(k) + '">' + esc(o.no || (works[o.no] ? '' : '未判定')) + '</td>' +
+          '<td><button class="btn small" data-alias="' + esc(k) + '">保存</button></td></tr>';
       }).join('');
+      $('works').innerHTML = '<p class="hint">梁ロボに入力された工事名が正式な工事名に合っているか確認し、違う場合は選び直して「保存」してください(スプレッドシートの別名表にも記録され、次回から自動で判定されます)。未判定(黄色)の工事は集計から除外されます。</p><table>' + head + body + '</table>';
     }
 
-    function renderUnknown(inPeriod) {
-      const d = st.data;
-      const names = {};
-      inPeriod.forEach(function (r) { if (r.s === 'nowork') names[r.wn] = (names[r.wn] || 0) + 1; });
-      const keys = Object.keys(names);
-      const box = $('unknown');
-      if (!keys.length) { box.style.display = 'none'; return; }
-      box.style.display = 'block';
-      const opts = '<option value="">工事を選択…</option>' + d.works.map(function (w) {
-        return '<option value="' + esc(w.workNo) + '">' + esc(w.workNo) + ' ' + esc(w.workName) + '</option>';
-      }).join('');
-      box.innerHTML = '<h3>工事名が判定できないデータ(集計から除外中)</h3>' +
-        '<p class="hint">略称などで同じ工事なら、工事を選んで「登録」してください(次回から自動で判定されます)。工事が違うものは、そのまま除外されます。</p>' +
-        keys.map(function (k) {
-          return '<div class="unk-row"><b>' + esc(k || '(空欄)') + '</b> <span class="cnt">' + names[k] + '件</span> ' +
-            '<select data-name="' + esc(k) + '">' + opts + '</select> <button class="btn small" data-alias="' + esc(k) + '">登録</button></div>';
-        }).join('');
+    function renderUnknown() {
+      $('unknown').style.display = 'none';
     }
 
     function fmt(n, dec) {
@@ -321,6 +320,10 @@ if (typeof document !== 'undefined') {
     // ===== イベント =====
     document.addEventListener('change', function (e) {
       const t = e.target;
+      if (t.dataset && t.dataset.name !== undefined && t.tagName === 'SELECT') {
+        const cell = document.querySelector('td[data-wkno="' + CSS.escape(t.dataset.name) + '"]');
+        if (cell) cell.textContent = t.value || '未判定';
+      }
       if (t.dataset && t.dataset.wk) {
         if (t.checked) st.selected.add(t.dataset.wk); else st.selected.delete(t.dataset.wk);
         render();
