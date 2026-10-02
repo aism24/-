@@ -334,7 +334,7 @@ if (typeof document !== 'undefined') {
             }).join('') + '</select>';
           if (g.corrected && g.product) cell += ' <span class="cnt">修正済: ' + esc(g.product.m) + '</span>';
         } else cell = 'マスタに無い製品名(候補なし)';
-        return '<tr class="' + (g.corrected ? 'fixed' : g.status === 'suggest' ? 'warn' : 'bad') + '"><td>' + esc(works[g.workNo] || g.enteredName) + '</td><td>' + esc(g.enteredMark) + '</td><td>' + cell + '</td></tr>';
+        return '<tr class="' + (g.corrected ? 'fixed' : g.status === 'suggest' ? 'warn' : 'bad') + '"><td class="ctr">' + esc(works[g.workNo] || g.enteredName) + '</td><td class="ctr">' + esc(g.enteredMark) + '</td><td>' + cell + '</td></tr>';
       }).join('');
       $('markCheck').innerHTML = '<table>' + head + body + '</table>';
     }
