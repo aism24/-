@@ -83,3 +83,8 @@ button[data-edit] { background:#ffd9e2; }
 .sticky-top { position:sticky; top:0; z-index:30; background:var(--bg); padding-bottom:1px; }
 .sticky-top .app-header { margin-top:0; margin-bottom:8px; }
 .sticky-top .card { margin:0 0 8px; }
+.yen-box { display:inline-flex; align-items:stretch; border:1px solid var(--line); border-radius:4px; background:#ffe5cc; overflow:hidden; }
+#costInput { width:110px; text-align:center; background:#ffe5cc; border:0; padding:4px 6px; font:inherit; color:#000; }
+.yen-step { display:flex; flex-direction:column; border-left:1px solid var(--line); }
+.yen-step button { flex:1; border:0; background:#ffd9b3; color:#000; font-size:9px; line-height:1; padding:0 6px; cursor:pointer; }
+.yen-step button + button { border-top:1px solid var(--line); }

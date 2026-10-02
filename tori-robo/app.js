@@ -197,7 +197,7 @@ if (typeof document !== 'undefined') {
       for (let m = 1; m <= 12; m++) mo += '<option value="' + m + '">' + m + '月</option>';
       $('monthSel').innerHTML = mo;
       syncPeriod();
-      $('costInput').value = st.cost;
+      setCostText();
       $('updatedAt').textContent = (st.sample ? '【サンプルデータ】 ' : '') + '更新: ' + (d.generatedAt || '').replace('T', ' ').slice(0, 16);
       setStatus('');
       render();
@@ -397,7 +397,16 @@ if (typeof document !== 'undefined') {
     $('monthSel').addEventListener('change', function () { st.m = Number(this.value); syncPeriod(); render(); });
     $('modeCalendar').addEventListener('click', function () { st.mode = 'calendar'; syncPeriod(); render(); });
     $('modeClose').addEventListener('click', function () { st.mode = 'close20'; syncPeriod(); render(); });
-    $('costInput').addEventListener('change', function () { st.cost = Number(this.value) || 0; render(); });
+    // 時間単価: 「￥ 4,000」表示(#,##0)、▲▼・↑↓キーは50円単位
+    function setCostText() { $('costInput').value = '￥ ' + st.cost.toLocaleString('ja-JP'); }
+    function setCost(v) { st.cost = Math.max(0, Math.round(v) || 0); setCostText(); render(); }
+    $('costInput').addEventListener('change', function () { setCost(Number(this.value.replace(/[^0-9]/g, ''))); });
+    $('costInput').addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowUp') { e.preventDefault(); setCost(st.cost + 50); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); setCost(st.cost - 50); }
+    });
+    $('costUp').addEventListener('click', function () { setCost(st.cost + 50); });
+    $('costDown').addEventListener('click', function () { setCost(st.cost - 50); });
     $('reloadBtn').addEventListener('click', function () { load(true); });
     $('dlBtn').addEventListener('click', function () {
       try { downloadExcel(); } catch (err) { setStatus('Excelの作成に失敗しました: ' + err.message, true); }

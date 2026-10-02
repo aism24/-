@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>鳥取梁ロボ管理</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="style.css?v=stk2">
+<link rel="stylesheet" href="style.css?v=yen1">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 </head>
 <body>
@@ -37,7 +37,7 @@
   </section>
 
   <section class="card">
-    <div class="h2row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:nowrap"><h2 style="margin:0">3. 加工実績(出力用)</h2><label style="margin-left:auto;white-space:nowrap;display:flex;align-items:center;gap:6px">時間単価 <input type="number" id="costInput" min="0" step="100" style="background:#ffe5cc"></label></div>
+    <div class="h2row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:nowrap"><h2 style="margin:0">3. 加工実績(出力用)</h2><label style="margin-left:auto;white-space:nowrap;display:flex;align-items:center;gap:6px">時間単価 <span class="yen-box"><input type="text" inputmode="numeric" id="costInput" autocomplete="off"><span class="yen-step"><button type="button" id="costUp" aria-label="50円上げる">▲</button><button type="button" id="costDown" aria-label="50円下げる">▼</button></span></span></label></div>
     <div id="summary" class="table-wrap"></div>
     <div class="row cost">
       <span id="costLine"></span>
@@ -57,6 +57,6 @@
   </section>
 
 </div>
-<script src="app.js?v=stk2"></script>
+<script src="app.js?v=yen1"></script>
 </body>
 </html>
