@@ -301,15 +301,15 @@ if (typeof document !== 'undefined') {
       st.data.works.forEach(function (w) { works[w.workNo] = w.workName; });
       const bad = groups.filter(function (g) { return g.status !== 'ok'; }).length;
       $('detailInfo').textContent = groups.length + '製品' + (bad ? '(要確認 ' + bad + '件)' : '');
-      const head = '<tr><th>工事番号</th><th>工事名</th><th>図面番号</th><th>製品名</th><th>サイズ</th><th>重量(t)</th><th>ロボ</th><th>溶接回数</th><th>加工日</th><th>溶接日</th><th>経過(分)</th><th>アーク(分)</th><th>ワイヤ(kg)</th><th>溶接長(m)</th><th>確認</th></tr>';
+      const head = '<tr><th>工事番号</th><th>工事名</th><th>図面番号</th><th>製品名</th><th>サイズ</th><th>重量(t)</th><th>ロボ</th><th>溶接回数</th><th>加工日</th><th>溶接日</th><th>経過(分)</th><th>アーク(分)</th><th>ワイヤ(kg)</th><th>溶接長(m)</th></tr>';
       const body = groups.map(function (g, i) {
         const p = g.product;
-        let note = '';
         let cls = '';
-        if (g.status === 'suggest') { cls = 'warn'; note = '製品名の候補あり(4.で確認)'; }
-        else if (g.status === 'nomark') { cls = 'bad'; note = 'マスタに無い製品名(誤入力の可能性)'; }
-        else if (g.corrected) { cls = 'fixed'; note = '修正済 (入力: ' + esc(g.enteredMark) + ')'; }
-        return '<tr class="' + cls + '"><td>' + esc(g.workNo) + '</td><td>' + esc(works[g.workNo] || g.enteredName) + '</td><td>' + esc(p ? p.d : '') + '</td><td>' + esc(p ? p.m : g.enteredMark) + (g.count > 1 ? ' <span class="times">×' + g.count + '回</span>' : '') + '</td><td>' + esc(p ? p.s : '') + '</td><td class="num">' + (p ? fmt(p.w, 1) : '') + '</td><td>' + g.robot + '号機</td><td class="num">' + g.count + '</td><td>' + esc(p ? p.k : '') + '</td><td>' + esc(p ? p.v : '') + '</td><td class="num">' + fmt(g.run / 60) + '</td><td class="num">' + fmt(g.arc / 60) + '</td><td class="num">' + fmt(g.wire, 1) + '</td><td class="num">' + fmt(g.len) + '</td><td>' + note + '</td></tr>';
+        let tip = '';
+        if (g.status === 'suggest') cls = 'warn';
+        else if (g.status === 'nomark') cls = 'bad';
+        else if (g.corrected) { cls = 'fixed'; tip = esc(g.enteredMark) + ' → ' + esc(p ? p.m : ''); }
+        return '<tr class="' + cls + '"' + (tip ? ' data-tip="' + tip + '"' : '') + '><td class="ctr">' + esc(g.workNo) + '</td><td>' + esc(works[g.workNo] || g.enteredName) + '</td><td>' + esc(p ? p.d : '') + '</td><td>' + esc(p ? p.m : g.enteredMark) + '</td><td>' + esc(p ? p.s : '') + '</td><td class="num">' + (p ? fmt(p.w, 1) : '') + '</td><td>' + g.robot + '号機</td><td class="ctr">' + (g.count > 1 ? g.count : '') + '</td><td>' + esc(p ? p.k : '') + '</td><td>' + esc(g.last.slice(0, 10)) + '</td><td class="num">' + fmt(g.run / 60) + '</td><td class="num">' + fmt(g.arc / 60) + '</td><td class="num">' + fmt(g.wire, 1) + '</td><td class="num">' + fmt(g.len) + '</td></tr>';
       }).join('');
       $('detail').innerHTML = groups.length ? '<table>' + head + body + '</table>' : '';
       renderMarkCheck(groups, works);
@@ -340,6 +340,17 @@ if (typeof document !== 'undefined') {
     }
 
     // ===== イベント =====
+    const tipEl = document.createElement('div');
+    tipEl.className = 'tip';
+    document.body.appendChild(tipEl);
+    document.addEventListener('mousemove', function (e) {
+      const tr = e.target.closest ? e.target.closest('tr[data-tip]') : null;
+      if (!tr) { tipEl.style.display = 'none'; return; }
+      tipEl.innerHTML = '入力: ' + tr.dataset.tip.replace(' → ', '<br>修正: ');
+      tipEl.style.display = 'block';
+      tipEl.style.left = (e.clientX + 14) + 'px';
+      tipEl.style.top = (e.clientY + 14) + 'px';
+    });
     document.addEventListener('change', function (e) {
       const t = e.target;
       if (t.dataset && t.dataset.fix !== undefined && t.tagName === 'SELECT') {
@@ -448,7 +459,7 @@ if (typeof document !== 'undefined') {
         const p = g.product;
         const row = wd.getRow(i + 2);
         const note = g.status === 'suggest' ? '要確認: 製品名候補 ' + g.suggestions.join(' / ') : g.status === 'nomark' ? '要確認: マスタに無い製品名' : g.corrected ? '修正済(入力: ' + g.enteredMark + ')' : '';
-        const vals = [g.workNo, works[g.workNo] || g.enteredName, p ? p.d : '', p ? p.m : g.enteredMark, p ? p.s : '', p ? Math.round(p.w * 100) / 100 : '', g.robot + '号機', g.count, p ? p.k : '', p ? p.v : '', g.first, g.last,
+        const vals = [g.workNo, works[g.workNo] || g.enteredName, p ? p.d : '', p ? p.m : g.enteredMark, p ? p.s : '', p ? Math.round(p.w * 100) / 100 : '', g.robot + '号機', g.count, p ? p.k : '', g.last.slice(0, 10), g.first, g.last,
           Math.round(g.run / 60), Math.round(g.arc / 60), Math.max(0, Math.round((g.run - g.arc) / 60)), Math.round(g.wire * 10) / 10, Math.round(g.len), note];
         vals.forEach(function (v, j) { row.getCell(j + 1).value = v; });
         if (p && p.l) { row.getCell(3).value = { text: p.d || p.m, hyperlink: p.l }; row.getCell(3).font = { color: { argb: 'FF0563C1' }, underline: true }; }

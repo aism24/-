@@ -74,3 +74,5 @@ button[data-edit] { background:#ffd9e2; }
 #markCheck td.ctr { text-align:center; }
 #summary td.ctr { text-align:center; }
 #reloadBtn { margin-left:auto; background:#fff176; border-color:#b59f00; }
+#detail td.ctr { text-align:center; }
+.tip { display:none; position:fixed; z-index:50; background:#fffbe6; color:#000; border:1px solid #000; border-radius:4px; padding:6px 10px; font-size:13px; box-shadow:2px 2px 6px rgba(0,0,0,.4); pointer-events:none; }
