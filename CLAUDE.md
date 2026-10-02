@@ -191,6 +191,7 @@ Previewデプロイが発生する)
 | 生産損益分析アプリ(損益分岐。production-profit / sonekibunki) | https://drive.google.com/drive/folders/1Ly54tAkSLk5zFTmohHrj2thy7BNPTaWg | `1Ly54tAkSLk5zFTmohHrj2thy7BNPTaWg` |
 | 実行予算まとめアプリ(管理用スプレッドシート「実行予算」も同じフォルダ内。2026-09-29登録) | https://drive.google.com/drive/folders/1EwfXNOal_AdY6MzARgEGV_aKAcf6HjWN | `1EwfXNOal_AdY6MzARgEGV_aKAcf6HjWN` |
 | コストインサイト(cost-insight。原価管理・生産進捗分析。管理用スプレッドシート「コストインサイト」も同じフォルダ内。2026-10-01登録) | https://drive.google.com/drive/folders/1iB0Za-pfjZm3jfgyhQ4ktMkhEaCjivbO | `1iB0Za-pfjZm3jfgyhQ4ktMkhEaCjivbO` |
+| 梁ロボ(tori-robo。鳥取梁ロボ管理。管理用スプレッドシート「鳥取梁ロボ管理データ」も同じフォルダ内。2026-10-02登録) | https://drive.google.com/drive/folders/1E0FH8FPtfcyyIK-lH0O-JC1I1vRCb5Iw | `1E0FH8FPtfcyyIK-lH0O-JC1I1vRCb5Iw` |
 | 上記以外のアプリ | 未登録(ユーザーがアプリごとに指示する。指示されたらこの表に追記する) | - |
 
 - **保存先フォルダはユーザーがアプリごとに指示する。** 指示が無いアプリは、推測で決めずにユーザーに聞く。
@@ -211,6 +212,22 @@ Previewデプロイが発生する)
   言ったときだけ実行する。マージ後は「mainへ反映済み・本番(Vercel)は未反映。デプロイする場合は指示を」と報告する。
 - 2026-09-28、sonekibunki(production-profit)で修正のたびに指示なくデプロイし(1日に計7回)、ユーザーから指摘を受けた。
 - デプロイしたときは、報告の冒頭に直近24時間のデプロイ回数(上限: Hobby 1日100回)を必ず書く。
+
+## 【厳守】GAS等のコードのURLを案内する前に、GitHub上が最新か確認する(2026-10-02〜、ユーザー指示)
+
+- Code.gs・Index.html 等のGAS関連コードのGitHubのURL(blob形式)をユーザーへ案内する前に、
+  push済みの最新コミットがGitHub上のファイルに反映されていることを確認する。
+  確認方法の例: `git ls-remote origin <branch>` が手元のHEADと一致 + raw.githubusercontent.com の
+  該当ファイルに今回の変更箇所(目印の文字列)が含まれること。ラグがある場合は反映を待ってから案内する。
+- 確認した旨(最新コミットのハッシュなど)を案内文に添える。ユーザーに何度も言わせないこと。
+- アプリの確認用URL(raw.githack.com 等)は、報告のたびに毎回添付する(ユーザー指示 2026-10-02)。
+- **【厳守】確認用URL(raw.githack.com)にもラグがある(2026-10-02、ユーザー指示。何度も言わせないこと)。**
+  URLを添付する前に、**今回のpushが実際にそのURLへ反映されたことを確認してから**添付する。
+  確認方法: index.html に `?v=<目印>` を付けたJS/CSSの版を毎回更新しておき、
+  `curl -s "https://raw.githack.com/aism24/-/<branch>/<フォルダ>/index.html" | grep -o 'app.js?v=[a-z0-9]*'`
+  が今回の版と一致するまで待つ(raw.githubusercontent.com では最新なのに raw.githack では古い、という状態が
+  数分続くことがある。2026-10-02確認)。一致を確認できないうちは「反映待ち」と伝え、
+  反映されたと断定しない。報告には、確認した版の目印と確認時刻を添える。
 
 ## 自動デプロイ停止方式(vercel.json)(2026-09-24〜、daily-reportで検証済み)
 
