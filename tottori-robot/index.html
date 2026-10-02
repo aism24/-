@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>鳥取梁ロボ管理</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+</head>
+<body>
+<div class="page">
+  <header class="app-header">
+    <h1>鳥取梁ロボ管理</h1>
+    <div class="updated-at" id="updatedAt"></div>
+  </header>
+
+  <div id="status" class="status" style="display:none"></div>
+  <div id="warnings" class="warnings"></div>
+
+  <section class="card">
+    <h2>1. 期間と月の区切り</h2>
+    <div class="row">
+      <label>期間 <input type="date" id="startDate"> 〜 <input type="date" id="endDate"></label>
+      <label class="radio"><input type="radio" name="mode" value="calendar" checked> 一般の月(1日〜末日)</label>
+      <label class="radio"><input type="radio" name="mode" value="close20"> 20日〆(前月21日〜当月20日)</label>
+      <button class="btn" id="reloadBtn">最新のデータを読み込む</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>2. 対象の工事</h2>
+    <div id="works" class="chips"></div>
+    <div id="unknown" class="unknown" style="display:none"></div>
+  </section>
+
+  <section class="card">
+    <h2>3. 加工実績(出力用)</h2>
+    <div id="summary" class="table-wrap"></div>
+    <div class="row cost">
+      <span id="costLine"></span>
+      <label>単価(円/時間) <input type="number" id="costInput" min="0" step="100"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>4. 製品ごとの内訳(全て抽出) <span id="detailInfo" class="cnt"></span></h2>
+    <p class="hint">1つの製品を複数回溶接した場合は、1行にまとめて回数を表示しています。黄色=製品名の候補あり(ボタンで修正)、赤=マスタに無い製品名。</p>
+    <div id="detail" class="table-wrap"></div>
+  </section>
+
+  <div class="dl-bar">
+    <button class="btn primary" id="dlBtn" disabled>この内容でExcelをダウンロード</button>
+    <span class="hint">実寸法師は、ダウンロードしたExcelの図面番号のリンクから開きます。</span>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
