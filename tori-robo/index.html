@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>鳥取梁ロボ管理</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="style.css?v=dt1">
+<link rel="stylesheet" href="style.css?v=cs1">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 </head>
 <body>
@@ -35,10 +35,9 @@
   </section>
 
   <section class="card">
-    <h2>3. 加工実績(出力用)</h2>
+    <div class="h2row"><h2>3. 加工実績(出力用)</h2><label>時間単価 <input type="number" id="costInput" min="0" step="100" style="background:#ffe5cc"></label></div>
     <div id="summary" class="table-wrap"></div>
     <div class="row cost">
-      <label>時間単価 <input type="number" id="costInput" min="0" step="100" style="background:#ffe5cc"></label>
       <span id="costLine"></span>
     </div>
   </section>
@@ -56,6 +55,6 @@
   </section>
 
 </div>
-<script src="app.js?v=dt1"></script>
+<script src="app.js?v=cs1"></script>
 </body>
 </html>
