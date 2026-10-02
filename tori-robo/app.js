@@ -171,7 +171,7 @@ if (typeof document !== 'undefined') {
       st.sample = useSample;
       const cached = !useSample && !refresh && !fresh && !st.data ? loadCachedData() : null;
       if (cached) { st.data = cached; init(); } // 前回の結果をまず表示し、裏で最新を取得する
-      else setStatus(refresh === true ? '最新のデータを確認中…(数十秒かかることがあります)' : 'データを読み込み中…');
+      else setStatus(refresh === true ? '最新のデータを確認中…(数十秒かかることがあります)' : 'データを読み込み中…', false, !useSample && !refresh && !fresh); // 前回の結果が無い初回だけ注意書きを出す
       const p = useSample
         ? fetchJson('sample.json').then(function (d) { return { status: 'success', data: d }; })
         : (refresh === true || fresh) ? fetchJson(GAS_API_URL + '?action=' + (refresh === true ? 'refresh' : 'getData'))
@@ -187,12 +187,13 @@ if (typeof document !== 'undefined') {
       });
     }
 
-    function setStatus(msg, isErr) {
+    function setStatus(msg, isErr, first) {
       const el = $('status');
       const busy = !!msg && !isErr;
       // 読込中などの進行メッセージは、画面をグレーアウトして中央のポップアップ(進行バー付き)で表示。エラーだけ帯で表示
       $('loading').style.display = busy ? 'flex' : 'none';
       $('loadingMsg').textContent = busy ? msg : '';
+      $('loadingFirst').style.display = busy && first ? 'block' : 'none';
       el.textContent = isErr ? msg : '';
       el.className = 'status' + (isErr ? ' err' : '');
       el.style.display = isErr && msg ? 'block' : 'none';
