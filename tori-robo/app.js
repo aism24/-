@@ -258,6 +258,10 @@ if (typeof document !== 'undefined') {
       for (let y = y0; y <= y1; y++) yo += '<option value="' + y + '">' + y + '年</option>';
       $('yearSel').innerHTML = yo;
       $('yearSel2').innerHTML = yo;
+      const cmin = (d.calendarMin || '2024-11-21').split('-'); // 選べる月の範囲: カレンダーの最初の月〜今日の月
+      const now = new Date();
+      st.minIdx = Number(cmin[0]) * 12 + Number(cmin[1]) - 1;
+      st.maxIdx = Math.max(now.getFullYear() * 12 + now.getMonth(), st.minIdx);
       let mo = '';
       for (let m = 1; m <= 12; m++) mo += '<option value="' + m + '">' + m + '月</option>';
       $('monthSel').innerHTML = mo;
@@ -271,6 +275,10 @@ if (typeof document !== 'undefined') {
 
     // 年・月・20日〆ボタンの状態から期間を決め、画面に反映する。
     function syncPeriod() {
+      const mi = st.minIdx || 0, ma = st.maxIdx || 99999;
+      function clampIdx(y, m) { const i = Math.min(ma, Math.max(mi, y * 12 + m - 1)); return { y: Math.floor(i / 12), m: i % 12 + 1 }; }
+      let c = clampIdx(st.y, st.m); st.y = c.y; st.m = c.m;
+      c = clampIdx(st.y2, st.m2); st.y2 = c.y; st.m2 = c.m;
       if (!st.multi || st.y2 * 12 + st.m2 < st.y * 12 + st.m) { st.y2 = st.y; st.m2 = st.m; } // 終了月は開始月以降
       const p = periodFor(st.y, st.m, st.mode === 'close20');
       const pe = periodFor(st.multi ? st.y2 : st.y, st.multi ? st.m2 : st.m, st.mode === 'close20');
@@ -279,13 +287,34 @@ if (typeof document !== 'undefined') {
       st.end = p.end;
       $('yearSel2').value = String(st.y2);
       $('monthSel2').value = String(st.m2);
-      ['multiTo', 'yearSel2', 'monthSel2'].forEach(function (id) { $(id).style.display = st.multi ? '' : 'none'; });
+      ['multiTo', 'yearSel2', 'mnav2'].forEach(function (id) { $(id).style.display = st.multi ? '' : 'none'; });
       $('modeMulti').setAttribute('aria-pressed', st.multi ? 'true' : 'false');
       $('yearSel').value = String(st.y);
       $('monthSel').value = String(st.m);
+      updateMonthNav();
       $('modeCalendar').setAttribute('aria-pressed', st.mode === 'calendar' ? 'true' : 'false');
       $('modeClose').setAttribute('aria-pressed', st.mode === 'close20' ? 'true' : 'false');
       $('periodText').textContent = '期間: ' + p.start.replace(/-/g, '/') + ' 〜 ' + p.end.replace(/-/g, '/');
+    }
+
+    // 範囲外の年・月はグレーアウト(選べない)。◀▶は範囲の端でグレーアウト。
+    function updateMonthNav() {
+      const mi = st.minIdx || 0, ma = st.maxIdx || 99999;
+      [['yearSel', 'monthSel', 'mPrev', 'mNext', st.y, st.m, mi, ma], ['yearSel2', 'monthSel2', 'mPrev2', 'mNext2', st.y2, st.m2, st.y * 12 + st.m - 1, ma]].forEach(function (r) {
+        const lo = r[6], hi = r[7], y = r[4], idx = r[4] * 12 + r[5] - 1;
+        Array.prototype.forEach.call($(r[0]).options, function (o) { const v = Number(o.value); o.disabled = v * 12 + 11 < lo || v * 12 > hi; });
+        Array.prototype.forEach.call($(r[1]).options, function (o) { const i = y * 12 + Number(o.value) - 1; o.disabled = i < lo || i > hi; });
+        $(r[2]).disabled = idx <= lo;
+        $(r[3]).disabled = idx >= hi;
+      });
+    }
+    function stepMonth(which, delta) {
+      const k = which === 2 ? ['y2', 'm2'] : ['y', 'm'];
+      const i = st[k[0]] * 12 + st[k[1]] - 1 + delta;
+      st[k[0]] = Math.floor(i / 12);
+      st[k[1]] = i % 12 + 1;
+      syncPeriod();
+      render();
     }
 
     function esc(s) {
@@ -473,6 +502,10 @@ if (typeof document !== 'undefined') {
     $('monthSel').addEventListener('change', function () { st.m = Number(this.value); syncPeriod(); render(); });
     $('yearSel2').addEventListener('change', function () { st.y2 = Number(this.value); syncPeriod(); render(); });
     $('monthSel2').addEventListener('change', function () { st.m2 = Number(this.value); syncPeriod(); render(); });
+    $('mPrev').addEventListener('click', function () { stepMonth(1, -1); });
+    $('mNext').addEventListener('click', function () { stepMonth(1, 1); });
+    $('mPrev2').addEventListener('click', function () { stepMonth(2, -1); });
+    $('mNext2').addEventListener('click', function () { stepMonth(2, 1); });
     $('modeMulti').addEventListener('click', function () { st.multi = !st.multi; syncPeriod(); render(); });
     $('modeCalendar').addEventListener('click', function () { st.mode = 'calendar'; syncPeriod(); render(); });
     $('modeClose').addEventListener('click', function () { st.mode = 'close20'; syncPeriod(); render(); });

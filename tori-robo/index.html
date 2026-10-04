@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>鳥取梁ロボ管理</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="style.css?v=sp17">
+<link rel="stylesheet" href="style.css?v=sp18">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 </head>
 <body>
@@ -20,10 +20,10 @@
     <div class="row">
       <h2 style="margin:0">1. 期間(年・月・〆日)</h2>
       <select id="yearSel" aria-label="年"></select>
-      <select id="monthSel" aria-label="月"></select>
+      <span class="mnav"><button type="button" class="btn nav" id="mPrev" aria-label="前の月">◀</button><select id="monthSel" aria-label="月"></select><button type="button" class="btn nav" id="mNext" aria-label="次の月">▶</button></span>
       <span id="multiTo" style="display:none">～</span>
       <select id="yearSel2" aria-label="終了年" style="display:none"></select>
-      <select id="monthSel2" aria-label="終了月" style="display:none"></select>
+      <span class="mnav" id="mnav2" style="display:none"><button type="button" class="btn nav" id="mPrev2" aria-label="終了月を前の月へ">◀</button><select id="monthSel2" aria-label="終了月"></select><button type="button" class="btn nav" id="mNext2" aria-label="終了月を次の月へ">▶</button></span>
       <span class="seg"><button type="button" class="btn toggle" id="modeCalendar" aria-pressed="true">普通月〆</button><button type="button" class="btn toggle" id="modeClose" aria-pressed="false">20日〆</button></span>
       <button type="button" class="btn toggle" id="modeMulti" aria-pressed="false">複数月</button>
       <span id="periodText" class="period"></span>
@@ -67,6 +67,6 @@
   <div class="manual-bar"><span id="manualPage" class="manual-page"></span><button type="button" class="btn" id="manualPrev">前ページ</button><button type="button" class="btn" id="manualNext">次ページ</button><button type="button" class="btn manual-close" id="manualClose">説明書を閉じる</button></div>
   <img id="manualImg" alt="説明書"></div></div>
 </div>
-<script src="app.js?v=sp17"></script>
+<script src="app.js?v=sp18"></script>
 </body>
 </html>

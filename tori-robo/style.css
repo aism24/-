@@ -127,3 +127,8 @@ select, option, input, button, .btn, .btn.primary, #dlBtn, #dlBtn:disabled, .man
 
 /* 濃い色の背景(緑・ピンク)のボタンは白抜きの文字の方が見やすいので、黒太字の指定を上書き */
 #dlBtn, #dlBtn:disabled, .manual-btn, .manual-close { color:#fff !important; font-weight:bold !important; }
+
+/* 月の前後移動(◀▶)。範囲外はグレーアウト */
+.mnav { display:inline-flex; align-items:center; gap:4px; }
+.btn.nav { padding:5px 9px; background:#e6f0fa; }
+.btn.nav:disabled, select option:disabled { color:#aaa !important; background:#f0f0f0; cursor:default; }
