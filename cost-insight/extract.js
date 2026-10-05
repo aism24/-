@@ -38,21 +38,21 @@
       '<th rowspan="2">契約総重量(t)</th><th rowspan="2">契約金額(円)</th><th rowspan="2">参照シート</th>';
     JY.PROFITS.forEach(p => { h += '<th colspan="2" class="grp">' + esc(p.label) + '</th>'; });
     JY.CATS.forEach(c => { h += '<th colspan="3" class="grp">' + esc(c) + '</th>'; });
-    h += '<th rowspan="2">保存日時</th></tr><tr>';
+    h += '<th rowspan="2">前回の保存者</th><th rowspan="2">保存日時</th></tr><tr>';
     JY.PROFITS.forEach(() => { h += '<th class="grp-l">予算</th><th>実際</th>'; });
     JY.CATS.forEach(() => { h += '<th class="grp-l">予算</th><th>実際</th><th>割合</th>'; });
     h += '</tr>';
     if (JY.isFiltered(filter)) {
       const tot = JY.computeTotals(rows);
       h += '<tr class="total"><th class="c-y" colspan="3">合計（' + tot.count + '件）</th><th class="c-name"></th>';
-      tot.cells.filter(c => c.id !== 'author').forEach(c => { h += '<th class="' + (c.kind === 'str' || c.kind === 'date' ? '' : 'num') + (c.over ? ' over' : '') + (c.id.endsWith(':b') ? ' grp-l' : '') + '">' + esc(cellText(c)) + '</th>'; });
+      tot.cells.forEach(c => { h += '<th class="' + (c.kind === 'str' || c.kind === 'date' ? '' : 'num') + (c.over ? ' over' : '') + (c.id.endsWith(':b') ? ' grp-l' : '') + '">' + esc(cellText(c)) + '</th>'; });
       h += '</tr>';
     }
     h += '</thead><tbody>';
     rows.forEach(r => {
       h += '<tr class="' + r.rowClass + '"><td class="c-y' + yearTag(r.year) + '">' + esc(r.year || JY.UNSET) + '</td><td class="c-d">' + (r.done ? '完了' : '') + '</td>' +
         '<td class="c-no">' + esc(r.no) + '</td><td class="c-name">' + esc(r.name) + '</td>';
-      r.cells.filter(c => c.id !== 'author').forEach(c => {
+      r.cells.forEach(c => {
         const cls = [c.kind === 'str' || c.kind === 'date' ? 'txt' : 'num'];
         if (c.id.endsWith(':b')) cls.push('grp-l');
         if (c.over) cls.push('over');
