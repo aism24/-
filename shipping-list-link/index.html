@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>出荷リスト図番リンク付与</title>
+<style>
+:root{--bg:#f6f7f9;--fg:#1c2330;--card:#fff;--line:#d9dee7;--acc:#1f6feb;--ok:#13795b;--warn:#b45309}
+@media(prefers-color-scheme:dark){:root{--bg:#12161d;--fg:#e6eaf2;--card:#1b212b;--line:#2c3544;--acc:#58a6ff;--ok:#3fb68b;--warn:#e0a458}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,"Hiragino Sans","Yu Gothic",sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px;margin:0 0 4px}
+.sub{color:#8a94a6;font-size:13px;margin-bottom:16px}
+#drop{border:2px dashed var(--line);background:var(--card);border-radius:12px;padding:44px 16px;text-align:center;cursor:pointer}
+#drop.over{border-color:var(--acc)}#drop b{font-size:17px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:14px}
+.row{display:flex;gap:8px;flex-wrap:wrap}.stat{flex:1;min-width:110px}.stat span{display:block;font-size:12px;color:#8a94a6}.stat strong{font-size:24px}
+.ok{color:var(--ok)}.warn{color:var(--warn)}table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left}
+#msg{margin-top:10px;font-size:13px}.small{font-size:12px;color:#8a94a6}
+</style></head><body><main>
+<h1>出荷リスト 図番リンク付与</h1>
+<div class="sub" id="master">マスタ読込中…</div>
+<div id="drop"><b>PDFをここにドロップ</b><br>またはクリックして選択<input id="file" type="file" accept="application/pdf" hidden></div>
+<div id="msg"></div>
+<div id="result"></div>
+<p class="small">図番と製品名が完全一致した行の製品名にリンクを付け、PDFを自動でダウンロードします。リンクは社内ネットワーク内でのみ開けます。</p>
+</main>
+<script src="vendor/pdf.min.js?v=20261005a"></script>
+<script src="vendor/pdf-lib.min.js?v=20261005a"></script>
+<script src="core.js?v=20261005a"></script>
+<script src="app.js?v=20261005a"></script>
+</body></html>
