@@ -219,6 +219,8 @@ if (typeof document !== 'undefined') {
       const s = document.querySelector('.sticky-top');
       if (!s) return;
       document.documentElement.style.setProperty('--stkH', Math.ceil(s.getBoundingClientRect().height) + 'px');
+      const th = document.querySelector('#detail th');
+      if (th) document.documentElement.style.setProperty('--thH', Math.ceil(th.getBoundingClientRect().height) + 'px');
     }
     window.addEventListener('resize', updateStick);
     if (window.ResizeObserver) {
@@ -416,7 +418,7 @@ if (typeof document !== 'undefined') {
         else if (g.corrected) { cls = 'fixed'; tip = esc(g.enteredMark) + ' → ' + esc(p ? p.m : ''); }
         return '<tr class="' + cls + '"' + (tip ? ' data-tip="' + tip + '"' : '') + '><td class="ctr">' + esc(g.workNo) + '</td><td>' + esc(works[g.workNo] || g.enteredName) + '</td><td class="ctr">' + esc(p ? p.d : '') + '</td><td>' + esc(p ? p.m : g.enteredMark) + '</td><td>' + esc(p ? p.s : '') + '</td><td class="num">' + (p ? fmt(p.w, 1) : '') + '</td><td class="ctr">' + g.robot + '号機</td><td class="ctr">' + (g.count > 1 ? g.count : '') + '</td><td class="ctr">' + md(p ? p.k : '') + '</td><td class="ctr">' + md(g.last) + '</td><td class="num">' + fmt(g.run / 60) + '</td><td class="num">' + fmt(g.arc / 60) + '</td><td class="num">' + fmt(g.wire, 1) + '</td><td class="num">' + fmt(g.len) + '</td></tr>';
       }).join('');
-      $('detail').innerHTML = groups.length ? '<table>' + head + body + '</table>' : '';
+      $('detail').innerHTML = groups.length ? '<table>' + head + body + '</table>' : ''; updateStick();
       renderMarkCheck(groups, works);
     }
 

@@ -165,3 +165,6 @@ select, option, input, button, .btn, .btn.primary, #dlBtn, #dlBtn:disabled, .man
 .dl-notice-box .btn.primary { margin-top:6px; padding:0 32px; }
 /* 表の文字は等幅フォント(細い文字1・Iなどで縦の並びが凸凹にならないように) */
 table th, table td { font-family:"BIZ UDGothic","MS Gothic","Osaka-Mono",Consolas,"Courier New",monospace; }
+/* 5.の表は1行ずつスクロール(固定見出しの下で行が半分切れないようにスナップ)。位置は固定ヘッダー+5.タイトル+列見出しの高さ */
+html { scroll-snap-type:y proximity; scroll-padding-top:calc(var(--stkH,0px) + 34px + var(--thH,32px)); }
+#detail tbody tr { scroll-snap-align:start; }
