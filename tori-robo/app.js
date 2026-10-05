@@ -524,6 +524,19 @@ if (typeof document !== 'undefined') {
       try { downloadExcel(); } catch (err) { setStatus('Excelの作成に失敗しました: ' + err.message, true); }
     });
 
+    // ダウンロード後のお知らせポップアップ
+    function showDlNotice() {
+      if ($('dlNotice')) return;
+      const ov = document.createElement('div');
+      ov.id = 'dlNotice'; ov.className = 'dl-notice'; ov.setAttribute('role', 'dialog');
+      ov.innerHTML = '<div class="dl-notice-box"><p>「出力用」シートで加工実績を印刷できます。</p><p>「全て抽出」シートで実寸法師が開けます(C列をクリック)。</p><button type="button" class="btn primary">OK</button></div>';
+      const close = function () { ov.remove(); document.removeEventListener('keydown', onKey); };
+      const onKey = function (e) { if (e.key === 'Escape' || e.key === 'Enter') close(); };
+      ov.addEventListener('click', function (e) { if (e.target === ov || e.target.tagName === 'BUTTON') close(); });
+      document.addEventListener('keydown', onKey);
+      document.body.appendChild(ov);
+    }
+
     // Excelダウンロードを記録(GAS action=logDownload)。サンプル時は送らない。結果は待たず、失敗しても無視する
     function logDownload() {
       if (st.sample || !GAS_API_URL) return;
@@ -600,7 +613,7 @@ if (typeof document !== 'undefined') {
           Math.round(g.run / 60), Math.round(g.arc / 60), Math.max(0, Math.round((g.run - g.arc) / 60)), Math.round(g.wire * 10) / 10, Math.round(g.len), note];
         vals.forEach(function (v, j) { row.getCell(j + 1).value = v; });
         for (let j = 9; j <= 12; j++) row.getCell(j).numFmt = 'm/d';
-        [7, 9, 10, 11, 12].forEach(function (j) { row.getCell(j).alignment = { horizontal: 'center' }; }); // ロボ・日付列は中央揃え
+        [1, 3, 7, 8, 9, 10, 11, 12].forEach(function (j) { row.getCell(j).alignment = { horizontal: "center" }; }); // 工事番号・図面番号・ロボ・溶接回数・日付列は中央揃え
         if (p && p.l) { row.getCell(3).value = { text: p.d || p.m, hyperlink: p.l }; row.getCell(3).font = { color: { argb: 'FF0563C1' }, underline: true }; }
         if (g.status !== 'ok') for (let j = 1; j <= dh.length; j++) row.getCell(j).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: g.status === 'suggest' ? 'FFFFF2CC' : 'FFF8CBAD' } };
       });
@@ -632,6 +645,7 @@ if (typeof document !== 'undefined') {
         document.body.appendChild(a);
         a.click();
         setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+        showDlNotice();
         logDownload(); // スプレッドシート「記録」へ日時と期間を記録(失敗してもダウンロードには影響しない)
       });
     }
