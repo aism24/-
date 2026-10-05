@@ -186,6 +186,7 @@ function doGet(e) {
     if (action === 'getData') return okRaw_(getSnapshotText_());
     if (action === 'refresh') return ok_(refreshSnapshot_(false));
     if (action === 'refreshMasters') return ok_(refreshMasters_());
+    if (action === 'logDownload') return ok_(logDownload_(p.period));
     if (action === 'saveAlias') return ok_(saveAlias_(p.name, p.workNo));
     return errRes_('不明なaction: ' + action);
   } catch (err) {
@@ -335,6 +336,26 @@ function readAlias_(rows) {
 }
 
 // 工事名称の別名を「各種情報」V:W列に追記する(同じ入力名があれば工事番号を上書き)。
+// Excelダウンロードの記録: シート「記録」の2行目に挿入(常に2行目が最新、古いものほど下)。A=日時 / B=期間。
+const LOG_SHEET_NAME = '記録';
+function logDownload_(period) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    let sh = ss_().getSheetByName(LOG_SHEET_NAME);
+    if (!sh) {
+      sh = ss_().insertSheet(LOG_SHEET_NAME);
+      sh.getRange(1, 1, 1, 2).setValues([['日時', '期間']]);
+    }
+    sh.insertRowBefore(2);
+    const now = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
+    sh.getRange(2, 1, 1, 2).setNumberFormat('@').setValues([[now, String(period || '')]]);
+    return { logged: true, at: now };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function saveAlias_(name, workNo) {
   name = String(name || '').trim();
   workNo = String(workNo || '').trim();
