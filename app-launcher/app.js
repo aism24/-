@@ -222,30 +222,36 @@ function saveSearchHistory(query) {
   renderSearchHistory();
 }
 
+// 検索履歴のドロップダウンを描画する。入力中は、入力語を含む履歴だけに絞る。
 function renderSearchHistory() {
   const box = document.getElementById('search-history');
-  const list = loadSearchHistory();
+  const input = document.getElementById('search');
+  const typed = normalizeText(input.value).trim();
+  const list = loadSearchHistory().filter(function (q) {
+    return !typed || normalizeText(q).indexOf(typed) !== -1;
+  });
   box.innerHTML = '';
-  if (list.length === 0) {
+  if (list.length === 0 || document.activeElement !== input) {
     box.hidden = true;
     return;
   }
   box.hidden = false;
-  const label = document.createElement('span');
-  label.textContent = '検索履歴:';
-  box.appendChild(label);
+  const head = document.createElement('div');
+  head.className = 'head';
+  head.textContent = '検索履歴(クリックで再検索)';
+  box.appendChild(head);
   list.forEach(function (q) {
-    const chip = document.createElement('span');
-    chip.className = 'chip';
+    const item = document.createElement('div');
+    item.className = 'item';
     const use = document.createElement('button');
     use.type = 'button';
     use.className = 'q';
     use.textContent = q;
     use.addEventListener('click', function () {
-      const input = document.getElementById('search');
       input.value = q;
       applySearch();
       saveSearchHistory(q); // 使った履歴を先頭へ
+      box.hidden = true;
     });
     const del = document.createElement('button');
     del.type = 'button';
@@ -256,14 +262,14 @@ function renderSearchHistory() {
       storeSearchHistory(loadSearchHistory().filter(function (x) { return x !== q; }));
       renderSearchHistory();
     });
-    chip.appendChild(use);
-    chip.appendChild(del);
-    box.appendChild(chip);
+    item.appendChild(use);
+    item.appendChild(del);
+    box.appendChild(item);
   });
   const clear = document.createElement('button');
   clear.type = 'button';
   clear.className = 'clear-all';
-  clear.textContent = '全て削除';
+  clear.textContent = '履歴を全て削除';
   clear.addEventListener('click', function () {
     storeSearchHistory([]);
     renderSearchHistory();
@@ -305,17 +311,29 @@ function applySearch() {
 
 (function initSearch() {
   const input = document.getElementById('search');
-  input.addEventListener('input', applySearch);
+  const box = document.getElementById('search-history');
+  input.addEventListener('input', function () {
+    applySearch();
+    renderSearchHistory();
+  });
+  // 検索欄のクリック・フォーカスで履歴を表示する(マウスだけで再検索できる)。
+  input.addEventListener('focus', renderSearchHistory);
+  input.addEventListener('click', renderSearchHistory);
+  // 履歴ボタン操作で検索欄のフォーカスが外れて閉じてしまわないようにする。
+  box.addEventListener('mousedown', function (e) { e.preventDefault(); });
   // 履歴は、Enter・入力欄から離れた時・アプリを開いた時に保存する。
   input.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') saveSearchHistory(input.value);
+    if (e.key === 'Enter') {
+      saveSearchHistory(input.value);
+      box.hidden = true;
+    } else if (e.key === 'Escape') {
+      box.hidden = true;
+    }
   });
-  input.addEventListener('blur', function (e) {
-    // 履歴チップ(使う・削除)を操作しに移る時は保存しない。
-    if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('#search-history')) return;
+  input.addEventListener('blur', function () {
     saveSearchHistory(input.value);
+    box.hidden = true;
   });
-  renderSearchHistory();
 })();
 
 // アプリ一覧はGAS Web Appの起動オーバーヘッドで毎回2〜3秒程度かかるため、
