@@ -531,10 +531,11 @@ if (typeof document !== 'undefined') {
       if ($('dlNotice')) return;
       const ov = document.createElement('div');
       ov.id = 'dlNotice'; ov.className = 'dl-notice'; ov.setAttribute('role', 'dialog');
-      ov.innerHTML = '<div class="dl-notice-box"><p>「出力用」シートで加工実績を印刷できます。</p><p>「全て抽出」シートで実寸法師が開けます(C列をクリック)。</p><button type="button" class="btn primary">OK</button></div>';
-      const close = function () { ov.remove(); document.removeEventListener('keydown', onKey); };
+      ov.innerHTML = '<div class="dl-notice-box"><p>「出力用」シートで加工実績を印刷できます。</p><p>「全て抽出」シートで実寸法師が開けます(C列をクリック)。</p><div class="dl-notice-bar"><span></span></div></div>';
+      const close = function () { clearTimeout(timer); ov.remove(); document.removeEventListener('keydown', onKey); };
       const onKey = function (e) { if (e.key === 'Escape' || e.key === 'Enter') close(); };
-      ov.addEventListener('click', function (e) { if (e.target === ov || e.target.tagName === 'BUTTON') close(); });
+      const timer = setTimeout(close, 3000); // 3秒後に自動で消える
+      ov.addEventListener('click', close);
       document.addEventListener('keydown', onKey);
       document.body.appendChild(ov);
     }
