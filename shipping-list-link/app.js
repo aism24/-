@@ -7,7 +7,7 @@
   var OPEN_BASE = 'https://shipping-list-link.vercel.app/open.html';
   var $ = function (id) { return document.getElementById(id); };
   var links = null, CK = 'ship-links-v1';
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261005o';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261005p';
 
   function showMaster(m, note) {
     links = m.links;
