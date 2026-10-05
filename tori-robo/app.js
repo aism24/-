@@ -159,9 +159,10 @@ if (typeof document !== 'undefined') {
     }
 
     function loadCachedData() {
-      try { return JSON.parse(localStorage.getItem(DATA_CACHE_KEY) || 'null'); } catch (e) { return null; }
+      try { const c = JSON.parse(localStorage.getItem(DATA_CACHE_KEY) || 'null'); return c && Array.isArray(c.works) ? c : null; } catch (e) { return null; } // 壊れた保存(全データでないもの)は使わない
     }
     function saveCachedData(data) {
+      if (!data || !Array.isArray(data.works)) return;
       try { localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data)); } catch (e) { /* 保存できなくても動作は続ける */ }
     }
 
