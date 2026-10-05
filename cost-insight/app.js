@@ -147,12 +147,13 @@ function showView(name) {
   document.body.dataset.view = name; // ホームへ戻るボタンをホーム画面では隠す(CSS)
   document.querySelectorAll('.view').forEach(v => { v.hidden = v.id !== 'v-' + name; });
   window.scrollTo(0, 0);
-  document.querySelector('main').classList.toggle('wide', name === 'simple' || name === 'detail'); // シンプル版は画面いっぱいに使う
+  document.querySelector('main').classList.toggle('wide', name === 'simple' || name === 'detail' || name === 'extract'); // シンプル版・実行予算抽出は画面いっぱいに使う
   if (name === 'progress') {
     document.querySelector('#v-progress .home-row button').dataset.go = state.tab === 'site' ? 'sitemode' : 'analysis';
     render(); // グラフは表示されてから描く(非表示のままだと大きさが決まらない)
   }
   syncStickyOffsets();
+  if (name === 'extract' && window.ExtractView) ExtractView.show();
   if (name === 'simple' && window.SimpleView) SimpleView.show();
   if (name === 'detail' && window.DetailView) DetailView.show();
 }

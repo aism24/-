@@ -129,6 +129,8 @@
               padding:17px 12px; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.25); transition:filter .15s, transform .15s; }
   .menu-btn.m1 { background:#dbeafe; border-color:#93c5fd; }
   .menu-btn.m2 { background:#dcfce7; border-color:#86efac; }
+  .menu-btn.wide2 { grid-column:1 / -1; font-size:20px; padding:20px 12px; }
+  .menu-btn.m4 { background:#fef3c7; border-color:#fcd34d; }
   .menu-btn.m3 { background:#ede9fe; border-color:#c4b5fd; }
   .menu-btn:hover:not(:disabled) { filter:brightness(1.04); transform:translateY(-2px); }
   .menu-btn:disabled { background:#999; border-color:#999; color:#ddd; cursor:default; }
@@ -152,6 +154,34 @@
   .btn-row { align-self:stretch; display:flex; gap:10px; margin:4px 0 8px; }
   .btn-row .btn { flex:1 1 0; margin:0; padding:4px 10px; font-size:14px; line-height:1.4; }
   .budget-stack .imp-status { width:min(340px, 100%); }
+  /* 実行予算抽出(赤は使わない: 予算超過・未達は太字+薄いオレンジ、未完成は薄い黄色) */
+  .exBar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; background:var(--card); border-radius:8px 8px 0 0; padding:8px 12px; }
+  .exBar .note { margin:0; }
+  .exFilters { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-weight:bold; }
+  .exFilters button { font:inherit; padding:4px 14px; border:1px solid #999; background:#fff; color:#000; border-radius:4px; cursor:pointer; }
+  .exFilters button.on { background:#1a73e8; border-color:#1a73e8; color:#fff; }
+  .exWrap { overflow:auto; max-height:calc(100vh - 190px); background:#fff; border:1px solid #ccc; }
+  #ex-tbl { border-collapse:separate; border-spacing:0; white-space:nowrap; font-size:13px; color:#000; }
+  #ex-tbl th, #ex-tbl td { border-right:1px solid #ddd; border-bottom:1px solid #ddd; padding:3px 6px; background:#fff; }
+  #ex-tbl thead th { position:sticky; top:0; z-index:2; background:#eef1f5; font-weight:600; text-align:center; }
+  #ex-tbl thead tr.total th { background:#f7f7f2; font-weight:700; border-bottom:3px double #888; }
+  #ex-tbl thead tr.total th.num { text-align:right; }
+  #ex-tbl .c-st, #ex-tbl .c-y, #ex-tbl .c-d, #ex-tbl .c-no, #ex-tbl .c-name { position:sticky; z-index:1; overflow:hidden; text-overflow:ellipsis; }
+  #ex-tbl thead .c-st, #ex-tbl thead .c-y, #ex-tbl thead .c-d, #ex-tbl thead .c-no, #ex-tbl thead .c-name { z-index:3; }
+  #ex-tbl .c-st { left:0; width:104px; min-width:104px; max-width:104px; font-size:12px; white-space:normal; text-align:center; }
+  #ex-tbl .c-y { left:104px; width:56px; min-width:56px; max-width:56px; text-align:center; }
+  #ex-tbl .c-d { left:160px; width:48px; min-width:48px; max-width:48px; text-align:center; }
+  #ex-tbl .c-no { left:208px; width:64px; min-width:64px; max-width:64px; text-align:center; }
+  #ex-tbl .c-name { left:272px; width:200px; min-width:200px; max-width:200px; border-right:2px solid #bbb; }
+  #ex-tbl .grp, #ex-tbl .grp-l { border-left:2px solid #bbb; }
+  #ex-tbl td.num { text-align:right; } #ex-tbl td.txt { text-align:left; }
+  #ex-tbl tbody td { height:34px; vertical-align:middle; }
+  #ex-tbl tr.missing td { background:#d9d9d9; }
+  #ex-tbl td.over, #ex-tbl th.over { background:#ffedd5; font-weight:700; }
+  #ex-tbl td.zero { background:#fef08a; font-weight:700; }
+  #ex-tbl td.y0 { background:#d6e9ff; } #ex-tbl td.y1 { background:#d8f3dc; } #ex-tbl td.y2 { background:#ffd9e6; } #ex-tbl td.y3 { background:#fff3a8; }
+  #ex-tbl tbody tr { cursor:pointer; }
+  #ex-tbl tr.sel td { background:#e3f4e1; border-top:3px double #2e8b57; border-bottom:3px double #2e8b57; }
 </style>
 </head>
 <body data-view="menu">
@@ -168,6 +198,7 @@
   <section id="v-menu" class="view">
     <div class="menu">
       <button class="menu-btn m3 wide" type="button" data-go="analysis" disabled>進捗・結果確認</button>
+      <button class="menu-btn m4 wide2" type="button" data-go="extract" disabled>実行予算抽出</button>
       <button class="menu-btn m1" type="button" data-go="budget" disabled>実行予算取込</button>
       <button class="menu-btn m2" type="button" data-go="settings" disabled>設定</button>
     </div>
@@ -266,6 +297,12 @@
     </div>
   </section>
 
+  <!-- 実行予算抽出: 取り込んだ実行予算の結果テーブル -->
+  <section id="v-extract" class="view" hidden>
+    <div class="exBar"><span id="ex-meta" class="note"></span><div id="ex-filters" class="exFilters"></div></div>
+    <div class="exWrap"><table id="ex-tbl"></table></div>
+  </section>
+
   <!-- 実行予算取込モード -->
   <section id="v-budget" class="view" hidden>
     <!-- 3つのボタンを縦に並べ、上合わせ・中央揃え -->
@@ -341,6 +378,8 @@
   </div>
 </div>
 <script src="calc.js"></script>
+<script src="budgetview.js"></script>
+<script src="extract.js"></script>
 <script src="bepchart.js"></script>
 <script src="app.js"></script>
 <script src="simple.js"></script>
