@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
 <!-- ?v= はスタイル/スクリプト更新のたびに値を上げ、ブラウザの古いキャッシュが
      読み込まれ続けることを防ぐためのキャッシュバスティング用クエリ -->
-<link rel="stylesheet" href="style.css?v=17">
+<link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
   <div class="header">
@@ -21,8 +21,15 @@
     <h1>アプリ一覧</h1>
   </div>
 
+  <div class="search-area">
+    <div class="search-box">
+      <input id="search" type="search" placeholder="アプリを検索（クリックで検索履歴を表示）" autocomplete="off" aria-label="アプリを検索">
+      <div id="search-history" class="search-history" hidden></div>
+    </div>
+  </div>
+
   <div id="groups"><div class="empty">読み込み中...</div></div>
 
-<script src="app.js?v=10"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

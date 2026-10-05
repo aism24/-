@@ -200,3 +200,99 @@ h2.category {
 .empty {
   color: #888;
 }
+
+/* アプリ検索(検索ボックス・検索履歴・絞り込み時の非表示) */
+.search-area {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 0 20px;
+}
+.search-box input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  font-size: 16px;
+  color: #eee;
+  background: #161616;
+  border: 2px solid #333;
+  border-radius: 10px;
+  outline: none;
+}
+.search-box input:focus {
+  border-color: #E74155;
+}
+/* 検索履歴: 検索欄をクリックすると下に表示されるドロップダウン */
+.search-box {
+  position: relative;
+}
+.search-history {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  margin-top: 4px;
+  background: #161616;
+  border: 2px solid #333;
+  border-radius: 10px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  font-size: 14px;
+}
+.search-history[hidden] {
+  display: none;
+}
+.search-history .head {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: #888;
+  border-bottom: 1px solid #2a2a2a;
+}
+.search-history .item {
+  display: flex;
+  align-items: center;
+}
+.search-history .item:hover {
+  background: #262626;
+}
+.search-history .item .q {
+  flex: 1;
+  text-align: left;
+  padding: 9px 14px;
+  font: inherit;
+  color: #eee;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.search-history .item .x {
+  padding: 9px 14px;
+  font: inherit;
+  color: #777;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.search-history .item .x:hover {
+  color: #E74155;
+}
+.search-history .clear-all {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  text-align: right;
+  font: inherit;
+  font-size: 12px;
+  color: #888;
+  background: none;
+  border: 0;
+  border-top: 1px solid #2a2a2a;
+  cursor: pointer;
+}
+.search-history .clear-all:hover {
+  color: #E74155;
+}
+.card.search-hide,
+.category-row.search-hide {
+  display: none;
+}
