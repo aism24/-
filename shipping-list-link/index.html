@@ -12,21 +12,23 @@
 #drop{position:relative;overflow:hidden;animation:glowPulse 3s ease-in-out infinite}
 #drop.over,#drop:hover{border-color:var(--acc);animation:none}
 #drop b{display:block;margin-top:14px}
-.stage{position:relative;height:84px;overflow:hidden;pointer-events:none}
+.stage{position:relative;height:96px;overflow:hidden;pointer-events:none}
 .stage.busy{opacity:.3}
-.fi{position:absolute;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:4px}
-.fi .box{width:48px;height:56px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;letter-spacing:1px;color:#fff;position:relative}
-.fi .lab{font-size:10px;color:#8a94a6;letter-spacing:1px}
-.fi-src .box{background:linear-gradient(135deg,#6b7585,#8a94a6);box-shadow:0 0 12px rgba(138,148,166,.45)}
-.fi-out .box{background:linear-gradient(135deg,#c0392b,#e74c3c);box-shadow:0 0 12px rgba(231,76,60,.5)}
-.fi-out .box::after{content:"🔗";position:absolute;right:-8px;bottom:-8px;font-size:18px;filter:drop-shadow(0 0 3px rgba(0,0,0,.4))}
-.fx{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:4px;opacity:0}
-.fx i{width:5px;height:5px;border-radius:50%;background:var(--acc);box-shadow:0 0 6px var(--acc)}
-.fx u{width:6px;height:6px;border-right:2px solid var(--acc);border-top:2px solid var(--acc);transform:rotate(45deg)}
-.fi-src{animation:srcMove 3s ease-in-out infinite}.fi-out{animation:outMove 3s ease-in-out infinite}.fx{animation:fxFlash 3s ease-in-out infinite}
-@keyframes srcMove{0%{left:-80px;opacity:0}10%{opacity:1}45%,55%{left:calc(50% - 24px);opacity:1}90%{opacity:1}100%{left:calc(100% + 80px);opacity:0}}
-@keyframes outMove{0%{left:calc(100% + 80px);opacity:0}10%{opacity:1}45%,55%{left:calc(50% - 24px);opacity:1}90%{opacity:1}100%{left:-80px;opacity:0}}
-@keyframes fxFlash{0%,42%{opacity:0;transform:translate(-50%,-50%) scale(.5)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.3)}58%,100%{opacity:0}}
+/* 4.2秒周期: 左から赤PDF→中央で発光しピンクの「リンク付き」へ→右へ移動して消える→1秒の間→繰り返し */
+.fi{position:absolute;top:50%;left:-80px;margin-top:-40px;display:flex;flex-direction:column;align-items:center;gap:4px;opacity:0;animation:move 4.2s ease-in-out infinite}
+.fi .box{width:48px;height:56px;border-radius:6px;position:relative;animation:glow 4.2s ease-in-out infinite}
+.fi .b{position:absolute;inset:0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;letter-spacing:1px;color:#fff}
+.fi .b-red{background:linear-gradient(135deg,#c0392b,#e74c3c);box-shadow:0 0 12px rgba(231,76,60,.5);animation:toRed 4.2s ease-in-out infinite}
+.fi .b-pink{background:linear-gradient(135deg,#f06292,#ff8fb8);box-shadow:0 0 14px rgba(255,111,165,.6);opacity:0;animation:toPink 4.2s ease-in-out infinite}
+.fi .b-pink::after{content:"🔗";position:absolute;right:-8px;bottom:-8px;font-size:18px}
+.fi .labs{position:relative;height:14px;width:80px;font-size:10px;letter-spacing:1px;color:#8a94a6;text-align:center}
+.fi .labs span{position:absolute;inset:0}
+.fi .labs .l2{color:#e0558a;font-weight:bold;opacity:0;animation:toPink 4.2s ease-in-out infinite}
+.fi .labs .l1{animation:toRed 4.2s ease-in-out infinite}
+@keyframes move{0%{left:-80px;opacity:0}4%{opacity:1}28%,47%{left:calc(50% - 24px);opacity:1}70%{opacity:1}76%{left:calc(100% + 80px);opacity:0}100%{left:calc(100% + 80px);opacity:0}}
+@keyframes toRed{0%,30%{opacity:1}36%,100%{opacity:0}}
+@keyframes toPink{0%,30%{opacity:0}36%,100%{opacity:1}}
+@keyframes glow{0%,28%{transform:scale(1);filter:none}33%{transform:scale(1.35);filter:brightness(1.8) drop-shadow(0 0 16px #fff) drop-shadow(0 0 28px #ff8fb8)}40%{transform:scale(1.1);filter:brightness(1.3) drop-shadow(0 0 10px #ff8fb8)}47%,100%{transform:scale(1);filter:none}}
 @keyframes glowPulse{0%,100%{box-shadow:0 0 10px rgba(31,111,235,.10)}50%{box-shadow:0 0 22px rgba(31,111,235,.25)}}
 body.dragging::after{content:"ここにドロップ";position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:bold;color:var(--acc);background:rgba(31,111,235,.10);border:4px dashed var(--acc);pointer-events:none}
 main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
@@ -42,9 +44,8 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
 <div class="sub" id="master">マスタ読込中…</div>
 <div id="drop">
   <div class="stage" id="stage">
-    <div class="fi fi-src"><div class="box">PDF</div><span class="lab">SOURCE</span></div>
-    <div class="fx"><i></i><u></u><i></i><u></u><i></i></div>
-    <div class="fi fi-out"><div class="box">PDF</div><span class="lab">リンク付き</span></div>
+    <div class="fi"><div class="box"><div class="b b-red">PDF</div><div class="b b-pink">PDF</div></div>
+      <div class="labs"><span class="l1">PDF</span><span class="l2">リンク付き</span></div></div>
   </div>
   <b>PDFを画面のどこにでもドロップ</b>またはクリックして選択
   <input id="file" type="file" accept="application/pdf" hidden>
@@ -53,8 +54,8 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
 <div id="result"></div>
 <p class="small">図番と製品名が完全一致した行の製品名にリンクを付け、PDFを自動でダウンロードします。リンクは社内ネットワーク内でのみ開けます。</p>
 </main>
-<script src="vendor/pdf.min.js?v=20261005d"></script>
-<script src="vendor/pdf-lib.min.js?v=20261005d"></script>
-<script src="core.js?v=20261005d"></script>
-<script src="app.js?v=20261005d"></script>
+<script src="vendor/pdf.min.js?v=20261005e"></script>
+<script src="vendor/pdf-lib.min.js?v=20261005e"></script>
+<script src="core.js?v=20261005e"></script>
+<script src="app.js?v=20261005e"></script>
 </body></html>
