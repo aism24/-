@@ -148,6 +148,7 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 |---|---|---|---|
 | pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 解除(2026-09-24、関数統合版を本番デプロイ後に再解除) | |
 | daily-report (https://all-daily-report.vercel.app/) | daily-report | 解除(2026-09-24) | `daily-report/vercel.json` で `git.deploymentEnabled=false`。Ignored Build Step=`git diff HEAD^ HEAD --quiet -- .` |
+| shipping-list-link (https://shipping-list-link.vercel.app/) | shipping-list-link | 連携中(2026-10-05〜。現在 `list_projects` で1件) | 静的サイト+`api/links.js`(小さいNode関数)。`vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
 | sonekibunki (https://sonekibunki.vercel.app/) | production-profit | 解除(2026-09-29、#416〜#424を本番デプロイ後にユーザーが解除。`list_projects` 0件を確認。`vercel.json` の `git.deploymentEnabled=false` は残置) | 静的サイト(関数なし)。本番反映は `create_deployment` で行う。GitHub Pages版は廃止(index.htmlでVercel版へ転送) |
 
 2026-09-29、sonekibunkiの連携も解除され、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。公開時は連携を戻してから、指示があったときだけ `create_deployment` で1回デプロイする。
@@ -192,6 +193,7 @@ Previewデプロイが発生する)
 | 実行予算まとめアプリ(管理用スプレッドシート「実行予算」も同じフォルダ内。2026-09-29登録) | https://drive.google.com/drive/folders/1EwfXNOal_AdY6MzARgEGV_aKAcf6HjWN | `1EwfXNOal_AdY6MzARgEGV_aKAcf6HjWN` |
 | コストインサイト(cost-insight。原価管理・生産進捗分析。管理用スプレッドシート「コストインサイト」も同じフォルダ内。2026-10-01登録) | https://drive.google.com/drive/folders/1iB0Za-pfjZm3jfgyhQ4ktMkhEaCjivbO | `1iB0Za-pfjZm3jfgyhQ4ktMkhEaCjivbO` |
 | 梁ロボ(tori-robo。鳥取梁ロボ管理。管理用スプレッドシート「鳥取梁ロボ管理データ」も同じフォルダ内。2026-10-02登録) | https://drive.google.com/drive/folders/1E0FH8FPtfcyyIK-lH0O-JC1I1vRCb5Iw | `1E0FH8FPtfcyyIK-lH0O-JC1I1vRCb5Iw` |
+| リンク付き出荷リスト(shipping-list-link。出荷リストPDFの製品名に実寸法師へのハイパーリンクを付与。元PDF・リンク表・記録シート「PDFに図番ハイパーリンク付与」も同じフォルダ内。2026-10-05登録。引き継ぎ書のGoogleドキュメントのタイトルは「リンク付き出荷リスト」) | https://drive.google.com/drive/folders/1vekpzwfn-W0MqRyWWYzWdS4A6jp2bEt3 | `1vekpzwfn-W0MqRyWWYzWdS4A6jp2bEt3` |
 | 上記以外のアプリ | 未登録(ユーザーがアプリごとに指示する。指示されたらこの表に追記する) | - |
 
 - **保存先フォルダはユーザーがアプリごとに指示する。** 指示が無いアプリは、推測で決めずにユーザーに聞く。
