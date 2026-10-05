@@ -132,3 +132,12 @@ select, option, input, button, .btn, .btn.primary, #dlBtn, #dlBtn:disabled, .man
 .mnav { display:inline-flex; align-items:center; gap:4px; }
 .btn.nav { padding:5px 9px; background:#e6f0fa; }
 .btn.nav:disabled, select option:disabled { color:#aaa !important; background:#f0f0f0; cursor:default; }
+/* カード間・上端の余白をすべて同じ幅にそろえる(基準=ヘッダーと1.期間の間) */
+:root { --gap:8px; }
+.page { padding-top:var(--gap); padding-bottom:var(--gap); }
+.card { margin:0 0 var(--gap); }
+.pair { gap:var(--gap); }
+.pair .card { margin:0 0 var(--gap); }
+.sticky-top { padding-bottom:0; }
+.sticky-top .app-header { margin:0 0 var(--gap); }
+.sticky-top .card { margin:0 0 var(--gap); }
