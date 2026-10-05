@@ -179,6 +179,10 @@ if (typeof document !== 'undefined') {
       p.then(function (res) {
         if (res.status !== 'success') throw new Error(res.message || '読み込みに失敗しました');
         if (res.data && res.data.timing) { try { console.log('更新確認の所要時間(ms)', res.data.timing); } catch (e) { /* 無視 */ } }
+        if (res.data && res.data.unchanged) { // 変更なし(全データは来ない): 手元のデータのまま、ポップアップだけ閉じる
+          if (st.data) { setStatus(''); return; }
+          return load(false, true); // 手元にデータが無い場合だけ読み直す
+        }
         if (!useSample) saveCachedData(res.data);
         if (cached && cached.generatedAt === res.data.generatedAt) return; // 変更なし
         st.data = res.data;
