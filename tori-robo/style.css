@@ -176,5 +176,5 @@ table th, table td { font-family:"BIZ UDGothic","MS Gothic","Osaka-Mono",Consola
 #works .btn.small { padding-top:0; padding-bottom:0; line-height:20px; }
 /* 3秒で縮むバー(自動で消えることを示す装飾) */
 .dl-notice-bar { height:10px; border-radius:5px; background:#f3e8a0; overflow:hidden; margin-top:6px; }
-.dl-notice-bar span { display:block; height:100%; background:#2e9e4f; border-radius:5px; transform-origin:left; animation:dlbar 3s linear forwards; }
+.dl-notice-bar span { display:block; height:100%; background:#2e9e4f; border-radius:5px; transform-origin:left; animation:dlbar 10s linear forwards; }
 @keyframes dlbar { from { transform:scaleX(1); } to { transform:scaleX(0); } }

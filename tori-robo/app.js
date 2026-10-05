@@ -584,7 +584,7 @@ if (typeof document !== 'undefined') {
       ov.innerHTML = '<div class="dl-notice-box"><p>「出力用」シートで加工実績を印刷できます。</p><p>「全て抽出」シートで実寸法師が開けます(C列をクリック)。</p><div class="dl-notice-bar"><span></span></div></div>';
       const close = function () { clearTimeout(timer); ov.remove(); document.removeEventListener('keydown', onKey); };
       const onKey = function (e) { if (e.key === 'Escape' || e.key === 'Enter') close(); };
-      const timer = setTimeout(close, 3000); // 3秒後に自動で消える
+      const timer = setTimeout(close, 10000); // 10秒後に自動で消える
       ov.addEventListener('click', close);
       document.addEventListener('keydown', onKey);
       document.body.appendChild(ov);
