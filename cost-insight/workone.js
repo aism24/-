@@ -35,10 +35,13 @@
     const w = state.model.works[no], g = K.goalRate() / 100;
     const all = C.summarize(state.model.cells);
     const own = w.hourRate !== null && w.hourRate !== undefined;
-    const L = (own ? w.hourRate : all.hourRate || 0) * 8; // 1人工(8h)当たりの労務費
+    let L = (own ? w.hourRate : all.hourRate || 0) * 8; // 1人工(8h)当たりの労務費
+    // 完了の工事は、人件費を実行予算の労務費(実際)にする(売上・仕入も実際なので、損益が実行予算の営業損益(実際)と一致する)
+    const byBudget = !!(w.done && w.hasBudget && w.laborActual > 0 && w.hours > 0);
+    if (byBudget) L = w.laborActual / (w.hours / 8);
     const W0 = w.unitWeight > 0 ? w.unitWeight : w.weight; // 完了は生産実績の累計、未完は契約総重量
-    return { w, no, g, L, ownRate: own, W0, P: w.procUnit || 0, v: w.purchaseUnit || 0,
-      nNow: w.weight > 0 ? w.hours / 8 / w.weight : 0 };
+    return { w, no, g, L, ownRate: own, laborByBudget: byBudget, W0, P: w.procUnit || 0, v: w.purchaseUnit || 0,
+      nNow: w.done && W0 > 0 ? w.hours / 8 / W0 : (w.weight > 0 ? w.hours / 8 / w.weight : 0) }; // 完了は生産実績の累計重量(W0)を基準にする
   }
 
   function simulate(x, W, n, P) {
@@ -83,7 +86,7 @@
     });
     const w = x.w;
     $('w-basis').innerHTML = esc(w.no + ' ' + w.name) + '(' + (w.done ? '完了' : '未完') + ' / ' + esc(w.year || '年度未設定') + ')。生産重量=' + (w.unitByActual ? '生産実績の累計(完了のため)' : '契約総重量') + '、1t当たり人工数=これまでの実績、トン単価=契約金額÷' + (w.unitByActual ? '生産重量' : '契約総重量') + '。' +
-      (x.ownRate ? '' : '時間単価は工事の値がないため全体の平均を使用。') + 'その他固定費は工事には配分していません。';
+      (x.laborByBudget ? '人件費は実行予算の労務費(実際)。' : x.ownRate ? '' : '時間単価は工事の値がないため全体の平均を使用。') + 'その他固定費は工事には配分していません。';
     update();
   }
 
@@ -156,9 +159,9 @@
   /* 右上: 損益分岐生産量のグラフ(目標シミュレーターと同じ)。これまでの実績(累計の生産重量・工数)で描く。
      人件費(工数×時間単価)を固定費、仕入を1tごとの変動費として、損益分岐生産量と目標利益率に届く生産量を出す。つまみは動かせない */
   function renderChart(x) {
-    const w = x.w, labor = w.hours * x.L / 8, s = K.solve(labor, x.P, x.v, x.g);
+    const w = x.w, now = w.done ? x.W0 : w.weight, labor = w.hours * x.L / 8, s = K.solve(labor, x.P, x.v, x.g); // 完了の位置=生産実績の累計重量
     drawBep('c-work', { fixed: labor, unitPrice: x.P, laborPerTon: 0, varPerTon: x.v, profitRate: x.g, fixedLabel: ['人件費', '(実績)'], otherFixed: 0, laborRate: x.L,
-      sig: [x.no, labor, x.P, x.v, x.g, w.weight].join('|'), x: w.weight, fixedX: true, beTons: s.be, goalTons: s.goal, handleLabel: w.done ? '完了' : '現在', endTons: w.done ? 0 : x.W0 });
+      sig: [x.no, labor, x.P, x.v, x.g, now].join('|'), x: now, fixedX: true, beTons: s.be, goalTons: s.goal, handleLabel: w.done ? '完了' : '現在', endTons: w.done ? 0 : x.W0 });
   }
 
   window.WorkView = { show };

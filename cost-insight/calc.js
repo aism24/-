@@ -166,6 +166,7 @@
         w.hasBudget = true;
         w.purchaseActual = num(b.cats['計'][1]) - laborSum(b, 1);
         w.purchaseBudget = num(b.cats['計'][0]) - laborSum(b, 0);
+        w.laborActual = laborSum(b, 1); // 労務費(実際。工場・事務図面・現場の合計)。完了の工事の人件費に使う
         w.purchase = w.done ? w.purchaseActual : w.purchaseBudget;
         w.purchaseUnit = basis > 0 ? w.purchase / basis : null;
         w.cutoff = periodFromBudget(b.laborCutoff);
