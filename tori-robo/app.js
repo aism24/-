@@ -651,7 +651,7 @@ if (typeof document !== 'undefined') {
           let len = 0;
           for (let k = 0; k < t.length; k++) {
             const ch = t.charAt(k);
-            len += t.charCodeAt(k) > 255 ? 2.1 : /[MW]/.test(ch) ? 1.5 : /[Iil1j.\s]/.test(ch) ? 0.6 : ch === '-' ? 0.7 : /[A-Z]/.test(ch) ? 1.2 : 1.1;
+            len += t.charCodeAt(k) > 255 ? 2.1 : /[MW]/.test(ch) ? 1.5 : /[Iilj.\s]/.test(ch) ? 0.6 : ch === '-' ? 0.7 : /[A-Z]/.test(ch) ? 1.2 : 1.1;
           }
           cw = Math.max(cw, len * 1.75 + 3); // 18pt は 11pt の約1.64倍(太字ぶん余裕)
           row.height = 26;
