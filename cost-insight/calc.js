@@ -149,10 +149,14 @@
       var m = sw[no] || {}, info = (cache.works || {})[no] || {};
       var contract = num(m.contract), tw = num(m.totalWeight);
       var total = tw !== null ? tw : (num(info.totalWeight) || 0);
+      // 単価の元にする重量: 完了の工事は「生産実績の累計」(生産した分だけで契約金額がもらえる)、未完は契約総重量。
+      // 完了を解除すればこのモデルを作り直すだけで契約総重量に戻る(完了・年度の設定を保存するたびに build し直す)
+      var actual = num(info.totalWeight) || 0;
+      var basis = m.done && actual > 0 ? actual : total;
       var w = works[no] = {
         no: no, name: m.name || info.name || '', done: !!m.done, year: m.year || '',
-        contract: contract, totalWeight: total,
-        procUnit: contract !== null && total > 0 ? contract / total : null,
+        contract: contract, totalWeight: total, unitWeight: basis, unitByActual: basis !== total,
+        procUnit: contract !== null && basis > 0 ? contract / basis : null,
         hasBudget: false, purchaseActual: null, purchaseBudget: null, purchase: null, purchaseEst: !m.done, purchaseUnit: null,
         laborUsed: 0, laborBeforeData: 0, cutoff: '', hoursToCutoff: 0, hourRate: null,
         weight: 0, hours: 0, hoursBeforeAnalysis: 0, coverage: null, dataShort: false, notes: [],
@@ -163,7 +167,7 @@
         w.purchaseActual = num(b.cats['計'][1]) - laborSum(b, 1);
         w.purchaseBudget = num(b.cats['計'][0]) - laborSum(b, 0);
         w.purchase = w.done ? w.purchaseActual : w.purchaseBudget;
-        w.purchaseUnit = total > 0 ? w.purchase / total : null;
+        w.purchaseUnit = basis > 0 ? w.purchase / basis : null;
         w.cutoff = periodFromBudget(b.laborCutoff);
         w.laborByPeriod = laborByPeriod(b);
         if (b.missing) w.notes.push('実行予算のファイルが見つからないため前回の値');
@@ -172,6 +176,8 @@
       if (contract === null) w.notes.push('契約金額なし');
       else if (tw === null) w.notes.push('契約総重量が無いため生産実績の総重量で加工単価を計算');
       else if (!(tw > 0)) w.notes.push('契約総重量が0のため単価なし(実行予算Excelの入力が未完了の可能性)');
+      if (m.done && actual > 0) w.notes.push('完了のため、単価は生産実績の累計重量 ' + Math.round(actual * 10) / 10 + 't で計算(契約総重量ではなく)');
+      else if (m.done) w.notes.push('完了だが生産実績の累計重量が無いため、契約総重量で計算');
       return w;
     }
     Object.keys(sw).forEach(work);
@@ -208,7 +214,7 @@
     // 生産重量の割合と、データ不足の判定
     Object.keys(works).forEach(function (no) {
       var w = works[no];
-      w.coverage = w.totalWeight > 0 ? w.weight / w.totalWeight : null;
+      w.coverage = w.unitWeight > 0 ? w.weight / w.unitWeight : null;
       w.dataShort = w.hoursBeforeAnalysis > 0 && (w.coverage === null || w.coverage < 0.95);
       if (w.dataShort) w.notes.push('生産重量のデータ不足(' + analysisFrom.replace(/-/g, '/') + 'より前の生産重量が無い)');
     });
