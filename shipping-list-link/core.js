@@ -59,7 +59,9 @@
   }
 
   // links: { "図番\t製品名": url | [url,...](重複) }
-  async function linkPdf(pdfjsLib, PDFLib, data, links) {
+  // opts.mapUri(url): PDFに埋め込むリンク先の変換(省略時はマスタのURLそのまま)
+  async function linkPdf(pdfjsLib, PDFLib, data, links, opts) {
+    var mapUri = (opts && opts.mapUri) || function (u) { return u; };
     var doc = await pdfjsLib.getDocument({ data: new Uint8Array(data.slice(0)) }).promise;
     var out = await PDFLib.PDFDocument.load(data, { ignoreEncryption: true });
     var zset = {}, shapes = {};
@@ -83,7 +85,7 @@
           done[id] = 1;
           if (Array.isArray(v)) { stats.dup++; stats.partial.push({ page: pn, zuban: toks[i].text, name: t.text, reason: '重複' }); continue; }
           var rect = [t.x0, t.y - t.h * 0.25, t.x1, t.y + t.h * 0.85];
-          annots.push({ rect: rect, uri: v });
+          annots.push({ rect: rect, uri: mapUri(v) });
           stats.linked++;
         }
         if (stats.linked === rowStartLinked) {
@@ -107,6 +109,15 @@
     return { bytes: await out.save(), stats: stats };
   }
 
-  var api = { linkPdf: linkPdf, encodeUri: encodeUri };
+  // マスタのリンク(file://192.168.1.2/share/….tdf)を、Webページ経由の起動リンク(open.html?p=…)に変換する
+  function toOpenUrl(base, fileUrl) {
+    var m = /^file:\/\/(.+)$/i.exec(fileUrl);
+    if (!m) return fileUrl;
+    var path;
+    try { path = decodeURIComponent(m[1]); } catch (e) { path = m[1]; }
+    return base + '?p=' + encodeURIComponent(path);
+  }
+
+  var api = { linkPdf: linkPdf, encodeUri: encodeUri, toOpenUrl: toOpenUrl };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ShippingCore = api;
 })(typeof window !== 'undefined' ? window : this);
