@@ -221,7 +221,57 @@ if (typeof document !== 'undefined') {
       document.documentElement.style.setProperty('--stkH', Math.ceil(s.getBoundingClientRect().height) + 'px');
       const th = document.querySelector('#detail th');
       if (th) document.documentElement.style.setProperty('--thH', Math.ceil(th.getBoundingClientRect().height) + 'px');
+      fitBottom();
     }
+
+    // 5.の表の下の余白: 一番下までスクロールしたとき最後の数行がちょうど収まる(行が半分切れない)最小限の高さにする
+    function fitBottom() {
+      const root = document.documentElement;
+      const table = document.querySelector('#detail table');
+      const st0 = document.querySelector('.sticky-top');
+      if (!table || !st0) { root.style.setProperty('--bspace', '0px'); return; }
+      root.style.setProperty('--bspace', '0px');
+      const th = table.querySelector('th');
+      const rows = Array.prototype.slice.call(table.tBodies[0] ? table.tBodies[0].rows : []);
+      if (!th || !rows.length) return;
+      const area = window.innerHeight - st0.getBoundingClientRect().height - 34 - th.getBoundingClientRect().height; // 固定見出しの下の表示領域
+      const b0 = root.scrollHeight - (table.getBoundingClientRect().bottom + window.scrollY); // 表の下の元の余白
+      const avail = area - b0;
+      let sum = 0;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const h = rows[i].getBoundingClientRect().height;
+        if (sum + h > avail) { root.style.setProperty('--bspace', Math.max(0, Math.floor(area - sum - b0)) + 'px'); return; }
+        sum += h;
+      }
+      // 全行が1画面に収まる場合は余白不要
+    }
+
+    // スクロール停止後、固定ヘッダーの下で半分切れている行があれば、1行単位にそろえる(2.3.4.5.の表)
+    (function () {
+      let timer = null;
+      function snapRows() {
+        const st0 = document.querySelector('.sticky-top');
+        if (!st0) return;
+        const top0 = st0.getBoundingClientRect().bottom;
+        const dth = document.querySelector('#detail th');
+        let topD = top0;
+        if (dth) { const r = dth.getBoundingClientRect(); if (r.top <= top0 + 36) topD = Math.max(topD, r.bottom); }
+        const sets = [['#summary tr', top0], ['#markCheck tr', top0], ['#detail tbody tr', topD], ['#works tr', top0]];
+        for (let k = 0; k < sets.length; k++) {
+          const list = document.querySelectorAll(sets[k][0]);
+          const H = sets[k][1];
+          for (let i = 0; i < list.length; i++) {
+            const r = list[i].getBoundingClientRect();
+            if (r.bottom < H - 1) continue;
+            if (r.top > H + 1) break;
+            // 見出しの下に隠れている部分が半分より多ければ下へ(行ごと隠す)、少なければ上へ(行全体を見せる)
+            const hidden = H - r.top, h = r.height;
+            if (hidden > 0.5 && hidden < h - 0.5) { window.scrollBy(0, hidden > h / 2 ? h - hidden : -hidden); return; }
+          }
+        }
+      }
+      window.addEventListener('scroll', function () { clearTimeout(timer); timer = setTimeout(snapRows, 140); }, { passive: true });
+    })();
     window.addEventListener('resize', updateStick);
     if (window.ResizeObserver) {
       const ro = new ResizeObserver(updateStick);
