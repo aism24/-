@@ -16,6 +16,8 @@
  *   - 秘密キー: スクリプトプロパティ SECRET(PC側 設定.json の「秘密キー」と同じ値。リポジトリには書かない)
  *   - 受け取った工事ごとの値(key=ファイル名)を _cache_budget.json(同フォルダ)に保存する。
  *     読み取りエラーの工事は前回の値を引き継ぎ status:'error'、今回届かなかった工事は前回の値のまま missing:true。
+ *   - 前回値(比較の基準): 受信時、保存済みの値が前日以前のものなら、それを baseline:{day, at, rows} に繰り上げる
+ *     (同じ日の再受信では基準を変えない)。画面の「実行予算抽出」が、前回から変わったセルを黄色で示すのに使う。
  *   - 工事データ(工事No単位)の B 契約総重量・C 契約金額・F 労務費の締め を書く(値が変わった行だけ。無い工事Noは末尾に追加)。
  *     D 完了・E 年度には触らない。F は「2026.10」が 2026.1 にならないよう文字列(書式 @)で書く。
  *     対象外: 元ファイルなし・読み取りエラー・一覧に未登録・契約総重量と契約金額がどちらも0/空欄の工事。
@@ -521,8 +523,13 @@ function normalizeBudgetRows(data) {
   return list.filter(function (r) { return r && typeof r === 'object' && r.key; });
 }
 
-// 保存済み { version, at, rows:{key:row} } に今回の受信を重ねる
+// 保存済み { version, at, rows:{key:row}, baseline? } に今回の受信を重ねる
+//   at: 'yyyy-MM-ddTHH:mm:ss+09:00'(日本時間)。保存済みの日付が前日以前なら、保存済みの内容を baseline(比較の基準)に繰り上げる
 function mergeBudget(state, incoming, at) {
+  const day = String(at).slice(0, 10);
+  const prevDay = state && state.at ? String(state.at).slice(0, 10) : '';
+  let baseline = (state && state.baseline) || null;
+  if (state && state.rows && prevDay && prevDay < day) baseline = { day: prevDay, at: state.at, rows: state.rows };
   const prevRows = (state && state.rows) || {};
   const rows = {};
   incoming.forEach(function (r) {
@@ -544,7 +551,7 @@ function mergeBudget(state, incoming, at) {
     row.locked = false;
     rows[k] = row;
   });
-  return { version: 1, at: at, rows: rows };
+  return { version: 1, at: at, day: day, baseline: baseline, rows: rows };
 }
 
 // 工事データの既存値(A〜F列の表示文字、2行目から)と受信値から、書き換える行と追加する行を決める
