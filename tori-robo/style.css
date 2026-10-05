@@ -160,8 +160,9 @@ select, option, input, button, .btn, .btn.primary, #dlBtn, #dlBtn:disabled, .man
 #detail th:last-child::after { right:-3px; }
 /* Excelダウンロード後のお知らせ */
 .dl-notice { position:fixed; inset:0; z-index:110; background:rgba(60,64,70,.65); display:flex; align-items:center; justify-content:center; }
-.dl-notice-box { background:#fff; color:#000; border-radius:10px; padding:22px 32px; width:min(460px,88vw); box-shadow:0 6px 24px rgba(0,0,0,.45); text-align:center; font-weight:bold; }
-.dl-notice-box p { margin:0 0 12px; line-height:1.6; }
+.dl-notice-box { background:#fff176; color:#000; border:3px solid #e0b800; border-radius:14px; padding:36px 44px; width:min(920px,94vw); box-sizing:border-box; text-align:center; font-weight:bold; font-size:28px; animation:dlglow 1.2s ease-in-out infinite; }
+.dl-notice-box p { margin:0 0 18px; line-height:1.6; }
+@keyframes dlglow { 0%,100% { background:#fff59d; box-shadow:0 0 12px 4px rgba(255,214,0,.6); } 50% { background:#ffee58; box-shadow:0 0 44px 16px rgba(255,214,0,1); } }
 /* 表の文字は等幅フォント(細い文字1・Iなどで縦の並びが凸凹にならないように) */
 table th, table td { font-family:"BIZ UDGothic","MS Gothic","Osaka-Mono",Consolas,"Courier New",monospace; }
 /* 表の行は1行ずつスクロール(固定ヘッダーの下で行・文字が半分切れないようにスナップ)。2.3.4.は固定ヘッダーの下、5.は固定ヘッダー+5.タイトル+列見出しの下にそろえる */
@@ -173,3 +174,7 @@ table th, table td { font-family:"BIZ UDGothic","MS Gothic","Osaka-Mono",Consola
 /* 2.の「工事を選択」行も他の行と同じ高さ(31px)に収め、3.と行の位置がずれないようにする */
 #works select { height:21px; font-size:13px; padding-top:0; padding-bottom:0; }
 #works .btn.small { padding-top:0; padding-bottom:0; line-height:20px; }
+/* 3秒で縮むバー(自動で消えることを示す装飾) */
+.dl-notice-bar { height:10px; border-radius:5px; background:#f3e8a0; overflow:hidden; margin-top:6px; }
+.dl-notice-bar span { display:block; height:100%; background:#2e9e4f; border-radius:5px; transform-origin:left; animation:dlbar 3s linear forwards; }
+@keyframes dlbar { from { transform:scaleX(1); } to { transform:scaleX(0); } }
