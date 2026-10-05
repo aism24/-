@@ -2,6 +2,8 @@
 (function () {
   'use strict';
   const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // 横スクロールしても固定する列(契約総重量・契約金額・参照シート)
+  const STICKY = { weight: 'c-w', amount: 'c-a', sheet: 'c-s' };
   let view = null, filter = { done: false, years: [] };
 
   const yearTag = y => { const m = /^R(\d+)$/.exec(y || ''); return m ? ' y' + (Number(m[1]) % 4) : ''; };
@@ -35,7 +37,7 @@
     const rows = JY.filterRows(view.rows, filter);
     meta.textContent = '最終取込: ' + JY.fmt('date', view.todayAt) + ' / ' + (rows.length === view.rows.length ? rows.length + '件' : rows.length + '件(全' + view.rows.length + '件)');
     let h = '<thead><tr><th rowspan="2" class="c-y">年度</th><th rowspan="2" class="c-d">完了</th><th rowspan="2" class="c-no">工事No</th><th rowspan="2" class="c-name">工事名</th>' +
-      '<th rowspan="2">契約総重量(t)</th><th rowspan="2">契約金額(円)</th><th rowspan="2">参照シート</th>';
+      '<th rowspan="2" class="c-w">契約総重量(t)</th><th rowspan="2" class="c-a">契約金額(円)</th><th rowspan="2" class="c-s">参照シート</th>';
     JY.PROFITS.forEach(p => { h += '<th colspan="2" class="grp">' + esc(p.label) + '</th>'; });
     JY.CATS.forEach(c => { h += '<th colspan="3" class="grp">' + esc(c) + '</th>'; });
     h += '<th rowspan="2">前回の保存者</th><th rowspan="2">保存日時</th></tr><tr>';
@@ -45,7 +47,7 @@
     if (JY.isFiltered(filter)) {
       const tot = JY.computeTotals(rows);
       h += '<tr class="total"><th class="c-y" colspan="3">合計（' + tot.count + '件）</th><th class="c-name"></th>';
-      tot.cells.forEach(c => { h += '<th class="' + (c.kind === 'str' || c.kind === 'date' ? '' : 'num') + (c.over ? ' over' : '') + (c.id.endsWith(':b') ? ' grp-l' : '') + '">' + esc(cellText(c)) + '</th>'; });
+      tot.cells.forEach(c => { h += '<th class="' + (STICKY[c.id] ? STICKY[c.id] + ' ' : '') + (c.kind === 'str' || c.kind === 'date' ? '' : 'num') + (c.over ? ' over' : '') + (c.id.endsWith(':b') ? ' grp-l' : '') + '">' + esc(cellText(c)) + '</th>'; });
       h += '</tr>';
     }
     h += '</thead><tbody>';
@@ -55,6 +57,8 @@
       r.cells.forEach(c => {
         const cls = [c.kind === 'str' || c.kind === 'date' ? 'txt' : 'num'];
         if (c.id.endsWith(':b')) cls.push('grp-l');
+        if (STICKY[c.id]) cls.push(STICKY[c.id]);
+        if (c.id === 'author') cls.push('ctr');
         if (c.over) cls.push('over');
         if (c.zero) cls.push('zero');
         h += '<td class="' + cls.join(' ') + '">' + esc(cellText(c)) + '</td>';
