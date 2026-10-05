@@ -1,0 +1,270 @@
+/* 実行予算抽出(実行予算まとめ jikko-yosan/logic.js の表示用部分をそのまま移植。Excel書き出しは未実装) */
+(function (root) {
+  'use strict';
+
+  // 利益項目: key = PC側データ(profit)の名前、label = 画面・Excelの表示名
+  const PROFITS = [{ key: '粗利益', label: '粗利益' }, { key: '営業利益', label: '営業損益' }];
+  const CATS = ['材料費', '工場加工費', '事務図面費', '外注加工費', 'メッキ費', '運送費', '塗装費', '現場費', 'その他', '計'];
+
+  // 黄色判定の対象(表示・Excelの列順と同じ)
+  const FIELDS = [
+    { id: 'weight', label: '契約総重量(t)', kind: 't', get: r => r.weight },
+    { id: 'amount', label: '契約金額(円)', kind: 'yen', get: r => r.amount },
+    { id: 'sheet', label: '参照シート', kind: 'str', get: r => r.sheet },
+  ];
+  // 粗利益・営業損益: PC側の正しい計算(profitCalc。労務の仕訳から計算)。無い古いデータはシートの値(profit)。割合は出さない
+  PROFITS.forEach(({ key: p, label: l }) => {
+    FIELDS.push({ id: p + ':b', profit: p, label: l + ' 予算', kind: 'yen', get: r => prof(r, p)[0] });
+    FIELDS.push({ id: p + ':a', profit: p, label: l + ' 実際', kind: 'yen', get: r => prof(r, p)[1] });
+  });
+  CATS.forEach(c => {
+    FIELDS.push({ id: c + ':b', cat: c, label: c + ' 予算', kind: 'yen', get: r => pair(r, c)[0] });
+    FIELDS.push({ id: c + ':a', cat: c, label: c + ' 実際', kind: 'yen', get: r => pair(r, c)[1] });
+    FIELDS.push({ id: c + ':r', cat: c, label: c + ' 割合', kind: 'pct', get: r => ratio(pair(r, c)) });
+  });
+  FIELDS.push({ id: 'author', label: '前回の保存者', kind: 'str', get: r => r.author });
+  FIELDS.push({ id: 'saved', label: '保存日時', kind: 'date', get: r => r.saved });
+
+  function pair(r, c) {
+    const p = r && r.cats && r.cats[c];
+    return Array.isArray(p) ? p : [null, null];
+  }
+  function prof(r, p) {
+    const src = r && (r.profitCalc || r.profit);
+    const v = src && src[p];
+    return Array.isArray(v) ? v : [null, null];
+  }
+  // 労務(実際) = 工場労務費 + 事務図面労務費 + 現場労務費(PC側の仕訳 breakdown)。無い古いデータは null
+  const LABOR_PARTS = ['工場労務費', '事務図面労務費', '現場労務費'];
+  function labor(r) {
+    const bd = r && r.breakdown;
+    if (!bd) return null;
+    return LABOR_PARTS.reduce((acc, k) => acc + (num(Array.isArray(bd[k]) ? bd[k][1] : null) || 0), 0);
+  }
+  // 赤字: 費目は予算超過(実際 > 予算)で「実際」「割合」、利益は予算未達(実際 < 予算)で「実際」
+  function isOver(f, b, a) {
+    if (b === null || a === null) return false;
+    if (f.cat) return !f.id.endsWith(':b') && a > b;
+    if (f.profit) return f.id.endsWith(':a') && a < b;
+    return false;
+  }
+  function num(v) { return v === null || v === undefined || v === '' || !isFinite(Number(v)) ? null : Number(v); }
+  function ratio(p) {
+    const b = num(p[0]), a = num(p[1]);
+    return b ? (a || 0) / b : null;
+  }
+
+  function norm(kind, v) {
+    if (kind === 'str') return v === null || v === undefined ? '' : String(v).trim();
+    if (kind === 'date') return v ? String(Math.floor(new Date(v).getTime() / 60000)) : '';
+    const n = num(v);
+    if (n === null) return '';
+    if (kind === 't') return n.toFixed(3);
+    if (kind === 'pct') return n.toFixed(6);
+    return String(Math.round(n));
+  }
+
+  function jst(v) {
+    const t = new Date(v).getTime();
+    return isFinite(t) ? new Date(t + 9 * 3600000) : null;
+  }
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  const NF0 = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 0 });
+  const NF3 = new Intl.NumberFormat('ja-JP', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const NF1 = new Intl.NumberFormat('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+  function fmt(kind, v) {
+    if (kind === 'str') return v === null || v === undefined ? '' : String(v);
+    if (kind === 'date') {
+      const d = v ? jst(v) : null;
+      return d ? d.getUTCFullYear() + '/' + pad(d.getUTCMonth() + 1) + '/' + pad(d.getUTCDate()) + ' ' +
+        pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) : '';
+    }
+    const n = num(v);
+    if (n === null) return '';
+    if (kind === 't') return NF3.format(n);
+    if (kind === 't1') return NF1.format(n); // 画面表示用の重量(##,###.0)。Excelは 't' のまま
+    if (kind === 'pct') return Math.round(n * 100) + '%';
+    return NF0.format(Math.round(n));
+  }
+
+  /* ===================== 完了・年度 ===================== */
+
+  const UNSET = '未設定';
+
+  // 年度の表記を「R8」に揃える(r8・R８・令和8・令和８年度 など)。読めない値はそのまま
+  function normYear(v) {
+    const s = String(v === null || v === undefined ? '' : v).trim()
+      .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+    if (!s) return '';
+    const m = s.match(/^(?:[rR]|令和)\s*(\d{1,3})\s*(?:年度?)?$/);
+    return m ? 'R' + Number(m[1]) : s;
+  }
+  function normDone(v) { return v === true || String(v === null || v === undefined ? '' : v).trim() === '完了'; }
+
+  // 会社の年度: 11/21始まり・11/20決算。決算の年で呼ぶ(2025/11/21〜2026/11/20 = R8)
+  function fiscalYearOf(t) {
+    const d = jst(t);
+    const y = d.getUTCFullYear(), m = d.getUTCMonth() + 1, day = d.getUTCDate();
+    return 'R' + ((m > 11 || (m === 11 && day >= 21) ? y + 1 : y) - 2018);
+  }
+  function yearNum(y) { const m = /^R(\d+)$/.exec(y); return m ? Number(m[1]) : Infinity; }
+  function sortYears(list) { return list.slice().sort((a, b) => yearNum(a) - yearNum(b) || a.localeCompare(b, 'ja')); }
+
+  // GASの settings.rows([[工事No, 完了, 年度], …])→ { 工事No: {done, year} }。同じ工事Noは上の行
+  function buildSettings(list) {
+    const map = {};
+    (Array.isArray(list) ? list : []).forEach(v => {
+      const no = String(v && v[0] || '').trim();
+      if (no && !map[no]) map[no] = { done: normDone(v[1]), year: normYear(v[2]) };
+    });
+    return map;
+  }
+
+  // 設定画面の年度の選択肢: シートにある年度 + 今年度 + 来年度(未設定は画面側で最後に付ける)
+  function yearOptions(settings, now) {
+    const set = {};
+    Object.keys(settings || {}).forEach(no => { if (settings[no].year) set[settings[no].year] = true; });
+    const cur = fiscalYearOf(now === undefined ? Date.now() : now);
+    set[cur] = true;
+    set['R' + (yearNum(cur) + 1)] = true;
+    return sortYears(Object.keys(set));
+  }
+
+  function cmpNo(a, b) {
+    return String(a || '').localeCompare(String(b || ''), 'ja', { numeric: true });
+  }
+
+  // GASの {baseline, today} と完了・年度の設定から画面・Excel用の行を作る
+  function buildView(payload, settings) {
+    const today = payload && payload.today;
+    const baseline = payload && payload.baseline;
+    if (!today || !today.rows) return { rows: [], todayAt: null, baselineAt: null };
+    const baseRows = baseline && baseline.rows ? baseline.rows : null;
+    settings = settings || {};
+    const noCount = {};
+    Object.keys(today.rows).forEach(key => {
+      const no = String(today.rows[key].no || today.rows[key].fileNo || '').trim();
+      if (no) noCount[no] = (noCount[no] || 0) + 1;
+    });
+
+    const rows = Object.keys(today.rows).map(key => {
+      const r = today.rows[key];
+      const base = baseRows ? baseRows[key] : undefined;
+      const isNew = !!baseRows && !base && !r.missing;
+      const compare = !!base && !r.missing && r.status !== 'error';
+      let changed = 0;
+      const cells = FIELDS.map(f => {
+        const v = f.get(r);
+        const cell = { id: f.id, kind: f.kind, v: v, text: fmt(f.kind, v), changed: false, prev: null, over: false };
+        if (f.cat || f.profit) {
+          const p = f.cat ? pair(r, f.cat) : prof(r, f.profit);
+          cell.over = isOver(f, num(p[0]), num(p[1]));
+        }
+        // 未完成: 契約総重量・契約金額が0(空欄も)。元ファイルなし・読み取りエラーは対象外
+        if ((f.id === 'weight' || f.id === 'amount') && !r.missing && r.status !== 'error' && !num(v)) cell.zero = true;
+        if (compare) {
+          const pv = f.get(base);
+          if (norm(f.kind, v) !== norm(f.kind, pv)) {
+            cell.changed = true;
+            cell.prev = fmt(f.kind, pv) || '(空欄)';
+            cell.pv = pv;
+            changed++;
+          }
+        }
+        return cell;
+      });
+      let status;
+      if (r.missing) status = '元ファイルなし';
+      else if (r.status === 'error') status = '読み取りエラー';
+      else if (r.matchedBy === '一覧に未登録') status = '一覧に未登録';
+      else if (isNew) status = '新規';
+      else if (changed) status = '変更あり';
+      else status = baseRows ? '変更なし' : '';
+      const no = r.no || r.fileNo || '';
+      const incomplete = cells.some(c => c.zero);
+      const tags = [];
+      if (incomplete) tags.push('未完成');
+      if (r.locked && !r.missing) tags.push('編集中');
+      if (noCount[String(no).trim()] > 1) tags.push('同じ工事Noあり');
+      const laborWarn = (r.laborCheck || []).filter(c => c && c.level === 'warn').map(c => c.msg);
+      if (laborWarn.length && !r.missing) tags.push('式の確認');
+      if (tags.length) status += '（' + tags.join('・') + '）';
+      const st = settings[String(no).trim()] || { done: false, year: '' };
+      return {
+        key: key, no: no, name: r.name || r.c2 || key,
+        rowClass: r.missing ? 'missing' : isNew ? 'new' : '',
+        status: status, warn: [r.warn].concat(laborWarn).filter((m, i, a) => m && a.indexOf(m) === i).join('\n'),
+        changed: changed, cells: cells, labor: labor(r),
+        incomplete: incomplete, unlisted: r.matchedBy === '一覧に未登録',
+        done: st.done, year: st.year, saved: r.saved || '',
+      };
+    });
+    rows.sort((a, b) => cmpNo(a.no, b.no) || cmpNo(a.key, b.key));
+    return { rows: rows, todayAt: today.at || null, baselineAt: baseline ? baseline.at : null };
+  }
+
+  /* ===================== 絞り込み・合計 ===================== */
+
+  // filter: { done: true/false, years: ['R8', '未設定', …] }。どちらも無ければ全て表示
+  function isFiltered(filter) { return !!(filter && (filter.done || (filter.years && filter.years.length))); }
+  function filterRows(rows, filter) {
+    if (!isFiltered(filter)) return rows;
+    const years = filter.years || [];
+    return rows.filter(r => (!filter.done || r.done) && (!years.length || years.indexOf(r.year || UNSET) >= 0));
+  }
+  function filterLabel(filter) {
+    if (!isFiltered(filter)) return '全て';
+    const parts = [];
+    if (filter.done) parts.push('完了');
+    if (filter.years && filter.years.length) parts.push(sortYears(filter.years.filter(y => y !== UNSET)).concat(filter.years.indexOf(UNSET) >= 0 ? [UNSET] : []).join('・'));
+    return parts.join('_');
+  }
+  // 抽出画面の年度ボタン: データにある年度 + 未設定
+  function yearsInRows(rows) {
+    const set = {};
+    rows.forEach(r => { if (r.year) set[r.year] = true; });
+    return sortYears(Object.keys(set)).concat([UNSET]);
+  }
+
+  // 合計行(表示中の行すべて)。割合は 合計の実際 ÷ 合計の予算
+  function computeTotals(rows) {
+    const sums = FIELDS.map(() => null);
+    rows.forEach(r => r.cells.forEach((c, i) => {
+      if (c.kind !== 'yen' && c.kind !== 't') return;
+      const n = num(c.v);
+      if (n !== null) sums[i] = (sums[i] || 0) + n;
+    }));
+    const byId = {};
+    FIELDS.forEach((f, i) => { byId[f.id] = sums[i]; });
+    const cells = FIELDS.map((f, i) => {
+      let v = sums[i];
+      if (f.kind === 'pct') v = ratio([byId[f.cat + ':b'], byId[f.cat + ':a']]);
+      else if (f.kind === 'str' || f.kind === 'date') v = null;
+      const cell = { id: f.id, kind: f.kind, v: v, text: fmt(f.kind, v), over: false };
+      const g = f.cat || f.profit;
+      if (g) cell.over = isOver(f, byId[g + ':b'], byId[g + ':a']);
+      return cell;
+    });
+    return { count: rows.length, cells: cells };
+  }
+
+  // 設定画面の行: 工事Noごとに1行(同じ工事Noが複数なら保存日時の新しい方の値)
+  function settingRows(rows) {
+    const byNo = {};
+    rows.forEach(r => {
+      const no = String(r.no || '').trim();
+      if (!no) return;
+      const prev = byNo[no];
+      if (prev && String(prev.saved) >= String(r.saved)) { prev.unlisted = prev.unlisted && r.unlisted; return; }
+      byNo[no] = { no: no, name: r.name, done: r.done, year: r.year, saved: r.saved,
+        unlisted: prev ? prev.unlisted && r.unlisted : r.unlisted,
+        cells: r.cells.filter(c => c.id === 'weight' || c.id === 'amount' || c.id === '粗利益:a' || c.id === '営業利益:a') };
+    });
+    return Object.keys(byNo).sort(cmpNo).map(no => byNo[no]);
+  }
+
+  const api = { CATS, PROFITS, UNSET, buildView, fmt, normYear, normDone, isFiltered, filterRows, yearsInRows, computeTotals };
+  root.JY = api;
+})(window);
