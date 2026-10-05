@@ -24,7 +24,7 @@ function drawBep(id, o) {
   const sig = o.sig || [o.fixed, o.unitPrice, o.laborPerTon, o.varPerTon, o.profitRate].join('|');
   const keep = prev && prev.sig === sig && !o.forceX && !o.fixedX; // 実績に固定のグラフ(fixedX)は毎回実績の位置に置く
   const st = bepState[id] = { o, x: keep ? prev.x : (o.x || 0), sig, padL: prev && prev.sig === sig ? prev.padL : undefined, maxX: keep ? prev.maxX : null }; // ドラッグ中以外は縮尺を取り直す
-  if (!st.maxX) st.maxX = Math.max(o.x || 0, o.beTons || 0, o.goalTons || 0, 1) * 1.35;
+  if (!st.maxX) st.maxX = Math.max(o.x || 0, o.beTons || 0, o.goalTons || 0, o.endTons || 0, 1) * (o.endTons ? 1.12 : 1.35); // endTons(完了の位置)があるときは、その少し先までを横軸にする
   box.classList.toggle('fixedX', !!o.fixedX); // fixedX: つまみを動かせない(実績の損益分岐生産量タブ)
   renderBepSvg(id);
   if (!box.dataset.bound) {
@@ -157,6 +157,12 @@ function renderBepSvg(id) {
   if (o.dragHint) {
     const dw = 128, dx = Math.min(W - 4 - dw / 2, Math.max(4 + dw / 2, cx));
     h += `<text class="dragHint" x="${dx}" y="${g.t - 58}" text-anchor="middle" style="animation-delay:-${((performance.now() % 4800) / 1000).toFixed(2)}s">ドラッグで移動可能</text>`;
+  }
+  // 完了の位置(o.endTons: 工事の契約重量。縦の破線と「完了 / 重量 / 売上高」。工事別で使う)
+  if (o.endTons) {
+    const ex = X(o.endTons), ey = Y(sales(o.endTons)), endR = ex > g.l + g.w * 0.7, tx = endR ? ex - 8 : ex + 8;
+    h += `<line x1="${ex}" y1="${g.t}" x2="${ex}" y2="${g.t + g.h}" stroke="#2e7d32" stroke-width="2.5" stroke-dasharray="7 5"/><circle cx="${ex}" cy="${ey}" r="${6 * k}" fill="#2e7d32"/>` +
+      `<text class="lbl" x="${tx}" y="${g.t + 22 * k}" text-anchor="${endR ? 'end' : 'start'}" fill="#2e7d32" font-weight="700" font-size="${17 * k}">完了(契約)${ton(o.endTons)}t<tspan x="${tx}" dy="${22 * k}">売上高 ${bepOku(sales(o.endTons))}</tspan></text>`;
   }
   h += beLbl;
   // 利益目標達成点(★・目標表示は最前面に描く。試算の破線やバーは裏側を通る)
