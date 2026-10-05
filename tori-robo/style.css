@@ -151,3 +151,10 @@ select, option, input, button, .btn, .btn.primary, #dlBtn, #dlBtn:disabled, .man
 #detail th { box-shadow:inset 0 1px 0 #000, inset 0 2px 0 var(--head), inset 0 3px 0 #000, 0 1px 0 #000; padding-top:7px; }
 /* 5.の列見出しをタイトルに2px重ねて前面に出し、小数ピクセルの隙間から行の文字が透けないようにする */
 #detail th { top:calc(var(--stkH,0px) + 34px); z-index:25; }
+/* 5.の列見出し上の二重線: 縦の罫線が二重線の間まで通る(他の表と同じ交差になる)ように、影ではなく背景で線を描く */
+#detail th { box-shadow:0 1px 0 #000; background-color:var(--head); background-image:linear-gradient(#000,#000),linear-gradient(#000,#000); background-size:100% 1px,100% 1px; background-position:0 0,0 2px; background-repeat:no-repeat; }
+/* 5.の列見出し左右上端: 外枠の二重線の角を他の表と同じに閉じる */
+#detail th:first-child::before, #detail th:last-child::after { content:''; position:absolute; top:0; width:3px; height:3px; pointer-events:none;
+  background:linear-gradient(#000,#000) 0 0/100% 1px no-repeat, linear-gradient(#000,#000) 0 2px/100% 1px no-repeat, linear-gradient(90deg,#000 1px,transparent 1px,transparent 2px,#000 2px); }
+#detail th:first-child::before { left:-3px; }
+#detail th:last-child::after { right:-3px; }

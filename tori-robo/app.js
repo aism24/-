@@ -218,7 +218,7 @@ if (typeof document !== 'undefined') {
     function updateStick() {
       const s = document.querySelector('.sticky-top');
       if (!s) return;
-      document.documentElement.style.setProperty('--stkH', s.getBoundingClientRect().height + 'px');
+      document.documentElement.style.setProperty('--stkH', Math.ceil(s.getBoundingClientRect().height) + 'px');
     }
     window.addEventListener('resize', updateStick);
     if (window.ResizeObserver) {
