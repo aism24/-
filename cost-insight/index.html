@@ -153,6 +153,7 @@
   /* 工事別結果分析(詳細版と同じ見た目は detail.css / simple.css を共用) */
   #v-workone .woLbl { color:#000; font-weight:bold; margin-right:6px; }
   #v-workone .sFilters select { max-width:min(520px, 60vw); }
+  #v-workone .simChart .chartBox.woChart { flex:none; height:340px; min-height:340px; margin-bottom:10px; }
   .woStatus { flex:1; min-height:0; overflow:auto; font-size:14px; color:#000; }
   .woInfo { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:4px 18px; margin-bottom:12px; }
   .woInfo div { border-bottom:1px solid #eee; padding:3px 0; } .woInfo b { float:right; }
@@ -353,7 +354,7 @@
         <div class="panel simKpiPanel"><div id="w-kpis" class="simTable"></div></div>
         <div class="panel simAdvicePanel"><div id="w-advice" class="simAdvice"></div></div>
       </div>
-      <div class="panel simChart"><div id="w-status" class="woStatus"></div></div>
+      <div class="panel simChart"><div class="chartBox bepBox woChart" id="c-work"></div><div id="w-status" class="woStatus"></div></div>
     </div>
   </section>
 
