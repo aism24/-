@@ -634,9 +634,26 @@ if (typeof document !== 'undefined') {
       // Excelの文字はすべて黒の太字(図面番号のリンクは下線だけ残す)
       wb.eachSheet(function (sheet) {
         sheet.eachRow({ includeEmpty: false }, function (row) {
-          row.eachCell({ includeEmpty: false }, function (c) { c.font = Object.assign({}, c.font, { bold: true, color: { argb: 'FF000000' } }); });
+          row.eachCell({ includeEmpty: false }, function (c) {
+            // 図面番号のハイパーリンク付きセルは青・18pt(行の高さ・列幅は下で文字に合わせる)
+            const link = sheet === wd && c.col === 3 && c.value && c.value.hyperlink;
+            c.font = Object.assign({}, c.font, link ? { bold: true, size: 18, color: { argb: 'FF0000FF' }, underline: true } : { bold: true, color: { argb: 'FF000000' } });
+          });
         });
       });
+      // C列(図面番号)をリンク文字(18pt)に合わせて自動調整し、行の高さも全体が見えるように広げる
+      let cw = 10;
+      wd.eachRow({ includeEmpty: false }, function (row, ri) {
+        const v = row.getCell(3).value;
+        if (ri >= 2 && v && v.hyperlink) {
+          const t = String(v.text || '');
+          let len = 0;
+          for (let k = 0; k < t.length; k++) len += t.charCodeAt(k) > 255 ? 2 : 1;
+          cw = Math.max(cw, len * 1.75 + 2); // 18pt は 11pt の約1.64倍(太字ぶん余裕)
+          row.height = 26;
+        }
+      });
+      wd.getColumn(3).width = Math.min(Math.ceil(cw), 80);
       wb.xlsx.writeBuffer().then(function (buf) {
         const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const a = document.createElement('a');
