@@ -164,10 +164,12 @@ select, option, input, button, .btn, .btn.primary, #dlBtn, #dlBtn:disabled, .man
 .dl-notice-box p { margin:0 0 12px; line-height:1.6; }
 /* 表の文字は等幅フォント(細い文字1・Iなどで縦の並びが凸凹にならないように) */
 table th, table td { font-family:"BIZ UDGothic","MS Gothic","Osaka-Mono",Consolas,"Courier New",monospace; }
-/* 5.の表は1行ずつスクロール(固定見出しの下で行が半分切れないようにスナップ)。位置は固定ヘッダー+5.タイトル+列見出しの高さ */
-html { scroll-snap-type:y proximity; scroll-padding-top:calc(var(--stkH,0px) + 34px + var(--thH,32px)); }
-#detail tbody tr { scroll-snap-align:start; }
-/* 3秒で縮む緑のバー(自動で消えることを示す装飾) */
-.dl-notice-bar { height:6px; border-radius:3px; background:#d8ecd8; overflow:hidden; margin-top:14px; }
-.dl-notice-bar span { display:block; height:100%; background:#2e9e4f; border-radius:3px; transform-origin:left; animation:dlbar 3s linear forwards; }
-@keyframes dlbar { from { transform:scaleX(1); } to { transform:scaleX(0); } }
+/* 表の行は1行ずつスクロール(固定ヘッダーの下で行・文字が半分切れないようにスナップ)。2.3.4.は固定ヘッダーの下、5.は固定ヘッダー+5.タイトル+列見出しの下にそろえる */
+html { scroll-snap-type:y proximity; scroll-padding-top:var(--stkH,0px); }
+table tr { scroll-snap-align:start; }
+#detail tbody tr { scroll-margin-top:calc(34px + var(--thH,32px)); }
+/* 一番下までスクロールしても最後の行が見出しの下にそろうよう、5.の表の下に余白を足す */
+#detail:not(:empty)::after { content:''; display:block; height:calc(100vh - var(--stkH,0px) - var(--thH,32px) - 64px); }
+/* 2.と3.は左右並びなので、表の開始位置と行の高さをそろえて、1行ずつのスナップが両方の表で同時に効くようにする */
+.card:has(#works) > h2, .card:has(#summary) > .h2row { height:36px; display:flex; align-items:center; margin:0 0 8px; box-sizing:border-box; }
+#works tr, #summary tr { height:31px; }
