@@ -151,6 +151,8 @@
   .btn-row .btn { flex:1 1 0; margin:0; padding:4px 10px; font-size:14px; line-height:1.4; }
   .budget-stack .imp-status { width:min(340px, 100%); }
   /* 実行予算抽出(赤は使わない: 予算超過・未達は太字+薄いオレンジ、未完成は薄い黄色) */
+  /* 表の上にも左右と同じ幅(16px)の黒い余白 */
+  body[data-view="extract"] main.wide { margin-top:16px; margin-bottom:16px; }
   .exBar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; background:var(--card); border-radius:8px 8px 0 0; padding:8px 12px; }
   .exBar .note { margin:0; }
   .exFilters { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-weight:bold; }
