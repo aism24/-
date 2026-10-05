@@ -149,3 +149,5 @@ select, option, input, button, .btn, .btn.primary, #dlBtn, #dlBtn:disabled, .man
 /* 5.の列見出し: 外枠の上の二重線ごと固定する(表自体の上枠は外し、見出し側で二重線を描く) */
 #detail table { border-top:0; }
 #detail th { box-shadow:inset 0 1px 0 #000, inset 0 2px 0 var(--head), inset 0 3px 0 #000, 0 1px 0 #000; padding-top:7px; }
+/* 5.の列見出しをタイトルに2px重ねて前面に出し、小数ピクセルの隙間から行の文字が透けないようにする */
+#detail th { top:calc(var(--stkH,0px) + 34px); z-index:25; }
