@@ -169,13 +169,13 @@ main.wide { max-width: none; margin-top: 8px; }
 #v-simple .sTop button.btn { background: #f97316; color: #fff; border: 0; font-weight: bold; }
 #v-simple .sTop button.btn:hover { background: #ea580c; }
 /* リセット: 黄色の背景で、期間・工場ボタンの一番左 */
-#v-simple .resetBtn, #v-detail .resetBtn { background: #ffd83a; color: #1a1a19; border: 2px solid #e0b400; border-radius: 6px; padding: 6px 16px; font-weight: 700; align-self: center; }
-#v-simple .resetBtn:hover, #v-detail .resetBtn:hover { background: #ffe680; }
+#v-simple .resetBtn, #v-detail .resetBtn, #v-workone .resetBtn { background: #ffd83a; color: #1a1a19; border: 2px solid #e0b400; border-radius: 6px; padding: 6px 16px; font-weight: 700; align-self: center; }
+#v-simple .resetBtn:hover, #v-detail .resetBtn:hover, #v-workone .resetBtn:hover { background: #ffe680; }
 /* リセットだけ左端(他のボタンは中央揃えのまま) */
-#v-simple .sFilters, #v-detail .sFilters { position: relative; }
-#v-simple .resetBtn, #v-detail .resetBtn { align-self: flex-start; }
+#v-simple .sFilters, #v-detail .sFilters, #v-workone .sFilters { position: relative; }
+#v-simple .resetBtn, #v-detail .resetBtn, #v-workone .resetBtn { align-self: flex-start; }
 @media (min-width: 1000px) {
-  #v-simple .resetBtn, #v-detail .resetBtn { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); }
+  #v-simple .resetBtn, #v-detail .resetBtn, #v-workone .resetBtn { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); }
 }
 
 /* 上部: 戻る・タイトル・フィルターを1行に(PC)。狭い画面では折り返す */
@@ -189,17 +189,17 @@ main.wide { max-width: none; margin-top: 8px; }
 @media (min-width: 1000px) {
   body:has(main.wide) header { position: sticky; top: 0; z-index: 50; }
   main.wide { margin-top: 0; margin-bottom: 0; }
-  #v-simple .sBar .sTop, #v-detail .sBar .sTop { margin: 0; }
+  #v-simple .sBar .sTop, #v-detail .sBar .sTop, #v-workone .sBar .sTop { margin: 0; }
   .sBar { position: sticky; top: var(--hdrH, 64px); z-index: 40; background: var(--bg); padding: 8px 0; /* アプリ名の下・バーの下とも、ほかの隙間と同じ8px */ }
   /* 戻る・リセット・年度/月〆・期間・3工場/本社/夢前/鳥取: 高さ26px(従来の約70%)、同じ大きさ */
-  #v-simple .sBar button, #v-detail .sBar button, #v-simple .sBar select, #v-detail .sBar select { box-sizing: border-box; height: 26px; padding: 0 8px; font-size: 13px; line-height: 1; border-radius: 5px; }
-  #v-simple .sBar .sTop button.btn, #v-detail .sBar .sTop button.btn, #v-simple .sBar .resetBtn, #v-detail .sBar .resetBtn, .sBar .segBtns button { width: 72px; min-width: 0; white-space: nowrap; }
-  #v-simple .sBar .resetBtn, #v-detail .sBar .resetBtn { border-width: 1px; }
+  #v-simple .sBar button, #v-detail .sBar button, #v-workone .sBar button, #v-simple .sBar select, #v-detail .sBar select, #v-workone .sBar select { box-sizing: border-box; height: 26px; padding: 0 8px; font-size: 13px; line-height: 1; border-radius: 5px; }
+  #v-simple .sBar .sTop button.btn, #v-detail .sBar .sTop button.btn, #v-workone .sBar .sTop button.btn, #v-simple .sBar .resetBtn, #v-detail .sBar .resetBtn, #v-workone .sBar .resetBtn, .sBar .segBtns button { width: 72px; min-width: 0; white-space: nowrap; }
+  #v-simple .sBar .resetBtn, #v-detail .sBar .resetBtn, #v-workone .sBar .resetBtn { border-width: 1px; }
   .sBar .monthBtn { width: 28px; min-width: 0; padding: 0; }
   .sBar .sFilters { padding: 4px 10px; }
   /* 左の紫(緑縁)のカードと右のグラフは、下端をそろえて画面の下まで伸ばす */
-  body #v-simple .sBody, body #v-detail .simLayout { align-items: stretch; min-height: calc(100vh - var(--stickyH, 120px) - 8px); }
-  body #v-simple .sLeft, body #v-detail .simLeft { display: flex; flex-direction: column; }
+  body #v-simple .sBody, body #v-detail .simLayout, body #v-workone .simLayout { align-items: stretch; min-height: calc(100vh - var(--stickyH, 120px) - 8px); }
+  body #v-simple .sLeft, body #v-detail .simLeft, body #v-workone .simLeft { display: flex; flex-direction: column; }
   #v-simple .sGoal { flex: 1; }
-  body #v-simple .sChart, body #v-detail .panel.simChart { position: sticky; top: var(--stickyH, 120px); align-self: start; height: calc(100vh - var(--stickyH, 120px) - 8px); min-height: 0; }
+  body #v-simple .sChart, body #v-detail .panel.simChart, body #v-workone .panel.simChart { position: sticky; top: var(--stickyH, 120px); align-self: start; height: calc(100vh - var(--stickyH, 120px) - 8px); min-height: 0; }
 }

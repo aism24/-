@@ -1,27 +1,27 @@
 /* 工場別進捗分析(詳細版=目標シミュレーター)。生産損益分析の目標シミュレーターと同じ見た目。色は明るいテーマ固定 */
-#v-detail {
+#v-detail, #v-workone {
   --surface: #fcfcfb; --border: #dddcd6; --text: #0b0b0b; --text2: #0b0b0b; --muted: #666; --accent: #2a78d6;
   --good: #0ca30c; --bad: #d03b3b; --warn-bg: #fff4d6; --grid: #e8e7e2;
   --g-period: #e3f4e6; --g-site: #fce6ee; --g-work: #e3eefc;
   --bep-cost: #c8423b; --bep-fixed: #5b63b0; --bep-var: #2e9bd6; --bep-be: #d99a00; --goal: #e0287d;
   font-variant-numeric: tabular-nums;
 }
-#v-detail button { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 6px; padding: 6px 14px; }
-#v-detail input { font: inherit; color: var(--text); }
-#v-detail .muted { color: var(--muted); } #v-detail .small { font-size: 12px; }
-#v-detail .pos { color: var(--good); } #v-detail .neg { color: var(--bad); }
-#v-detail [hidden] { display: none !important; }
-#v-detail .sTop { color: #fff; font-size: 20px; font-weight: 800; margin: 0 0 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-#v-detail .sTop button.btn { background: #f97316; color: #fff; border: 0; font-weight: bold; font-size: 14px; padding: 8px 18px; margin: 0; }
-#v-detail .segBtns button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+#v-detail button, #v-workone button { font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 6px; padding: 6px 14px; }
+#v-detail input, #v-workone input { font: inherit; color: var(--text); }
+#v-detail .muted, #v-workone .muted { color: var(--muted); } #v-detail .small { font-size: 12px; }
+#v-detail .pos, #v-workone .pos { color: var(--good); } #v-detail .neg { color: var(--bad); }
+#v-detail [hidden], #v-workone [hidden] { display: none !important; }
+#v-detail .sTop, #v-workone .sTop { color: #fff; font-size: 20px; font-weight: 800; margin: 0 0 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+#v-detail .sTop button.btn, #v-workone .sTop button.btn { background: #f97316; color: #fff; border: 0; font-weight: bold; font-size: 14px; padding: 8px 18px; margin: 0; }
+#v-detail .segBtns button.active, #v-workone .segBtns button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 @keyframes hintBlink { from { opacity: 1; } to { opacity: .25; } }
 @keyframes resetGlow { from { box-shadow: 0 0 0 0 rgba(240, 180, 0, .15); border-color: #f0b400; } to { box-shadow: 0 0 10px 3px rgba(255, 200, 0, .9); border-color: #ff9800; } }
 @keyframes bestGlow { from { box-shadow: 0 0 6px rgba(245, 196, 0, .5); } to { box-shadow: 0 0 16px rgba(245, 196, 0, 1); } }
 .chartHead { display: flex; align-items: center; justify-content: flex-start; gap: 12px; margin-bottom: 8px; }
 .chartHead h2 { margin: 0; font-size: 15px; }
-#v-detail .resetBtn2 { background: #d6efff; color: #0b0b0b; border: 2px solid #9fd3f5; font-weight: 700; padding: 5px 14px; }
-#v-detail .resetBtn2.changed { background: #ffe45c; border-color: #f0b400; animation: resetGlow 1.6s ease-in-out infinite alternate; }
-#v-detail .resetBtn2.changed:hover { background: #ffd81f; }
+#v-detail .resetBtn2, #v-workone .resetBtn2 { background: #d6efff; color: #0b0b0b; border: 2px solid #9fd3f5; font-weight: 700; padding: 5px 14px; }
+#v-detail .resetBtn2.changed, #v-workone .resetBtn2.changed { background: #ffe45c; border-color: #f0b400; animation: resetGlow 1.6s ease-in-out infinite alternate; }
+#v-detail .resetBtn2.changed:hover, #v-workone .resetBtn2.changed:hover { background: #ffd81f; }
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 16px; min-width: 0; }
 .fullTab { max-width: none; }
 .simLayout { display: grid; grid-template-columns: minmax(360px, 1.25fr) 1.25fr; gap: 16px; align-items: stretch; }
@@ -178,18 +178,18 @@
 .simAdvice .advWarn { font-size: 0.85em; font-weight: 700; color: var(--bad); margin-top: 2px; animation: hintBlink 1.6s ease-in-out infinite alternate; } /* 注意はゆっくり点滅 */
 
 /* 画面の大きさに合わせた配置: PCは左に入力・試算表・現状分析、右にグラフ(グラフは画面の高さに収める) */
-#v-detail .simLayout { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); align-items: start; }
-#v-detail .simLeft { overflow: visible; }
-#v-detail .panel.simChart { position: sticky; top: 8px; height: calc(100vh - 190px); min-height: 380px; }
-#v-detail .simChart .chartBox { flex: 1; min-height: 0; height: auto; }
+#v-detail .simLayout, #v-workone .simLayout { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); align-items: start; }
+#v-detail .simLeft, #v-workone .simLeft { overflow: visible; }
+#v-detail .panel.simChart, #v-workone .panel.simChart { position: sticky; top: 8px; height: calc(100vh - 190px); min-height: 380px; }
+#v-detail .simChart .chartBox, #v-workone .simChart .chartBox { flex: 1; min-height: 0; height: auto; }
 @media (max-width: 1000px) {
-  #v-detail .simLayout { grid-template-columns: 1fr; }
-  #v-detail .panel.simChart { position: static; height: auto; }
-  #v-detail .simChart .chartBox { min-height: 360px; }
-  #v-detail .simGridWrap { flex-direction: column; width: 100%; }
-  #v-detail .simFixed { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
-  #v-detail .simWorks { width: 100%; }
+  #v-detail .simLayout, #v-workone .simLayout { grid-template-columns: 1fr; }
+  #v-detail .panel.simChart, #v-workone .panel.simChart { position: static; height: auto; }
+  #v-detail .simChart .chartBox, #v-workone .simChart .chartBox { min-height: 360px; }
+  #v-detail .simGridWrap, #v-workone .simGridWrap { flex-direction: column; width: 100%; }
+  #v-detail .simFixed, #v-workone .simFixed { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+  #v-detail .simWorks, #v-workone .simWorks { width: 100%; }
 }
-#v-detail .simFixed .simRow > label { font-size: 13px; white-space: nowrap; line-height: 1.1; }
-#v-detail .simFixed .simHead.simHeadRow .simTitle { white-space: nowrap; }
+#v-detail .simFixed .simRow > label, #v-workone .simFixed .simRow > label { font-size: 13px; white-space: nowrap; line-height: 1.1; }
+#v-detail .simFixed .simHead.simHeadRow .simTitle, #v-workone .simFixed .simHead.simHeadRow .simTitle { white-space: nowrap; }
 } /* @media (min-width:1200px) の閉じ(従来はファイル末尾で自動的に閉じられていた。挙動は同じ) */

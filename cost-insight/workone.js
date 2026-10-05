@@ -1,70 +1,201 @@
-/* 工事別結果分析: 工事をリストから選び、その工事だけの結果(工事情報・単価と損益・実行予算・月度ごとの推移)を表示する */
+/*
+ * 工事別結果分析 = 工事別の目標シミュレーター
+ *   実行予算にある工事をリストから選び、その工事の「目標値」と「現状」を、詳細版(detail.js)と同じ表示で出す。
+ *   売上=契約金額(生産重量×トン単価) / 変動費=仕入(未完は予算、完了は実績) / 人件費=工数×時間単価(労務費)。
+ *   その他固定費は工事には配分しない(会社・工場単位のため)。目標利益率は基本設定の値。
+ *   入力欄の初期値: 生産重量=契約総重量、1t当たり人工数=これまでの実績(工数÷8÷生産重量)、トン単価=契約金額÷契約総重量。
+ */
 (function () {
   'use strict';
-  let sel = null, rows = [];
-
-  const budgetRow = no => {
-    const d = state.data, works = (d.settings && d.settings.works) || {}, map = {};
-    Object.keys(works).forEach(k => { map[k] = { done: JY.normDone(works[k].done), year: JY.normYear(works[k].year) }; });
-    const v = JY.buildView(d.budget ? { today: d.budget } : null, map);
-    return v.rows.filter(r => String(r.no).trim() === no).sort((x, y) => String(y.saved).localeCompare(String(x.saved)))[0] || null;
+  const C = CICalc, K = CIKit;
+  const $ = (id) => document.getElementById(id);
+  const D = { inited: false, no: '', ctx: null, base: null, exact: {}, hours: 0 };
+  const DIG = { w: 1, n: 2, p: 0 };
+  const simFmt = (k, v) => fmt(v, DIG[k]);
+  const parseNumIn = (text) => {
+    const s = String(text === null || text === undefined ? '' : text)
+      .replace(/[０-９．，－]/g, (c) => ({ '．': '.', '，': ',', '－': '-' }[c] || String.fromCharCode(c.charCodeAt(0) - 0xFEE0))).replace(/[,\s円t]/g, '');
+    const v = parseFloat(s);
+    return isFinite(v) ? v : 0;
   };
+  const simValue = (k) => { const v = $('w-' + k).value, ex = D.exact[k]; return ex && ex.shown === v ? ex.value : parseNumIn(v); };
 
-  function list() {
-    const m = state.model, q = document.getElementById('wo-search').value.trim().toLowerCase();
-    // 生産実績か実行予算がある工事だけ(工事No順)
-    rows = Object.keys(m.works).sort().map(no => m.works[no]).filter(w => w.weight > 0 || w.hours > 0 || w.hasBudget);
-    const shown = rows.filter(w => !q || (w.no + ' ' + w.name).toLowerCase().indexOf(q) >= 0);
-    document.getElementById('wo-list').innerHTML = shown.map(w =>
-      '<button type="button" class="wo-item' + (w.no === sel ? ' on' : '') + '" data-no="' + esc(w.no) + '">' + esc(w.no) + ' ' + esc(w.name) +
-      '<small>' + (w.done ? '完了' : '未完') + ' / ' + esc(w.year || '年度未設定') + '</small></button>').join('') || '<p class="note">該当する工事がありません</p>';
-  }
-
-  function result() {
-    const el = document.getElementById('wo-result');
-    if (!sel) { el.innerHTML = '<div class="card wo-empty">左のリストから工事を選んでください</div>'; return; }
-    const m = state.model, w = m.works[sel];
-    if (!w) { el.innerHTML = '<div class="card wo-empty">工事が見つかりません</div>'; return; }
-    const cells = CICalc.filterCells(m, { works: { [sel]: true } });
-    const t = CICalc.summarize(cells);
-    const info = (l, v) => '<div>' + l + '<b>' + v + '</b></div>';
-    let h = '<div class="card"><h2>' + esc(w.no) + ' ' + esc(w.name) + '<span class="wo-tag">' + (w.done ? '完了' : '未完') + '</span><span class="wo-tag">' + esc(w.year || '年度未設定') + '</span></h2><div class="wo-info">' +
-      info('契約総重量', fmt(w.totalWeight, 1) + ' t') + info('契約金額', fmt(w.contract) + ' 円') + info('生産重量(累計)', fmt(w.weight, 1) + ' t') +
-      info('生産割合', pct(w.coverage)) + info('工数(累計)', fmt(w.hours) + ' h') + info('労務費の締め', esc(w.cutoff ? CICalc.periodLabel(w.cutoff) : '—')) + '</div></div>';
-    h += '<div class="card"><h2>結果(全期間)</h2><div id="kpis">' + kpiHtml(t) + '</div></div>';
-
-    // 実行予算(実行予算抽出と同じ項目)
-    const b = budgetRow(sel);
-    if (b) {
-      const c = {}; b.cells.forEach(x => { c[x.id] = x; });
-      const txt = id => c[id] ? esc(c[id].text) : '';
-      let th = '<tr><th>項目</th><th class="n">予算</th><th class="n">実際</th><th class="n">割合</th></tr>';
-      JY.PROFITS.forEach(p => { th += '<tr><td>' + esc(p.label) + '</td><td class="n">' + txt(p.key + ':b') + '</td><td class="n">' + txt(p.key + ':a') + '</td><td></td></tr>'; });
-      JY.CATS.forEach(k => { th += '<tr' + (k === '計' ? ' class="total"' : '') + '><td>' + esc(k) + '</td><td class="n">' + txt(k + ':b') + '</td><td class="n">' + txt(k + ':a') + '</td><td class="n">' + txt(k + ':r') + '</td></tr>'; });
-      h += '<div class="card"><h2>実行予算</h2><div class="tbl-wrap"><table>' + th + '</table></div><p class="note">取込: ' + esc(JY.fmt('date', b.saved)) + '</p></div>';
-    } else h += '<div class="card"><h2>実行予算</h2><p class="note">実行予算のデータがありません</p></div>';
-
-    // 月度ごとの推移
-    const g = {};
-    cells.forEach(x => { (g[x.period] || (g[x.period] = [])).push(x); });
-    const ps = Object.keys(g).sort();
-    let pt = '<tr><th>月度</th><th class="n">生産重量(t)</th><th class="n">工数(h)</th><th class="n">人工/t</th><th class="n">売上(万円)</th><th class="n">仕入(万円)</th><th class="n">労務費(万円)</th><th class="n">損益(万円)</th><th class="n">利益率</th></tr>';
-    ps.forEach(p => {
-      const s = CICalc.summarize(g[p]), ok = s.profitSales > 0;
-      pt += '<tr><td>' + esc(CICalc.periodLabel(p)) + '</td><td class="n">' + fmt(s.weight, 1) + '</td><td class="n">' + fmt(s.hours) + '</td><td class="n">' + (s.weight > 0 ? (s.hours / 8 / s.weight).toFixed(2) : '—') +
-        '</td><td class="n">' + man(s.sales) + '</td><td class="n">' + man(s.purchase) + '</td><td class="n">' + man(s.labor) + '</td><td class="n">' + (ok ? man(s.profit) : '—') + '</td><td class="n">' + (ok ? pct(s.profitRate) : '—') + '</td></tr>';
+  // 実行予算にある工事(工事No順)
+  function budgetWorks() {
+    const b = state.data.budget, rows = (b && b.rows) || {}, set = {};
+    Object.keys(rows).forEach((k) => {
+      const no = String(rows[k].no || rows[k].fileNo || '').trim();
+      if (no && rows[k].matchedBy !== '一覧に未登録' && state.model.works[no]) set[no] = true;
     });
-    h += '<div class="card"><h2>月度ごとの推移</h2>' + (ps.length ? '<div class="tbl-wrap"><table>' + pt + '</table></div>' : '<p class="note">生産実績がありません</p>') + '</div>';
-    if (w.notes.length) h += '<div class="card"><h2>注意</h2><ul id="notes">' + w.notes.map(n => '<li>' + esc(n) + '</li>').join('') + '</ul></div>';
-    el.innerHTML = h;
+    return Object.keys(set).sort((a, b) => a.localeCompare(b, 'ja', { numeric: true }));
   }
 
-  document.getElementById('wo-search').addEventListener('input', list);
-  document.getElementById('wo-list').addEventListener('click', e => {
-    const b = e.target.closest('.wo-item');
-    if (!b) return;
-    sel = b.dataset.no;
-    list(); result();
-  });
-  window.WorkView = { show() { list(); result(); } };
+  // 選んだ工事の計算の前提(単価・時間単価・実績)
+  function context(no) {
+    const w = state.model.works[no], g = K.goalRate() / 100;
+    const all = C.summarize(state.model.cells);
+    const own = w.hourRate !== null && w.hourRate !== undefined;
+    const L = (own ? w.hourRate : all.hourRate || 0) * 8; // 1人工(8h)当たりの労務費
+    const W0 = w.totalWeight > 0 ? w.totalWeight : w.weight;
+    return { w, no, g, L, ownRate: own, W0, P: w.procUnit || 0, v: w.purchaseUnit || 0,
+      nNow: w.weight > 0 ? w.hours / 8 / w.weight : 0 };
+  }
+
+  function simulate(x, W, n, P) {
+    const sales = W * P, ninku = W * n, labor = ninku * x.L, variable = W * x.v, profit = sales - labor - variable, goal = sales * x.g;
+    const room = sales * (1 - x.g) - variable; // 人件費に使える上限(目標利益率を確保した場合)
+    return { weight: W, n, unitPrice: P, sales, ninku, hours: ninku * 8, labor, variable, profit, rate: sales > 0 ? profit / sales : null, goal,
+      nMax: W > 0 && x.L > 0 ? room / (W * x.L) : null, nBe: W > 0 && x.L > 0 ? (sales - variable) / (W * x.L) : null,
+      vMax: W > 0 ? (sales * (1 - x.g) - labor) / W : null };
+  }
+
+  function init() {
+    $('w-pick').onchange = () => select($('w-pick').value);
+    const step = (d) => { const s = $('w-pick'), i = s.selectedIndex + d; if (i >= 0 && i < s.options.length) { s.selectedIndex = i; select(s.value); } };
+    $('w-prev').onclick = () => step(-1);
+    $('w-next').onclick = () => step(1);
+    Object.keys(DIG).forEach((k) => {
+      const el = $('w-' + k);
+      el.oninput = () => onInput(k);
+      el.onchange = () => {
+        const v = parseNumIn(el.value), ex = D.exact[k];
+        if (ex && Math.abs(v - parseNumIn(ex.shown)) < 1e-9) { el.value = ex.shown; return; }
+        el.value = simFmt(k, v);
+        onInput(k);
+      };
+    });
+    $('w-reset').onclick = () => select(D.no);
+    D.inited = true;
+  }
+
+  function show() {
+    if (!state.model) return;
+    if (!D.inited) init();
+    const list = budgetWorks(), sel = $('w-pick');
+    sel.innerHTML = list.map((no) => `<option value="${esc(no)}">${esc(no)} ${esc(state.model.works[no].name)}</option>`).join('');
+    if (!list.length) { D.no = ''; D.ctx = null; $('w-kpis').innerHTML = ''; $('w-advice').innerHTML = ''; $('w-status').innerHTML = '<p class="note">実行予算に取り込まれた工事がありません</p>'; return; }
+    select(list.indexOf(D.no) >= 0 ? D.no : list[0]);
+  }
+
+  // 工事を選び直す(入力欄は実績の値に戻す)
+  function select(no) {
+    D.no = no;
+    $('w-pick').value = no;
+    const i = $('w-pick').selectedIndex;
+    $('w-prev').disabled = i <= 0;
+    $('w-next').disabled = i >= $('w-pick').options.length - 1;
+    const x = D.ctx = context(no);
+    D.base = { w: x.W0, n: x.nNow, p: x.P };
+    D.hours = x.W0 * x.nNow * 8;
+    D.exact = {};
+    ['w', 'n', 'p'].forEach((k) => {
+      const el = $('w-' + k);
+      el.value = simFmt(k, D.base[k]);
+      D.exact[k] = { shown: el.value, value: D.base[k] };
+    });
+    const w = x.w;
+    $('w-basis').innerHTML = esc(w.no + ' ' + w.name) + '(' + (w.done ? '完了' : '未完') + ' / ' + esc(w.year || '年度未設定') + ')。生産重量=契約総重量、1t当たり人工数=これまでの実績、トン単価=契約金額÷契約総重量。' +
+      (x.ownRate ? '' : '時間単価は工事の値がないため全体の平均を使用。') + 'その他固定費は工事には配分していません。';
+    update();
+  }
+
+  // 総工数(=必要人工)は生産重量を変えても変わらない人員体制として固定し、生産重量を増やすと1t当たり人工数が減る
+  function onInput(k) {
+    if (k === 'w') {
+      const W = simValue('w');
+      if (W > 0 && D.hours > 0) { const n = D.hours / 8 / W, el = $('w-n'); el.value = simFmt('n', n); D.exact.n = { shown: el.value, value: n }; }
+    } else if (k === 'n') D.hours = simValue('w') * simValue('n') * 8;
+    update();
+  }
+
+  const simNote = (note) => String(note || '').replace(/(^|>)([^<]*)/g, (m, a, txt) => a + txt.replace(/[+\-]?\d[\d,]*(\.\d+)?%?/g, '<span class="nv">$&</span>'));
+
+  function update() {
+    const x = D.ctx;
+    if (!x) return;
+    const W = simValue('w'), n = simValue('n'), P = simValue('p'), b = D.base, g = K.goalRate();
+    const r = simulate(x, W, n, P);
+    $('w-s').value = fmt(r.sales, 0);
+    const changed = Math.abs(W - b.w) > 1e-9 || Math.abs(n - b.n) > 1e-9 || Math.abs(P - b.p) > 1e-9;
+    $('w-reset').classList.toggle('changed', changed);
+    $('w-title').textContent = changed ? '試算' : '現在';
+    const sRow = (label, value, unit, note, cls) =>
+      `<div class="dLabel">${label}</div><div class="dVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="dNote">${simNote(note)}</div>`;
+    const gOk = r.sales > 0 && r.profit - r.goal >= -0.5, gd = r.profit - r.goal;
+    const nOk = r.nMax !== null && n <= r.nMax + 1e-9;
+    $('w-kpis').innerHTML = [
+      sRow('売上額(概算)', yen(r.sales), '円', `契約金額 ${yen(x.w.contract)}円`),
+      sRow('損益', yen(r.profit), '円', (r.rate === null ? '利益率 —' : `利益率 <span class="${r.rate * 100 >= g - 1e-9 ? 'pos' : 'neg'}">${pct(r.rate)}</span>`) + `<span class="goalPctWrap">（<b class="goalPct">目標${fmt(g, g % 1 ? 1 : 0)}%</b>）</span>`, r.profit >= 0 ? 'pos' : 'neg'),
+      sRow('利益目標額', yen(r.goal), '円', r.sales > 0 ? `<span class="${gOk ? 'pos' : 'neg'}">${gOk ? '達成' : '未達'}</span>(損益との差 <span class="${gd >= 0 ? 'pos' : 'neg'}">${gd >= 0 ? '+' : ''}${yen(gd)}</span>円)` : '売上なし', r.sales > 0 ? (gOk ? 'pos' : 'neg') : ''),
+      sRow('許容人工数(目標達成)', r.nMax === null ? '—' : fmt(r.nMax, 2), '人工/t', r.nMax === null ? '算出不可' : (nOk ? `<span class="pos">余裕 ${fmt(r.nMax - n, 2)}</span>人工/t` : `<span class="neg">超過 ${fmt(n - r.nMax, 2)}</span>人工/t`)),
+      sRow('許容総工数(目標達成)', r.nMax === null ? '—' : fmt(r.nMax * W * 8, 0), 'h', `必要 ${fmt(r.hours, 0)}h`),
+      sRow('損益分岐人工数', r.nBe === null ? '—' : fmt(r.nBe, 2), '人工/t', r.nBe === null ? '算出不可' : (n <= r.nBe ? `<span class="pos">余裕 ${fmt(r.nBe - n, 2)}</span>人工/t` : `<span class="neg">超過 ${fmt(n - r.nBe, 2)}</span>人工/t`)),
+      sRow('必要人工', fmt(r.ninku, 1), '人工', `${fmt(r.hours, 0)}h`),
+      sRow('変動費(仕入)', yen(r.variable), '円', `${yen(x.v)}円/t` + (x.w.done ? '(実績)' : '(予算)')),
+      sRow('人件費', yen(r.labor), '円', `${yen(x.L)}円/人工`),
+    ].join('');
+    renderAdvice(x, r, W, P, g, gOk);
+    renderStatus(x, r);
+  }
+
+  /* 現状分析: 目標利益率に届くには(ほかの条件は同じとして1つずつ) */
+  function renderAdvice(x, r, W, P, g, ok) {
+    const box = $('w-advice'), gl = fmt(g, g % 1 ? 1 : 0) + '%';
+    if (!(r.sales > 0)) { box.innerHTML = ''; return; }
+    const gap = r.goal - r.profit, perHour = x.L / 8;
+    let html = `<div class="advHead">現状分析：目標利益率${gl}を達成するには${ok ? '' : '<small>ほかの条件は同じとして、どれか1つで達成する場合</small>'}</div>`;
+    const plans = [
+      { cls: 'advH', title: '時間を減らす', cond: '今の生産量のまま', need: perHour > 0 ? gap / perHour : null, unit: 'h', d: 0, from: r.hours, unitNote: perHour > 0 ? `1h減で 利益 +${yen(perHour)}円` : '' },
+      { cls: 'advV', title: '変動費(仕入)を下げる', cond: '1tあたり', need: W > 0 ? gap / W : null, unit: '円/t', d: 0, from: x.v, unitNote: `1,000円/t減で 利益 +${yen(W * 1000)}円` },
+    ];
+    plans.forEach((c) => { c.ng = c.need === null || c.need > c.from; c.rate = !c.ng && c.from > 0 ? Math.abs(c.need) / c.from : null; });
+    const cand = ok ? [] : plans.filter((c) => !c.ng && c.rate !== null), best = cand.length ? cand.reduce((a, b) => (b.rate < a.rate ? b : a)) : null;
+    html += ok
+      ? `<div class="advLead">✓ 目標を達成しています <span class="advLeadSub">目標より <b>${yen(-gap)}</b>円 超</span></div>`
+      : `<div class="advLead" title="不足額 ${yen(gap)}円">あと <b class="advLeadGap">${bepMan(gap)}</b> 不足` +
+        (best ? ` <span class="advArrow">➜</span> 最短は <b class="advLeadKey">「${best.title} −${pct(best.rate)}」</b>` : ' <span class="advArrow">➜</span> 1つだけでは届きません（組み合わせが必要）') + '</div>';
+    const maxRate = Math.max(...plans.map((c) => (!c.ng && c.rate) || 0)) || 1;
+    html += '<div class="advCards">' + plans.map((c) => {
+      let body;
+      if (c.ng) body = `<div class="advBig neg">${c.need === null ? '到達不能' : 'これだけでは不可'}</div>`;
+      else body = `<div class="advBig ${ok ? 'pos' : 'neg'}">${ok ? '超 ' : '−'}${fmt(Math.abs(c.need), c.d)}<span class="advUnit">${c.unit}</span></div>` +
+        `<div class="advFromTo">${fmt(c.from, c.d)} → ${fmt(c.from - c.need, c.d)}${c.unit}</div>` +
+        `<div class="advBar"><i style="width:${Math.max(2, c.rate / maxRate * 100)}%"></i><span>${ok ? '' : '−'}${pct(c.rate)}</span></div>`;
+      return `<div class="advCard ${c.cls}${c === best ? ' advBest' : ''}">${c === best ? '<span class="advRibbon">最短</span>' : ''}<div class="advTitle">${c.title}<small>（${c.cond}）</small></div>${body}<div class="advNote">${c.unitNote}</div></div>`;
+    }).join('') + '</div>';
+    // 今後の見積もりの目安単価
+    const cost = r.labor + r.variable, goalPrice = W > 0 && x.g < 1 ? cost / (W * (1 - x.g)) : null, bePrice = W > 0 ? cost / W : null;
+    if (goalPrice !== null && P > 0) {
+      const vals = [bePrice, P, goalPrice], lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * 0.12 || hi * 0.05;
+      const pos = (v) => ((v - lo + pad) / (hi - lo + pad * 2) * 100).toFixed(1);
+      const mk = (v, cls, label) => `<div class="advMk ${cls}" style="left:${pos(v)}%"><span>${label}<b>${yen(v)}</b></span></div>`;
+      html += `<div class="advRow2"><div class="advCard advPrice"><div class="advTitle">この工事の目安単価<small>（円/t）</small></div>
+        <div class="advScale"><div class="advLine"></div>${mk(bePrice, 'mkBe', '損益0')}${mk(goalPrice, 'mkGoal', '目標' + gl)}${mk(P, 'mkNow', '今')}</div>
+        <div class="advNote">利益率${gl}には、今より <b class="${goalPrice > P ? 'neg' : 'pos'}">${goalPrice > P ? '+' : ''}${yen(goalPrice - P)}</b>円/t</div></div></div>`;
+    }
+    box.innerHTML = html;
+  }
+
+  /* 右: 目標と現状(これまでの実績。試算の入力とは別に、実績の工数・仕入を目標の上限と比べる) */
+  function renderStatus(x, r) {
+    const w = x.w, done = w.weight, prog = x.W0 > 0 ? done / x.W0 : null;
+    const allowH = r.nMax !== null ? r.nMax * x.W0 * 8 : null; // 契約総重量を作るのに使える総工数
+    const info = (l, v) => `<div>${l}<b>${v}</b></div>`;
+    const bar = (title, v, mark, max, capL, capR) => `<div class="woBar"><h3>${title}</h3><div class="track"><div class="fill${mark !== null && v > mark ? ' over' : ''}" style="width:${Math.min(100, max > 0 ? v / max * 100 : 0)}%"></div>` +
+      (mark !== null ? `<div class="mark" style="left:${Math.min(100, max > 0 ? mark / max * 100 : 0)}%"></div>` : '') + `</div><div class="cap"><span>${capL}</span><span>${capR}</span></div></div>`;
+    let h = '<div class="woInfo">' +
+      info('契約総重量', fmt(x.W0, 1) + ' t') + info('契約金額', yen(w.contract) + ' 円') + info('生産重量(累計)', fmt(done, 1) + ' t') +
+      info('生産進捗', pct(prog)) + info('工数(累計)', fmt(w.hours, 0) + ' h') + info('1t当たり人工数(実績)', fmt(x.nNow, 2)) +
+      info('労務費の締め', esc(w.cutoff ? C.periodLabel(w.cutoff) : '—')) + info('時間単価', w.hourRate ? yen(w.hourRate) + ' 円/h' : '—') + '</div>';
+    h += bar('生産進捗', done, null, x.W0, `累計 ${fmt(done, 1)}t`, `契約 ${fmt(x.W0, 1)}t(${pct(prog)})`);
+    if (allowH !== null && allowH > 0) h += bar('工数の消化(目標利益率を確保できる総工数に対して)', w.hours, allowH * (prog || 0), Math.max(allowH, w.hours) * 1.05,
+      `累計 ${fmt(w.hours, 0)}h`, `許容 ${fmt(allowH, 0)}h(黒線=生産進捗に見合う工数 ${fmt(allowH * (prog || 0), 0)}h)`);
+    if (r.nMax !== null) h += bar('1t当たり人工数(実績と目標の上限)', x.nNow, r.nMax, Math.max(x.nNow, r.nMax) * 1.1, `実績 ${fmt(x.nNow, 2)}`, `上限 ${fmt(r.nMax, 2)}(黒線)`);
+    if (w.hasBudget && w.purchaseBudget !== null && w.purchaseActual !== null) h += bar('仕入(実行予算 実際と予算)', w.purchaseActual, w.purchaseBudget, Math.max(w.purchaseActual, w.purchaseBudget) * 1.1,
+      `実際 ${yen(w.purchaseActual)}円`, `予算 ${yen(w.purchaseBudget)}円(黒線)`);
+    if (w.notes.length) h += '<ul id="notes">' + w.notes.map((t) => '<li>' + esc(t) + '</li>').join('') + '</ul>';
+    $('w-status').innerHTML = h;
+  }
+
+  window.WorkView = { show };
 })();

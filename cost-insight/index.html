@@ -150,24 +150,18 @@
   .btn-row { align-self:stretch; display:flex; gap:10px; margin:4px 0 8px; }
   .btn-row .btn { flex:1 1 0; margin:0; padding:4px 10px; font-size:14px; line-height:1.4; }
   .budget-stack .imp-status { width:min(340px, 100%); }
-  /* 工事別結果分析(工事リスト+選んだ工事の結果)。文字は黒 */
-  #v-workone .an-title { color:#f2f2f2; }
-  .wo-body { display:grid; grid-template-columns:320px minmax(0,1fr); gap:16px; align-items:start; }
-  @media (max-width: 900px) { .wo-body { grid-template-columns:1fr; } }
-  .wo-listbox { position:sticky; top:8px; padding:12px; }
-  @media (max-width: 900px) { .wo-listbox { position:static; } }
-  #wo-search { width:100%; box-sizing:border-box; font:inherit; padding:6px 8px; border:1px solid #888; border-radius:4px; margin-bottom:8px; }
-  .wo-list { max-height:70vh; overflow:auto; }
-  .wo-item { display:block; width:100%; text-align:left; font:inherit; color:#000; background:#fff; border:1px solid #ddd; border-radius:4px; padding:6px 8px; margin:0 0 4px; cursor:pointer; }
-  .wo-item:hover { background:#eef1f5; }
-  .wo-item.on { background:#dbeafe; border-color:#93c5fd; font-weight:bold; }
-  .wo-item small { display:block; color:#222; font-size:12px; }
-  .wo-empty { padding:40px 20px; text-align:center; font-size:15px; }
-  .wo-result .card h2 { font-size:16px; }
-  .wo-info { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:6px 18px; font-size:14px; }
-  .wo-info div { border-bottom:1px solid #eee; padding:3px 0; } .wo-info b { float:right; }
-  .wo-tag { display:inline-block; font-size:12px; padding:1px 8px; border-radius:10px; background:#ede9fe; margin-left:6px; }
-  .wo-result .tbl-wrap { max-height:none; }
+  /* 工事別結果分析(詳細版と同じ見た目は detail.css / simple.css を共用) */
+  #v-workone .woLbl { color:#000; font-weight:bold; margin-right:6px; }
+  #v-workone .sFilters select { max-width:min(520px, 60vw); }
+  .woStatus { flex:1; min-height:0; overflow:auto; font-size:14px; color:#000; }
+  .woInfo { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:4px 18px; margin-bottom:12px; }
+  .woInfo div { border-bottom:1px solid #eee; padding:3px 0; } .woInfo b { float:right; }
+  .woBar { margin:0 0 14px; } .woBar h3 { font-size:14px; margin:0 0 4px; }
+  .woBar .track { position:relative; height:18px; background:#e8e7e2; border-radius:9px; overflow:hidden; }
+  .woBar .fill { position:absolute; left:0; top:0; height:100%; background:#2a78d6; }
+  .woBar .fill.over { background:#eb6834; }
+  .woBar .mark { position:absolute; top:0; height:100%; width:3px; background:#000; }
+  .woBar .cap { display:flex; justify-content:space-between; font-size:12px; margin-top:3px; }
   /* 実行予算抽出: 実行予算まとめと同じ表示(上は黒い帯に絞り込みボタン、表は左右16pxの余白) */
   body[data-view="extract"] main.wide { margin-top:0; margin-bottom:16px; }
   .exBar { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:6px 16px; padding:10px 0 8px; }
@@ -329,16 +323,35 @@
     </div>
   </section>
 
-  <!-- 工事別結果分析: 工事をリストから選び、その工事だけの結果を表示 -->
-  <section id="v-workone" class="view" hidden>
-    <p class="home-row"><button class="btn orange stack-btn" type="button" data-go="analysis">戻る</button></p>
-    <h2 class="an-title">工事別結果分析</h2>
-    <div class="wo-body">
-      <div class="card wo-listbox">
-        <input id="wo-search" type="search" placeholder="工事No・工事名で絞り込み" autocomplete="off">
-        <div id="wo-list" class="wo-list"></div>
+  <!-- 工事別結果分析: 実行予算にある工事をリストから選び、その工事の目標値と現状を詳細版(目標シミュレーター)と同じ表示で出す -->
+  <section id="v-workone" class="view fullTab" hidden>
+    <div class="sBar">
+    <div class="sTop"><button class="btn" type="button" data-go="analysis">戻る</button><span>工事別結果分析(目標シミュレーター)</span></div>
+    <div class="sFilters">
+      <div class="sRow">
+        <span class="woLbl">工事</span>
+        <span class="periodWrap"><button type="button" id="w-prev" class="monthBtn" title="前の工事">◀</button><select id="w-pick" aria-label="工事"></select><button type="button" id="w-next" class="monthBtn" title="次の工事">▶</button></span>
       </div>
-      <div id="wo-result" class="wo-result"></div>
+    </div>
+    </div>
+    <div class="simLayout">
+      <div class="simLeft">
+        <div class="panel simInputs">
+          <div class="simGridWrap">
+            <div class="simFixed">
+              <div class="simHead simHeadRow"><span class="simTitle" id="w-title">現在</span><span class="simInHead">入力欄</span></div>
+              <div class="simRow"><label>生産重量(t)</label><span class="simIn"><input type="text" inputmode="decimal" id="w-w" class="simNum" autocomplete="off"><span class="simUnit">t</span></span></div>
+              <div class="simRow"><label>1t当たり人工数</label><span class="simIn"><input type="text" inputmode="decimal" id="w-n" class="simNum" autocomplete="off"><span class="simUnit">人工</span></span></div>
+              <div class="simRow"><label>トン単価(円/t)</label><span class="simIn"><input type="text" inputmode="decimal" id="w-p" class="simNum" autocomplete="off"><span class="simUnit">円/t</span></span></div>
+              <div class="simRow"><label>売上額(概算)</label><span class="simIn simInSales"><input type="text" id="w-s" class="simNum simSales" readonly tabindex="-1" title="生産重量×トン単価(自動計算)"><span class="simUnit">円</span></span></div>
+            </div>
+          </div>
+          <p class="note" id="w-basis"></p>
+        </div>
+        <div class="panel simKpiPanel"><div id="w-kpis" class="simTable"></div></div>
+        <div class="panel simAdvicePanel"><div id="w-advice" class="simAdvice"></div></div>
+      </div>
+      <div class="panel simChart"><div class="chartHead"><h2>目標と現状</h2><button id="w-reset" class="resetBtn2" type="button">現在値に戻す</button></div><div id="w-status" class="woStatus"></div></div>
     </div>
   </section>
 
@@ -425,10 +438,10 @@
 <script src="calc.js"></script>
 <script src="budgetview.js"></script>
 <script src="extract.js"></script>
-<script src="workone.js"></script>
 <script src="bepchart.js"></script>
 <script src="app.js"></script>
 <script src="simple.js"></script>
 <script src="detail.js"></script>
+<script src="workone.js"></script>
 </body>
 </html>
