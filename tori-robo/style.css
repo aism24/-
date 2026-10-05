@@ -163,3 +163,5 @@ select, option, input, button, .btn, .btn.primary, #dlBtn, #dlBtn:disabled, .man
 .dl-notice-box { background:#fff; color:#000; border-radius:10px; padding:22px 32px; width:min(460px,88vw); box-shadow:0 6px 24px rgba(0,0,0,.45); text-align:center; font-weight:bold; }
 .dl-notice-box p { margin:0 0 12px; line-height:1.6; }
 .dl-notice-box .btn.primary { margin-top:6px; padding:0 32px; }
+/* 表の文字は等幅フォント(細い文字1・Iなどで縦の並びが凸凹にならないように) */
+table th, table td { font-family:"BIZ UDGothic","MS Gothic","Osaka-Mono",Consolas,"Courier New",monospace; }
