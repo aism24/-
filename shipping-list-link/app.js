@@ -3,7 +3,7 @@
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbw0NvmN8vjr4g0TNx1TQ8DffC6FWwK6GfBOZb32N0mTp3CrcYXLNOpkxhXo2ce1PwE6/exec';
   var $ = function (id) { return document.getElementById(id); };
   var links = null, CK = 'ship-links-v1';
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261005j';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261005l';
 
   function showMaster(m, note) {
     links = m.links;
@@ -24,37 +24,56 @@
     for (i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
     return btoa(s);
   }
+  // 結果ポップアップ。「OK」でアプリをリセット(開いたときの状態に戻す)
+  var modalOpen = false;
+  function popup(lines, ok) {
+    modalOpen = true;
+    $('modalText').innerHTML = lines.map(function (l) { return '<div>' + esc(l) + '</div>'; }).join('');
+    $('modalNote').textContent = '';
+    $('modal').className = 'show ' + (ok ? 'mok' : 'mng');
+    $('modalOk').focus();
+  }
+  function resetApp() {
+    modalOpen = false;
+    $('modal').className = '';
+    $('msg').textContent = '';
+    $('stage').classList.remove('busy');
+    inp.value = '';
+  }
+  $('modalOk').onclick = resetApp;
+
   async function handle(file) {
-    if (!file) return;
+    if (!file || modalOpen) return;
     if (!links) { $('msg').textContent = 'マスタが未取得です。少し待って再実行してください。'; return; }
-    $('msg').textContent = '処理中…'; $('result').innerHTML = ''; $('stage').classList.add('busy');
+    $('msg').textContent = '処理中…'; $('stage').classList.add('busy');
     try {
       var buf = await file.arrayBuffer();
       var r = await ShippingCore.linkPdf(pdfjsLib, PDFLib, buf, links);
-      var base = file.name.replace(/\.pdf$/i, '');
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([r.bytes], { type: 'application/pdf' }));
-      a.download = base + '_リンク付き.pdf'; a.style.display = 'none'; document.body.appendChild(a); a.click();
-      setTimeout(function () { a.remove(); URL.revokeObjectURL(a.href); }, 10000);
-      var s = r.stats, h = '<div class="card"><div class="row">' +
-        '<div class="stat"><span>リンク付与</span><strong class="ok">' + s.linked + '</strong></div>' +
-        '<div class="stat"><span>ページ数</span><strong>' + s.pages + '</strong></div>' +
-        '<div class="stat"><span>要確認</span><strong class="' + (s.partial.length ? 'warn' : '') + '">' + s.partial.length + '</strong></div></div>';
-      if (s.partial.length) h += '<table><tr><th>頁</th><th>図番</th><th>製品名</th><th>理由</th></tr>' + s.partial.map(function (p) {
-        return '<tr><td>' + p.page + '</td><td>' + esc(p.zuban) + '</td><td>' + esc(p.name) + '</td><td>' + p.reason + '</td></tr>'; }).join('') + '</table>';
-      $('result').innerHTML = h + '</div>';
-      $('msg').textContent = 'ダウンロードしました。';
-      if (GAS_URL) await save(file.name, s.pages, buf); else $('msg').textContent += '(GAS未設定のため保存・記録はスキップ)';
-    } catch (e) { $('msg').textContent = '失敗しました: ' + e; }
-    $('stage').classList.remove('busy');
+      var s = r.stats;
+      $('msg').textContent = '';
+      if (s.linked > 0) {
+        var base = file.name.replace(/\.pdf$/i, '');
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([r.bytes], { type: 'application/pdf' }));
+        a.download = base + '_リンク付き.pdf'; a.style.display = 'none'; document.body.appendChild(a); a.click();
+        setTimeout(function () { a.remove(); URL.revokeObjectURL(a.href); }, 10000);
+        popup(['ダウンロードしました', 'リンク付与できた図番' + s.linked + '件', '付与できなかった図番' + s.ng + '件'], true);
+      } else {
+        popup(['リンクが付与できず、ダウンロードしていません', 'マスタには無い図番と製品名の可能性あり'], false);
+      }
+      if (GAS_URL) save(file.name, s, buf);   // 元PDFの保存・記録はバックグラウンドで実施
+    } catch (e) {
+      $('stage').classList.remove('busy');
+      $('msg').textContent = '失敗しました: ' + e;
+    }
   }
-  async function save(name, pages, buf) {
+  async function save(name, s, buf) {
     try {
       var r = await fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ name: name, pages: pages, pdf: b64(buf) }) });
+        body: JSON.stringify({ name: name, pages: s.pages, linked: s.linked, ng: s.ng, pdf: b64(buf) }) });
       var j = await r.json();
-      $('msg').textContent += j.ok ? ' 元PDFを保存・記録しました。' : ' 保存に失敗: ' + j.error;
-    } catch (e) { $('msg').textContent += ' 保存に失敗: ' + e; }
+      if (!j.ok) throw new Error(j.error);
+    } catch (e) { if (modalOpen) $('modalNote').textContent = '(元PDFの保存・記録に失敗しました)'; }
   }
   var drop = $('drop'), inp = $('file');
   drop.onclick = function () { inp.click(); };
