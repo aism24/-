@@ -50,6 +50,9 @@
     return toks;
   }
 
+  // 図番の「形」(数字→9, 英大文字→A, 英小文字→a)。マスタの図番と同じ形のトークンを図番らしいとみなす
+  function shape(t) { return t.replace(/[0-9]/g, '9').replace(/[A-Z]/g, 'A').replace(/[a-z]/g, 'a'); }
+
   function encodeUri(u) {
     return u.replace(/[^\x21-\x7e]/g, function (c) { return encodeURIComponent(c); })
       .replace(/\(/g, '%28').replace(/\)/g, '%29');
@@ -59,9 +62,9 @@
   async function linkPdf(pdfjsLib, PDFLib, data, links) {
     var doc = await pdfjsLib.getDocument({ data: new Uint8Array(data.slice(0)) }).promise;
     var out = await PDFLib.PDFDocument.load(data, { ignoreEncryption: true });
-    var zset = {};
-    Object.keys(links).forEach(function (k) { zset[k.split('\t')[0]] = 1; });
-    var stats = { pages: doc.numPages, linked: 0, dup: 0, partial: [], rows: 0 };
+    var zset = {}, shapes = {};
+    Object.keys(links).forEach(function (k) { var z = k.split('\t')[0]; zset[z] = 1; shapes[shape(z)] = 1; });
+    var stats = { pages: doc.numPages, linked: 0, dup: 0, ng: 0, partial: [], rows: 0 };
     for (var pn = 1; pn <= doc.numPages; pn++) {
       var tc = await (await doc.getPage(pn)).getTextContent();
       var page = out.getPage(pn - 1), annots = [];
@@ -69,7 +72,7 @@
       for (var r = 0; r < rows.length; r++) {
         var toks = rowTokens(rows[r]), done = {}, hasAny = false;
         stats.rows++;
-        var rowStart = stats.linked + stats.dup;
+        var rowStartLinked = stats.linked;
         for (var i = 0; i < toks.length; i++) for (var j = 0; j < toks.length; j++) {
           if (i === j || toks[i].text === toks[j].text) continue;
           var key = toks[i].text + '\t' + toks[j].text, v = links[key];
@@ -83,9 +86,13 @@
           annots.push({ rect: rect, uri: v });
           stats.linked++;
         }
-        if (!hasAny) {
-          var z = toks.filter(function (t) { return zset[t.text]; })[0];
-          if (z) stats.partial.push({ page: pn, zuban: z.text, name: '', reason: '製品名が不一致' });
+        if (stats.linked === rowStartLinked) {
+          // 図番らしい(マスタの図番と同じ形の)トークンがあるのにリンクが付かなかった行 = NG
+          var z = toks.filter(function (t) { return shapes[shape(t.text)] && t.text.indexOf('-') >= 0; })[0];
+          if (z) {
+            stats.ng++;
+            if (!hasAny) stats.partial.push({ page: pn, zuban: z.text, name: '', reason: zset[z.text] ? '製品名が不一致' : 'マスタに無い図番' });
+          }
         }
       }
       annots.forEach(function (a) {

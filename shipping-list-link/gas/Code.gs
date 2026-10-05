@@ -137,7 +137,7 @@ function doGet(e) {
   return json_(loadLinksJson_());
 }
 
-/** body(text/plain): JSON {name, pages, pdf(base64)} */
+/** body(text/plain): JSON {name, pages, linked, ng, pdf(base64)} */
 function doPost(e) {
   var lock = LockService.getScriptLock();
   try {
@@ -146,10 +146,11 @@ function doPost(e) {
     var stamp = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd_HHmmss');
     var blob = Utilities.newBlob(Utilities.base64Decode(d.pdf), 'application/pdf', sanitizeName_(d.name) + '_' + stamp + '.pdf');
     var file = DriveApp.getFolderById(SAVE_FOLDER_ID).createFile(blob);
-    // 2行目に挿入(最新が常に2行目、古い記録ほど下へ)
+    // 2行目に挿入(最新が常に2行目、古い記録ほど下へ)。列: 日時 / 枚数 / PDFのURL / リンク付与 / NG
     var sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
     sh.insertRowAfter(1);
-    sh.getRange(2, 1, 1, 3).setValues([[Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss'), Number(d.pages) || '', file.getUrl()]]);
+    sh.getRange(2, 1, 1, 5).setValues([[Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss'), Number(d.pages) || '', file.getUrl(),
+      d.linked === undefined ? '' : Number(d.linked), d.ng === undefined ? '' : Number(d.ng)]]);
     return json_({ ok: true, url: file.getUrl() });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
