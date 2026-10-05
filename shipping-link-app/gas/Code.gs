@@ -2,7 +2,7 @@
  * 出荷リスト図番リンク付与アプリ用 GAS(ms-tottori アカウントで実行)
  *  - 毎朝: マスタExcelのハイパーリンクを抜き出し「リンク表(JSON)」をDriveに保存
  *  - doGet : リンク表JSONを返す(?action=links)
- *  - doPost: 取り込んだ元PDFを保存フォルダへ保存し、スプレッドシート「記録」に日時/ページ数/URLを追記
+ *  - doPost: 取り込んだ元PDFを保存フォルダへ保存し、スプレッドシート「記録」の2行目に日時/ページ数/URLを挿入(最新が上)
  *
  * 【初回セットアップ】 ①このコードを貼り付け ②setupDaily を1回実行(権限を承認) ③buildMaster を1回実行
  *  ④デプロイ → ウェブアプリ(実行ユーザー=自分 / アクセス=全員)→ URLを app.js の GAS_URL に設定
@@ -146,8 +146,10 @@ function doPost(e) {
     var stamp = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd_HHmmss');
     var blob = Utilities.newBlob(Utilities.base64Decode(d.pdf), 'application/pdf', sanitizeName_(d.name) + '_' + stamp + '.pdf');
     var file = DriveApp.getFolderById(SAVE_FOLDER_ID).createFile(blob);
-    SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME)
-      .appendRow([Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss'), Number(d.pages) || '', file.getUrl()]);
+    // 2行目に挿入(最新が常に2行目、古い記録ほど下へ)
+    var sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
+    sh.insertRowAfter(1);
+    sh.getRange(2, 1, 1, 3).setValues([[Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss'), Number(d.pages) || '', file.getUrl()]]);
     return json_({ ok: true, url: file.getUrl() });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
