@@ -169,6 +169,7 @@ function showView(name) {
   }
   syncStickyOffsets();
   if (name === 'extract' && window.ExtractView) ExtractView.show();
+  if (name === 'workone' && window.WorkView) WorkView.show();
   if (name === 'simple' && window.SimpleView) SimpleView.show();
   if (name === 'detail' && window.DetailView) DetailView.show();
 }
@@ -177,6 +178,7 @@ document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', 
 const AN_TITLE = { work: '工事別結果分析', site: '工場別進捗分析' };
 document.querySelectorAll('[data-analysis]').forEach(b => b.addEventListener('click', () => {
   if (b.dataset.analysis === 'site') { showView('sitemode'); return; } // 工場別は 詳細版/シンプル版 を先に選ぶ
+  if (b.dataset.analysis === 'work') { showView('workone'); return; } // 工事別は 工事を選んでその工事だけの結果を表示
   state.tab = b.dataset.analysis;
   document.getElementById('an-title').textContent = AN_TITLE[state.tab];
   showView('progress');
@@ -270,9 +272,12 @@ function workRows(cells) {
   }).filter(r => r.t.weight > 0 || r.t.hours > 0);
 }
 
-function renderKpis(t) {
+function renderKpis(t) { document.getElementById('kpis').innerHTML = kpiHtml(t); }
+
+// 3つの単価・損益・生産重量のカード(進捗画面・工事別結果分析で共通)
+function kpiHtml(t) {
   const k = (label, value, unit, sub) => `<div class="kpi"><div class="kpi-l">${label}</div><div class="kpi-v">${value}<small>${unit}</small></div><div class="kpi-s">${sub || ''}</div></div>`;
-  document.getElementById('kpis').innerHTML = [
+  return [
     k('1t当たり加工単価', fmt(t.procUnit), '円/t', '売上 ' + man(t.sales) + '万円'),
     k('1t当たり仕入単価', fmt(t.purchaseUnit) + est(t.purchaseEst), '円/t', '仕入 ' + man(t.purchase) + '万円'),
     k('1時間当たり単価', fmt(t.hourRate) + est(t.laborEst), '円/h', '労務費 ' + man(t.labor) + '万円'),
