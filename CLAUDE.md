@@ -148,7 +148,7 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 |---|---|---|---|
 | pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 解除(2026-09-24、関数統合版を本番デプロイ後に再解除) | |
 | daily-report (https://all-daily-report.vercel.app/) | daily-report | 解除(2026-09-24) | `daily-report/vercel.json` で `git.deploymentEnabled=false`。Ignored Build Step=`git diff HEAD^ HEAD --quiet -- .` |
-| shipping-list-link (https://shipping-list-link.vercel.app/) | shipping-list-link | 連携中(2026-10-05〜。現在 `list_projects` で1件) | 静的サイト+`api/links.js`(小さいNode関数)。`vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
+| shipping-list-link (https://shipping-list-link.vercel.app/) | shipping-list-link | 連携は現在解除(2026-10-05、`list_projects` 0件を確認。作成時は連携済みで、本番デプロイは `create_deployment` で5回実施) | 静的サイト+`api/links.js`(小さいNode関数)。`vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(連携を解除した状態でも実行できるかは未確認。連携を戻す場合は先に他アプリの連携が無いことを確認)。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
 | sonekibunki (https://sonekibunki.vercel.app/) | production-profit | 解除(2026-09-29、#416〜#424を本番デプロイ後にユーザーが解除。`list_projects` 0件を確認。`vercel.json` の `git.deploymentEnabled=false` は残置) | 静的サイト(関数なし)。本番反映は `create_deployment` で行う。GitHub Pages版は廃止(index.htmlでVercel版へ転送) |
 
 2026-09-29、sonekibunkiの連携も解除され、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。公開時は連携を戻してから、指示があったときだけ `create_deployment` で1回デプロイする。
