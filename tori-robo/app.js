@@ -178,6 +178,7 @@ if (typeof document !== 'undefined') {
           : fetchJson('api/data').catch(function () { return fetchJson(GAS_API_URL + '?action=getData'); }); // 通常はVercel中継(CDNキャッシュ)。失敗時はGASへ直接
       p.then(function (res) {
         if (res.status !== 'success') throw new Error(res.message || '読み込みに失敗しました');
+        if (res.data && res.data.timing) { try { console.log('更新確認の所要時間(ms)', res.data.timing); } catch (e) { /* 無視 */ } }
         if (!useSample) saveCachedData(res.data);
         if (cached && cached.generatedAt === res.data.generatedAt) return; // 変更なし
         st.data = res.data;
