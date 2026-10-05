@@ -1,0 +1,27 @@
+// マスタ(リンク表JSON)の中継API。GASをサーバー側で取得(最大3回リトライ)し、gzipしてCDNにキャッシュさせる。
+// ブラウザからGASを直接呼ぶと転送(302)の連鎖等で遅い/失敗するため。画面側は失敗時だけGAS直接へフォールバックする。
+const zlib = require('zlib');
+const GAS_URL = process.env.GAS_URL ||
+  'https://script.google.com/macros/s/AKfycbw0NvmN8vjr4g0TNx1TQ8DffC6FWwK6GfBOZb32N0mTp3CrcYXLNOpkxhXo2ce1PwE6/exec';
+
+module.exports = async (req, res) => {
+  let body = null, err = '';
+  for (let i = 0; i < 3 && !body; i++) {
+    try {
+      const r = await fetch(GAS_URL + '?action=links', { redirect: 'follow' });
+      const t = await r.text();
+      if (r.ok && t.startsWith('{') && t.includes('"links"')) body = t; else err = 'HTTP ' + r.status;
+    } catch (e) { err = String(e); }
+  }
+  if (!body) {
+    res.statusCode = 502;
+    res.setHeader('Cache-Control', 'no-store');
+    return res.end(JSON.stringify({ error: err }));
+  }
+  const gz = zlib.gzipSync(Buffer.from(body, 'utf8'), { level: 9 });   // 6.5MB → 数百KB(関数の応答上限4.5MB対策も兼ねる)
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Encoding', 'gzip');
+  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=86400');
+  res.end(gz);
+};

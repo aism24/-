@@ -3,19 +3,27 @@
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbw0NvmN8vjr4g0TNx1TQ8DffC6FWwK6GfBOZb32N0mTp3CrcYXLNOpkxhXo2ce1PwE6/exec';
   var $ = function (id) { return document.getElementById(id); };
   var links = null, CK = 'ship-links-v1';
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261005l';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261005m';
 
   function showMaster(m, note) {
     links = m.links;
     $('master').textContent = 'マスタ: ' + Object.keys(m.links).length + '件 / 更新 ' + (m.updated || '') + (note ? ' / ' + note : '');
   }
+  // 取得経路: Vercelの中継API(CDNキャッシュ・gzip)を優先。失敗時だけGASを直接呼ぶ(GitHub上の確認用URLには中継APIが無いのでこちらになる)
+  async function fetchMaster() {
+    try {
+      var r = await fetch('api/links');
+      if (r.ok) { var m = await r.json(); if (m && m.links) return { m: m, via: '中継API' }; }
+    } catch (e) {}
+    var r2 = await fetch(GAS_URL ? GAS_URL + '?action=links' : 'sample/links.json', { cache: 'no-store' });
+    return { m: await r2.json(), via: GAS_URL ? 'GAS直接' : '動作確認用サンプル' };
+  }
   async function loadMaster() {
     try { var c = JSON.parse(localStorage.getItem(CK) || 'null'); if (c && GAS_URL) showMaster(c, 'キャッシュ'); } catch (e) {}
     try {
-      var r = await fetch(GAS_URL ? GAS_URL + '?action=links' : 'sample/links.json', { cache: 'no-store' });
-      var m = await r.json();
-      showMaster(m, GAS_URL ? '最新' : '動作確認用サンプル');
-      if (GAS_URL) try { localStorage.setItem(CK, JSON.stringify(m)); } catch (e) {}
+      var t0 = Date.now(), got = await fetchMaster();
+      showMaster(got.m, got.via + ' ' + ((Date.now() - t0) / 1000).toFixed(1) + '秒');
+      if (GAS_URL) try { localStorage.setItem(CK, JSON.stringify(got.m)); } catch (e) {}
     } catch (e) { if (!links) $('master').textContent = 'マスタの取得に失敗しました: ' + e; }
   }
   function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
