@@ -155,6 +155,9 @@
   .exBar { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:6px 16px; padding:10px 0 8px; }
   .exBar .note { color:#f2f2f2; margin:0; }
   .exFilters { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:6px; font-weight:bold; color:#f2f2f2; }
+  .exLegend { display:flex; gap:8px; font-size:12px; }
+  .exLegend span { padding:2px 8px; border:1px solid #ccc; border-radius:3px; color:#000; }
+  .exLegend .lgChg { background:#ffff00; } .exLegend .lgNew { background:#ccffff; }
   .exFilters span { margin:0 4px 0 12px; }
   .exFilters button { font:inherit; padding:5px 14px; border:1px solid #999; background:#fff; color:#333; border-radius:4px; cursor:pointer; }
   .exFilters button:hover { background:#eef1f5; }
@@ -183,6 +186,9 @@
   #ex-tbl .grp, #ex-tbl .grp-l { border-left:2px solid #bbb; }
   #ex-tbl td.num { text-align:right; } #ex-tbl td.txt { text-align:left; }
   #ex-tbl tbody td { height:38px; vertical-align:middle; }
+  #ex-tbl tr.new td { background:#ccffff; }
+  #ex-tbl td.chg:not(.zero) { background:#ffff00 !important; }
+  #ex-tbl .prev { font-size:10px; color:#7a5a00; font-weight:normal; }
   #ex-tbl tr.missing td { background:#d9d9d9; color:#555; }
   /* 予算超過・利益の予算未達は赤字、未完成(契約総重量・契約金額が0)は黄色でゆっくり点滅+赤字 */
   #ex-tbl td.over, #ex-tbl th.over { color:#e00000; font-weight:600; }
@@ -307,7 +313,7 @@
 
   <!-- 実行予算抽出: 取り込んだ実行予算の結果テーブル -->
   <section id="v-extract" class="view" hidden>
-    <div class="exBar"><span id="ex-meta" class="note"></span><div id="ex-filters" class="exFilters"></div></div>
+    <div class="exBar"><span id="ex-meta" class="note"></span><div id="ex-filters" class="exFilters"></div><div class="exLegend"><span class="lgChg">変更あり(前回値を表示)</span><span class="lgNew">新規の工事</span></div></div>
     <div class="exWrap"><table id="ex-tbl"></table></div>
   </section>
 

@@ -8,12 +8,13 @@
 
   const yearTag = y => { const m = /^R(\d+)$/.exec(y || ''); return m ? ' y' + (Number(m[1]) % 4) : ''; };
   const cellText = c => c.kind === 't' ? JY.fmt('t1', c.v) : c.text;
+  const prevText = c => c.kind === 't' ? JY.fmt('t1', c.pv) || '(空欄)' : c.prev;
 
   function build() {
     const d = state.data, works = (d.settings && d.settings.works) || {};
     const map = {};
     Object.keys(works).forEach(no => { map[no] = { done: JY.normDone(works[no].done), year: JY.normYear(works[no].year) }; });
-    view = JY.buildView(d.budget ? { today: d.budget } : null, map);
+    view = JY.buildView(d.budget ? { today: d.budget, baseline: d.budget.baseline } : null, map);
   }
 
   function renderFilters() {
@@ -35,7 +36,7 @@
     }
     renderFilters();
     const rows = JY.filterRows(view.rows, filter);
-    meta.textContent = '最終取込: ' + JY.fmt('date', view.todayAt) + ' / ' + (rows.length === view.rows.length ? rows.length + '件' : rows.length + '件(全' + view.rows.length + '件)');
+    meta.textContent = '最終取込: ' + JY.fmt('date', view.todayAt) + ' / 比較の基準: ' + (view.baselineAt ? JY.fmt('date', view.baselineAt) : 'なし(初回。翌日以降の取込から表示)') + ' / ' + (rows.length === view.rows.length ? rows.length + '件' : rows.length + '件(全' + view.rows.length + '件)');
     let h = '<thead><tr><th rowspan="2" class="c-y">年度</th><th rowspan="2" class="c-d">完了</th><th rowspan="2" class="c-no">工事No</th><th rowspan="2" class="c-name">工事名</th>' +
       '<th rowspan="2" class="c-w">契約総重量(t)</th><th rowspan="2" class="c-a">契約金額(円)</th><th rowspan="2" class="c-s">参照シート</th>';
     JY.PROFITS.forEach(p => { h += '<th colspan="2" class="grp">' + esc(p.label) + '</th>'; });
@@ -61,7 +62,9 @@
         if (c.id === 'author') cls.push('ctr');
         if (c.over) cls.push('over');
         if (c.zero) cls.push('zero');
-        h += '<td class="' + cls.join(' ') + '">' + esc(cellText(c)) + '</td>';
+        if (c.changed) cls.push('chg');
+        h += '<td class="' + cls.join(' ') + '">' + esc(cellText(c)) +
+          (c.changed ? '<div class="prev">前回：' + esc(prevText(c)) + '</div>' : '') + '</td>';
       });
       h += '</tr>';
     });
