@@ -68,6 +68,8 @@ function openApp(card) {
     // 残ってしまう。同じタブでlocationを変更すればランチャー画面はそのまま残る。
     window.location.href = app.url;
   }
+  // 検索中にアプリを開いたら、その検索語を履歴に残す。
+  saveSearchHistory(document.getElementById('search').value);
   // クリックログの送信は失敗してもアプリ起動自体は妨げない(ベストエフォート)。
   apiPost('logAppOpen', { appName: app.name }).catch(function () {});
 }
@@ -136,6 +138,7 @@ if (!supportsHover) {
 function renderGroups(groups) {
   const root = document.getElementById('groups');
   root.innerHTML = '';
+  lastGroups = groups;
 
   if (!groups || groups.length === 0) {
     root.innerHTML = '<div class="empty">登録されたアプリがありません。</div>';
@@ -180,7 +183,140 @@ function renderGroups(groups) {
     row.appendChild(grid);
     root.appendChild(row);
   });
+  applySearch();
 }
+
+/* ---------------------------------------------------------------------
+ * アプリ検索。名前・説明・分類・アイコン文字を、全角半角・大小文字を区別せず
+ * スペース区切りのAND条件で絞り込む。検索履歴はブラウザ(localStorage)ごとに保存。
+ * ------------------------------------------------------------------ */
+let lastGroups = null;
+const SEARCH_HISTORY_KEY = 'appLauncherSearchHistory_v1';
+const SEARCH_HISTORY_MAX = 10;
+
+function normalizeText(s) {
+  return String(s == null ? '' : s).normalize('NFKC').toLowerCase();
+}
+
+function loadSearchHistory() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || '[]');
+    return Array.isArray(arr) ? arr.filter(function (x) { return typeof x === 'string'; }) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function storeSearchHistory(list) {
+  try {
+    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(list));
+  } catch (e) {}
+}
+
+function saveSearchHistory(query) {
+  const q = String(query || '').trim();
+  if (!q) return;
+  const list = loadSearchHistory().filter(function (x) { return x !== q; });
+  list.unshift(q);
+  storeSearchHistory(list.slice(0, SEARCH_HISTORY_MAX));
+  renderSearchHistory();
+}
+
+function renderSearchHistory() {
+  const box = document.getElementById('search-history');
+  const list = loadSearchHistory();
+  box.innerHTML = '';
+  if (list.length === 0) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  const label = document.createElement('span');
+  label.textContent = '検索履歴:';
+  box.appendChild(label);
+  list.forEach(function (q) {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    const use = document.createElement('button');
+    use.type = 'button';
+    use.className = 'q';
+    use.textContent = q;
+    use.addEventListener('click', function () {
+      const input = document.getElementById('search');
+      input.value = q;
+      applySearch();
+      saveSearchHistory(q); // 使った履歴を先頭へ
+    });
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'x';
+    del.textContent = '×';
+    del.setAttribute('aria-label', '「' + q + '」を履歴から削除');
+    del.addEventListener('click', function () {
+      storeSearchHistory(loadSearchHistory().filter(function (x) { return x !== q; }));
+      renderSearchHistory();
+    });
+    chip.appendChild(use);
+    chip.appendChild(del);
+    box.appendChild(chip);
+  });
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = 'clear-all';
+  clear.textContent = '全て削除';
+  clear.addEventListener('click', function () {
+    storeSearchHistory([]);
+    renderSearchHistory();
+  });
+  box.appendChild(clear);
+}
+
+// 現在の検索語で、カードと分類行の表示/非表示を切り替える。
+function applySearch() {
+  const terms = normalizeText(document.getElementById('search').value).split(/\s+/).filter(Boolean);
+  const root = document.getElementById('groups');
+  const note = document.getElementById('search-empty');
+  if (note) note.remove();
+  if (!lastGroups) return;
+
+  let shown = 0;
+  root.querySelectorAll('.category-row').forEach(function (row) {
+    const category = row.querySelector('h2.category').textContent;
+    let rowShown = 0;
+    row.querySelectorAll('.card').forEach(function (card) {
+      const app = cardApps.get(card);
+      const hay = normalizeText([app.name, app.description, app.initial, category].join(' '));
+      const hit = terms.every(function (t) { return hay.indexOf(t) !== -1; });
+      card.classList.toggle('search-hide', !hit);
+      if (hit) rowShown++;
+    });
+    row.classList.toggle('search-hide', rowShown === 0);
+    shown += rowShown;
+  });
+
+  if (terms.length && shown === 0 && lastGroups.length) {
+    const div = document.createElement('div');
+    div.id = 'search-empty';
+    div.className = 'empty';
+    div.textContent = '該当するアプリがありません。';
+    root.appendChild(div);
+  }
+}
+
+(function initSearch() {
+  const input = document.getElementById('search');
+  input.addEventListener('input', applySearch);
+  // 履歴は、Enter・入力欄から離れた時・アプリを開いた時に保存する。
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') saveSearchHistory(input.value);
+  });
+  input.addEventListener('blur', function (e) {
+    // 履歴チップ(使う・削除)を操作しに移る時は保存しない。
+    if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('#search-history')) return;
+    saveSearchHistory(input.value);
+  });
+  renderSearchHistory();
+})();
 
 // アプリ一覧はGAS Web Appの起動オーバーヘッドで毎回2〜3秒程度かかるため、
 // 直近の取得結果をブラウザに保存しておき、次回以降は先にそれを表示しつつ
