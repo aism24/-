@@ -209,9 +209,55 @@ function errRes_(message) { return jsonResponse_({ status: 'error', message: mes
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
 function infoSheet_() { return ss_().getSheetByName(INFO_SHEET_NAME) || ss_().getSheets()[0]; }
 
+// ---- 速度対策: 1回の実行中は同じファイルを何度も開き直さない(メモ) ----
+var FILE_MEMO_ = {};
+function fileOf_(id) {
+  if (!FILE_MEMO_[id]) FILE_MEMO_[id] = DriveApp.getFileById(id);
+  return FILE_MEMO_[id];
+}
+var MTIME_MEMO_ = {};
+function mtimeOf_(id) {
+  if (MTIME_MEMO_[id] === undefined) MTIME_MEMO_[id] = String(fileOf_(id).getLastUpdated().getTime());
+  return MTIME_MEMO_[id];
+}
+
+// リンク用フォルダのファイル一覧(id・名前・更新日時)を Drive API の1回の呼び出し(1000件ずつ)で取る。
+// 1件ずつ DriveApp で名前と更新日時を聞くより桁違いに速い。失敗したときだけ従来の方法に切り替える。
+var LINK_LIST_MEMO_ = null;
+function listLinkFiles_() {
+  if (LINK_LIST_MEMO_) return LINK_LIST_MEMO_;
+  const out = [];
+  try {
+    let token = '';
+    do {
+      const args = { q: "'" + LINK_FOLDER_ID + "' in parents and trashed = false", fields: 'nextPageToken, files(id, name, modifiedTime)', pageSize: 1000, orderBy: 'name', supportsAllDrives: true, includeItemsFromAllDrives: true };
+      if (token) args.pageToken = token;
+      const res = Drive.Files.list(args);
+      (res.files || []).forEach(function (f) { out.push({ id: f.id, name: f.name, mtime: new Date(f.modifiedTime).getTime() }); });
+      token = res.nextPageToken || '';
+    } while (token);
+  } catch (err) {
+    out.length = 0;
+    const it = DriveApp.getFolderById(LINK_FOLDER_ID).getFiles(); // 従来の方法(遅いが確実)
+    while (it.hasNext()) { const f = it.next(); out.push({ id: f.getId(), name: f.getName(), mtime: f.getLastUpdated().getTime() }); }
+  }
+  LINK_LIST_MEMO_ = out;
+  return out;
+}
+
 // 「各種情報」C列(工事番号)・D列(Excelファイル名)を、E列URLの実ファイルから毎回調べて更新する。
 //   D = そのファイルの実際の名前 / C = そのファイルが入っているフォルダ名の先頭の工事番号。
 // 変わっていなければ書き込まない。変わった場合のみ書き換え、変更内容を返す。
+var PARENT_NAME_MEMO_ = {};
+function parentFolderName_(f, fileId) {
+  const parents = f.getParents();
+  if (!parents.hasNext()) return '';
+  const p = parents.next();
+  const pid = p.getId();
+  if (PARENT_NAME_MEMO_[pid] === undefined) PARENT_NAME_MEMO_[pid] = p.getName();
+  return PARENT_NAME_MEMO_[pid]; // 同じフォルダの名前は1回だけ聞く
+}
+
 function syncIndexRows_() {
   const sh = infoSheet_();
   const lastRow = sh.getLastRow();
@@ -223,10 +269,9 @@ function syncIndexRows_() {
     if (!fileId) return;
     const row = i + 2;
     try {
-      const f = DriveApp.getFileById(fileId);
+      const f = fileOf_(fileId);
       const name = f.getName();
-      const parents = f.getParents();
-      const folderName = parents.hasNext() ? parents.next().getName() : '';
+      const folderName = parentFolderName_(f, fileId);
       let parsed = parseWorkFolderName_(folderName);
       // 現在のC列の工事番号でフォルダ名が始まっていれば「変更なし」とみなす(例: C=24-12A、フォルダ=24-12AGLP_…。
       // 英字付きの工事番号は工事名の英字と区別できないため、既存の値を優先する)。
@@ -596,13 +641,11 @@ function saveArchive_(folder, archive) {
 function readLinkFiles_(warnings) {
   const map = {};
   try {
-    const it = DriveApp.getFolderById(LINK_FOLDER_ID).getFiles();
-    while (it.hasNext()) {
-      const f = it.next();
-      if (!/\.(xlsx?|xlsm)$/i.test(f.getName())) continue;
-      const key = baseKey_(f.getName());
-      if (!map[key]) map[key] = { id: f.getId(), name: f.getName() };
-    }
+    listLinkFiles_().forEach(function (f) {
+      if (!/\.(xlsx?|xlsm)$/i.test(f.name)) return;
+      const key = baseKey_(f.name);
+      if (!map[key]) map[key] = { id: f.id, name: f.name };
+    });
   } catch (err) {
     warnings.push('リンク用フォルダを開けません: ' + err.message);
   }
@@ -625,11 +668,11 @@ function loadMasters_(folder, masterList) {
     const lk = linkFiles[baseKey_(m.fileName)] || linkFiles[baseKey_(m.workName || '')];
     const src = lk ? { fileId: lk.id, fileName: lk.name, linked: true } : { fileId: m.fileId, fileName: m.fileName, linked: false };
     let file;
-    try { file = DriveApp.getFileById(src.fileId); } catch (err) {
+    try { file = fileOf_(src.fileId); } catch (err) {
       warnings.push('「' + src.fileName + '」を開けません: ' + err.message);
       return;
     }
-    const mtime = String(file.getLastUpdated().getTime());
+    const mtime = mtimeOf_(src.fileId);
     const c = cache[src.fileId + '|' + m.workNo];
     let records;
     if (c && c.mtime === mtime && c.v === MASTER_CACHE_VERSION) {
@@ -866,17 +909,14 @@ function computeFingerprint_() {
   const parts = [];
   const rows = readInfoRows_();
   readRobotSheets_(rows).forEach(function (r) {
-    try { parts.push(DriveApp.getFileById(r.id).getLastUpdated().getTime()); } catch (e) { parts.push('x'); }
+    try { parts.push(mtimeOf_(r.id)); } catch (e) { parts.push('x'); }
   });
-  try { parts.push(DriveApp.getFileById(ss_().getId()).getLastUpdated().getTime()); } catch (e) { parts.push('x'); }
+  try { parts.push(mtimeOf_(ss_().getId())); } catch (e) { parts.push('x'); }
   try {
-    const it = DriveApp.getFolderById(LINK_FOLDER_ID).getFiles();
-    const t = [];
-    while (it.hasNext()) { const f = it.next(); t.push(f.getName() + ':' + f.getLastUpdated().getTime()); }
-    parts.push(t.sort().join(','));
+    parts.push(listLinkFiles_().map(function (f) { return f.name + ':' + f.mtime; }).sort().join(','));
   } catch (e) { parts.push('x'); }
   readMasterIndex_(rows).forEach(function (m) {
-    try { parts.push(DriveApp.getFileById(m.fileId).getLastUpdated().getTime()); } catch (e) { parts.push('x'); }
+    try { parts.push(mtimeOf_(m.fileId)); } catch (e) { parts.push('x'); }
   });
   parts.push('logic' + SNAPSHOT_LOGIC_VERSION);
   return parts.join('|');
@@ -898,13 +938,20 @@ function refreshSnapshot_(force) {
   const lock = LockService.getScriptLock();
   lock.waitLock(240000);
   try {
+    const t0 = Date.now();
     const folder = getCacheFolder_();
     const fp = computeFingerprint_();
+    const t1 = Date.now();
     const snap = loadSnapshot_(folder);
-    if (!force && snap && snap.fp === fp && snap.data) return snap.data;
+    if (!force && snap && snap.fp === fp && snap.data) {
+      return Object.assign({}, snap.data, { timing: { fingerprintMs: t1 - t0, rebuilt: false, totalMs: Date.now() - t0 } });
+    }
     const data = buildData_();
+    const t2 = Date.now();
     saveSnapshot_(folder, { fp: fp, data: data });
-    return data;
+    const t3 = Date.now();
+    // 所要時間(ミリ秒)の内訳。画面のコンソール(F12)で確認できる。保存する結果には含めない。
+    return Object.assign({}, data, { timing: { fingerprintMs: t1 - t0, buildMs: t2 - t1, saveMs: t3 - t2, rebuilt: true, totalMs: t3 - t0 } });
   } finally {
     lock.releaseLock();
   }
