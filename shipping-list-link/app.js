@@ -3,7 +3,7 @@
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbw0NvmN8vjr4g0TNx1TQ8DffC6FWwK6GfBOZb32N0mTp3CrcYXLNOpkxhXo2ce1PwE6/exec';
   var $ = function (id) { return document.getElementById(id); };
   var links = null, CK = 'ship-links-v1';
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261005c';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261005d';
 
   function showMaster(m, note) {
     links = m.links;
@@ -27,7 +27,7 @@
   async function handle(file) {
     if (!file) return;
     if (!links) { $('msg').textContent = 'マスタが未取得です。少し待って再実行してください。'; return; }
-    $('msg').textContent = '処理中…'; $('result').innerHTML = '';
+    $('msg').textContent = '処理中…'; $('result').innerHTML = ''; $('stage').classList.add('busy');
     try {
       var buf = await file.arrayBuffer();
       var r = await ShippingCore.linkPdf(pdfjsLib, PDFLib, buf, links);
@@ -46,6 +46,7 @@
       $('msg').textContent = 'ダウンロードしました。';
       if (GAS_URL) await save(file.name, s.pages, buf); else $('msg').textContent += '(GAS未設定のため保存・記録はスキップ)';
     } catch (e) { $('msg').textContent = '失敗しました: ' + e; }
+    $('stage').classList.remove('busy');
   }
   async function save(name, pages, buf) {
     try {
@@ -58,8 +59,16 @@
   var drop = $('drop'), inp = $('file');
   drop.onclick = function () { inp.click(); };
   inp.onchange = function () { handle(inp.files[0]); inp.value = ''; };
-  ['dragover', 'dragenter'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
-  ['dragleave', 'drop'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
-  drop.addEventListener('drop', function (e) { handle(e.dataTransfer.files[0]); });
+  // 画面全体でドロップを受け付ける(PDF以外の場所でも、ブラウザがPDFを開いてしまわないよう常にpreventDefault)
+  var depth = 0;
+  function dragOn(on) { document.body.classList.toggle('dragging', on); drop.classList.toggle('over', on); }
+  document.addEventListener('dragenter', function (e) { e.preventDefault(); depth++; dragOn(true); });
+  document.addEventListener('dragover', function (e) { e.preventDefault(); });
+  document.addEventListener('dragleave', function (e) { e.preventDefault(); depth = Math.max(0, depth - 1); if (!depth) dragOn(false); });
+  document.addEventListener('drop', function (e) {
+    e.preventDefault(); depth = 0; dragOn(false);
+    var f = e.dataTransfer && e.dataTransfer.files[0];
+    if (f) handle(f);
+  });
   loadMaster();
 })();
