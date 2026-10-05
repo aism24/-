@@ -153,18 +153,10 @@
   /* 工事別結果分析(詳細版と同じ見た目は detail.css / simple.css を共用) */
   #v-workone .woLbl { color:#000; font-weight:bold; margin-right:6px; }
   #v-workone .sFilters select { max-width:min(520px, 60vw); }
-  #v-workone .simChart .chartBox.woChart { flex:none; height:340px; min-height:340px; margin-bottom:10px; }
-  .woStatus { flex:1; min-height:0; overflow:auto; font-size:14px; color:#000; }
-  .woInfo { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:4px 18px; margin-bottom:12px; }
-  .woInfo div { border-bottom:1px solid #eee; padding:3px 0; } .woInfo b { float:right; }
-  .woBar { margin:0 0 14px; } .woBar h3 { font-size:14px; margin:0 0 4px; }
-  .woBar .track { position:relative; height:18px; background:#e8e7e2; border-radius:9px; overflow:hidden; }
-  .woBar .fill { position:absolute; left:0; top:0; height:100%; background:#2a78d6; }
-  .woBar .fill.over { background:#eb6834; }
-  .woBar .mark { position:absolute; top:0; height:100%; width:3px; background:#000; }
-  .woBar .woDiff { margin-top:2px; font-size:15px; font-weight:bold; text-align:right; }
-  .woBar .woDiff.over { color:#e00000; } .woBar .woDiff.under { color:#0a8a0a; }
-  .woBar .cap { display:flex; justify-content:space-between; font-size:12px; margin-top:3px; }
+  /* 入力欄は表示専用: 背景は白、罫線は左端から右端まで通す */
+  #v-workone .simIn { background:transparent; }
+  #v-workone .simFixed { padding-left:0; }
+  #v-workone .simFixed .simRow, #v-workone .simFixed .simHead.simHeadRow { column-gap:0; grid-template-columns:112px 174px; padding-left:0; }
   /* 実行予算抽出: 実行予算まとめと同じ表示(上は黒い帯に絞り込みボタン、表は左右16pxの余白) */
   body[data-view="extract"] main.wide { margin-top:0; margin-bottom:16px; }
   .exBar { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:6px 16px; padding:10px 0 8px; }
@@ -354,7 +346,7 @@
         <div class="panel simKpiPanel"><div id="w-kpis" class="simTable"></div></div>
         <div class="panel simAdvicePanel"><div id="w-advice" class="simAdvice"></div></div>
       </div>
-      <div class="panel simChart"><div class="chartBox bepBox woChart" id="c-work"></div><div id="w-status" class="woStatus"></div></div>
+      <div class="panel simChart"><div class="chartBox bepBox" id="c-work"></div></div>
     </div>
   </section>
 
