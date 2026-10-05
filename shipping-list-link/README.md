@@ -24,10 +24,10 @@ PDFを入れると、(図番, 製品名)がマスタと完全一致した行の*
 
 ## リンク形式(2026-10-05 実機検証済み)
 `app.js` の `LINK_MODE` で切り替え(戻したいときはここだけ変更)。
-- `'web'`(既定): PDFのリンク = `https://shipping-list-link.vercel.app/open.html?p=<社内パス>`。`open.html` が `jissun://` へ転送して実寸法師を起動。
+- `'web'`: PDFのリンク = `https://shipping-list-link.vercel.app/open.html?p=<社内パス>`。`open.html` が `jissun://` へ転送して実寸法師を起動。
   Acrobatは通常のWebリンクとして扱うので「PDFファイルを起動しようとしています」の警告が出ない(「サイトに接続」の警告は初回に許可+記憶)。
   `open.html` は社内IP(192.168.x.x 等)の `.tdf` だけ許可。
-- `'file'`: マスタの `file://…tdf` をそのまま埋め込む(従来)。Acrobatの警告が2回出る。
+- `'file'`(既定): マスタの `file://…tdf` をそのまま埋め込む。Acrobatの警告が2回出る。`'web'` は操作が1工程増えるため、2026-10-05に既定を `'file'` へ戻した。
 - 検証結果: `file:////`・起動型(Launch)は警告が消えず/開けない。Acrobatは `jissun://` を直接は起動しない(Webページ経由が必要)。Edgeでは `jissun://…tdf` で実寸法師が開くことを確認。
 
 ## リグレッション基準値(2026-10-05)

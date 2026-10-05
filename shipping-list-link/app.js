@@ -3,11 +3,11 @@
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbw0NvmN8vjr4g0TNx1TQ8DffC6FWwK6GfBOZb32N0mTp3CrcYXLNOpkxhXo2ce1PwE6/exec';
   // PDFに埋め込むリンクの形式。'web'=Webページ(open.html)経由で jissun:// 起動(Acrobatの「ファイルを起動」警告を回避)
   //                              'file'=マスタのfile://を直接埋め込む(従来形式。Acrobatの警告が2回出る)
-  var LINK_MODE = 'web';
+  var LINK_MODE = 'file';
   var OPEN_BASE = 'https://shipping-list-link.vercel.app/open.html';
   var $ = function (id) { return document.getElementById(id); };
   var links = null, CK = 'ship-links-v1';
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261005n';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261005o';
 
   function showMaster(m, note) {
     links = m.links;
