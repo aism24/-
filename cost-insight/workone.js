@@ -155,22 +155,28 @@
 
   /* 右: 目標と現状(これまでの実績。試算の入力とは別に、実績の工数・仕入を目標の上限と比べる) */
   function renderStatus(x, r) {
-    const w = x.w, done = w.weight, prog = w.totalWeight > 0 ? done / w.totalWeight : null, progW = x.W0 > 0 ? done / x.W0 : null; // prog=契約総重量に対する進捗、progW=試算の重量に対する進捗
+    const w = x.w, done = w.weight, prog = w.done ? 1 : (w.totalWeight > 0 ? done / w.totalWeight : null), progW = x.W0 > 0 ? done / x.W0 : null; // prog=生産進捗(完了は現状の生産重量で100%、進捗中は契約総重量に対する割合)、progW=試算の重量に対する進捗
     const allowH = r.nMax !== null ? r.nMax * x.W0 * 8 : null; // 契約総重量を作るのに使える総工数
     const info = (l, v) => `<div>${l}<b>${v}</b></div>`;
-    const bar = (title, v, mark, max, capL, capR) => `<div class="woBar"><h3>${title}</h3><div class="track"><div class="fill${mark !== null && v > mark ? ' over' : ''}" style="width:${Math.min(100, max > 0 ? v / max * 100 : 0)}%"></div>` +
-      (mark !== null ? `<div class="mark" style="left:${Math.min(100, max > 0 ? mark / max * 100 : 0)}%"></div>` : '') + `</div><div class="cap"><span>${capL}</span><span>${capR}</span></div></div>`;
+    // 目標値との差: 増えた=オーバー(赤)、減った=コスト削減(緑)
+    const diff = (v, t, unit, d) => {
+      const e = v - t, lim = 0.5 / Math.pow(10, d);
+      if (t === null || Math.abs(e) < lim) return '';
+      return e > 0 ? `<div class="woDiff over">オーバー +${fmt(e, d)}${unit}</div>` : `<div class="woDiff under">コスト削減 −${fmt(-e, d)}${unit}</div>`;
+    };
+    const bar = (title, v, mark, max, capL, capR, dif) => `<div class="woBar"><h3>${title}</h3><div class="track"><div class="fill${mark !== null && v > mark ? ' over' : ''}" style="width:${Math.min(100, max > 0 ? v / max * 100 : 0)}%"></div>` +
+      (mark !== null ? `<div class="mark" style="left:${Math.min(100, max > 0 ? mark / max * 100 : 0)}%"></div>` : '') + `</div><div class="cap"><span>${capL}</span><span>${capR}</span></div>${dif || ''}</div>`;
     let h = '<div class="woInfo">' +
       info('契約総重量', fmt(w.totalWeight, 1) + ' t') + info('契約金額', yen(w.contract) + ' 円') + info('生産重量(累計)', fmt(done, 1) + ' t') +
       info('生産進捗', pct(prog)) + info('工数(累計)', fmt(w.hours, 0) + ' h') + info('1t当たり人工数(実績)', fmt(x.nNow, 2)) +
       info('労務費の締め', esc(w.cutoff ? C.periodLabel(w.cutoff) : '—')) + info('時間単価', w.hourRate ? yen(w.hourRate) + ' 円/h' : '—') + '</div>';
-    h += bar('生産進捗', done, null, Math.max(w.totalWeight, done), `累計 ${fmt(done, 1)}t`, `契約 ${fmt(w.totalWeight, 1)}t(${pct(prog)})`);
+    h += w.done ? bar('生産進捗(完了)', 1, null, 1, `累計 ${fmt(done, 1)}t`, '完了(100%)')
+      : bar('生産進捗', done, null, Math.max(w.totalWeight, done), `累計 ${fmt(done, 1)}t`, `契約 ${fmt(w.totalWeight, 1)}t(${pct(prog)})`);
     if (allowH !== null && allowH > 0) h += bar('工数の消化(目標利益率を確保できる総工数に対して)', w.hours, allowH * (progW || 0), Math.max(allowH, w.hours) * 1.05,
-      `累計 ${fmt(w.hours, 0)}h`, `許容 ${fmt(allowH, 0)}h(黒線=生産進捗に見合う工数 ${fmt(allowH * (progW || 0), 0)}h)`);
-    if (r.nMax !== null) h += bar('1t当たり人工数(実績と目標の上限)', x.nNow, r.nMax, Math.max(x.nNow, r.nMax) * 1.1, `実績 ${fmt(x.nNow, 2)}`, `上限 ${fmt(r.nMax, 2)}(黒線)`);
+      `累計 ${fmt(w.hours, 0)}h`, `許容 ${fmt(allowH, 0)}h(黒線=生産進捗に見合う工数 ${fmt(allowH * (progW || 0), 0)}h)`, diff(w.hours, allowH * (progW || 0), 'h', 0));
+    if (r.nMax !== null) h += bar('1t当たり人工数(実績と目標の上限)', x.nNow, r.nMax, Math.max(x.nNow, r.nMax) * 1.1, `実績 ${fmt(x.nNow, 2)}`, `上限 ${fmt(r.nMax, 2)}(黒線)`, diff(x.nNow, r.nMax, '人工/t', 2));
     if (w.hasBudget && w.purchaseBudget !== null && w.purchaseActual !== null) h += bar('仕入(実行予算 実際と予算)', w.purchaseActual, w.purchaseBudget, Math.max(w.purchaseActual, w.purchaseBudget) * 1.1,
-      `実際 ${yen(w.purchaseActual)}円`, `予算 ${yen(w.purchaseBudget)}円(黒線)`);
-    if (w.notes.length) h += '<ul id="notes">' + w.notes.map((t) => '<li>' + esc(t) + '</li>').join('') + '</ul>';
+      `実際 ${yen(w.purchaseActual)}円`, `予算 ${yen(w.purchaseBudget)}円(黒線)`, diff(w.purchaseActual, w.purchaseBudget, '円', 0));
     $('w-status').innerHTML = h;
   }
 
