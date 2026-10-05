@@ -524,6 +524,15 @@ if (typeof document !== 'undefined') {
       try { downloadExcel(); } catch (err) { setStatus('Excelの作成に失敗しました: ' + err.message, true); }
     });
 
+    // Excelダウンロードを記録(GAS action=logDownload)。サンプル時は送らない。結果は待たず、失敗しても無視する
+    function logDownload() {
+      if (st.sample || !GAS_API_URL) return;
+      const period = st.start.replace(/-/g, '/') + ' 〜 ' + st.end.replace(/-/g, '/');
+      try {
+        fetch(GAS_API_URL + '?action=logDownload&period=' + encodeURIComponent(period), { credentials: 'omit', keepalive: true }).catch(function () {});
+      } catch (e) { /* 記録の失敗は無視 */ }
+    }
+
     // ===== Excel出力(ExcelJS) =====
     function downloadExcel() {
       if (typeof ExcelJS === 'undefined') throw new Error('ExcelJSの読み込みに失敗しています。ネットワークを確認してください。');
@@ -623,6 +632,7 @@ if (typeof document !== 'undefined') {
         document.body.appendChild(a);
         a.click();
         setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+        logDownload(); // スプレッドシート「記録」へ日時と期間を記録(失敗してもダウンロードには影響しない)
       });
     }
 
