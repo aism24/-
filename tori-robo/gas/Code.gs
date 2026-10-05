@@ -944,7 +944,8 @@ function refreshSnapshot_(force) {
     const t1 = Date.now();
     const snap = loadSnapshot_(folder);
     if (!force && snap && snap.fp === fp && snap.data) {
-      return Object.assign({}, snap.data, { timing: { fingerprintMs: t1 - t0, rebuilt: false, totalMs: Date.now() - t0 } });
+      // 変更なし: 全データは返さない(画面は手元のデータをそのまま使う。通信・解析・再描画を省いて速くする)
+      return { unchanged: true, generatedAt: snap.data.generatedAt, timing: { fingerprintMs: t1 - t0, rebuilt: false, totalMs: Date.now() - t0 } };
     }
     const data = buildData_();
     const t2 = Date.now();
