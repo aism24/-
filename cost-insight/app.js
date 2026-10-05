@@ -90,7 +90,7 @@ function startImportWatch() {
   WATCH.t0 = Date.now();
   if (WATCH.timer) clearInterval(WATCH.timer);
   WATCH.timer = setInterval(checkImport, 10000);
-  showImportStatus('', '取込を待っています…(黒い画面が閉じると、自動で反映してホームに戻ります)');
+  showImportStatus('', '取込を待っています…(黒い画面が閉じると、完了を自動で確認します。完了したら③実行予算最新確認を押してください)');
 }
 
 function showImportStatus(cls, text) {
@@ -117,18 +117,33 @@ async function checkImport() {
       applyData(await gasGet('getData'));
       renderSettings();
       render();
-      // 「実行予算取込完了＿ホームに戻ります」を2秒出してからホーム(メニュー)へ戻る
-      document.getElementById('imp-status').hidden = true;
-      const toast = document.getElementById('toast');
-      toast.hidden = false;
-      setTimeout(() => { toast.hidden = true; showView('menu'); }, 2000);
+      // 完了後はホームへ戻らず、この画面で待機(③実行予算最新確認でテーブルを表示する)
+      showImportStatus('ok', '取込が完了しました。③実行予算最新確認を押すと、結果のテーブルを表示します。');
     } else {
-      showImportStatus('', '取込を待っています…(経過 ' + Math.floor(sec / 60) + '分' + (sec % 60) + '秒。黒い画面が閉じると、自動で反映してホームに戻ります)');
+      showImportStatus('', '取込を待っています…(経過 ' + Math.floor(sec / 60) + '分' + (sec % 60) + '秒。黒い画面が閉じると、完了を自動で確認します。完了したら③実行予算最新確認を押してください)');
     }
   } catch (e) {
     showImportStatus('ng', '確認に失敗しました。再確認します…(' + e.message + ')');
   } finally {
     WATCH.busy = false;
+  }
+}
+
+// ③実行予算最新確認: 最新のデータを取り直して、実行予算抽出のテーブルを表示する
+async function showLatestBudget() {
+  const btn = document.getElementById('latestBtn');
+  btn.disabled = true;
+  showImportStatus('', '最新の実行予算を読み込んでいます…');
+  try {
+    applyData(await gasGet('getData'));
+    renderSettings();
+    render();
+    document.getElementById('imp-status').hidden = true;
+    showView('extract');
+  } catch (e) {
+    showImportStatus('ng', '読み込みに失敗しました: ' + e.message + '(もう一度押してください)');
+  } finally {
+    btn.disabled = false;
   }
 }
 

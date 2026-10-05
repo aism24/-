@@ -96,10 +96,6 @@
   .btn.blue:disabled { background:#bbb; }
   .btn.pink:hover { background:#db2777; }
   /* 取込完了のお知らせ(2秒表示してホームへ戻る) */
-  #toast { position:fixed; inset:0; background:rgba(40,40,40,.45); display:flex; align-items:center; justify-content:center; z-index:110; }
-  #toast[hidden] { display:none; }
-  #toast div { background:#fff; border-radius:10px; padding:26px 34px; font-size:18px; font-weight:bold; color:#166534;
-               border:3px solid #86efac; box-shadow:0 8px 30px rgba(0,0,0,.35); max-width:calc(100% - 32px); text-align:center; }
   .reg-next { display:inline-block; background:#fff200; color:#222; font-weight:bold; padding:10px 16px;
               border:2px solid #ff9800; border-radius:6px; font-size:14px; vertical-align:middle; margin:4px 0;
               animation:reg-blink 1s ease-in-out infinite; }
@@ -305,11 +301,12 @@
 
   <!-- 実行予算取込モード -->
   <section id="v-budget" class="view" hidden>
-    <!-- 3つのボタンを縦に並べ、上合わせ・中央揃え -->
+    <!-- ①②③のボタンを縦に並べ、上合わせ・中央揃え -->
     <div class="card budget-stack">
       <h2>実行予算取込</h2>
       <button id="regBtn" class="btn sub stack-btn" type="button" onclick="downloadReg()" title="PCごとに1回だけ。ダウンロードした 正光コストインサイト登録.reg をダブルクリックで開き、［はい］→［OK］">①初期設定をダウンロード</button>
       <a class="btn pink stack-btn" href="costinsight://update" onclick="startImportWatch()" title="会社サーバーの 実行予算更新.bat を実行します(社内ネットワークのPCのみ)">②実行予算取込</a>
+      <button id="latestBtn" class="btn blue stack-btn" type="button" onclick="showLatestBudget()" title="最新の実行予算を読み込み直して、結果のテーブルを表示します">③実行予算最新確認</button>
       <p id="imp-status" class="imp-status" hidden></p>
       <p id="budget" class="note">前回取込: 確認中…</p>
     </div>
@@ -366,7 +363,6 @@
   </section>
 </main>
 <!-- 取込完了のお知らせ -->
-<div id="toast" role="alert" hidden><div>実行予算取込完了＿ホームに戻ります</div></div>
 <!-- 読み込み中のポップアップ -->
 <div id="loading" role="dialog" aria-live="polite">
   <div class="ld-box">
