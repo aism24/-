@@ -158,7 +158,7 @@
   function renderChart(x) {
     const w = x.w, labor = w.hours * x.L / 8, s = K.solve(labor, x.P, x.v, x.g);
     drawBep('c-work', { fixed: labor, unitPrice: x.P, laborPerTon: 0, varPerTon: x.v, profitRate: x.g, fixedLabel: ['人件費', '(実績)'], otherFixed: 0, laborRate: x.L,
-      sig: [x.no, labor, x.P, x.v, x.g, w.weight].join('|'), x: w.weight, fixedX: true, beTons: s.be, goalTons: s.goal, handleLabel: w.done ? '完了' : '現在' });
+      sig: [x.no, labor, x.P, x.v, x.g, w.weight].join('|'), x: w.weight, fixedX: true, beTons: s.be, goalTons: s.goal, handleLabel: w.done ? '完了' : '現在', endTons: w.done ? 0 : x.W0 });
   }
 
   window.WorkView = { show };
