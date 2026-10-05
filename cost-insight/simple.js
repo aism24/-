@@ -60,9 +60,13 @@
 
   /* ---------- 集計(calc.js のセルから) ---------- */
   function analyze(from, to, sites) {
-    const t = C.summarize(C.filterCells(state.model, { from, to, sites }));
+    const cells = C.filterCells(state.model, { from, to, sites });
+    const t = C.summarize(cells);
     t.fixed = fixedFor(from, to, sites);                 // その他固定費(人件費は労務費として別に入っている)
-    t.profit -= t.fixed;
+    // 単価が未確定で損益に入らないセル(売上・仕入が不明)の工数も人件費は掛かっているので、損益から引く。
+    // 労務費が分かるセルはその額、分からないセルは 期間の平均時間単価 × 工数(2026-10-05 ユーザー指示)
+    t.ngLabor = cells.reduce((a, c) => c.ok ? a : a + (c.labor !== null ? c.labor : c.hours * (t.hourRate || 0)), 0);
+    t.profit -= t.fixed + t.ngLabor;
     t.profitRate = t.profitSales > 0 ? t.profit / t.profitSales : null;
     t.ninkuPerTon = t.weight > 0 ? t.hours / 8 / t.weight : null;
     t.unitPrice = t.procUnit;            // 加工単価(円/t)
