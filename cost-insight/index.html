@@ -162,19 +162,19 @@
   #ex-tbl thead th { position:sticky; top:0; z-index:2; background:#eef1f5; font-weight:600; text-align:center; }
   #ex-tbl thead tr.total th { background:#f7f7f2; font-weight:700; border-bottom:3px double #888; }
   #ex-tbl thead tr.total th.num { text-align:right; }
-  #ex-tbl .c-st, #ex-tbl .c-y, #ex-tbl .c-d, #ex-tbl .c-no, #ex-tbl .c-name { position:sticky; z-index:1; overflow:hidden; text-overflow:ellipsis; }
-  #ex-tbl thead .c-st, #ex-tbl thead .c-y, #ex-tbl thead .c-d, #ex-tbl thead .c-no, #ex-tbl thead .c-name { z-index:3; }
-  #ex-tbl .c-st { left:0; width:104px; min-width:104px; max-width:104px; font-size:12px; white-space:normal; text-align:center; }
-  #ex-tbl .c-y { left:104px; width:56px; min-width:56px; max-width:56px; text-align:center; }
-  #ex-tbl .c-d { left:160px; width:48px; min-width:48px; max-width:48px; text-align:center; }
-  #ex-tbl .c-no { left:208px; width:64px; min-width:64px; max-width:64px; text-align:center; }
-  #ex-tbl .c-name { left:272px; width:200px; min-width:200px; max-width:200px; border-right:2px solid #bbb; }
+  #ex-tbl .c-y, #ex-tbl .c-d, #ex-tbl .c-no, #ex-tbl .c-name { position:sticky; z-index:1; overflow:hidden; text-overflow:ellipsis; }
+  #ex-tbl thead .c-y, #ex-tbl thead .c-d, #ex-tbl thead .c-no, #ex-tbl thead .c-name { z-index:3; }
+  #ex-tbl .c-y { left:0; width:56px; min-width:56px; max-width:56px; text-align:center; }
+  #ex-tbl .c-d { left:56px; width:48px; min-width:48px; max-width:48px; text-align:center; }
+  #ex-tbl .c-no { left:104px; width:64px; min-width:64px; max-width:64px; text-align:center; }
+  #ex-tbl .c-name { left:168px; width:200px; min-width:200px; max-width:200px; border-right:2px solid #bbb; }
   #ex-tbl .grp, #ex-tbl .grp-l { border-left:2px solid #bbb; }
   #ex-tbl td.num { text-align:right; } #ex-tbl td.txt { text-align:left; }
   #ex-tbl tbody td { height:34px; vertical-align:middle; }
   #ex-tbl tr.missing td { background:#d9d9d9; }
   #ex-tbl td.over, #ex-tbl th.over { background:#ffedd5; font-weight:700; }
-  #ex-tbl td.zero { background:#fef08a; font-weight:700; }
+  #ex-tbl td.zero { font-weight:700; animation:zero-blink 1.2s ease-in-out infinite alternate; }
+  @keyframes zero-blink { from { background:#fffbd0; } to { background:#ffe600; } }
   #ex-tbl td.y0 { background:#d6e9ff; } #ex-tbl td.y1 { background:#d8f3dc; } #ex-tbl td.y2 { background:#ffd9e6; } #ex-tbl td.y3 { background:#fff3a8; }
   #ex-tbl tbody tr { cursor:pointer; }
   #ex-tbl tr.sel td { background:#e3f4e1; border-top:3px double #2e8b57; border-bottom:3px double #2e8b57; }

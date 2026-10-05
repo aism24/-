@@ -34,26 +34,25 @@
     renderFilters();
     const rows = JY.filterRows(view.rows, filter);
     meta.textContent = '最終取込: ' + JY.fmt('date', view.todayAt) + ' / ' + (rows.length === view.rows.length ? rows.length + '件' : rows.length + '件(全' + view.rows.length + '件)');
-    let h = '<thead><tr><th rowspan="2" class="c-st">状態</th><th rowspan="2" class="c-y">年度</th><th rowspan="2" class="c-d">完了</th><th rowspan="2" class="c-no">工事No</th><th rowspan="2" class="c-name">工事名</th>' +
+    let h = '<thead><tr><th rowspan="2" class="c-y">年度</th><th rowspan="2" class="c-d">完了</th><th rowspan="2" class="c-no">工事No</th><th rowspan="2" class="c-name">工事名</th>' +
       '<th rowspan="2">契約総重量(t)</th><th rowspan="2">契約金額(円)</th><th rowspan="2">参照シート</th>';
     JY.PROFITS.forEach(p => { h += '<th colspan="2" class="grp">' + esc(p.label) + '</th>'; });
     JY.CATS.forEach(c => { h += '<th colspan="3" class="grp">' + esc(c) + '</th>'; });
-    h += '<th rowspan="2">前回の保存者</th><th rowspan="2">保存日時</th></tr><tr>';
+    h += '<th rowspan="2">保存日時</th></tr><tr>';
     JY.PROFITS.forEach(() => { h += '<th class="grp-l">予算</th><th>実際</th>'; });
     JY.CATS.forEach(() => { h += '<th class="grp-l">予算</th><th>実際</th><th>割合</th>'; });
     h += '</tr>';
     if (JY.isFiltered(filter)) {
       const tot = JY.computeTotals(rows);
-      h += '<tr class="total"><th class="c-st">合計（' + tot.count + '件）</th><th class="c-y"></th><th class="c-d"></th><th class="c-no"></th><th class="c-name"></th>';
-      tot.cells.forEach(c => { h += '<th class="' + (c.kind === 'str' || c.kind === 'date' ? '' : 'num') + (c.over ? ' over' : '') + (c.id.endsWith(':b') ? ' grp-l' : '') + '">' + esc(cellText(c)) + '</th>'; });
+      h += '<tr class="total"><th class="c-y" colspan="3">合計（' + tot.count + '件）</th><th class="c-name"></th>';
+      tot.cells.filter(c => c.id !== 'author').forEach(c => { h += '<th class="' + (c.kind === 'str' || c.kind === 'date' ? '' : 'num') + (c.over ? ' over' : '') + (c.id.endsWith(':b') ? ' grp-l' : '') + '">' + esc(cellText(c)) + '</th>'; });
       h += '</tr>';
     }
     h += '</thead><tbody>';
     rows.forEach(r => {
-      h += '<tr class="' + r.rowClass + '"><td class="c-st"' + (r.warn ? ' title="' + esc(r.warn) + '"' : '') + '>' + esc(r.status) + '</td>' +
-        '<td class="c-y' + yearTag(r.year) + '">' + esc(r.year || JY.UNSET) + '</td><td class="c-d">' + (r.done ? '完了' : '') + '</td>' +
+      h += '<tr class="' + r.rowClass + '"><td class="c-y' + yearTag(r.year) + '">' + esc(r.year || JY.UNSET) + '</td><td class="c-d">' + (r.done ? '完了' : '') + '</td>' +
         '<td class="c-no">' + esc(r.no) + '</td><td class="c-name">' + esc(r.name) + '</td>';
-      r.cells.forEach(c => {
+      r.cells.filter(c => c.id !== 'author').forEach(c => {
         const cls = [c.kind === 'str' || c.kind === 'date' ? 'txt' : 'num'];
         if (c.id.endsWith(':b')) cls.push('grp-l');
         if (c.over) cls.push('over');
@@ -62,7 +61,7 @@
       });
       h += '</tr>';
     });
-    if (!rows.length) h += '<tr><td class="txt" colspan="8">条件に合う工事がありません</td></tr>';
+    if (!rows.length) h += '<tr><td class="txt" colspan="7">条件に合う工事がありません</td></tr>';
     tbl.innerHTML = h + '</tbody>';
     // 見出し2行目・合計行の固定位置(上の行の高さの合計)
     let top = 0;
