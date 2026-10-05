@@ -339,10 +339,10 @@
         <div class="panel simInputs">
           <div class="simGridWrap">
             <div class="simFixed">
-              <div class="simHead simHeadRow"><span class="simTitle" id="w-title">現在</span><span class="simInHead">入力欄</span></div>
-              <div class="simRow"><label>生産重量(t)</label><span class="simIn"><input type="text" inputmode="decimal" id="w-w" class="simNum" autocomplete="off"><span class="simUnit">t</span></span></div>
-              <div class="simRow"><label>1t当たり人工数</label><span class="simIn"><input type="text" inputmode="decimal" id="w-n" class="simNum" autocomplete="off"><span class="simUnit">人工</span></span></div>
-              <div class="simRow"><label>トン単価(円/t)</label><span class="simIn"><input type="text" inputmode="decimal" id="w-p" class="simNum" autocomplete="off"><span class="simUnit">円/t</span></span></div>
+              <div class="simHead simHeadRow"><span class="simTitle" id="w-title">進捗中</span><span class="simInHead"></span></div>
+              <div class="simRow"><label>生産重量(t)</label><span class="simIn"><input type="text" inputmode="decimal" id="w-w" class="simNum" autocomplete="off" readonly tabindex="-1"><span class="simUnit">t</span></span></div>
+              <div class="simRow"><label>1t当たり人工数</label><span class="simIn"><input type="text" inputmode="decimal" id="w-n" class="simNum" autocomplete="off" readonly tabindex="-1"><span class="simUnit">人工</span></span></div>
+              <div class="simRow"><label>トン単価(円/t)</label><span class="simIn"><input type="text" inputmode="decimal" id="w-p" class="simNum" autocomplete="off" readonly tabindex="-1"><span class="simUnit">円/t</span></span></div>
               <div class="simRow"><label>売上額(概算)</label><span class="simIn simInSales"><input type="text" id="w-s" class="simNum simSales" readonly tabindex="-1" title="生産重量×トン単価(自動計算)"><span class="simUnit">円</span></span></div>
             </div>
           </div>
@@ -351,7 +351,7 @@
         <div class="panel simKpiPanel"><div id="w-kpis" class="simTable"></div></div>
         <div class="panel simAdvicePanel"><div id="w-advice" class="simAdvice"></div></div>
       </div>
-      <div class="panel simChart"><div class="chartHead"><h2>目標と現状</h2><button id="w-reset" class="resetBtn2" type="button">現在値に戻す</button></div><div id="w-status" class="woStatus"></div></div>
+      <div class="panel simChart"><div id="w-status" class="woStatus"></div></div>
     </div>
   </section>
 

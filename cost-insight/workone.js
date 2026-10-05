@@ -3,7 +3,7 @@
  *   実行予算にある工事をリストから選び、その工事の「目標値」と「現状」を、詳細版(detail.js)と同じ表示で出す。
  *   売上=契約金額(生産重量×トン単価) / 変動費=仕入(未完は予算、完了は実績) / 人件費=工数×時間単価(労務費)。
  *   その他固定費は工事には配分しない(会社・工場単位のため)。目標利益率は基本設定の値。
- *   入力欄の初期値: 生産重量=契約総重量、1t当たり人工数=これまでの実績(工数÷8÷生産重量)、トン単価=契約金額÷契約総重量。
+ *   入力欄は表示専用(入力不可。見出しは 進捗中/完了)。値: 生産重量=契約総重量(完了は生産実績の累計)、1t当たり人工数=これまでの実績(工数÷8÷生産重量)、トン単価=契約金額÷契約総重量。
  */
 (function () {
   'use strict';
@@ -54,17 +54,6 @@
     const step = (d) => { const s = $('w-pick'), i = s.selectedIndex + d; if (i >= 0 && i < s.options.length) { s.selectedIndex = i; select(s.value); } };
     $('w-prev').onclick = () => step(-1);
     $('w-next').onclick = () => step(1);
-    Object.keys(DIG).forEach((k) => {
-      const el = $('w-' + k);
-      el.oninput = () => onInput(k);
-      el.onchange = () => {
-        const v = parseNumIn(el.value), ex = D.exact[k];
-        if (ex && Math.abs(v - parseNumIn(ex.shown)) < 1e-9) { el.value = ex.shown; return; }
-        el.value = simFmt(k, v);
-        onInput(k);
-      };
-    });
-    $('w-reset').onclick = () => select(D.no);
     D.inited = true;
   }
 
@@ -86,7 +75,6 @@
     $('w-next').disabled = i >= $('w-pick').options.length - 1;
     const x = D.ctx = context(no);
     D.base = { w: x.W0, n: x.nNow, p: x.P };
-    D.hours = x.W0 * x.nNow * 8;
     D.exact = {};
     ['w', 'n', 'p'].forEach((k) => {
       const el = $('w-' + k);
@@ -99,26 +87,15 @@
     update();
   }
 
-  // 総工数(=必要人工)は生産重量を変えても変わらない人員体制として固定し、生産重量を増やすと1t当たり人工数が減る
-  function onInput(k) {
-    if (k === 'w') {
-      const W = simValue('w');
-      if (W > 0 && D.hours > 0) { const n = D.hours / 8 / W, el = $('w-n'); el.value = simFmt('n', n); D.exact.n = { shown: el.value, value: n }; }
-    } else if (k === 'n') D.hours = simValue('w') * simValue('n') * 8;
-    update();
-  }
-
   const simNote = (note) => String(note || '').replace(/(^|>)([^<]*)/g, (m, a, txt) => a + txt.replace(/[+\-]?\d[\d,]*(\.\d+)?%?/g, '<span class="nv">$&</span>'));
 
   function update() {
     const x = D.ctx;
     if (!x) return;
-    const W = simValue('w'), n = simValue('n'), P = simValue('p'), b = D.base, g = K.goalRate();
+    const W = simValue('w'), n = simValue('n'), P = simValue('p'), g = K.goalRate();
     const r = simulate(x, W, n, P);
     $('w-s').value = fmt(r.sales, 0);
-    const changed = Math.abs(W - b.w) > 1e-9 || Math.abs(n - b.n) > 1e-9 || Math.abs(P - b.p) > 1e-9;
-    $('w-reset').classList.toggle('changed', changed);
-    $('w-title').textContent = changed ? '試算' : '現在';
+    $('w-title').textContent = x.w.done ? '完了' : '進捗中';
     const sRow = (label, value, unit, note, cls) =>
       `<div class="dLabel">${label}</div><div class="dVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="dNote">${simNote(note)}</div>`;
     const gOk = r.sales > 0 && r.profit - r.goal >= -0.5, gd = r.profit - r.goal;
