@@ -89,6 +89,33 @@
     return { doneDays, leftDays, perDayW, perDayH, extraH, Ff, hourRate, hoursEnd: t.hours + extraH, fixedAll: Ff + (t.hours + extraH) * hourRate };
   }
 
+  /* ---------- 共通目盛り(グラフの比較用) ----------
+     縦軸=固定費(人件費込み)を100%、横軸=損益分岐生産量を100%とした割合で描く。3工場・本社・夢前・鳥取の4つで
+     縦横の最大を共通にするので、工場を切り替えても 固定費の線の高さ・損益分岐の位置が変わらない。 */
+  const NORM = { on: false };
+  function normFrame(sel) {
+    const p = goalRate() / 100, cur = sel.to < sel.fullTo;
+    let xmax = 1.6;
+    const list = [SITE_LIST].concat(SITE_LIST.map((s) => [s])).map((sites) => {
+      const a = analyze(sel.from, sel.to, sites);
+      if (!(a.weight > 0 && a.unitPrice > 0)) return null;
+      let fixedAll, x;
+      if (cur) { const m = endModel(a, sel.from, sel.to, sel.fullTo, sites); fixedAll = m.fixedAll; x = a.weight + m.perDayW * m.leftDays; } else { fixedAll = a.fixed + a.labor; x = a.weight; }
+      const r = solve(fixedAll, a.unitPrice, a.varPerTon, p);
+      if (r.be === null || !(r.be > 0)) return null;
+      xmax = Math.max(xmax, x / r.be * 1.12, r.goal !== null ? r.goal / r.be * 1.12 : 0);
+      return { lev: a.unitPrice / (a.unitPrice - a.varPerTon) };
+    }).filter(Boolean);
+    const ymax = Math.max(1.5, ...list.map((q) => q.lev * xmax * 1.05));
+    return { xmax, ymax };
+  }
+  /* 共通目盛りのときの drawBep の追加オプション(be=損益分岐生産量・fixedAll=固定費(人件費込み)) */
+  function normOpts(sel, be, fixedAll) {
+    if (!NORM.on || !(be > 0) || !(fixedAll > 0)) return {};
+    const f = normFrame(sel);
+    return { maxX: f.xmax * be, maxY: f.ymax * fixedAll, norm: { bx: be, fy: fixedAll } };
+  }
+
   /* 目標利益率・単価から損益分岐生産量と目標生産量を出す(人件費とその他固定費を合わせて固定費扱い) */
   // 損益分岐生産量 = 固定費÷(単価−変動費)、目標生産量 = 固定費÷(単価×(1−目標利益率)−変動費)(詳細版 detail.js と共用)
   function solve(fixedAll, P, v, p) {
@@ -138,6 +165,7 @@
     $('f-prev').onclick = () => step(1);
     $('f-next').onclick = () => step(-1);
     $('f-reset').onclick = () => { resetView(); render(); };
+    $('c-norm').onclick = () => { NORM.on = !NORM.on; syncNorm(); render(); if (window.DetailView && window.DetailView.redraw) window.DetailView.redraw(); };
     window.addEventListener('resize', () => setTimeout(placeTargets, 0));
     S.inited = true;
   }
@@ -323,9 +351,9 @@
       box.querySelector('.gHead').innerHTML = head;
       box.querySelector('.gLead').innerHTML = lead;
       box.querySelector('.gTable').innerHTML = rows;
-      drawBep('c-goal', { fixed: fixedAll, unitPrice: t.unitPrice, laborPerTon: 0, varPerTon: t.varPerTon, profitRate: p,
+      drawBep('c-goal', Object.assign({ fixed: fixedAll, unitPrice: t.unitPrice, laborPerTon: 0, varPerTon: t.varPerTon, profitRate: p,
         fixedLabel: ['固定費', '(人件費込み)'], otherFixed: t.fixed, laborRate: t.laborRate,
-        x: t.weight, fixedX: true, beTons: gs.be, goalTons: Wg, handleLabel: '実績', hideMoney: true });
+        x: t.weight, fixedX: true, beTons: gs.be, goalTons: Wg, handleLabel: '実績', hideMoney: true }, normOpts(sel, gs.be, fixedAll)));
       placeTargets(); requestAnimationFrame(placeTargets);
       return { goalSales: Wg === null ? 0 : Wg * t.unitPrice, progress: false };
     }
@@ -360,9 +388,9 @@
       box.querySelector('.gLead').innerHTML = lead;
       box.querySelector('.gTable').innerHTML = rows;
       const few = M.doneDays < 3, cx = few || Wg === null ? (Wg || 0) : t.weight + M.perDayW * M.leftDays;
-      drawBep('c-goal', { fixed: M.fixedAll, unitPrice: t.unitPrice, laborPerTon: 0, varPerTon: t.varPerTon, profitRate: p,
+      drawBep('c-goal', Object.assign({ fixed: M.fixedAll, unitPrice: t.unitPrice, laborPerTon: 0, varPerTon: t.varPerTon, profitRate: p,
         fixedLabel: ['固定費', '(人件費込み)'], otherFixed: M.Ff, laborRate: t.laborRate,
-        x: cx, fixedX: true, beTons: G.be, goalTons: Wg, handleLabel: few ? '目標' : '見込み', hideMoney: true });
+        x: cx, fixedX: true, beTons: G.be, goalTons: Wg, handleLabel: few ? '目標' : '見込み', hideMoney: true }, normOpts(sel, G.be, M.fixedAll)));
       placeTargets(); requestAnimationFrame(placeTargets);
       return { goalSales: Wg === null ? 0 : Wg * t.unitPrice, progress: true };
     }
@@ -499,6 +527,10 @@
     el.style.left = (ox + best.x) + 'px'; el.style.top = (oy + best.y) + 'px';
   }
 
-  window.CIKit = { SITE_LIST, otherFixed, solve, fixedFor, siteShare, analyze, endModel, workDaysIn, ymdToUtc, utcToYmd, calendar, goalRate, lastDataYmd };
-  window.SimpleView = { show };
+  /* 共通目盛りのボタン表示(シンプル版・詳細版で共通の状態) */
+  function syncNorm() {
+    ['c-norm', 's-norm'].forEach((id) => { const b = $(id); if (b) { b.classList.toggle('changed', NORM.on); b.textContent = NORM.on ? '実額の目盛りに戻す' : '共通目盛りで比較'; } });
+  }
+  window.CIKit = { NORM, normFrame, normOpts, syncNorm, SITE_LIST, otherFixed, solve, fixedFor, siteShare, analyze, endModel, workDaysIn, ymdToUtc, utcToYmd, calendar, goalRate, lastDataYmd };
+  window.SimpleView = { show, redraw: render };
 })();

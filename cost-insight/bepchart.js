@@ -25,6 +25,7 @@ function drawBep(id, o) {
   const keep = prev && prev.sig === sig && !o.forceX && !o.fixedX; // 実績に固定のグラフ(fixedX)は毎回実績の位置に置く
   const st = bepState[id] = { o, x: keep ? prev.x : (o.x || 0), sig, padL: prev && prev.sig === sig ? prev.padL : undefined, maxX: keep ? prev.maxX : null }; // ドラッグ中以外は縮尺を取り直す
   if (!st.maxX) st.maxX = Math.max(o.x || 0, o.beTons || 0, o.goalTons || 0, o.endTons || 0, 1) * (o.endTons ? 1.12 : 1.35); // endTons(完了の位置)があるときは、その少し先までを横軸にする
+  if (o.maxX) st.maxX = o.maxX; // 共通目盛り: 横軸の最大を指定(損益分岐生産量の倍数)
   box.classList.toggle('fixedX', !!o.fixedX); // fixedX: つまみを動かせない(実績の損益分岐生産量タブ)
   renderBepSvg(id);
   if (!box.dataset.bound) {
@@ -71,20 +72,22 @@ function renderBepSvg(id) {
   const P = o.unitPrice || 0, lab = o.laborPerTon || 0, vr = o.varPerTon || 0, F = o.fixed || 0;
   const maxX = st.maxX;
   const cost = (x) => F + (lab + vr) * x, sales = (x) => P * x;
-  const maxY = Math.max(sales(maxX), cost(maxX), F, 1) * 1.05;
+  const maxY = o.maxY || Math.max(sales(maxX), cost(maxX), F, 1) * 1.05; // 共通目盛り(o.norm)では縦軸の最大も指定
+  const nm = o.norm || null; // 共通目盛り: 縦軸=固定費を100%、横軸=損益分岐生産量を100%とした割合で目盛りを出す
   const X = (x) => g.l + x / maxX * g.w, Y = (y) => g.t + g.h - y / maxY * g.h;
   const pts = (arr) => arr.map((p) => X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' ');
   const be = o.beTons !== null && o.beTons !== undefined && o.beTons <= maxX ? o.beTons : null;
   let h = '';
   // グリッドと目盛
-  const xs = niceStep(maxX, Math.max(3, Math.floor(g.w / 90))), ys = niceStep(maxY, 5);
+  const xs = nm ? niceStep(maxX / nm.bx * 100, Math.max(3, Math.floor(g.w / 90))) * nm.bx / 100 : niceStep(maxX, Math.max(3, Math.floor(g.w / 90)));
+  const ys = nm ? niceStep(maxY / nm.fy * 100, 5) * nm.fy / 100 : niceStep(maxY, 5);
   for (let v = 0; v <= maxY + 1e-9; v += ys) {
     h += `<line class="bg" x1="${g.l}" x2="${g.l + g.w}" y1="${Y(v)}" y2="${Y(v)}"/>`;
     // 左余白の固定費ラベル(2行)と重なる目盛りの数字は出さない
-    if (!o.hideMoney && Math.abs(Y(v) - Y(F)) > (o.fixedLabel ? 34 : 22) * Math.max(1, k)) h += `<text class="ax" x="${g.l - 6}" y="${Y(v) + 4}" text-anchor="end">${fmt(v / 10000, 0)}万</text>`;
+    if ((nm || !o.hideMoney) && Math.abs(Y(v) - Y(F)) > (o.fixedLabel ? 34 : 22) * Math.max(1, k)) h += `<text class="ax" x="${g.l - 6}" y="${Y(v) + 4}" text-anchor="end">${nm ? fmt(v / nm.fy * 100, 0) + '%' : fmt(v / 10000, 0) + '万'}</text>`;
   }
-  for (let v = 0; v <= maxX + 1e-9; v += xs) h += `<line class="bg" y1="${g.t}" y2="${g.t + g.h}" x1="${X(v)}" x2="${X(v)}"/><text class="ax" x="${X(v)}" y="${g.t + g.h + 16}" text-anchor="middle">${fmt(v, 0)}</text>`;
-  h += `<text class="ax" x="${g.l + g.w}" y="${H - 4}" text-anchor="end">生産重量(t)</text>`;
+  for (let v = 0; v <= maxX + 1e-9; v += xs) h += `<line class="bg" y1="${g.t}" y2="${g.t + g.h}" x1="${X(v)}" x2="${X(v)}"/><text class="ax" x="${X(v)}" y="${g.t + g.h + 16}" text-anchor="middle">${nm ? fmt(v / nm.bx * 100, 0) + '%' : fmt(v, 0)}</text>`;
+  h += `<text class="ax" x="${g.l + g.w}" y="${H - 4}" text-anchor="end">${nm ? '生産重量(損益分岐=100%)　縦軸: 固定費=100%' : '生産重量(t)'}</text>`;
   // 面: 固定費帯・人件費帯・変動費帯
   h += `<polygon class="fFixed" points="${pts([[0, 0], [maxX, 0], [maxX, F], [0, F]])}"/>`;
   h += `<polygon class="fLabor" points="${pts([[0, F], [maxX, F + lab * maxX], [maxX, F]])}"/>`;
