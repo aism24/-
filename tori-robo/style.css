@@ -160,7 +160,7 @@ select, option, input, button, .btn, .btn.primary, #dlBtn, #dlBtn:disabled, .man
 #detail th:last-child::after { right:-3px; }
 /* Excelダウンロード後のお知らせ */
 .dl-notice { position:fixed; inset:0; z-index:110; background:rgba(60,64,70,.65); display:flex; align-items:center; justify-content:center; }
-.dl-notice-box { background:#fff176; color:#000; border:3px solid #e0b800; border-radius:14px; padding:36px 44px; width:min(920px,94vw); box-sizing:border-box; text-align:center; font-weight:bold; font-size:28px; animation:dlglow 1.2s ease-in-out infinite; }
+.dl-notice-box { background:#fff176; color:#000; border:3px solid #e0b800; border-radius:14px; padding:36px 44px; width:min(920px,94vw); box-sizing:border-box; text-align:center; font-weight:bold; font-size:19.6px; animation:dlglow 1.2s ease-in-out infinite; }
 .dl-notice-box p { margin:0 0 18px; line-height:1.6; }
 @keyframes dlglow { 0%,100% { background:#fff59d; box-shadow:0 0 12px 4px rgba(255,214,0,.6); } 50% { background:#ffee58; box-shadow:0 0 44px 16px rgba(255,214,0,1); } }
 /* 表の文字は等幅フォント(細い文字1・Iなどで縦の並びが凸凹にならないように) */
