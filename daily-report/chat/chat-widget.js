@@ -10,7 +10,7 @@
 
   var css = ".cw-btn{position:fixed;right:16px;bottom:16px;z-index:99998;height:48px;padding:0 18px;border-radius:24px;border:0;background:#2563eb;color:#fff;font-size:16px;font-weight:bold;box-shadow:0 2px 8px #0004;cursor:pointer}" +
     ".cw-box{position:fixed;right:16px;bottom:72px;z-index:99999;width:min(360px,calc(100vw - 32px));height:min(520px,70vh);background:#fff;color:#111;border-radius:12px;box-shadow:0 4px 20px #0005;display:none;flex-direction:column;font:14px/1.5 sans-serif}" +
-    ".cw-box.cw-open{display:flex}.cw-head{padding:10px 12px;background:#2563eb;color:#fff;border-radius:12px 12px 0 0;font-weight:bold;display:flex;justify-content:space-between}" +
+    ".cw-box.cw-open{display:flex;inset:0;width:auto;height:auto;border-radius:0}.cw-box.cw-open .cw-head{border-radius:0;font-size:16px}.cw-m{font-size:15px}.cw-copy{margin-top:6px;padding:4px 10px;border:1px solid #2563eb;border-radius:6px;background:#fff;color:#2563eb;cursor:pointer;font-size:13px}.cw-head{padding:10px 12px;background:#2563eb;color:#fff;border-radius:12px 12px 0 0;font-weight:bold;display:flex;justify-content:space-between}" +
     ".cw-head span{cursor:pointer}.cw-log{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px}" +
     ".cw-m{max-width:85%;padding:8px 10px;border-radius:10px;white-space:pre-wrap;word-break:break-word}.cw-u{align-self:flex-end;background:#dbeafe}.cw-b{align-self:flex-start;background:#f1f5f9}" +
     ".cw-m img{max-width:100%;display:block;margin-top:6px;border-radius:6px}.cw-form{display:flex;gap:6px;padding:8px;border-top:1px solid #ddd}" +
@@ -19,7 +19,7 @@
 
   var btn = el("button", "cw-btn", "💬 AIに質問"); btn.title = "質問する";
   var box = el("div", "cw-box");
-  var head = el("div", "cw-head"); head.appendChild(el("div", "", "使い方を質問")); var x = el("span", "", "✕"); head.appendChild(x);
+  var head = el("div", "cw-head"); head.appendChild(el("div", "", "AIに質問")); var x = el("span", "", "✕ 閉じる"); head.appendChild(x);
   var log = el("div", "cw-log");
   var form = el("form", "cw-form"); var inp = el("input"); inp.placeholder = "質問を入力"; inp.maxLength = 300;
   var send = el("button", "", "送信"); send.type = "submit"; form.appendChild(inp); form.appendChild(send);
@@ -32,9 +32,9 @@
     (imgs || []).forEach(function (f) { var i = el("img"); i.src = BASE + "img/" + encodeURIComponent(f); i.alt = f; m.appendChild(i); });
     log.appendChild(m); log.scrollTop = log.scrollHeight; return m;
   }
-  btn.onclick = function () { box.classList.toggle("cw-open"); if (box.classList.contains("cw-open")) { load(); inp.focus(); } };
-  window.cwOpen = function () { box.classList.add("cw-open"); load(); inp.focus(); };
-  x.onclick = function () { box.classList.remove("cw-open"); };
+  btn.onclick = function () { box.classList.toggle("cw-open"); btn.style.display = box.classList.contains("cw-open") ? "none" : ""; if (box.classList.contains("cw-open")) { load(); inp.focus(); } };
+  window.cwOpen = function () { box.classList.add("cw-open"); btn.style.display = "none"; load(); inp.focus(); };
+  x.onclick = function () { box.classList.remove("cw-open"); btn.style.display = ""; };
 
   function load() {
     if (data) return Promise.resolve(data);
@@ -79,11 +79,24 @@
     return null;
   }
   function table(h, rows) {
-    var t = el("table"); t.style.cssText = "border-collapse:collapse;font-size:12px;margin-top:4px";
+    var t = el("table"); t.style.cssText = "border-collapse:collapse;font-size:14px;margin-top:4px";
     var add = function (cells, tag) { var tr = el("tr"); cells.forEach(function (c) { var e = el(tag, "", String(c)); e.style.cssText = "border:1px solid #cbd5e1;padding:2px 6px;text-align:left"; tr.appendChild(e); }); t.appendChild(tr); };
     add(h, "th"); rows.forEach(function (r) { add(r, "td"); }); return t;
   }
-  function reply(text, tbl) { var m = say(text, "b"); if (tbl) m.appendChild(tbl); log.scrollTop = log.scrollHeight; }
+  function copyText(t, b) {
+    var done = function () { var o = b.textContent; b.textContent = "コピーしました ✓"; setTimeout(function () { b.textContent = o; }, 1500); };
+    var fb = function () { var ta = el("textarea"); ta.value = t; ta.style.cssText = "position:fixed;opacity:0"; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (e) { b.textContent = "コピー失敗(表を選択してCtrl+C)"; } ta.remove(); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, fb); else fb();
+  }
+  function reply(text, tbl) {
+    var m = say(text, "b");
+    if (tbl) {
+      m.appendChild(tbl);
+      var tsv = Array.prototype.map.call(tbl.rows, function (r) { return Array.prototype.map.call(r.cells, function (c) { return c.textContent.replace(/[\t\r\n]+/g, " "); }).join("\t"); }).join("\n");
+      var b = el("button", "cw-copy", "📋 表をコピー(Excelに貼り付け可)"); b.type = "button"; b.onclick = function () { copyText(tsv, b); }; m.appendChild(b);
+    }
+    log.scrollTop = log.scrollHeight;
+  }
   function norm(s) { return String(s || "").replace(/[\s\u3000]/g, "").replace(/さん$/, ""); }
 
   function runIntent(it) {
