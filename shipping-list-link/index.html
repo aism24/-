@@ -12,21 +12,21 @@
 #drop b{display:block;margin-top:14px}
 .stage{position:relative;height:150px;overflow:hidden;pointer-events:none}
 .stage.busy{opacity:.3}
-/* 4.2秒周期: 左から赤PDF→中央で発光しピンクの「リンク付き」へ→右へ移動して消える→1秒の間→繰り返し */
-.fi{position:absolute;top:50%;left:-150px;margin-top:-60px;display:flex;flex-direction:column;align-items:center;gap:8px;opacity:0;animation:move 4.2s ease-in-out infinite}
-.fi .box{width:112px;height:120px;border-radius:10px;position:relative;animation:glow 4.2s ease-in-out infinite}
+/* 6秒周期(速度70%): 左から赤PDF→中央で発光しピンクの「リンク付き」へ→右へ移動して消える→1秒の間→繰り返し */
+.fi{position:absolute;top:50%;left:-150px;margin-top:-60px;display:flex;flex-direction:column;align-items:center;gap:8px;opacity:0;animation:move 6s ease-in-out infinite}
+.fi .box{width:112px;height:120px;border-radius:10px;position:relative;animation:glow 6s ease-in-out infinite}
 .fi .b{position:absolute;inset:0;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:24px;line-height:1.3;text-align:center;font-weight:bold;letter-spacing:1px;color:#fff}
-.fi .b-red{background:linear-gradient(135deg,#c0392b,#e74c3c);box-shadow:0 0 12px rgba(231,76,60,.5);animation:toRed 4.2s ease-in-out infinite}
-.fi .b-pink{background:linear-gradient(135deg,#f06292,#ff8fb8);box-shadow:0 0 14px rgba(255,111,165,.6);opacity:0;animation:toPink 4.2s ease-in-out infinite}
-.fi .two{position:absolute;inset:0;display:flex;flex-direction:column;gap:8px;animation:toRed 4.2s ease-in-out infinite}
+.fi .b-red{background:linear-gradient(135deg,#c0392b,#e74c3c);box-shadow:0 0 12px rgba(231,76,60,.5);animation:toRed 6s ease-in-out infinite}
+.fi .b-pink{background:linear-gradient(135deg,#f06292,#ff8fb8);box-shadow:0 0 14px rgba(255,111,165,.6);opacity:0;animation:toPink 6s ease-in-out infinite}
+.fi .two{position:absolute;inset:0;display:flex;flex-direction:column;gap:8px;animation:toRed 6s ease-in-out infinite}
 .fi .c{flex:1;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;white-space:nowrap}
 .fi .c-red{background:linear-gradient(135deg,#c0392b,#e74c3c);color:#fff;box-shadow:0 0 10px rgba(231,76,60,.5)}
 .fi .c-green{background:#c8efd4;color:#1f6b3a;box-shadow:0 0 10px rgba(160,230,185,.45)}
 .fi .b-pink::after{content:"🔗";position:absolute;right:-16px;bottom:-16px;font-size:36px}
 .fi .labs{position:relative;height:14px;width:80px;font-size:10px;letter-spacing:1px;color:#8a94a6;text-align:center}
 .fi .labs span{position:absolute;inset:0}
-.fi .labs .l2{color:#e0558a;font-weight:bold;opacity:0;animation:toPink 4.2s ease-in-out infinite}
-.fi .labs .l1{animation:toRed 4.2s ease-in-out infinite}
+.fi .labs .l2{color:#e0558a;font-weight:bold;opacity:0;animation:toPink 6s ease-in-out infinite}
+.fi .labs .l1{animation:toRed 6s ease-in-out infinite}
 @keyframes move{0%{left:-150px;opacity:0}4%{opacity:1}28%,47%{left:calc(50% - 56px);opacity:1}70%{opacity:1}76%{left:calc(100% + 150px);opacity:0}100%{left:calc(100% + 150px);opacity:0}}
 @keyframes toRed{0%,30%{opacity:1}36%,100%{opacity:0}}
 @keyframes toPink{0%,30%{opacity:0}36%,100%{opacity:1}}
@@ -66,8 +66,8 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
 <p class="small">図番と製品名が完全一致した行の製品名にリンクを付け、PDFを自動でダウンロードします。リンクは社内ネットワーク内でのみ開けます。</p>
 </main>
 <a class="manual" href="manual/after-download.pdf" target="_blank" rel="noopener">ダウンロード後の説明書</a>
-<script src="vendor/pdf.min.js?v=20261006d"></script>
-<script src="vendor/pdf-lib.min.js?v=20261006d"></script>
-<script src="core.js?v=20261006d"></script>
-<script src="app.js?v=20261006d"></script>
+<script src="vendor/pdf.min.js?v=20261006e"></script>
+<script src="vendor/pdf-lib.min.js?v=20261006e"></script>
+<script src="core.js?v=20261006e"></script>
+<script src="app.js?v=20261006e"></script>
 </body></html>
