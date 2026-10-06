@@ -1552,8 +1552,10 @@ function askAI_(params) {
       'hours_summary=誰か(または工事)の期間の合計時間・内訳、not_submitted=日報を出していない(未提出・未入力の)人、' +
       'headcount=在職者数・人数、leave_list=ある日(期間)に有給・休み・届けを出している人の一覧、' +
       'leave_person=特定の人の有給・休み・届けの履歴、howto=アプリの使い方、other=それ以外。' +
-      '日付: 1日だけならdateFromとdateToを同じ日に。「先月」「今月」「先週」「今年」等は期間に直す。年が無い日付は今日以前で最も近い年。' +
-      '期間の指定が無い場合、daily_report・not_submitted・leave_listは今日、hours_summary・leave_personは今月1日〜今日。headcountは日付不要。' +
+      '日付: 1日だけならdateFromとdateToを同じ日に。年が無い日付は今日以前で最も近い年。' +
+      '会社の締め: 1か月は前月21日〜当月20日(例: 9月・9月締め=8/21〜9/20)。今月=今日を含む締め月、先月=その前の締め月。' +
+      '年度は11/21〜翌年11/20(例: 2026年度=R8年度=2025/11/21〜2026/11/20)。今期=今日を含む年度、前期=その前の年度。' +
+      '期間の指定が無い場合、daily_report・not_submitted・leave_listは今日、hours_summary・leave_personは今日を含む締め月の初日〜今日。headcountは日付不要。' +
       '分からない項目は空文字。answerはintentがhowtoのときだけ、下のマニュアルの範囲での簡潔な日本語の回答' +
       '(記載がなければ「マニュアルに記載がないため管理者に確認してください」)。\n\n【マニュアル】\n' + manual + '\n\n【質問】\n' + q;
     genCfg = { responseMimeType: 'application/json' };

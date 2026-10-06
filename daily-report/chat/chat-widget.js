@@ -111,27 +111,56 @@
   function ymd(y, m, d) { return y + "/" + pad(m) + "/" + pad(d); }
   function nearestYear(m, d) { var t = new Date(), y = t.getFullYear(); if (new Date(y, m - 1, d) > t) y--; return y; }
   function monthRange(y, m) { var last = new Date(y, m, 0).getDate(), t = new Date(); var to = ymd(y, m, last); if (to > fmt(t)) to = fmt(t); return { from: ymd(y, m, 1), to: to }; }
-  /* 締め(〆)の期間: 「9/20締め」「9月20日〆」→ 8/21〜9/20、「9月締め」「9月〆」→ 20日締め、
-     「先月締め」「今月締め」「前回の締め」も20日締めとして扱う(⑤20日〆集計と同じ区切り)。 */
+  /* 会社の締め・年度(ユーザー指定):
+     ・1か月は「前月21日〜当月20日」(20日締め)。例: 9月締め(9月度)=8/21〜9/20、1月締め=前年12/21〜1/20
+     ・年度は11/21始まり〜翌年11/20(決算)。2026/10/6は2026年度(R8年度)、2026/11/22は2027年度(R9年度)
+     ・今月=今日を含む締め月、先月=その前の締め月、今期=今日を含む年度、前期=その前の年度 */
+  function closingPeriod(y, mo, d) {
+    d = d || 20;
+    var end = new Date(y, mo - 1, d), start = new Date(y, mo - 2, d + 1), t = fmt(new Date());
+    var to = fmt(end); if (to > t && fmt(start) <= t) to = t; // 未来の期間は切り詰めない(データ無しと答える)
+    return { from: fmt(start), to: to, closing: y + "年" + mo + "月" + (d === 20 ? "" : d + "日") + "締め" };
+  }
+  function currentClosing(offset) { // 今日を含む締め月(offsetで前後の月)
+    var t = new Date(), y = t.getFullYear(), mo = t.getMonth() + 1 + (t.getDate() > 20 ? 1 : 0) + (offset || 0);
+    var d = new Date(y, mo - 1, 1); return { y: d.getFullYear(), mo: d.getMonth() + 1 };
+  }
+  function closingYear(mo) { // 年の指定が無い「○月締め」は、期間の始まりが今日以前で最も近い年
+    var t = new Date(), y = t.getFullYear(); if (new Date(y, mo - 2, 21) > t) y--; return y;
+  }
+  function fiscalYearOf(d) { return d.getMonth() + 1 > 11 || (d.getMonth() + 1 === 11 && d.getDate() >= 21) ? d.getFullYear() + 1 : d.getFullYear(); }
+  function fiscalPeriod(n) {
+    var t = fmt(new Date()), to = n + "/11/20"; if (to > t && (n - 1) + "/11/21" <= t) to = t;
+    return { from: (n - 1) + "/11/21", to: to, closing: n + "年度(R" + (n - 2018) + "年度)" };
+  }
+  function fiscalRange(q) {
+    var m, cur = fiscalYearOf(new Date());
+    if ((m = q.match(/(\d{4})\s*年度/))) return fiscalPeriod(Number(m[1]));
+    if ((m = q.match(/(?:R|Ｒ|令和)\s*(\d{1,2})(?!\d)\s*年度?/))) return fiscalPeriod(2018 + Number(m[1]));
+    if (/今期|今年度|当期|本年度/.test(q)) return fiscalPeriod(cur);
+    if (/前期|昨年度|前年度|去年度/.test(q)) return fiscalPeriod(cur - 1);
+    return null;
+  }
   function closingRange(q) {
-    if (!/締|〆|しめ/.test(q)) return null;
-    var t = new Date(), m, y, mo, d = 20;
-    if ((m = q.match(/(?:(\d{4})[\/年])?(\d{1,2})[\/月](\d{1,2})日?\s*(?:締|〆|しめ)/))) { y = m[1] ? Number(m[1]) : 0; mo = Number(m[2]); d = Number(m[3]); }
-    else if ((m = q.match(/(?:(\d{4})年)?(\d{1,2})月(?:分)?\s*(?:の)?\s*(?:\d{1,2}日)?\s*(?:締|〆|しめ)/))) { y = m[1] ? Number(m[1]) : 0; mo = Number(m[2]); }
-    else if (/先月/.test(q)) { var p0 = new Date(t.getFullYear(), t.getMonth() - 1, 1); y = p0.getFullYear(); mo = p0.getMonth() + 1; }
-    else if (/今月|今回/.test(q)) { y = t.getFullYear(); mo = t.getMonth() + 1; }
-    else if (/前回/.test(q)) { var p1 = new Date(t.getFullYear(), t.getMonth() - (t.getDate() > 20 ? 0 : 1), 1); y = p1.getFullYear(); mo = p1.getMonth() + 1; }
-    else return null;
-    if (!(mo >= 1 && mo <= 12 && d >= 1 && d <= 31)) return null;
-    if (!y) y = nearestYear(mo, 1);
-    var end = new Date(y, mo - 1, d), start = new Date(y, mo - 2, d + 1);
-    var to = fmt(end); if (to > fmt(t)) to = fmt(t);
-    return { from: fmt(start), to: to, closing: ymd(y, mo, d) + "締め" };
+    var m, c;
+    if ((m = q.match(/(?:(\d{4})[\/年])?(\d{1,2})[\/月](\d{1,2})日?\s*(?:締|〆|しめ)/))) {
+      var mo = Number(m[2]), d = Number(m[3]); if (!(mo >= 1 && mo <= 12 && d >= 1 && d <= 31)) return null;
+      return closingPeriod(m[1] ? Number(m[1]) : closingYear(mo), mo, d);
+    }
+    // 「9月締め」「9月〆」「9月度」「9月分」、日付の無い「9月」も締め月として扱う
+    if ((m = q.match(/(?:(\d{4})年)?(\d{1,2})月(?!\d{1,2}日|\d)(?:分|度)?/))) {
+      var mo2 = Number(m[2]); if (!(mo2 >= 1 && mo2 <= 12)) return null;
+      return closingPeriod(m[1] ? Number(m[1]) : closingYear(mo2), mo2, 20);
+    }
+    if (/先月|前月|前回/.test(q)) { c = currentClosing(-1); return closingPeriod(c.y, c.mo, 20); }
+    if (/今月|今回|当月/.test(q)) { c = currentClosing(0); return closingPeriod(c.y, c.mo, 20); }
+    return null;
   }
   /* 質問文から日付・期間を読み取る({from,to} または null)。 */
   function parseDates(q0) {
     var q = z2h(q0), t = new Date(), m, days = [];
     var shift = function (n) { var d = new Date(); d.setDate(d.getDate() + n); return fmt(d); };
+    var fy = fiscalRange(q); if (fy) return fy;
     var cm = closingRange(q); if (cm) return cm;
     var re = /(\d{4})[\/年.-](\d{1,2})[\/月.-](\d{1,2})日?|(\d{1,2})\/(\d{1,2})|(\d{1,2})月(\d{1,2})日/g;
     while ((m = re.exec(q))) {
@@ -144,13 +173,10 @@
     if (/昨日|きのう/.test(q)) { var d1 = shift(-1); return { from: d1, to: d1 }; }
     if (/今日|本日|きょう/.test(q)) return { from: fmt(t), to: fmt(t) };
     if (/明日|あした/.test(q)) { var d3 = shift(1); return { from: d3, to: d3 }; }
-    if (/先月|前月/.test(q)) { var pm = new Date(t.getFullYear(), t.getMonth() - 1, 1); return monthRange(pm.getFullYear(), pm.getMonth() + 1); }
-    if (/今月/.test(q)) return monthRange(t.getFullYear(), t.getMonth() + 1);
     if (/先週|前週/.test(q)) { var w = (t.getDay() + 6) % 7; return { from: shift(-w - 7), to: shift(-w - 1) }; }
     if (/今週/.test(q)) { var w2 = (t.getDay() + 6) % 7; return { from: shift(-w2), to: fmt(t) }; }
     if (/去年|昨年/.test(q)) return { from: (t.getFullYear() - 1) + "/01/01", to: (t.getFullYear() - 1) + "/12/31" };
     if (/今年/.test(q)) return { from: t.getFullYear() + "/01/01", to: fmt(t) };
-    if ((m = q.match(/(?:(\d{4})年)?(\d{1,2})月(?!\d)/))) { var mo = Number(m[2]); if (mo >= 1 && mo <= 12) return monthRange(m[1] ? Number(m[1]) : nearestYear(mo, 1), mo); }
     return null;
   }
   function factoryOf(q) { var m = q.match(/本社|夢前|鳥取|総務建築/); return m ? m[0] : ""; }
@@ -241,7 +267,7 @@
     }
     log.scrollTop = log.scrollHeight;
   }
-  var EXAMPLES = "次のように聞けます(語順・言い方は自由です):\n・今日の日報の集計全て\n・山田さんの10月5日の日報\n・先月の山田さんの作業時間の合計\n・○○工事の鳥取の工数(期間なしは工事全体)\n・9/20締め分の山田さんの日報\n・昨日 日報を出していない人(本社)\n・10/5に有給を取っている人\n・山田さんの今年の有給\n・夢前の在職者数";
+  var EXAMPLES = "次のように聞けます(語順・言い方は自由です):\n・今日の日報の集計全て\n・山田さんの10月5日の日報\n・先月の山田さんの作業時間の合計\n・○○工事の鳥取の工数(期間なしは工事全体)\n・9/20締め分の山田さんの日報\n・今期(R8年度)の○○工事の工数\n・昨日 日報を出していない人(本社)\n・10/5に有給を取っている人\n・山田さんの今年の有給\n・夢前の在職者数";
   var MAX_ROWS = 300;
   function range(it) { return it.allPeriod ? "全期間" : (it.closing ? it.closing + "(" : "") + (it.from === it.to ? it.from : it.from + "〜" + it.to) + (it.closing ? ")" : ""); }
   function round2(n) { return Math.round(n * 100) / 100; }
@@ -257,7 +283,7 @@
     if (!it.from) {
       // 工事の工数は、期間の指定が無ければ工事全体(全期間)で集計する
       if ((it.intent === "hours_summary" || it.intent === "daily_report") && !(it.ops && it.ops.length) && it.cons && it.cons.length) { it.from = "0000/00/00"; it.to = today; it.allPeriod = true; it.defaulted = true; }
-      else if (it.intent === "hours_summary" || it.intent === "leave_person") { var mr = monthRange(new Date().getFullYear(), new Date().getMonth() + 1); it.from = mr.from; it.to = mr.to; it.defaulted = true; }
+      else if (it.intent === "hours_summary" || it.intent === "leave_person") { var cc = currentClosing(0), mr = closingPeriod(cc.y, cc.mo, 20); it.from = mr.from; it.to = mr.to; it.closing = mr.closing; it.defaulted = true; }
       else if (it.intent !== "headcount") { it.from = it.to = today; it.defaulted = true; }
     }
     var dnote = it.defaulted ? "(期間の指定が無かったため " + range(it) + " で集計)\n" : "";
