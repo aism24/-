@@ -137,3 +137,9 @@
 - 注意点: Geminiが年を取り違える→日付は質問文から再計算。窓幅は `%` の max-width が効かない(固有幅計算)ので `em` で制限。ユーザー指示: 全画面は大きすぎ→内容に合わせて自動サイズ、「？」だけは不明→文字付きボタン。
 - 使ったアプリ: daily-report
 
+
+### GASの「2段階応答(echo)」が不安定で、fetch型アプリが開けない(daily-report、10/6)
+- 症状: Vercel版だけ開けない(GAS版=google.script.runは1秒で開く)。何も処理しないPOSTでも約5割が echo 404 / echo→/exec(CORS error)で失敗、成功も2〜40秒。別GAS(tori-robo)でも再現=アプリのコードではなくGoogle側。
+- 対処: 起動時5件を1つの `getInitialData` に統合+`api/data.js` 中継(サーバー側で再試行、CDNキャッシュ)。行データ17.7MBは辞書+列形式(2.4MB)+gzip(0.42MB)にして関数の4.5MB上限内に。
+- 注意: 中継→GAS直接→(旧GASなら)5件並行の順に切替。`不明なaction` は再試行しない。
+- 使ったアプリ: daily-report

@@ -1,5 +1,11 @@
 {
   "git": {
     "deploymentEnabled": false
+  },
+  "fluid": true,
+  "functions": {
+    "api/data.js": {
+      "maxDuration": 120
+    }
   }
 }

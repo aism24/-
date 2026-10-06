@@ -1471,6 +1471,23 @@ function logFactorySelectionLocked_(factory) {
   }
 }
 
+/* 起動時の5件(getMasterData/getAllDailyReportRows/getCompanyCalendarData/
+   getAbsenteeismData/getAbsenteeismDetail)を1回の実行でまとめて返す。
+   ContentServiceの応答はGoogle側の2段階応答(受取URL echo)を通り、これが一定割合で
+   404やCORS errorで失敗する(2026-10-06実測。別GASでも再現)。5件を別々に取ると
+   1件でも失敗した時点で起動できないため、1回にまとめて失敗に当たる回数を減らす。
+   既存の各関数は無改変のまま呼ぶだけ。 */
+function getInitialData_() {
+  return {
+    master: getMasterDataWithStatus_(),
+    rows: getAllDailyReportRowsMerged_(),
+    calendar: getCompanyCalendarData(),
+    absenteeism: getAbsenteeismData(),
+    absenteeismDetail: getAbsenteeismDetail_(),
+    fetchedAt: new Date().getTime()
+  };
+}
+
 function apiJsonErr_(message) {
   return ContentService
     .createTextOutput(JSON.stringify({ status: 'error', message: message }))
@@ -1492,6 +1509,7 @@ function doPost(e) {
     if (action === 'getCompanyCalendarData') return apiJsonOk_(getCompanyCalendarData());
     if (action === 'getAbsenteeismData') return apiJsonOk_(getAbsenteeismData());
     if (action === 'getAbsenteeismDetail') return apiJsonOk_(getAbsenteeismDetail_());
+    if (action === 'getInitialData') return apiJsonOk_(getInitialData_());
     if (action === 'generateReport1') return apiJsonOk_(generateReport1(params));
     if (action === 'generateReport2') return apiJsonOk_(generateReport2(params));
     if (action === 'generateReport3') return apiJsonOk_(generateReport3(params));
