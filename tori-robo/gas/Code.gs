@@ -147,8 +147,8 @@ function suggestMarks_(entered, marks) {
 }
 
 // 工事名称(手入力)から工事番号の候補を求める。
-// works: [{workNo, names:[正規化済みの名称...]}], alias: { 正規化した入力名: workNo }
-function matchWorkNos_(enteredName, works, alias) {
+// alias: { 正規化した入力名: workNo }
+function matchWorkNos_(enteredName, alias) {
   // 別名表(V:W)に登録された入力名だけを工事に結び付ける。部分一致などの自動判定はしない(画面2.で人が指定する)
   const n = normName_(enteredName);
   if (!n) return [];
@@ -159,17 +159,11 @@ function matchWorkNos_(enteredName, works, alias) {
 // masterIndex: { workNo: { byMark: { 正規化マーク: record }, marks: [{key,mark}] } }
 // 戻り値: { workNo, status, product, suggestions }
 //   status: 'ok'(製品確定) / 'suggest'(製品マークが無く候補あり) / 'nomark'(製品マークが無い) / 'nowork'(工事が判定できない)
-function resolveRow_(row, works, alias, masterIndex) {
-  const cands = matchWorkNos_(row.wn, works, alias);
+function resolveRow_(row, alias, masterIndex) {
+  const cands = matchWorkNos_(row.wn, alias); // 別名表の判定は最大1件
   if (!cands.length) return { workNo: '', status: 'nowork', product: null, suggestions: [] };
   const key = normMark_(row.mk);
-  let workNo = cands[0];
-  if (cands.length > 1) {
-    const withMark = cands.filter(function (c) { return masterIndex[c] && masterIndex[c].byMark[key]; });
-    if (withMark.length === 1) workNo = withMark[0];
-    else if (withMark.length === 0) return { workNo: '', status: 'nowork', product: null, suggestions: [], ambiguous: cands };
-    else workNo = withMark[0];
-  }
+  const workNo = cands[0];
   const mi = masterIndex[workNo];
   const rec = mi && key ? mi.byMark[key] : null;
   if (rec) return { workNo: workNo, status: 'ok', product: rec, suggestions: [] };
@@ -405,6 +399,16 @@ function saveAlias_(name, workNo) {
   name = String(name || '').trim();
   workNo = String(workNo || '').trim();
   if (!name || !workNo) throw new Error('入力名と工事番号が必要です');
+  // 同時に保存されても同じ空き行へ書き込まないよう、シートへの書き込みだけロックする(ロックは再入できないため、更新確認の前に解放する)
+  const lock = LockService.getScriptLock();
+  lock.waitLock(120000);
+  let updated;
+  try { updated = writeAlias_(name, workNo); } finally { lock.releaseLock(); }
+  refreshSnapshot_(true);
+  return { saved: true, updated: updated };
+}
+
+function writeAlias_(name, workNo) {
   const sh = infoSheet_();
   const lastRow = Math.max(sh.getLastRow(), 3);
   const vals = sh.getRange(1, ALIAS_COL, lastRow, 2).getValues();
@@ -415,16 +419,14 @@ function saveAlias_(name, workNo) {
     if (normName_(vals[i][0]) === target) {
       sh.getRange(i + 1, ALIAS_COL + 1).setValue(workNo);
       mirrorAlias_(sh, name, workNo);
-      refreshSnapshot_(true);
-      return { saved: true, updated: true };
+      return true;
     }
   }
   let row = 3;
   while (row <= vals.length && String(vals[row - 1][0] || '').trim()) row++;
   sh.getRange(row, ALIAS_COL, 1, 2).setValues([[name, workNo]]);
   mirrorAlias_(sh, name, workNo);
-  refreshSnapshot_(true);
-  return { saved: true, updated: false };
+  return false;
 }
 
 // ========== フォルダ・キャッシュ ==========
@@ -765,10 +767,8 @@ function buildData_() {
   const workInfo = [];
   masterList.forEach(function (m) {
     const base = m.fileName.replace(/\.(xlsx?|xlsm)$/i, '');
-    const names = [normName_(base)];
-    if (workNames[m.workNo]) names.push(normName_(workNames[m.workNo]));
     if (!works.some(function (w) { return w.workNo === m.workNo; })) {
-      works.push({ workNo: m.workNo, names: names });
+      works.push({ workNo: m.workNo });
       workInfo.push({ workNo: m.workNo, workName: workNames[m.workNo] || base, fileName: m.fileName });
     }
     const recs = loaded.records[m.workNo];
@@ -787,10 +787,7 @@ function buildData_() {
   Object.keys(loaded.archive || {}).forEach(function (workNo) {
     if (works.some(function (w) { return w.workNo === workNo; })) return;
     const a = loaded.archive[workNo];
-    const names = [baseKey_(a.fileName)];
-    if (a.workName) names.push(normName_(a.workName));
-    if (workNames[workNo]) names.push(normName_(workNames[workNo]));
-    works.push({ workNo: workNo, names: names });
+    works.push({ workNo: workNo });
     workInfo.push({ workNo: workNo, workName: workNames[workNo] || a.workName || a.fileName, fileName: a.fileName, archived: true });
     const byMark = {};
     const marks = [];
@@ -812,7 +809,7 @@ function buildData_() {
     }
     rr.forEach(function (row) {
       if (row.sd < cal.min) return; // 会社カレンダーの最初の日より前は集計しない
-      const res = resolveRow_(row, works, alias, masterIndex);
+      const res = resolveRow_(row, alias, masterIndex);
       const o = { r: row.r, wn: row.wn, mk: row.mk, sd: row.sd, st: row.st, ed: row.ed, et: row.et, run: row.run, arc: row.arc, wire: row.wire, len: row.len, no: res.workNo, s: res.status, al: alias[normName_(row.wn)] ? 1 : 0 }; // al=1: 別名表(V:W)に登録済みの入力名
       if (res.status === 'ok') {
         o.pk = res.workNo + '|' + res.product.m;
@@ -911,7 +908,10 @@ function computeFingerprint_() {
   readRobotSheets_(rows).forEach(function (r) {
     try { parts.push(mtimeOf_(r.id)); } catch (e) { parts.push('x'); }
   });
-  try { parts.push(mtimeOf_(ss_().getId())); } catch (e) { parts.push('x'); }
+  // 「各種情報」の内容(A:W)の要約値。シート全体の更新日時だと、ダウンロードの記録(「記録」シートへの書き込み)でも変わり、毎回作り直しになるため
+  try {
+    parts.push(Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(rows), Utilities.Charset.UTF_8)));
+  } catch (e) { parts.push('x'); }
   try {
     parts.push(listLinkFiles_().map(function (f) { return f.name + ':' + f.mtime; }).sort().join(','));
   } catch (e) { parts.push('x'); }
@@ -928,7 +928,9 @@ function getSnapshotText_() {
   if (cached) return cached;
   const folder = getCacheFolder_();
   const snap = loadSnapshot_(folder);
-  const text = JSON.stringify(snap && snap.data ? snap.data : refreshSnapshot_(true));
+  let data = snap && snap.data ? snap.data : refreshSnapshot_(true);
+  if (data.timing) { data = Object.assign({}, data); delete data.timing; } // 所要時間は保存・配信する結果に含めない
+  const text = JSON.stringify(data);
   putSnapshotCache_(text);
   return text;
 }
