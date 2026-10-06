@@ -77,6 +77,18 @@
     return t;
   }
 
+  /* 期間途中の「年度末(期間末)までに目標利益率を達成するには」の前提(詳細版・シンプル版共通)。
+     人件費は工数ペースで固定: 工数は 実績 + 1出勤日あたりの実績工数 × 残りの出勤日。増産しても人件費は増えない。
+     固定費 = 期間全体のその他固定費 + 期間末までの人件費 */
+  function endModel(t, from, to, fullTo, sites) {
+    const cal = calendar(), next = utcToYmd(ymdToUtc(to) + 86400000);
+    const doneDays = workDaysIn(cal, from, to), leftDays = workDaysIn(cal, next, fullTo);
+    const perDayW = doneDays > 0 ? t.weight / doneDays : 0, perDayH = doneDays > 0 ? t.hours / doneDays : 0;
+    const extraH = perDayH * leftDays, hourRate = t.hourRate || 0;
+    const Ff = fixedFor(from, fullTo, sites);
+    return { doneDays, leftDays, perDayW, perDayH, extraH, Ff, hourRate, hoursEnd: t.hours + extraH, fixedAll: Ff + (t.hours + extraH) * hourRate };
+  }
+
   /* 目標利益率・単価から損益分岐生産量と目標生産量を出す(人件費とその他固定費を合わせて固定費扱い) */
   // 損益分岐生産量 = 固定費÷(単価−変動費)、目標生産量 = 固定費÷(単価×(1−目標利益率)−変動費)(詳細版 detail.js と共用)
   function solve(fixedAll, P, v, p) {
@@ -293,44 +305,39 @@
     const unitLbl = sel.mode === 'fiscal' ? '年度・12か月分' : '1か月';
     let head, lead, rows, x, label;
     if (useA) {
-      // 実績ベース: 単価・仕入単価・1t当たりの人件費は 現在までの実績、固定費は期間全体。必要量は詳細版の remainingNeed と同じ式
+      // 実績ベース: 単価・仕入単価・時間単価は現在までの実績。人件費は工数ペースで固定(endModel)。詳細版の「期間全体で達成するには」と同じ前提
       const goalFor = (sites) => {
         const a = sites === sel.sites ? t : analyze(sel.from, sel.lastTo, sites);
         if (!(a.weight > 0 && a.unitPrice > 0)) return null;
-        const lpt = a.labor / a.weight, Ff = fixedFor(sel.from, sel.fullTo, sites), r = solve(Ff, a.unitPrice, a.varPerTon + lpt, p);
-        return { a, lpt, Ff, be: r.be, goal: r.goal };
+        const m = endModel(a, sel.from, sel.lastTo, sel.fullTo, sites), r = solve(m.fixedAll, a.unitPrice, a.varPerTon, p);
+        return { a, m, be: r.be, goal: r.goal };
       };
-      const G = goalFor(sel.sites);
-      const cal = calendar();
-      const next = utcToYmd(ymdToUtc(sel.lastTo) + 86400000);
-      const doneDays = workDaysIn(cal, sel.from, sel.lastTo), leftDays = workDaysIn(cal, next, sel.fullTo);
-      const perDayW = doneDays > 0 ? t.weight / doneDays : 0, perDayH = doneDays > 0 ? t.hours / doneDays : 0;
-      const Wg = G.goal, need = Wg === null ? null : Wg - t.weight, nptA = t.ninkuPerTon;
-      const remH = need !== null && need > 0 ? need * nptA * 8 : 0, needDay = need !== null && leftDays > 0 ? need / leftDays : null;
-      const siteDay = sel.sites.length > 1 && leftDays > 0 ? '<small>（' + sel.sites.map((s) => {
+      const G = goalFor(sel.sites), M = G.m;
+      const Wg = G.goal, need = Wg === null ? null : Wg - t.weight;
+      const needDay = need !== null && M.leftDays > 0 ? need / M.leftDays : null;
+      const siteDay = sel.sites.length > 1 && M.leftDays > 0 ? '<small>（' + sel.sites.map((s) => {
         const q = goalFor([s]);
-        return s + (q && q.goal !== null ? fmt(Math.max(0, q.goal - q.a.weight) / leftDays, 0) : '—');
+        return s + (q && q.goal !== null ? fmt(Math.max(0, q.goal - q.a.weight) / q.m.leftDays, 0) : '—');
       }).join('_') + '）</small>' : '';
-      head = `目標（${unitLbl}）を達成するには（${sel.reiwa}）<small>実績の単価・費用ベース</small>`;
+      head = `目標（${unitLbl}）を達成するには（${sel.reiwa}）`;
       lead = Wg === null ? '<span class="neg">今の単価・費用では目標に届きません</span>'
         : need <= 0 ? `<span class="pos">✓ 目標利益率に到達済み</span><span class="gLeadSub">（実績 ${ton(t.weight)}t／必要 ${ton(Wg)}t）</span>`
-          : leftDays > 0 ? `残り <b>${leftDays}</b>出勤日で あと <b class="gKey">${ton(need)}t</b> を <b class="gKey">${fmt(remH, 0)}h</b>`
+          : M.leftDays > 0 ? `残り <b>${M.leftDays}</b>出勤日で あと <b class="gKey">${ton(need)}t</b> を <b class="gKey">${fmt(M.extraH, 0)}h</b>`
             : '<span class="neg">残りの出勤日がありません</span>';
       rows = Wg === null ? '' : [
         row('目標生産量', ton(Wg), 't', `実績 ${ton(t.weight)}t ＋ 残り ${ton(Math.max(0, need))}t`),
-        row('目標工数', fmt(t.hours + remH, 0), 'h', `実績 ${fmt(t.hours, 0)}h ＋|残り ${fmt(remH, 0)}h（1日 ${leftDays > 0 ? fmt(remH / leftDays, 0) : '—'}h × ${leftDays}日）`),
-        row('1日あたり生産量' + siteDay, needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `実績 ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
-        row('1日あたり工数', leftDays > 0 && need > 0 ? fmt(remH / leftDays, 0) : '—', 'h/日', `実績 ${fmt(perDayH, 0)}h/日`),
-        row('1t当たり人工数', npt(nptA), '人工/t', '実績のまま（工数は生産量に比例）'),
+        row('目標工数', fmt(M.hoursEnd, 0), 'h', `実績 ${fmt(t.hours, 0)}h ＋|残り ${fmt(M.extraH, 0)}h（1日 ${fmt(M.perDayH, 0)}h × ${M.leftDays}日）`),
+        row('1日あたり生産量' + siteDay, needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `実績 ${ton(M.perDayW)}t/日（${M.perDayW > 0 ? fmt(needDay / M.perDayW, 2) + '倍' : '—'}）` : ''),
+        row('1日あたり工数', fmt(M.perDayH, 0), 'h/日', '実績のペース'),
+        row('目標の1t当たり人工数', npt(M.hoursEnd / 8 / Wg), '人工/t', `実績 ${npt(t.ninkuPerTon)}`),
       ].join('');
       box.querySelector('.gHead').innerHTML = head;
       box.querySelector('.gLead').innerHTML = lead;
       box.querySelector('.gTable').innerHTML = rows;
-      // グラフは詳細版と同じ: 現在までの期間で、固定費=人件費(実績の工数×時間単価)+その他固定費(現在まで)、現在の位置=実績の生産重量
-      const fixedAll = t.fixed + t.labor, gs = solve(fixedAll, t.unitPrice, t.varPerTon, p);
-      drawBep('c-goal', { fixed: fixedAll, unitPrice: t.unitPrice, laborPerTon: 0, varPerTon: t.varPerTon, profitRate: p,
-        fixedLabel: ['固定費', '(人件費込み)'], otherFixed: t.fixed, laborRate: t.laborRate,
-        x: t.weight, fixedX: true, beTons: gs.be, goalTons: gs.goal, handleLabel: '現在', hideMoney: true });
+      const few = M.doneDays < 3, cx = few || Wg === null ? (Wg || 0) : t.weight + M.perDayW * M.leftDays;
+      drawBep('c-goal', { fixed: M.fixedAll, unitPrice: t.unitPrice, laborPerTon: 0, varPerTon: t.varPerTon, profitRate: p,
+        fixedLabel: ['固定費', '(人件費込み)'], otherFixed: M.Ff, laborRate: t.laborRate,
+        x: cx, fixedX: true, beTons: G.be, goalTons: Wg, handleLabel: few ? '目標' : '見込み', hideMoney: true });
       placeTargets(); requestAnimationFrame(placeTargets);
       return { goalSales: Wg === null ? 0 : Wg * t.unitPrice, progress: true };
     }
@@ -467,6 +474,6 @@
     el.style.left = (ox + best.x) + 'px'; el.style.top = (oy + best.y) + 'px';
   }
 
-  window.CIKit = { SITE_LIST, otherFixed, solve, fixedFor, siteShare, analyze, workDaysIn, ymdToUtc, utcToYmd, calendar, goalRate, lastDataYmd };
+  window.CIKit = { SITE_LIST, otherFixed, solve, fixedFor, siteShare, analyze, endModel, workDaysIn, ymdToUtc, utcToYmd, calendar, goalRate, lastDataYmd };
   window.SimpleView = { show };
 })();

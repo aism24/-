@@ -40,13 +40,6 @@
       perTon: r.unitPrice - (r.varPerTon || 0), perHour, perVar1000: W * 1000,
       goalPrice: W > 0 && p < 1 ? cost / (W * (1 - p)) : null, bePrice: W > 0 ? cost / W : null };
   }
-  function remainingNeed(actual, extraFixed) {
-    const p = K.goalRate() / 100;
-    const lpt = actual.weight > 0 ? actual.labor / actual.weight : 0;
-    const margin = (actual.unitPrice || 0) * (1 - p) - (actual.varPerTon || 0) - lpt;
-    const need = p * actual.sales - actual.profit + extraFixed;
-    return { tons: margin > 0 ? need / margin : null };
-  }
   /* 直近12か月度(締まった月度)の1出勤日あたり工数: 平均と最少の月 */
   function dailyHoursStats(cal, sites, endKey) {
     const set = new Set(sites), startKey = C.shiftPeriod(endKey, -11), hours = {};
@@ -147,10 +140,12 @@
     const monthly = K.otherFixed() * K.siteShare(sel.sites), mo = monthly > 0 ? t.fixed / monthly : 0;
     D.fixedNote = `${yen(monthly)}円/月 × ${fmt(mo, Math.abs(mo - Math.round(mo)) < 0.05 ? 0 : 1)}か月（${sel.sites.length === SITE_LIST.length ? '3工場合計' : sel.sites.join('・')}）`;
     // 期間の途中なら、期間の終わりまでに目標利益率に届くのに必要な、残り期間の生産量(固定費の上乗せは、期間全体のその他固定費と現在までの分の差)
-    D.remain = null;
+    D.remain = null; D.endM = null;
     if (sel.to < sel.fullTo) {
-      const cal = K.calendar(), next = K.utcToYmd(K.ymdToUtc(sel.to) + 86400000);
-      D.remain = Object.assign(remainingNeed(t, K.fixedFor(sel.from, sel.fullTo, sel.sites) - t.fixed), { doneDays: K.workDaysIn(cal, sel.from, sel.to), leftDays: K.workDaysIn(cal, next, sel.fullTo), end: sel.fullTo });
+      // 期間末までに必要な生産量: 人件費は工数ペースで固定(K.endModel。シンプル版と同じ前提)
+      const m = K.endModel(t, sel.from, sel.to, sel.fullTo, sel.sites), gs = K.solve(m.fixedAll, t.unitPrice || 0, t.varPerTon || 0, K.goalRate() / 100);
+      D.endM = m;
+      D.remain = { tons: gs.goal === null ? null : gs.goal - t.weight, doneDays: m.doneDays, leftDays: m.leftDays, end: sel.fullTo };
     }
     // 「時間を減らす」の判定用: 期間の出勤日数と、直近12か月度の1出勤日あたり工数
     D.daily = null;
@@ -246,9 +241,11 @@
     ].join('');
     renderAdvice(r, t, W, P);
     // 人件費は試算の生産重量での額を固定費に含め、固定費線を水平にする(つまみのドラッグ中に縮尺が変わらないよう、署名は基準値で作る)
-    drawBep('c-sim', { fixed: r.fixed + r.labor, unitPrice: P, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: g / 100,
-      fixedLabel: ['固定費', '(人件費込み)'], otherFixed: r.fixed, laborRate: r.laborRate, sig: [r.fixed, P, D.hours, r.laborRate, r.varPerTon, g].join('|'),
-      x: W, forceX: !D.dragging, beTons: r.breakEvenTons, goalTons: r.goalTons, handleLabel: changed ? '試算' : '現在', dragHint: true,
+    // 期間の途中は、期間末(年度末)までの固定費で描く: その他固定費は期間全体、人件費は 試算の工数 + 残りの出勤日の工数ペース(固定)
+    const em = D.endM, fe = em ? em.Ff + r.labor + em.extraH / 8 * r.laborRate : r.fixed + r.labor, se = em ? K.solve(fe, P, r.varPerTon, g / 100) : { be: r.breakEvenTons, goal: r.goalTons };
+    drawBep('c-sim', { fixed: fe, unitPrice: P, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: g / 100,
+      fixedLabel: ['固定費', '(人件費込み)'], otherFixed: em ? em.Ff : r.fixed, laborRate: r.laborRate, sig: [fe, P, D.hours, r.laborRate, r.varPerTon, g].join('|'),
+      x: W, forceX: !D.dragging, beTons: se.be, goalTons: se.goal, handleLabel: changed ? '試算' : '現在', dragHint: true,
       onMove: (x) => { D.dragging = true; $('s-w').value = simFmt('w', x); D.exact.w = { shown: $('s-w').value, value: x }; onInput('w'); D.dragging = false; } });
   }
 
