@@ -135,7 +135,7 @@
       busy = true; var w = say("考え中…", "b");
       return ask(q, "route").then(function (a) {
         var j = {}; try { j = JSON.parse(a); } catch (x) { }
-        if (j.intent && j.intent !== "howto" && j.intent !== "other") { w.remove(); runIntent(j); } else w.textContent = j.answer || "すみません、答えられませんでした。管理者に確認してください。";
+        if (j.intent && j.intent !== "howto" && j.intent !== "other") { w.remove(); var d2 = parseDate(q); if (d2) j.date = d2; runIntent(j); } else w.textContent = j.answer || "すみません、答えられませんでした。管理者に確認してください。";
       }, function () { w.textContent = "すみません、この質問には答えられませんでした(AI回答は未設定、または混雑中)。言い方を変えるか、管理者に確認してください。"; })
         .then(function () { busy = false; });
     });
