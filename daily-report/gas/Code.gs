@@ -1521,13 +1521,26 @@ function askAI_(params) {
   const q = String(params.question || '').slice(0, 300);
   const manual = String(params.manual || '').slice(0, 8000);
   if (!q) throw new Error('質問が空です');
-  const prompt = 'あなたは社内アプリ「' + String(params.appName || '').slice(0, 50) + '」の操作案内係です。' +
-    '下の【マニュアル】の範囲だけで、日本語で簡潔に答えてください。' +
-    '載っていないことは推測せず「マニュアルに記載がないため管理者に確認してください」と答えてください。\n\n【マニュアル】\n' + manual + '\n\n【質問】\n' + q;
+  const appName = String(params.appName || '').slice(0, 50);
+  let prompt;
+  let genCfg = {};
+  if (params.mode === 'route') {
+    /* 質問の意図だけをJSONで返させる。日報・人事等の実データはGeminiに送らない(集計はブラウザ側)。 */
+    prompt = 'あなたは社内アプリ「' + appName + '」の質問振り分け係です。今日は' + String(params.today || '').slice(0, 10) + 'です。' +
+      '質問を次のJSONだけで返してください。' +
+      '{"intent":"daily_report|headcount|leave_list|howto|other","date":"yyyy/MM/dd(不明なら空)","person":"社員名または工事名(日報のとき)","factory":"本社|夢前|鳥取|総務建築(在職者人数のとき。無指定は空)","answer":"intentがhowtoのときだけ、下のマニュアルの範囲での簡潔な日本語の回答。記載がなければ「マニュアルに記載がないため管理者に確認してください」"}。' +
+      'daily_report=ある日のある人(または工事)の日報データ、headcount=在職者人数、leave_list=ある日の有給等届け一覧、howto=アプリの操作方法、other=それ以外。' +
+      '年が無い日付は今日以前で最も近い年にしてください。\n\n【マニュアル】\n' + manual + '\n\n【質問】\n' + q;
+    genCfg = { responseMimeType: 'application/json' };
+  } else {
+    prompt = 'あなたは社内アプリ「' + appName + '」の操作案内係です。' +
+      '下の【マニュアル】の範囲だけで、日本語で簡潔に答えてください。' +
+      '載っていないことは推測せず「マニュアルに記載がないため管理者に確認してください」と答えてください。\n\n【マニュアル】\n' + manual + '\n\n【質問】\n' + q;
+  }
   const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent', {
     method: 'post', contentType: 'application/json', muteHttpExceptions: true,
     headers: { 'x-goog-api-key': key },
-    payload: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    payload: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: genCfg })
   });
   if (res.getResponseCode() !== 200) throw new Error('Gemini応答エラー ' + res.getResponseCode());
   const j = JSON.parse(res.getContentText());
