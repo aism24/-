@@ -9,11 +9,11 @@
   var data = null, busy = false;
 
   var css = ".cw-btn{position:fixed;right:16px;bottom:16px;z-index:99998;height:48px;padding:0 18px;border-radius:24px;border:0;background:#2563eb;color:#fff;font-size:16px;font-weight:bold;box-shadow:0 2px 8px #0004;cursor:pointer}" +
-    ".cw-box{position:fixed;right:16px;bottom:72px;z-index:99999;width:min(360px,calc(100vw - 32px));height:min(520px,70vh);background:#fff;color:#111;border-radius:12px;box-shadow:0 4px 20px #0005;display:none;flex-direction:column;font:14px/1.5 sans-serif}" +
-    ".cw-box.cw-open{display:flex;inset:0;width:auto;height:auto;border-radius:0}.cw-box.cw-open .cw-head{border-radius:0;font-size:16px}.cw-m{font-size:15px}.cw-copy{margin-top:6px;padding:4px 10px;border:1px solid #2563eb;border-radius:6px;background:#fff;color:#2563eb;cursor:pointer;font-size:13px}.cw-head{padding:10px 12px;background:#2563eb;color:#fff;border-radius:12px 12px 0 0;font-weight:bold;display:flex;justify-content:space-between}" +
-    ".cw-head span{cursor:pointer}.cw-log{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px}" +
-    ".cw-m{max-width:85%;padding:8px 10px;border-radius:10px;white-space:pre-wrap;word-break:break-word}.cw-u{align-self:flex-end;background:#dbeafe}.cw-b{align-self:flex-start;background:#f1f5f9}" +
-    ".cw-m img{max-width:100%;display:block;margin-top:6px;border-radius:6px}.cw-form{display:flex;gap:6px;padding:8px;border-top:1px solid #ddd}" +
+    ".cw-box{position:fixed;right:16px;bottom:72px;z-index:99999;width:fit-content;min-width:min(340px,calc(100vw - 32px));max-width:calc(100vw - 32px);height:auto;max-height:calc(100vh - 96px);background:#fff;color:#111;border-radius:12px;box-shadow:0 4px 20px #0005;display:none;flex-direction:column;font:14px/1.5 sans-serif}" +
+    ".cw-box.cw-open{display:flex}.cw-m{font-size:15px}.cw-copy{margin-top:6px;padding:4px 10px;border:1px solid #2563eb;border-radius:6px;background:#fff;color:#2563eb;cursor:pointer;font-size:13px}.cw-head{padding:10px 12px;background:#2563eb;color:#fff;border-radius:12px 12px 0 0;font-weight:bold;display:flex;justify-content:space-between}" +
+    ".cw-head span{cursor:pointer}.cw-log{flex:0 1 auto;min-height:60px;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px}" +
+    ".cw-m{max-width:28em;width:fit-content;padding:8px 10px;border-radius:10px;white-space:pre-wrap;word-break:break-word}.cw-u{align-self:flex-end;background:#dbeafe}.cw-b{align-self:flex-start;background:#f1f5f9}" +
+    ".cw-m.cw-wide{max-width:none}.cw-m img{max-width:100%;display:block;margin-top:6px;border-radius:6px}.cw-form{display:flex;gap:6px;padding:8px;border-top:1px solid #ddd}" +
     ".cw-form input{flex:1;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:16px}.cw-form button{padding:8px 12px;border:0;border-radius:6px;background:#2563eb;color:#fff}";
   var st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
 
@@ -91,7 +91,7 @@
   function reply(text, tbl) {
     var m = say(text, "b");
     if (tbl) {
-      m.appendChild(tbl);
+      m.classList.add("cw-wide"); m.appendChild(tbl);
       var tsv = Array.prototype.map.call(tbl.rows, function (r) { return Array.prototype.map.call(r.cells, function (c) { return c.textContent.replace(/[\t\r\n]+/g, " "); }).join("\t"); }).join("\n");
       var b = el("button", "cw-copy", "📋 表をコピー(Excelに貼り付け可)"); b.type = "button"; b.onclick = function () { copyText(tsv, b); }; m.appendChild(b);
     }
