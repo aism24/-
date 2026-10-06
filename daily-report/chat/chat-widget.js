@@ -33,6 +33,7 @@
     log.appendChild(m); log.scrollTop = log.scrollHeight; return m;
   }
   btn.onclick = function () { box.classList.toggle("cw-open"); if (box.classList.contains("cw-open")) { load(); inp.focus(); } };
+  window.cwOpen = function () { box.classList.add("cw-open"); load(); inp.focus(); };
   x.onclick = function () { box.classList.remove("cw-open"); };
 
   function load() {

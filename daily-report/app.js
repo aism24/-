@@ -349,7 +349,7 @@ function setHomeButtonsEnabled(enabled){
      ホーム画面から非表示にする。 */
   const isKenchiku = getDefaultFactory_() === '総務建築';
   document.querySelectorAll('#screen-home .homeButtons .homeBtn').forEach(b => {
-    b.hidden = isKenchiku && !b.classList.contains('homeBtnCheck') && !b.classList.contains('homeBtnLeave');
+    b.hidden = isKenchiku && !b.classList.contains('homeBtnCheck') && !b.classList.contains('homeBtnLeave') && !b.classList.contains('homeBtnAI');
   });
 }
 

@@ -65,6 +65,7 @@ button{ font-family:inherit; cursor:pointer; }
   background:#2a6fd6; color:#fff; transform:none; animation:none;
   box-shadow:0 2px 8px rgba(0,0,0,.2);
 }
+.homeBtn.homeBtnAI{ background:#0f766e; }
 .homeBtn.homeBtnCheck{ background:#f4d03f; color:#3a2a00; }
 .homeBtn.homeBtnCheck:disabled:hover{
   background:#f4d03f; color:#3a2a00; transform:none; animation:none;
