@@ -96,6 +96,7 @@
       };
     });
     $('s-reset').onclick = () => { D.base = null; render(); };
+    $('s-norm').onclick = () => { K.NORM.on = !K.NORM.on; K.syncNorm(); render(); if (window.SimpleView && window.SimpleView.redraw) window.SimpleView.redraw(); };
     $('d-reset').onclick = () => { resetView(); render(); };
     D.inited = true;
   }
@@ -135,6 +136,7 @@
     $('d-prev').disabled = selPer.selectedIndex >= selPer.options.length - 1;
     $('d-next').disabled = selPer.selectedIndex <= 0;
     const sel = selection();
+    D.sel = sel;
     const t = K.analyze(sel.from, sel.to, sel.sites);
     D.total = t;
     const monthly = K.otherFixed() * K.siteShare(sel.sites), mo = monthly > 0 ? t.fixed / monthly : 0;
@@ -245,10 +247,10 @@
     const em = D.endM, fe = em ? em.Ff + r.labor + em.extraH / 8 * r.laborRate : r.fixed + r.labor, se = em ? K.solve(fe, P, r.varPerTon, g / 100) : { be: r.breakEvenTons, goal: r.goalTons };
     // つまみの位置: 期間の途中は 期間末(年度末)の見込み = 入力の生産重量 + 残りの出勤日の1日あたり実績重量。ドラッグすると入力の生産重量は 位置 − その上乗せ分
     const xw = em ? em.perDayW * em.leftDays : 0;
-    drawBep('c-sim', { fixed: fe, unitPrice: P, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: g / 100,
+    drawBep('c-sim', Object.assign({ fixed: fe, unitPrice: P, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: g / 100,
       fixedLabel: ['固定費', '(人件費込み)'], otherFixed: em ? em.Ff : r.fixed, laborRate: r.laborRate, sig: [fe, P, D.hours, r.laborRate, r.varPerTon, g].join('|'),
       x: W + xw, forceX: !D.dragging, beTons: se.be, goalTons: se.goal, handleLabel: changed ? '試算' : (em ? '見込み' : '現在'), dragHint: true,
-      onMove: (x) => { const w = Math.max(0, x - xw); D.dragging = true; $('s-w').value = simFmt('w', w); D.exact.w = { shown: $('s-w').value, value: w }; onInput('w'); D.dragging = false; } });
+      onMove: (x) => { const w = Math.max(0, x - xw); D.dragging = true; $('s-w').value = simFmt('w', w); D.exact.w = { shown: $('s-w').value, value: w }; onInput('w'); D.dragging = false; } }, K.normOpts(D.sel, se.be, fe)));
   }
 
   /* 現状分析: 目標利益率に届くには(ほかの条件は同じとして1つずつ)。トン単価は受注時に決まっているため変えない */
@@ -331,5 +333,5 @@
     box.innerHTML = html;
   }
 
-  window.DetailView = { show };
+  window.DetailView = { show, redraw: () => { if (state.view === 'detail') render(); } };
 })();
