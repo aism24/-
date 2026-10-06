@@ -151,10 +151,10 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 | shipping-list-link (https://shipping-list-link.vercel.app/) | shipping-list-link | 連携は現在解除(2026-10-05、`list_projects` 0件を確認。作成時は連携済みで、本番デプロイは `create_deployment` で5回実施) | 静的サイト+`api/links.js`(小さいNode関数)。`vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(連携を解除した状態でも実行できるかは未確認。連携を戻す場合は先に他アプリの連携が無いことを確認)。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
 | sonekibunki (https://sonekibunki.vercel.app/) | production-profit | 解除(2026-09-29、#416〜#424を本番デプロイ後にユーザーが解除。`list_projects` 0件を確認。`vercel.json` の `git.deploymentEnabled=false` は残置) | 静的サイト(関数なし)。本番反映は `create_deployment` で行う。GitHub Pages版は廃止(index.htmlでVercel版へ転送) |
 | cost-insight (https://cost-insight.vercel.app/) | cost-insight | 解除(2026-10-06、ユーザーが解除。`list_projects` 0件を確認) | 静的サイト。`cost-insight/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(project=cost-insight)。引き継ぎ書はDriveの保存先フォルダ(上の表) |
-| tori-robo (Vercelプロジェクト名「-tori-robo」。https://tori-robo.vercel.app/) | tori-robo | 解除(2026-10-06、sp43=6b93452を `create_deployment` で本番デプロイするため一時連携→デプロイ後にユーザーが解除。`list_projects` 0件を確認) | `tori-robo/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(teamIdは渡さない=403)。引き継ぎ書はDriveの保存先フォルダ(上の表) |
+| tori-robo (Vercelプロジェクト名「-tori-robo」。https://tori-robo.vercel.app/) | tori-robo | 解除(2026-10-07、10/6にユーザーが一時連携→sp43〜sp50(6回)を `create_deployment` で本番デプロイ→10/7にユーザーが解除。`list_projects` 0件を確認) | `tori-robo/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(teamIdは渡さない=403)。引き継ぎ書はDriveの保存先フォルダ(上の表) |
 | app-launcher (https://app-launcher-ashy.vercel.app/) | app-launcher | 解除(2026-10-05〜06にユーザーが解除。`list_projects` 0件を確認)| `app-launcher/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(同一SHAは `forceNew="1"` を付ける)。Ignored Build Stepに `-- ./app-launcher` のコマンドが入っていると常にスキップされる(原因判明・解消済み)。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
 
-2026-10-06現在、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携。cost-insight・tori-robo・app-launcherとも解除済み)。
+2026-10-07現在、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携。cost-insight・tori-robo・app-launcherとも解除済み)。
 
 2026-09-29、sonekibunkiの連携も解除され、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。公開時は連携を戻してから、指示があったときだけ `create_deployment` で1回デプロイする。
 
