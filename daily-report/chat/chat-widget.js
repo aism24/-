@@ -138,7 +138,7 @@
     if (/未提出|出して(い)?ない|出てない|出ていない|未入力|入力して(い)?ない|書いて(い)?ない|提出して(い)?ない|漏れ/.test(q)) it = { intent: "not_submitted" };
     else if (/有給|休み|休暇|欠勤|届け?|代休|遅刻|早退|休んだ/.test(q)) it = { intent: ops.length ? "leave_person" : "leave_list" };
     else if (/在職|在籍|社員数|従業員数|何人いる|人数/.test(q)) it = { intent: "headcount" };
-    else if (/合計|何時間|時間数|集計|内訳|トータル|累計|まとめ/.test(q) && (ops.length || cons.length)) it = { intent: "hours_summary" };
+    else if (/合計|何時間|時間数|工数|人工|集計|内訳|トータル|累計|まとめ|稼働/.test(q) && (ops.length || cons.length)) it = { intent: "hours_summary" };
     else if (/日報|作業|仕事|何をし|何して|入力内容|実績/.test(q) && (ops.length || cons.length)) it = { intent: "daily_report" };
     else if (/日報|作業|集計|合計|時間|実績|稼働/.test(q) && (dr || /全て|全部|全体|すべて|全員|みんな/.test(q))) it = { intent: "hours_summary", all: true }; // 人・工事の指定なし=全体の集計
     else return null;
@@ -179,9 +179,9 @@
     }
     log.scrollTop = log.scrollHeight;
   }
-  var EXAMPLES = "次のように聞けます(語順・言い方は自由です):\n・今日の日報の集計全て\n・山田さんの10月5日の日報\n・先月の山田さんの作業時間の合計\n・○○工事の今月の時間の内訳\n・昨日 日報を出していない人(本社)\n・10/5に有給を取っている人\n・山田さんの今年の有給\n・夢前の在職者数";
+  var EXAMPLES = "次のように聞けます(語順・言い方は自由です):\n・今日の日報の集計全て\n・山田さんの10月5日の日報\n・先月の山田さんの作業時間の合計\n・○○工事の鳥取の工数(期間なしは工事全体)\n・昨日 日報を出していない人(本社)\n・10/5に有給を取っている人\n・山田さんの今年の有給\n・夢前の在職者数";
   var MAX_ROWS = 300;
-  function range(it) { return it.from === it.to ? it.from : it.from + "〜" + it.to; }
+  function range(it) { return it.allPeriod ? "全期間" : it.from === it.to ? it.from : it.from + "〜" + it.to; }
   function round2(n) { return Math.round(n * 100) / 100; }
   function sumBy(rows, keyFn) { var m = {}; rows.forEach(function (r) { var k = keyFn(r); m[k] = (m[k] || 0) + (Number(r.hours) || 0); }); return Object.keys(m).map(function (k) { return [k, round2(m[k])]; }).sort(function (a, b) { return b[1] - a[1]; }); }
   function daysBetween(from, to) { var out = [], d = new Date(from.split("/").join("-") + "T00:00:00"), e = new Date(to.split("/").join("-") + "T00:00:00"); while (d <= e && out.length < 400) { out.push(fmt(d)); d.setDate(d.getDate() + 1); } return out; }
@@ -193,7 +193,9 @@
     if (!master || !rows || !master.operators.length) return reply("データを読み込み中です。ホーム画面のボタンが押せるようになってから、もう一度質問してください。");
     var today = fmt(new Date());
     if (!it.from) {
-      if (it.intent === "hours_summary" || it.intent === "leave_person") { var mr = monthRange(new Date().getFullYear(), new Date().getMonth() + 1); it.from = mr.from; it.to = mr.to; it.defaulted = true; }
+      // 工事の工数は、期間の指定が無ければ工事全体(全期間)で集計する
+      if ((it.intent === "hours_summary" || it.intent === "daily_report") && !(it.ops && it.ops.length) && it.cons && it.cons.length) { it.from = "0000/00/00"; it.to = today; it.allPeriod = true; it.defaulted = true; }
+      else if (it.intent === "hours_summary" || it.intent === "leave_person") { var mr = monthRange(new Date().getFullYear(), new Date().getMonth() + 1); it.from = mr.from; it.to = mr.to; it.defaulted = true; }
       else if (it.intent !== "headcount") { it.from = it.to = today; it.defaulted = true; }
     }
     var dnote = it.defaulted ? "(期間の指定が無かったため " + range(it) + " で集計)\n" : "";
@@ -201,8 +203,11 @@
     var who = it.ops && it.ops.length ? it.ops.map(function (o) { return o.name; }).join("・") : (it.cons && it.cons.length ? it.cons.map(function (c) { return cl[c] || c; }).join("・") : "");
     var nos = {}; (it.ops || []).forEach(function (o) { nos[o.no] = 1; });
     var consSet = {}; (it.cons || []).forEach(function (c) { consSet[c] = 1; });
+    // 工場(本社・夢前・鳥取)の指定があれば、人・工事の集計もその工場の行だけにする
+    var onlyF = it.factory && it.factory !== "総務建築" ? it.factory : "";
+    if (onlyF && who) who += "(" + onlyF + ")";
     var pick = function () {
-      return rows.filter(function (r) { return r.workDate >= it.from && r.workDate <= it.to && (it.ops && it.ops.length ? nos[r.operatorNo] : consSet[r.constructionId]); });
+      return rows.filter(function (r) { return r.workDate >= it.from && r.workDate <= it.to && (!onlyF || r.factory === onlyF) && (it.ops && it.ops.length ? nos[r.operatorNo] : consSet[r.constructionId]); });
     };
 
     if (it.intent === "headcount") {
@@ -247,6 +252,10 @@
       var other = it.ops && it.ops.length ? sumBy(sel, function (r) { return cl[r.constructionId] || r.constructionId; }) : sumBy(sel, function (r) { return nm[r.operatorNo] || r.operatorNo; });
       var t2 = table(["作業内容", "時間"], byWork);
       var m2 = reply(dnote + range(it) + " の " + who + ": 合計" + total + "時間(" + sel.length + "件)" + (it.intent !== "hours_summary" ? "\n件数が多いため内訳で表示します。" : ""), t2);
+      if (!onlyF) { // 工場の指定が無いときは工場別の内訳も出す
+        var byFac = sumBy(sel, function (r) { return r.factory || "-"; });
+        if (byFac.length > 1) reply("工場別の内訳", table(["工場", "時間"], byFac));
+      }
       reply((it.ops && it.ops.length ? "工事別" : "社員別") + "の内訳", table([it.ops && it.ops.length ? "工事" : "氏名", "時間"], other.slice(0, MAX_ROWS)));
       return m2;
     }
