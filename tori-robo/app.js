@@ -145,16 +145,14 @@ function listRecords(rows, products) {
       robot: row.r, workNo: row.no, enteredName: row.wn, enteredMark: row.mk, status: row.s,
       corrected: row.corrected, suggestions: row.sg || [], product: p, same: same,
       first: row.sd + ' ' + row.st, last: row.ed + ' ' + row.et,
-      len: row.len, arc: row.arc, run: row.run, wire: row.wire, seq: n,
+      len: row.len, arc: row.arc, run: row.run, wire: row.wire, seq: n, oi: x.i,
     };
   });
-  return list.sort(function (a, b) { // ①日付(画面・Excelに出る終了日)の新しい順 ②同じ日付なら1号機が上 ③同じロボ内は時刻の新しい記録が上
+  return list.sort(function (a, b) { // ①日付(画面・Excelに出る終了日)の新しい順 ②同じ日付なら1号機が上 ③同じ日付・同じロボ内は元データの入力順で下の行が上
     const da = a.last.slice(0, 10), db = b.last.slice(0, 10);
     if (da !== db) return da > db ? -1 : 1;
     if (a.robot !== b.robot) return a.robot - b.robot;
-    if (a.last !== b.last) return a.last > b.last ? -1 : 1;
-    if (a.first !== b.first) return a.first > b.first ? -1 : 1;
-    return b.seq - a.seq;
+    return b.oi - a.oi;
   });
 }
 
