@@ -106,7 +106,7 @@
     D.inited = true;
   }
 
-  /* 「生産データ更新」の後: データが入れ替わったので、期間・年度の選択肢を作り直す(選んでいる期間・工場はそのまま) */
+  /* 「重量・工数更新」の後: データが入れ替わったので、期間・年度の選択肢を作り直す(選んでいる期間・工場はそのまま) */
   function reload() {
     if (!state.model || !D.inited) return;
     const per = $('d-period').value, fy = $('d-fiscal').value;
