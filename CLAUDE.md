@@ -200,6 +200,7 @@ Previewデプロイが発生する)
 | 梁ロボ(tori-robo。鳥取梁ロボ管理。管理用スプレッドシート「鳥取梁ロボ管理データ」も同じフォルダ内。2026-10-02登録) | https://drive.google.com/drive/folders/1E0FH8FPtfcyyIK-lH0O-JC1I1vRCb5Iw | `1E0FH8FPtfcyyIK-lH0O-JC1I1vRCb5Iw` |
 | リンク付き出荷リスト(shipping-list-link。出荷リストPDFの製品名に実寸法師へのハイパーリンクを付与。元PDF・リンク表・記録シート「PDFに図番ハイパーリンク付与」も同じフォルダ内。2026-10-05登録。引き継ぎ書のGoogleドキュメントのタイトルは「リンク付き出荷リスト」) | https://drive.google.com/drive/folders/1vekpzwfn-W0MqRyWWYzWdS4A6jp2bEt3 | `1vekpzwfn-W0MqRyWWYzWdS4A6jp2bEt3` |
 | アプリランチャー(app-launcher。アプリ一覧・検索。管理用スプレッドシート「アプリ一Launcher」も同じフォルダ内。引き継ぎ書のGoogleドキュメントのタイトルは「アプリランチャー引き継ぎ書 (vN) 最新版」。2026-10-05登録) | https://drive.google.com/drive/folders/1wjoBjlZ4lzCt7weocczUVRfjZV4axbpX | `1wjoBjlZ4lzCt7weocczUVRfjZV4axbpX` |
+| 日報全期間集計(daily-report。管理用スプレッドシート「日報集計アプリ」も同じフォルダ内。引き継ぎ書のタイトルは「日報アプリ引き継ぎ書」。2026-10-06登録) | https://drive.google.com/drive/folders/1RYjLWyC2mxSq8_Jzan-pWnpxrsvcTYgL | `1RYjLWyC2mxSq8_Jzan-pWnpxrsvcTYgL` |
 | 上記以外のアプリ | 未登録(ユーザーがアプリごとに指示する。指示されたらこの表に追記する) | - |
 
 - **保存先フォルダはユーザーがアプリごとに指示する。** 指示が無いアプリは、推測で決めずにユーザーに聞く。
