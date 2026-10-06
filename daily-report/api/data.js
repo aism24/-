@@ -6,51 +6,14 @@
 // Vercel関数の応答上限(4.5MB)に収めるため。
 const zlib = require('zlib');
 
-const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyiocXgXi_YEMUUq5BJPe7CUi2V-LJIBvLwceextYV-82hEArRKRaHQ5peVj5oMfTsW/exec';
+const { gasPostHedged } = require('./_gas');
+
 const DEADLINE_MS = 240000; // vercel.json の maxDuration(300秒)より手前で打ち切る
 const ROW_KEYS = ['operatorNo', 'factory', 'dept', 'workDate', 'constructionId', 'workCode', 'hours'];
 
-async function gasPost(action) {
-  const r = await fetch(GAS_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action: action, params: {} }),
-    redirect: 'follow',
-  });
-  const text = await r.text();
-  let json;
-  try { json = JSON.parse(text); } catch (e) { throw new Error('HTTP ' + r.status + '(JSONでない応答)'); }
-  if (json.status !== 'success') {
-    const err = new Error(json.message || 'HTTP ' + r.status);
-    err.unknownAction = /不明なaction/.test(json.message || '');
-    throw err;
-  }
-  return json.data;
-}
-
-// 受取URL(echo)の失敗は1回あたり15〜80秒待たされてから分かるため、順番に再試行すると
-// 時間切れになりやすい。成功を待たずに一定間隔で次の試行を並行して始め、最初の成功を使う
-// (同時に最大3本、合計最大6回)。GAS側の処理(読み取りのみ)は数秒で終わるため負荷は小さい。
+// 同時に最大3本・合計最大6回、20秒ごとに次の試行を並行して始める
 function gasPostRetry(action, started) {
-  return new Promise(function (resolve, reject) {
-    let launched = 0, running = 0, done = false, lastErr = null, timer = null;
-    const finish = function (fn, v) { if (done) return; done = true; clearInterval(timer); fn(v); };
-    const launch = function () {
-      if (done || launched >= 6 || running >= 3 || Date.now() - started > DEADLINE_MS) return;
-      launched++; running++;
-      gasPost(action).then(function (d) { finish(resolve, d); }, function (e) {
-        running--; lastErr = e;
-        if (e.unknownAction) return finish(reject, e);
-        if (launched >= 6 && running === 0) return finish(reject, e);
-        launch();
-      });
-    };
-    launch();
-    timer = setInterval(function () {
-      if (Date.now() - started > DEADLINE_MS) return finish(reject, lastErr || new Error('時間切れ'));
-      launch();
-    }, 20000);
-  });
+  return gasPostHedged(action, {}, { started: started, deadlineMs: DEADLINE_MS, maxTotal: 6, maxParallel: 3, intervalMs: 20000 });
 }
 
 // 行データを「列ごとの番号配列+重複を除いた値の辞書」に詰める(hoursは数値のまま)。

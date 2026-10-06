@@ -6,6 +6,9 @@
   "functions": {
     "api/data.js": {
       "maxDuration": 300
+    },
+    "api/ask.js": {
+      "maxDuration": 90
     }
   }
 }
