@@ -8,7 +8,7 @@
      更新が反映されないことがある((A)のGAS版はdoGetで毎回動的生成されるためこの問題が
      起きない、という違いがユーザー報告で判明)。app.js/style.cssを変更するたびに
      ?v=の値を必ず変更してキャッシュを強制的に無効化すること。 -->
-<link rel="stylesheet" href="style.css?v=20260909a">
+<link rel="stylesheet" href="style.css?v=20261006a">
 </head>
 <body>
 
@@ -50,6 +50,7 @@
       <button class="homeBtn" disabled onclick="showScreen('report1')">③ 工事別 作業内容集計<span class="sub">1つの工事の作業別時間数を集計</span></button>
       <button class="homeBtn" disabled onclick="showScreen('report2')">④ 個人別 作業内容集計<span class="sub">1人の社員の期間別・作業内容明細</span></button>
       <button class="homeBtn" disabled onclick="showScreen('report3')">⑤ 20日〆集計<span class="sub">拠点別・工事×作業内容のクロス集計</span></button>
+<button class="homeBtn homeBtnAI" disabled onclick="window.cwOpen && window.cwOpen()">⑥ AIに質問(テキスト入力)<span class="sub">日報・在職者数・有給届け・使い方を質問</span></button>
     </div>
   </div>
 </div>
@@ -503,6 +504,6 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="app.js?v=20260909a"></script>
-<script src="chat/chat-widget.js?v=20261006c"></script>
+<script src="chat/chat-widget.js?v=20261006e"></script>
 </body>
 </html>
