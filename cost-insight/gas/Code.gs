@@ -198,10 +198,10 @@ function refreshLocked_(reuseIfExists) {
     const t2 = Date.now();
     const agg = aggregateSources_(src);
     const t3 = Date.now();
-    agg.timing = { fetchMs: t1 - t0, historyMs: t2 - t1, aggregateMs: t3 - t2 };
+    agg.timing = { fetchMs: t1 - t0, historyMs: t2 - t1, aggregateMs: t3 - t2, history: lastHistoryTiming_ };
     const text = JSON.stringify(agg);
     saveCacheText_(text);
-    Logger.log('集計の所要時間: 取得 ' + (t1 - t0) + 'ms / 履歴 ' + (t2 - t1) + 'ms / 集計 ' + (t3 - t2) + 'ms / 保存 ' + (Date.now() - t3) + 'ms / 合計 ' + (Date.now() - t0) + 'ms(キャッシュ ' + text.length + '文字)');
+    Logger.log('集計の所要時間: 取得 ' + (t1 - t0) + 'ms / 履歴 ' + (t2 - t1) + 'ms(' + JSON.stringify(lastHistoryTiming_) + ') / 集計 ' + (t3 - t2) + 'ms / 保存 ' + (Date.now() - t3) + 'ms / 合計 ' + (Date.now() - t0) + 'ms(キャッシュ ' + text.length + '文字)');
     return text;
   } finally {
     lock.releaseLock();
@@ -470,11 +470,19 @@ function masterAndDone_() {
 
 // 毎朝の集計で呼ぶ。生産管理APIの値を履歴に反映して保存し、反映後の履歴を返す
 function updateHistoryFromPm_(pm) {
+  const t0 = Date.now();
   const md = masterAndDone_();
-  const next = mergeHistory(loadHistory_(), pm, md.masterNos, md.doneNos);
+  const t1 = Date.now();
+  const cur = loadHistory_();
+  const t2 = Date.now();
+  const next = mergeHistory(cur, pm, md.masterNos, md.doneNos);
+  const t3 = Date.now();
   saveHistory_(next);
+  // 内訳(工事マスタの読み取り / 履歴ファイルの読み込み / 反映 / 履歴ファイルの保存)。refreshLocked_ が timing に入れる
+  lastHistoryTiming_ = { masterMs: t1 - t0, loadMs: t2 - t1, mergeMs: t3 - t2, saveMs: Date.now() - t3 };
   return next;
 }
+var lastHistoryTiming_ = null;
 
 /* 履歴に記録したファイルの更新日時(h.mtimes: {ファイルID: ミリ秒})が、今のドライブ上の更新日時(updated)と全ファイルで一致するか。
    一致すれば、そのファイルは前回から編集されていないので読み直さない(純粋関数。Nodeでテストする)。記録が無ければ false */
