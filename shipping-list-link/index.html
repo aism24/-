@@ -18,6 +18,10 @@
 .fi .b{position:absolute;inset:0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;line-height:1.3;text-align:center;font-weight:bold;letter-spacing:1px;color:#fff}
 .fi .b-red{background:linear-gradient(135deg,#c0392b,#e74c3c);box-shadow:0 0 12px rgba(231,76,60,.5);animation:toRed 4.2s ease-in-out infinite}
 .fi .b-pink{background:linear-gradient(135deg,#f06292,#ff8fb8);box-shadow:0 0 14px rgba(255,111,165,.6);opacity:0;animation:toPink 4.2s ease-in-out infinite}
+.fi .two{position:absolute;inset:0;display:flex;flex-direction:column;gap:4px;animation:toRed 4.2s ease-in-out infinite}
+.fi .c{flex:1;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;white-space:nowrap}
+.fi .c-red{background:linear-gradient(135deg,#c0392b,#e74c3c);color:#fff;box-shadow:0 0 10px rgba(231,76,60,.5)}
+.fi .c-green{background:#c8efd4;color:#1f6b3a;box-shadow:0 0 10px rgba(160,230,185,.45)}
 .fi .b-pink::after{content:"🔗";position:absolute;right:-8px;bottom:-8px;font-size:18px}
 .fi .labs{position:relative;height:14px;width:80px;font-size:10px;letter-spacing:1px;color:#8a94a6;text-align:center}
 .fi .labs span{position:absolute;inset:0}
@@ -52,7 +56,7 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
 <div class="sub" id="master">マスタ読込中…</div>
 <div id="drop">
   <div class="stage" id="stage">
-    <div class="fi"><div class="box"><div class="b b-red">出荷<br>リスト</div><div class="b b-pink">リンク<br>付き</div></div></div>
+    <div class="fi"><div class="box"><div class="two"><div class="c c-red">出荷リスト</div><div class="c c-green">その他PDF</div></div><div class="b b-pink">リンク<br>付き</div></div></div>
   </div>
   <b>PDFを画面のどこにでもドロップ</b>またはクリックして選択
   <input id="file" type="file" accept="application/pdf" hidden>
@@ -62,8 +66,8 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
 <p class="small">図番と製品名が完全一致した行の製品名にリンクを付け、PDFを自動でダウンロードします。リンクは社内ネットワーク内でのみ開けます。</p>
 </main>
 <a class="manual" href="manual/after-download.pdf" target="_blank" rel="noopener">ダウンロード後の説明書</a>
-<script src="vendor/pdf.min.js?v=20261005p"></script>
-<script src="vendor/pdf-lib.min.js?v=20261005p"></script>
-<script src="core.js?v=20261005p"></script>
-<script src="app.js?v=20261005p"></script>
+<script src="vendor/pdf.min.js?v=20261006a"></script>
+<script src="vendor/pdf-lib.min.js?v=20261006a"></script>
+<script src="core.js?v=20261006a"></script>
+<script src="app.js?v=20261006a"></script>
 </body></html>
