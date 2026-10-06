@@ -118,7 +118,7 @@ function groupByProduct(rows, products) {
   });
 }
 
-// 5.・Excel「全て抽出」用: 溶接した記録を1件1行で、ロボに関係なく日付(終了日時)の新しいものを上に並べる。
+// 5.・Excel「全て抽出」用: 溶接した記録を1件1行で、日付(終了日)の新しいものを上、同じ日付なら1号機を上に並べる。
 // 「同じ製品」の判定は溶接した順(古い順)で行う: 同じ製品(ロボ×製品)の2回目以降は same=true(重量は表示しない)。
 // 重量は3.の集計と同じく、最初に溶接した1件だけ。
 function listRecords(rows, products) {
@@ -148,10 +148,13 @@ function listRecords(rows, products) {
       len: row.len, arc: row.arc, run: row.run, wire: row.wire, seq: n,
     };
   });
-  return list.sort(function (a, b) { // 日付(終了)の新しい順。同じなら開始の新しい順→ロボ番号→同じロボ内は新しい記録が上
+  return list.sort(function (a, b) { // ①日付(画面・Excelに出る終了日)の新しい順 ②同じ日付なら1号機が上 ③同じロボ内は時刻の新しい記録が上
+    const da = a.last.slice(0, 10), db = b.last.slice(0, 10);
+    if (da !== db) return da > db ? -1 : 1;
+    if (a.robot !== b.robot) return a.robot - b.robot;
     if (a.last !== b.last) return a.last > b.last ? -1 : 1;
     if (a.first !== b.first) return a.first > b.first ? -1 : 1;
-    return a.robot !== b.robot ? a.robot - b.robot : b.seq - a.seq;
+    return b.seq - a.seq;
   });
 }
 
