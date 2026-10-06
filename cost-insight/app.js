@@ -37,6 +37,7 @@ function startLoadingBar() {
   const timer = setInterval(tick, 300);
   return {
     done() { clearInterval(timer); fill.style.width = '100%'; sub.textContent = '100% ・ 読み込み完了'; },
+    stop() { clearInterval(timer); },
     fail(msg) {
       clearInterval(timer);
       document.getElementById('ld-title').textContent = '読み込みに失敗しました';
@@ -148,13 +149,19 @@ async function showLatestBudget() {
 }
 
 // 「生産データ更新」: GASで生産・日報を今すぐ集計し直して(action=refresh。ふだんは毎朝6時台に自動)、画面に反映する。
-// 選んでいる期間・工場はそのまま。集計に1分ほどかかることがある
+// 更新中は読み込みのポップアップ(進み具合のバー)を出す。選んでいる期間・工場はそのまま。集計に30秒〜1分ほどかかる
 let refreshingProduction = false;
-async function refreshProduction(btn) {
+async function refreshProduction() {
   if (refreshingProduction) return;
   refreshingProduction = true;
-  document.querySelectorAll('button[onclick^="refreshProduction"]').forEach(b => { b.disabled = true; b.dataset.label = b.dataset.label || b.textContent; b.textContent = '更新中…'; });
-  let msg = '';
+  const box = document.getElementById('loading'), title = document.getElementById('ld-title'), err = document.getElementById('ld-err'), note = document.getElementById('ld-note');
+  document.querySelectorAll('.refreshBtn').forEach(b => { b.disabled = true; });
+  title.textContent = '生産データを更新中…';
+  note.textContent = '生産・日報を集計し直しています(30秒〜1分ほどかかります)';
+  err.hidden = true;
+  box.classList.remove('done');
+  const bar = startLoadingBar();
+  let ok = false;
   try {
     applyData(await gasGet('refresh'));
     renderSettings();
@@ -162,14 +169,25 @@ async function refreshProduction(btn) {
     if (window.DetailView) DetailView.reload();
     if (state.view === 'progress') render();
     const last = window.CIKit && CIKit.lastDataYmd();
-    msg = '更新しました' + (last ? '(〜' + Number(last.slice(5, 7)) + '/' + Number(last.slice(8)) + 'の実績)' : '');
+    bar.done();
+    title.textContent = '更新しました' + (last ? '(〜' + Number(last.slice(5, 7)) + '/' + Number(last.slice(8)) + 'の実績)' : '');
+    const tm = state.data.cache.timing; // GASが記録した所要時間(古いGASには無い)
+    if (tm) note.textContent = '所要時間: 取得 ' + (tm.fetchMs / 1000).toFixed(1) + '秒 / 履歴 ' + (tm.historyMs / 1000).toFixed(1) + '秒 / 集計 ' + (tm.aggregateMs / 1000).toFixed(1) + '秒';
+    ok = true;
   } catch (e) {
-    msg = '更新に失敗: ' + e.message;
+    bar.stop();
+    title.textContent = '更新に失敗しました';
+    err.hidden = false;
+    err.innerHTML = esc(e.message) + '<br><button class="btn" type="button" onclick="closeLoading()">閉じる</button>';
   } finally {
     refreshingProduction = false;
-    document.querySelectorAll('button[onclick^="refreshProduction"]').forEach(b => { b.disabled = false; b.textContent = msg; });
-    setTimeout(() => document.querySelectorAll('button[onclick^="refreshProduction"]').forEach(b => { b.textContent = b.dataset.label; }), 6000);
+    document.querySelectorAll('.refreshBtn').forEach(b => { b.disabled = false; });
+    if (ok) setTimeout(closeLoading, 2500);
   }
+}
+function closeLoading() {
+  document.getElementById('loading').classList.add('done');
+  document.getElementById('ld-note').textContent = '初回は30秒ほどかかることがあります';
 }
 
 /* ===================== 画面の切り替え(メニュー / 3つのモード) ===================== */

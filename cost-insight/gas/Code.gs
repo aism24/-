@@ -190,14 +190,43 @@ function refreshLocked_(reuseIfExists) {
       const done = loadCacheText_();
       if (done !== null) return done;
     }
+    // 所要時間を記録する(取得=3つのAPI待ち / 履歴 / 集計)。キャッシュの timing と実行ログに残し、遅い所を特定できるようにする
+    const t0 = Date.now();
     const src = fetchSources_();
+    const t1 = Date.now();
     src.history = updateHistoryFromPm_(src.pm);
-    const text = JSON.stringify(aggregateSources_(src));
+    const t2 = Date.now();
+    const agg = aggregateSources_(src);
+    const t3 = Date.now();
+    agg.timing = { fetchMs: t1 - t0, historyMs: t2 - t1, aggregateMs: t3 - t2 };
+    const text = JSON.stringify(agg);
     saveCacheText_(text);
+    Logger.log('集計の所要時間: 取得 ' + (t1 - t0) + 'ms / 履歴 ' + (t2 - t1) + 'ms / 集計 ' + (t3 - t2) + 'ms / 保存 ' + (Date.now() - t3) + 'ms / 合計 ' + (Date.now() - t0) + 'ms(キャッシュ ' + text.length + '文字)');
     return text;
   } finally {
     lock.releaseLock();
   }
+}
+
+/* エディタから手動で実行する: 3つのAPIを1つずつ呼んで、それぞれの所要時間・応答の大きさ・結果をログに出す(遅い所の特定用。保存はしない)。 */
+function diagnoseRefresh() {
+  const dr = function (action) {
+    return { url: DR_API_URL, method: 'post', contentType: 'application/json',
+      payload: JSON.stringify({ action: action, params: {} }), muteHttpExceptions: true, followRedirects: true };
+  };
+  const list = [
+    ['生産管理ダッシュボード getData', { url: PM_API_URL + '?action=getData', method: 'get', muteHttpExceptions: true, followRedirects: true }],
+    ['日報 getMasterData', dr('getMasterData')],
+    ['日報 getAllDailyReportRows', dr('getAllDailyReportRows')],
+  ];
+  list.forEach(function (it) {
+    const t = Date.now();
+    const res = UrlFetchApp.fetch(it[1].url, it[1]);
+    const text = res.getContentText();
+    let st = '';
+    try { st = JSON.parse(text).status; } catch (e) { st = '(JSONではない)'; }
+    Logger.log(it[0] + ': ' + (Date.now() - t) + 'ms / HTTP ' + res.getResponseCode() + ' / ' + text.length + '文字 / status=' + st);
+  });
 }
 
 function fetchSources_() {
@@ -447,14 +476,36 @@ function updateHistoryFromPm_(pm) {
   return next;
 }
 
-/* エディタから手動で実行する: マスターファイルから全期間の生産重量を履歴に取り込む。
-   対象: Excelマスタ一覧C列の工事のうち、工事マスタA列にあり、(まだ取り込んでいない or 完了でない)工事。
-   約5分で区切る。「続きがあります」とログに出たら、もう一度実行する(取り込み済みの工事は飛ばす)。 */
+/* 履歴に記録したファイルの更新日時(h.mtimes: {ファイルID: ミリ秒})が、今のドライブ上の更新日時(updated)と全ファイルで一致するか。
+   一致すれば、そのファイルは前回から編集されていないので読み直さない(純粋関数。Nodeでテストする)。記録が無ければ false */
+function historyUpToDate_(h, fileList, updated) {
+  if (!h || !h.imported || !h.mtimes) return false;
+  return fileList.every(function (f) { return updated[f.id] !== undefined && h.mtimes[f.id] === updated[f.id]; });
+}
+
+function fileUpdatedMs_(id) {
+  try { return DriveApp.getFileById(id).getLastUpdated().getTime(); } catch (e) { return undefined; }
+}
+
+/* エディタから手動で実行する: マスターファイルから全期間の生産重量を履歴に取り込む(差分)。
+   対象: Excelマスタ一覧C列の工事のうち、工事マスタA列にある工事。
+   ファイルの更新日時を工事ごとに履歴へ記録し、前回から更新日時が変わっていないファイルは読み直さない(編集されたファイルだけ読む)。
+   更新日時の記録がまだ無い工事: 完了の工事は従来どおり読み直さず(今の更新日時を記録だけ)、完了でない工事は1回読んで記録する。
+   約5分で区切る。「続きがあります」とログに出たら、もう一度実行する(読み終えた工事は更新日時が一致するので飛ばす)。 */
 function importHistory() {
+  importHistory_(false);
+}
+
+/* エディタから手動で実行する: 更新日時に関わらず、すべての工事を読み直す(履歴を作り直したいとき)。約5分で区切り、続きはもう一度実行する。 */
+function importHistoryAll() {
+  importHistory_(true);
+}
+
+function importHistory_(force) {
   const t0 = Date.now();
   const props = PropertiesService.getScriptProperties();
   let runStart = props.getProperty('IMPORT_RUN_START');
-  if (!runStart) { runStart = new Date().toISOString(); props.setProperty('IMPORT_RUN_START', runStart); }
+  if (force && !runStart) { runStart = new Date().toISOString(); props.setProperty('IMPORT_RUN_START', runStart); }
 
   const md = masterAndDone_();
   const idxSh = SpreadsheetApp.openById(INDEX_SHEET_ID).getSheets()[0];
@@ -467,8 +518,15 @@ function importHistory() {
 
   for (let i = 0; i < nos.length; i++) {
     const no = nos[i], h = history.works[no];
-    if (h && h.imported && (md.doneNos[no] || h.imported >= runStart)) { skipped.push(no); continue; }
     if (Date.now() - t0 > IMPORT_TIME_LIMIT_MS) { remaining = nos.length - i; break; }
+    const updated = {};
+    files[no].forEach(function (f) { updated[f.id] = fileUpdatedMs_(f.id); });
+    if (force) {
+      if (h && h.imported && h.imported >= runStart) { skipped.push(no); continue; } // この実行(続きの実行を含む)で読み終えた工事
+    } else if (historyUpToDate_(h, files[no], updated)) { skipped.push(no); continue; } // 更新日時が前回と同じ=編集されていない
+    else if (h && h.imported && !h.mtimes && md.doneNos[no]) { // 更新日時の記録が無い完了の工事: 従来どおり読み直さず、今の更新日時を記録だけする
+      h.mtimes = updated; saveHistory_(history); skipped.push(no); continue;
+    }
     try {
       let byDate = {};
       files[no].forEach(function (f) { byDate = mergeByDate(byDate, readMasterFileByDate_(f)); });
@@ -476,6 +534,7 @@ function importHistory() {
       nh.byDate = byDate;
       nh.imported = new Date().toISOString();
       nh.files = files[no].map(function (f) { return f.name; });
+      nh.mtimes = updated; // 読む前に測った更新日時(読んでいる間に編集されたら、次回また読み直す)
       saveHistory_(history); // 1工事ごとに保存(途中で止まっても取り込んだ分は残る)
       done.push(no + '(' + nh.files.length + 'ファイル・' + round_(sumByDate_(byDate), 1) + 't)');
     } catch (err) {
@@ -483,7 +542,7 @@ function importHistory() {
     }
   }
   Logger.log('取り込み: ' + (done.join('、') || 'なし'));
-  Logger.log('取り込み済み・完了のため飛ばした工事: ' + (skipped.join('、') || 'なし'));
+  Logger.log('更新日時が前回と同じなど、読み直さなかった工事: ' + (skipped.join('、') || 'なし'));
   if (failed.length) Logger.log('読み取れなかった工事: ' + failed.join(' / '));
   if (remaining) {
     Logger.log('続きがあります(残り ' + remaining + ' 工事)。もう一度 importHistory を実行してください。');

@@ -203,3 +203,11 @@ main.wide { max-width: none; margin-top: 8px; }
   #v-simple .sGoal { flex: 1; }
   body #v-simple .sChart, body #v-detail .panel.simChart, body #v-workone .panel.simChart { position: sticky; top: var(--stickyH, 120px); align-self: start; height: calc(100vh - var(--stickyH, 120px) - 8px); min-height: 0; }
 }
+
+/* 生産データ更新: リセットと同じ黄色。文字がはみ出さないよう幅は文字に合わせる(リセットの72px固定・左端固定は使わない) */
+.refreshBtn { background: #ffd83a; color: #1a1a19; border: 2px solid #e0b400; border-radius: 6px; padding: 6px 12px; font-weight: 700; white-space: nowrap; align-self: center; cursor: pointer; }
+.refreshBtn:hover { background: #ffe680; }
+.refreshBtn:disabled { opacity: .6; cursor: default; }
+@media (min-width: 1000px) {
+  #v-simple .sBar .refreshBtn, #v-detail .sBar .refreshBtn { width: auto; border-width: 1px; padding: 0 10px; }
+}
