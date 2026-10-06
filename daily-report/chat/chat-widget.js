@@ -75,10 +75,28 @@
   function ymd(y, m, d) { return y + "/" + pad(m) + "/" + pad(d); }
   function nearestYear(m, d) { var t = new Date(), y = t.getFullYear(); if (new Date(y, m - 1, d) > t) y--; return y; }
   function monthRange(y, m) { var last = new Date(y, m, 0).getDate(), t = new Date(); var to = ymd(y, m, last); if (to > fmt(t)) to = fmt(t); return { from: ymd(y, m, 1), to: to }; }
+  /* 締め(〆)の期間: 「9/20締め」「9月20日〆」→ 8/21〜9/20、「9月締め」「9月〆」→ 20日締め、
+     「先月締め」「今月締め」「前回の締め」も20日締めとして扱う(⑤20日〆集計と同じ区切り)。 */
+  function closingRange(q) {
+    if (!/締|〆|しめ/.test(q)) return null;
+    var t = new Date(), m, y, mo, d = 20;
+    if ((m = q.match(/(?:(\d{4})[\/年])?(\d{1,2})[\/月](\d{1,2})日?\s*(?:締|〆|しめ)/))) { y = m[1] ? Number(m[1]) : 0; mo = Number(m[2]); d = Number(m[3]); }
+    else if ((m = q.match(/(?:(\d{4})年)?(\d{1,2})月(?:分)?\s*(?:の)?\s*(?:\d{1,2}日)?\s*(?:締|〆|しめ)/))) { y = m[1] ? Number(m[1]) : 0; mo = Number(m[2]); }
+    else if (/先月/.test(q)) { var p0 = new Date(t.getFullYear(), t.getMonth() - 1, 1); y = p0.getFullYear(); mo = p0.getMonth() + 1; }
+    else if (/今月|今回/.test(q)) { y = t.getFullYear(); mo = t.getMonth() + 1; }
+    else if (/前回/.test(q)) { var p1 = new Date(t.getFullYear(), t.getMonth() - (t.getDate() > 20 ? 0 : 1), 1); y = p1.getFullYear(); mo = p1.getMonth() + 1; }
+    else return null;
+    if (!(mo >= 1 && mo <= 12 && d >= 1 && d <= 31)) return null;
+    if (!y) y = nearestYear(mo, 1);
+    var end = new Date(y, mo - 1, d), start = new Date(y, mo - 2, d + 1);
+    var to = fmt(end); if (to > fmt(t)) to = fmt(t);
+    return { from: fmt(start), to: to, closing: ymd(y, mo, d) + "締め" };
+  }
   /* 質問文から日付・期間を読み取る({from,to} または null)。 */
   function parseDates(q0) {
     var q = z2h(q0), t = new Date(), m, days = [];
     var shift = function (n) { var d = new Date(); d.setDate(d.getDate() + n); return fmt(d); };
+    var cm = closingRange(q); if (cm) return cm;
     var re = /(\d{4})[\/年.-](\d{1,2})[\/月.-](\d{1,2})日?|(\d{1,2})\/(\d{1,2})|(\d{1,2})月(\d{1,2})日/g;
     while ((m = re.exec(q))) {
       if (m[1]) days.push(ymd(m[1], m[2], m[3]));
@@ -122,6 +140,14 @@
       var tk = m[1].replace(/^.*[のはがをにで]/, ""); if (tk.length < 2) continue;
       master.operators.forEach(function (o) { if (norm(o.name).indexOf(tk) === 0 && hit.indexOf(o) < 0) hit.push(o); });
     }
+    if (hit.length) return hit;
+    // 「角の日報」のように敬称が無い・1文字の姓でも探す: 質問を助詞等で区切り、氏名の先頭と一致する語を使う
+    var STOP = /^(日報|集計|合計|工数|人工|稼働|作業|時間|内訳|有給|届け?|届出|一覧|全て|全部|全体|すべて|今日|本日|昨日|明日|今月|先月|今週|先週|今年|去年|締め?|分|本社|夢前|鳥取|総務建築|教えて|見せて|出して|下さい|ください|何時間|人数|在職者?|未提出)$/;
+    var tokens = String(q).replace(/[\d０-９\/／〜~\-年月日〆]+/g, " ").split(/[\s\u3000、。・,!?！？「」()（）]|の|は|が|を|に|で|と|さん|くん|君|様|氏/);
+    tokens.forEach(function (tk) {
+      tk = tk.trim(); if (!tk || STOP.test(tk) || !/^[一-龥々ァ-ヶー]+$/.test(tk) || tk.length > 5) return;
+      master.operators.forEach(function (o) { if (norm(o.name).indexOf(tk) === 0 && norm(o.name).length > tk.length && hit.indexOf(o) < 0) hit.push(o); });
+    });
     return hit;
   }
   function findCons(text) {
@@ -143,14 +169,14 @@
     else if (/日報|作業|集計|合計|時間|実績|稼働/.test(q) && (dr || /全て|全部|全体|すべて|全員|みんな/.test(q))) it = { intent: "hours_summary", all: true }; // 人・工事の指定なし=全体の集計
     else return null;
     it.from = dr ? dr.from : ""; it.to = dr ? dr.to : ""; it.factory = factory; it.ops = ops; it.cons = cons;
-    it.dateGiven = !!dr;
+    it.dateGiven = !!dr; it.closing = dr && dr.closing;
     it.complete = it.intent === "headcount" || it.intent === "leave_list" || it.intent === "not_submitted" || it.all ? true : !!(ops.length || cons.length);
     return it;
   }
   /* Geminiの答え(新旧どちらの形式でも)を共通の形に直す。人・工事の特定はブラウザ内で行う。 */
   function fromAI(j, q) {
     var it = { intent: j.intent, factory: j.factory || factoryOf(q), from: j.dateFrom || j.date || "", to: j.dateTo || j.date || "" };
-    var dr = parseDates(q); if (dr) { it.from = dr.from; it.to = dr.to; } // 明示された日付はブラウザ側の読み取りを優先
+    var dr = parseDates(q); if (dr) { it.from = dr.from; it.to = dr.to; it.closing = dr.closing; } // 明示された日付はブラウザ側の読み取りを優先
     if (it.from && !it.to) it.to = it.from;
     it.ops = j.person ? findOps(j.person) : []; if (!it.ops.length) it.ops = opsInText(q);
     it.cons = it.ops.length ? [] : (j.construction ? findCons(j.construction) : []);
@@ -179,9 +205,9 @@
     }
     log.scrollTop = log.scrollHeight;
   }
-  var EXAMPLES = "次のように聞けます(語順・言い方は自由です):\n・今日の日報の集計全て\n・山田さんの10月5日の日報\n・先月の山田さんの作業時間の合計\n・○○工事の鳥取の工数(期間なしは工事全体)\n・昨日 日報を出していない人(本社)\n・10/5に有給を取っている人\n・山田さんの今年の有給\n・夢前の在職者数";
+  var EXAMPLES = "次のように聞けます(語順・言い方は自由です):\n・今日の日報の集計全て\n・山田さんの10月5日の日報\n・先月の山田さんの作業時間の合計\n・○○工事の鳥取の工数(期間なしは工事全体)\n・9/20締め分の山田さんの日報\n・昨日 日報を出していない人(本社)\n・10/5に有給を取っている人\n・山田さんの今年の有給\n・夢前の在職者数";
   var MAX_ROWS = 300;
-  function range(it) { return it.allPeriod ? "全期間" : it.from === it.to ? it.from : it.from + "〜" + it.to; }
+  function range(it) { return it.allPeriod ? "全期間" : (it.closing ? it.closing + "(" : "") + (it.from === it.to ? it.from : it.from + "〜" + it.to) + (it.closing ? ")" : ""); }
   function round2(n) { return Math.round(n * 100) / 100; }
   function sumBy(rows, keyFn) { var m = {}; rows.forEach(function (r) { var k = keyFn(r); m[k] = (m[k] || 0) + (Number(r.hours) || 0); }); return Object.keys(m).map(function (k) { return [k, round2(m[k])]; }).sort(function (a, b) { return b[1] - a[1]; }); }
   function daysBetween(from, to) { var out = [], d = new Date(from.split("/").join("-") + "T00:00:00"), e = new Date(to.split("/").join("-") + "T00:00:00"); while (d <= e && out.length < 400) { out.push(fmt(d)); d.setDate(d.getDate() + 1); } return out; }
