@@ -734,29 +734,37 @@ if (typeof document !== 'undefined') {
       wb.eachSheet(function (sheet) {
         sheet.eachRow({ includeEmpty: false }, function (row) {
           row.eachCell({ includeEmpty: false }, function (c) {
-            // 図面番号のハイパーリンク付きセルは青・18pt(行の高さ・列幅は下で文字に合わせる)
+            // 図面番号のハイパーリンク付きセルは青・11pt・太字・下線
             const link = sheet === wd && c.col === 3 && c.value && c.value.hyperlink;
-            c.font = Object.assign({}, c.font, link ? { bold: true, size: 18, color: { argb: 'FF0000FF' }, underline: true } : { bold: true, color: { argb: 'FF000000' } });
+            c.font = Object.assign({}, c.font, link ? { bold: true, size: 11, color: { argb: 'FF0000FF' }, underline: true } : { bold: true, color: { argb: 'FF000000' } });
           });
         });
       });
-      // C列(図面番号)をリンク文字(18pt)に合わせて自動調整し、行の高さも全体が見えるように広げる
-      let cw = 10;
-      wd.eachRow({ includeEmpty: false }, function (row, ri) {
-        const v = row.getCell(3).value;
-        if (ri >= 2 && v && v.hyperlink) {
-          const t = String(v.text || '');
-          // 文字ごとの幅の重み(広い文字M/Wは大きく、細い文字I/1/-は小さく)で合計し、最も広い文字列に列幅を合わせる(細い文字で凸凹にならないよう、幅は最大値で決める)
-          let len = 0;
-          for (let k = 0; k < t.length; k++) {
-            const ch = t.charAt(k);
-            len += t.charCodeAt(k) > 255 ? 2.1 : /[MW]/.test(ch) ? 1.5 : /[Iilj.\s]/.test(ch) ? 0.6 : ch === '-' ? 0.7 : /[A-Z]/.test(ch) ? 1.2 : 1.1;
-          }
-          cw = Math.max(cw, len * 1.75 + 3); // 18pt は 11pt の約1.64倍(太字ぶん余裕)
-          row.height = 26;
-        }
-      });
-      wd.getColumn(3).width = Math.min(Math.ceil(cw), 80);
+      // 全ての列を、中身(見出し含む)の最も長い文字列に合わせて自動調整(オートフィット)。文字ごとの幅の重み(全角=2、細い文字=0.6、他=1.1(太字))の合計の最大値で決める
+      const textOf = function (v) {
+        if (v == null || v === '') return '';
+        if (v instanceof Date) return (v.getUTCMonth() + 1) + '/' + v.getUTCDate();
+        if (typeof v === 'object') return String(v.text != null ? v.text : '');
+        return String(v);
+      };
+      const fitColumns = function (sheet, fromRow) {
+        const w = {};
+        sheet.eachRow({ includeEmpty: false }, function (row, ri) {
+          if (ri < fromRow) return;
+          row.eachCell({ includeEmpty: false }, function (c) {
+            const t = textOf(c.value);
+            let len = 0;
+            for (let k = 0; k < t.length; k++) {
+              const ch = t.charAt(k);
+              len += t.charCodeAt(k) > 255 ? 2 : /[Iilj.,\s:]/.test(ch) ? 0.6 : ch === '-' ? 0.7 : /[MW]/.test(ch) ? 1.4 : 1.1;
+            }
+            if (len > (w[c.col] || 0)) w[c.col] = len;
+          });
+        });
+        Object.keys(w).forEach(function (col) { sheet.getColumn(Number(col)).width = Math.min(Math.max(Math.ceil(w[col] + 2), 6), 80); });
+      };
+      fitColumns(wd, 1);
+      fitColumns(ws, 3); // 出力用は1行目のタイトル(右へはみ出す長い文字)を除く
       wb.xlsx.writeBuffer().then(function (buf) {
         const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const a = document.createElement('a');
