@@ -118,8 +118,9 @@ function groupByProduct(rows, products) {
   });
 }
 
-// 5.・Excel「全て抽出」用: 溶接した記録を1件1行で、ロボごとに溶接した順(古い順)に並べる。
-// 同じ製品(ロボ×製品)の2回目以降は same=true(重量は表示しない)。重量は3.の集計と同じく、最初の1件だけ。
+// 5.・Excel「全て抽出」用: 溶接した記録を1件1行で、ロボごとにまとめ、新しい日付を上に並べる。
+// 「同じ製品」の判定は溶接した順(古い順)で行う: 同じ製品(ロボ×製品)の2回目以降は same=true(重量は表示しない)。
+// 重量は3.の集計と同じく、最初に溶接した1件だけ。
 function listRecords(rows, products) {
   const idx = rows.map(function (row, i) { return { row: row, i: i }; });
   idx.sort(function (a, b) {
@@ -131,7 +132,7 @@ function listRecords(rows, products) {
     return a.i - b.i;
   });
   const seen = {};
-  return idx.map(function (x) {
+  const list = idx.map(function (x, n) {
     const row = x.row;
     const p = row.pk ? products[row.pk] : null;
     let same = false;
@@ -144,9 +145,10 @@ function listRecords(rows, products) {
       robot: row.r, workNo: row.no, enteredName: row.wn, enteredMark: row.mk, status: row.s,
       corrected: row.corrected, suggestions: row.sg || [], product: p, same: same,
       first: row.sd + ' ' + row.st, last: row.ed + ' ' + row.et,
-      len: row.len, arc: row.arc, run: row.run, wire: row.wire,
+      len: row.len, arc: row.arc, run: row.run, wire: row.wire, seq: n,
     };
   });
+  return list.sort(function (a, b) { return a.robot !== b.robot ? a.robot - b.robot : b.seq - a.seq; }); // ロボ順、同じロボ内は新しいものが上
 }
 
 // 年・月と20日〆の指定から期間を求める。close20=trueなら前月21日〜指定月20日、falseなら1日〜末日。
