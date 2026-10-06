@@ -163,6 +163,7 @@ if (typeof document !== 'undefined') {
     }
     function saveCachedData(data) {
       if (!data || !Array.isArray(data.works)) return;
+      if (data.timing) { data = Object.assign({}, data); delete data.timing; } // 所要時間(確認用)は保存しない
       try { localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data)); } catch (e) { /* 保存できなくても動作は続ける */ }
     }
 
