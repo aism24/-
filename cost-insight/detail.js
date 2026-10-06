@@ -243,10 +243,12 @@
     // 人件費は試算の生産重量での額を固定費に含め、固定費線を水平にする(つまみのドラッグ中に縮尺が変わらないよう、署名は基準値で作る)
     // 期間の途中は、期間末(年度末)までの固定費で描く: その他固定費は期間全体、人件費は 試算の工数 + 残りの出勤日の工数ペース(固定)
     const em = D.endM, fe = em ? em.Ff + r.labor + em.extraH / 8 * r.laborRate : r.fixed + r.labor, se = em ? K.solve(fe, P, r.varPerTon, g / 100) : { be: r.breakEvenTons, goal: r.goalTons };
+    // つまみの位置: 期間の途中は 期間末(年度末)の見込み = 入力の生産重量 + 残りの出勤日の1日あたり実績重量。ドラッグすると入力の生産重量は 位置 − その上乗せ分
+    const xw = em ? em.perDayW * em.leftDays : 0;
     drawBep('c-sim', { fixed: fe, unitPrice: P, laborPerTon: 0, varPerTon: r.varPerTon, profitRate: g / 100,
       fixedLabel: ['固定費', '(人件費込み)'], otherFixed: em ? em.Ff : r.fixed, laborRate: r.laborRate, sig: [fe, P, D.hours, r.laborRate, r.varPerTon, g].join('|'),
-      x: W, forceX: !D.dragging, beTons: se.be, goalTons: se.goal, handleLabel: changed ? '試算' : '現在', dragHint: true,
-      onMove: (x) => { D.dragging = true; $('s-w').value = simFmt('w', x); D.exact.w = { shown: $('s-w').value, value: x }; onInput('w'); D.dragging = false; } });
+      x: W + xw, forceX: !D.dragging, beTons: se.be, goalTons: se.goal, handleLabel: changed ? '試算' : (em ? '見込み' : '現在'), dragHint: true,
+      onMove: (x) => { const w = Math.max(0, x - xw); D.dragging = true; $('s-w').value = simFmt('w', w); D.exact.w = { shown: $('s-w').value, value: w }; onInput('w'); D.dragging = false; } });
   }
 
   /* 現状分析: 目標利益率に届くには(ほかの条件は同じとして1つずつ)。トン単価は受注時に決まっているため変えない */
