@@ -63,15 +63,17 @@
     const cells = C.filterCells(state.model, { from, to, sites });
     const t = C.summarize(cells);
     t.fixed = fixedFor(from, to, sites);                 // その他固定費(人件費は労務費として別に入っている)
-    // 単価が未確定で損益に入らないセル(売上・仕入が不明)の工数も人件費は掛かっているので、損益から引く。
-    // 労務費が分かるセルはその額、分からないセルは 期間の平均時間単価 × 工数(2026-10-05 ユーザー指示)
-    t.ngLabor = cells.reduce((a, c) => c.ok ? a : a + (c.labor !== null ? c.labor : c.hours * (t.hourRate || 0)), 0);
-    t.profit -= t.fixed + t.ngLabor;
-    t.profitRate = t.profitSales > 0 ? t.profit / t.profitSales : null;
     t.ninkuPerTon = t.weight > 0 ? t.hours / 8 / t.weight : null;
     t.unitPrice = t.procUnit;            // 加工単価(円/t)
     t.varPerTon = t.purchaseUnit;        // 仕入単価(円/t)=変動費
     t.laborRate = t.hourRate === null ? null : t.hourRate * 8; // 1人工(8h)当たりの労務費
+    // 売上・仕入・人件費・損益は詳細版(目標シミュレーター)と同じ式: 売上=重量×加工単価、仕入=重量×仕入単価、人件費=工数×時間単価。
+    // 単価が未確定のセルの重量・工数も含める(2026-10-05 ユーザー指示: 詳細版を正とする)
+    t.sales = t.weight * (t.unitPrice || 0);
+    t.purchase = t.weight * (t.varPerTon || 0);
+    t.labor = t.hours * (t.hourRate || 0);
+    t.profit = t.sales - t.purchase - t.labor - t.fixed;
+    t.profitRate = t.sales > 0 ? t.profit / t.sales : null;
     return t;
   }
 
@@ -276,7 +278,9 @@
     renderTargetsTable(plan, sel, p);
     const cur = sel.lastTo < sel.fullTo;
     const t = tNow || analyze(sel.from, sel.lastTo, sel.sites); // 実績(ここまで)。selection() は to と lastTo が同じなので、render() で求めた結果を使い回す
-    if (!T || !(t.weight > 0 || cur)) { box.hidden = true; chartBox.hidden = true; return null; }
+    // 期間の途中は、詳細版と同じ「実績の単価・費用」で目標を出す(標準の目標は使わない)
+    const useA = cur && t.weight > 0 && t.unitPrice > 0;
+    if (!useA && (!T || !(t.weight > 0 || cur))) { box.hidden = true; chartBox.hidden = true; return null; }
     box.hidden = false; chartBox.hidden = false;
     const phr = (html) => String(html || '').split(/(?=（)|\|/).filter((x) => x !== '').map((x) => `<span class="ph">${x}</span>`).join('');
     const row = (label, value, unit, note, cls) => `<div class="gLabel">${label}</div><div class="gVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="gNote">${phr(note)}</div>`;
@@ -288,6 +292,47 @@
     const isAll = sel.sites.length === SITE_LIST.length;
     const unitLbl = sel.mode === 'fiscal' ? '年度・12か月分' : '1か月';
     let head, lead, rows, x, label;
+    if (useA) {
+      // 実績ベース: 単価・仕入単価・1t当たりの人件費は 現在までの実績、固定費は期間全体。必要量は詳細版の remainingNeed と同じ式
+      const goalFor = (sites) => {
+        const a = sites === sel.sites ? t : analyze(sel.from, sel.lastTo, sites);
+        if (!(a.weight > 0 && a.unitPrice > 0)) return null;
+        const lpt = a.labor / a.weight, Ff = fixedFor(sel.from, sel.fullTo, sites), r = solve(Ff, a.unitPrice, a.varPerTon + lpt, p);
+        return { a, lpt, Ff, be: r.be, goal: r.goal };
+      };
+      const G = goalFor(sel.sites);
+      const cal = calendar();
+      const next = utcToYmd(ymdToUtc(sel.lastTo) + 86400000);
+      const doneDays = workDaysIn(cal, sel.from, sel.lastTo), leftDays = workDaysIn(cal, next, sel.fullTo);
+      const perDayW = doneDays > 0 ? t.weight / doneDays : 0, perDayH = doneDays > 0 ? t.hours / doneDays : 0;
+      const Wg = G.goal, need = Wg === null ? null : Wg - t.weight, nptA = t.ninkuPerTon;
+      const remH = need !== null && need > 0 ? need * nptA * 8 : 0, needDay = need !== null && leftDays > 0 ? need / leftDays : null;
+      const siteDay = sel.sites.length > 1 && leftDays > 0 ? '<small>（' + sel.sites.map((s) => {
+        const q = goalFor([s]);
+        return s + (q && q.goal !== null ? fmt(Math.max(0, q.goal - q.a.weight) / leftDays, 0) : '—');
+      }).join('_') + '）</small>' : '';
+      head = `目標（${unitLbl}）を達成するには（${sel.reiwa}）<small>実績の単価・費用ベース</small>`;
+      lead = Wg === null ? '<span class="neg">今の単価・費用では目標に届きません</span>'
+        : need <= 0 ? `<span class="pos">✓ 目標利益率に到達済み</span><span class="gLeadSub">（実績 ${ton(t.weight)}t／必要 ${ton(Wg)}t）</span>`
+          : leftDays > 0 ? `残り <b>${leftDays}</b>出勤日で あと <b class="gKey">${ton(need)}t</b> を <b class="gKey">${fmt(remH, 0)}h</b>`
+            : '<span class="neg">残りの出勤日がありません</span>';
+      rows = Wg === null ? '' : [
+        row('目標生産量', ton(Wg), 't', `実績 ${ton(t.weight)}t ＋ 残り ${ton(Math.max(0, need))}t`),
+        row('目標工数', fmt(t.hours + remH, 0), 'h', `実績 ${fmt(t.hours, 0)}h ＋|残り ${fmt(remH, 0)}h（1日 ${leftDays > 0 ? fmt(remH / leftDays, 0) : '—'}h × ${leftDays}日）`),
+        row('1日あたり生産量' + siteDay, needDay !== null && need > 0 ? ton(needDay) : '—', 't/日', needDay !== null && need > 0 ? `実績 ${ton(perDayW)}t/日（${perDayW > 0 ? fmt(needDay / perDayW, 2) + '倍' : '—'}）` : ''),
+        row('1日あたり工数', leftDays > 0 && need > 0 ? fmt(remH / leftDays, 0) : '—', 'h/日', `実績 ${fmt(perDayH, 0)}h/日`),
+        row('1t当たり人工数', npt(nptA), '人工/t', '実績のまま（工数は生産量に比例）'),
+      ].join('');
+      box.querySelector('.gHead').innerHTML = head;
+      box.querySelector('.gLead').innerHTML = lead;
+      box.querySelector('.gTable').innerHTML = rows;
+      const few = doneDays < 3, cx = few || Wg === null ? (Wg || 0) : t.weight + perDayW * leftDays;
+      drawBep('c-goal', { fixed: G.Ff, unitPrice: t.unitPrice, laborPerTon: G.lpt, varPerTon: t.varPerTon, profitRate: p,
+        fixedLabel: ['その他固定費'], otherFixed: G.Ff, laborRate: t.laborRate,
+        x: cx, fixedX: true, beTons: G.be, goalTons: Wg, handleLabel: few ? '目標' : '見込み', hideMoney: true });
+      placeTargets(); requestAnimationFrame(placeTargets);
+      return { goalSales: Wg === null ? 0 : Wg * t.unitPrice, progress: true };
+    }
     const A = t;
     const aRate = A.profitRate;
     if (!cur) {
@@ -360,7 +405,7 @@
     const W = plan.th === null ? null : plan.rows.reduce((x, r) => x + r.w, 0), H = plan.rows.reduce((x, r) => x + r.H, 0);
     const head = plan.th === null ? '<b class="neg">今の単価・費用では目標に届きません</b>'
       : `${m === 12 ? '年度（1か月×12）' : '1か月あたり'}・3工場合計で目標利益率${g}${plan.reach ? '' : '　<b class="neg">⚠ 過去の実績を超える</b>'}`;
-    el.innerHTML = `<div class="tgHead">【目標値】<small>${head}</small></div>
+    el.innerHTML = `<div class="tgHead">【標準の目標値(参考)】<small>${head}</small></div>
       <table><tr><th>工場</th><th>生産重量(t)</th><th>工数(h)</th><th>人工数(人工/t)</th></tr>
       ${tr('3工場', W, H, 'tot')}${plan.rows.map((r) => tr(r.site, r.w, r.H, '', r.over)).join('')}</table>`;
     el.hidden = false;
