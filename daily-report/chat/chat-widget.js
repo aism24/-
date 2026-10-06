@@ -8,8 +8,8 @@
   var BASE = (document.currentScript && document.currentScript.src || "").replace(/[^\/]*$/, "");
   var data = null, busy = false;
 
-  var css = ".cw-btn{position:fixed;right:16px;bottom:16px;z-index:99998;width:52px;height:52px;border-radius:50%;border:0;background:#2563eb;color:#fff;font-size:24px;box-shadow:0 2px 8px #0004;cursor:pointer}" +
-    ".cw-box{position:fixed;right:16px;bottom:78px;z-index:99999;width:min(360px,calc(100vw - 32px));height:min(520px,70vh);background:#fff;color:#111;border-radius:12px;box-shadow:0 4px 20px #0005;display:none;flex-direction:column;font:14px/1.5 sans-serif}" +
+  var css = ".cw-btn{position:fixed;right:16px;bottom:16px;z-index:99998;height:48px;padding:0 18px;border-radius:24px;border:0;background:#2563eb;color:#fff;font-size:16px;font-weight:bold;box-shadow:0 2px 8px #0004;cursor:pointer}" +
+    ".cw-box{position:fixed;right:16px;bottom:72px;z-index:99999;width:min(360px,calc(100vw - 32px));height:min(520px,70vh);background:#fff;color:#111;border-radius:12px;box-shadow:0 4px 20px #0005;display:none;flex-direction:column;font:14px/1.5 sans-serif}" +
     ".cw-box.cw-open{display:flex}.cw-head{padding:10px 12px;background:#2563eb;color:#fff;border-radius:12px 12px 0 0;font-weight:bold;display:flex;justify-content:space-between}" +
     ".cw-head span{cursor:pointer}.cw-log{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px}" +
     ".cw-m{max-width:85%;padding:8px 10px;border-radius:10px;white-space:pre-wrap;word-break:break-word}.cw-u{align-self:flex-end;background:#dbeafe}.cw-b{align-self:flex-start;background:#f1f5f9}" +
@@ -17,7 +17,7 @@
     ".cw-form input{flex:1;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:16px}.cw-form button{padding:8px 12px;border:0;border-radius:6px;background:#2563eb;color:#fff}";
   var st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
 
-  var btn = el("button", "cw-btn", "？"); btn.title = "質問する";
+  var btn = el("button", "cw-btn", "💬 AIに質問"); btn.title = "質問する";
   var box = el("div", "cw-box");
   var head = el("div", "cw-head"); head.appendChild(el("div", "", "使い方を質問")); var x = el("span", "", "✕"); head.appendChild(x);
   var log = el("div", "cw-log");
