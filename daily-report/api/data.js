@@ -7,7 +7,7 @@
 const zlib = require('zlib');
 
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyiocXgXi_YEMUUq5BJPe7CUi2V-LJIBvLwceextYV-82hEArRKRaHQ5peVj5oMfTsW/exec';
-const DEADLINE_MS = 100000; // vercel.json の maxDuration(120秒)より手前で打ち切る
+const DEADLINE_MS = 240000; // vercel.json の maxDuration(300秒)より手前で打ち切る
 const ROW_KEYS = ['operatorNo', 'factory', 'dept', 'workDate', 'constructionId', 'workCode', 'hours'];
 
 async function gasPost(action) {
@@ -28,15 +28,29 @@ async function gasPost(action) {
   return json.data;
 }
 
-async function gasPostRetry(action, started) {
-  let lastErr;
-  for (let i = 0; i < 4 && Date.now() - started < DEADLINE_MS; i++) {
-    try { return await gasPost(action); } catch (e) {
-      if (e.unknownAction) throw e;
-      lastErr = e;
-    }
-  }
-  throw lastErr || new Error('時間切れ');
+// 受取URL(echo)の失敗は1回あたり15〜80秒待たされてから分かるため、順番に再試行すると
+// 時間切れになりやすい。成功を待たずに一定間隔で次の試行を並行して始め、最初の成功を使う
+// (同時に最大3本、合計最大6回)。GAS側の処理(読み取りのみ)は数秒で終わるため負荷は小さい。
+function gasPostRetry(action, started) {
+  return new Promise(function (resolve, reject) {
+    let launched = 0, running = 0, done = false, lastErr = null, timer = null;
+    const finish = function (fn, v) { if (done) return; done = true; clearInterval(timer); fn(v); };
+    const launch = function () {
+      if (done || launched >= 6 || running >= 3 || Date.now() - started > DEADLINE_MS) return;
+      launched++; running++;
+      gasPost(action).then(function (d) { finish(resolve, d); }, function (e) {
+        running--; lastErr = e;
+        if (e.unknownAction) return finish(reject, e);
+        if (launched >= 6 && running === 0) return finish(reject, e);
+        launch();
+      });
+    };
+    launch();
+    timer = setInterval(function () {
+      if (Date.now() - started > DEADLINE_MS) return finish(reject, lastErr || new Error('時間切れ'));
+      launch();
+    }, 20000);
+  });
 }
 
 // 行データを「列ごとの番号配列+重複を除いた値の辞書」に詰める(hoursは数値のまま)。

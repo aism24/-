@@ -5,7 +5,7 @@
   "fluid": true,
   "functions": {
     "api/data.js": {
-      "maxDuration": 120
+      "maxDuration": 300
     }
   }
 }
