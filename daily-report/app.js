@@ -813,11 +813,9 @@ async function selectFactory(loc){
   sessionStorage.setItem('defaultFactory', loc);
   updateHeaderFactoryLabels_();
   showScreen('home');
-  try {
-    await apiPost('logFactorySelection', { factory: loc });
-  } catch (e) {
-    // ログイン記録に失敗しても本体機能には影響させない(ベストエフォート)
-  }
+  // ログイン記録は完了を待たずに裏で送る(GAS直接POSTは受取URLの不調で数十秒かかることがあり、
+  // 待つと同期ポップアップが出るまで10数秒止まって見えていたため)。失敗しても本体機能には影響させない
+  apiPost('logFactorySelection', { factory: loc }).catch(() => {});
   initSyncPopup();
 }
 
