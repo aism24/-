@@ -147,6 +147,31 @@ async function showLatestBudget() {
   }
 }
 
+// 「生産データ更新」: GASで生産・日報を今すぐ集計し直して(action=refresh。ふだんは毎朝6時台に自動)、画面に反映する。
+// 選んでいる期間・工場はそのまま。集計に1分ほどかかることがある
+let refreshingProduction = false;
+async function refreshProduction(btn) {
+  if (refreshingProduction) return;
+  refreshingProduction = true;
+  document.querySelectorAll('button[onclick^="refreshProduction"]').forEach(b => { b.disabled = true; b.dataset.label = b.dataset.label || b.textContent; b.textContent = '更新中…'; });
+  let msg = '';
+  try {
+    applyData(await gasGet('refresh'));
+    renderSettings();
+    if (window.SimpleView) SimpleView.reload();
+    if (window.DetailView) DetailView.reload();
+    if (state.view === 'progress') render();
+    const last = window.CIKit && CIKit.lastDataYmd();
+    msg = '更新しました' + (last ? '(〜' + Number(last.slice(5, 7)) + '/' + Number(last.slice(8)) + 'の実績)' : '');
+  } catch (e) {
+    msg = '更新に失敗: ' + e.message;
+  } finally {
+    refreshingProduction = false;
+    document.querySelectorAll('button[onclick^="refreshProduction"]').forEach(b => { b.disabled = false; b.textContent = msg; });
+    setTimeout(() => document.querySelectorAll('button[onclick^="refreshProduction"]').forEach(b => { b.textContent = b.dataset.label; }), 6000);
+  }
+}
+
 /* ===================== 画面の切り替え(メニュー / 3つのモード) ===================== */
 
 // 固定する上部(アプリ名+操作バー)の高さを CSS 変数に入れる(グラフ・カードの高さと固定位置の計算用)
