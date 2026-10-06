@@ -267,7 +267,7 @@
     }
     log.scrollTop = log.scrollHeight;
   }
-  var EXAMPLES = "次のように聞けます(語順・言い方は自由です):\n・今日の日報の集計全て\n・山田さんの10月5日の日報\n・先月の山田さんの作業時間の合計\n・○○工事の鳥取の工数(期間なしは工事全体)\n・9/20締め分の山田さんの日報\n・今期(R8年度)の○○工事の工数\n・昨日 日報を出していない人(本社)\n・10/5に有給を取っている人\n・山田さんの今年の有給\n・夢前の在職者数";
+  var EXAMPLES = "次のように聞けます(語順・言い方は自由です):\n・今日の日報の集計全て\n・山田さんの10月5日の日報\n・先月の山田さんの作業時間の合計\n・○○工事の鳥取の工数(期間なしは工事全体)\n・9/20締め分の山田さんの日報\n・今期(R8年度)の○○工事の工数\n・今度の土曜日は出勤日?/次の連休はいつ?\n・昨日 日報を出していない人(本社)\n・10/5に有給を取っている人\n・山田さんの今年の有給\n・夢前の在職者数";
   var MAX_ROWS = 300;
   function range(it) { return it.allPeriod ? "全期間" : (it.closing ? it.closing + "(" : "") + (it.from === it.to ? it.from : it.from + "〜" + it.to) + (it.closing ? ")" : ""); }
   function round2(n) { return Math.round(n * 100) / 100; }
@@ -372,6 +372,56 @@
       reply("社員別" + (byP.length > MAX_ROWS ? "(先頭" + MAX_ROWS + "名)" : ""), table(["拠点", "氏名", "時間"], byP.slice(0, MAX_ROWS)));
     }
   }
+  /* ===== 会社カレンダー(CALENDAR_MAP: 'yyyy/MM/dd' -> '出勤'|'休日')への質問 =====
+     「今日は何日?」「今度の土曜日は出勤日?」「次の休みはいつ?」「次の連休はいつ?」等。答えたらtrue。 */
+  var WD = "日月火水木金土";
+  function dlabel(ds) { var d = new Date(ds.split("/").join("-") + "T00:00:00"); return (d.getMonth() + 1) + "月" + d.getDate() + "日(" + WD.charAt(d.getDay()) + ")"; }
+  function addDays(ds, n) { var d = new Date(ds.split("/").join("-") + "T00:00:00"); d.setDate(d.getDate() + n); return fmt(d); }
+  function weekdayDate(q) { // 「今度の土曜日」「来週の月曜」「今週の金曜」等
+    var m = q.match(/(今度|次|今週|来週|再来週)?の?([日月火水木金土])曜/); if (!m) return "";
+    var t = new Date(), today = fmt(t), want = WD.indexOf(m[2]), cur = t.getDay();
+    if (m[1] === "今週" || m[1] === "来週" || m[1] === "再来週") { // 週は月曜始まり
+      var mon = addDays(today, -((cur + 6) % 7)), wk = m[1] === "今週" ? 0 : m[1] === "来週" ? 7 : 14;
+      return addDays(mon, wk + (want + 6) % 7);
+    }
+    var diff = (want - cur + 7) % 7; if (diff === 0 && m[1]) diff = 7; // 「今度の/次の」は今日を含めない
+    return addDays(today, diff);
+  }
+  function calendarAnswer(q) {
+    var cal = G("CALENDAR_MAP") || {}, today = fmt(new Date()), keys = Object.keys(cal).sort(), last = keys[keys.length - 1] || "";
+    var kind = function (ds) { return cal[ds] === "休日" ? "休日" : cal[ds] === "出勤" ? "出勤日" : ""; };
+    var asksPerson = /人|誰|者|有給|届|取って|取った|休んだ|欠勤/.test(q);
+    if (/連休/.test(q) && !asksPerson) { // 3日以上続く休日
+      var d = addDays(today, 1);
+      while (d <= last) {
+        if (cal[d] === "休日") { var e = d; while (cal[addDays(e, 1)] === "休日") e = addDays(e, 1);
+          var n = Math.round((new Date(e.split("/").join("-")) - new Date(d.split("/").join("-"))) / 864e5) + 1;
+          if (n >= 3) { reply("次の連休(3日以上の休日)は " + dlabel(d) + "〜" + dlabel(e) + " の" + n + "連休です。"); return true; }
+          d = addDays(e, 1);
+        } else d = addDays(d, 1);
+      }
+      reply("会社カレンダー(" + last + "まで登録)の範囲に、3日以上の連休はありません。"); return true;
+    }
+    if (/(次|今度|直近)の?(休み|休日|お休み)/.test(q) && !asksPerson) {
+      for (var d2 = addDays(today, 1); d2 <= last; d2 = addDays(d2, 1)) if (cal[d2] === "休日") { reply("次の休み(会社カレンダーの休日)は " + dlabel(d2) + " です。"); return true; }
+      reply("会社カレンダー(" + last + "まで登録)の範囲に、休日はありません。"); return true;
+    }
+    if (/(次|今度)の?(出勤日|出勤|稼働日)/.test(q) && !asksPerson) {
+      for (var d3 = addDays(today, 1); d3 <= last; d3 = addDays(d3, 1)) if (cal[d3] === "出勤") { reply("次の出勤日は " + dlabel(d3) + " です。"); return true; }
+    }
+    if (/(出勤日|出勤|休日|休み|稼働日|営業日|会社)(です|でしょう)?か|(出勤日|休日|稼働日|営業日)[？?]|休み[？?]/.test(q) && !asksPerson) {
+      var ds = weekdayDate(q); if (!ds) { var dr = parseDates(q); if (dr && dr.from === dr.to) ds = dr.from; }
+      if (!ds && /今日|本日/.test(q)) ds = today;
+      if (ds) { var k = kind(ds); reply(k ? dlabel(ds) + " は" + k + "です(会社カレンダー)。" : dlabel(ds) + " は会社カレンダーに登録がありません(" + last + "まで登録)。"); return true; }
+    }
+    if (/今日は何日|今日の日付|何日ですか|何曜日|今日は何曜/.test(q) && !/日報/.test(q)) {
+      var fy = fiscalYearOf(new Date()), cc = currentClosing(0), k2 = kind(today);
+      reply("今日は " + new Date().getFullYear() + "年" + dlabel(today) + " です。" + (k2 ? "会社カレンダーでは" + k2 + "です。" : "") +
+        "\n" + fy + "年度(R" + (fy - 2018) + "年度)、" + cc.mo + "月締め(" + closingPeriod(cc.y, cc.mo, 20).from + "〜" + cc.y + "/" + String(cc.mo).padStart(2, "0") + "/20)の期間です。");
+      return true;
+    }
+    return false;
+  }
   function askVia(url, payload) {
     return fetch(url, { method: "POST", headers: { "Content-Type": url === GAS_URL ? "text/plain;charset=utf-8" : "application/json" }, body: JSON.stringify(payload) })
       .then(function (r) { return r.json(); })
@@ -387,6 +437,7 @@
   form.onsubmit = function (e) {
     e.preventDefault(); var q = inp.value.trim(); if (!q || busy) return; inp.value = ""; say(q, "u");
     load().then(function () {
+      if (calendarAnswer(q)) return;
       var loc = localIntent(q);
       if (loc && loc.complete) return runIntent(loc);
       var f = best(q);
