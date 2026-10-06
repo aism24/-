@@ -8,21 +8,34 @@
   var BASE = (document.currentScript && document.currentScript.src || "").replace(/[^\/]*$/, "");
   var data = null, busy = false;
 
-  /* 窓は画面中央に出す。開くボタンはホームの「⑥ AIに質問」と、各画面のリセットボタンの右(ユーザー指定)。 */
-  var css = ".cw-hbtn{padding:6px 14px;font-size:13px;border:1px solid #2563eb;border-radius:16px;background:#2563eb;color:#fff;cursor:pointer;white-space:nowrap}.cw-hbtn:hover{background:#1d4ed8}" +
-    ".cw-box{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:99999;width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 64px);background:#fff;color:#111;border-radius:12px;box-shadow:0 8px 32px #0006;display:none;flex-direction:column;font:14px/1.5 sans-serif}" +
-    ".cw-box.cw-open{display:flex}.cw-m{font-size:15px}.cw-copy{margin-top:6px;padding:4px 10px;border:1px solid #2563eb;border-radius:6px;background:#fff;color:#2563eb;cursor:pointer;font-size:13px}.cw-head{padding:10px 12px;background:#2563eb;color:#fff;border-radius:12px 12px 0 0;font-weight:bold;display:flex;justify-content:space-between}" +
-    ".cw-head span{cursor:pointer}.cw-log{flex:0 1 auto;min-height:60px;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:8px}" +
-    ".cw-m{max-width:36em;width:fit-content;padding:8px 10px;border-radius:10px;white-space:pre-wrap;word-break:break-word}.cw-u{align-self:flex-end;background:#dbeafe}.cw-b{align-self:flex-start;background:#f1f5f9}" +
-    ".cw-m.cw-wide{max-width:none}.cw-m img{max-width:100%;display:block;margin-top:6px;border-radius:6px}.cw-form{display:flex;gap:6px;padding:8px;border-top:1px solid #ddd}" +
-    ".cw-form input{flex:1;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:16px}.cw-form button{padding:8px 12px;border:0;border-radius:6px;background:#2563eb;color:#fff}";
+  /* 窓は画面中央に出す。開くボタンはホームの「⑥ AIに質問」と、各画面のリセットボタンの右(ユーザー指定)。
+     見た目はLINE風(ユーザー指定): 青みの背景、自分=右の緑の吹き出し+時刻・既読、AI=左のアイコン・名前付きの白い吹き出し+時刻。 */
+  var css = ".cw-hbtn{padding:6px 14px;font-size:13px;border:1px solid #06c755;border-radius:16px;background:#06c755;color:#fff;cursor:pointer;white-space:nowrap}.cw-hbtn:hover{background:#05b04b}" +
+    ".cw-box{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:99999;width:min(640px,calc(100vw - 32px));height:min(640px,calc(100vh - 64px));background:#8cabd9;color:#111;border-radius:14px;overflow:hidden;box-shadow:0 8px 32px #0006;display:none;flex-direction:column;font:14px/1.5 'Hiragino Sans','Meiryo',sans-serif}" +
+    ".cw-box.cw-open{display:flex}" +
+    ".cw-head{padding:12px 14px;background:#273246;color:#fff;font-weight:bold;display:flex;justify-content:space-between;align-items:center}.cw-head span{cursor:pointer;font-weight:normal;font-size:13px;opacity:.85}" +
+    ".cw-log{flex:1 1 auto;min-height:60px;overflow:auto;padding:12px 10px;display:flex;flex-direction:column;gap:10px}" +
+    ".cw-row{display:flex;align-items:flex-end;gap:6px;max-width:100%}.cw-row-u{align-self:flex-end;flex-direction:row-reverse}.cw-row-b{align-self:flex-start;align-items:flex-start}" +
+    ".cw-av{flex:0 0 36px;width:36px;height:36px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 1px 2px #0002}" +
+    ".cw-col{display:flex;flex-direction:column;min-width:0;max-width:calc(100% - 42px)}.cw-name{font-size:11px;color:#fff;margin:0 0 3px 4px}" +
+    ".cw-line{display:flex;align-items:flex-end;gap:5px;min-width:0}.cw-row-u .cw-line{flex-direction:row-reverse}" +
+    ".cw-meta{font-size:10px;color:#fff;line-height:1.3;white-space:nowrap;flex:0 0 auto;text-align:right}.cw-row-b .cw-meta{text-align:left}" +
+    ".cw-m{position:relative;font-size:15px;max-width:30em;width:fit-content;min-width:0;padding:8px 12px;border-radius:18px;white-space:pre-wrap;word-break:break-word;overflow-x:auto}" +
+    ".cw-u{background:#8de055;color:#111}.cw-b{background:#fff;color:#111}" +
+    ".cw-u::after{content:'';position:absolute;right:-6px;top:8px;border:7px solid transparent;border-left:10px solid #8de055;border-right:0}" +
+    ".cw-b::before{content:'';position:absolute;left:-6px;top:8px;border:7px solid transparent;border-right:10px solid #fff;border-left:0}" +
+    ".cw-m.cw-wide{max-width:none}.cw-m img{max-width:100%;display:block;margin-top:6px;border-radius:6px}" +
+    ".cw-copy{margin-top:6px;padding:4px 10px;border:1px solid #06c755;border-radius:14px;background:#fff;color:#06a64a;cursor:pointer;font-size:13px}" +
+    ".cw-form{display:flex;gap:8px;align-items:center;padding:8px 10px;background:#fff;border-top:1px solid #e3e3e3}" +
+    ".cw-form input{flex:1;min-width:0;padding:9px 14px;border:0;border-radius:20px;background:#f2f3f5;font-size:16px;outline:none}" +
+    ".cw-form button{flex:0 0 auto;width:40px;height:40px;border:0;border-radius:50%;background:#06c755;color:#fff;font-size:18px;cursor:pointer}.cw-form button:disabled{background:#b8e6c9}";
   var st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
 
   var box = el("div", "cw-box");
-  var head = el("div", "cw-head"); head.appendChild(el("div", "", "AIに質問")); var x = el("span", "", "✕ 閉じる"); head.appendChild(x);
+  var head = el("div", "cw-head"); head.appendChild(el("div", "", "AIアシスタント")); var x = el("span", "", "✕ 閉じる"); head.appendChild(x);
   var log = el("div", "cw-log");
-  var form = el("form", "cw-form"); var inp = el("input"); inp.placeholder = "質問を入力"; inp.maxLength = 300;
-  var send = el("button", "", "送信"); send.type = "submit"; form.appendChild(inp); form.appendChild(send);
+  var form = el("form", "cw-form"); var inp = el("input"); inp.placeholder = "メッセージを入力"; inp.maxLength = 300;
+  var send = el("button", "", "➤"); send.type = "submit"; send.title = "送信"; form.appendChild(inp); form.appendChild(send);
   box.appendChild(head); box.appendChild(log); box.appendChild(form);
   document.body.appendChild(box);
   // 各画面のリセットボタンの右に「AIに質問」ボタンを置く
@@ -33,10 +46,18 @@
   });
 
   function el(t, c, txt) { var e = document.createElement(t); if (c) e.className = c; if (txt) e.textContent = txt; return e; }
+  function hhmm() { var d = new Date(); return d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0"); }
+  /* LINE風の1行(アイコン・名前・吹き出し・時刻)を追加し、吹き出し要素を返す。吹き出しのremove()で行ごと消える。 */
   function say(text, who, imgs) {
-    var m = el("div", "cw-m " + (who === "u" ? "cw-u" : "cw-b"), text);
+    var u = who === "u", row = el("div", "cw-row " + (u ? "cw-row-u" : "cw-row-b"));
+    var m = el("div", "cw-m " + (u ? "cw-u" : "cw-b"), text);
     (imgs || []).forEach(function (f) { var i = el("img"); i.src = BASE + "img/" + encodeURIComponent(f); i.alt = f; m.appendChild(i); });
-    log.appendChild(m); log.scrollTop = log.scrollHeight; return m;
+    var meta = el("div", "cw-meta"); if (u) { meta.appendChild(el("div", "", "既読")); } meta.appendChild(el("div", "", hhmm()));
+    var line = el("div", "cw-line"); line.appendChild(m); line.appendChild(meta);
+    if (u) row.appendChild(line);
+    else { row.appendChild(el("div", "cw-av", "🤖")); var col = el("div", "cw-col"); col.appendChild(el("div", "cw-name", "AIアシスタント")); col.appendChild(line); row.appendChild(col); }
+    m.remove = function () { row.parentNode && row.parentNode.removeChild(row); };
+    log.appendChild(row); log.scrollTop = log.scrollHeight; return m;
   }
   function close() { box.classList.remove("cw-open"); }
   window.cwOpen = function () { box.classList.add("cw-open"); load(); inp.focus(); };
@@ -188,7 +209,7 @@
   }
   function table(h, rows) {
     var t = el("table"); t.style.cssText = "border-collapse:collapse;font-size:14px;margin-top:4px";
-    var add = function (cells, tag) { var tr = el("tr"); cells.forEach(function (c) { var e = el(tag, "", String(c)); e.style.cssText = "border:1px solid #cbd5e1;padding:2px 6px;text-align:left"; tr.appendChild(e); }); t.appendChild(tr); };
+    var add = function (cells, tag) { var tr = el("tr"); cells.forEach(function (c) { var e = el(tag, "", String(c)); e.style.cssText = "border:1px solid #cbd5e1;padding:2px 6px;text-align:left;white-space:nowrap"; tr.appendChild(e); }); t.appendChild(tr); };
     add(h, "th"); rows.forEach(function (r) { add(r, "td"); }); return t;
   }
   function copyText(t, b) {
