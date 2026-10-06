@@ -1502,8 +1502,36 @@ function doPost(e) {
     if (action === 'getUpdateLogPdf') return apiJsonOk_(getUpdateLogPdfForClient(params.fileId));
     if (action === 'getKenchikuCheckData') return apiJsonOk_(getKenchikuCheckDataForClient());
     if (action === 'getKenchikuLeaveData') return apiJsonOk_(getKenchikuLeaveDataForClient());
+    if (action === 'askAI') return apiJsonOk_(askAI_(params));
     return apiJsonErr_('不明なaction: ' + action);
   } catch (err) {
     return apiJsonErr_(String(err && err.message || err));
   }
+}
+
+
+/**
+ * 質問チャット用(新規)。FAQで答えられなかった質問だけがここに来る。
+ * 事前準備: スクリプトプロパティ GEMINI_API_KEY にGeminiのAPIキーを登録する。
+ * モデルは gemini-3.5-flash-lite 固定(変更しない)。
+ */
+function askAI_(params) {
+  const key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!key) throw new Error('GEMINI_API_KEY未設定');
+  const q = String(params.question || '').slice(0, 300);
+  const manual = String(params.manual || '').slice(0, 8000);
+  if (!q) throw new Error('質問が空です');
+  const prompt = 'あなたは社内アプリ「' + String(params.appName || '').slice(0, 50) + '」の操作案内係です。' +
+    '下の【マニュアル】の範囲だけで、日本語で簡潔に答えてください。' +
+    '載っていないことは推測せず「マニュアルに記載がないため管理者に確認してください」と答えてください。\n\n【マニュアル】\n' + manual + '\n\n【質問】\n' + q;
+  const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'x-goog-api-key': key },
+    payload: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+  });
+  if (res.getResponseCode() !== 200) throw new Error('Gemini応答エラー ' + res.getResponseCode());
+  const j = JSON.parse(res.getContentText());
+  const t = j.candidates && j.candidates[0] && j.candidates[0].content.parts.map(function (p) { return p.text || ''; }).join('');
+  if (!t) throw new Error('回答なし');
+  return { answer: t };
 }
