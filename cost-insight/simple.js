@@ -326,10 +326,11 @@
       box.querySelector('.gHead').innerHTML = head;
       box.querySelector('.gLead').innerHTML = lead;
       box.querySelector('.gTable').innerHTML = rows;
-      const few = doneDays < 3, cx = few || Wg === null ? (Wg || 0) : t.weight + perDayW * leftDays;
-      drawBep('c-goal', { fixed: G.Ff, unitPrice: t.unitPrice, laborPerTon: G.lpt, varPerTon: t.varPerTon, profitRate: p,
-        fixedLabel: ['その他固定費'], otherFixed: G.Ff, laborRate: t.laborRate,
-        x: cx, fixedX: true, beTons: G.be, goalTons: Wg, handleLabel: few ? '目標' : '見込み', hideMoney: true });
+      // グラフは詳細版と同じ: 現在までの期間で、固定費=人件費(実績の工数×時間単価)+その他固定費(現在まで)、現在の位置=実績の生産重量
+      const fixedAll = t.fixed + t.labor, gs = solve(fixedAll, t.unitPrice, t.varPerTon, p);
+      drawBep('c-goal', { fixed: fixedAll, unitPrice: t.unitPrice, laborPerTon: 0, varPerTon: t.varPerTon, profitRate: p,
+        fixedLabel: ['固定費', '(人件費込み)'], otherFixed: t.fixed, laborRate: t.laborRate,
+        x: t.weight, fixedX: true, beTons: gs.be, goalTons: gs.goal, handleLabel: '現在', hideMoney: true });
       placeTargets(); requestAnimationFrame(placeTargets);
       return { goalSales: Wg === null ? 0 : Wg * t.unitPrice, progress: true };
     }
