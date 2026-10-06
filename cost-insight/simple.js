@@ -92,7 +92,7 @@
   /* ---------- 共通目盛り(グラフの比較用) ----------
      縦軸=固定費(人件費込み)を100%、横軸=損益分岐生産量を100%とした割合で描く。3工場・本社・夢前・鳥取の4つで
      縦横の最大を共通にするので、工場を切り替えても 固定費の線の高さ・損益分岐の位置が変わらない。 */
-  const NORM = { on: false };
+  const NORM = { on: true }; // 初期表示は共通目盛り(2026-10-06 ユーザー指示)
   function normFrame(sel) {
     const p = goalRate() / 100, cur = sel.to < sel.fullTo;
     let xmax = 1.6;
@@ -165,6 +165,7 @@
     $('f-prev').onclick = () => step(1);
     $('f-next').onclick = () => step(-1);
     $('f-reset').onclick = () => { resetView(); render(); };
+    syncNorm();
     $('c-norm').onclick = () => { NORM.on = !NORM.on; syncNorm(); render(); if (window.DetailView && window.DetailView.redraw) window.DetailView.redraw(); };
     window.addEventListener('resize', () => setTimeout(placeTargets, 0));
     S.inited = true;

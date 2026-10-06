@@ -96,6 +96,7 @@
       };
     });
     $('s-reset').onclick = () => { D.base = null; render(); };
+    K.syncNorm();
     $('s-norm').onclick = () => { K.NORM.on = !K.NORM.on; K.syncNorm(); render(); if (window.SimpleView && window.SimpleView.redraw) window.SimpleView.redraw(); };
     $('d-reset').onclick = () => { resetView(); render(); };
     D.inited = true;
