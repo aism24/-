@@ -8,7 +8,7 @@
      更新が反映されないことがある((A)のGAS版はdoGetで毎回動的生成されるためこの問題が
      起きない、という違いがユーザー報告で判明)。app.js/style.cssを変更するたびに
      ?v=の値を必ず変更してキャッシュを強制的に無効化すること。 -->
-<link rel="stylesheet" href="style.css?v=20261006a">
+<link rel="stylesheet" href="style.css?v=20261006i">
 </head>
 <body>
 
@@ -44,6 +44,7 @@
   <div class="homeWrap">
     <div class="appTitle"><img class="homeLogo" src="" data-logo>日報全期間集計</div>
     <div class="homeFactoryLabel" id="homeFactoryLabel"></div>
+    <div class="homeDataTime" id="homeDataTime"></div>
     <div class="homeButtons">
       <button class="homeBtn homeBtnCheck" disabled onclick="showScreen('report4')">① 日報入力チェック<span class="sub">未提出・重複・長時間勤務のチェック</span></button>
       <button class="homeBtn homeBtnLeave" disabled onclick="showScreen('report5')">② 有給等届けの確認<span class="sub">指定日の届出の確認</span></button>
@@ -503,7 +504,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="app.js?v=20261006h"></script>
+<script src="app.js?v=20261006i"></script>
 <script src="chat/chat-widget.js?v=20261006g"></script>
 </body>
 </html>

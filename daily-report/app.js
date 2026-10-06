@@ -35,6 +35,7 @@ async function apiPostRetry(action, params, maxAttempts) {
       return await apiPost(action, params);
     } catch (err) {
       lastErr = err;
+      if (/不明なaction/.test(err.message)) break; // GAS側が未対応。再試行しても同じ
       if (attempt < maxAttempts) await new Promise(r => setTimeout(r, 1500 * attempt));
     }
   }
@@ -387,6 +388,63 @@ async function initSyncPopup(){
   }
 }
 
+/* 起動時データの取得。①Vercel中継API(api/data。サーバー側で再試行+CDNキャッシュ)→
+   ②失敗時(確認用URL等で関数が無い場合も)GASのgetInitialData(5件を1回にまとめたもの)→
+   ③GAS側が未更新(不明なaction)なら従来の5件並行取得。
+   ブラウザからGASへ直接POSTすると、Google側の2段階応答(受取URL echo)が一定割合で
+   404/CORS errorになるため(2026-10-06実測)、通常は①で済ませる。 */
+async function fetchInitialData_(){
+  try {
+    return await fetchRelay_('init');
+  } catch (e) { /* ②へ */ }
+  try {
+    return await apiPostRetry('getInitialData', undefined, 3);
+  } catch (err) {
+    if (!/不明なaction/.test(err.message)) throw err;
+  }
+  const [master, rows, calendar, absenteeism, absenteeismDetail] = await Promise.all([
+    apiPostRetry('getMasterData', undefined, 3),
+    apiPostRetry('getAllDailyReportRows', undefined, 3),
+    apiPostRetry('getCompanyCalendarData', undefined, 3),
+    apiPostRetry('getAbsenteeismData', undefined, 3),
+    apiPostRetry('getAbsenteeismDetail', undefined, 3),
+  ]);
+  return { master, rows, calendar, absenteeism, absenteeismDetail, fetchedAt: null };
+}
+
+async function fetchRelay_(kind){
+  const res = await fetch('api/data?kind=' + kind);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  if (json.status !== 'success') throw new Error(json.message || '中継APIエラー');
+  return json.data;
+}
+
+/* 中継APIは行データを辞書+列形式(compact1)に詰めて返すため、元の行オブジェクトに戻す。
+   GASから直接取った場合は行オブジェクトの配列のまま。 */
+function expandRows_(rows){
+  if (!rows || rows.format !== 'compact1') return rows;
+  const keys = Object.keys(rows.cols), out = new Array(rows.n);
+  for (let i = 0; i < rows.n; i++) {
+    const r = {};
+    keys.forEach(k => { const v = rows.cols[k][i]; r[k] = rows.dict[k] ? rows.dict[k][v] : v; });
+    out[i] = r;
+  }
+  return out;
+}
+
+/* 中継APIはCDNキャッシュ(最大1日前の結果を返しつつ裏で更新)のため、データの時刻を表示する。
+   15分より古ければ、再読み込みで最新になる旨を添える。 */
+function showDataTime_(fetchedAt){
+  const el = document.getElementById('homeDataTime');
+  if (!el || !fetchedAt) return;
+  const d = new Date(fetchedAt);
+  const pad = n => String(n).padStart(2, '0');
+  const old = Date.now() - fetchedAt > 15 * 60 * 1000;
+  el.textContent = `データ時刻: ${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}` +
+    (old ? '(1分ほどして再読み込みすると最新になります)' : '');
+}
+
 async function loadAllData(){
   /* 本社/夢前/鳥取は起動時にgetAllDailyReportRows等で全データを先読み済みのため、
      ①のチェックボックスを押した瞬間はメモリ上のデータを表示するだけで済み速い。
@@ -400,13 +458,10 @@ async function loadAllData(){
      computeR5Groups_側のガードで制御)。 */
   ensureKenchikuData_();
 
-  const [master, rows, calendar, absenteeism, absenteeismDetail] = await Promise.all([
-    apiPostRetry('getMasterData', undefined, 3),
-    apiPostRetry('getAllDailyReportRows', undefined, 3),
-    apiPostRetry('getCompanyCalendarData', undefined, 3),
-    apiPostRetry('getAbsenteeismData', undefined, 3),
-    apiPostRetry('getAbsenteeismDetail', undefined, 3),
-  ]);
+  const init = await fetchInitialData_();
+  const master = init.master, rows = expandRows_(init.rows), calendar = init.calendar,
+        absenteeism = init.absenteeism, absenteeismDetail = init.absenteeismDetail;
+  showDataTime_(init.fetchedAt);
   MASTER = master;
   ALL_ROWS = rows.map(r => Object.assign({}, r, { _date: new Date(r.workDate.split('/').join('-')) }));
   CALENDAR_MAP = calendar;
@@ -1221,7 +1276,8 @@ async function ensureKenchikuData_(){
   if(KENCHIKU_LOADED || KENCHIKU_LOADING || KENCHIKU_FAILED) return;
   KENCHIKU_LOADING = true;
   try{
-    const data = await apiPostRetry('getKenchikuCheckData', {}, 2);
+    // 通常はVercel中継(CDNキャッシュ)。失敗時はGASへ直接
+    const data = await fetchRelay_('kenchiku').catch(() => apiPostRetry('getKenchikuCheckData', {}, 2));
     KENCHIKU_OPERATORS = data.operators || [];
     KENCHIKU_ROWS = data.rows || [];
     KENCHIKU_ABSENTEEISM = data.absenteeism || [];
