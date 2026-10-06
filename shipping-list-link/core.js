@@ -166,9 +166,7 @@
         var act = ctx.obj({ S: 'URI', URI: PDFLib.PDFString.of(encodeUri(a.uri)) });
         var ann = ctx.obj({ Type: 'Annot', Subtype: 'Link', Rect: rect, Border: [0, 0, 0], A: act });
         page.node.addAnnot(ctx.register(ann));
-        // リンクが付いた製品名は、淡い青の塗り(文字は読める半透明)+青い下線で目立たせる
-        page.drawRectangle({ x: rect[0] - 1, y: rect[1], width: rect[2] - rect[0] + 2, height: rect[3] - rect[1],
-          color: PDFLib.rgb(0.45, 0.7, 1), opacity: 0.35, borderWidth: 0 });
+        // リンクが付いた製品名は、青い下線で示す(文字色・背景は変えない)
         page.drawLine({ start: { x: a.ul[0], y: a.ul[1] }, end: { x: a.ul[2], y: a.ul[3] },
           thickness: 0.9, color: PDFLib.rgb(0, 0.2, 0.9) });
       });
