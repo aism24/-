@@ -292,7 +292,8 @@
     const t = tNow || analyze(sel.from, sel.lastTo, sel.sites); // 実績(ここまで)。selection() は to と lastTo が同じなので、render() で求めた結果を使い回す
     // 期間の途中は、詳細版と同じ「実績の単価・費用」で目標を出す(標準の目標は使わない)
     const useA = cur && t.weight > 0 && t.unitPrice > 0;
-    if (!useA && (!T || !(t.weight > 0 || cur))) { box.hidden = true; chartBox.hidden = true; return null; }
+    const useC = !cur && t.weight > 0 && t.unitPrice > 0; // 終わった期間も、その期間の実績の単価・費用で見る(詳細版と同じ)
+    if (!useA && !useC && (!T || !(t.weight > 0 || cur))) { box.hidden = true; chartBox.hidden = true; return null; }
     box.hidden = false; chartBox.hidden = false;
     const phr = (html) => String(html || '').split(/(?=（)|\|/).filter((x) => x !== '').map((x) => `<span class="ph">${x}</span>`).join('');
     const row = (label, value, unit, note, cls) => `<div class="gLabel">${label}</div><div class="gVal ${cls || ''}">${value}<span class="unit">${unit || ''}</span></div><div class="gNote">${phr(note)}</div>`;
@@ -304,6 +305,30 @@
     const isAll = sel.sites.length === SITE_LIST.length;
     const unitLbl = sel.mode === 'fiscal' ? '年度・12か月分' : '1か月';
     let head, lead, rows, x, label;
+    if (useC) {
+      // 終わった期間: 単価・仕入単価・時間単価はその期間の実績、固定費=その期間の人件費(実績の工数×時間単価)+その他固定費。詳細版と同じ
+      const fixedAll = t.fixed + t.labor, gs = solve(fixedAll, t.unitPrice, t.varPerTon, p), Wg = gs.goal;
+      const ok = Wg !== null && t.weight >= Wg - 0.05;
+      head = `目標（${unitLbl}）に届いたか（${sel.reiwa}）`;
+      lead = Wg === null ? '<span class="neg">この期間の単価・費用では目標に届きません</span>'
+        : ok ? `<span class="pos">✓ 実績で目標利益率を達成</span><span class="gLeadSub">（実績 ${ton(t.weight)}t／必要 ${ton(Wg)}t）</span>`
+          : `<span class="neg">目標利益率に必要な生産量に <b>${ton(Wg - t.weight)}t</b> 届きませんでした</span><span class="gLeadSub">（実績 ${ton(t.weight)}t／必要 ${ton(Wg)}t）</span>`;
+      rows = [
+        row('必要生産量', Wg === null ? '—' : ton(Wg), 't', Wg === null ? '' : `実績 ${ton(t.weight)}t（${cmp(t.weight - Wg, 't', 1, true)}）`),
+        row('損益分岐生産量', gs.be === null ? '—' : ton(gs.be), 't', gs.be === null ? '' : `実績 ${ton(t.weight)}t（${cmp(t.weight - gs.be, 't', 1, true)}）`),
+        row('工数', fmt(t.hours, 0), 'h', '実績（人件費は工数で固定）'),
+        row('1t当たり人工数', npt(t.ninkuPerTon), '人工/t', Wg === null ? '' : `必要生産量なら ${npt(t.hours / 8 / Wg)}`),
+        row('利益率', fmt(g, g % 1 ? 1 : 0), '%', t.profitRate === null ? '実績 —' : `実績 <span class="${t.profitRate >= p - 1e-9 ? 'pos' : t.profitRate < 0 ? 'neg' : 'warn'}">${fmt(t.profitRate * 100, 1)}%</span>`),
+      ].join('');
+      box.querySelector('.gHead').innerHTML = head;
+      box.querySelector('.gLead').innerHTML = lead;
+      box.querySelector('.gTable').innerHTML = rows;
+      drawBep('c-goal', { fixed: fixedAll, unitPrice: t.unitPrice, laborPerTon: 0, varPerTon: t.varPerTon, profitRate: p,
+        fixedLabel: ['固定費', '(人件費込み)'], otherFixed: t.fixed, laborRate: t.laborRate,
+        x: t.weight, fixedX: true, beTons: gs.be, goalTons: Wg, handleLabel: '実績', hideMoney: true });
+      placeTargets(); requestAnimationFrame(placeTargets);
+      return { goalSales: Wg === null ? 0 : Wg * t.unitPrice, progress: false };
+    }
     if (useA) {
       // 実績ベース: 単価・仕入単価・時間単価は現在までの実績。人件費は工数ペースで固定(endModel)。詳細版の「期間全体で達成するには」と同じ前提
       const goalFor = (sites) => {
