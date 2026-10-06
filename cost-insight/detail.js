@@ -55,7 +55,7 @@
   }
 
   /* ---------- 画面の準備 ---------- */
-  function init() {
+  function fillLists() {
     const m = state.model;
     D.lastYmd = K.lastDataYmd();
     const first = C.periodKeyOf(m.analysisFrom), cur = D.lastYmd ? C.periodKeyOf(D.lastYmd) : first;
@@ -68,6 +68,10 @@
     for (let y = C.fiscalYearOf(cur); y >= C.fiscalYearOf(first); y--) fys.push(y);
     $('d-fiscal').innerHTML = fys.map((y) => `<option value="${y}">${y}/11/21〜${y + 1}/11/20期</option>`).join('');
     $('d-fiscal').value = String(C.fiscalYearOf(cur));
+  }
+
+  function init() {
+    fillLists();
     $('d-sites').innerHTML = [['', SITE_LIST.length + '工場']].concat(SITE_LIST.map((s) => [s, s]))
       .map(([v, l]) => `<button type="button" data-site="${esc(v)}">${esc(l)}</button>`).join('');
     const change = () => { D.base = null; render(); };
@@ -100,6 +104,17 @@
     $('s-norm').onclick = () => { K.NORM.on = !K.NORM.on; K.syncNorm(); render(); if (window.SimpleView && window.SimpleView.redraw) window.SimpleView.redraw(); };
     $('d-reset').onclick = () => { resetView(); render(); };
     D.inited = true;
+  }
+
+  /* 「生産データ更新」の後: データが入れ替わったので、期間・年度の選択肢を作り直す(選んでいる期間・工場はそのまま) */
+  function reload() {
+    if (!state.model || !D.inited) return;
+    const per = $('d-period').value, fy = $('d-fiscal').value;
+    fillLists();
+    if (Array.from($('d-period').options).some((o) => o.value === per)) $('d-period').value = per;
+    if (Array.from($('d-fiscal').options).some((o) => o.value === fy)) $('d-fiscal').value = fy;
+    D.base = null;
+    if (state.view === 'detail') render();
   }
 
   // 年度・今期・3工場の表示に戻す(画面を開いたときと「リセット」ボタン)
@@ -334,5 +349,5 @@
     box.innerHTML = html;
   }
 
-  window.DetailView = { show, redraw: () => { if (state.view === 'detail') render(); } };
+  window.DetailView = { show, reload, redraw: () => { if (state.view === 'detail') render(); } };
 })();

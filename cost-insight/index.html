@@ -249,6 +249,7 @@
     <div class="sTop"><button class="btn orange" type="button" data-go="sitemode">戻る</button><span>工場別進捗分析 シンプル版</span></div>
     <div class="sFilters">
       <button type="button" id="f-reset" class="resetBtn" title="年度・今期・3工場の表示に戻します">リセット</button>
+      <button type="button" class="resetBtn" onclick="refreshProduction(this)" title="生産・日報のデータを今すぐ集計し直して画面に反映します(ふだんは毎朝6時台に自動で更新。1分ほどかかることがあります)">生産データ更新</button>
       <div class="sRow">
         <div id="f-modes" class="segBtns" role="group" aria-label="期間">
           <button type="button" data-mode="fiscal">年度</button>
@@ -285,6 +286,7 @@
     <div class="sTop"><button class="btn" type="button" data-go="sitemode">戻る</button><span>工場別進捗分析 詳細版(目標シミュレーター)</span></div>
     <div class="sFilters">
       <button type="button" id="d-reset" class="resetBtn" title="年度・今期・3工場の表示に戻します">リセット</button>
+      <button type="button" class="resetBtn" onclick="refreshProduction(this)" title="生産・日報のデータを今すぐ集計し直して画面に反映します(ふだんは毎朝6時台に自動で更新。1分ほどかかることがあります)">生産データ更新</button>
       <div class="sRow">
         <div id="d-modes" class="segBtns" role="group" aria-label="期間">
           <button type="button" data-mode="fiscal">年度</button>

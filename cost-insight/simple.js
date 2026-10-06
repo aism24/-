@@ -135,7 +135,7 @@
     return last;
   }
 
-  function init() {
+  function fillLists() {
     const m = state.model;
     S.lastYmd = lastDataYmd();
     const first = C.periodKeyOf(m.analysisFrom);
@@ -149,6 +149,10 @@
     for (let y = C.fiscalYearOf(cur); y >= C.fiscalYearOf(first); y--) fys.push(y);
     $('f-sfiscal').innerHTML = fys.map((y) => `<option value="${y}">${y}/11/21〜${y + 1}/11/20期</option>`).join('');
     $('f-sfiscal').value = String(C.fiscalYearOf(cur));
+  }
+
+  function init() {
+    fillLists();
     $('f-ssites').innerHTML = [['', SITE_LIST.length + '工場']].concat(SITE_LIST.map((s) => [s, s]))
       .map(([v, l]) => `<button type="button" data-site="${esc(v)}">${esc(l)}</button>`).join('');
     $('f-modes').onclick = (e) => {
@@ -169,6 +173,16 @@
     $('c-norm').onclick = () => { NORM.on = !NORM.on; syncNorm(); render(); if (window.DetailView && window.DetailView.redraw) window.DetailView.redraw(); };
     window.addEventListener('resize', () => setTimeout(placeTargets, 0));
     S.inited = true;
+  }
+
+  /* 「生産データ更新」の後: データが入れ替わったので、期間・年度の選択肢を作り直す(選んでいる期間・工場はそのまま) */
+  function reload() {
+    if (!state.model || !S.inited) return;
+    const per = $('f-speriod').value, fy = $('f-sfiscal').value;
+    fillLists();
+    if (Array.from($('f-speriod').options).some((o) => o.value === per)) $('f-speriod').value = per;
+    if (Array.from($('f-sfiscal').options).some((o) => o.value === fy)) $('f-sfiscal').value = fy;
+    if (state.view === 'simple') render();
   }
 
   // 年度・今期・3工場の表示に戻す(画面を開いたときと「リセット」ボタン)
@@ -533,5 +547,5 @@
     ['c-norm', 's-norm'].forEach((id) => { const b = $(id); if (b) { b.classList.toggle('changed', NORM.on); b.textContent = NORM.on ? '実額の目盛りに戻す' : '共通目盛りで比較'; } });
   }
   window.CIKit = { NORM, normFrame, normOpts, syncNorm, SITE_LIST, otherFixed, solve, fixedFor, siteShare, analyze, endModel, workDaysIn, ymdToUtc, utcToYmd, calendar, goalRate, lastDataYmd };
-  window.SimpleView = { show, redraw: render };
+  window.SimpleView = { show, redraw: render, reload };
 })();
