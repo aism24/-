@@ -1544,11 +1544,18 @@ function askAI_(params) {
   let genCfg = {};
   if (params.mode === 'route') {
     /* 質問の意図だけをJSONで返させる。日報・人事等の実データはGeminiに送らない(集計はブラウザ側)。 */
-    prompt = 'あなたは社内アプリ「' + appName + '」の質問振り分け係です。今日は' + String(params.today || '').slice(0, 10) + 'です。' +
-      '質問を次のJSONだけで返してください。' +
-      '{"intent":"daily_report|headcount|leave_list|howto|other","date":"yyyy/MM/dd(不明なら空)","person":"社員名または工事名(日報のとき)","factory":"本社|夢前|鳥取|総務建築(在職者人数のとき。無指定は空)","answer":"intentがhowtoのときだけ、下のマニュアルの範囲での簡潔な日本語の回答。記載がなければ「マニュアルに記載がないため管理者に確認してください」"}。' +
-      'daily_report=ある日のある人(または工事)の日報データ、headcount=在職者人数、leave_list=ある日の有給等届け一覧、howto=アプリの操作方法、other=それ以外。' +
-      '年が無い日付は今日以前で最も近い年にしてください。\n\n【マニュアル】\n' + manual + '\n\n【質問】\n' + q;
+    prompt = 'あなたは社内アプリ「' + appName + '」の質問振り分け係です。今日は' + String(params.today || '').slice(0, 20) + 'です。' +
+      '利用者の質問(言い方・語順・略し方は自由)を読み取り、次のJSONだけで返してください。' +
+      '{"intent":"daily_report|hours_summary|not_submitted|headcount|leave_list|leave_person|howto|other",' +
+      '"dateFrom":"yyyy/MM/dd","dateTo":"yyyy/MM/dd","person":"社員名(敬称なし。姓だけでも可)","construction":"工事名や工事番号","factory":"本社|夢前|鳥取|総務建築","answer":""}。' +
+      'intentの意味: daily_report=誰か(または工事)の日報の中身(何の作業を何時間したか)、' +
+      'hours_summary=誰か(または工事)の期間の合計時間・内訳、not_submitted=日報を出していない(未提出・未入力の)人、' +
+      'headcount=在職者数・人数、leave_list=ある日(期間)に有給・休み・届けを出している人の一覧、' +
+      'leave_person=特定の人の有給・休み・届けの履歴、howto=アプリの使い方、other=それ以外。' +
+      '日付: 1日だけならdateFromとdateToを同じ日に。「先月」「今月」「先週」「今年」等は期間に直す。年が無い日付は今日以前で最も近い年。' +
+      '期間の指定が無い場合、daily_report・not_submitted・leave_listは今日、hours_summary・leave_personは今月1日〜今日。headcountは日付不要。' +
+      '分からない項目は空文字。answerはintentがhowtoのときだけ、下のマニュアルの範囲での簡潔な日本語の回答' +
+      '(記載がなければ「マニュアルに記載がないため管理者に確認してください」)。\n\n【マニュアル】\n' + manual + '\n\n【質問】\n' + q;
     genCfg = { responseMimeType: 'application/json' };
   } else {
     prompt = 'あなたは社内アプリ「' + appName + '」の操作案内係です。' +
