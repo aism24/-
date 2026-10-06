@@ -204,10 +204,11 @@ main.wide { max-width: none; margin-top: 8px; }
   body #v-simple .sChart, body #v-detail .panel.simChart, body #v-workone .panel.simChart { position: sticky; top: var(--stickyH, 120px); align-self: start; height: calc(100vh - var(--stickyH, 120px) - 8px); min-height: 0; }
 }
 
-/* 生産データ更新: リセットと同じ黄色。文字がはみ出さないよう幅は文字に合わせる(リセットの72px固定・左端固定は使わない) */
-.refreshBtn { background: #ffd83a; color: #1a1a19; border: 2px solid #e0b400; border-radius: 6px; padding: 6px 12px; font-weight: 700; white-space: nowrap; align-self: center; cursor: pointer; }
+/* 重量・工数更新: 黄色の背景に赤の太字。カード(上部の操作バー)の右端にそろえる(PCは右端に固定、狭い画面は行の右端) */
+.refreshBtn { background: #ffd83a; color: #d00000; border: 2px solid #e0b400; border-radius: 6px; padding: 6px 12px; font-weight: 800; white-space: nowrap; align-self: center; margin-left: auto; cursor: pointer; }
 .refreshBtn:hover { background: #ffe680; }
 .refreshBtn:disabled { opacity: .6; cursor: default; }
 @media (min-width: 1000px) {
-  #v-simple .sBar .refreshBtn, #v-detail .sBar .refreshBtn { width: auto; border-width: 1px; padding: 0 10px; }
+  #v-simple .sFilters, #v-detail .sFilters { padding-left: 100px; padding-right: 120px; } /* 左のリセット・右の更新ボタンと中央の並びが重ならないよう、左右を同じ幅だけ空ける */
+  #v-simple .sBar .refreshBtn, #v-detail .sBar .refreshBtn { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); margin: 0; width: auto; border-width: 1px; padding: 0 10px; }
 }

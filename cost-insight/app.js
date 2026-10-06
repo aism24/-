@@ -148,7 +148,7 @@ async function showLatestBudget() {
   }
 }
 
-// 「生産データ更新」: GASで生産・日報を今すぐ集計し直して(action=refresh。ふだんは毎朝6時台に自動)、画面に反映する。
+// 「重量・工数更新」: GASで生産・日報を今すぐ集計し直して(action=refresh。ふだんは毎朝6時台に自動)、画面に反映する。
 // 更新中は読み込みのポップアップ(進み具合のバー)を出す。選んでいる期間・工場はそのまま。集計に30秒〜1分ほどかかる
 let refreshingProduction = false;
 async function refreshProduction() {
@@ -156,8 +156,8 @@ async function refreshProduction() {
   refreshingProduction = true;
   const box = document.getElementById('loading'), title = document.getElementById('ld-title'), err = document.getElementById('ld-err'), note = document.getElementById('ld-note');
   document.querySelectorAll('.refreshBtn').forEach(b => { b.disabled = true; });
-  title.textContent = '生産データを更新中…';
-  note.textContent = '生産・日報を集計し直しています(30秒〜1分ほどかかります)';
+  title.textContent = '重量・工数を更新中…';
+  note.textContent = '生産重量・工数を集計し直しています(30秒〜1分ほどかかります)';
   err.hidden = true;
   box.classList.remove('done');
   const bar = startLoadingBar();
