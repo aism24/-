@@ -114,7 +114,11 @@ function groupByProduct(rows, products) {
     if (row.ed + ' ' + row.et > g.last) g.last = row.ed + ' ' + row.et;
   });
   return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) {
-    return a.workNo === b.workNo ? (a.first < b.first ? -1 : 1) : (a.workNo < b.workNo ? -1 : 1);
+    // 日付(旧・溶接日=最終終了)の新しいものを上に。同じなら工事番号→初回開始→ロボの順
+    if (a.last !== b.last) return a.last > b.last ? -1 : 1;
+    if (a.workNo !== b.workNo) return a.workNo < b.workNo ? -1 : 1;
+    if (a.first !== b.first) return a.first < b.first ? -1 : 1;
+    return a.robot - b.robot;
   });
 }
 
@@ -465,7 +469,7 @@ if (typeof document !== 'undefined') {
       st.data.works.forEach(function (w) { works[w.workNo] = w.workName; });
       const bad = groups.filter(function (g) { return g.status !== 'ok'; }).length;
       $('detailInfo').textContent = groups.length + '製品' + (bad ? '(要確認 ' + bad + '件)' : '');
-      const head = '<tr><th>工事番号</th><th>工事名</th><th>図面番号</th><th>製品名</th><th>サイズ</th><th>重量(t)</th><th>ロボ</th><th>溶接回数</th><th>加工日</th><th>溶接日</th><th>経過(分)</th><th>アーク(分)</th><th>ワイヤ(kg)</th><th>溶接長(m)</th></tr>';
+      const head = '<tr><th>工事番号</th><th>工事名</th><th>図面番号</th><th>製品名</th><th>サイズ</th><th>重量(t)</th><th>ロボ</th><th>溶接回数</th><th>加工日</th><th>日付</th><th>経過(分)</th><th>アーク(分)</th><th>ワイヤ(kg)</th><th>溶接長(m)</th></tr>';
       const body = groups.map(function (g, i) {
         const p = g.product;
         let cls = '';
@@ -655,7 +659,7 @@ if (typeof document !== 'undefined') {
 
       // --- 全て抽出(製品ごと1行) ---
       const wd = wb.addWorksheet('全て抽出', { views: [{ state: 'frozen', ySplit: 1 }], pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
-      const dh = ['工事番号', '工事名', '図面番号', '製品名', 'サイズ', '重量(t)', 'ロボット', '溶接回数', '加工日', '溶接日', '初回開始', '最終終了', '経過時間(分)', 'アークタイム(分)', '非アークタイム(分)', 'ワイヤ使用量(kg)', '換算溶接長(m)', '確認'];
+      const dh = ['工事番号', '工事名', '図面番号', '製品名', 'サイズ', '重量(t)', 'ロボット', '溶接回数', '加工日', '日付', '初回開始', '最終終了', '経過時間(分)', 'アークタイム(分)', '非アークタイム(分)', 'ワイヤ使用量(kg)', '換算溶接長(m)', '確認'];
       const dr = wd.getRow(1);
       dh.forEach(function (h, i) { const c = dr.getCell(i + 1); c.value = h; c.fill = blue; c.font = { bold: true }; c.alignment = { wrapText: true, vertical: 'middle' }; });
       const works = {};
