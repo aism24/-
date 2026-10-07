@@ -5,7 +5,8 @@
  */
 var MODEL = 'gemini-3.5-flash-lite'; // 固定。明示の指示があるときだけ変える(自動選択・可変にしない)
 var SHEET = { OPERATOR: 'Operator', ADMIN: '管理者', RULES: '規則', STAGE: '規則_取込', HIST: '規則履歴',
-              LOG: '質問ログ', CAL: 'CompanyCalendar', CONS: 'Construction', META: '設定', INFO: '諸情報', ABS: '有給欠勤' };
+              LOG: '質問ログ', CAL: 'CompanyCalendar', CONS: 'Construction', META: '設定', INFO: '諸情報', ABS: '有給欠勤',
+              WORK: '日報', WORKP: '日報_過去', CONT: '作業内容', CONS5: '工事_建設' };
 var OPERATOR_HEADER = ['社員No', '氏名', '事業部', '工場', '部', '生まれた月', '電話番号', 'E-Mail', 'Reportcheck', '運転者', '管理者'];
 var LOG_HEADER = ['質問ID', '日時', 'E-Mail', '氏名', '質問', '回答', '区分', '参照', '評価', 'コメント', '検索ms', 'Gemini ms', '合計ms', '対応状況'];
 var RULE_HEADER = ['規程', '条', '見出し', '本文'];
@@ -66,7 +67,14 @@ function safe_(s) { s = String(s == null ? '' : s); return /^[=+\-@\t\r]/.test(s
 function ts_(v) { return v instanceof Date ? Utilities.formatDate(v, TZ, 'yyyy/MM/dd HH:mm:ss') : String(v); }
 // シートから読んだ日時(Date)を、タイムゾーンの影響が出ないよう文字に直す(Logic.gsは文字の日付だけを扱う)
 function plain_(values) {
-  return values.map(function (row) { return row.map(function (v) { return v instanceof Date ? Utilities.formatDate(v, TZ, 'yyyy/MM/dd HH:mm:ss') : v; }); });
+  function p2(n) { return (n < 10 ? '0' : '') + n; }
+  return values.map(function (row) {
+    return row.map(function (v) {
+      if (!(v instanceof Date)) return v;
+      var j = new Date(v.getTime() + 9 * 3600000); // 日本時間(夏時間なし)。大量の日報で formatDate を呼ぶと遅いため直接計算
+      return j.getUTCFullYear() + '/' + p2(j.getUTCMonth() + 1) + '/' + p2(j.getUTCDate()) + ' ' + p2(j.getUTCHours()) + ':' + p2(j.getUTCMinutes()) + ':' + p2(j.getUTCSeconds());
+    });
+  });
 }
 // 書き込み中に空になる瞬間を作らない: 先に新しい内容を書き、余った下の行だけを消す
 function writeTable_(sh, values) {
@@ -173,6 +181,10 @@ function ask_(user, question) {
   if (question.length > 300) throw err_('bad_request', '質問は300文字以内にしてください');
   var abs = AI_LOGIC.parseAbsenceQuery(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), rosterList_());
   if (abs) return askAbsence_(user, question, abs, t0);
+  var wk = AI_LOGIC.parseWorkQuery(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), rosterList_(), loadProjects_());
+  if (wk) return askWork_(user, question, wk, t0);
+  var cal = AI_LOGIC.parseCalendarQuery(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'));
+  if (cal) return askCalendar_(user, question, cal, t0);
   var chunks = loadRules_();
   if (!chunks.length) throw err_('no_rules', '就業規則がまだ登録されていません');
   var t1 = Date.now();
@@ -234,6 +246,77 @@ function askAbsence_(user, question, abs, t0) {
            ms: { search: 0, ai: 0, total: total } };
 }
 
+// ---------- 会社カレンダーの質問(今日の日付・出勤日か・次の休日/連休): コードが答える ----------
+function askCalendar_(user, question, cal, t0) {
+  var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), src = '会社カレンダー(CompanyCalendar)';
+  var today = Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), hol = loadHolidays_();
+  if (!Object.keys(hol).length) throw err_('no_data', '会社カレンダーがまだ取り込まれていません。管理者に連絡してください');
+  var answer = AI_LOGIC.answerCalendar(cal, today, hol), total = Date.now() - t0;
+  logAsk_(qid, user, question, answer, '回答済', src, 0, 0, total, '');
+  return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], asOf: '会社カレンダー ' + (getMeta_('roster_synced_at') || '(更新日不明)'), ms: { search: 0, ai: 0, total: total } };
+}
+
+// ---------- 日報(工数)の質問: 数字はコードが集計して文章にする(AIは使わない) ----------
+function loadProjects_() {
+  var out = [], c = getLarge_('projects');
+  if (c) return JSON.parse(c);
+  [SHEET.CONS, SHEET.CONS5].forEach(function (n) {
+    var sh = ss_().getSheetByName(n); if (!sh || sh.getLastRow() < 2) return;
+    var ix = {}; sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].forEach(function (h, i) { ix[AI_LOGIC.squash(h)] = i; });
+    sh.getDataRange().getValues().slice(1).forEach(function (r) {
+      var nm = String(r[ix['工事名']] || '').replace(/\.\.\.$/, '').trim();
+      if (nm) out.push({ id: String(r[ix['工事ID']] || '').trim(), no: String(r[ix['工事No']] || '').trim(), name: nm });
+    });
+  });
+  if (out.length) putLarge_('projects', JSON.stringify(out), 3600);
+  return out;
+}
+function loadContentNames_() {
+  var sh = ss_().getSheetByName(SHEET.CONT), m = {};
+  if (!sh || sh.getLastRow() < 2) return m;
+  sh.getDataRange().getValues().slice(1).forEach(function (r) { if (r[0]) m[String(r[0]).trim()] = String(r[1]).trim(); });
+  return m;
+}
+// 日付(yyyymmdd・小さい順)の列を二分探索して、期間に当たる行だけを読む
+function workRows_(sheetName, fromNum, toNum) {
+  var sh = ss_().getSheetByName(sheetName), last = sh ? sh.getLastRow() : 0;
+  if (last < 2) return [];
+  var dates = sh.getRange(2, 3, last - 1, 1).getValues(), n = dates.length, lo = 0, hi = n, mid;
+  while (lo < hi) { mid = (lo + hi) >> 1; if (Number(dates[mid][0]) < fromNum) lo = mid + 1; else hi = mid; }
+  var start = lo; lo = start; hi = n;
+  while (lo < hi) { mid = (lo + hi) >> 1; if (Number(dates[mid][0]) <= toNum) lo = mid + 1; else hi = mid; }
+  if (lo <= start) return [];
+  return sh.getRange(start + 2, 1, lo - start, AI_LOGIC.WORK_HEADER.length).getValues();
+}
+function askWork_(user, question, wk, t0) {
+  var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), answer = '';
+  var src = '日報データ(日報アプリのDailyReport)';
+  if (wk.who === 'ambiguous') {
+    answer = '該当する方が複数います: ' + wk.people.map(function (p) { return p.name + '(社員No' + p.no + ')'; }).join('、') + '。お一人ずつ質問してください。';
+  } else if (wk.projects.length > 1) {
+    answer = '該当する工事が複数あります: ' + wk.projects.slice(0, 6).map(function (p) { return p.name + (p.no ? '(' + p.no + ')' : ''); }).join('、') + '。工事名をもう少し詳しく書いてください。';
+  } else {
+    var f = {}, title = '', roster = rosterList_(), names = {};
+    roster.forEach(function (p) { names[p.no] = p.name; });
+    var person = wk.who === 'self' ? { no: user.no, name: user.name } : wk.who === 'person' ? wk.people[0] : null;
+    if (person) f.no = person.no;
+    if (wk.projects.length) f.project = wk.projects[0];
+    title = person && f.project ? person.name + 'さん(社員No' + person.no + ')の工事「' + f.project.name + '」'
+          : person ? person.name + 'さん(社員No' + person.no + ')' : '工事「' + f.project.name + '」';
+    var fromN = Number(wk.period.from.replace(/\//g, '')), toN = Number(wk.period.to.replace(/\//g, ''));
+    var rows = workRows_(SHEET.WORK, fromN, toN).concat(workRows_(SHEET.WORKP, fromN, toN));
+    if (!rows.length && !ss_().getSheetByName(SHEET.WORK)) throw err_('no_data', '日報のデータがまだ取り込まれていません。管理者に連絡してください');
+    var sum = AI_LOGIC.summarizeWork(rows, f);
+    answer = AI_LOGIC.formatWorkAnswer(sum, { title: title, period: wk.period, names: names, contentNames: loadContentNames_(),
+      showPeople: !person, skipProject: !!f.project, asOf: (getMeta_('work_synced_at') || '').slice(0, 10) || '更新日不明' });
+    if (!f.project && !person) answer = '誰の・どの工事の工数かを書いてください(例: 「私の今月の工数」「◯◯さんの先月の作業時間」)。';
+  }
+  var total = Date.now() - t0;
+  logAsk_(qid, user, question, answer, '回答済', src, 0, 0, total, '');
+  return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], asOf: '日報 ' + (getMeta_('work_synced_at') || '(更新日不明)'),
+           ms: { search: 0, ai: 0, total: total } };
+}
+
 function logAsk_(qid, user, question, answer, kind, sources, tSearch, tAi, total, status) {
   sheet_(SHEET.LOG, LOG_HEADER).appendRow([qid, now_(), user.email, user.name, safe_(question), safe_(answer), kind,
     sources, '', '', tSearch, tAi, total, status]);
@@ -266,11 +349,12 @@ function syncRoster() {
     copySheet_(b2, SHEET.CAL);
     copySheet_(b2, SHEET.CONS);
     syncAbsence_(b2, b5);
+    syncWork_(b2, b5);
     CacheService.getScriptCache().remove('roster_n');
     setMeta_('roster_synced_at', now_());
     setMeta_('roster_warnings', r.warnings.join('\n'));
     setMeta_('roster_error', '');
-    return '名簿 ' + r.table.length + '人(管理者' + r.adminCount + '人) / 警告' + r.warnings.length + '件 / 有給欠勤 ' + (getMeta_('absence_error') ? '要確認: ' + getMeta_('absence_error') : getMeta_('absence_synced_at') + ' 更新');
+    return '名簿 ' + r.table.length + '人(管理者' + r.adminCount + '人) / 警告' + r.warnings.length + '件 / 有給欠勤 ' + (getMeta_('absence_error') ? '要確認: ' + getMeta_('absence_error') : getMeta_('absence_synced_at') + ' 更新' + ' 更新') + ' / 日報 ' + (getMeta_('work_error') ? '要確認: ' + getMeta_('work_error') : getMeta_('work_synced_at') + ' 更新');
   } catch (err) {
     setMeta_('roster_error', now_() + ' ' + err.message); // 失敗時は前回の名簿のまま
     return '失敗: ' + err.message;
@@ -287,6 +371,59 @@ function syncAbsence_(b2, b5) {
     setMeta_('absence_synced_at', now_());
     setMeta_('absence_error', r.warnings.concat(s5 ? [] : ['B5にAbsenteeismシートが無いため、B2のみ取り込みました']).join(' / '));
   } catch (err) { setMeta_('absence_error', now_() + ' ' + err.message); }
+}
+// 書き込みは大きいため、先に新しい内容を書き(分割)、余った下の行だけを消す
+function writeBig_(sh, values) {
+  var rows = values.length, cols = values[0].length, last = sh.getLastRow(), CH = 15000;
+  if (sh.getMaxRows() < rows) sh.insertRowsAfter(sh.getMaxRows(), rows - sh.getMaxRows());
+  for (var i = 0; i < rows; i += CH) { var part = values.slice(i, i + CH); sh.getRange(i + 1, 1, part.length, cols).setValues(part); }
+  if (last > rows) sh.getRange(rows + 1, 1, last - rows, sh.getMaxColumns()).clearContent();
+}
+// 日報(現行分): B2・B5の現行DailyReportを、1作業=1行にそろえて「日報」シートへ。失敗しても前回のまま
+function syncWork_(b2, b5) {
+  try {
+    var warnings = [], seen = {};
+    var cons = AI_LOGIC.buildConsMap(plain_(b2.getSheetByName('Construction').getDataRange().getValues()));
+    var rows = AI_LOGIC.workFromB2(plain_(b2.getSheetByName('DailyReport').getDataRange().getValues()), cons, seen, warnings);
+    var n2 = rows.length;
+    rows = rows.concat(AI_LOGIC.workFromB5(plain_(b5.getSheetByName('DailyReport').getDataRange().getValues()), seen, warnings));
+    if (warnings.length) throw new Error(warnings.join(' / '));
+    if (n2 < 1000 || rows.length - n2 < 1000) throw new Error('日報の件数が極端に少ない(B2 ' + n2 + '件、B5 ' + (rows.length - n2) + '件)ため更新を中止しました');
+    AI_LOGIC.sortWork(rows);
+    writeBig_(sheet_(SHEET.WORK, AI_LOGIC.WORK_HEADER), [AI_LOGIC.WORK_HEADER].concat(rows));
+    // 作業内容の名前(B2のWorkcontent・B5のSection)と、B5の工事一覧
+    var cont = [['コード', '名称', '元']];
+    var wc = b2.getSheetByName('Workcontent'), sc = b5.getSheetByName('Section');
+    if (wc) wc.getDataRange().getValues().slice(1).forEach(function (r) { if (r[0]) cont.push([String(r[0]).trim(), String(r[1]).trim(), 'B2']); });
+    if (sc) sc.getDataRange().getValues().slice(1).forEach(function (r) { if (r[0]) cont.push([String(r[0]).trim(), String(r[1]).trim(), 'B5']); });
+    writeTable_(sheet_(SHEET.CONT), cont);
+    var c5 = b5.getSheetByName('Construction');
+    if (c5) { var cv = c5.getDataRange().getValues().filter(function (r) { return r[0] || r[1]; }); if (cv.length > 1) writeTable_(sheet_(SHEET.CONS5), cv); }
+    CacheService.getScriptCache().remove('projects_n');
+    setMeta_('work_synced_at', now_());
+    setMeta_('work_error', '');
+  } catch (err) { setMeta_('work_error', now_() + ' ' + err.message); }
+}
+// 日報(過去分): DATA2025.11.21以降 → DATA2024.11.21以降 の順に、現行分に無い WorkReport No だけを「日報_過去」へ(メニューから手動。再実行できる)
+function importWorkPast() {
+  var cur = sheet_(SHEET.WORK, AI_LOGIC.WORK_HEADER), seen = {}, vals = cur.getLastRow() > 1 ? cur.getRange(2, 1, cur.getLastRow() - 1, 1).getValues() : [];
+  if (vals.length < 1000) throw new Error('先に「名簿・工事・カレンダーを今すぐ更新」で現行の日報を取り込んでください');
+  vals.forEach(function (r) { seen[String(r[0]).trim()] = true; });
+  var b2 = SpreadsheetApp.openById(prop_('DailyReport'));
+  var cons = AI_LOGIC.buildConsMap(plain_(b2.getSheetByName('Construction').getDataRange().getValues()));
+  var rows = [], warnings = [], report = [];
+  ['DailyReport_DATA2025.11.21以降', 'DailyReport_DATA2024.11.21以降'].forEach(function (k) {
+    var id = prop_(k, true); if (!id) { report.push(k + ': 未設定'); return; }
+    var sh = SpreadsheetApp.openById(id).getSheetByName('DailyReport');
+    var part = AI_LOGIC.workFromB2(plain_(sh.getDataRange().getValues()), cons, seen, warnings);
+    report.push(k + ': ' + part.length + '行'); rows = rows.concat(part);
+  });
+  if (warnings.length) throw new Error(warnings.join(' / '));
+  if (!rows.length) throw new Error('過去分が1行も取れませんでした(諸情報のIDを確認)');
+  AI_LOGIC.sortWork(rows);
+  writeBig_(sheet_(SHEET.WORKP, AI_LOGIC.WORK_HEADER), [AI_LOGIC.WORK_HEADER].concat(rows));
+  setMeta_('work_past_at', now_());
+  return '過去分を取り込みました(合計' + rows.length + '行)\n' + report.join('\n');
 }
 function copySheet_(srcSs, name) {
   var src = srcSs.getSheetByName(name);
@@ -348,6 +485,7 @@ function dailyMail() {
   });
   var warn = getMeta_('roster_warnings') + (getMeta_('roster_error') ? '\n取り込み失敗: ' + getMeta_('roster_error') : '')
   warn += (getMeta_('absence_error') ? '\n有給欠勤の取り込み: ' + getMeta_('absence_error') : '');
+  warn += (getMeta_('work_error') ? '\n日報の取り込み: ' + getMeta_('work_error') : '');
   var hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, warn));
   var warnNew = warn.trim() && hash !== getMeta_('roster_warnings_sent');
   if (!items.length && !warnNew) return '送信なし';
@@ -397,6 +535,12 @@ function selfTest() {
     if (rows.length < 1000) throw new Error('有給欠勤シートが少なすぎます(' + rows.length + '件)。メニューで更新してください' + (getMeta_('absence_error') ? ' / ' + getMeta_('absence_error') : ''));
     var me = rosterList_()[0], s = AI_LOGIC.summarizeAbsence(rows, me.no, AI_LOGIC.parsePeriod('', Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd')), loadHolidays_());
     return rows.length + '件 / ' + getMeta_('absence_synced_at') + ' / 試算OK(' + me.name + ' 今年度の有給 ' + s.paidDays + '日)';
+  });
+  step('日報(現行分・過去分)', function () {
+    var sh = ss_().getSheetByName(SHEET.WORK), n = sh ? sh.getLastRow() - 1 : 0, p = ss_().getSheetByName(SHEET.WORKP);
+    if (n < 1000) throw new Error('日報シートが少なすぎます(' + n + '件)。メニューで更新してください' + (getMeta_('work_error') ? ' / ' + getMeta_('work_error') : ''));
+    var np = p ? Math.max(0, p.getLastRow() - 1) : 0, t = Date.now(), r = workRows_(SHEET.WORK, 20000101, 20991231);
+    return '現行' + n + '行 / 過去' + np + '行' + (np ? '' : '(過去分は未取込。メニューで取り込み)') + ' / 全期間の読み込み' + (Date.now() - t) + 'ms';
   });
   step('就業規則(公開済み)', function () {
     var c = loadRules_(), main = c.filter(function (x) { return x.doc === '就業規則' && x.no; }).length;
@@ -458,7 +602,10 @@ var GUIDE_LINES = [
   ['・名簿・工事・カレンダーを今すぐ更新: 毎晩1時に自動で行われます。急ぐときだけ使う'],
   ['・就業規則を取り込む(確認用): PDFを条文に分けて「規則_取込」シートに入れ、現行との差(追加/削除/変更)を表示'],
   ['・就業規則を公開する: 確認した内容を本番にする(旧版は「規則履歴」に残る)'],
+  ['・日報の過去分を取り込む: 初回と、日報の現行ファイルが替わる年度替わり(11/21)に1回。「諸情報」の DailyReport_DATA2024.11.21以降 / DATA2025.11.21以降 のIDを読み、現行分と重複しない分を「日報_過去」へ'],
   ['・前日分メールを今すぐ送る: 動作確認用'],
+  ['・会社カレンダーの質問(「今日の日付」「今度の土曜は出勤日?」「次の連休」「次の休日」「今月の出勤日は何日」)も、コードが答えます(毎晩1時に取り込む CompanyCalendar を使用)'],
+  ['・日報(工数)の質問(「私の今月の工数」「◯◯さんの昨日の日報」「◯◯工事の工数」)も、コードが集計して答えます。期間の指定がなければ今月度(前月21日〜当月20日)。現行分は毎晩1時に「日報」シートへ取り込み'],
   ['・有給・欠勤の質問(「私の有給は今年度何日?」「◯◯さんの先月の欠勤」)は、AIではなくコードが計算して答えます。データは毎晩1時に「有給欠勤」シートへ取り込み(B2・B5のAbsenteeismを合体)'],
   [''],
   ['■ 就業規則を改訂したとき'],
@@ -504,6 +651,7 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('社内AI')
     .addItem('動作確認(自己診断)', 'menuSelfTest')
     .addItem('名簿・工事・カレンダーを今すぐ更新', 'menuSync')
+    .addItem('日報の過去分を取り込む(初回・年度替わり)', 'menuWorkPast')
     .addItem('就業規則を取り込む(確認用)', 'menuIngest')
     .addItem('就業規則を公開する', 'menuPublish')
     .addItem('前日分メールを今すぐ送る', 'menuMail').addToUi();
@@ -513,5 +661,6 @@ function run_(fn) { try { SpreadsheetApp.getUi().alert(fn()); } catch (e) { Spre
 function menuSelfTest() { run_(selfTest); }
 function menuSync() { run_(syncRoster); }
 function menuIngest() { run_(ingestRules); }
+function menuWorkPast() { run_(importWorkPast); }
 function menuPublish() { run_(publishRules); }
 function menuMail() { run_(dailyMail); }

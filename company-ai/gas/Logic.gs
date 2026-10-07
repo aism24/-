@@ -252,7 +252,7 @@ var AI_LOGIC = (function () {
   }
 
   // 期間(from〜to)。今日(today)から、質問文の指定を読み取る。指定なしは「今年度(4/1〜翌3/31。有給の付与は4月)」
-  function parsePeriod(q, today) {
+  function parsePeriod(q, today, defKind) {
     var t = nfkc(q), y = +today.slice(0, 4), m = +today.slice(5, 7), d = +today.slice(8, 10), mm;
     function monthDo(yy, mo) { // 月度: 前月21日〜当月20日
       var py = mo === 1 ? yy - 1 : yy, pm = mo === 1 ? 12 : mo - 1;
@@ -277,6 +277,7 @@ var AI_LOGIC = (function () {
     if (/(昨年度|去年度|前年度)/.test(t)) { var s0 = (m >= 4 ? y : y - 1) - 1; return { from: ymd(s0, 4, 1), to: ymd(s0 + 1, 3, 31), label: '昨年度(' + s0 + '/04/01〜' + (s0 + 1) + '/03/31)' }; }
     if (/(昨年|去年|前年)/.test(t)) return { from: ymd(y - 1, 1, 1), to: ymd(y - 1, 12, 31), label: (y - 1) + '年(1/1〜12/31)' };
     if (/(今年|本年)(?!度)/.test(t)) return { from: ymd(y, 1, 1), to: ymd(y, 12, 31), label: y + '年(1/1〜12/31)' };
+    if (defKind === 'month') { var cm = monthDo(curMonthDo.y, curMonthDo.m); cm.label = '今月度(' + cm.from + '〜' + cm.to + ')'; cm.isDefault = true; return cm; }
     var s1 = m >= 4 ? y : y - 1; // 既定: 今年度
     return { from: ymd(s1, 4, 1), to: ymd(s1 + 1, 3, 31), label: '今年度(' + s1 + '/04/01〜' + (s1 + 1) + '/03/31)', isDefault: true };
   }
@@ -350,9 +351,224 @@ var AI_LOGIC = (function () {
     return out.join('\n');
   }
 
+
+  // ---------- 日報(第2弾): 工数の集計。数字はコードが計算し、AIは使わない ----------
+  var WORK_HEADER = ['WorkReportNo', '社員No', '作業日', '工事ID', '工事No', '工事名', '作業内容', '時間', '元'];
+  function dnum(s) { return parseInt(String(s).replace(/\//g, ''), 10); }
+  function buildConsMap(values) { // 工事ID → {no, name}
+    var m = {};
+    if (!values || values.length < 2) return m;
+    var ix = colIndex(values[0]);
+    values.slice(1).forEach(function (r) {
+      var id = String(r[ix['工事ID']] == null ? '' : r[ix['工事ID']]).trim();
+      if (id) m[id] = { no: String(r[ix['工事No']] == null ? '' : r[ix['工事No']]).trim(), name: String(r[ix['工事名']] == null ? '' : r[ix['工事名']]).trim() };
+    });
+    return m;
+  }
+  function hours(v) { var h = parseFloat(nfkc(v)); return isNaN(h) || h <= 0 || h > 24 ? 0 : h; }
+  // B2(鉄構)の日報: 1行に最大5件(工事名N・工事名N_free・作業内容N・作業時間N)。seen: 既に取り込んだ WorkReport No(先に入れた方を優先)
+  function workFromB2(values, cons, seen, warnings) {
+    var out = [];
+    if (!values || values.length < 2) return out;
+    var ix = colIndex(values[0]);
+    var lack = ['WorkReportNo', '登録者', '作業日', '工事名1', '作業時間1'].filter(function (n) { return ix[n] == null; });
+    if (lack.length) { warnings.push('日報(鉄構)に列が見つかりません: ' + lack.join('、')); return out; }
+    for (var k = 1; k < values.length; k++) {
+      var r = values[k], id = String(r[ix['WorkReportNo']]).trim(), no = parseInt(nfkc(r[ix['登録者']]), 10), d = normDate(r[ix['作業日']]);
+      if (!id || isNaN(no) || !d || seen[id]) continue;
+      var got = false;
+      for (var j = 1; j <= 5; j++) {
+        var h = hours(r[ix['作業時間' + j]]); if (!h) continue;
+        var cid = String(r[ix['工事名' + j]] == null ? '' : r[ix['工事名' + j]]).trim(), free = ix['工事名' + j + '_free'] == null ? '' : String(r[ix['工事名' + j + '_free']]).trim();
+        var c = cons[cid] || {};
+        out.push([id, no, dnum(d), cid, c.no || cid, c.name || free.replace(/\.\.\.$/, ''), String(r[ix['作業内容' + j]] == null ? '' : r[ix['作業内容' + j]]).trim(), h, 'B2']);
+        got = true;
+      }
+      if (got) seen[id] = true;
+    }
+    return out;
+  }
+  // B5(建設・総務)の日報: 作業時間 = 終了 − 開始(休憩は差し引かない)。社員No+2000
+  function workFromB5(values, seen, warnings) {
+    var out = [];
+    if (!values || values.length < 2) return out;
+    var ix = colIndex(values[0]);
+    var lack = ['WorkReportNo', '登録者', '開始時間', '終了時間'].filter(function (n) { return ix[n] == null; });
+    if (lack.length) { warnings.push('日報(建設・総務)に列が見つかりません: ' + lack.join('、')); return out; }
+    function ms(v) { var m = /(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})[ T](\d{1,2}):(\d{2})/.exec(nfkc(v)); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : NaN; }
+    for (var k = 1; k < values.length; k++) {
+      var r = values[k], id = String(r[ix['WorkReportNo']]).trim(), no = parseInt(nfkc(r[ix['登録者']]), 10), d = normDate(r[ix['開始時間']]);
+      if (!id || isNaN(no) || !d || seen[id]) continue;
+      var a = ms(r[ix['開始時間']]), b = ms(r[ix['終了時間']]), h = (b - a) / 3600000;
+      if (!isNaN(h) && h < 0) h += 24;
+      h = isNaN(h) || h <= 0 || h > 24 ? 0 : Math.round(h * 100) / 100;
+      if (!h) continue;
+      seen[id] = true;
+      var nm = ix['工事名'] == null ? '' : String(r[ix['工事名']]).trim();
+      out.push([id, no + 2000, dnum(d), ix['工事名(参照)'] == null ? '' : String(r[ix['工事名(参照)']]).trim(), ix['工事No'] == null ? '' : String(r[ix['工事No']]).trim(),
+                nm, ix['作業内容'] == null ? '' : String(r[ix['作業内容']]).trim(), h, 'B5']);
+    }
+    return out;
+  }
+  function sortWork(rows) { return rows.sort(function (x, y) { return x[2] - y[2]; }); }
+
+  function hasToken(sq, tok) { // 数字・英字の途中の一致を除く
+    var t = squash(tok).toLowerCase(), s = sq.toLowerCase(), i = -1;
+    if (!t) return false;
+    while ((i = s.indexOf(t, i + 1)) >= 0) {
+      var pre = s.charAt(i - 1), post = s.charAt(i + t.length);
+      if (!/[0-9a-z\-]/.test(pre) && !/[0-9a-z\-]/.test(post)) return true;
+    }
+    return false;
+  }
+  var GENERIC_PROJECT = ['自由記入', '自由記述', 'その他'];
+  // projects: [{id, no, name}]。質問に含まれる工事(名前・工事ID・工事No)を探す
+  function findProjects(q, projects) {
+    var sq = squash(q), hit = [], seen = {};
+    projects.forEach(function (p) {
+      var nm = squash(p.name), len = 0;
+      if (nm.length >= 3 && GENERIC_PROJECT.indexOf(nm) < 0 && sq.indexOf(nm) >= 0) len = nm.length;
+      else if (String(p.id).length >= 6 && hasToken(sq, p.id)) len = 5;
+      else if (/^[0-9]{2}-[0-9]+$/.test(String(p.no)) && hasToken(sq, p.no)) len = 4;
+      if (!len) return;
+      var key = nm + '|' + p.no; if (seen[key]) return; seen[key] = true;
+      hit.push({ p: p, len: len });
+    });
+    var mx = 0; hit.forEach(function (h) { mx = Math.max(mx, h.len); });
+    return hit.filter(function (h) { return h.len === mx; }).map(function (h) { return h.p; });
+  }
+  function parseDay(q, today) {
+    var t = nfkc(q), mm;
+    if (/(一昨日|おととい)/.test(t)) return addDays(today, -2);
+    if (/昨日/.test(t)) return addDays(today, -1);
+    if (/(今日|本日)/.test(t)) return today;
+    if ((mm = /(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})日?/.exec(t))) return ymd(+mm[1], +mm[2], +mm[3]);
+    if ((mm = /(\d{1,2})月(\d{1,2})日/.exec(t)) || (mm = /(?:^|[^\d])(\d{1,2})\/(\d{1,2})(?:[^\d]|$)/.exec(t))) {
+      var y = +today.slice(0, 4), d = ymd(y, +mm[1], +mm[2]); return d > today ? ymd(y - 1, +mm[1], +mm[2]) : d;
+    }
+    return '';
+  }
+  var WORK_TOPIC = /(日報|工数|作業時間|何時間|時間働|どれくらい働|どのくらい働|働いた)/;
+  // 戻り値: null / {who, people, projects, period, day}
+  function parseWorkQuery(q, today, roster, projects) {
+    var t = nfkc(q);
+    if (!WORK_TOPIC.test(t)) return null;
+    var people = findPeople(q, roster), selfCue = /(私|わたし|自分|僕|俺)/.test(t), pj = findProjects(q, projects);
+    if (!people.length && !selfCue && !pj.length) return null; // 誰・どの工事かが分からない質問は、規則の質問とみなす
+    var who = people.length > 1 ? 'ambiguous' : people.length === 1 ? 'person' : selfCue ? 'self' : 'none';
+    var day = parseDay(q, today), period = day ? { from: day, to: day, label: day, isDay: true } : parsePeriod(q, today, 'month');
+    return { who: who, people: people, projects: pj, period: period, day: day };
+  }
+  // rows: 日報の行(期間内)。f: {no, project}
+  function summarizeWork(rows, f) {
+    var total = 0, days = {}, people = {}, byP = {}, byC = {}, byW = {}, detail = [], srcs = {};
+    rows.forEach(function (r) {
+      if (f.no != null && Number(r[1]) !== Number(f.no)) return;
+      if (f.project && !(squash(r[5]) === squash(f.project.name) || (r[3] && r[3] === f.project.id) || (f.project.no && r[4] === f.project.no && squash(r[5]) === squash(f.project.name)))) return;
+      var h = Number(r[7]); total += h; days[r[2]] = 1; people[r[1]] = (people[r[1]] || 0) + h; srcs[r[8]] = 1;
+      var pk = (r[5] || r[4] || '(工事不明)') + (r[4] && r[5] ? '(' + r[4] + ')' : '');
+      byP[pk] = (byP[pk] || 0) + h; byC[r[6] || '(不明)'] = (byC[r[6] || '(不明)'] || 0) + h; byW[r[1]] = (byW[r[1]] || 0) + h;
+      detail.push({ date: r[2], proj: pk, content: r[6], h: h });
+    });
+    return { total: total, dayCount: Object.keys(days).length, peopleCount: Object.keys(people).length, byProject: byP, byContent: byC, byPerson: byW, detail: detail, hasB5: !!srcs.B5 };
+  }
+  function top(o, n) { return Object.keys(o).map(function (k) { return [k, o[k]]; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, n); }
+  function dfmt(n) { var s = String(n); return s.slice(0, 4) + '/' + s.slice(4, 6) + '/' + s.slice(6); }
+  // ctx: {title, period, names:{社員No:氏名}, contentNames:{コード:名称}, asOf}
+  function formatWorkAnswer(sum, ctx) {
+    var out = [ctx.title + ' の ' + ctx.period.label + ' の工数です(' + ctx.asOf + ' 時点のデータ)。'];
+    if (!sum.total) { out.push('この期間の日報は見つかりませんでした。'); return out.join('\n'); }
+    out.push('合計 ' + fmtNum(sum.total) + '時間(日報のあった日 ' + sum.dayCount + '日' + (ctx.showPeople ? '、延べ' + sum.peopleCount + '人' : '') + ')');
+    var cn = function (c) { return ctx.contentNames && ctx.contentNames[c] ? c + ' ' + ctx.contentNames[c] : c; };
+    if (ctx.period.isDay) {
+      out.push('', '【内訳】');
+      sum.detail.slice(0, 15).forEach(function (d) { out.push('・' + d.proj + ' / ' + cn(d.content) + ' / ' + fmtNum(d.h) + '時間'); });
+    } else {
+      if (!ctx.skipProject) { out.push('', '【工事別】'); top(sum.byProject, 8).forEach(function (x) { out.push('・' + x[0] + ': ' + fmtNum(x[1]) + '時間'); }); }
+      out.push('', '【作業内容別】'); top(sum.byContent, 8).forEach(function (x) { out.push('・' + cn(x[0]) + ': ' + fmtNum(x[1]) + '時間'); });
+      if (ctx.showPeople) { out.push('', '【人別(上位8)】'); top(sum.byPerson, 8).forEach(function (x) { out.push('・' + (ctx.names[x[0]] || '社員No' + x[0]) + ': ' + fmtNum(x[1]) + '時間'); }); }
+    }
+    if (sum.hasB5) out.push('', '※建設・総務の時間は、日報の開始〜終了時刻の差です(休憩は差し引いていません)。');
+    return out.join('\n');
+  }
+
+
+  // ---------- 会社カレンダーの一般的な質問(今日の日付・出勤日か・次の休日・次の連休・月の出勤日数) ----------
+  var WD = ['日', '月', '火', '水', '木', '金', '土'];
+  function dlabel(d) { return d + '(' + WD[dow(d)] + ')'; }
+  function monthRange(today, t) {
+    var mm, y = +today.slice(0, 4), m = +today.slice(5, 7);
+    if (/来月/.test(t)) { m++; } else if (/先月|前月/.test(t)) { m--; } else if ((mm = /(\d{1,2})月/.exec(t))) { m = +mm[1]; }
+    while (m > 12) { m -= 12; y++; } while (m < 1) { m += 12; y--; }
+    var last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    return { from: ymd(y, m, 1), to: ymd(y, m, last), label: y + '年' + m + '月' };
+  }
+  function resolveCalDate(t, today) {
+    var mm;
+    if (/明後日|あさって/.test(t)) return addDays(today, 2);
+    if (/明日|あした/.test(t)) return addDays(today, 1);
+    if (/昨日/.test(t)) return addDays(today, -1);
+    if (/(今日|本日)/.test(t)) return today;
+    if ((mm = /(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})日?/.exec(t))) return ymd(+mm[1], +mm[2], +mm[3]);
+    if ((mm = /(\d{1,2})月(\d{1,2})日/.exec(t)) || (mm = /(?:^|[^\d])(\d{1,2})\/(\d{1,2})(?:[^\d]|$)/.exec(t))) return ymd(+today.slice(0, 4), +mm[1], +mm[2]);
+    if ((mm = /(再来週|来週|今週|今度の|次の|この)?の?([月火水木金土日])曜/.exec(t))) {
+      var wd = WD.indexOf(mm[2]), cur = dow(today), pre = mm[1] || '';
+      if (/週/.test(pre)) { var monday = addDays(today, -((cur + 6) % 7)), k = pre === '再来週' ? 2 : pre === '来週' ? 1 : 0; return addDays(monday, 7 * k + ((wd + 6) % 7)); }
+      var n = (wd - cur + 7) % 7; if (/今度|次/.test(pre) && n === 0) n = 7;
+      return addDays(today, n);
+    }
+    return '';
+  }
+  // 戻り値: null(カレンダーの質問ではない) / {kind: today|day|next|renkyu|month, ...}
+  function parseCalendarQuery(q, today) {
+    var t = nfkc(q), mm;
+    if (/(今日|本日)(の日付|は何日|は何月|は何曜|の曜日)|^日付|日付を教え|今日の日付/.test(t)) return { kind: 'today' };
+    if (/(次|今度|直近|最初|今後).*連休|連休.*(いつ|次|今度)/.test(t)) return { kind: 'renkyu' };
+    if ((mm = /(次|今度|直近|最初)の?(休日|休み|お休み|出勤日|出社日|営業日)/.exec(t))) return { kind: 'next', want: /出勤|出社|営業/.test(mm[2]) ? '出勤' : '休日' };
+    if (/(今月|来月|先月|前月|\d{1,2}月)/.test(t) && /(出勤日|休日|営業日|休み)/.test(t) && /(何日|いくつ|日数|何回)/.test(t) && !/\d{1,2}月\d{1,2}日/.test(t))
+      return { kind: 'month', want: /休日|休み/.test(t) && !/出勤日|営業日/.test(t) ? '休日' : '出勤', range: monthRange(today, t) };
+    var d = resolveCalDate(t, today);
+    if (d && /(出勤|休日|休み|お休み|営業日|出社|会社|カレンダー|曜日|何曜|何日|いつ)/.test(t)) return { kind: 'day', date: d };
+    return null;
+  }
+  // hol: {'yyyy/MM/dd': '休日'|'出勤'}
+  function answerCalendar(c, today, hol) {
+    function st(d) { return hol[d] || ''; }
+    function find(from, want, max) { for (var i = 0, d = from; i < max; i++, d = addDays(d, 1)) if (st(d) === want) return d; return ''; }
+    function ago(d) { var n = Math.round((toUtc(d) - toUtc(today)) / 86400000); return n === 0 ? '今日' : n === 1 ? '明日' : n + '日後'; }
+    var out;
+    if (c.kind === 'today') {
+      out = '今日は ' + dlabel(today) + ' です。' + (st(today) ? '会社カレンダー上は「' + (st(today) === '出勤' ? '出勤日' : '休日') + '」です。' : '(会社カレンダーに今日の登録がありません)');
+    } else if (c.kind === 'day') {
+      var s = st(c.date);
+      out = dlabel(c.date) + '(' + ago(c.date) + ')は、' + (s ? '会社カレンダー上「' + (s === '出勤' ? '出勤日' : '休日') + '」です。' : '会社カレンダーに登録がないため、出勤日かどうか分かりません。');
+    } else if (c.kind === 'next') {
+      var d = find(addDays(today, 1), c.want, 400);
+      out = d ? '次の' + (c.want === '出勤' ? '出勤日' : '休日') + 'は ' + dlabel(d) + '(' + ago(d) + ')です。' + (st(today) === c.want ? '(今日も' + (c.want === '出勤' ? '出勤日' : '休日') + 'です)' : '') : '会社カレンダーに、今後の' + c.want + 'が登録されていません。';
+    } else if (c.kind === 'renkyu') {
+      var best = null, i, d0 = today, startToday = null;
+      // 今日が連休の途中なら、その旨を添える
+      if (st(today) === '休日') { var a = today, b = today; while (st(addDays(a, -1)) === '休日') a = addDays(a, -1); while (st(addDays(b, 1)) === '休日') b = addDays(b, 1); if (a !== b) startToday = [a, b]; }
+      var cur = addDays(startToday ? startToday[1] : today, 1);
+      for (i = 0; i < 400 && !best; i++) {
+        if (st(cur) === '休日') { var e = cur; while (st(addDays(e, 1)) === '休日') e = addDays(e, 1); if (e !== cur) best = [cur, e]; cur = addDays(e, 1); i += 1; }
+        else cur = addDays(cur, 1);
+      }
+      out = (startToday ? '今は連休中です(' + dlabel(startToday[0]) + '〜' + dlabel(startToday[1]) + ')。\n' : '') +
+            (best ? '次の連休は ' + dlabel(best[0]) + '〜' + dlabel(best[1]) + ' の ' + (Math.round((toUtc(best[1]) - toUtc(best[0])) / 86400000) + 1) + '連休(' + ago(best[0]) + 'から)です。' : '会社カレンダーに、今後の連休(休日が2日以上続く期間)が登録されていません。');
+    } else { // month
+      var n = 0, miss = 0, r = c.range;
+      for (var dd = r.from; dd <= r.to; dd = addDays(dd, 1)) { if (st(dd) === c.want) n++; else if (!st(dd)) miss++; }
+      out = r.label + '(' + r.from + '〜' + r.to + ')の' + (c.want === '出勤' ? '出勤日' : '休日') + 'は ' + n + '日です。' + (miss ? '(カレンダー未登録の日が' + miss + '日あります)' : '');
+    }
+    return out + '\n※会社カレンダー(出勤/休日)に基づきます。';
+  }
+
   return { nfkc: nfkc, squash: squash, parseRules: parseRules, chunkLabel: chunkLabel, searchRules: searchRules,
            buildPrompt: buildPrompt, pickSources: pickSources, parseModelJson: parseModelJson, mergeRoster: mergeRoster, readRoster: readRoster,
            normEmail: normEmail, fixEmail: fixEmail, normName: normName,
            ABS_HEADER: ABS_HEADER, normDate: normDate, mergeAbsence: mergeAbsence, parsePeriod: parsePeriod, findPeople: findPeople,
-           parseAbsenceQuery: parseAbsenceQuery, daysInPeriod: daysInPeriod, summarizeAbsence: summarizeAbsence, formatAbsenceAnswer: formatAbsenceAnswer };
+           parseAbsenceQuery: parseAbsenceQuery, daysInPeriod: daysInPeriod, summarizeAbsence: summarizeAbsence, formatAbsenceAnswer: formatAbsenceAnswer,
+           WORK_HEADER: WORK_HEADER, buildConsMap: buildConsMap, workFromB2: workFromB2, workFromB5: workFromB5, sortWork: sortWork, findProjects: findProjects,
+           parseCalendarQuery: parseCalendarQuery, answerCalendar: answerCalendar, parseDay: parseDay, parseWorkQuery: parseWorkQuery, summarizeWork: summarizeWork, formatWorkAnswer: formatWorkAnswer };
 })();
