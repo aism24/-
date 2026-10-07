@@ -129,6 +129,15 @@ var AI_LOGIC = (function () {
     return idx;
   }
   function normEmail(s) { return nfkc(s).replace(/\s+/g, '').toLowerCase(); }
+  // 打ち間違いを直す: 「@」の重なり(a@@gmail.com)と、よくあるGmailのドメイン誤字(gmeil.com等)
+  var DOMAIN_FIX = { 'gmeil.com': 'gmail.com', 'gmial.com': 'gmail.com', 'gamil.com': 'gmail.com', 'gmai.com': 'gmail.com',
+                     'gmail.con': 'gmail.com', 'gmail.co': 'gmail.com', 'gmail.comm': 'gmail.com', 'gmaill.com': 'gmail.com' };
+  function fixEmail(s) {
+    var e = normEmail(s).replace(/@{2,}/g, '@');
+    var at = e.lastIndexOf('@');
+    if (at > 0 && DOMAIN_FIX[e.slice(at + 1)]) e = e.slice(0, at + 1) + DOMAIN_FIX[e.slice(at + 1)];
+    return e;
+  }
   function normName(s) { return nfkc(s).replace(/\s+/g, ''); }
   function readRoster(values, kind) {
     if (!values || values.length < 2) return [];
@@ -142,14 +151,14 @@ var AI_LOGIC = (function () {
         var n5 = parseInt(nfkc(no), 10);
         out.push({
           no: isNaN(n5) ? '' : n5 + 2000, name: name, div: String(get(r, '事業部')).trim(), factory: '',
-          dept: String(get(r, '部署')).trim(), born: '', email: normEmail(get(r, 'E-Mail')),
+          dept: String(get(r, '部署')).trim(), born: '', email: fixEmail(get(r, 'E-Mail')), emailRaw: normEmail(get(r, 'E-Mail')),
           status: String(get(r, '現状')).trim(), driver: ''
         });
       } else {
         var n2 = parseInt(nfkc(no), 10);
         out.push({
           no: isNaN(n2) ? '' : n2, name: name, div: String(get(r, '事業部')).trim(), factory: String(get(r, '工場')).trim(),
-          dept: String(get(r, '部')).trim(), born: String(get(r, '生まれた月')).trim(), email: normEmail(get(r, 'E-Mail')),
+          dept: String(get(r, '部')).trim(), born: String(get(r, '生まれた月')).trim(), email: fixEmail(get(r, 'E-Mail')), emailRaw: normEmail(get(r, 'E-Mail')),
           status: String(get(r, 'Reportcheck')).trim(), driver: String(get(r, '運転者')).trim()
         });
       }
@@ -161,7 +170,7 @@ var AI_LOGIC = (function () {
     var warnings = [], rows = [], seen = {};
     var admins = {}, adminName = {};
     (adminValues || []).slice(1).forEach(function (r) {
-      var em = normEmail(r[1]);
+      var em = fixEmail(r[1]);
       if (em && squash(r[2]) === '管理者') { admins[em] = true; adminName[em] = normName(r[0]); }
     });
     function add(list, kind) {
@@ -169,7 +178,8 @@ var AI_LOGIC = (function () {
         var active = (kind === 'B5' ? B5_ACTIVE : B2_ACTIVE).indexOf(p.status) >= 0;
         if (!active) return; // 退職済・退社・状態なしは反映しない
         var tag = '(' + (kind === 'B5' ? 'B5' : 'B2') + ' 社員No' + p.no + ' ' + p.name + ')';
-        if (!p.email) { warnings.push('E-Mail空欄' + tag); return; }
+        if (!p.email) return; // E-Mail空欄は対象外(警告も出さない)
+        if (p.email !== p.emailRaw) warnings.push('E-Mail自動補正 ' + p.emailRaw + ' → ' + p.email + tag);
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.email) || TYPO_DOMAINS.test(p.email.split('@')[1] || '')) { warnings.push('E-Mail要確認 ' + p.email + tag); return; }
         if (seen[p.email]) { warnings.push('E-Mail重複 ' + p.email + tag + '(先の行を採用)'); return; }
         seen[p.email] = true;
@@ -196,5 +206,5 @@ var AI_LOGIC = (function () {
 
   return { nfkc: nfkc, squash: squash, parseRules: parseRules, chunkLabel: chunkLabel, searchRules: searchRules,
            buildPrompt: buildPrompt, parseModelJson: parseModelJson, mergeRoster: mergeRoster, readRoster: readRoster,
-           normEmail: normEmail, ymd: ymd };
+           normEmail: normEmail, fixEmail: fixEmail, ymd: ymd };
 })();
