@@ -35,16 +35,25 @@
     if (DEMO) { showChat({ name: 'デモ', isAdmin: false }); return; }
     if (!CFG.GAS_URL || !CFG.CLIENT_ID) { $('setupNote').style.display = ''; showLogin(''); return; }
     var saved = tokenGet();
-    if (saved) { token = saved; api('me').then(showChat).catch(function () { tokenSet(''); token = ''; renderBtn(); }); }
-    else renderBtn();
+    if (saved) { token = saved; api('me').then(showChat).catch(function () { tokenSet(''); token = ''; showLogin(''); renderBtn(); }); }
+    else { showLogin(''); renderBtn(); }
   }
+  // Googleのログインボタンを出す(読み込めないときは10秒で諦めて案内を出す)
+  var btnTimer = null;
   function renderBtn() {
-    showLogin('');
-    var t = setInterval(function () {
-      if (!(window.google && google.accounts && google.accounts.id)) return;
-      clearInterval(t);
-      google.accounts.id.initialize({ client_id: CFG.CLIENT_ID, callback: onCredential, auto_select: true });
-      google.accounts.id.renderButton($('gsiBtn'), { theme: 'outline', size: 'large', text: 'signin_with', locale: 'ja' });
+    if (btnTimer) return;
+    var waited = 0;
+    btnTimer = setInterval(function () {
+      waited += 200;
+      if (window.google && google.accounts && google.accounts.id) {
+        clearInterval(btnTimer); btnTimer = null;
+        google.accounts.id.initialize({ client_id: CFG.CLIENT_ID, callback: onCredential, auto_select: true });
+        $('gsiBtn').textContent = '';
+        google.accounts.id.renderButton($('gsiBtn'), { theme: 'outline', size: 'large', text: 'signin_with', locale: 'ja' });
+      } else if (waited >= 10000) {
+        clearInterval(btnTimer); btnTimer = null;
+        showLogin('Googleのログインを読み込めませんでした。ページを再読み込みしてください。');
+      }
     }, 200);
   }
 

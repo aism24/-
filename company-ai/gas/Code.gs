@@ -12,7 +12,7 @@ var RULE_HEADER = ['規程', '条', '見出し', '本文'];
 var TZ = 'Asia/Tokyo';
 
 // ---------- 小さな道具 ----------
-// 設定は「諸情報」シート(A=名前、B=値)から読む。シートに無ければ旧方式のスクリプトプロパティを予備で見る
+// 設定は「諸情報」シート(A=名前、B=値)だけから読む
 function prop_(k, optional) {
   var v = '', sh = ss_().getSheetByName(SHEET.INFO);
   if (sh) {
@@ -21,11 +21,9 @@ function prop_(k, optional) {
       if (String(vals[i][0]).trim() === k && String(vals[i][1]).trim()) { v = String(vals[i][1]).trim(); break; }
     }
   }
-  if (!v) v = PropertiesService.getScriptProperties().getProperty(k) || '';
   if (!v && !optional) throw new Error('「諸情報」シートの「' + k + '」が未入力です');
   return v;
 }
-function fileId_(name) { return prop_(name); }
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
 function sheet_(name, header) {
   var sh = ss_().getSheetByName(name);
@@ -45,10 +43,13 @@ function setMeta_(k, v) {
 }
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 function err_(code, msg) { var e = new Error(msg || code); e.code = code; return e; }
+var CACHE_PART = 30000; // 日本語は1文字3バイト。1キー100KBの上限に収める
 function putLarge_(key, str, sec) {
-  var c = CacheService.getScriptCache(), n = Math.ceil(str.length / 90000), o = {};
-  for (var i = 0; i < n; i++) o[key + '_' + i] = str.substr(i * 90000, 90000);
-  o[key + '_n'] = String(n); c.putAll(o, sec);
+  try {
+    var c = CacheService.getScriptCache(), n = Math.ceil(str.length / CACHE_PART), o = {};
+    for (var i = 0; i < n; i++) o[key + '_' + i] = str.substr(i * CACHE_PART, CACHE_PART);
+    o[key + '_n'] = String(n); c.putAll(o, sec);
+  } catch (e) { /* キャッシュに載せられなくても、毎回シートから読むだけで動く */ }
 }
 function getLarge_(key) {
   var c = CacheService.getScriptCache(), n = parseInt(c.get(key + '_n') || '0', 10);
@@ -59,6 +60,17 @@ function getLarge_(key) {
   return s;
 }
 
+// シートに書く文字が「=」などで始まると数式として実行されるため、先頭に ' を付けて文字として扱わせる
+function safe_(s) { s = String(s == null ? '' : s); return /^[=+\-@\t\r]/.test(s) ? "'" + s : s; }
+// 日時はシートが日付に変換して返すことがあるため、文字でも日付でも同じ形に直す
+function ts_(v) { return v instanceof Date ? Utilities.formatDate(v, TZ, 'yyyy/MM/dd HH:mm:ss') : String(v); }
+// 書き込み中に空になる瞬間を作らない: 先に新しい内容を書き、余った下の行だけを消す
+function writeTable_(sh, values) {
+  var rows = values.length, last = sh.getLastRow();
+  sh.getRange(1, 1, rows, values[0].length).setValues(values);
+  if (last > rows) sh.getRange(rows + 1, 1, last - rows, sh.getMaxColumns()).clearContent();
+}
+
 // ---------- Webアプリ ----------
 function doGet() { return json_({ ok: true, app: '社内AI', model: MODEL }); }
 
@@ -66,7 +78,7 @@ function doPost(e) {
   try {
     var req = JSON.parse(e.postData.contents);
     var user = authenticate_(req.idToken);
-    if (req.action === 'me') return json_({ ok: true, name: user.name, isAdmin: user.isAdmin, rulesVersion: getMeta_('rules_version') });
+    if (req.action === 'me') return json_({ ok: true, name: user.name, isAdmin: user.isAdmin });
     if (req.action === 'ask') return json_(ask_(user, req.question));
     if (req.action === 'feedback') return json_(feedback_(user, req));
     throw err_('bad_request', '不明な操作です');
@@ -103,7 +115,7 @@ function getRoster_() {
     var em = AI_LOGIC.normEmail(vals[i][7]);
     if (em) map[em] = { no: vals[i][0], name: vals[i][1], admin: String(vals[i][10]) === '管理者' };
   }
-  putLarge_('roster', JSON.stringify(map), 300);
+  if (Object.keys(map).length) putLarge_('roster', JSON.stringify(map), 300);
   return map;
 }
 
@@ -147,9 +159,15 @@ function ask_(user, question) {
   var hits = AI_LOGIC.searchRules(chunks, question, 6);
   var tSearch = Date.now() - t1, tAi = 0;
   var answerable = false, answer = '', sources = [];
+  var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase();
   if (hits.length) {
-    var t2 = Date.now();
-    var out = AI_LOGIC.parseModelJson(callGemini_(AI_LOGIC.buildPrompt(question, hits)));
+    var t2 = Date.now(), out;
+    try {
+      out = AI_LOGIC.parseModelJson(callGemini_(AI_LOGIC.buildPrompt(question, hits)));
+    } catch (e) { // AIが失敗した質問も、担当者が気づけるようログに残す
+      logAsk_(qid, user, question, '', 'エラー', '', tSearch, Date.now() - t2, Date.now() - t0, '未対応');
+      throw e;
+    }
     tAi = Date.now() - t2;
     if (out && out.answerable === true && out.answer) {
       answerable = true; answer = String(out.answer);
@@ -159,11 +177,15 @@ function ask_(user, question) {
       sources = idx.map(function (i) { return AI_LOGIC.chunkLabel(hits[i].chunk); });
     }
   }
-  var total = Date.now() - t0, qid = Utilities.getUuid().slice(0, 8);
-  sheet_(SHEET.LOG, LOG_HEADER).appendRow([qid, now_(), user.email, user.name, question, answer, answerable ? '回答済' : '回答不可',
-    sources.join(' / '), '', '', tSearch, tAi, total, answerable ? '' : '未対応']);
+  var total = Date.now() - t0;
+  logAsk_(qid, user, question, answer, answerable ? '回答済' : '回答不可', sources.join(' / '), tSearch, tAi, total, answerable ? '' : '未対応');
   return { ok: true, qid: qid, answerable: answerable, answer: answer, sources: sources,
            asOf: getMeta_('rules_version'), ms: { search: tSearch, ai: tAi, total: total } };
+}
+
+function logAsk_(qid, user, question, answer, kind, sources, tSearch, tAi, total, status) {
+  sheet_(SHEET.LOG, LOG_HEADER).appendRow([qid, now_(), user.email, user.name, safe_(question), safe_(answer), kind,
+    sources, '', '', tSearch, tAi, total, status]);
 }
 
 function feedback_(user, req) {
@@ -174,25 +196,22 @@ function feedback_(user, req) {
   if (!f) throw err_('bad_request', '質問が見つかりません');
   var row = f.getRow();
   if (AI_LOGIC.normEmail(sh.getRange(row, 3).getValue()) !== user.email) throw err_('forbidden', '自分の質問だけ評価できます');
-  sh.getRange(row, 9, 1, 2).setValues([[rating, String(req.comment || '').slice(0, 300)]]);
+  sh.getRange(row, 9, 1, 2).setValues([[rating, safe_(String(req.comment || '').slice(0, 300))]]);
   if (rating === '👎') sh.getRange(row, 14).setValue('未対応');
   return { ok: true };
 }
 
-// ---------- 毎朝: 名簿・工事・カレンダーをB2(+B5)から取り込む(深夜1時台) ----------
+// ---------- 毎晩1時台: 名簿・工事・カレンダーをB2(名簿はB5も)から取り込む。失敗したら前回のまま ----------
 function syncRoster() {
   try {
-    var b2 = SpreadsheetApp.openById(fileId_('DailyReport')), b5 = SpreadsheetApp.openById(fileId_('DailyReport建築'));
+    var b2 = SpreadsheetApp.openById(prop_('DailyReport')), b5 = SpreadsheetApp.openById(prop_('DailyReport建築'));
     var v2 = b2.getSheetByName('Operator').getDataRange().getValues();
     var v5 = b5.getSheetByName('Operator').getDataRange().getValues();
     var adm = sheet_(SHEET.ADMIN, ['氏名', 'E-Mail', '管理者']).getDataRange().getValues();
     var r = AI_LOGIC.mergeRoster(v2, v5, adm);
     if (r.table.length < 50) throw new Error('名簿が極端に少ない(' + r.table.length + '件)ため更新を中止しました');
     if (r.adminCount === 0) throw new Error('管理者が0人になるため名簿の更新を中止しました(管理者シートを確認)');
-    var op = sheet_(SHEET.OPERATOR, OPERATOR_HEADER);
-    op.clearContents();
-    op.getRange(1, 1, 1, OPERATOR_HEADER.length).setValues([OPERATOR_HEADER]);
-    op.getRange(2, 1, r.table.length, OPERATOR_HEADER.length).setValues(r.table);
+    writeTable_(sheet_(SHEET.OPERATOR, OPERATOR_HEADER), [OPERATOR_HEADER].concat(r.table));
     copySheet_(b2, SHEET.CAL);
     copySheet_(b2, SHEET.CONS);
     CacheService.getScriptCache().remove('roster_n');
@@ -210,14 +229,12 @@ function copySheet_(srcSs, name) {
   if (!src) throw new Error(name + ' が元ファイルにありません');
   var vals = src.getDataRange().getValues();
   if (vals.length < 2) throw new Error(name + ' の元データが空のため更新を中止しました');
-  var dst = sheet_(name);
-  dst.clearContents();
-  dst.getRange(1, 1, vals.length, vals[0].length).setValues(vals);
+  writeTable_(sheet_(name), vals);
 }
 
-// ---------- 就業規則の取り込みと公開(クリエーターのみ。メニューから実行) ----------
+// ---------- 就業規則の取り込みと公開(メニューから実行。シートの編集権限がある人だけ) ----------
 function ingestRules() {
-  var id = fileId_('RULES_PDF_ID'), file = DriveApp.getFileById(id);
+  var id = prop_('RULES_PDF_ID'), file = DriveApp.getFileById(id);
   var doc = Drive.Files.create({ name: 'tmp_rules_' + Date.now(), mimeType: 'application/vnd.google-apps.document' }, file.getBlob(), { ocrLanguage: 'ja' });
   var text;
   try { text = DocumentApp.openById(doc.id).getBody().getText(); } finally { DriveApp.getFileById(doc.id).setTrashed(true); }
@@ -251,20 +268,19 @@ function publishRules() {
     var rows = cur.slice(1).map(function (r) { return [label, now_()].concat(r); });
     hist.getRange(hist.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
   }
-  rules.clearContents();
-  rules.getRange(1, 1, st.length, 4).setValues(st);
+  writeTable_(rules, st);
   setMeta_('rules_version', getMeta_('stage_label'));
   setMeta_('rules_published_at', now_());
   CacheService.getScriptCache().remove('rules_n');
   return '公開しました: ' + getMeta_('rules_version') + '(' + (st.length - 1) + '件)';
 }
 
-// ---------- 毎朝3時: 前日分の「回答できなかった質問」「👎報告」をメール(0件の日は送らない) ----------
+// ---------- 毎朝3時: 前日分の「回答できなかった質問」「AIエラー」「👎報告」と、名簿の確認事項(変化があった日だけ)をメール。どちらも無ければ送らない ----------
 function dailyMail() {
   var y = Utilities.formatDate(new Date(new Date().getTime() - 24 * 3600 * 1000), TZ, 'yyyy/MM/dd');
   var vals = sheet_(SHEET.LOG, LOG_HEADER).getDataRange().getValues();
   var items = vals.slice(1).filter(function (r) {
-    return String(r[1]).indexOf(y) === 0 && (r[6] === '回答不可' || r[8] === '👎');
+    return ts_(r[1]).indexOf(y) === 0 && (r[6] === '回答不可' || r[6] === 'エラー' || r[8] === '👎');
   });
   var warn = getMeta_('roster_warnings') + (getMeta_('roster_error') ? '\n取り込み失敗: ' + getMeta_('roster_error') : '');
   var hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, warn));
@@ -274,7 +290,7 @@ function dailyMail() {
   if (items.length) {
     body.push('■ ' + y + ' の回答不可・間違い報告(' + items.length + '件)');
     items.forEach(function (r, i) {
-      body.push((i + 1) + '. [' + r[6] + (r[8] ? ' ' + r[8] : '') + '] ' + r[3] + '(' + r[2] + ') ' + r[1]);
+      body.push((i + 1) + '. [' + r[6] + (r[8] ? ' ' + r[8] : '') + '] ' + r[3] + '(' + r[2] + ') ' + ts_(r[1]));
       body.push('   質問: ' + r[4]);
       if (r[5]) body.push('   回答: ' + r[5]);
       if (r[7]) body.push('   参照: ' + r[7]);
