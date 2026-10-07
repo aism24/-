@@ -185,10 +185,7 @@ function ask_(user, question) {
     tAi = Date.now() - t2;
     if (out && out.answerable === true && out.answer) {
       answerable = true; answer = String(out.answer);
-      var idx = (out.cited || []).map(function (c) { return parseInt(String(c).replace(/\D/g, ''), 10) - 1; })
-        .filter(function (i) { return i >= 0 && i < hits.length; });
-      if (!idx.length) idx = [0, 1, 2].filter(function (i) { return i < hits.length; });
-      sources = idx.map(function (i) { return AI_LOGIC.chunkLabel(hits[i].chunk); });
+      sources = AI_LOGIC.pickSources(out.cited, answer, hits).map(function (i) { return AI_LOGIC.chunkLabel(hits[i].chunk); });
     }
   }
   var total = Date.now() - t0;
