@@ -285,7 +285,7 @@ function syncAbsence_(b2, b5) {
     if (r.table.length < 1000) throw new Error('有給欠勤の件数が極端に少ない(' + r.table.length + '件)ため更新を中止しました');
     writeTable_(sheet_(SHEET.ABS, AI_LOGIC.ABS_HEADER), [AI_LOGIC.ABS_HEADER].concat(r.table));
     setMeta_('absence_synced_at', now_());
-    setMeta_('absence_error', s5 ? '' : 'B5にAbsenteeismシートが無いため、B2のみ取り込みました');
+    setMeta_('absence_error', r.warnings.concat(s5 ? [] : ['B5にAbsenteeismシートが無いため、B2のみ取り込みました']).join(' / '));
   } catch (err) { setMeta_('absence_error', now_() + ' ' + err.message); }
 }
 function copySheet_(srcSs, name) {

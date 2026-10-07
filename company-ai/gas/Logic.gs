@@ -227,10 +227,12 @@ var AI_LOGIC = (function () {
   var ABS_HEADER = ['AbID', '社員No', '自', '至', '申請項目', '事由', '振替日', '直属上司', '元'];
   // B2(鉄構)・B5(建設・総務)のAbsenteeismを1つに合体。B5の社員No・直属上司には+2000。AbIDで重複を除く(先に来た行を採用)
   function mergeAbsence(v2, v5) {
-    var rows = [], seen = {}, skipped = 0;
+    var rows = [], seen = {}, skipped = 0, warnings = [];
     function add(values, kind) {
       if (!values || values.length < 2) return;
-      var ix = colIndex(values[0]);
+      var ix = colIndex(values[0]), before = rows.length;
+      var lack = ['AbID', '登録者', '自', '申請項目'].filter(function (n) { return ix[n] == null; });
+      if (lack.length) { warnings.push(kind + 'のAbsenteeismに列が見つかりません: ' + lack.join('、') + '(列名が変わっていないか確認)'); return; }
       var g = function (r, n) { var i = ix[n]; return i == null ? '' : r[i]; };
       var off = kind === 'B5' ? 2000 : 0;
       for (var k = 1; k < values.length; k++) {
@@ -243,8 +245,10 @@ var AI_LOGIC = (function () {
                    normDate(g(r, '振替日')), isNaN(boss) ? '' : boss + off, kind]);
       }
     }
-    add(v2, 'B2'); add(v5, 'B5');
-    return { table: rows, skipped: skipped };
+    var n2 = 0;
+    add(v2, 'B2'); n2 = rows.length; add(v5, 'B5');
+    if (v5 && v5.length > 50 && rows.length - n2 === 0 && !warnings.length) warnings.push('B5のAbsenteeismから1件も取り込めませんでした');
+    return { table: rows, skipped: skipped, warnings: warnings };
   }
 
   // 期間(from〜to)。今日(today)から、質問文の指定を読み取る。指定なしは「今年度(4/1〜翌3/31。有給の付与は4月)」
