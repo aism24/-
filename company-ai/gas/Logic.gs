@@ -211,7 +211,144 @@ var AI_LOGIC = (function () {
     return { table: table, warnings: warnings, adminCount: rows.filter(function (p) { return p.admin; }).length };
   }
 
+  // ---------- 有給・欠勤(第2弾): 数字はコードが計算し、AIは使わない ----------
+  // 日付は 'yyyy/MM/dd' の文字で扱う(Code.gs側でDateを文字に直してから渡す)
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function ymd(y, m, d) { return y + '/' + pad2(m) + '/' + pad2(d); }
+  function normDate(v) {
+    var m = /(\d{4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})/.exec(nfkc(v));
+    return m ? ymd(+m[1], +m[2], +m[3]) : '';
+  }
+  function toUtc(s) { var p = s.split('/'); return Date.UTC(+p[0], +p[1] - 1, +p[2]); }
+  function fromUtc(t) { var d = new Date(t); return ymd(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); }
+  function addDays(s, n) { return fromUtc(toUtc(s) + n * 86400000); }
+  function dow(s) { return new Date(toUtc(s)).getUTCDay(); }
+
+  var ABS_HEADER = ['AbID', '社員No', '自', '至', '申請項目', '事由', '振替日', '直属上司', '元'];
+  // B2(鉄構)・B5(建設・総務)のAbsenteeismを1つに合体。B5の社員No・直属上司には+2000。AbIDで重複を除く(先に来た行を採用)
+  function mergeAbsence(v2, v5) {
+    var rows = [], seen = {}, skipped = 0;
+    function add(values, kind) {
+      if (!values || values.length < 2) return;
+      var ix = colIndex(values[0]);
+      var g = function (r, n) { var i = ix[n]; return i == null ? '' : r[i]; };
+      var off = kind === 'B5' ? 2000 : 0;
+      for (var k = 1; k < values.length; k++) {
+        var r = values[k], id = String(g(r, 'AbID')).trim(), no = parseInt(nfkc(g(r, '登録者')), 10), from = normDate(g(r, '自'));
+        if (!id || isNaN(no) || !from) { if (id || !isNaN(no)) skipped++; continue; }
+        if (seen[id]) continue;
+        seen[id] = true;
+        var boss = parseInt(nfkc(g(r, '直属上司')), 10);
+        rows.push([id, no + off, from, normDate(g(r, '至')), String(g(r, '申請項目')).trim(), String(g(r, '事由')).trim(),
+                   normDate(g(r, '振替日')), isNaN(boss) ? '' : boss + off, kind]);
+      }
+    }
+    add(v2, 'B2'); add(v5, 'B5');
+    return { table: rows, skipped: skipped };
+  }
+
+  // 期間(from〜to)。今日(today)から、質問文の指定を読み取る。指定なしは「今年度(4/1〜翌3/31。有給の付与は4月)」
+  function parsePeriod(q, today) {
+    var t = nfkc(q), y = +today.slice(0, 4), m = +today.slice(5, 7), d = +today.slice(8, 10), mm;
+    function monthDo(yy, mo) { // 月度: 前月21日〜当月20日
+      var py = mo === 1 ? yy - 1 : yy, pm = mo === 1 ? 12 : mo - 1;
+      return { from: ymd(py, pm, 21), to: ymd(yy, mo, 20), label: yy + '年' + mo + '月度' };
+    }
+    var curMonthDo = d >= 21 ? (m === 12 ? { y: y + 1, m: 1 } : { y: y, m: m + 1 }) : { y: y, m: m };
+    if (/(これまで|今まで|全期間|累計|通算|ずっと|全部)/.test(t)) return { from: '2000/01/01', to: '2099/12/31', label: '全期間' };
+    if (/会計年度|会計年/.test(t)) {
+      var fy = /(昨|去|前)/.test(t) ? -1 : 0, ys = (m > 11 || (m === 11 && d >= 21)) ? y : y - 1; ys += fy;
+      return { from: ymd(ys, 11, 21), to: ymd(ys + 1, 11, 20), label: '会計年度 ' + ys + '/11/21〜' + (ys + 1) + '/11/20' };
+    }
+    if ((mm = /(\d{4})年度/.exec(t))) { var a = +mm[1]; return { from: ymd(a, 4, 1), to: ymd(a + 1, 3, 31), label: a + '年度(' + a + '/04/01〜' + (a + 1) + '/03/31)' }; }
+    if ((mm = /(\d{4})年(\d{1,2})月/.exec(t))) { var r1 = monthDo(+mm[1], +mm[2]); return r1; }
+    if ((mm = /(\d{4})年/.exec(t))) { var b = +mm[1]; return { from: ymd(b, 1, 1), to: ymd(b, 12, 31), label: b + '年(1/1〜12/31)' }; }
+    function monthsBack(n) { var mo = curMonthDo.m - n, yy = curMonthDo.y; while (mo < 1) { mo += 12; yy--; } return monthDo(yy, mo); }
+    if (/先々月/.test(t)) return monthsBack(2);
+    if (/(先月|前月)/.test(t)) return monthsBack(1);
+    if (/(今月|当月|今月度)/.test(t)) return monthDo(curMonthDo.y, curMonthDo.m);
+    if ((mm = /(\d{1,2})月(?!曜)/.exec(t))) {
+      var mo = +mm[1]; if (mo >= 1 && mo <= 12) { var yy = mo > curMonthDo.m ? curMonthDo.y - 1 : curMonthDo.y; return monthDo(yy, mo); }
+    }
+    if (/(昨年度|去年度|前年度)/.test(t)) { var s0 = (m >= 4 ? y : y - 1) - 1; return { from: ymd(s0, 4, 1), to: ymd(s0 + 1, 3, 31), label: '昨年度(' + s0 + '/04/01〜' + (s0 + 1) + '/03/31)' }; }
+    if (/(昨年|去年|前年)/.test(t)) return { from: ymd(y - 1, 1, 1), to: ymd(y - 1, 12, 31), label: (y - 1) + '年(1/1〜12/31)' };
+    if (/(今年|本年)(?!度)/.test(t)) return { from: ymd(y, 1, 1), to: ymd(y, 12, 31), label: y + '年(1/1〜12/31)' };
+    var s1 = m >= 4 ? y : y - 1; // 既定: 今年度
+    return { from: ymd(s1, 4, 1), to: ymd(s1 + 1, 3, 31), label: '今年度(' + s1 + '/04/01〜' + (s1 + 1) + '/03/31)', isDefault: true };
+  }
+
+  var ABS_TOPIC = /(有給|有休|年休|欠勤|遅刻|早退|遅早|休んだ|休み|休暇)/;
+  var ABS_CUE = /(私|わたし|自分|僕|俺|取った|取って|取得|使った|使って|消化|何日休|何回休|休んだ|遅刻した|欠勤した)/;
+  // roster: [{no, name}]。質問に出てきた氏名(スペースなしの完全一致)を探す
+  function findPeople(q, roster) {
+    var sq = squash(q), out = [];
+    roster.forEach(function (p) { var n = normName(p.name); if (n.length >= 2 && sq.indexOf(n) >= 0) out.push(p); });
+    var maxLen = 0; out.forEach(function (p) { maxLen = Math.max(maxLen, normName(p.name).length); });
+    return out.filter(function (p) { return normName(p.name).length === maxLen; }); // 長い名前を優先(部分一致の取りこぼし防止)
+  }
+  // 戻り値: null(就業規則の質問として扱う) / {who:'self'|'person'|'ambiguous', people, period, remain}
+  function parseAbsenceQuery(q, today, roster) {
+    var t = nfkc(q);
+    if (!ABS_TOPIC.test(t)) return null;
+    var people = findPeople(q, roster), selfCue = /(私|わたし|自分|僕|俺)/.test(t);
+    if (!people.length && !selfCue && !ABS_CUE.test(t)) return null;
+    if (!people.length && !selfCue) return null; // 「誰の」が分からない取得系の質問は、規則の質問とみなす
+    var who = people.length > 1 ? 'ambiguous' : people.length === 1 ? 'person' : 'self';
+    if (who === 'self' && !/(取った|取って|取得|使った|使って|消化|休んだ|遅刻|早退|欠勤|何日|何回|残|状況|確認|履歴)/.test(t)) return null;
+    return { who: who, people: people, period: parsePeriod(q, today), remain: /(残り|残数|残日|残って|あと何日|余り)/.test(t) };
+  }
+
+  // 申請1件が、期間内で何日分か(至があれば、休日を除いた日数。休日の情報が無い日は土日を休みとみなす)
+  function daysInPeriod(row, period, holidays) {
+    var from = row[2], to = row[3] || row[2];
+    var s = from < period.from ? period.from : from, e = to > period.to ? period.to : to;
+    if (s > e) return 0;
+    if (from === to || !row[3]) return (from >= period.from && from <= period.to) ? 1 : 0;
+    var n = 0, cur = s;
+    for (var i = 0; i < 400 && cur <= e; i++, cur = addDays(cur, 1)) {
+      var h = holidays[cur];
+      if (h === '休日' || (h == null && (dow(cur) === 0 || dow(cur) === 6))) continue;
+      n++;
+    }
+    return n;
+  }
+  // rows: mergeAbsence後の表。holidays: {'yyyy/MM/dd':'休日'|'出勤'}
+  function summarizeAbsence(rows, no, period, holidays) {
+    var kinds = {}, details = [];
+    rows.forEach(function (r) {
+      if (Number(r[1]) !== Number(no)) return;
+      var n = daysInPeriod(r, period, holidays);
+      if (!n) return;
+      var kind = r[4] || '(項目なし)', k = kinds[kind] || (kinds[kind] = { count: 0, days: 0 });
+      k.count++; k.days += n;
+      details.push({ from: r[2], to: r[3], kind: kind, days: n, reason: r[5] });
+    });
+    details.sort(function (a, b) { return a.from < b.from ? 1 : a.from > b.from ? -1 : 0; });
+    var full = kinds['有給'] || { count: 0, days: 0 }, half = kinds['半日有給'] || { count: 0, days: 0 };
+    return { kinds: kinds, details: details, paidDays: full.days + half.count * 0.5, full: full.count, half: half.count };
+  }
+  function fmtNum(x) { return String(Math.round(x * 10) / 10); }
+  function formatAbsenceAnswer(name, no, period, sum, remain, asOfDate) {
+    var out = [name + 'さん(社員No' + no + ')の ' + period.label + ' の状況です(' + asOfDate + ' 時点のデータ)。'];
+    var ks = Object.keys(sum.kinds);
+    if (!ks.length) out.push('この期間に、有給・欠勤・遅早などの申請は見つかりませんでした。');
+    else {
+      out.push('・有給: ' + fmtNum(sum.paidDays) + '日(全日' + sum.full + '回、半日' + sum.half + '回)');
+      ks.filter(function (k) { return k !== '有給' && k !== '半日有給'; }).forEach(function (k) {
+        out.push('・' + k + ': ' + sum.kinds[k].count + '回' + (k === '遅早' ? '' : '(' + fmtNum(sum.kinds[k].days) + '日)'));
+      });
+      var show = sum.details.slice(0, 10);
+      out.push('', '【直近の申請】');
+      show.forEach(function (d) { out.push(d.from + (d.to && d.to !== d.from ? '〜' + d.to : '') + ' ' + d.kind + (d.reason ? '(' + d.reason + ')' : '')); });
+      if (sum.details.length > show.length) out.push('ほか' + (sum.details.length - show.length) + '件');
+    }
+    if (remain) out.push('', '※残日数は、付与日数のデータがこのアプリに無いため算出できません。付与の日数の決まりは「年次有給休暇は何日もらえますか」でお答えできます。');
+    return out.join('\n');
+  }
+
   return { nfkc: nfkc, squash: squash, parseRules: parseRules, chunkLabel: chunkLabel, searchRules: searchRules,
            buildPrompt: buildPrompt, pickSources: pickSources, parseModelJson: parseModelJson, mergeRoster: mergeRoster, readRoster: readRoster,
-           normEmail: normEmail, fixEmail: fixEmail };
+           normEmail: normEmail, fixEmail: fixEmail, normName: normName,
+           ABS_HEADER: ABS_HEADER, normDate: normDate, mergeAbsence: mergeAbsence, parsePeriod: parsePeriod, findPeople: findPeople,
+           parseAbsenceQuery: parseAbsenceQuery, daysInPeriod: daysInPeriod, summarizeAbsence: summarizeAbsence, formatAbsenceAnswer: formatAbsenceAnswer };
 })();
