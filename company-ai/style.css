@@ -1,0 +1,28 @@
+:root { --bg:#f4f6f8; --card:#fff; --fg:#111; --muted:#555; --line:#b8c2cc; --accent:#1f6feb; --bad:#f8d7da; --ok:#e6f4ea; --head:#e8edf2; color-scheme:light; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,"Hiragino Sans","Yu Gothic",Meiryo,sans-serif; }
+.page { max-width:760px; margin:0 auto; padding:0 16px 80px; }
+.app-header { display:flex; align-items:baseline; gap:16px; padding:16px 0 8px; }
+.app-header h1 { margin:0; font-size:20px; }
+.who { margin-left:auto; color:var(--muted); font-size:13px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 16px; margin:12px 0; }
+.card h2 { margin:0 0 8px; font-size:15px; }
+.hint { color:var(--muted); font-size:13px; }
+.status { background:var(--head); border-radius:6px; padding:8px 12px; margin:8px 0; }
+.status.err { background:var(--bad); }
+.btn { background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:5px 12px; cursor:pointer; font:inherit; }
+.btn.primary { background:#cfe2ff; border-color:var(--accent); font-weight:bold; padding:8px 20px; }
+.btn:disabled { opacity:.45; cursor:not-allowed; }
+.btn.on { background:#cfe2ff; border-color:var(--accent); font-weight:bold; }
+.row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:8px; }
+.cnt { color:var(--muted); font-size:12px; }
+textarea { width:100%; border:1px solid var(--line); border-radius:4px; padding:8px; font:inherit; resize:vertical; }
+.msg { margin:12px 0; }
+.msg .q { background:var(--head); border-radius:8px; padding:8px 12px; margin-left:48px; white-space:pre-wrap; }
+.msg .a { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin-top:8px; margin-right:24px; white-space:pre-wrap; }
+.msg .a.ng { background:var(--bad); }
+.src { color:var(--muted); font-size:12px; margin-top:6px; }
+.fb { display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+.fb textarea { margin-top:6px; }
+.thanks { color:var(--muted); font-size:12px; }
+.ask textarea { min-height:56px; }
