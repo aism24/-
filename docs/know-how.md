@@ -181,3 +181,10 @@
 - やり方: `list_projects`(repoUrl)で連携中が対象アプリ1件だけと確認。`vercel.json` の `deploymentEnabled=false` なのでpush・マージではデプロイされない(直前の `list_deployments` と比べて確認)。本番は「デプロイして」で `create_deployment` を1回(`requestBody` に name/project/target/gitSource。teamIdは渡さない=403)。
 - 注意点: `create_deployment` は引数を `requestBody` に入れないと入力エラーになる。反映確認は本番URLの `app.js?v=` を1回見る。
 - 使ったアプリ: tori-robo
+
+### コード精査→安全な範囲だけ修正し、出力同一をリグレッション確認(shipping-list-link、10/7)
+- 効果: 未使用CSS・localStorageキャッシュ(6.5MBで常に失敗)・二重計算を削除、`doc.destroy()`・ページ取得の並列化・処理中の二重ドロップ防止を追加。出力PDF(リンクRect・URI・描画内容のハッシュ・件数)は修正前後で完全一致。
+- やり方: 本番 `api/links` のマスタ+合成PDF(従来形式・回転・加工予定表はpdf.jsを模擬)で、旧core.jsと新core.jsの結果JSONを `cmp`。画面はPlaywrightでドロップ→ポップアップ→OKを旧版と比較。テストは作業メモ領域で行い削除。
+- 注意点: 件数に影響する変更(重複のNG扱いの統一、従来形式の回転対応)は結果が変わるので見送り。実PDFでの照合は未実施。
+- 使ったアプリ: shipping-list-link
+

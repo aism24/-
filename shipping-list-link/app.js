@@ -6,8 +6,8 @@
   var LINK_MODE = 'file';
   var OPEN_BASE = 'https://shipping-list-link.vercel.app/open.html';
   var $ = function (id) { return document.getElementById(id); };
-  var links = null, CK = 'ship-links-v1';
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261005p';
+  var links = null, working = false;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261007a';
 
   function showMaster(m, note) {
     links = m.links;
@@ -23,11 +23,9 @@
     return { m: await r2.json(), via: GAS_URL ? 'GAS直接' : '動作確認用サンプル' };
   }
   async function loadMaster() {
-    try { var c = JSON.parse(localStorage.getItem(CK) || 'null'); if (c && GAS_URL) showMaster(c, 'キャッシュ'); } catch (e) {}
     try {
       var t0 = Date.now(), got = await fetchMaster();
       showMaster(got.m, got.via + ' ' + ((Date.now() - t0) / 1000).toFixed(1) + '秒');
-      if (GAS_URL) try { localStorage.setItem(CK, JSON.stringify(got.m)); } catch (e) {}
     } catch (e) { if (!links) $('master').textContent = 'マスタの取得に失敗しました: ' + e; }
   }
   function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
@@ -55,8 +53,9 @@
   $('modalOk').onclick = resetApp;
 
   async function handle(file) {
-    if (!file || modalOpen) return;
+    if (!file || modalOpen || working) return;
     if (!links) { $('msg').textContent = 'マスタが未取得です。少し待って再実行してください。'; return; }
+    working = true;   // 処理中の追加ドロップは無視(二重処理・二重記録の防止)
     $('msg').textContent = '処理中…'; $('stage').classList.add('busy');
     try {
       var buf = await file.arrayBuffer();
@@ -78,7 +77,7 @@
     } catch (e) {
       $('stage').classList.remove('busy');
       $('msg').textContent = '失敗しました: ' + e;
-    }
+    } finally { working = false; }
   }
   async function save(name, s, buf) {
     try {
