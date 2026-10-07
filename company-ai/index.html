@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>社内AI</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="style.css?v=ai1">
+<link rel="stylesheet" href="style.css?v=ai3">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -18,6 +18,7 @@
     <h2>ログイン</h2>
     <p class="hint">会社に登録されているGoogleアカウントでログインしてください。</p>
     <div id="gsiBtn"></div>
+    <div class="status" id="loginBusy" style="display:none"></div>
     <div class="status err" id="loginErr" style="display:none"></div>
     <div class="status" id="setupNote" style="display:none">接続設定(config.js)が未入力です。画面の確認だけなら、URLの末尾に <b>?demo=1</b> を付けてください。</div>
   </section>
@@ -32,6 +33,6 @@
   </section>
 </div>
 <script src="config.js?v=ai2"></script>
-<script src="app.js?v=ai1"></script>
+<script src="app.js?v=ai3"></script>
 </body>
 </html>
