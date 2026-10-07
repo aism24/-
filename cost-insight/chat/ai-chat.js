@@ -205,12 +205,23 @@
   box.appendChild(head); box.appendChild(log); box.appendChild(form); document.body.appendChild(box);
   var fab = el('button', 'cw-fab', '💬 AIに質問'); fab.type = 'button'; fab.setAttribute('data-cw-open', '1'); document.body.appendChild(fab);
 
+  /* アイコン: ヘッダーの会社ロゴから「masamiz」の文字を除いたマーク部分だけを、赤色で丸の中に表示(取れなければ🤖) */
+  function avatar() {
+    var a = el('div', 'cw-av'), mark = document.querySelector('svg.logo .logo-mark');
+    if (mark) {
+      var ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg'), path = document.createElementNS(ns, 'path');
+      svg.setAttribute('viewBox', '40 40 390 390'); svg.setAttribute('width', '28'); svg.setAttribute('height', '28');
+      path.setAttribute('d', mark.getAttribute('d')); path.setAttribute('fill-rule', 'evenodd'); path.setAttribute('fill', '#e60012');
+      svg.appendChild(path); a.appendChild(svg);
+    } else a.textContent = '🤖';
+    return a;
+  }
   function say(text, who) {
     var u = who === 'u', row = el('div', 'cw-row ' + (u ? 'cw-row-u' : 'cw-row-b')), m = el('div', 'cw-m ' + (u ? 'cw-u' : 'cw-b'), text);
     var meta = el('div', 'cw-meta'); if (u) meta.appendChild(el('div', '', '既読')); meta.appendChild(el('div', '', hhmm()));
     var line = el('div', 'cw-line'); line.appendChild(m); line.appendChild(meta);
     if (u) row.appendChild(line);
-    else { row.appendChild(el('div', 'cw-av', '🤖')); var col = el('div', 'cw-col'); col.appendChild(el('div', 'cw-name', 'AI_masamiz')); col.appendChild(line); row.appendChild(col); }
+    else { row.appendChild(avatar()); var col = el('div', 'cw-col'); col.appendChild(el('div', 'cw-name', 'AI_masamiz')); col.appendChild(line); row.appendChild(col); }
     log.appendChild(row); log.scrollTop = log.scrollHeight; return m;
   }
   function open() {
