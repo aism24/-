@@ -5,7 +5,7 @@
  */
 var MODEL = 'gemini-3.5-flash-lite'; // 固定。明示の指示があるときだけ変える(自動選択・可変にしない)
 var SHEET = { OPERATOR: 'Operator', ADMIN: '管理者', RULES: '規則', STAGE: '規則_取込', HIST: '規則履歴',
-              LOG: '質問ログ', CAL: 'CompanyCalendar', CONS: 'Construction', META: '設定' };
+              LOG: '質問ログ', CAL: 'CompanyCalendar', CONS: 'Construction', META: '設定', INFO: '諸情報' };
 var OPERATOR_HEADER = ['社員No', '氏名', '事業部', '工場', '部', '生まれた月', '電話番号', 'E-Mail', 'Reportcheck', '運転者', '管理者'];
 var LOG_HEADER = ['質問ID', '日時', 'E-Mail', '氏名', '質問', '回答', '区分', '参照', '評価', 'コメント', '検索ms', 'Gemini ms', '合計ms', '対応状況'];
 var RULE_HEADER = ['規程', '条', '見出し', '本文'];
@@ -16,6 +16,14 @@ function prop_(k, optional) {
   var v = PropertiesService.getScriptProperties().getProperty(k);
   if (!v && !optional) throw new Error('スクリプトプロパティ ' + k + ' が未設定です');
   return v || '';
+}
+// ファイルIDは「諸情報」シート(A列=ファイル名、B列=ファイルID)から読む
+function fileId_(name) {
+  var vals = ss_().getSheetByName(SHEET.INFO).getDataRange().getValues();
+  for (var i = 1; i < vals.length; i++) {
+    if (String(vals[i][0]).trim() === name && String(vals[i][1]).trim()) return String(vals[i][1]).trim();
+  }
+  throw new Error('「諸情報」シートに「' + name + '」のファイルIDがありません');
 }
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
 function sheet_(name, header) {
@@ -173,7 +181,7 @@ function feedback_(user, req) {
 // ---------- 毎朝: 名簿・工事・カレンダーをB2(+B5)から取り込む(深夜1時台) ----------
 function syncRoster() {
   try {
-    var b2 = SpreadsheetApp.openById(prop_('B2_ID')), b5 = SpreadsheetApp.openById(prop_('B5_ID'));
+    var b2 = SpreadsheetApp.openById(fileId_('DailyReport')), b5 = SpreadsheetApp.openById(fileId_('DailyReport建築'));
     var v2 = b2.getSheetByName('Operator').getDataRange().getValues();
     var v5 = b5.getSheetByName('Operator').getDataRange().getValues();
     var adm = sheet_(SHEET.ADMIN, ['氏名', 'E-Mail', '管理者']).getDataRange().getValues();
@@ -208,7 +216,7 @@ function copySheet_(srcSs, name) {
 
 // ---------- 就業規則の取り込みと公開(クリエーターのみ。メニューから実行) ----------
 function ingestRules() {
-  var id = prop_('RULES_PDF_ID'), file = DriveApp.getFileById(id);
+  var id = fileId_('就業規則'), file = DriveApp.getFileById(id);
   var doc = Drive.Files.create({ name: 'tmp_rules_' + Date.now(), mimeType: 'application/vnd.google-apps.document' }, file.getBlob(), { ocrLanguage: 'ja' });
   var text;
   try { text = DocumentApp.openById(doc.id).getBody().getText(); } finally { DriveApp.getFileById(doc.id).setTrashed(true); }
@@ -288,7 +296,8 @@ function setup() {
   });
   ScriptApp.newTrigger('syncRoster').timeBased().everyDays(1).atHour(1).create();
   ScriptApp.newTrigger('dailyMail').timeBased().everyDays(1).atHour(3).create();
-  ['GEMINI_API_KEY', 'CLIENT_ID', 'OWNER_EMAIL', 'B2_ID', 'B5_ID', 'RULES_PDF_ID'].forEach(function (k) { prop_(k); });
+  ['GEMINI_API_KEY', 'CLIENT_ID', 'OWNER_EMAIL'].forEach(function (k) { prop_(k); });
+  ['DailyReport', 'DailyReport建築', '就業規則'].forEach(function (n) { fileId_(n); });
   Logger.log('設定OK。モデル=' + MODEL);
 }
 function onOpen() {
