@@ -71,11 +71,10 @@
       var ux = a / ul, uy = b / ul, vx = c / vl, vy = d / vl, h = it.height || vl;
       var re = /[A-Za-z0-9][A-Za-z0-9\-_.\/]*/g, mt;
       while ((mt = re.exec(it.str))) {
-        var sp = spanX(it, mt.index, mt.index + mt[0].length), s0 = sp.x0 - m[4], s1 = sp.x1 - m[4];
-        // spanX は水平前提のため、item の向きに沿った長さ(0〜width)の按分に直す
+        // spanX は水平前提のため、item の向きに沿った長さ(0〜width)を文字幅の重みで按分する
         var w = it.width || 0, tot = 0, p0 = 0, p1 = 0, i;
         for (i = 0; i < it.str.length; i++) { if (i === mt.index) p0 = tot; tot += charWeight(it.str[i]); if (i + 1 === mt.index + mt[0].length) p1 = tot; }
-        s0 = w * p0 / tot; s1 = w * p1 / tot;
+        var s0 = w * p0 / tot, s1 = w * p1 / tot;
         var lo = -0.25 * h, hi = 0.85 * h;
         var pts = [[s0, lo], [s1, lo], [s0, hi], [s1, hi]].map(function (q) { return [m[4] + ux * q[0] + vx * q[1], m[5] + uy * q[0] + vy * q[1]]; });
         var xs = pts.map(function (q) { return q[0]; }), ys = pts.map(function (q) { return q[1]; });
@@ -97,7 +96,7 @@
     rows.forEach(function (r) { r.toks.sort(function (p, q) { return p.X0 - q.X0; }); });
     return rows;
   }
-  function scheduleRows(items, vp, links, shapes, zset, stats, annots, pn) {
+  function scheduleRows(items, vp, links, shapes, zset, stats, annots, pn, mapUri) {
     schedRows(schedTokens(items, vp)).forEach(function (row) {
       var u = row.toks;
       stats.rows++;
@@ -107,7 +106,7 @@
         if (z.text.indexOf('-') < 0 || !shapes[shape(z.text)]) continue;
         var v = links[z.text + '\t' + n.text];
         if (Array.isArray(v)) { stats.dup++; stats.partial.push({ page: pn, zuban: z.text, name: n.text, reason: '重複' }); continue; }
-        if (v) { annots.push({ rect: n.rect, ul: n.ul, uri: v }); stats.linked++; continue; }
+        if (v) { annots.push({ rect: n.rect, ul: n.ul, uri: mapUri(v) }); stats.linked++; continue; }
         stats.ng++;
         stats.partial.push({ page: pn, zuban: z.text, name: n.text, reason: zset[z.text] ? '製品名が不一致' : 'マスタに無い図番' });
       }
@@ -124,17 +123,20 @@
     Object.keys(links).forEach(function (k) { var z = k.split('\t')[0]; zset[z] = 1; shapes[shape(z)] = 1; });
     var stats = { pages: doc.numPages, linked: 0, dup: 0, ng: 0, partial: [], rows: 0 };
     var tcs = [], vps = [], sched = [], anySched = false;
-    for (var q = 1; q <= doc.numPages; q++) {
+    try {
+    var qs = [];
+    for (var q0 = 1; q0 <= doc.numPages; q0++) qs.push(q0);
+    await Promise.all(qs.map(async function (q) {   // 全ページのテキスト取得を並列化(結果は添字で格納するので順序は不変)
       var pj = await doc.getPage(q); vps[q] = pj.getViewport({ scale: 1 }); tcs[q] = await pj.getTextContent();
       sched[q] = tcs[q].items.map(function (it) { return it.str; }).join('').replace(/\s/g, '').indexOf('加工予定表') >= 0;   // タイトルは1文字ずつ分かれている場合がある
-      if (sched[q]) anySched = true;
-    }
+    }));
+    for (var q1 = 1; q1 <= doc.numPages; q1++) if (sched[q1]) anySched = true;
     for (var pn = 1; pn <= doc.numPages; pn++) {
       if (anySched && !sched[pn]) continue;   // 「加工予定表」のタイトルがあるPDFは、そのページだけを対象にする
       var tc = tcs[pn];
       var page = out.getPage(pn - 1), annots = [];
       var rows = sched[pn] ? [] : clusterRows(tc.items);
-      if (sched[pn]) scheduleRows(tc.items, vps[pn], links, shapes, zset, stats, annots, pn);
+      if (sched[pn]) scheduleRows(tc.items, vps[pn], links, shapes, zset, stats, annots, pn, mapUri);
       for (var r = 0; r < rows.length; r++) {
         var toks = rowTokens(rows[r]), done = {}, hasAny = false;
         stats.rows++;
@@ -171,6 +173,7 @@
           thickness: 0.9, color: PDFLib.rgb(0, 0.2, 0.9) });
       });
     }
+    } finally { doc.destroy(); }   // pdf.js のworker・ページ資源を解放(処理のたびに残らないように)
     return { bytes: await out.save(), stats: stats };
   }
 
