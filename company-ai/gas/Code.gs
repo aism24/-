@@ -303,6 +303,59 @@ function dailyMail() {
   return '送信しました';
 }
 
+// ---------- 自己診断(メニュー「動作確認」): 実際の環境で、公開前に各部分が動くかを1つずつ確かめる ----------
+function selfTest() {
+  var out = [];
+  function step(name, fn) {
+    var t = Date.now();
+    try { var r = fn(); out.push('✔ ' + name + (r ? ': ' + r : '') + ' (' + (Date.now() - t) + 'ms)'); }
+    catch (e) { out.push('✖ ' + name + ': ' + e.message); }
+  }
+  var q = '年次有給休暇は何日もらえますか';
+  step('設定(諸情報シート)', function () {
+    ['GEMINI_API_KEY', 'CLIENT_ID', 'OWNER_EMAIL', 'DailyReport', 'DailyReport建築', 'RULES_PDF_ID'].forEach(function (k) { prop_(k); });
+    return '必須6項目すべて入力済み';
+  });
+  step('元ファイルの読み取り(B2・B5のOperator)', function () {
+    var a = SpreadsheetApp.openById(prop_('DailyReport')).getSheetByName('Operator'), b = SpreadsheetApp.openById(prop_('DailyReport建築')).getSheetByName('Operator');
+    if (!a || !b) throw new Error('Operatorシートが見つかりません');
+    return 'B2 ' + (a.getLastRow() - 1) + '行 / B5 ' + (b.getLastRow() - 1) + '行';
+  });
+  step('名簿(Operatorシート)', function () {
+    var m = getRoster_(), keys = Object.keys(m), adm = keys.filter(function (k) { return m[k].admin; }).length;
+    if (keys.length < 50) throw new Error('名簿が少なすぎます(' + keys.length + '人)。メニューで名簿を更新してください');
+    if (!adm) throw new Error('管理者が0人です');
+    return keys.length + '人(管理者' + adm + '人)';
+  });
+  step('就業規則(公開済み)', function () {
+    var c = loadRules_(), main = c.filter(function (x) { return x.doc === '就業規則' && x.no; }).length;
+    if (main < 100) throw new Error('就業規則が公開されていません(' + main + '条)。メニューで取り込み→公開してください');
+    return c.length + '件(就業規則' + main + '条) / ' + getMeta_('rules_version');
+  });
+  step('検索', function () {
+    var h = AI_LOGIC.searchRules(loadRules_(), q, 6);
+    if (!h.length) throw new Error('条文が見つかりません');
+    return '最上位=' + AI_LOGIC.chunkLabel(h[0].chunk);
+  });
+  step('Gemini(' + MODEL + ')', function () {
+    var h = AI_LOGIC.searchRules(loadRules_(), q, 6);
+    var o = AI_LOGIC.parseModelJson(callGemini_(AI_LOGIC.buildPrompt(q, h)));
+    if (!o) throw new Error('AIの応答を読み取れませんでした');
+    return o.answerable ? '回答あり「' + String(o.answer).slice(0, 50) + '…」' : '回答なし(answerable=false)';
+  });
+  step('ログイン検証の通信(Google)', function () {
+    var r = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=x', { muteHttpExceptions: true });
+    if (r.getResponseCode() !== 400) throw new Error('想定外の応答(' + r.getResponseCode() + ')');
+    return '接続OK';
+  });
+  step('Drive API(就業規則の取り込みに必要)', function () {
+    if (typeof Drive === 'undefined') throw new Error('サービス「Drive API」を追加してください(左の「サービス」の＋)');
+    return DriveApp.getFileById(prop_('RULES_PDF_ID')).getName();
+  });
+  step('朝のメールの宛先', function () { return prop_('OWNER_EMAIL') + '(送信はしません)'; });
+  return out.join('\n');
+}
+
 // ---------- 初期設定とメニュー ----------
 var CONFIG_GUIDE = [
   ['DailyReport', '日報(鉄構)の現行ファイルのID。鉄構の名簿・工事・カレンダー・有給の元(B2)'],
@@ -330,6 +383,7 @@ var GUIDE_LINES = [
   ['4. 直したら、対応状況(質問ログのN列)を「対応済」に変える'],
   [''],
   ['■ メニュー「社内AI」(このシートを編集できる人だけが使えます。共有はクリエーターだけにしてください)'],
+  ['・動作確認(自己診断): 設定・名簿・就業規則・AI・Googleとの通信を1つずつ確かめ、✔/✖で表示。✖が出たら、その行の指示どおりに直す'],
   ['・名簿・工事・カレンダーを今すぐ更新: 毎晩1時に自動で行われます。急ぐときだけ使う'],
   ['・就業規則を取り込む(確認用): PDFを条文に分けて「規則_取込」シートに入れ、現行との差(追加/削除/変更)を表示'],
   ['・就業規則を公開する: 確認した内容を本番にする(旧版は「規則履歴」に残る)'],
@@ -376,6 +430,7 @@ function setup() {
 }
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('社内AI')
+    .addItem('動作確認(自己診断)', 'menuSelfTest')
     .addItem('名簿・工事・カレンダーを今すぐ更新', 'menuSync')
     .addItem('就業規則を取り込む(確認用)', 'menuIngest')
     .addItem('就業規則を公開する', 'menuPublish')
@@ -383,6 +438,7 @@ function onOpen() {
 }
 // メニューの操作は、このスプレッドシートの編集権限がある人だけが使える(共有を作成者・クリエーターに限る)。メール一致では判定しない
 function run_(fn) { try { SpreadsheetApp.getUi().alert(fn()); } catch (e) { SpreadsheetApp.getUi().alert('エラー: ' + e.message); } }
+function menuSelfTest() { run_(selfTest); }
 function menuSync() { run_(syncRoster); }
 function menuIngest() { run_(ingestRules); }
 function menuPublish() { run_(publishRules); }
