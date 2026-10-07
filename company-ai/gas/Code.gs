@@ -71,6 +71,20 @@ function writeTable_(sh, values) {
   if (last > rows) sh.getRange(rows + 1, 1, last - rows, sh.getMaxColumns()).clearContent();
 }
 
+// 同じ要求ID(rid)の再送は、もう一度実行せず前回の結果を返す。
+// Googleの応答が途中で失われて画面が再送しても、質問が二重に記録されたり、AIが二重に呼ばれたりしない
+function replay_(user, rid, fn) {
+  if (!rid) return fn();
+  var c = CacheService.getScriptCache(), k = 'rid_' + user.email + '_' + String(rid).slice(0, 40), hit = c.get(k);
+  if (hit) return JSON.parse(hit);
+  if (c.get(k + '_run')) { // 同じ要求が実行中: 終わるのを待って、その結果を返す
+    for (var i = 0; i < 40; i++) { Utilities.sleep(500); hit = c.get(k); if (hit) return JSON.parse(hit); }
+    throw err_('busy', '処理に時間がかかっています。少し待ってからもう一度お試しください');
+  }
+  c.put(k + '_run', '1', 60);
+  try { var r = fn(); c.put(k, JSON.stringify(r), 300); return r; } finally { c.remove(k + '_run'); }
+}
+
 // ---------- Webアプリ ----------
 function doGet() { return json_({ ok: true, app: '社内AI', model: MODEL }); }
 
@@ -79,8 +93,8 @@ function doPost(e) {
     var req = JSON.parse(e.postData.contents);
     var user = authenticate_(req.idToken);
     if (req.action === 'me') return json_({ ok: true, name: user.name, isAdmin: user.isAdmin });
-    if (req.action === 'ask') return json_(ask_(user, req.question));
-    if (req.action === 'feedback') return json_(feedback_(user, req));
+    if (req.action === 'ask') return json_(replay_(user, req.rid, function () { return ask_(user, req.question); }));
+    if (req.action === 'feedback') return json_(replay_(user, req.rid, function () { return feedback_(user, req); }));
     throw err_('bad_request', '不明な操作です');
   } catch (err) {
     return json_({ ok: false, error: err.code || 'error', message: String(err.message || err) });

@@ -8,13 +8,37 @@
   function tokenGet() { try { return sessionStorage.getItem('ai_token') || ''; } catch (e) { return ''; } }
   function tokenSet(t) { try { if (t) sessionStorage.setItem('ai_token', t); else sessionStorage.removeItem('ai_token'); } catch (e) {} }
 
-  // GASへ。text/plainで送ると事前確認(CORS preflight)が要らない
-  function api(action, payload) {
+  // GASへ。text/plainで送ると事前確認(CORS preflight)が要らない。
+  // GASの応答は、Google側の事情で数十秒かかったり、途中で失われたりする(404・HTML)ことがある。
+  // そこで、同じ要求を少しずつ時間をずらして最大4回まで送り、最初に成功した結果を使う(要求IDが同じなので、サーバー側で二重に実行されない)。
+  var HEDGE_MS = CFG.HEDGE_MS || 7000, TRY_TIMEOUT_MS = CFG.TRY_TIMEOUT_MS || 25000, MAX_TRIES = 4;
+  function rid() { return (window.crypto && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g, '').slice(0, 24) : String(Date.now()) + Math.random().toString(36).slice(2, 10); }
+  function postJson(body, onTry) {
+    return new Promise(function (resolve, reject) {
+      var started = 0, failed = 0, done = false, timer = null;
+      function finish(fn, v) { if (done) return; done = true; clearTimeout(timer); fn(v); }
+      function launch() {
+        if (done || started >= MAX_TRIES) return;
+        started++; if (onTry) onTry(started);
+        var ac = new AbortController(), t = setTimeout(function () { ac.abort(); }, TRY_TIMEOUT_MS);
+        fetch(CFG.GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), signal: ac.signal })
+          .then(function (r) { return r.text(); })
+          .then(function (txt) { return JSON.parse(txt); })
+          .then(function (j) { clearTimeout(t); finish(resolve, j); })
+          .catch(function () {
+            clearTimeout(t); failed++;
+            if (failed >= MAX_TRIES) finish(reject, Object.assign(new Error('通信がうまくいきませんでした。Google側の応答が不安定なことがあります。もう一度お試しください。'), { code: 'net' }));
+            else launch(); // 失敗したら、待たずに次を送る
+          });
+        clearTimeout(timer); if (started < MAX_TRIES) timer = setTimeout(launch, HEDGE_MS);
+      }
+      launch();
+    });
+  }
+  function api(action, payload, onTry) {
     if (DEMO) return demoApi(action, payload);
-    var body = Object.assign({ action: action, idToken: token }, payload || {});
-    return fetch(CFG.GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) })
-      .then(function (r) { return r.json(); })
-      .then(function (j) { if (!j.ok) { var e = new Error(j.message || '失敗しました'); e.code = j.error; throw e; } return j; });
+    var body = Object.assign({ action: action, idToken: token, rid: rid() }, payload || {});
+    return postJson(body, onTry).then(function (j) { if (!j.ok) { var e = new Error(j.message || '失敗しました'); e.code = j.error; throw e; } return j; });
   }
 
   function showLogin(msg) {
@@ -26,16 +50,24 @@
     $('who').textContent = me.name + ' さん' + (me.isAdmin ? '(管理者)' : '');
   }
 
-  function onCredential(resp) {
-    token = resp.credential; tokenSet(token);
-    api('me').then(showChat).catch(function (e) { tokenSet(''); token = ''; showLogin(e.message); });
+  // ログイン確認中の表示(Google側が遅いと30秒ほどかかることがあるため、待っていることを伝える)
+  function loginBusy(on, tries) {
+    var el = $('loginBusy'); el.style.display = on ? '' : 'none';
+    if (on) el.textContent = 'ログインを確認しています…' + (tries > 1 ? '(混み合っているため再試行しています ' + tries + '/' + MAX_TRIES + ')' : '(最大30秒ほどかかることがあります)');
+    $('gsiBtn').style.display = on ? 'none' : '';
   }
+  function checkMe() {
+    showLogin(''); loginBusy(true, 1);
+    return api('me', null, function (n) { loginBusy(true, n); }).then(function (me) { loginBusy(false); showChat(me); })
+      .catch(function (e) { loginBusy(false); tokenSet(''); token = ''; showLogin(e.message); renderBtn(); });
+  }
+  function onCredential(resp) { token = resp.credential; tokenSet(token); checkMe(); }
 
   function initLogin() {
     if (DEMO) { showChat({ name: 'デモ', isAdmin: false }); return; }
     if (!CFG.GAS_URL || !CFG.CLIENT_ID) { $('setupNote').style.display = ''; showLogin(''); return; }
     var saved = tokenGet();
-    if (saved) { token = saved; api('me').then(showChat).catch(function () { tokenSet(''); token = ''; showLogin(''); renderBtn(); }); }
+    if (saved) { token = saved; checkMe(); }
     else { showLogin(''); renderBtn(); }
   }
   // Googleのログインボタンを出す(読み込めないときは10秒で諦めて案内を出す)
@@ -101,9 +133,13 @@
     ev.preventDefault();
     var q = $('q').value.trim(); if (!q) return;
     $('q').value = ''; $('qcnt').textContent = '0/300'; $('sendBtn').disabled = true;
-    var m = addMessage(q);
-    api('ask', { question: q }).then(function (r) { renderAnswer(m, r); })
+    var m = addMessage(q), t0 = Date.now(), tries = 1;
+    var tick = setInterval(function () {
+      m.a.textContent = '考え中…' + Math.round((Date.now() - t0) / 1000) + '秒' + (tries > 1 ? '(混み合っているため再試行しています ' + tries + '/' + MAX_TRIES + ')' : '');
+    }, 1000);
+    api('ask', { question: q }, function (n) { tries = n; }).then(function (r) { clearInterval(tick); renderAnswer(m, r); })
       .catch(function (e) {
+        clearInterval(tick);
         m.a.classList.add('ng'); m.a.textContent = e.message;
         if (e.code === 'auth') { tokenSet(''); token = ''; showLogin(e.message); renderBtn(); }
       })
