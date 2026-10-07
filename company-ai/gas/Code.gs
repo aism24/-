@@ -295,7 +295,7 @@ var CONFIG_GUIDE = [
   ['DailyReport建築', '日報(建設・総務)の現行ファイルのID。建設・総務の名簿の元(B5)'],
   ['RULES_PDF_ID', '就業規則PDFのファイルID。改訂したら新しいPDFのIDに書き換え → メニューで取り込み・公開'],
   ['GEMINI_API_KEY', 'AI Studioで取得したAPIキー。他人に見せない・このシートを不用意に共有しない'],
-  ['OWNER_EMAIL', 'クリエーターのGmail。朝3時のメールの宛先で、メニュー操作を許可する人'],
+  ['OWNER_EMAIL', 'クリエーターのGmail。朝3時の確認メールの宛先'],
   ['CLIENT_ID', 'Googleログイン用のOAuthクライアントID(…apps.googleusercontent.com)']
 ];
 var GUIDE_LINES = [
@@ -313,7 +313,7 @@ var GUIDE_LINES = [
   ['3. 「👎」: 利用者が間違いと報告した回答。コメントと参照した条文を見て原因を調べる'],
   ['4. 直したら、対応状況(質問ログのN列)を「対応済」に変える'],
   [''],
-  ['■ メニュー「社内AI」(クリエーターだけが使えます)'],
+  ['■ メニュー「社内AI」(このシートを編集できる人だけが使えます。共有はクリエーターだけにしてください)'],
   ['・名簿・工事・カレンダーを今すぐ更新: 毎晩1時に自動で行われます。急ぐときだけ使う'],
   ['・就業規則を取り込む(確認用): PDFを条文に分けて「規則_取込」シートに入れ、現行との差(追加/削除/変更)を表示'],
   ['・就業規則を公開する: 確認した内容を本番にする(旧版は「規則履歴」に残る)'],
@@ -365,11 +365,8 @@ function onOpen() {
     .addItem('就業規則を公開する', 'menuPublish')
     .addItem('前日分メールを今すぐ送る', 'menuMail').addToUi();
 }
-function owner_() {
-  var me = Session.getActiveUser().getEmail(), ow = prop_('OWNER_EMAIL');
-  if (me && AI_LOGIC.normEmail(me) !== AI_LOGIC.normEmail(ow)) throw new Error('この操作はクリエーターのみ実行できます');
-}
-function run_(fn) { try { owner_(); SpreadsheetApp.getUi().alert(fn()); } catch (e) { SpreadsheetApp.getUi().alert('エラー: ' + e.message); } }
+// メニューの操作は、このスプレッドシートの編集権限がある人だけが使える(共有を作成者・クリエーターに限る)。メール一致では判定しない
+function run_(fn) { try { SpreadsheetApp.getUi().alert(fn()); } catch (e) { SpreadsheetApp.getUi().alert('エラー: ' + e.message); } }
 function menuSync() { run_(syncRoster); }
 function menuIngest() { run_(ingestRules); }
 function menuPublish() { run_(publishRules); }
