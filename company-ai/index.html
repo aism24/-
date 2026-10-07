@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>社内AI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="style.css?v=ai1">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+<div class="page">
+  <header class="app-header">
+    <h1>社内AI</h1>
+    <div class="who" id="who"></div>
+  </header>
+
+  <section class="card" id="loginCard">
+    <h2>ログイン</h2>
+    <p class="hint">会社に登録されているGoogleアカウントでログインしてください。</p>
+    <div id="gsiBtn"></div>
+    <div class="status err" id="loginErr" style="display:none"></div>
+    <div class="status" id="setupNote" style="display:none">接続設定(config.js)が未入力です。画面の確認だけなら、URLの末尾に <b>?demo=1</b> を付けてください。</div>
+  </section>
+
+  <section id="chatCard" style="display:none">
+    <div class="card hint">就業規則・規程(退職金・再雇用・育児介護・慶弔見舞金)について質問できます。答えられないときは、担当者に届きます。</div>
+    <div id="log"></div>
+    <form class="card ask" id="askForm">
+      <textarea id="q" rows="2" maxlength="300" placeholder="例: 年次有給休暇は何日もらえますか?" required></textarea>
+      <div class="row"><span class="cnt" id="qcnt">0/300</span><button class="btn primary" id="sendBtn" type="submit">質問する</button></div>
+    </form>
+  </section>
+</div>
+<script src="config.js?v=ai1"></script>
+<script src="app.js?v=ai1"></script>
+</body>
+</html>
