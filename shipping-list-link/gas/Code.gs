@@ -1,7 +1,7 @@
 /**
  * 出荷リスト図番リンク付与アプリ用 GAS(ms-tottori アカウントで実行)
  *  - 毎朝: マスタExcelのハイパーリンクを抜き出し「リンク表(JSON)」をDriveに保存
- *  - doGet : リンク表JSONを返す(?action=links)
+ *  - doGet : リンク表JSONを返す(?action=links) / 軽い状態確認(?action=info) / 今すぐ再生成(?action=rebuild。連打は1分で制限、件数が旧の90%未満なら上書きしない)
  *  - doPost: 取り込んだ元PDFを保存フォルダへ保存し、スプレッドシート「記録」の2行目に日時/ページ数/URLを挿入(最新が上)
  *
  * 【初回セットアップ】 ①このコードを貼り付け ②setupDaily を1回実行(権限を承認) ③buildMaster を1回実行
@@ -90,6 +90,13 @@ function mergeLinks_(list) {
   Object.keys(dups).forEach(function (k) { links[k] = dups[k]; });
   return links;
 }
+/** 件数の安全弁: 旧の90%未満になる再生成は上書きしない(Excelの欠損・読み取り失敗で件数が激減したJSONを公開しないため) */
+function shrinkRejected_(oldCount, newCount) {
+  return oldCount > 0 && newCount < oldCount * 0.9;
+}
+function maxModified_(sources) {
+  return (sources || []).reduce(function (m, s) { return s.modified > m ? s.modified : m; }, '');
+}
 function sanitizeName_(s) {
   return String(s || 'shipping').replace(/\.pdf$/i, '').replace(/[\\\/:*?"<>|]/g, '_').slice(0, 80);
 }
@@ -105,8 +112,9 @@ function readXlsxLinks_(blob) {
   return extractLinks_(get(path), get(relPath), get('xl/sharedStrings.xml'));
 }
 
-/** 毎朝実行: マスタExcel全件 → リンク表JSONをDriveに保存 */
-function buildMaster() {
+/** マスタExcel全件 → リンク表JSONをDriveに保存。force=false のとき、件数が旧の90%未満なら上書きしない。
+ *  戻り値: { ok, updated, count, prevCount, excelModified } か { ok:false, rejected:{oldCount,newCount} } */
+function build_(force) {
   var it = DriveApp.getFolderById(MASTER_FOLDER_ID).getFiles(), list = [], sources = [];
   while (it.hasNext()) {
     var f = it.next();
@@ -115,11 +123,27 @@ function buildMaster() {
     list.push(one);
     sources.push({ name: f.getName(), count: Object.keys(one).length, modified: f.getLastUpdated().toISOString() });
   }
-  var json = JSON.stringify({ updated: new Date().toISOString(), sources: sources, links: mergeLinks_(list) });
-  var folder = DriveApp.getFolderById(SAVE_FOLDER_ID), ex = folder.getFilesByName(LINKS_FILE_NAME);
-  if (ex.hasNext()) ex.next().setContent(json); else folder.createFile(LINKS_FILE_NAME, json, 'application/json');
-  return json.length;
+  var merged = mergeLinks_(list), count = Object.keys(merged).length, props = PropertiesService.getScriptProperties();
+  var folder = DriveApp.getFolderById(SAVE_FOLDER_ID), ex = folder.getFilesByName(LINKS_FILE_NAME), exFile = ex.hasNext() ? ex.next() : null;
+  var meta = JSON.parse(props.getProperty('meta') || 'null');
+  var prevCount = meta ? meta.count : (exFile ? Object.keys(JSON.parse(exFile.getBlob().getDataAsString('UTF-8')).links || {}).length : 0);
+  if (!force && shrinkRejected_(prevCount, count)) {
+    var rej = { at: new Date().toISOString(), oldCount: prevCount, newCount: count };
+    props.setProperty('rejected', JSON.stringify(rej));
+    return { ok: false, rejected: rej };
+  }
+  var updated = new Date().toISOString();
+  var json = JSON.stringify({ updated: updated, sources: sources, links: merged });
+  if (exFile) exFile.setContent(json); else folder.createFile(LINKS_FILE_NAME, json, 'application/json');
+  var excelModified = maxModified_(sources);
+  props.setProperty('meta', JSON.stringify({ updated: updated, count: count, excelModified: excelModified }));
+  props.deleteProperty('rejected');
+  return { ok: true, updated: updated, count: count, prevCount: prevCount, excelModified: excelModified };
 }
+/** 毎朝6時のトリガー用(トリガーは引数にイベントを渡すので、force を取らない形にしている) */
+function buildMaster() { return build_(false); }
+/** 件数が正当に10%以上減ったときだけ、Apps Scriptから手動実行する(安全弁を無視して作り直す) */
+function buildMasterForce() { return build_(true); }
 function setupDaily() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'buildMaster') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('buildMaster').timeBased().everyDays(1).atHour(6).inTimezone('Asia/Tokyo').create();
@@ -131,9 +155,33 @@ function loadLinksJson_() {
 }
 function json_(o) { return ContentService.createTextOutput(typeof o === 'string' ? o : JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
+var REBUILD_MIN_INTERVAL_MS = 60000; // 手動の再生成は1分以内に続けて実行しない
+
+/** 画面の「最新のリンク付きマスタを取得」ボタン用。連打は1分で制限し、同時に走らないようロックする */
+function rebuildNow_() {
+  var props = PropertiesService.getScriptProperties(), meta = JSON.parse(props.getProperty('meta') || 'null');
+  var last = Number(props.getProperty('lastRebuildAt') || 0);
+  if (Date.now() - last < REBUILD_MIN_INTERVAL_MS && meta) return { ok: true, throttled: true, updated: meta.updated, count: meta.count, excelModified: meta.excelModified };
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return { ok: true, busy: true };
+  try {
+    props.setProperty('lastRebuildAt', String(Date.now()));
+    return build_(false);
+  } finally { lock.releaseLock(); }
+}
+/** 軽い状態確認(Driveを読まない)。画面が再生成の完了を待つときに使う */
+function info_() {
+  var props = PropertiesService.getScriptProperties(), meta = JSON.parse(props.getProperty('meta') || 'null') || {};
+  return { ok: true, updated: meta.updated || '', count: meta.count || 0, excelModified: meta.excelModified || '', rejected: JSON.parse(props.getProperty('rejected') || 'null') };
+}
+
 function doGet(e) {
   var a = (e && e.parameter && e.parameter.action) || 'links';
   if (a === 'ping') return json_({ ok: true });
+  if (a === 'info') return json_(info_());
+  if (a === 'rebuild') {
+    try { return json_(rebuildNow_()); } catch (err) { return json_({ ok: false, error: String(err) }); }
+  }
   return json_(loadLinksJson_());
 }
 

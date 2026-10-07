@@ -188,3 +188,9 @@
 - 注意点: 件数に影響する変更(重複のNG扱いの統一、従来形式の回転対応)は結果が変わるので見送り。実PDFでの照合は未実施。
 - 使ったアプリ: shipping-list-link
 
+### GASのマスタ再生成ボタンを安全に付ける(shipping-list-link、10/7)
+- 効果: 朝6時の自動更新を待たず、画面から最新のリンク表を取得。更新日時(日本時間)とExcel最終更新を表示して「最新になった」が分かる。
+- やり方: GASに `?action=rebuild`(連打1分制限+LockService+件数の安全弁90%)と軽い `?action=info`(PropertiesServiceのmeta)。画面はrebuild→応答不可なら info を4秒おきに最大2分ポーリング→`api/links?t=`でCDNを避けて再取得。GASはvmにDriveApp等を模擬してNodeでテスト、画面はPlaywrightでGAS応答を差し替えて全分岐(更新あり/変更なし/連打/拒否/busy/エラー/応答不可)を確認。
+- 注意点: 時間トリガーはイベント引数を渡すので、forceは別関数(`buildMasterForce`)にする。旧GASのままだと rebuild がリンク表を返すので「GAS未更新」と表示する。
+- 使ったアプリ: shipping-list-link
+
