@@ -181,3 +181,8 @@
 - やり方: `list_projects`(repoUrl)で連携中が対象アプリ1件だけと確認。`vercel.json` の `deploymentEnabled=false` なのでpush・マージではデプロイされない(直前の `list_deployments` と比べて確認)。本番は「デプロイして」で `create_deployment` を1回(`requestBody` に name/project/target/gitSource。teamIdは渡さない=403)。
 - 注意点: `create_deployment` は引数を `requestBody` に入れないと入力エラーになる。反映確認は本番URLの `app.js?v=` を1回見る。
 - 使ったアプリ: tori-robo
+
+### アプリに「AIに質問」(データ集計つき)を入れる(cost-insight、10/7)
+- やり方: 日報の方式を流用。質問の読み取り・集計はブラウザ内(既存のcalc.jsのmodel)、読み取れない質問だけGeminiに「意図のJSON」を聞く。実データはGeminiに送らない。`chat/ai-chat.js`+`api/ask.js`+GAS `askAI_`。
+- 検証: 実データ(GAS getData)をNodeで読み、答えの合計が `CICalc.summarize` の直接計算と一致(37,137.5t / 夢前R8 5,350.2t)。
+- 注意点: GASに `GEMINI_API_KEY` の登録と新バージョンのデプロイが必要。年度はR8=2025/11/21〜2026/11/20。

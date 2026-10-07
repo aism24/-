@@ -101,6 +101,7 @@ function doPost(e) {
       if (body.basic) data.basic = saveBasicSettings_(body.basic);
       return json_({ status: 'success', data: data });
     }
+    if (body.action === 'askAI') return json_({ status: 'success', data: askAI_(body.params || {}) });
     const secret = PropertiesService.getScriptProperties().getProperty('SECRET');
     if (!secret || body.secret !== secret) return json_({ status: 'error', message: '秘密キーが違います' });
     const rows = normalizeBudgetRows(body.data);
@@ -909,4 +910,35 @@ function readHeadcount_(vals) {
     count[site] = (count[site] || 0) + 1;
   }
   return count;
+}
+
+/**
+ * 「AIに質問」用。質問文から意図(何を・どの切り口で)だけをJSONで返す。予算・工数・重量等の実データは受け取らず、集計は画面側。
+ * 事前準備: スクリプトプロパティ GEMINI_API_KEY にGeminiのAPIキーを登録する。
+ * モデルは gemini-3.5-flash-lite 固定(変更しない)。
+ */
+function askAI_(params) {
+  const key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!key) throw new Error('GEMINI_API_KEY未設定');
+  const q = String(params.question || '').slice(0, 300);
+  if (!q) throw new Error('質問が空です');
+  const prompt = 'あなたは社内アプリ「コストインサイト」の質問振り分け係です。今日は' + String(params.today || '').slice(0, 20) + 'です。' +
+    '利用者の質問(言い方・語順・略し方は自由)を読み取り、次のJSONだけで返してください。' +
+    '{"intent":"data|howto|other","metric":"weight|hours|budget|all","groupBy":"none|factory|work|year|month","factory":"本社|夢前|鳥取","construction":"工事名または工事番号(質問に書かれた文字のまま)","fiscalYear":"R8 または 2026","closing":"yyyy-MM","answer":""}。' +
+    'intent: data=生産重量・工数(時間)・実行予算(契約金額・仕入・労務費・損益)に関する質問、howto=アプリの使い方、other=それ以外。' +
+    'metric: weight=生産重量(t)、hours=工数(時間)、budget=実行予算・金額・仕入・労務費・契約金額・損益・利益、all=複数や指定なし。' +
+    'groupBy: 「〜別」「〜ごと」で内訳を求められた切り口(factory=工場別、work=工事別、year=年度別、month=締め月別)。全体の合計だけならnone。' +
+    '会社の締め: 1か月は前月21日〜当月20日(例: 9月締め・9月度=8/21〜9/20)。closingは締め月をyyyy-MMで(年の指定が無い月は今日以前で最も近い年)。今月=今日を含む締め月、先月=その前の締め月。' +
+    '年度は11/21〜翌年11/20(例: 2026年度=R8年度=2025/11/21〜2026/11/20)。fiscalYearは「R8」のように。今期=今日を含む年度、前期=その前の年度。' +
+    '分からない項目は空文字。answerは使わない(空文字)。\n\n【質問】\n' + q;
+  const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'x-goog-api-key': key },
+    payload: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } })
+  });
+  if (res.getResponseCode() !== 200) throw new Error('Gemini応答エラー ' + res.getResponseCode());
+  const j = JSON.parse(res.getContentText());
+  const t = j.candidates && j.candidates[0] && j.candidates[0].content.parts.map(function (p) { return p.text || ''; }).join('');
+  if (!t) throw new Error('回答なし');
+  return { answer: t };
 }

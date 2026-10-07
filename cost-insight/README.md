@@ -59,3 +59,8 @@
 3. `pc/設定.json` を `server/pc/設定.example.json` の内容にして、「秘密キー」を記入する。
 4. Node公式の Windows 版 zip(https://nodejs.org/ の LTS、Windows x64 の .zip)から `node.exe` だけを `pc` に置く。
 5. 全員が `pc\出力` に書き込めること(前回の結果の共有・同時実行防止の目印に使う)。
+
+## AIに質問(2026-10-07〜)
+- ホームの［AIに質問］/右下の「💬 AIに質問」。実行予算・工数・生産重量を、全体・工場別・工事別・年度別(R8=2025/11/21〜2026/11/20)・締め月別(20日締め)で答える。
+- `chat/ai-chat.js`: 質問の読み取りと集計をブラウザ内で行う(calc.jsのmodelを使うため画面の数字と一致)。読み取れない質問だけ `api/ask`(Vercel中継)→GAS `askAI_` 経由でGemini(gemini-3.5-flash-lite固定)に「意図のJSON」だけ聞く。実データ・工事名はGeminiに送らない。
+- 設置: `gas/Code.gs` を貼り替え、スクリプト プロパティ `GEMINI_API_KEY`(日報アプリと同じキー)を追加 → デプロイを管理 → 新バージョン。Vercel中継(`api/ask.js`)は本番デプロイで有効になる(確認用URLではGAS直接)。
