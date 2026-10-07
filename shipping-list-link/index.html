@@ -39,12 +39,14 @@ body.dragging::after{content:"ここにドロップ";position:fixed;inset:0;z-in
 @keyframes manualGlow{0%,100%{box-shadow:0 0 6px #ffd400,0 0 14px rgba(255,212,0,.55)}50%{box-shadow:0 0 14px #ffe66d,0 0 32px rgba(255,212,0,.9)}}
 main{padding-bottom:84px!important}
 main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
-.sub{color:#8a94a6;font-size:13px;margin-bottom:16px}
+.sub{color:#8a94a6;font-size:13px;margin-bottom:16px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;text-align:center}
+.sub #master{grid-column:2}.sub #refresh{grid-column:3;justify-self:end}
+@media(max-width:760px){.sub{grid-template-columns:1fr}.sub #master,.sub #refresh{grid-column:1}}
 .sub b{color:#e6eaf2}.sub b.flash{animation:flash 3s ease-out 1}
 @keyframes flash{0%{color:#000;background:var(--ok);box-shadow:0 0 0 4px var(--ok)}100%{color:#e6eaf2;background:transparent;box-shadow:0 0 0 4px transparent}}
-#refresh{margin-left:8px;padding:3px 12px;font-size:13px;border:1px solid var(--acc);border-radius:6px;background:transparent;color:var(--acc);cursor:pointer;white-space:nowrap}
+#refresh{padding:3px 12px;font-size:13px;border:1px solid var(--acc);border-radius:6px;background:transparent;color:var(--acc);cursor:pointer;white-space:nowrap}
 #refresh:hover{background:rgba(88,166,255,.15)}#refresh:disabled{opacity:.5;cursor:default}
-#refreshMsg{font-size:13px;margin:-8px 0 14px;min-height:1em}#refreshMsg.ok{color:var(--ok)}#refreshMsg.warn{color:var(--warn)}
+#refreshMsg{font-size:13px;margin:-8px 0 14px;min-height:1em;text-align:center}#refreshMsg.ok{color:var(--ok)}#refreshMsg.warn{color:var(--warn)}
 #ngToggle{margin-top:6px;background:none;border:0;color:var(--acc);text-decoration:underline;font-size:14px;cursor:pointer}
 #ngList{margin-top:8px;max-height:50vh;overflow:auto;text-align:left}
 #ngList table{border-collapse:collapse;width:100%;font-size:12px}#ngList th,#ngList td{border-bottom:1px solid var(--line);padding:3px 6px;text-align:left;word-break:break-all}
@@ -65,11 +67,11 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
 </div>
 <div id="msg"></div>
 <div id="modal"><div class="mbox" id="mbox"><div id="modalText"></div><button id="ngToggle" type="button" style="display:none"></button><div id="ngList" style="display:none"></div><div id="modalNote"></div><button id="modalOk" type="button">OK</button></div></div>
-<p class="small">図番と製品名が完全一致した行の製品名にリンクを付け、PDFを自動でダウンロードします。リンクは社内ネットワーク内でのみ開けます。</p>
+<p class="small" style="text-align:center">図番と製品名が完全一致した行の製品名にリンクを付け、PDFを自動でダウンロードします。リンクは社内ネットワーク内でのみ開けます。</p>
 </main>
 <a class="manual" href="manual/after-download.pdf" target="_blank" rel="noopener">ダウンロード後の説明書</a>
-<script src="vendor/pdf.min.js?v=20261007b"></script>
-<script src="vendor/pdf-lib.min.js?v=20261007b"></script>
-<script src="core.js?v=20261007b"></script>
-<script src="app.js?v=20261007b"></script>
+<script src="vendor/pdf.min.js?v=20261007c"></script>
+<script src="vendor/pdf-lib.min.js?v=20261007c"></script>
+<script src="core.js?v=20261007c"></script>
+<script src="app.js?v=20261007c"></script>
 </body></html>
