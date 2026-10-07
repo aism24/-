@@ -14,14 +14,10 @@ input[type=date], input[type=number], select { background:var(--card); color:var
 .btn.primary { background:#cfe2ff; border-color:var(--accent); color:#000; font-weight:bold; padding:10px 20px; }
 .btn:disabled { opacity:.45; cursor:not-allowed; }
 .chips { display:flex; flex-wrap:wrap; gap:8px; }
-.chip { border:1px solid var(--line); border-radius:16px; padding:3px 10px; cursor:pointer; }
-.chip.dim { color:var(--muted); }
 .cnt { color:var(--muted); font-size:12px; }
 .hint { color:var(--muted); font-size:12px; margin:4px 0; }
 .status { background:var(--head); border-radius:6px; padding:8px 12px; margin:8px 0; }
 .status.err { background:var(--bad); }
-.warnings { color:#000; font-size:12px; }
-.unk-row { margin:4px 0; }
 .table-wrap { overflow-x:auto; }
 table { border-collapse:collapse; width:100%; white-space:nowrap; }
 th { background:var(--head); text-align:center; font-weight:600; }
@@ -33,10 +29,7 @@ tr.total td { background:var(--head); font-weight:bold; }
 tr.warn td { background:var(--warn); }
 tr.bad td { background:var(--bad); }
 tr.fixed td { background:var(--fixed); }
-.times { color:#000; font-weight:bold; font-size:12px; }
 .cost { margin-top:8px; justify-content:space-between; }
-.dl-bar { position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line); padding:10px 16px; display:flex; gap:16px; align-items:center; }
-@media (max-width:600px) { .dl-bar { flex-direction:column; align-items:stretch; } }
 
 .btn.toggle[aria-pressed=true] { background:#cfe2ff; border-color:var(--accent); color:#000; font-weight:bold; }
 .period { color:var(--muted); font-variant-numeric:tabular-nums; }

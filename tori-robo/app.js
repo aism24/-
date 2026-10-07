@@ -37,9 +37,9 @@ function applyOverride(row, products, overrides) {
   const key = row.r + '|' + row.wn + '|' + row.mk;
   const chosen = overrides[key];
   if (chosen && row.no && products[row.no + '|' + chosen]) {
-    return Object.assign({}, row, { s: 'ok', fixedMark: chosen, pk: row.no + '|' + chosen, corrected: true });
+    return Object.assign({}, row, { s: 'ok', pk: row.no + '|' + chosen, corrected: true });
   }
-  return Object.assign({}, row, { fixedMark: row.s === 'ok' ? row.mk : '', corrected: false });
+  return Object.assign({}, row, { corrected: false });
 }
 
 // 出力用の集計。rows: 期間・工事で絞り込み済みの稼動実績(1回の溶接=1行)。
@@ -47,8 +47,12 @@ function applyOverride(row, products, overrides) {
 function aggregate(rows, products, mode) {
   const months = {};
   const seen = {};
-  const sorted = rows.slice().sort(function (a, b) { return (a.sd + a.st) < (b.sd + b.st) ? -1 : 1; });
-  sorted.forEach(function (row) {
+  const sorted = rows.map(function (row, i) { return { row: row, i: i }; }).sort(function (a, b) { // 開始日時の古い順。同時刻は元の順(比較が不整合にならないように行番号で決める)
+    const x = a.row.sd + a.row.st, y = b.row.sd + b.row.st;
+    return x < y ? -1 : x > y ? 1 : a.i - b.i;
+  });
+  sorted.forEach(function (x) {
+    const row = x.row;
     const mk = monthKey(row.sd, mode);
     const mo = months[mk] || (months[mk] = {});
     const t = mo[row.r] || (mo[row.r] = { len: 0, weight: 0, arc: 0, run: 0, wire: 0 });
@@ -93,7 +97,7 @@ function finish(t) {
   };
 }
 
-// 1つの製品を複数回溶接した記録を、ロボ×製品の1行にまとめる(表・Excelの「全て抽出」用)。
+// 1つの製品を複数回溶接した記録を、ロボ×製品の1行にまとめる(4.製品名誤入力の確認用。5.・Excelの「全て抽出」は listRecords)。
 function groupByProduct(rows, products) {
   const map = {};
   rows.forEach(function (row) {
@@ -104,11 +108,10 @@ function groupByProduct(rows, products) {
       g = map[gk] = {
         robot: row.r, workNo: row.no, enteredName: row.wn, enteredMark: row.mk, status: row.s,
         corrected: row.corrected, suggestions: row.sg || [], product: p,
-        count: 0, first: row.sd + ' ' + row.st, last: row.ed + ' ' + row.et,
+        first: row.sd + ' ' + row.st, last: row.ed + ' ' + row.et,
         len: 0, arc: 0, run: 0, wire: 0, overrideKey: row.r + '|' + row.wn + '|' + row.mk,
       };
     }
-    g.count += 1;
     g.len += row.len; g.arc += row.arc; g.run += row.run; g.wire += row.wire;
     if (row.sd + ' ' + row.st < g.first) g.first = row.sd + ' ' + row.st;
     if (row.ed + ' ' + row.et > g.last) g.last = row.ed + ' ' + row.et;
@@ -118,7 +121,7 @@ function groupByProduct(rows, products) {
   });
 }
 
-// 5.・Excel「全て抽出」用: 溶接した記録を1件1行で、日付(終了日)の新しいものを上、同じ日付なら1号機を上に並べる。
+// 5.・Excel「全て抽出」用: 溶接した記録を1件1行で、日付(終了日)の新しいものを上、同じ日付なら1号機を上、同じ日付・同じロボ内は元データの入力順で下の行を上に並べる。
 // 「同じ製品」の判定は溶接した順(古い順)で行う: 同じ製品(ロボ×製品)の2回目以降は same=true(重量は表示しない)。
 // 重量は3.の集計と同じく、最初に溶接した1件だけ。
 function listRecords(rows, products) {
@@ -132,7 +135,7 @@ function listRecords(rows, products) {
     return a.i - b.i;
   });
   const seen = {};
-  const list = idx.map(function (x, n) {
+  const list = idx.map(function (x) {
     const row = x.row;
     const p = row.pk ? products[row.pk] : null;
     let same = false;
@@ -145,7 +148,7 @@ function listRecords(rows, products) {
       robot: row.r, workNo: row.no, enteredName: row.wn, enteredMark: row.mk, status: row.s,
       corrected: row.corrected, suggestions: row.sg || [], product: p, same: same,
       first: row.sd + ' ' + row.st, last: row.ed + ' ' + row.et,
-      len: row.len, arc: row.arc, run: row.run, wire: row.wire, seq: n, oi: x.i,
+      len: row.len, arc: row.arc, run: row.run, wire: row.wire, oi: x.i,
     };
   });
   return list.sort(function (a, b) { // ①日付(画面・Excelに出る終了日)の新しい順 ②同じ日付なら1号機が上 ③同じ日付・同じロボ内は元データの入力順で下の行が上
@@ -180,7 +183,7 @@ if (typeof module !== 'undefined') module.exports = { periodFor, defaultYearMont
 if (typeof document !== 'undefined') {
   (function () {
     const $ = function (id) { return document.getElementById(id); };
-    const st = { editing: {}, data: null, overrides: {}, selected: null, mode: 'calendar', multi: false, y: 0, m: 0, y2: 0, m2: 0, start: '', end: '', cost: HOURLY_COST_DEFAULT, sample: false };
+    const st = { editing: {}, data: null, overrides: {}, mode: 'calendar', multi: false, y: 0, m: 0, y2: 0, m2: 0, start: '', end: '', cost: HOURLY_COST_DEFAULT, sample: false };
 
     function loadOverrides() {
       try { st.overrides = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { st.overrides = {}; }
@@ -338,10 +341,8 @@ if (typeof document !== 'undefined') {
 
     function init() {
       const d = st.data;
-      if (!st.selected) st.selected = new Set();
-      d.works.forEach(function (w) { if (!st.known || !st.known[w.workNo]) st.selected.add(w.workNo); }); // 新しい工事は選択状態で追加
-      st.known = {};
-      d.works.forEach(function (w) { st.known[w.workNo] = true; });
+      st.works = {}; // 工事番号 → 工事名(2.・5.・Excelで共用)
+      d.works.forEach(function (w) { st.works[w.workNo] = w.workName; });
       if (!st.y) {
         const ym = defaultYearMonth(new Date());
         st.y = ym.y;
@@ -429,7 +430,7 @@ if (typeof document !== 'undefined') {
     function render() {
       const inPeriod = currentRows();
       renderWorks(inPeriod);
-      const rows = inPeriod.filter(function (r) { return r.no && st.selected.has(r.no); });
+      const rows = inPeriod.filter(function (r) { return r.no; });
       renderSummary(rows);
       renderDetail(rows);
       $('dlBtn').disabled = rows.length === 0;
@@ -447,8 +448,7 @@ if (typeof document !== 'undefined') {
       });
       const keys = Object.keys(names);
       const hasAl = inPeriod.some(function (r) { return r.al !== undefined; });
-      const works = {};
-      d.works.forEach(function (w) { works[w.workNo] = w.workName; });
+      const works = st.works;
       const optBase = d.works.map(function (w) { return '<option value="' + esc(w.workNo) + '">' + esc(w.workName) + '</option>'; });
       if (!keys.length) { $('works').innerHTML = '<p class="hint">この期間のデータがありません。</p>'; return; }
       const head = '<tr><th>梁ロボ入力工事名</th><th>工事番号</th><th>正式工事名</th><th>保存</th></tr>';
@@ -501,12 +501,11 @@ if (typeof document !== 'undefined') {
       st.groups = groups;
       const recs = listRecords(rows, st.data.products); // 5.・Excel用(1記録1行)
       st.records = recs;
-      const works = {};
-      st.data.works.forEach(function (w) { works[w.workNo] = w.workName; });
+      const works = st.works;
       const bad = recs.filter(function (g) { return g.status !== 'ok'; }).length;
       $('detailInfo').textContent = recs.length + '件' + (bad ? '(要確認 ' + bad + '件)' : '');
       const head = '<tr><th>工事番号</th><th>工事名</th><th>図面番号</th><th>製品名</th><th>サイズ</th><th>重量(t)</th><th>ロボ</th><th>加工日</th><th>日付</th><th>経過(分)</th><th>アーク(分)</th><th>ワイヤ(kg)</th><th>溶接長(m)</th></tr>';
-      const body = recs.map(function (g, i) {
+      const body = recs.map(function (g) {
         const p = g.product;
         let cls = '';
         let tip = '';
@@ -550,7 +549,10 @@ if (typeof document !== 'undefined') {
     document.addEventListener('mousemove', function (e) {
       const tr = e.target.closest ? e.target.closest('tr[data-tip]') : null;
       if (!tr) { tipEl.style.display = 'none'; return; }
-      tipEl.innerHTML = '入力: ' + tr.dataset.tip.replace(' → ', '<br>修正: ');
+      const tip = tr.dataset.tip, k = tip.indexOf(' → ');
+      tipEl.textContent = ''; // 入力値は文字として表示する(HTMLとして解釈させない)
+      tipEl.appendChild(document.createTextNode('入力: ' + (k < 0 ? tip : tip.slice(0, k))));
+      if (k >= 0) { tipEl.appendChild(document.createElement('br')); tipEl.appendChild(document.createTextNode('修正: ' + tip.slice(k + 3))); }
       tipEl.style.display = 'block';
       tipEl.style.left = (e.clientX + 14) + 'px';
       tipEl.style.top = (e.clientY + 14) + 'px';
@@ -567,10 +569,6 @@ if (typeof document !== 'undefined') {
       if (t.dataset && t.dataset.name !== undefined && t.tagName === 'SELECT') {
         const cell = document.querySelector('td[data-wkno="' + CSS.escape(t.dataset.name) + '"]');
         if (cell) cell.textContent = t.value || '未判定';
-      }
-      if (t.dataset && t.dataset.wk) {
-        if (t.checked) st.selected.add(t.dataset.wk); else st.selected.delete(t.dataset.wk);
-        render();
       }
     });
     document.addEventListener('click', function (e) {
@@ -689,7 +687,6 @@ if (typeof document !== 'undefined') {
       ws.getCell('G' + (r + 3)).value = '費用(円)';
       ws.getCell('H' + (r + 3)).value = Math.round(hours * st.cost);
       ws.getCell('H' + (r + 3)).numFmt = '#,##0';
-      [14, 8, 14, 11, 16, 18, 16, 14].forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
       ws.getRow(3).height = 32;
       ws.pageSetup.printArea = 'A1:H' + (r + 3); // 印刷範囲はA:H・A4横1ページに収める
 
@@ -698,8 +695,7 @@ if (typeof document !== 'undefined') {
       const dh = ['工事番号', '工事名', '図面番号', '製品名', 'サイズ', '重量(t)', 'ロボット', '加工日', '日付', '開始', '終了', '経過時間(分)', 'アークタイム(分)', '非アークタイム(分)', 'ワイヤ使用量(kg)', '換算溶接長(m)', '確認'];
       const dr = wd.getRow(1);
       dh.forEach(function (h, i) { const c = dr.getCell(i + 1); c.value = h; c.fill = blue; c.font = { bold: true }; c.alignment = { wrapText: true, vertical: 'middle' }; });
-      const works = {};
-      st.data.works.forEach(function (w) { works[w.workNo] = w.workName; });
+      const works = st.works;
       // 日付列(H:K)は実際の日付値にして m/d 表示にする(時刻は表示しない)
       const toDate = function (v) {
         const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v || '');
@@ -714,10 +710,9 @@ if (typeof document !== 'undefined') {
         vals.forEach(function (v, j) { row.getCell(j + 1).value = v; });
         for (let j = 8; j <= 11; j++) row.getCell(j).numFmt = 'm/d';
         [1, 3, 7, 8, 9, 10, 11].forEach(function (j) { row.getCell(j).alignment = { horizontal: "center" }; }); // 工事番号・図面番号・ロボ・日付列は中央揃え
-        if (p && p.l && !g.same) { row.getCell(3).value = { text: p.d || p.m, hyperlink: p.l }; row.getCell(3).font = { color: { argb: 'FF0563C1' }, underline: true }; }
+        if (p && p.l && !g.same) { row.getCell(3).value = { text: p.d || p.m, hyperlink: p.l }; }
         if (g.status !== 'ok') for (let j = 1; j <= dh.length; j++) row.getCell(j).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: g.status === 'suggest' ? 'FFFFF2CC' : 'FFF8CBAD' } };
       });
-      [10, 22, 16, 18, 20, 9, 9, 11, 11, 11, 11, 11, 11, 12, 11, 11, 30].forEach(function (w, i) { wd.getColumn(i + 1).width = w; });
       wd.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: dh.length } };
       // 罫線: 画面のテーブルと同じく、見出し・データの全セルに黒の細線。データ行(2行目以降)の高さは20
       const lineBorder = { style: 'thin', color: { argb: 'FF000000' } };
