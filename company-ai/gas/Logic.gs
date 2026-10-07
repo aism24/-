@@ -429,7 +429,7 @@ var AI_LOGIC = (function () {
       var nm = squash(p.name), len = 0;
       if (nm.length >= 3 && GENERIC_PROJECT.indexOf(nm) < 0 && sq.indexOf(nm) >= 0) len = nm.length;
       else if (String(p.id).length >= 6 && hasToken(sq, p.id)) len = 5;
-      else if (/^[0-9]{2}-[0-9]+$/.test(String(p.no)) && hasToken(sq, p.no)) len = 4;
+      else if (/^[0-9]{2}-[0-9]+[A-Za-z]?$/.test(String(p.no)) && hasToken(sq, p.no)) len = 4;
       if (!len) return;
       var key = nm + '|' + p.no; if (seen[key]) return; seen[key] = true;
       hit.push({ p: p, len: len });
@@ -564,11 +564,76 @@ var AI_LOGIC = (function () {
     return out + '\n※会社カレンダー(出勤/休日)に基づきます。';
   }
 
+
+  // ---------- 生産重量(第2弾): 「加工」完了日の重量(トン)を集計。期間は会社の締め日(21日区切り)が既定。AIは使わない ----------
+  var PROD_HEADER = ['工事番号', '工事名', '加工先', '部位', '加工日', '重量', '本数', '製品マーク', 'マスタNo'];
+  var MAIN_PARTS = ['柱', '大梁', '小梁'];
+  // 案件マスターの1シート分(Code.gsが必要な列だけ取り出した表)を行に直す。reduced: 先頭行=見出し(部位・加工先・加工・本数・重量・製品マーク)
+  // 加工が日付(年つき)の行だけ=加工完了。「*」(不要)・空欄(未了)・年の無い文字は数えない。meta: {no, workNo, workName}
+  function parseMasterRows(reduced, meta) {
+    var out = [], bad = 0;
+    if (!reduced || reduced.length < 2) return { rows: out, undated: 0 };
+    var ix = colIndex(reduced[0]), undated = 0;
+    for (var k = 1; k < reduced.length; k++) {
+      var r = reduced[k], site = String(r[ix['加工先']] == null ? '' : r[ix['加工先']]).trim(), part = String(r[ix['部位']] == null ? '' : r[ix['部位']]).trim();
+      var raw = r[ix['加工']], d = normDate(raw);
+      if (!site || !part) continue;
+      if (!d) { if (raw !== '' && raw != null && String(raw).trim() !== '*') undated++; continue; }
+      var w = parseFloat(nfkc(r[ix['重量']])); if (isNaN(w)) w = 0;
+      var q = parseFloat(nfkc(r[ix['本数']])); if (isNaN(q)) q = 0;
+      out.push([meta.workNo, meta.workName, site, MAIN_PARTS.indexOf(part) >= 0 ? part : '他', dnum(d), w, q, String(r[ix['製品マーク']] == null ? '' : r[ix['製品マーク']]).trim(), meta.no]);
+    }
+    return { rows: out, undated: undated };
+  }
+  var PROD_TOPIC = /(生産重量|加工重量|生産量|加工量|生産実績|何トン|生産.{0,6}(重量|トン)|加工.{0,6}(重量|トン))/;
+  var SITES = ['本社', '夢前', '鳥取'];
+  function parseProdQuery(q, today, projects) {
+    var t = nfkc(q);
+    if (!PROD_TOPIC.test(t)) return null;
+    var pj = findProjects(q, projects), sites = SITES.filter(function (x) { return t.indexOf(x) >= 0; });
+    var parts = [];
+    if (/大梁/.test(t)) parts.push('大梁'); if (/小梁/.test(t)) parts.push('小梁'); if (/柱/.test(t)) parts.push('柱'); if (/(その他|他の部位)/.test(t)) parts.push('他');
+    var day = parseDay(q, today), tq = /会計/.test(t) ? t : t.replace(/(昨年度|去年度|前年度)/, '前会計年度').replace(/(今年度|本年度|今期|年間)/, '会計年度');
+    var period = day ? { from: day, to: day, label: day, isDay: true } : parsePeriod(tq, today, 'month');
+    return { projects: pj, sites: sites, parts: parts, period: period, day: day };
+  }
+  // 期間内(今日まで)の出勤日数。hol: {'yyyy/MM/dd':'出勤'|'休日'}
+  function countWorkDays(hol, from, to) { var n = 0; Object.keys(hol).forEach(function (d) { if (hol[d] === '出勤' && d >= from && d <= to) n++; }); return n; }
+  function summarizeProd(rows, f) {
+    var total = 0, n = 0, bySite = {}, byPart = {}, byProj = {}, days = {};
+    rows.forEach(function (r) {
+      if (f.sites && f.sites.length && f.sites.indexOf(r[2]) < 0) return;
+      if (f.parts && f.parts.length && f.parts.indexOf(r[3]) < 0) return;
+      if (f.project && !(squash(r[1]) === squash(f.project.name) || (r[0] && r[0] === f.project.no))) return;
+      var w = Number(r[5]) || 0; total += w; n++; days[r[4]] = (days[r[4]] || 0) + w;
+      bySite[r[2]] = (bySite[r[2]] || 0) + w; byPart[r[3]] = (byPart[r[3]] || 0) + w;
+      var pk = (r[1] || r[0]) + (r[0] && r[1] ? '(' + r[0] + ')' : ''); byProj[pk] = (byProj[pk] || 0) + w;
+    });
+    return { total: total, count: n, bySite: bySite, byPart: byPart, byProject: byProj, byDay: days };
+  }
+  // ctx: {title, period, asOf, workDays(期間内で今日までの出勤日数。0なら日平均を出さない), filterNote}
+  function formatProdAnswer(sum, ctx) {
+    var out = [ctx.title + ' の ' + ctx.period.label + ' の生産重量(加工完了分)です(' + ctx.asOf + ' 時点のデータ)。'];
+    if (!sum.count) { out.push('この期間に加工完了の実績が見つかりませんでした。'); return out.join('\n'); }
+    out.push('合計 ' + fmtNum(sum.total) + 'トン(' + sum.count + '点)' + (ctx.workDays ? '、出勤日' + ctx.workDays + '日で日平均 ' + fmtNum(sum.total / ctx.workDays) + 'トン' : ''));
+    if (ctx.period.isDay === undefined || !ctx.period.isDay) {
+      var ds = Object.keys(sum.byDay).sort(); var peak = ds.sort(function (a, b) { return sum.byDay[b] - sum.byDay[a]; })[0];
+      if (ds.length > 1) out.push('最大の日: ' + dfmt(peak) + ' ' + fmtNum(sum.byDay[peak]) + 'トン');
+    }
+    var mk = function (title, o, n) { out.push('', title); top(o, n).forEach(function (x) { out.push('・' + x[0] + ': ' + fmtNum(x[1]) + 'トン'); }); };
+    if (Object.keys(sum.bySite).length > 1) mk('【加工先別】', sum.bySite, 6);
+    mk('【部位別】', sum.byPart, 6);
+    if (!ctx.skipProject) mk('【工事別(上位8)】', sum.byProject, 8);
+    out.push('', '※「加工」列に日付が入った製品の重量(トン)の合計です。期間は会社の締め日(前月21日〜当月20日)が基準です。');
+    return out.join('\n');
+  }
+
   return { nfkc: nfkc, squash: squash, parseRules: parseRules, chunkLabel: chunkLabel, searchRules: searchRules,
            buildPrompt: buildPrompt, pickSources: pickSources, parseModelJson: parseModelJson, mergeRoster: mergeRoster, readRoster: readRoster,
            normEmail: normEmail, fixEmail: fixEmail, normName: normName,
            ABS_HEADER: ABS_HEADER, normDate: normDate, mergeAbsence: mergeAbsence, parsePeriod: parsePeriod, findPeople: findPeople,
            parseAbsenceQuery: parseAbsenceQuery, daysInPeriod: daysInPeriod, summarizeAbsence: summarizeAbsence, formatAbsenceAnswer: formatAbsenceAnswer,
            WORK_HEADER: WORK_HEADER, buildConsMap: buildConsMap, workFromB2: workFromB2, workFromB5: workFromB5, sortWork: sortWork, findProjects: findProjects,
+           PROD_HEADER: PROD_HEADER, countWorkDays: countWorkDays, parseMasterRows: parseMasterRows, parseProdQuery: parseProdQuery, summarizeProd: summarizeProd, formatProdAnswer: formatProdAnswer,
            parseCalendarQuery: parseCalendarQuery, answerCalendar: answerCalendar, parseDay: parseDay, parseWorkQuery: parseWorkQuery, summarizeWork: summarizeWork, formatWorkAnswer: formatWorkAnswer };
 })();

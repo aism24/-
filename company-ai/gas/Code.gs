@@ -6,7 +6,8 @@
 var MODEL = 'gemini-3.5-flash-lite'; // 固定。明示の指示があるときだけ変える(自動選択・可変にしない)
 var SHEET = { OPERATOR: 'Operator', ADMIN: '管理者', RULES: '規則', STAGE: '規則_取込', HIST: '規則履歴',
               LOG: '質問ログ', CAL: 'CompanyCalendar', CONS: 'Construction', META: '設定', INFO: '諸情報', ABS: '有給欠勤',
-              WORK: '日報', WORKP: '日報_過去', CONT: '作業内容', CONS5: '工事_建設' };
+              WORK: '日報', WORKP: '日報_過去', CONT: '作業内容', CONS5: '工事_建設', PROD: '生産重量', PRODS: '生産重量_状態' };
+var PROD_INDEX_ID = '14Wgpkny7wIboiRKLyp7wZ8hxzUVevKmXdVJGIpV7A3c'; // 「Excelマスタ一覧」(諸情報の「Excelマスタ一覧」に入れれば、そちらを優先)
 var OPERATOR_HEADER = ['社員No', '氏名', '事業部', '工場', '部', '生まれた月', '電話番号', 'E-Mail', 'Reportcheck', '運転者', '管理者'];
 var LOG_HEADER = ['質問ID', '日時', 'E-Mail', '氏名', '質問', '回答', '区分', '参照', '評価', 'コメント', '検索ms', 'Gemini ms', '合計ms', '対応状況'];
 var RULE_HEADER = ['規程', '条', '見出し', '本文'];
@@ -183,6 +184,8 @@ function ask_(user, question) {
   if (abs) return askAbsence_(user, question, abs, t0);
   var wk = AI_LOGIC.parseWorkQuery(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), rosterList_(), loadProjects_());
   if (wk) return askWork_(user, question, wk, t0);
+  var prod = AI_LOGIC.parseProdQuery(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), loadProdProjects_());
+  if (prod) return askProd_(user, question, prod, t0);
   var cal = AI_LOGIC.parseCalendarQuery(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'));
   if (cal) return askCalendar_(user, question, cal, t0);
   var chunks = loadRules_();
@@ -246,6 +249,131 @@ function askAbsence_(user, question, abs, t0) {
            ms: { search: 0, ai: 0, total: total } };
 }
 
+// ---------- 生産重量の質問(「加工」完了日の重量。締め日基準): コードが集計して答える ----------
+function loadProdProjects_() {
+  var c = getLarge_('prodprojects');
+  if (c) return JSON.parse(c);
+  var sh = ss_().getSheetByName(SHEET.PROD), out = [], seen = {};
+  if (sh && sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach(function (r) {
+    var k = String(r[0]) + '|' + String(r[1]);
+    if (r[1] && !seen[k]) { seen[k] = 1; out.push({ id: '', no: String(r[0]).trim(), name: String(r[1]).trim() }); }
+  });
+  if (out.length) putLarge_('prodprojects', JSON.stringify(out), 3600);
+  return out;
+}
+function askProd_(user, question, pq, t0) {
+  var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), src = '生産重量(案件マスターの「加工」完了日)', answer;
+  if (pq.projects.length > 1) {
+    answer = '該当する工事が複数あります: ' + pq.projects.slice(0, 6).map(function (p) { return p.name + '(' + p.no + ')'; }).join('、') + '。工事名か工事番号をもう少し詳しく書いてください。';
+  } else {
+    if (!ss_().getSheetByName(SHEET.PROD) || ss_().getSheetByName(SHEET.PROD).getLastRow() < 2) throw err_('no_data', '生産重量のデータがまだ取り込まれていません。管理者に連絡してください');
+    var fromN = Number(pq.period.from.replace(/\//g, '')), toN = Number(pq.period.to.replace(/\//g, ''));
+    var rows = rangeRows_(SHEET.PROD, 5, AI_LOGIC.PROD_HEADER.length, fromN, toN), f = { sites: pq.sites, parts: pq.parts };
+    var title = '全社';
+    if (pq.projects.length) { f.project = pq.projects[0]; title = '工事「' + f.project.name + '」(' + f.project.no + ')'; }
+    if (pq.sites.length) title += ' ' + pq.sites.join('・');
+    if (pq.parts.length) title += ' ' + pq.parts.join('・');
+    var today = Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), last = pq.period.to < today ? pq.period.to : today;
+    var wd = AI_LOGIC.countWorkDays(loadHolidays_(), pq.period.from, last);
+    var sum = AI_LOGIC.summarizeProd(rows, f);
+    answer = AI_LOGIC.formatProdAnswer(sum, { title: title, period: pq.period, asOf: (getMeta_('prod_synced_at') || '').slice(0, 10) || '更新日不明', workDays: pq.period.isDay ? 0 : wd, skipProject: !!f.project });
+  }
+  var total = Date.now() - t0;
+  logAsk_(qid, user, question, answer, '回答済', src, 0, 0, total, '');
+  return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], asOf: '生産重量 ' + (getMeta_('prod_synced_at') || '(更新日不明)'), ms: { search: 0, ai: 0, total: total } };
+}
+
+// 案件マスター(約34件)から「加工」完了分だけを「生産重量」シートへ。工事番号・工事名は「Excelマスタ一覧」の表を正とする。
+// 6分の制限があるため、更新があったファイルだけを時間の許す限り処理する(残りは次回。メニューで続けて実行できる)
+function readProdIndex_() {
+  var id = prop_('Excelマスタ一覧', true) || PROD_INDEX_ID, ss = SpreadsheetApp.openById(id);
+  var sh = ss.getSheetByName('情報') || ss.getSheets()[0], vals = plain_(sh.getDataRange().getValues());
+  var hd = vals[0].map(function (h) { return AI_LOGIC.squash(h); });
+  var c = { no: hd.indexOf('マスタNo'), work: hd.indexOf('工事番号'), file: hd.indexOf('ファイル名'), url: hd.indexOf('URL') };
+  if (c.no < 0 || c.work < 0 || c.url < 0) throw new Error('「Excelマスタ一覧」の見出し(マスタNo・工事番号・URL)が見つかりません');
+  var listNo = -1, listRow = 0;
+  for (var r = 0; r < Math.min(3, vals.length) && listNo < 0; r++)
+    for (var j = 0; j < vals[r].length - 1; j++)
+      if (j !== c.work && String(vals[r][j]).trim() === '工事番号' && String(vals[r][j + 1]).trim() === '工事名') { listNo = j; listRow = r; break; }
+  if (listNo < 0) { listNo = 6; listRow = 0; } // 既定: G列=工事番号、H列=工事名
+  var names = {};
+  for (var i = listRow + 1; i < vals.length; i++) {
+    var no = String(vals[i][listNo]).trim(), nm = String(vals[i][listNo + 1]).trim();
+    if (no && no !== '工事番号' && nm && !names[no]) names[no] = nm;
+  }
+  var masters = [], seenFile = {};
+  for (var k = 1; k < vals.length; k++) {
+    var wn = String(vals[k][c.work]).trim(), m = /\/d\/([-\w]+)/.exec(String(vals[k][c.url]));
+    if (!wn || wn === '00-00' || !m) continue;
+    if (seenFile[m[1]]) continue; // 同じファイルを指す行は、二重に数えない
+    seenFile[m[1]] = true;
+    var fname = c.file >= 0 ? String(vals[k][c.file]).replace(/\.xlsx?$/i, '').trim() : '';
+    masters.push({ no: String(vals[k][c.no]).trim(), workNo: wn, workName: names[wn] || fname, fileId: m[1], fromList: !!names[wn] });
+  }
+  return masters;
+}
+function readMasterTable_(ss) {
+  var sheets = ss.getSheets(), sh = sheets[0];
+  for (var i = 0; i < sheets.length; i++) if (/マスターデータ|ﾏｽﾀｰﾃﾞｰﾀ/.test(AI_LOGIC.nfkc(sheets[i].getName()).replace(/ﾏｽﾀｰﾃﾞｰﾀ/, 'マスターデータ'))) { sh = sheets[i]; break; }
+  var lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+  if (lastRow < 2) return [];
+  var top = sh.getRange(1, 1, Math.min(5, lastRow), lastCol).getValues(), hr = -1, want = ['部位', '加工先', '加工', '重量'], col = {};
+  for (var r = 0; r < top.length && hr < 0; r++) {
+    var hd = top[r].map(function (h) { return AI_LOGIC.squash(h); }), ok = want.every(function (w) { return hd.indexOf(w) >= 0; });
+    if (ok) { hr = r; want.concat(['本数']).forEach(function (w) { col[w] = hd.indexOf(w); }); col['製品マーク'] = hd.map(function (h) { return h.indexOf('製品マーク') === 0; }).indexOf(true); }
+  }
+  if (hr < 0) throw new Error('見出し(部位・加工先・加工・重量)が見つかりません');
+  var order = ['部位', '加工先', '加工', '本数', '重量', '製品マーク'], idx = order.map(function (o) { return col[o]; }), maxc = Math.max.apply(null, idx.filter(function (x) { return x >= 0; })) + 1;
+  var data = sh.getRange(hr + 2, 1, Math.max(1, lastRow - hr - 1), maxc).getValues();
+  return [order].concat(data.map(function (row) {
+    return idx.map(function (ci, n) { var v = ci >= 0 ? row[ci] : ''; return n === 2 ? plain_([[v]])[0][0] : v; });
+  }));
+}
+function syncProduction() {
+  var t0 = Date.now(), BUDGET = 240000, notes = [];
+  try {
+    var masters = readProdIndex_(), st = sheet_(SHEET.PRODS, ['マスタNo', 'ファイルID', '更新日時(ミリ秒)', '行数', '取込日時', 'メモ']), sv = st.getDataRange().getValues(), state = {};
+    for (var i = 1; i < sv.length; i++) state[String(sv[i][0])] = { id: sv[i][1], mt: String(sv[i][2]), rows: sv[i][3], at: sv[i][4], memo: sv[i][5] };
+    var cur = sheet_(SHEET.PROD, AI_LOGIC.PROD_HEADER), byNo = {}, all = cur.getLastRow() > 1 ? cur.getRange(2, 1, cur.getLastRow() - 1, AI_LOGIC.PROD_HEADER.length).getValues() : [];
+    all.forEach(function (r) { (byNo[String(r[8])] = byNo[String(r[8])] || []).push(r); });
+    var live = {}; masters.forEach(function (m) { live[m.no] = 1; });
+    Object.keys(byNo).forEach(function (k) { if (!live[k]) delete byNo[k]; }); // 一覧から消えたマスターは外す
+    // 取り込みが古い・未取込のものを先に
+    masters.sort(function (a, b) { var x = state[a.no] ? String(state[a.no].at) : '', y = state[b.no] ? String(state[b.no].at) : ''; return x < y ? -1 : x > y ? 1 : 0; });
+    var pending = 0, changed = false;
+    masters.forEach(function (m) {
+      var ent = state[m.no] || {};
+      try {
+        var file = DriveApp.getFileById(m.fileId), mt = String(file.getLastUpdated().getTime());
+        if (ent.mt === mt && byNo[m.no] !== undefined && ent.id === m.fileId && !ent.memo) return; // 変わっていない
+        if (Date.now() - t0 > BUDGET) { pending++; return; }
+        var ss, tmp = null;
+        if (file.getMimeType() === 'application/vnd.google-apps.spreadsheet') ss = SpreadsheetApp.openById(m.fileId);
+        else { tmp = Drive.Files.create({ name: 'tmp_prod_' + Date.now(), mimeType: 'application/vnd.google-apps.spreadsheet' }, file.getBlob()); ss = SpreadsheetApp.openById(tmp.id); }
+        var res;
+        try { res = AI_LOGIC.parseMasterRows(readMasterTable_(ss), { no: m.no, workNo: m.workNo, workName: m.workName }); }
+        finally { if (tmp) DriveApp.getFileById(tmp.id).setTrashed(true); }
+        byNo[m.no] = res.rows; changed = true;
+        var memo = (res.undated ? '年のない日付の行が' + res.undated + '行(数えていません)' : '') + (m.fromList ? '' : ' 工事名が一覧に無くファイル名を使用');
+        state[m.no] = { id: m.fileId, mt: mt, rows: res.rows.length, at: now_(), memo: memo.trim() };
+      } catch (e) { notes.push('マスタ' + m.no + '(' + m.workNo + '): ' + e.message); state[m.no] = { id: m.fileId, mt: '', rows: (ent.rows || 0), at: ent.at || '', memo: 'エラー: ' + e.message }; }
+    });
+    if (changed) {
+      var rows = []; Object.keys(byNo).forEach(function (k) { rows = rows.concat(byNo[k]); });
+      rows.sort(function (x, y) { return x[4] - y[4]; });
+      writeBig_(cur, [AI_LOGIC.PROD_HEADER].concat(rows.length ? rows : [AI_LOGIC.PROD_HEADER.map(function () { return ''; })]));
+      CacheService.getScriptCache().remove('prodprojects_n');
+    }
+    var out = [['マスタNo', 'ファイルID', '更新日時(ミリ秒)', '行数', '取込日時', 'メモ']];
+    Object.keys(state).forEach(function (k) { if (live[k]) out.push([k, state[k].id, state[k].mt, state[k].rows, state[k].at, state[k].memo || '']); });
+    writeTable_(st, out);
+    var memos = out.slice(1).filter(function (r) { return r[5]; }).length;
+    if (!pending && !notes.length) setMeta_('prod_synced_at', now_());
+    setMeta_('prod_error', (pending ? '未更新' + pending + '件(続けて実行してください)。' : '') + notes.join(' / '));
+    return '生産重量: マスター' + masters.length + '件 / 未更新' + pending + '件 / エラー' + notes.length + '件' + (memos ? ' / 要確認メモ' + memos + '件(「生産重量_状態」シート)' : '') + (notes.length ? '\n' + notes.join('\n') : '');
+  } catch (err) { setMeta_('prod_error', now_() + ' ' + err.message); return '失敗: ' + err.message; }
+}
+
 // ---------- 会社カレンダーの質問(今日の日付・出勤日か・次の休日/連休): コードが答える ----------
 function askCalendar_(user, question, cal, t0) {
   var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), src = '会社カレンダー(CompanyCalendar)';
@@ -278,16 +406,17 @@ function loadContentNames_() {
   return m;
 }
 // 日付(yyyymmdd・小さい順)の列を二分探索して、期間に当たる行だけを読む
-function workRows_(sheetName, fromNum, toNum) {
+function rangeRows_(sheetName, dateCol, ncols, fromNum, toNum) {
   var sh = ss_().getSheetByName(sheetName), last = sh ? sh.getLastRow() : 0;
   if (last < 2) return [];
-  var dates = sh.getRange(2, 3, last - 1, 1).getValues(), n = dates.length, lo = 0, hi = n, mid;
+  var dates = sh.getRange(2, dateCol, last - 1, 1).getValues(), n = dates.length, lo = 0, hi = n, mid;
   while (lo < hi) { mid = (lo + hi) >> 1; if (Number(dates[mid][0]) < fromNum) lo = mid + 1; else hi = mid; }
   var start = lo; lo = start; hi = n;
   while (lo < hi) { mid = (lo + hi) >> 1; if (Number(dates[mid][0]) <= toNum) lo = mid + 1; else hi = mid; }
   if (lo <= start) return [];
-  return sh.getRange(start + 2, 1, lo - start, AI_LOGIC.WORK_HEADER.length).getValues();
+  return sh.getRange(start + 2, 1, lo - start, ncols).getValues();
 }
+function workRows_(sheetName, fromNum, toNum) { return rangeRows_(sheetName, 3, AI_LOGIC.WORK_HEADER.length, fromNum, toNum); }
 function askWork_(user, question, wk, t0) {
   var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), answer = '';
   var src = '日報データ(日報アプリのDailyReport)';
@@ -485,6 +614,7 @@ function dailyMail() {
   });
   var warn = getMeta_('roster_warnings') + (getMeta_('roster_error') ? '\n取り込み失敗: ' + getMeta_('roster_error') : '')
   warn += (getMeta_('absence_error') ? '\n有給欠勤の取り込み: ' + getMeta_('absence_error') : '');
+  warn += (getMeta_('prod_error') ? '\n生産重量の取り込み: ' + getMeta_('prod_error') : '');
   warn += (getMeta_('work_error') ? '\n日報の取り込み: ' + getMeta_('work_error') : '');
   var hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, warn));
   var warnNew = warn.trim() && hash !== getMeta_('roster_warnings_sent');
@@ -542,6 +672,11 @@ function selfTest() {
     var np = p ? Math.max(0, p.getLastRow() - 1) : 0, t = Date.now(), r = workRows_(SHEET.WORK, 20000101, 20991231);
     return '現行' + n + '行 / 過去' + np + '行' + (np ? '' : '(過去分は未取込。メニューで取り込み)') + ' / 全期間の読み込み' + (Date.now() - t) + 'ms';
   });
+  step('生産重量(案件マスター)', function () {
+    var sh = ss_().getSheetByName(SHEET.PROD), n = sh ? sh.getLastRow() - 1 : 0;
+    if (n < 1) throw new Error('生産重量シートが空です。メニュー「生産重量を今すぐ更新」を実行してください' + (getMeta_('prod_error') ? ' / ' + getMeta_('prod_error') : ''));
+    return n + '行 / ' + (getMeta_('prod_synced_at') || '取り込み未完了') + (getMeta_('prod_error') ? ' / ' + getMeta_('prod_error') : '');
+  });
   step('就業規則(公開済み)', function () {
     var c = loadRules_(), main = c.filter(function (x) { return x.doc === '就業規則' && x.no; }).length;
     if (main < 100) throw new Error('就業規則が公開されていません(' + main + '条)。メニューで取り込み→公開してください');
@@ -576,6 +711,7 @@ var CONFIG_GUIDE = [
   ['DailyReport', '日報(鉄構)の現行ファイルのID。鉄構の名簿・工事・カレンダー・有給の元(B2)'],
   ['DailyReport_DATA2024.11.21以降', '日報(鉄構)の過去分。日報を扱う弾から使う'],
   ['DailyReport_DATA2025.11.21以降', '同上(2026/11/21以降はこちらも使う)'],
+  ['Excelマスタ一覧', '案件マスター(生産重量)の一覧スプレッドシートのID。空のままでも、標準のものを使います(別のファイルに替えるときだけ入力)'],
   ['DailyReport建築', '日報(建設・総務)の現行ファイルのID。建設・総務の名簿・有給欠勤の元(B5)'],
   ['RULES_PDF_ID', '就業規則PDFのファイルID。改訂したら新しいPDFのIDに書き換え → メニューで取り込み・公開'],
   ['GEMINI_API_KEY', 'AI Studioで取得したAPIキー。他人に見せない・このシートを不用意に共有しない'],
@@ -604,6 +740,7 @@ var GUIDE_LINES = [
   ['・就業規則を公開する: 確認した内容を本番にする(旧版は「規則履歴」に残る)'],
   ['・日報の過去分を取り込む: 初回と、日報の現行ファイルが替わる年度替わり(11/21)に1回。「諸情報」の DailyReport_DATA2024.11.21以降 / DATA2025.11.21以降 のIDを読み、現行分と重複しない分を「日報_過去」へ'],
   ['・前日分メールを今すぐ送る: 動作確認用'],
+  ['・生産重量の質問(「今月の生産重量」「ランドポート京都伏見の生産重量」「鳥取の先月の加工重量」)も、コードが答えます。案件マスターの「加工」に日付が入った製品の重量(トン)の合計で、期間は会社の締め日(前月21日〜当月20日)が基準。工事番号・工事名は「Excelマスタ一覧」の表を正とします。毎晩2時に、更新があったマスターだけ取り込み(初回は、メニュー「生産重量を今すぐ更新」を未更新が0件になるまで数回実行)'],
   ['・会社カレンダーの質問(「今日の日付」「今度の土曜は出勤日?」「次の連休」「次の休日」「今月の出勤日は何日」)も、コードが答えます(毎晩1時に取り込む CompanyCalendar を使用)'],
   ['・日報(工数)の質問(「私の今月の工数」「◯◯さんの昨日の日報」「◯◯工事の工数」)も、コードが集計して答えます。期間の指定がなければ今月度(前月21日〜当月20日)。現行分は毎晩1時に「日報」シートへ取り込み'],
   ['・有給・欠勤の質問(「私の有給は今年度何日?」「◯◯さんの先月の欠勤」)は、AIではなくコードが計算して答えます。データは毎晩1時に「有給欠勤」シートへ取り込み(B2・B5のAbsenteeismを合体)'],
@@ -639,10 +776,11 @@ function setup() {
   gs.getRange(1, 1, GUIDE_LINES.length, 1).setValues(GUIDE_LINES);
   gs.setColumnWidth(1, 900);
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (['syncRoster', 'dailyMail'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+    if (['syncRoster', 'dailyMail', 'syncProduction'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('syncRoster').timeBased().everyDays(1).atHour(1).create();
   ScriptApp.newTrigger('dailyMail').timeBased().everyDays(1).atHour(3).create();
+  ScriptApp.newTrigger('syncProduction').timeBased().everyDays(1).atHour(2).create();
   var later = ['DailyReport_DATA2024.11.21以降', 'DailyReport_DATA2025.11.21以降'];
   var missing = CONFIG_GUIDE.map(function (g) { return g[0]; }).filter(function (k) { return later.indexOf(k) < 0 && !prop_(k, true); });
   Logger.log(missing.length ? '「諸情報」シートが未入力: ' + missing.join(', ') : '設定OK。モデル=' + MODEL);
@@ -652,6 +790,7 @@ function onOpen() {
     .addItem('動作確認(自己診断)', 'menuSelfTest')
     .addItem('名簿・工事・カレンダーを今すぐ更新', 'menuSync')
     .addItem('日報の過去分を取り込む(初回・年度替わり)', 'menuWorkPast')
+    .addItem('生産重量を今すぐ更新(未更新が残ったら続けて実行)', 'menuProd')
     .addItem('就業規則を取り込む(確認用)', 'menuIngest')
     .addItem('就業規則を公開する', 'menuPublish')
     .addItem('前日分メールを今すぐ送る', 'menuMail').addToUi();
@@ -662,5 +801,6 @@ function menuSelfTest() { run_(selfTest); }
 function menuSync() { run_(syncRoster); }
 function menuIngest() { run_(ingestRules); }
 function menuWorkPast() { run_(importWorkPast); }
+function menuProd() { run_(syncProduction); }
 function menuPublish() { run_(publishRules); }
 function menuMail() { run_(dailyMail); }
