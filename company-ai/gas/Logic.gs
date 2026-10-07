@@ -105,12 +105,24 @@ var AI_LOGIC = (function () {
       '次の「条文」に書かれている内容だけを根拠に、従業員の質問に日本語で簡潔に答えてください。',
       '条文に答えが無い、または判断できないときは answerable を false にし、answer は空にしてください。推測や一般論で補わないこと。',
       '回答には根拠の規程名と条番号を含めてください(例: 就業規則 第20条)。',
+      'cited には、実際に回答に使った条文の番号(C1など)だけを入れてください。',
       '出力はJSONのみ: {"answerable": true|false, "answer": "回答文", "cited": ["C1","C2"]}',
       '',
       '【条文】', ctx,
       '',
       '【質問】', String(question).slice(0, 300)
     ].join('\n');
+  }
+  // 「根拠」として見せる条文を選ぶ。回答文に書かれた「就業規則 第33条」のような言及を最優先にし(読む人の目に入る根拠と一致させる)、
+  // 次にAIが引用した番号(C1など)、どちらも無いときは検索1位だけ。最大3件。
+  function pickSources(cited, answer, hits) {
+    var idx = [], text = squash(answer);
+    function add(i) { if (i >= 0 && i < hits.length && idx.indexOf(i) < 0) idx.push(i); }
+    hits.forEach(function (h, i) { var c = h.chunk; if (c.no && text.indexOf(squash(c.doc) + '第' + c.no + '条') >= 0) add(i); });
+    if (!idx.length) hits.forEach(function (h, i) { var c = h.chunk; if (c.no && c.doc === '就業規則' && text.indexOf('第' + c.no + '条') >= 0) add(i); });
+    (cited || []).forEach(function (c) { add(parseInt(String(c).replace(/\D/g, ''), 10) - 1); });
+    if (!idx.length) add(0);
+    return idx.slice(0, 3);
   }
   function parseModelJson(text) {
     var t = String(text || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
@@ -200,6 +212,6 @@ var AI_LOGIC = (function () {
   }
 
   return { nfkc: nfkc, squash: squash, parseRules: parseRules, chunkLabel: chunkLabel, searchRules: searchRules,
-           buildPrompt: buildPrompt, parseModelJson: parseModelJson, mergeRoster: mergeRoster, readRoster: readRoster,
+           buildPrompt: buildPrompt, pickSources: pickSources, parseModelJson: parseModelJson, mergeRoster: mergeRoster, readRoster: readRoster,
            normEmail: normEmail, fixEmail: fixEmail };
 })();
