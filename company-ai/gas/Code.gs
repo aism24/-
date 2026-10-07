@@ -35,7 +35,7 @@ function sheet_(name, header) {
 function now_() { return Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd HH:mm:ss'); }
 function getMeta_(k) {
   var vals = sheet_(SHEET.META, ['項目', '値']).getDataRange().getValues();
-  for (var i = 1; i < vals.length; i++) if (vals[i][0] === k) return String(vals[i][1]);
+  for (var i = 1; i < vals.length; i++) if (vals[i][0] === k) return ts_(vals[i][1]); // 日時はシートが日付に変えて返すため、文字に直す
   return '';
 }
 function setMeta_(k, v) {
@@ -483,7 +483,7 @@ function syncRoster() {
     setMeta_('roster_synced_at', now_());
     setMeta_('roster_warnings', r.warnings.join('\n'));
     setMeta_('roster_error', '');
-    return '名簿 ' + r.table.length + '人(管理者' + r.adminCount + '人) / 警告' + r.warnings.length + '件 / 有給欠勤 ' + (getMeta_('absence_error') ? '要確認: ' + getMeta_('absence_error') : getMeta_('absence_synced_at') + ' 更新' + ' 更新') + ' / 日報 ' + (getMeta_('work_error') ? '要確認: ' + getMeta_('work_error') : getMeta_('work_synced_at') + ' 更新');
+    return '名簿 ' + r.table.length + '人(管理者' + r.adminCount + '人) / 警告' + r.warnings.length + '件 / 有給欠勤 ' + (getMeta_('absence_error') ? '要確認: ' + getMeta_('absence_error') : getMeta_('absence_synced_at') + ' 更新') + ' / 日報 ' + (getMeta_('work_error') ? '要確認: ' + getMeta_('work_error') : getMeta_('work_synced_at') + ' 更新');
   } catch (err) {
     setMeta_('roster_error', now_() + ' ' + err.message); // 失敗時は前回の名簿のまま
     return '失敗: ' + err.message;
@@ -782,7 +782,7 @@ function setup() {
   ScriptApp.newTrigger('dailyMail').timeBased().everyDays(1).atHour(3).create();
   ScriptApp.newTrigger('syncProduction').timeBased().everyDays(1).atHour(2).create();
   var later = ['DailyReport_DATA2024.11.21以降', 'DailyReport_DATA2025.11.21以降'];
-  var missing = CONFIG_GUIDE.map(function (g) { return g[0]; }).filter(function (k) { return later.indexOf(k) < 0 && !prop_(k, true); });
+  var missing = CONFIG_GUIDE.map(function (g) { return g[0]; }).filter(function (k) { return later.indexOf(k) < 0 && k !== 'Excelマスタ一覧' && !prop_(k, true); }); // Excelマスタ一覧は空でも標準のファイルを使う
   Logger.log(missing.length ? '「諸情報」シートが未入力: ' + missing.join(', ') : '設定OK。モデル=' + MODEL);
 }
 function onOpen() {
