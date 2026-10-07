@@ -9,8 +9,9 @@
  *   ・1号機/2号機の稼動実績スプレッドシートは読み取りのみ(書き込まない)。
  *   ・工事別マスターExcelも読み取りのみ。Excelはこのスプレッドシートと同じフォルダに
  *     作る「作業用コピー」へ変換して読み、元ファイルには一切触れない。
- *   ・書き込むのは、(a)同フォルダ内の作業用コピー/キャッシュJSON、(b)このスプレッドシートの
- *     「各種情報」V:W列(工事名称の別名表)のみ。
+ *   ・書き込むのは、(a)同フォルダ内の作業用コピー/キャッシュJSON/スナップショットJSON、
+ *     (b)このスプレッドシートの「各種情報」C・D列(ファイル名・工事番号の自動確認)・V:W列(工事名称の別名表)・
+ *     Y:Z列(別名表の名前版)、(c)「記録」シート(Excelダウンロードの記録)のみ。
  *
  * ■ 「各種情報」シートの構成
  *   A〜E : ドライブ / マスタNo / 工事番号 / Excelファイル名 / URL(工事別マスター)
@@ -18,6 +19,8 @@
  *   P〜Q : 工事番号 / 工事名
  *   S〜T : 会社カレンダー(Date / 出勤・休日)。最初の日付より前のデータは集計しない
  *   V〜W : 工事名称の別名表(入力名 / 工事番号)。アプリの画面から追記される
+ *   Y〜Z : 入力工事名 / 正式工事名(別名表の名前版。人が見る用。アプリはV:Wを参照する)
+ *   「記録」シート : A=日時 / B=期間(Excelダウンロードの記録。2行目が最新)
  *
  * ■ 突き合わせ
  *   ロボ側の「工事名称」(手入力)→工事、「柱番号」(手入力)=工事マスターの「製品マーク」。
@@ -43,7 +46,6 @@ const TIMEZONE = 'Asia/Tokyo';
 const IGNORE_WORK_NO = '00-00';
 const MIRROR_COL = 25; // Y列。Y=入力工事名 / Z=正式工事名(別名表の名前版。人が読む用)
 const ALIAS_COL = 22; // V列(1始まり)。V=入力名 / W=工事番号
-const ROBOT_SHEET_ROWS = { 1: 0, 2: 1 }; // ロボ番号 → G:H列の有効行の順番(0始まり)
 
 // ロボ稼動実績シートの列見出し(完全一致。見つからなければ下のfallback位置を使う)
 const ROBOT_HEADERS = {
@@ -157,9 +159,21 @@ function matchWorkNos_(enteredName, alias) {
 
 // ロボ1行分を解決する。
 // masterIndex: { workNo: { byMark: { 正規化マーク: record }, marks: [{key,mark}] } }
+// sugMemo: 候補の計算結果の入れ物(省略可)。
 // 戻り値: { workNo, status, product, suggestions }
 //   status: 'ok'(製品確定) / 'suggest'(製品マークが無く候補あり) / 'nomark'(製品マークが無い) / 'nowork'(工事が判定できない)
-function resolveRow_(row, alias, masterIndex) {
+// 製品の記録から、突き合わせ用の索引を作る(同じ正規化マークは最初の1件を優先)。
+function indexMasterRecords_(recs) {
+  const byMark = {};
+  const marks = [];
+  recs.forEach(function (r) {
+    const key = normMark_(r.m);
+    if (!byMark[key]) { byMark[key] = r; marks.push({ key: key, mark: r.m }); }
+  });
+  return { byMark: byMark, marks: marks };
+}
+
+function resolveRow_(row, alias, masterIndex, sugMemo) {
   const cands = matchWorkNos_(row.wn, alias); // 別名表の判定は最大1件
   if (!cands.length) return { workNo: '', status: 'nowork', product: null, suggestions: [] };
   const key = normMark_(row.mk);
@@ -167,7 +181,12 @@ function resolveRow_(row, alias, masterIndex) {
   const mi = masterIndex[workNo];
   const rec = mi && key ? mi.byMark[key] : null;
   if (rec) return { workNo: workNo, status: 'ok', product: rec, suggestions: [] };
-  const sug = mi ? suggestMarks_(row.mk, mi.marks) : [];
+  let sug = [];
+  if (mi) { // 同じ誤入力が何行もあるときは、候補(編集距離の計算)を1回だけ求める(sugMemoは呼び出し側が用意する任意の入れ物)
+    const mkey = workNo + '|' + row.mk;
+    if (sugMemo && sugMemo[mkey]) sug = sugMemo[mkey];
+    else { sug = suggestMarks_(row.mk, mi.marks); if (sugMemo) sugMemo[mkey] = sug; }
+  }
   return { workNo: workNo, status: sug.length ? 'suggest' : 'nomark', product: null, suggestions: sug };
 }
 
@@ -179,7 +198,6 @@ function doGet(e) {
     const action = p.action || 'getData';
     if (action === 'getData') return okRaw_(getSnapshotText_());
     if (action === 'refresh') return ok_(refreshSnapshot_(false));
-    if (action === 'refreshMasters') return ok_(refreshMasters_());
     if (action === 'logDownload') return ok_(logDownload_(p.period));
     if (action === 'saveAlias') return ok_(saveAlias_(p.name, p.workNo));
     return errRes_('不明なaction: ' + action);
@@ -243,7 +261,7 @@ function listLinkFiles_() {
 //   D = そのファイルの実際の名前 / C = そのファイルが入っているフォルダ名の先頭の工事番号。
 // 変わっていなければ書き込まない。変わった場合のみ書き換え、変更内容を返す。
 var PARENT_NAME_MEMO_ = {};
-function parentFolderName_(f, fileId) {
+function parentFolderName_(f) {
   const parents = f.getParents();
   if (!parents.hasNext()) return '';
   const p = parents.next();
@@ -265,7 +283,7 @@ function syncIndexRows_() {
     try {
       const f = fileOf_(fileId);
       const name = f.getName();
-      const folderName = parentFolderName_(f, fileId);
+      const folderName = parentFolderName_(f);
       let parsed = parseWorkFolderName_(folderName);
       // 現在のC列の工事番号でフォルダ名が始まっていれば「変更なし」とみなす(例: C=24-12A、フォルダ=24-12AGLP_…。
       // 英字付きの工事番号は工事名の英字と区別できないため、既存の値を優先する)。
@@ -366,15 +384,15 @@ function mirrorAlias_(sh, name, workNo) {
 
 function readAlias_(rows) {
   const alias = {};
+  const headName = normName_('入力名');
   rows.forEach(function (r) {
     const name = normName_(r[ALIAS_COL - 1]);
     const no = String(r[ALIAS_COL] || '').trim();
-    if (name && no && name !== normName_('入力名')) alias[name] = no;
+    if (name && no && name !== headName) alias[name] = no;
   });
   return alias;
 }
 
-// 工事名称の別名を「各種情報」V:W列に追記する(同じ入力名があれば工事番号を上書き)。
 // Excelダウンロードの記録: シート「記録」の2行目に挿入(常に2行目が最新、古いものほど下)。A=日時 / B=期間。
 const LOG_SHEET_NAME = '記録';
 function logDownload_(period) {
@@ -387,7 +405,7 @@ function logDownload_(period) {
       sh.getRange(1, 1, 1, 2).setValues([['日時', '期間']]);
     }
     sh.insertRowBefore(2);
-    const now = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
+    const now = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy/MM/dd HH:mm:ss');
     sh.getRange(2, 1, 1, 2).setNumberFormat('@').setValues([[now, String(period || '')]]);
     return { logged: true, at: now };
   } finally {
@@ -395,6 +413,7 @@ function logDownload_(period) {
   }
 }
 
+// 工事名称の別名を「各種情報」V:W列に追記する(同じ入力名があれば工事番号を上書き)。保存後に更新確認(作り直し)まで行う。
 function saveAlias_(name, workNo) {
   name = String(name || '').trim();
   workNo = String(workNo || '').trim();
@@ -519,9 +538,6 @@ function extractHyperlinks_(blob) {
     const sheetRoot = XmlService.parse(sheetXml.getDataAsString()).getRootElement();
     const hyperlinksEl = sheetRoot.getChild('hyperlinks', sheetRoot.getNamespace());
     const map = {};
-    // 診断用: 0件のとき原因を切り分けられるよう、構造の概要を残す。
-    const hlEls = hyperlinksEl ? hyperlinksEl.getChildren('hyperlink', sheetRoot.getNamespace()) : [];
-    Object.defineProperty(map, '__diag', { enumerable: false, value: 'zip' + entries.length + '件/シート' + sheetPath + '/hyperlink要素' + hlEls.length + '件/外部rels' + Object.keys(relMap).length + '件/mime=' + blob.getContentType() });
     if (hyperlinksEl) {
       hyperlinksEl.getChildren('hyperlink', sheetRoot.getNamespace()).forEach(function (h) {
         const refAttr = h.getAttribute('ref');
@@ -762,45 +778,29 @@ function buildData_() {
   sync.warnings.forEach(function (c) { warnings.push(c); });
 
   // 突き合わせ用の索引
-  const works = [];
   const masterIndex = {};
   const workInfo = [];
   masterList.forEach(function (m) {
     const base = m.fileName.replace(/\.(xlsx?|xlsm)$/i, '');
-    if (!works.some(function (w) { return w.workNo === m.workNo; })) {
-      works.push({ workNo: m.workNo });
+    if (!workInfo.some(function (w) { return w.workNo === m.workNo; })) {
       workInfo.push({ workNo: m.workNo, workName: workNames[m.workNo] || base, fileName: m.fileName });
     }
     const recs = loaded.records[m.workNo];
-    if (recs && !masterIndex[m.workNo]) {
-      const byMark = {};
-      const marks = [];
-      recs.forEach(function (r) {
-        const key = normMark_(r.m);
-        if (!byMark[key]) { byMark[key] = r; marks.push({ key: key, mark: r.m }); }
-      });
-      masterIndex[m.workNo] = { byMark: byMark, marks: marks };
-    }
+    if (recs && !masterIndex[m.workNo]) masterIndex[m.workNo] = indexMasterRecords_(recs);
   });
 
   // 工事の差し替えで「各種情報」から消えた工事も、保存済みの製品データで突き合わせを続ける(過去の期間を再現するため)。
   Object.keys(loaded.archive || {}).forEach(function (workNo) {
-    if (works.some(function (w) { return w.workNo === workNo; })) return;
+    if (workInfo.some(function (w) { return w.workNo === workNo; })) return;
     const a = loaded.archive[workNo];
-    works.push({ workNo: workNo });
     workInfo.push({ workNo: workNo, workName: workNames[workNo] || a.workName || a.fileName, fileName: a.fileName, archived: true });
-    const byMark = {};
-    const marks = [];
-    (a.records || []).forEach(function (r) {
-      const key = normMark_(r.m);
-      if (!byMark[key]) { byMark[key] = r; marks.push({ key: key, mark: r.m }); }
-    });
-    masterIndex[workNo] = { byMark: byMark, marks: marks };
+    masterIndex[workNo] = indexMasterRecords_(a.records || []);
   });
 
   // ロボ稼動実績 → 突き合わせ
   const outRows = [];
   const products = {}; // 'workNo|mark' → 製品情報
+  const sugMemo = {};
   robotSheets.slice(0, 2).forEach(function (rs, idx) {
     let rr;
     try { rr = readRobotRows_(idx + 1, rs.id); } catch (err) {
@@ -809,7 +809,7 @@ function buildData_() {
     }
     rr.forEach(function (row) {
       if (row.sd < cal.min) return; // 会社カレンダーの最初の日より前は集計しない
-      const res = resolveRow_(row, alias, masterIndex);
+      const res = resolveRow_(row, alias, masterIndex, sugMemo);
       const o = { r: row.r, wn: row.wn, mk: row.mk, sd: row.sd, st: row.st, ed: row.ed, et: row.et, run: row.run, arc: row.arc, wire: row.wire, len: row.len, no: res.workNo, s: res.status, al: alias[normName_(row.wn)] ? 1 : 0 }; // al=1: 別名表(V:W)に登録済みの入力名
       if (res.status === 'ok') {
         o.pk = res.workNo + '|' + res.product.m;
@@ -869,11 +869,12 @@ function loadSnapshot_(folder) {
 }
 
 function saveSnapshot_(folder, snap) {
-  const content = JSON.stringify(snap);
+  const dataText = JSON.stringify(snap.data);
+  const content = '{"fp":' + JSON.stringify(snap.fp) + ',"data":' + dataText + '}'; // JSON.stringify(snap) と同じ内容(結果を2回文字列にしない)
   const f = getSnapshotFile_(folder);
   if (f) f.setContent(content);
   else PropertiesService.getScriptProperties().setProperty(SNAP_ID_PROP, folder.createFile(SNAPSHOT_FILE_NAME, content, MimeType.PLAIN_TEXT).getId());
-  putSnapshotCache_(JSON.stringify(snap.data));
+  putSnapshotCache_(dataText);
 }
 
 function putSnapshotCache_(text) {
@@ -958,14 +959,6 @@ function refreshSnapshot_(force) {
   } finally {
     lock.releaseLock();
   }
-}
-
-// マスター(Excel)の再読み込みだけを行う(キャッシュ更新用。毎日のトリガーからも呼ぶ)。
-function refreshMasters_() {
-  syncIndexRows_();
-  const folder = getCacheFolder_();
-  const loaded = loadMasters_(folder, readMasterIndex_(readInfoRows_()));
-  return { masters: Object.keys(loaded.records).length, warnings: loaded.warnings };
 }
 
 // 作業用スプレッドシート(_作業用_梁ロボ_*)のうち、今の読み込みで使っていない古いものをゴミ箱へ移す(完全削除はしない)。
