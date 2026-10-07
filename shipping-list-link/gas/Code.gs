@@ -1,7 +1,7 @@
 /**
  * 出荷リスト図番リンク付与アプリ用 GAS(ms-tottori アカウントで実行)
  *  - 毎朝: マスタExcelのハイパーリンクを抜き出し「リンク表(JSON)」をDriveに保存
- *  - doGet : リンク表JSONを返す(?action=links) / 軽い状態確認(?action=info) / 今すぐ再生成(?action=rebuild。連打は1分で制限、件数が旧の90%未満なら上書きしない)
+ *  - doGet : リンク表JSONを返す(?action=links) / 軽い状態確認(?action=info) / 今すぐ再生成(?action=rebuild。Excelに変更がなければ省略、連打は1分で制限、件数が旧の90%未満なら上書きしない)
  *  - doPost: 取り込んだ元PDFを保存フォルダへ保存し、スプレッドシート「記録」の2行目に日時/ページ数/URLを挿入(最新が上)
  *
  * 【初回セットアップ】 ①このコードを貼り付け ②setupDaily を1回実行(権限を承認) ③buildMaster を1回実行
@@ -114,11 +114,22 @@ function readXlsxLinks_(blob) {
 
 /** マスタExcel全件 → リンク表JSONをDriveに保存。force=false のとき、件数が旧の90%未満なら上書きしない。
  *  戻り値: { ok, updated, count, prevCount, excelModified } か { ok:false, rejected:{oldCount,newCount} } */
-function build_(force) {
-  var it = DriveApp.getFolderById(MASTER_FOLDER_ID).getFiles(), list = [], sources = [];
+function masterFiles_() {
+  var it = DriveApp.getFolderById(MASTER_FOLDER_ID).getFiles(), out = [];
   while (it.hasNext()) {
     var f = it.next();
-    if (!/\.xlsx$/i.test(f.getName()) || f.getName().indexOf('~$') === 0) continue;
+    if (/\.xlsx$/i.test(f.getName()) && f.getName().indexOf('~$') !== 0) out.push(f);
+  }
+  return out;
+}
+/** マスタExcelの「名前+更新日時」の一覧(並べ替えて連結)。前回の再生成時と同じなら、Excelに変更がない */
+function signature_(files) {
+  return files.map(function (f) { return f.getName() + '|' + f.getLastUpdated().toISOString(); }).sort().join('\n');
+}
+function build_(force) {
+  var files = masterFiles_(), list = [], sources = [];
+  for (var fi = 0; fi < files.length; fi++) {
+    var f = files[fi];
     var one = readXlsxLinks_(f.getBlob());
     list.push(one);
     sources.push({ name: f.getName(), count: Object.keys(one).length, modified: f.getLastUpdated().toISOString() });
@@ -136,7 +147,7 @@ function build_(force) {
   var json = JSON.stringify({ updated: updated, sources: sources, links: merged });
   if (exFile) exFile.setContent(json); else folder.createFile(LINKS_FILE_NAME, json, 'application/json');
   var excelModified = maxModified_(sources);
-  props.setProperty('meta', JSON.stringify({ updated: updated, count: count, excelModified: excelModified }));
+  props.setProperty('meta', JSON.stringify({ updated: updated, count: count, excelModified: excelModified, sig: signature_(files) }));
   props.deleteProperty('rejected');
   return { ok: true, updated: updated, count: count, prevCount: prevCount, excelModified: excelModified };
 }
@@ -165,6 +176,8 @@ function rebuildNow_() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) return { ok: true, busy: true };
   try {
+    // マスタExcelに変更がなければ(名前+更新日時が前回の再生成時と同じ)、約30秒かかる再生成を省く
+    if (meta && meta.sig && signature_(masterFiles_()) === meta.sig) return { ok: true, unchanged: true, updated: meta.updated, count: meta.count, excelModified: meta.excelModified };
     props.setProperty('lastRebuildAt', String(Date.now()));
     return build_(false);
   } finally { lock.releaseLock(); }

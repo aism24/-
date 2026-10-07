@@ -7,7 +7,7 @@
   var OPEN_BASE = 'https://shipping-list-link.vercel.app/open.html';
   var $ = function (id) { return document.getElementById(id); };
   var links = null, working = false, cur = null, refreshing = false;
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261007c';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261007e';
 
   // 日時は日本時間の「10/7 06:55」形式で表示する
   var jst = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -68,13 +68,18 @@
       }
       if (j.ok === false) { msg.className = 'small warn'; msg.textContent = '取得できませんでした: ' + (j.error || '不明なエラー'); return; }
       if (j.busy) { msg.className = 'small warn'; msg.textContent = '他の更新が実行中です。少し待ってからもう一度押してください。'; return; }
+      if (j.unchanged && prev && j.updated === prev.updated) {   // Excelに変更が無く、画面のマスタも最新: 再生成も読み直しも不要
+        msg.className = 'small ok'; msg.textContent = '最新です。';
+        return;
+      }
       var got = await fetchMaster(true), m = got.m, oldN = prev ? Object.keys(prev.links).length : 0, newN = Object.keys(m.links).length;
-      var was = prev ? fmt(prev.updated) : '-', changedAt = prev && prev.updated !== m.updated;
+      var was = prev ? fmt(prev.updated) : '-';
       var sameData = prev && oldN === newN && excelMod(prev) === excelMod(m);
       showMaster(m, got.via);
       msg.className = 'small ok';
-      if (j.throttled) msg.textContent = '1分以内に更新済みです(更新 ' + fmt(m.updated) + ')。';
-      else if (sameData) msg.textContent = '変更はありませんでした(最新です。更新 ' + was + ' → ' + fmt(m.updated) + ')。';
+      if (j.unchanged) msg.textContent = '最新です。';
+      else if (j.throttled) msg.textContent = '1分以内に更新済みです(更新 ' + fmt(m.updated) + ')。';
+      else if (sameData) msg.textContent = '最新です。';
       else msg.textContent = '最新を取得しました(更新 ' + was + ' → ' + fmt(m.updated) + '、件数 ' + oldN.toLocaleString() + ' → ' + newN.toLocaleString() + ')。';
     } catch (e) {
       msg.className = 'small warn'; msg.textContent = '取得できませんでした: ' + e;
