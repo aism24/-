@@ -5,7 +5,7 @@
  */
 var MODEL = 'gemini-3.5-flash-lite'; // 固定。明示の指示があるときだけ変える(自動選択・可変にしない)
 var SHEET = { OPERATOR: 'Operator', ADMIN: '管理者', RULES: '規則', STAGE: '規則_取込', HIST: '規則履歴',
-              LOG: '質問ログ', CAL: 'CompanyCalendar', CONS: 'Construction', META: '設定', INFO: '諸情報' };
+              LOG: '質問ログ', CAL: 'CompanyCalendar', CONS: 'Construction', META: '設定', INFO: '諸情報', ABS: '有給欠勤' };
 var OPERATOR_HEADER = ['社員No', '氏名', '事業部', '工場', '部', '生まれた月', '電話番号', 'E-Mail', 'Reportcheck', '運転者', '管理者'];
 var LOG_HEADER = ['質問ID', '日時', 'E-Mail', '氏名', '質問', '回答', '区分', '参照', '評価', 'コメント', '検索ms', 'Gemini ms', '合計ms', '対応状況'];
 var RULE_HEADER = ['規程', '条', '見出し', '本文'];
@@ -64,6 +64,10 @@ function getLarge_(key) {
 function safe_(s) { s = String(s == null ? '' : s); return /^[=+\-@\t\r]/.test(s) ? "'" + s : s; }
 // 日時はシートが日付に変換して返すことがあるため、文字でも日付でも同じ形に直す
 function ts_(v) { return v instanceof Date ? Utilities.formatDate(v, TZ, 'yyyy/MM/dd HH:mm:ss') : String(v); }
+// シートから読んだ日時(Date)を、タイムゾーンの影響が出ないよう文字に直す(Logic.gsは文字の日付だけを扱う)
+function plain_(values) {
+  return values.map(function (row) { return row.map(function (v) { return v instanceof Date ? Utilities.formatDate(v, TZ, 'yyyy/MM/dd HH:mm:ss') : v; }); });
+}
 // 書き込み中に空になる瞬間を作らない: 先に新しい内容を書き、余った下の行だけを消す
 function writeTable_(sh, values) {
   var rows = values.length, last = sh.getLastRow();
@@ -119,7 +123,7 @@ function authenticate_(idToken) {
   var roster = getRoster_();
   var p = roster[email];
   if (!p) throw err_('forbidden', 'このアカウントは利用登録されていません。管理者へ連絡してください');
-  return { email: email, name: p.name, isAdmin: p.admin };
+  return { email: email, name: p.name, no: p.no, isAdmin: p.admin };
 }
 function getRoster_() {
   var c = getLarge_('roster');
@@ -167,6 +171,8 @@ function ask_(user, question) {
   question = String(question || '').trim();
   if (!question) throw err_('bad_request', '質問を入力してください');
   if (question.length > 300) throw err_('bad_request', '質問は300文字以内にしてください');
+  var abs = AI_LOGIC.parseAbsenceQuery(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), rosterList_());
+  if (abs) return askAbsence_(user, question, abs, t0);
   var chunks = loadRules_();
   if (!chunks.length) throw err_('no_rules', '就業規則がまだ登録されていません');
   var t1 = Date.now();
@@ -192,6 +198,40 @@ function ask_(user, question) {
   logAsk_(qid, user, question, answer, answerable ? '回答済' : '回答不可', sources.join(' / '), tSearch, tAi, total, answerable ? '' : '未対応');
   return { ok: true, qid: qid, answerable: answerable, answer: answer, sources: sources,
            asOf: getMeta_('rules_version'), ms: { search: tSearch, ai: tAi, total: total } };
+}
+
+// 有給・欠勤の質問: 数字はコードが計算して文章にする(AIは使わない)
+function rosterList_() {
+  var m = getRoster_(), out = [];
+  Object.keys(m).forEach(function (k) { out.push({ no: m[k].no, name: m[k].name }); });
+  return out;
+}
+function loadAbsence_() {
+  var vals = plain_(sheet_(SHEET.ABS, AI_LOGIC.ABS_HEADER).getDataRange().getValues());
+  return vals.slice(1).filter(function (r) { return r[0]; });
+}
+function loadHolidays_() {
+  var vals = plain_(sheet_(SHEET.CAL).getDataRange().getValues()), h = {};
+  for (var i = 1; i < vals.length; i++) { var d = AI_LOGIC.normDate(vals[i][0]); if (d) h[d] = String(vals[i][1]).trim(); }
+  return h;
+}
+function askAbsence_(user, question, abs, t0) {
+  var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), answer = '', ok = false;
+  var src = '有給・欠勤データ(日報アプリのAbsenteeism)';
+  if (abs.who === 'ambiguous') {
+    answer = '該当する方が複数います: ' + abs.people.map(function (p) { return p.name + '(社員No' + p.no + ')'; }).join('、') + '。お一人ずつ質問してください。';
+  } else {
+    var p = abs.who === 'self' ? { no: user.no, name: user.name } : abs.people[0];
+    var rows = loadAbsence_();
+    if (!rows.length) throw err_('no_data', '有給・欠勤のデータがまだ取り込まれていません。管理者に連絡してください');
+    var sum = AI_LOGIC.summarizeAbsence(rows, p.no, abs.period, loadHolidays_());
+    answer = AI_LOGIC.formatAbsenceAnswer(p.name, p.no, abs.period, sum, abs.remain, getMeta_('absence_synced_at').slice(0, 10) || '更新日不明');
+    ok = true;
+  }
+  var total = Date.now() - t0;
+  logAsk_(qid, user, question, answer, '回答済', ok ? src : '', 0, 0, total, '');
+  return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], asOf: '有給・欠勤 ' + (getMeta_('absence_synced_at') || '(更新日不明)'),
+           ms: { search: 0, ai: 0, total: total } };
 }
 
 function logAsk_(qid, user, question, answer, kind, sources, tSearch, tAi, total, status) {
@@ -225,15 +265,28 @@ function syncRoster() {
     writeTable_(sheet_(SHEET.OPERATOR, OPERATOR_HEADER), [OPERATOR_HEADER].concat(r.table));
     copySheet_(b2, SHEET.CAL);
     copySheet_(b2, SHEET.CONS);
+    syncAbsence_(b2, b5);
     CacheService.getScriptCache().remove('roster_n');
     setMeta_('roster_synced_at', now_());
     setMeta_('roster_warnings', r.warnings.join('\n'));
     setMeta_('roster_error', '');
-    return '名簿 ' + r.table.length + '人(管理者' + r.adminCount + '人) / 警告' + r.warnings.length + '件';
+    return '名簿 ' + r.table.length + '人(管理者' + r.adminCount + '人) / 警告' + r.warnings.length + '件 / 有給欠勤 ' + (getMeta_('absence_error') ? '要確認: ' + getMeta_('absence_error') : getMeta_('absence_synced_at') + ' 更新');
   } catch (err) {
     setMeta_('roster_error', now_() + ' ' + err.message); // 失敗時は前回の名簿のまま
     return '失敗: ' + err.message;
   }
+}
+// 有給・欠勤: B2・B5のAbsenteeismを合体して「有給欠勤」シートへ。失敗しても名簿の更新は止めない(前回のまま)
+function syncAbsence_(b2, b5) {
+  try {
+    var s2 = b2.getSheetByName('Absenteeism'), s5 = b5.getSheetByName('Absenteeism');
+    if (!s2) throw new Error('B2にAbsenteeismシートがありません');
+    var r = AI_LOGIC.mergeAbsence(plain_(s2.getDataRange().getValues()), s5 ? plain_(s5.getDataRange().getValues()) : null);
+    if (r.table.length < 1000) throw new Error('有給欠勤の件数が極端に少ない(' + r.table.length + '件)ため更新を中止しました');
+    writeTable_(sheet_(SHEET.ABS, AI_LOGIC.ABS_HEADER), [AI_LOGIC.ABS_HEADER].concat(r.table));
+    setMeta_('absence_synced_at', now_());
+    setMeta_('absence_error', s5 ? '' : 'B5にAbsenteeismシートが無いため、B2のみ取り込みました');
+  } catch (err) { setMeta_('absence_error', now_() + ' ' + err.message); }
 }
 function copySheet_(srcSs, name) {
   var src = srcSs.getSheetByName(name);
@@ -293,7 +346,8 @@ function dailyMail() {
   var items = vals.slice(1).filter(function (r) {
     return ts_(r[1]).indexOf(y) === 0 && (r[6] === '回答不可' || r[6] === 'エラー' || r[8] === '👎');
   });
-  var warn = getMeta_('roster_warnings') + (getMeta_('roster_error') ? '\n取り込み失敗: ' + getMeta_('roster_error') : '');
+  var warn = getMeta_('roster_warnings') + (getMeta_('roster_error') ? '\n取り込み失敗: ' + getMeta_('roster_error') : '')
+  warn += (getMeta_('absence_error') ? '\n有給欠勤の取り込み: ' + getMeta_('absence_error') : '');
   var hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, warn));
   var warnNew = warn.trim() && hash !== getMeta_('roster_warnings_sent');
   if (!items.length && !warnNew) return '送信なし';
@@ -338,6 +392,12 @@ function selfTest() {
     if (!adm) throw new Error('管理者が0人です');
     return keys.length + '人(管理者' + adm + '人)';
   });
+  step('有給・欠勤データ', function () {
+    var rows = loadAbsence_();
+    if (rows.length < 1000) throw new Error('有給欠勤シートが少なすぎます(' + rows.length + '件)。メニューで更新してください' + (getMeta_('absence_error') ? ' / ' + getMeta_('absence_error') : ''));
+    var me = rosterList_()[0], s = AI_LOGIC.summarizeAbsence(rows, me.no, AI_LOGIC.parsePeriod('', Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd')), loadHolidays_());
+    return rows.length + '件 / ' + getMeta_('absence_synced_at') + ' / 試算OK(' + me.name + ' 今年度の有給 ' + s.paidDays + '日)';
+  });
   step('就業規則(公開済み)', function () {
     var c = loadRules_(), main = c.filter(function (x) { return x.doc === '就業規則' && x.no; }).length;
     if (main < 100) throw new Error('就業規則が公開されていません(' + main + '条)。メニューで取り込み→公開してください');
@@ -372,7 +432,7 @@ var CONFIG_GUIDE = [
   ['DailyReport', '日報(鉄構)の現行ファイルのID。鉄構の名簿・工事・カレンダー・有給の元(B2)'],
   ['DailyReport_DATA2024.11.21以降', '日報(鉄構)の過去分。日報を扱う弾から使う'],
   ['DailyReport_DATA2025.11.21以降', '同上(2026/11/21以降はこちらも使う)'],
-  ['DailyReport建築', '日報(建設・総務)の現行ファイルのID。建設・総務の名簿の元(B5)'],
+  ['DailyReport建築', '日報(建設・総務)の現行ファイルのID。建設・総務の名簿・有給欠勤の元(B5)'],
   ['RULES_PDF_ID', '就業規則PDFのファイルID。改訂したら新しいPDFのIDに書き換え → メニューで取り込み・公開'],
   ['GEMINI_API_KEY', 'AI Studioで取得したAPIキー。他人に見せない・このシートを不用意に共有しない'],
   ['OWNER_EMAIL', 'クリエーターのGmail。朝3時の確認メールの宛先'],
@@ -399,6 +459,7 @@ var GUIDE_LINES = [
   ['・就業規則を取り込む(確認用): PDFを条文に分けて「規則_取込」シートに入れ、現行との差(追加/削除/変更)を表示'],
   ['・就業規則を公開する: 確認した内容を本番にする(旧版は「規則履歴」に残る)'],
   ['・前日分メールを今すぐ送る: 動作確認用'],
+  ['・有給・欠勤の質問(「私の有給は今年度何日?」「◯◯さんの先月の欠勤」)は、AIではなくコードが計算して答えます。データは毎晩1時に「有給欠勤」シートへ取り込み(B2・B5のAbsenteeismを合体)'],
   [''],
   ['■ 就業規則を改訂したとき'],
   ['1. 新しいPDFをドライブに置く → そのファイルIDを「諸情報」の RULES_PDF_ID に入れる'],
@@ -412,7 +473,7 @@ var GUIDE_LINES = [
 ];
 function setup() {
   [[SHEET.OPERATOR, OPERATOR_HEADER], [SHEET.ADMIN, ['氏名', 'E-Mail', '管理者']], [SHEET.RULES, RULE_HEADER], [SHEET.STAGE, RULE_HEADER],
-   [SHEET.HIST, ['版', '公開日時'].concat(RULE_HEADER)], [SHEET.LOG, LOG_HEADER], [SHEET.META, ['項目', '値']]]
+   [SHEET.HIST, ['版', '公開日時'].concat(RULE_HEADER)], [SHEET.LOG, LOG_HEADER], [SHEET.META, ['項目', '値']], [SHEET.ABS, AI_LOGIC.ABS_HEADER]]
     .forEach(function (x) { sheet_(x[0], x[1]); });
   // 「諸情報」: 不足している設定行を足し、説明(C列)と状態(D列)を書く。A・B列の入力済みの値は変えない
   var info = sheet_(SHEET.INFO, ['ファイル名', 'ID']), vals = info.getDataRange().getValues(), have = {};
