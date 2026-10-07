@@ -255,8 +255,12 @@
     var loc = parseLocal(q, ctx);
     // 指標が読み取れていて、「どの切り口か」も(全体指定でなく)分かる/不要なら、AIを使わずに即答
     var simple = loc.metric && (loc.groupBy || loc.site || loc.work || loc.fy !== null || loc.closing || /全体|全部|合計|総/.test(q));
-    if (simple) { say(answer(loc, ctx), 'b'); return; }
     busy = true; var w = say('考え中…', 'b');
+    if (simple) { // 即答でも、集計中に見えるよう 0.5・1・2秒のどれかをランダムに待ってから表示する
+      var wait = [500, 1000, 2000][Math.floor(Math.random() * 3)];
+      setTimeout(function () { w.textContent = answer(loc, ctx); busy = false; log.scrollTop = log.scrollHeight; }, wait);
+      return;
+    }
     ask(q).then(function (a) {
       var j = {}; try { j = JSON.parse(a); } catch (x) { }
       if (j.intent === 'data' || j.metric) { w.textContent = answer(fromAI(j, loc, ctx), ctx); }
