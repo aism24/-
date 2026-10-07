@@ -178,7 +178,7 @@ var AI_LOGIC = (function () {
         var active = (kind === 'B5' ? B5_ACTIVE : B2_ACTIVE).indexOf(p.status) >= 0;
         if (!active) return; // 退職済・退社・状態なしは反映しない
         var tag = '(' + (kind === 'B5' ? 'B5' : 'B2') + ' 社員No' + p.no + ' ' + p.name + ')';
-        if (!p.email) return; // E-Mail空欄は対象外(警告も出さない)
+        if (!p.email) { warnings.push('E-Mail空欄' + tag); return; } // ログインはできない(警告には残す)
         if (p.email !== p.emailRaw) warnings.push('E-Mail自動補正 ' + p.emailRaw + ' → ' + p.email + tag);
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.email) || TYPO_DOMAINS.test(p.email.split('@')[1] || '')) { warnings.push('E-Mail要確認 ' + p.email + tag); return; }
         if (seen[p.email]) { warnings.push('E-Mail重複 ' + p.email + tag + '(先の行を採用)'); return; }
