@@ -12,19 +12,20 @@ var RULE_HEADER = ['規程', '条', '見出し', '本文'];
 var TZ = 'Asia/Tokyo';
 
 // ---------- 小さな道具 ----------
+// 設定は「諸情報」シート(A=名前、B=値)から読む。シートに無ければ旧方式のスクリプトプロパティを予備で見る
 function prop_(k, optional) {
-  var v = PropertiesService.getScriptProperties().getProperty(k);
-  if (!v && !optional) throw new Error('スクリプトプロパティ ' + k + ' が未設定です');
-  return v || '';
-}
-// ファイルIDは「諸情報」シート(A列=ファイル名、B列=ファイルID)から読む
-function fileId_(name) {
-  var vals = ss_().getSheetByName(SHEET.INFO).getDataRange().getValues();
-  for (var i = 1; i < vals.length; i++) {
-    if (String(vals[i][0]).trim() === name && String(vals[i][1]).trim()) return String(vals[i][1]).trim();
+  var v = '', sh = ss_().getSheetByName(SHEET.INFO);
+  if (sh) {
+    var vals = sh.getDataRange().getValues();
+    for (var i = 1; i < vals.length; i++) {
+      if (String(vals[i][0]).trim() === k && String(vals[i][1]).trim()) { v = String(vals[i][1]).trim(); break; }
+    }
   }
-  throw new Error('「諸情報」シートに「' + name + '」のファイルIDがありません');
+  if (!v) v = PropertiesService.getScriptProperties().getProperty(k) || '';
+  if (!v && !optional) throw new Error('「諸情報」シートの「' + k + '」が未入力です');
+  return v;
 }
+function fileId_(name) { return prop_(name); }
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
 function sheet_(name, header) {
   var sh = ss_().getSheetByName(name);
@@ -216,7 +217,7 @@ function copySheet_(srcSs, name) {
 
 // ---------- 就業規則の取り込みと公開(クリエーターのみ。メニューから実行) ----------
 function ingestRules() {
-  var id = fileId_('就業規則'), file = DriveApp.getFileById(id);
+  var id = fileId_('RULES_PDF_ID'), file = DriveApp.getFileById(id);
   var doc = Drive.Files.create({ name: 'tmp_rules_' + Date.now(), mimeType: 'application/vnd.google-apps.document' }, file.getBlob(), { ocrLanguage: 'ja' });
   var text;
   try { text = DocumentApp.openById(doc.id).getBody().getText(); } finally { DriveApp.getFileById(doc.id).setTrashed(true); }
@@ -287,18 +288,75 @@ function dailyMail() {
 }
 
 // ---------- 初期設定とメニュー ----------
+var CONFIG_GUIDE = [
+  ['DailyReport', '日報(鉄構)の現行ファイルのID。鉄構の名簿・工事・カレンダー・有給の元(B2)'],
+  ['DailyReport_DATA2024.11.21以降', '日報(鉄構)の過去分。日報を扱う弾から使う'],
+  ['DailyReport_DATA2025.11.21以降', '同上(2026/11/21以降はこちらも使う)'],
+  ['DailyReport建築', '日報(建設・総務)の現行ファイルのID。建設・総務の名簿の元(B5)'],
+  ['RULES_PDF_ID', '就業規則PDFのファイルID。改訂したら新しいPDFのIDに書き換え → メニューで取り込み・公開'],
+  ['GEMINI_API_KEY', 'AI Studioで取得したAPIキー。他人に見せない・このシートを不用意に共有しない'],
+  ['OWNER_EMAIL', 'クリエーターのGmail。朝3時のメールの宛先で、メニュー操作を許可する人'],
+  ['CLIENT_ID', 'Googleログイン用のOAuthクライアントID(…apps.googleusercontent.com)']
+];
+var GUIDE_LINES = [
+  ['クリエーター用ガイド(このシートを見れば運用できます)'],
+  [''],
+  ['■ このアプリは何か'],
+  ['社員が就業規則などを質問すると、AIが条文を根拠に答えます。答えられない質問と「間違い」の報告は「質問ログ」に溜まり、毎朝3時に前日分がクリエーターへメールで届きます。'],
+  [''],
+  ['■ 設定(「諸情報」シート)'],
+  ['A列=名前、B列=ファイルIDやキー。D列が「✔入力済」ならOK、「★未入力」は埋める必要があります。'],
+  [''],
+  ['■ 毎日の流れ'],
+  ['1. 朝にメールを確認(0件で名簿の警告もない日はメールは来ません)'],
+  ['2. 「回答不可」: 規程に答えが無い質問。規程を直すか、検索を直す必要があるかをClaudeと相談'],
+  ['3. 「👎」: 利用者が間違いと報告した回答。コメントと参照した条文を見て原因を調べる'],
+  ['4. 直したら、対応状況(質問ログのN列)を「対応済」に変える'],
+  [''],
+  ['■ メニュー「社内AI」(クリエーターだけが使えます)'],
+  ['・名簿・工事・カレンダーを今すぐ更新: 毎晩1時に自動で行われます。急ぐときだけ使う'],
+  ['・就業規則を取り込む(確認用): PDFを条文に分けて「規則_取込」シートに入れ、現行との差(追加/削除/変更)を表示'],
+  ['・就業規則を公開する: 確認した内容を本番にする(旧版は「規則履歴」に残る)'],
+  ['・前日分メールを今すぐ送る: 動作確認用'],
+  [''],
+  ['■ 就業規則を改訂したとき'],
+  ['1. 新しいPDFをドライブに置く → そのファイルIDを「諸情報」の RULES_PDF_ID に入れる'],
+  ['2. メニュー「就業規則を取り込む」→ 差分の件数を確認 → 「就業規則を公開する」'],
+  ['3. 条文数が極端に減ると公開は自動で止まります(PDFの形式を確認)'],
+  [''],
+  ['■ よくあるトラブル'],
+  ['・ある人がログインできない: 名簿(元のOperatorシート)にGmailが入っているか、状態が在職中/休職中/専務(B5は勤務)か。誤字は朝のメールの警告に出ます'],
+  ['・管理者の追加・削除: 「管理者」シートに氏名・E-Mail・「管理者」と入れる(翌朝の更新で反映。急ぐ場合はメニューで更新)'],
+  ['・名簿が更新されない: 「設定」シートの roster_error を見る。管理者が0人だと安全のため更新を止めます']
+];
 function setup() {
   [[SHEET.OPERATOR, OPERATOR_HEADER], [SHEET.ADMIN, ['氏名', 'E-Mail', '管理者']], [SHEET.RULES, RULE_HEADER], [SHEET.STAGE, RULE_HEADER],
    [SHEET.HIST, ['版', '公開日時'].concat(RULE_HEADER)], [SHEET.LOG, LOG_HEADER], [SHEET.META, ['項目', '値']]]
     .forEach(function (x) { sheet_(x[0], x[1]); });
+  // 「諸情報」: 不足している設定行を足し、説明(C列)と状態(D列)を書く。A・B列の入力済みの値は変えない
+  var info = sheet_(SHEET.INFO, ['ファイル名', 'ID']), vals = info.getDataRange().getValues(), have = {};
+  for (var i = 1; i < vals.length; i++) have[String(vals[i][0]).trim()] = i + 1;
+  CONFIG_GUIDE.forEach(function (g) { if (!have[g[0]]) { info.appendRow([g[0], '']); have[g[0]] = info.getLastRow(); } });
+  info.getRange(1, 3, 1, 2).setValues([['説明', '状態']]);
+  vals = info.getDataRange().getValues();
+  var desc = {}; CONFIG_GUIDE.forEach(function (g) { desc[g[0]] = g[1]; });
+  for (var r = 2; r <= vals.length; r++) {
+    var name = String(vals[r - 1][0]).trim();
+    if (!name) continue;
+    info.getRange(r, 3, 1, 2).setValues([[desc[name] || vals[r - 1][2] || '', '=IF(LEN(B' + r + ')>0,"✔入力済","★未入力")']]);
+  }
+  var gs = sheet_('クリエーター用ガイド');
+  gs.clearContents();
+  gs.getRange(1, 1, GUIDE_LINES.length, 1).setValues(GUIDE_LINES);
+  gs.setColumnWidth(1, 900);
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (['syncRoster', 'dailyMail'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('syncRoster').timeBased().everyDays(1).atHour(1).create();
   ScriptApp.newTrigger('dailyMail').timeBased().everyDays(1).atHour(3).create();
-  ['GEMINI_API_KEY', 'CLIENT_ID', 'OWNER_EMAIL'].forEach(function (k) { prop_(k); });
-  ['DailyReport', 'DailyReport建築', '就業規則'].forEach(function (n) { fileId_(n); });
-  Logger.log('設定OK。モデル=' + MODEL);
+  var later = ['DailyReport_DATA2024.11.21以降', 'DailyReport_DATA2025.11.21以降'];
+  var missing = CONFIG_GUIDE.map(function (g) { return g[0]; }).filter(function (k) { return later.indexOf(k) < 0 && !prop_(k, true); });
+  Logger.log(missing.length ? '「諸情報」シートが未入力: ' + missing.join(', ') : '設定OK。モデル=' + MODEL);
 }
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('社内AI')
