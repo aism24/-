@@ -58,35 +58,35 @@ var AI_LOGIC = (function () {
 
   // ---------- 検索(文字2連続の一致 + 逆文書頻度。形態素解析なし) ----------
   function bigrams(s) {
-    var t = squash(s), out = [];
-    for (var i = 0; i < t.length - 1; i++) out.push(t.substr(i, 2));
-    return out;
+    var t = squash(s), out = {};
+    for (var i = 0; i < t.length - 1; i++) out[t.substr(i, 2)] = 1;
+    return Object.keys(out);
   }
+  // 質問の2文字(bigram)が条文に含まれるかを数える。条文側の分解はせず、文字列検索だけで済ませる
   function searchRules(chunks, question, topN) {
     topN = topN || 6;
     var N = chunks.length;
-    var docs = chunks.map(function (c) {
-      var set = {}; bigrams(c.body).forEach(function (b) { set[b] = 1; });
-      var hset = {}; bigrams(c.heading).forEach(function (b) { hset[b] = 1; });
-      var dset = {}; bigrams(c.doc).forEach(function (b) { dset[b] = 1; });
-      return { set: set, hset: hset, dset: dset, len: squash(c.body).length };
+    var body = chunks.map(function (c) { return squash(c.body); });
+    var head = chunks.map(function (c) { return squash(c.heading); });
+    var name = chunks.map(function (c) { return squash(c.doc); });
+    var qkeys = bigrams(question);
+    var w = {};
+    qkeys.forEach(function (b) {
+      var df = 0;
+      for (var i = 0; i < N; i++) if (body[i].indexOf(b) >= 0) df++;
+      w[b] = Math.log(1 + N / (1 + df));
     });
-    var df = {};
-    docs.forEach(function (d) { Object.keys(d.set).forEach(function (b) { df[b] = (df[b] || 0) + 1; }); });
-    var qb = {}; bigrams(question).forEach(function (b) { qb[b] = 1; });
-    var qkeys = Object.keys(qb);
     var refNos = [];
     var rm, reRef = /第([0-9]+)条/g, qn = nfkc(question);
     while ((rm = reRef.exec(qn))) refNos.push(parseInt(rm[1], 10));
     var scored = chunks.map(function (c, i) {
-      var d = docs[i], s = 0;
+      var s = 0;
       qkeys.forEach(function (b) {
-        var w = Math.log(1 + N / (1 + (df[b] || 0)));
-        if (d.set[b]) s += w;
-        if (d.hset[b]) s += w * 3;
-        if (d.dset[b]) s += w * 0.5;
+        if (body[i].indexOf(b) >= 0) s += w[b];
+        if (head[i].indexOf(b) >= 0) s += w[b] * 3;
+        if (name[i].indexOf(b) >= 0) s += w[b] * 0.5;
       });
-      s = s / Math.pow(Math.max(d.len, 20), 0.25);
+      s = s / Math.pow(Math.max(body[i].length, 20), 0.25);
       if (c.no && refNos.indexOf(c.no) >= 0) s += c.doc === '就業規則' ? 1500 : 1000;
       return { chunk: c, score: s };
     }).filter(function (x) { return x.score > 0; });
@@ -122,7 +122,6 @@ var AI_LOGIC = (function () {
   // ---------- 名簿の合体(B2=鉄構、B5=建設・総務) ----------
   var B2_ACTIVE = ['在職中', '休職中', '専務'];
   var B5_ACTIVE = ['勤務'];
-  var TYPO_DOMAINS = /(gmeil|gmial|gamil|gmai\.com|gmail\.co$|gmail\.con|gmail\.jp)/;
   function colIndex(header) {
     var idx = {};
     header.forEach(function (h, i) { idx[squash(h)] = i; });
@@ -180,7 +179,7 @@ var AI_LOGIC = (function () {
         var tag = '(' + (kind === 'B5' ? 'B5' : 'B2') + ' 社員No' + p.no + ' ' + p.name + ')';
         if (!p.email) { warnings.push('E-Mail空欄' + tag); return; } // ログインはできない(警告には残す)
         if (p.email !== p.emailRaw) warnings.push('E-Mail自動補正 ' + p.emailRaw + ' → ' + p.email + tag);
-        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.email) || TYPO_DOMAINS.test(p.email.split('@')[1] || '')) { warnings.push('E-Mail要確認 ' + p.email + tag); return; }
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.email) || (/^gmail\./.test(p.email.split('@')[1] || '') && p.email.split('@')[1] !== 'gmail.com')) { warnings.push('E-Mail要確認 ' + p.email + tag); return; }
         if (seen[p.email]) { warnings.push('E-Mail重複 ' + p.email + tag + '(先の行を採用)'); return; }
         seen[p.email] = true;
         p.admin = admins[p.email] ? '管理者' : '';
@@ -200,11 +199,7 @@ var AI_LOGIC = (function () {
     return { table: table, warnings: warnings, adminCount: rows.filter(function (p) { return p.admin; }).length };
   }
 
-  // ---------- 前日分の抽出(メール用) ----------
-  function pad2(n) { return (n < 10 ? '0' : '') + n; }
-  function ymd(d) { return d.getFullYear() + '/' + pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()); }
-
   return { nfkc: nfkc, squash: squash, parseRules: parseRules, chunkLabel: chunkLabel, searchRules: searchRules,
            buildPrompt: buildPrompt, parseModelJson: parseModelJson, mergeRoster: mergeRoster, readRoster: readRoster,
-           normEmail: normEmail, fixEmail: fixEmail, ymd: ymd };
+           normEmail: normEmail, fixEmail: fixEmail };
 })();
