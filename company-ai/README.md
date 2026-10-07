@@ -12,7 +12,8 @@
 ## GASの設置
 1. スプレッドシート「社内AI」→ 拡張機能 → Apps Script。`gas/Logic.gs` と `gas/Code.gs` をそれぞれ全文貼り付け(ファイル名は同じ)。
 2. サービス「+」→ **Drive API(v3)** を追加。
-3. プロジェクトの設定 → スクリプト プロパティ: `GEMINI_API_KEY` `CLIENT_ID`(GoogleのOAuthクライアントID) `OWNER_EMAIL`(クリエーターのGmail) `B2_ID` `B5_ID` `RULES_PDF_ID`
+3. プロジェクトの設定 → スクリプト プロパティ: `GEMINI_API_KEY` `CLIENT_ID`(GoogleのOAuthクライアントID) `OWNER_EMAIL`(クリエーターのGmail)
+   ファイルIDは「諸情報」シート(A=ファイル名、B=ID)から読む: `DailyReport`(B2) / `DailyReport建築`(B5) / `就業規則`(PDF)
 4. 管理者シートに、クリエーター自身(氏名・E-Mail・「管理者」)を先に入れる(管理者0人だと名簿が更新されない)。
 5. エディタで `setup` を実行(シート作成・トリガー: 名簿更新=1時台、メール=3時台)。
 6. メニュー「社内AI」→ 名簿を今すぐ更新 → 就業規則を取り込む → 差分を確認 → 就業規則を公開する。
