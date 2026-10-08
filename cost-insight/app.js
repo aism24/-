@@ -207,7 +207,7 @@ function showView(name) {
   window.scrollTo(0, 0);
   document.querySelector('main').classList.toggle('wide', name === 'simple' || name === 'detail' || name === 'extract' || name === 'workone'); // シンプル版・実行予算抽出は画面いっぱいに使う
   if (name === 'progress') {
-    document.querySelector('#v-progress .home-row button').dataset.go = state.tab === 'site' ? 'sitemode' : 'analysis';
+    document.querySelector('#v-progress .home-row button').dataset.go = state.tab === 'site' ? 'sitemode' : 'menu';
     render(); // グラフは表示されてから描く(非表示のままだと大きさが決まらない)
   }
   syncStickyOffsets();
