@@ -289,7 +289,7 @@ function readProdIndex_() {
   var id = prop_('Excelマスタ一覧', true) || PROD_INDEX_ID, ss = SpreadsheetApp.openById(id);
   var sh = ss.getSheetByName('情報') || ss.getSheets()[0], vals = plain_(sh.getDataRange().getValues());
   var hd = vals[0].map(function (h) { return AI_LOGIC.squash(h); });
-  var c = { no: hd.indexOf('マスタNo'), work: hd.indexOf('工事番号'), file: hd.indexOf('ファイル名'), url: hd.indexOf('URL') };
+  var c = { drive: hd.indexOf('ドライブ'), no: hd.indexOf('マスタNo'), work: hd.indexOf('工事番号'), file: hd.indexOf('ファイル名'), url: hd.indexOf('URL') };
   if (c.no < 0 || c.work < 0 || c.url < 0) throw new Error('「Excelマスタ一覧」の見出し(マスタNo・工事番号・URL)が見つかりません');
   var listNo = -1, listRow = 0;
   for (var r = 0; r < Math.min(3, vals.length) && listNo < 0; r++)
@@ -308,7 +308,8 @@ function readProdIndex_() {
     if (seenFile[m[1]]) continue; // 同じファイルを指す行は、二重に数えない
     seenFile[m[1]] = true;
     var fname = c.file >= 0 ? String(vals[k][c.file]).replace(/\.xlsx?$/i, '').trim() : '';
-    masters.push({ no: String(vals[k][c.no]).trim(), workNo: wn, workName: names[wn] || fname, fileId: m[1], fromList: !!names[wn] });
+    // マスタNo はドライブごとに別の体系(ms-tottori と mst に同じ番号がある)。「ドライブ:マスタNo」で区別する
+    masters.push({ no: (c.drive >= 0 ? String(vals[k][c.drive]).trim() + ':' : '') + String(vals[k][c.no]).trim(), workNo: wn, workName: names[wn] || fname, fileId: m[1], fromList: !!names[wn] });
   }
   return masters;
 }
@@ -320,10 +321,10 @@ function readMasterTable_(ss) {
   var top = sh.getRange(1, 1, Math.min(5, lastRow), lastCol).getValues(), hr = -1, want = ['部位', '加工先', '加工', '重量'], col = {};
   for (var r = 0; r < top.length && hr < 0; r++) {
     var hd = top[r].map(function (h) { return AI_LOGIC.squash(h); }), ok = want.every(function (w) { return hd.indexOf(w) >= 0; });
-    if (ok) { hr = r; want.concat(['本数']).forEach(function (w) { col[w] = hd.indexOf(w); }); col['製品マーク'] = hd.map(function (h) { return h.indexOf('製品マーク') === 0; }).indexOf(true); }
+    if (ok) { hr = r; want.concat(['本数']).forEach(function (w) { col[w] = hd.indexOf(w); }); }
   }
   if (hr < 0) throw new Error('見出し(部位・加工先・加工・重量)が見つかりません');
-  var order = ['部位', '加工先', '加工', '本数', '重量', '製品マーク'], idx = order.map(function (o) { return col[o]; }), maxc = Math.max.apply(null, idx.filter(function (x) { return x >= 0; })) + 1;
+  var order = ['部位', '加工先', '加工', '本数', '重量'], idx = order.map(function (o) { return col[o]; }), maxc = Math.max.apply(null, idx.filter(function (x) { return x >= 0; })) + 1;
   var data = sh.getRange(hr + 2, 1, Math.max(1, lastRow - hr - 1), maxc).getValues();
   return [order].concat(data.map(function (row) {
     return idx.map(function (ci, n) { var v = ci >= 0 ? row[ci] : ''; return n === 2 ? plain_([[v]])[0][0] : v; });
@@ -332,7 +333,7 @@ function readMasterTable_(ss) {
 function syncProduction() {
   var t0 = Date.now(), BUDGET = 240000, notes = [];
   try {
-    var masters = readProdIndex_(), st = sheet_(SHEET.PRODS, ['マスタNo', 'ファイルID', '更新日時(ミリ秒)', '行数', '取込日時', 'メモ']), sv = st.getDataRange().getValues(), state = {};
+    var masters = readProdIndex_(), st = sheet_(SHEET.PRODS, ['マスター(ドライブ:マスタNo)', 'ファイルID', '更新日時(ミリ秒)', '行数', '取込日時', 'メモ']), sv = st.getDataRange().getValues(), state = {};
     for (var i = 1; i < sv.length; i++) state[String(sv[i][0])] = { id: sv[i][1], mt: String(sv[i][2]), rows: sv[i][3], at: sv[i][4], memo: sv[i][5] };
     var cur = sheet_(SHEET.PROD, AI_LOGIC.PROD_HEADER), byNo = {}, all = cur.getLastRow() > 1 ? cur.getRange(2, 1, cur.getLastRow() - 1, AI_LOGIC.PROD_HEADER.length).getValues() : [];
     all.forEach(function (r) { (byNo[String(r[8])] = byNo[String(r[8])] || []).push(r); });
@@ -351,7 +352,7 @@ function syncProduction() {
         if (file.getMimeType() === 'application/vnd.google-apps.spreadsheet') ss = SpreadsheetApp.openById(m.fileId);
         else { tmp = Drive.Files.create({ name: 'tmp_prod_' + Date.now(), mimeType: 'application/vnd.google-apps.spreadsheet' }, file.getBlob()); ss = SpreadsheetApp.openById(tmp.id); }
         var res;
-        try { res = AI_LOGIC.parseMasterRows(readMasterTable_(ss), { no: m.no, workNo: m.workNo, workName: m.workName }); }
+        try { res = AI_LOGIC.parseMasterRows(readMasterTable_(ss), { key: m.no, workNo: m.workNo, workName: m.workName }); }
         finally { if (tmp) DriveApp.getFileById(tmp.id).setTrashed(true); }
         byNo[m.no] = res.rows; changed = true;
         var memo = (res.undated ? '年のない日付の行が' + res.undated + '行(数えていません)' : '') + (m.fromList ? '' : ' 工事名が一覧に無くファイル名を使用');
@@ -364,7 +365,7 @@ function syncProduction() {
       writeBig_(cur, [AI_LOGIC.PROD_HEADER].concat(rows.length ? rows : [AI_LOGIC.PROD_HEADER.map(function () { return ''; })]));
       CacheService.getScriptCache().remove('prodprojects_n');
     }
-    var out = [['マスタNo', 'ファイルID', '更新日時(ミリ秒)', '行数', '取込日時', 'メモ']];
+    var out = [['マスター(ドライブ:マスタNo)', 'ファイルID', '更新日時(ミリ秒)', '行数', '取込日時', 'メモ']];
     Object.keys(state).forEach(function (k) { if (live[k]) out.push([k, state[k].id, state[k].mt, state[k].rows, state[k].at, state[k].memo || '']); });
     writeTable_(st, out);
     var memos = out.slice(1).filter(function (r) { return r[5]; }).length;
