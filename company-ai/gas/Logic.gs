@@ -282,14 +282,23 @@ var AI_LOGIC = (function () {
     return { from: ymd(s1, 4, 1), to: ymd(s1 + 1, 3, 31), label: '今年度(' + s1 + '/04/01〜' + (s1 + 1) + '/03/31)', isDefault: true };
   }
 
-  var ABS_TOPIC = /(有給|有休|年休|欠勤|遅刻|早退|遅早|休んだ|休み|休暇)/;
+  var ABS_TOPIC = /(有給|有休|年休|欠勤|遅刻|早退|遅早|休んだ|休み|休暇|届)/;
   var ABS_CUE = /(私|わたし|自分|僕|俺|取った|取って|取得|使った|使って|消化|何日休|何回休|休んだ|遅刻した|欠勤した)/;
   // roster: [{no, name}]。質問に出てきた氏名(スペースなしの完全一致)を探す
   function findPeople(q, roster) {
     var sq = squash(q), out = [];
     roster.forEach(function (p) { var n = normName(p.name); if (n.length >= 2 && sq.indexOf(n) >= 0) out.push(p); });
     var maxLen = 0; out.forEach(function (p) { maxLen = Math.max(maxLen, normName(p.name).length); });
-    return out.filter(function (p) { return normName(p.name).length === maxLen; }); // 長い名前を優先(部分一致の取りこぼし防止)
+    out = out.filter(function (p) { return normName(p.name).length === maxLen; }); // 長い名前を優先(部分一致の取りこぼし防止)
+    if (out.length) return out;
+    // 氏名の完全一致が無いとき: 姓だけ(「角さん」「角の」)。名簿の姓と名の間に空白がある場合だけ。同じ姓が複数なら呼び出し側で「複数該当」になる
+    roster.forEach(function (p) {
+      var parts = nfkc(p.name).trim().split(/\s+/);
+      if (parts.length < 2 || !parts[0]) return;
+      var sn = parts[0].replace(/[.\\^$*+?()[\]{}|\/-]/g, '\\$&');
+      if (new RegExp(sn + '(さん|くん|君|の|は|が|を|に)').test(sq)) out.push(p);
+    });
+    return out;
   }
   // 戻り値: null(就業規則の質問として扱う) / {who:'self'|'person'|'ambiguous', people, period, remain}
   function parseAbsenceQuery(q, today, roster) {
@@ -299,7 +308,7 @@ var AI_LOGIC = (function () {
     if (!people.length && !selfCue && !ABS_CUE.test(t)) return null;
     if (!people.length && !selfCue) return null; // 「誰の」が分からない取得系の質問は、規則の質問とみなす
     var who = people.length > 1 ? 'ambiguous' : people.length === 1 ? 'person' : 'self';
-    if (who === 'self' && !/(取った|取って|取得|使った|使って|消化|休んだ|遅刻|早退|欠勤|何日|何回|残|状況|確認|履歴)/.test(t)) return null;
+    if (who === 'self' && !/(取った|取って|取得|使った|使って|消化|休んだ|遅刻|早退|欠勤|何日|何回|残|状況|確認|履歴|一覧)/.test(t)) return null;
     return { who: who, people: people, period: parsePeriod(q, today), remain: /(残り|残数|残日|残って|あと何日|余り)/.test(t) };
   }
 
