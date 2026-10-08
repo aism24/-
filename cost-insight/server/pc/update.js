@@ -30,6 +30,8 @@ const CATS = ['材料費', '工場加工費', '事務図面費', '外注加工�
 const CATS_T = CATS.concat(['計']);
 const PROFITS = ['粗利益', '営業利益'];
 // 費目の中の労務/外注の仕訳: [費目, 労務の名前, それ以外の名前]
+// 読み取りルールの版。変えたとき(労務の判定など)は上げる → 保存日時が同じでも全ファイルを読み直す
+const PARSE_VER = 2;
 const SPLITS = [['工場加工費', '工場労務費', '工場外注費'], ['事務図面費', '事務図面労務費', '図面外注費'], ['現場費', '現場労務費', '現場費']];
 
 const logs = [];
@@ -357,7 +359,7 @@ async function main() {
     const fileNo = FILE_NO.exec(f.name)[1];
     const p = prevByKey.get(f.name);
     let b;
-    if (p && p.status === 'ok' && p.mtimeMs === f.mtimeMs && p.profit && p.breakdown && p.laborByMonth) { // 利益項目・労務の仕訳・月度の労務費が無い旧データは読み直す
+    if (p && p.status === 'ok' && p.mtimeMs === f.mtimeMs && p.profit && p.breakdown && p.laborByMonth && p.parseVer === PARSE_VER) { // 利益項目・労務の仕訳・月度の労務費が無い旧データ、読み取りルールの版が古いデータは読み直す
       b = p; nSkip++;
     } else {
       try {
@@ -378,7 +380,7 @@ async function main() {
       sheet: b.sheet, weight: b.weight, amount: b.amount, cats: b.cats, profit: b.profit, profitRate: b.profitRate,
       breakdown: b.breakdown, profitCalc: b.profitCalc, profitCalcRate: b.profitCalcRate, laborCheck: b.laborCheck, author: b.author,
       laborByMonth: b.laborByMonth, laborCutoff: b.laborCutoff,
-      saved: jst(f.mtimeMs), mtimeMs: f.mtimeMs, locked: f.locked, status: 'ok', warn: b.warn || '',
+      saved: jst(f.mtimeMs), mtimeMs: f.mtimeMs, locked: f.locked, status: 'ok', warn: b.warn || '', parseVer: PARSE_VER,
     });
   }
   rows.sort((a, b) => (a.no < b.no ? -1 : a.no > b.no ? 1 : a.key.localeCompare(b.key)));
