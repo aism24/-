@@ -1,6 +1,6 @@
 :root { --bg:#f4f6f8; --card:#fff; --fg:#111; --muted:#555; --line:#b8c2cc; --accent:#1f6feb; --bad:#f8d7da; --ok:#e6f4ea; --head:#e8edf2; color-scheme:light; }
 * { box-sizing:border-box; }
-body { font-weight:700; margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,"Hiragino Sans","Yu Gothic",Meiryo,sans-serif; }
+body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,"Hiragino Sans","Yu Gothic",Meiryo,sans-serif; font-weight:700; }
 .page { max-width:none; margin:0 auto; padding:0 16px 80px; }
 .app-header { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; row-gap:2px; column-gap:8px; padding:16px 0 8px; }
 .app-header h1 { grid-column:2; grid-row:1; margin:0; font-size:20px; text-align:center; }
