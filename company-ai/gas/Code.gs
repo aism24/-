@@ -106,7 +106,7 @@ function doPost(e) {
     var req = JSON.parse(e.postData.contents);
     var user = authenticate_(req.idToken);
     if (req.action === 'me') return json_({ ok: true, name: user.name, isAdmin: user.isAdmin });
-    if (req.action === 'ask') return json_(replay_(user, req.rid, function () { return ask_(user, req.question); }));
+    if (req.action === 'ask') return json_(replay_(user, req.rid, function () { return ask_(user, req.question, req.topic); }));
     if (req.action === 'feedback') return json_(replay_(user, req.rid, function () { return feedback_(user, req); }));
     throw err_('bad_request', '不明な操作です');
   } catch (err) {
@@ -180,21 +180,26 @@ function callGemini_(prompt) {
   return parts.map(function (p) { return p.text || ''; }).join('');
 }
 
-function ask_(user, question) {
+function ask_(user, question, sel) {
   var t0 = Date.now();
   question = String(question || '').trim();
   if (!question) throw err_('bad_request', '質問を入力してください');
   if (question.length > 300) throw err_('bad_request', '質問は300文字以内にしてください');
-  var cl = AI_LOGIC.clarify(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), { roster: rosterList_, work: loadProjects_, prod: loadProdProjects_ });
+  var today = Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd');
+  sel = ['rules', 'rules!', 'daily', 'prod'].indexOf(String(sel || '')) >= 0 ? String(sel) : ''; // 画面の話題ボタン(就業規則/日報アプリ/生産管理)
+  var qq = AI_LOGIC.applyTopic(question, sel, today);
+  var cl = AI_LOGIC.clarify(qq, today, { roster: rosterList_, work: loadProjects_, prod: loadProdProjects_ }, sel);
   if (cl) return askClarify_(user, question, cl, t0);
-  var abs = AI_LOGIC.parseAbsenceQuery(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), rosterList_());
-  if (abs) return askAbsence_(user, question, abs, t0);
-  var wk = AI_LOGIC.parseWorkQuery(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), rosterList_(), loadProjects_());
-  if (wk) return askWork_(user, question, wk, t0);
-  var prod = AI_LOGIC.parseProdQuery(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), loadProdProjects_());
-  if (prod) return askProd_(user, question, prod, t0);
-  var cal = AI_LOGIC.parseCalendarQuery(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'));
-  if (cal) return askCalendar_(user, question, cal, t0);
+  if (sel.charAt(0) !== 'r') { // 就業規則を選んだときは、数字の集計に回さず就業規則の検索へ
+    var abs = AI_LOGIC.parseAbsenceQuery(qq, today, rosterList_());
+    if (abs) return askAbsence_(user, question, abs, t0);
+    var wk = AI_LOGIC.parseWorkQuery(qq, today, rosterList_(), loadProjects_());
+    if (wk) return askWork_(user, question, wk, t0);
+    var prod = AI_LOGIC.parseProdQuery(qq, today, loadProdProjects_());
+    if (prod) return askProd_(user, question, prod, t0);
+    var cal = AI_LOGIC.parseCalendarQuery(qq, today);
+    if (cal) return askCalendar_(user, question, cal, t0);
+  }
   var chunks = loadRules_();
   if (!chunks.length) throw err_('no_rules', '就業規則がまだ登録されていません');
   var t1 = Date.now();

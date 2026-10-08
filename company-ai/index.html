@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>社内AI</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="style.css?v=ai7">
+<link rel="stylesheet" href="style.css?v=ai8">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -28,12 +28,13 @@
     <div class="card hint">就業規則、有給等届け、日報、生産管理に係る質問に回答できます。<div class="warn">質問と回答は1問1答方式です。前回の質問を記憶して回答できません。</div></div>
     <div id="log"></div>
     <form class="card ask" id="askForm">
+      <div class="tabs" id="tabs"><span class="cg">話題(選ぶと速く正確になります・選ばなくてもOK):</span><button type="button" class="btn" data-t="rules">就業規則</button><button type="button" class="btn" data-t="daily">日報アプリ</button><button type="button" class="btn" data-t="prod">生産管理</button></div>
       <textarea id="q" rows="2" maxlength="300" required></textarea>
       <div class="row"><span class="cnt" id="qcnt">0/300</span><button class="btn primary" id="sendBtn" type="submit">質問する</button></div>
     </form>
   </section>
 </div>
 <script src="config.js?v=ai2"></script>
-<script src="app.js?v=ai7"></script>
+<script src="app.js?v=ai8"></script>
 </body>
 </html>
