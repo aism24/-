@@ -142,7 +142,7 @@ function getRoster_() {
     var em = AI_LOGIC.normEmail(vals[i][7]);
     if (em) map[em] = { no: vals[i][0], name: vals[i][1], admin: String(vals[i][10]) === '管理者' };
   }
-  if (Object.keys(map).length) putLarge_('roster', JSON.stringify(map), 300);
+  if (Object.keys(map).length) putLarge_('roster', JSON.stringify(map), 360);
   return map;
 }
 
@@ -775,6 +775,11 @@ var GUIDE_LINES = [
   ['・管理者の追加・削除: 「管理者」シートに氏名・E-Mail・「管理者」と入れる(翌朝の更新で反映。急ぐ場合はメニューで更新)'],
   ['・名簿が更新されない: 「設定」シートの roster_error を見る。管理者が0人だと安全のため更新を止めます']
 ];
+// 5分おきに呼ばれ、GASの起動とキャッシュ(名簿・就業規則・工事一覧)を温めておく。失敗しても何もしない
+function keepWarm() {
+  try { getRoster_(); loadRules_(); loadProjects_(); loadProdProjects_(); } catch (e) { Logger.log('keepWarm: ' + e); }
+}
+
 function setup() {
   [[SHEET.OPERATOR, OPERATOR_HEADER], [SHEET.ADMIN, ['氏名', 'E-Mail', '管理者']], [SHEET.RULES, RULE_HEADER], [SHEET.STAGE, RULE_HEADER],
    [SHEET.HIST, ['版', '公開日時'].concat(RULE_HEADER)], [SHEET.LOG, LOG_HEADER], [SHEET.META, ['項目', '値']], [SHEET.ABS, AI_LOGIC.ABS_HEADER]]
@@ -796,11 +801,12 @@ function setup() {
   gs.getRange(1, 1, GUIDE_LINES.length, 1).setValues(GUIDE_LINES);
   gs.setColumnWidth(1, 900);
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (['syncRoster', 'dailyMail', 'syncProduction'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+    if (['syncRoster', 'dailyMail', 'syncProduction', 'keepWarm'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('syncRoster').timeBased().everyDays(1).atHour(1).create();
   ScriptApp.newTrigger('dailyMail').timeBased().everyDays(1).atHour(3).create();
   ScriptApp.newTrigger('syncProduction').timeBased().everyDays(1).atHour(2).create();
+  ScriptApp.newTrigger('keepWarm').timeBased().everyMinutes(5).create(); // ログイン・質問の待ちを短くするため、5分おきに名簿などのキャッシュを温めておく
   var later = ['DailyReport_DATA2024.11.21以降', 'DailyReport_DATA2025.11.21以降'];
   var missing = CONFIG_GUIDE.map(function (g) { return g[0]; }).filter(function (k) { return later.indexOf(k) < 0 && k !== 'Excelマスタ一覧' && !prop_(k, true); }); // Excelマスタ一覧は空でも標準のファイルを使う
   Logger.log(missing.length ? '「諸情報」シートが未入力: ' + missing.join(', ') : '設定OK。モデル=' + MODEL);
