@@ -1,16 +1,16 @@
 :root { --bg:#d9c9a0; --card:#fbf3dc; --fg:#2b1b0e; --muted:#6b4a2a; --line:#6b4a2a; --accent:#a31621; --bad:#f4c9c4; --ok:#e6f4ea; --head:#efe2bd; color-scheme:light; }
 * { box-sizing:border-box; }
-body { margin:0; background:radial-gradient(circle at 50% 30%,#eadfc3,#cdb98a); min-height:100vh; color:var(--fg); font:15px/1.6 -apple-system,"Hiragino Sans","Yu Gothic",Meiryo,sans-serif; font-weight:700; }
+body { margin:0; background:radial-gradient(circle at 50% 30%,#eadfc3,#cdb98a); min-height:100vh; color:var(--fg); font:17px/1.65 -apple-system,"Hiragino Sans","Yu Gothic",Meiryo,sans-serif; font-weight:700; }
 .page { max-width:none; margin:0 auto; padding:0 56px 80px; }
 .app-header { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; row-gap:2px; column-gap:8px; padding:16px 0 8px; }
-.app-header h1 { grid-column:2; grid-row:1; margin:0; font-size:20px; text-align:center; }
+.app-header h1 { grid-column:2; grid-row:1; margin:0; font-size:23px; text-align:center; }
 .app-header .brand { grid-column:3; grid-row:1; justify-self:end; display:flex; align-items:center; gap:8px; }
 .brandLogo { width:34px; height:38px; flex:none; color:#000; }
-.companyName { font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic",Meiryo,sans-serif; font-weight:900; font-size:16px; color:#000; white-space:nowrap; }
-.who { grid-column:3; grid-row:2; justify-self:end; color:var(--muted); font-size:13px; text-align:right; }
+.companyName { font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic",Meiryo,sans-serif; font-weight:900; font-size:18px; color:#000; white-space:nowrap; }
+.who { grid-column:3; grid-row:2; justify-self:end; color:var(--muted); font-size:15px; text-align:right; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 16px; margin:12px 0; }
-.card h2 { margin:0 0 8px; font-size:15px; }
-.hint { color:var(--muted); font-size:13px; }
+.card h2 { margin:0 0 8px; font-size:17px; }
+.hint { color:var(--muted); font-size:15px; }
 .status { background:var(--head); border-radius:6px; padding:8px 12px; margin:8px 0; }
 .status.err { background:var(--bad); }
 .btn { background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:5px 12px; cursor:pointer; font:inherit; }
@@ -18,22 +18,22 @@ body { margin:0; background:radial-gradient(circle at 50% 30%,#eadfc3,#cdb98a); 
 .btn:disabled { opacity:.45; cursor:not-allowed; }
 .btn.on { background:#cfe2ff; border-color:var(--accent); font-weight:bold; }
 .row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:8px; }
-.cnt { color:var(--muted); font-size:12px; }
+.cnt { color:var(--muted); font-size:14px; }
 textarea { width:100%; border:1px solid var(--line); border-radius:4px; padding:8px; font:inherit; resize:vertical; }
 .msg { margin:12px 0; }
 .msg .q { background:var(--head); border-radius:8px; padding:8px 12px; margin-left:48px; white-space:pre-wrap; }
 .msg .a { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin-top:8px; margin-right:24px; white-space:pre-wrap; }
 .msg .a.ng { background:var(--bad); }
-.src { color:var(--muted); font-size:12px; margin-top:6px; }
+.src { color:var(--muted); font-size:14px; margin-top:6px; }
 .fb { display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap; }
 .fb textarea { margin-top:6px; }
-.thanks { color:var(--muted); font-size:12px; }
+.thanks { color:var(--muted); font-size:14px; }
 .ask textarea { min-height:56px; }
 .warn { color:#d00; font-weight:700; margin-top:4px; }
 .choices { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
-.choices .cg { color:var(--muted); font-size:13px; }
+.choices .cg { color:var(--muted); font-size:15px; }
 .tabs { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:8px; }
-.tabs .cg { color:var(--muted); font-size:13px; }
+.tabs .cg { color:var(--muted); font-size:15px; }
 .tabs .btn.sel { background:#cfe2ff; border-color:var(--accent); font-weight:bold; }
 /* 忍者の背景: 和紙、左右の竹、巻物風のカード(文面は変えない) */
 body::before, body::after { content:''; position:fixed; top:0; bottom:0; width:26px; z-index:0; background:linear-gradient(90deg,#3d6b32,#7fb069,#3d6b32); box-shadow:0 0 0 2px #2a4a22; }
