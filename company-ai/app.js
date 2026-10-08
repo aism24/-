@@ -132,6 +132,7 @@
     ev.preventDefault();
     var q = $('q').value.trim(); if (!q) return;
     $('q').value = ''; $('qcnt').textContent = '0/300'; $('sendBtn').disabled = true;
+    $('log').textContent = ''; // 1問1答: 前回の質問と回答を消す
     var m = addMessage(q), t0 = Date.now(), tries = 1;
     var tick = setInterval(function () {
       m.a.textContent = '考え中…' + Math.round((Date.now() - t0) / 1000) + '秒' + (tries > 1 ? '(混み合っているため再試行しています ' + tries + '/' + MAX_TRIES + ')' : '');
