@@ -24,7 +24,12 @@
         fetch(CFG.GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), signal: ac.signal })
           .then(function (r) { return r.text(); })
           .then(function (txt) { return JSON.parse(txt); })
-          .then(function (j) { clearTimeout(t); finish(resolve, j); })
+          .then(function (j) {
+            clearTimeout(t);
+            // 再送分が「処理中」(busy)と返しただけなら、元の要求の結果を待つ(最終結果にしない)
+            if (j && j.ok === false && j.error === 'busy' && ++failed < MAX_TRIES) return;
+            finish(resolve, j);
+          })
           .catch(function () {
             clearTimeout(t); failed++;
             if (failed >= MAX_TRIES) finish(reject, Object.assign(new Error('通信がうまくいきませんでした。Google側の応答が不安定なことがあります。もう一度お試しください。'), { code: 'net' }));

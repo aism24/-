@@ -241,8 +241,17 @@ function rosterList_() {
   return out;
 }
 function loadAbsence_() {
+  var c = getLarge_('absence'); // 約1万5千行を毎回シートから読むと遅いため、圧縮してキャッシュに載せる(夜間の更新で破棄)
+  if (c) { try { return JSON.parse(Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(c), 'application/x-gzip')).getDataAsString()); } catch (e) { /* 読めなければ、シートから読み直す */ } }
   var vals = plain_(sheet_(SHEET.ABS, AI_LOGIC.ABS_HEADER).getDataRange().getValues());
-  return vals.slice(1).filter(function (r) { return r[0]; });
+  var rows = vals.slice(1).filter(function (r) { return r[0]; });
+  if (rows.length) putLarge_('absence', Utilities.base64Encode(Utilities.gzip(Utilities.newBlob(JSON.stringify(rows))).getBytes()), 1800);
+  return rows;
+}
+function dropLarge_(key) {
+  var c = CacheService.getScriptCache(), n = parseInt(c.get(key + '_n') || '0', 10), keys = [key + '_n'];
+  for (var i = 0; i < n; i++) keys.push(key + '_' + i);
+  c.removeAll(keys);
 }
 function loadHolidays_() {
   var vals = plain_(sheet_(SHEET.CAL).getDataRange().getValues()), h = {};
@@ -250,22 +259,23 @@ function loadHolidays_() {
   return h;
 }
 function askAbsence_(user, question, abs, t0) {
-  var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), answer = '', ok = false;
+  var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), answer = '', ok = false, loadMs = 0;
   var src = '有給・欠勤データ(日報アプリのAbsenteeism)';
   if (abs.who === 'ambiguous') {
     answer = '該当する方が複数います: ' + abs.people.map(function (p) { return p.name + '(社員No' + p.no + ')'; }).join('、') + '。お一人ずつ質問してください。';
   } else {
     var p = abs.who === 'self' ? { no: user.no, name: user.name } : abs.people[0];
-    var rows = loadAbsence_();
+    var tLoad = Date.now(), rows = loadAbsence_();
     if (!rows.length) throw err_('no_data', '有給・欠勤のデータがまだ取り込まれていません。管理者に連絡してください');
-    var sum = AI_LOGIC.summarizeAbsence(rows, p.no, abs.period, loadHolidays_());
+    var hol = loadHolidays_(); loadMs = Date.now() - tLoad; // データの読み込み時間(質問ログの「検索」列に記録)
+    var sum = AI_LOGIC.summarizeAbsence(rows, p.no, abs.period, hol);
     answer = AI_LOGIC.formatAbsenceAnswer(p.name, p.no, abs.period, sum, abs.remain, getMeta_('absence_synced_at').slice(0, 10) || '更新日不明');
     ok = true;
   }
   var total = Date.now() - t0;
-  logAsk_(qid, user, question, answer, '回答済', ok ? src : '', 0, 0, total, '');
+  logAsk_(qid, user, question, answer, '回答済', ok ? src : '', loadMs, 0, total, '');
   return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], asOf: '有給・欠勤 ' + (getMeta_('absence_synced_at') || '(更新日不明)'),
-           ms: { search: 0, ai: 0, total: total } };
+           ms: { search: loadMs, ai: 0, total: total } };
 }
 
 // ---------- 生産重量の質問(「加工」完了日の重量。締め日基準): コードが集計して答える ----------
@@ -517,6 +527,7 @@ function syncAbsence_(b2, b5) {
     var r = AI_LOGIC.mergeAbsence(plain_(s2.getDataRange().getValues()), s5 ? plain_(s5.getDataRange().getValues()) : null);
     if (r.table.length < 1000) throw new Error('有給欠勤の件数が極端に少ない(' + r.table.length + '件)ため更新を中止しました');
     writeTable_(sheet_(SHEET.ABS, AI_LOGIC.ABS_HEADER), [AI_LOGIC.ABS_HEADER].concat(r.table));
+    dropLarge_('absence');
     setMeta_('absence_synced_at', now_());
     setMeta_('absence_error', r.warnings.concat(s5 ? [] : ['B5にAbsenteeismシートが無いため、B2のみ取り込みました']).join(' / '));
   } catch (err) { setMeta_('absence_error', now_() + ' ' + err.message); }
@@ -777,7 +788,7 @@ var GUIDE_LINES = [
 ];
 // 5分おきに呼ばれ、GASの起動とキャッシュ(名簿・就業規則・工事一覧)を温めておく。失敗しても何もしない
 function keepWarm() {
-  try { getRoster_(); loadRules_(); loadProjects_(); loadProdProjects_(); } catch (e) { Logger.log('keepWarm: ' + e); }
+  try { getRoster_(); loadRules_(); loadProjects_(); loadProdProjects_(); loadAbsence_(); } catch (e) { Logger.log('keepWarm: ' + e); }
 }
 
 function setup() {

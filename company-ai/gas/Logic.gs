@@ -293,14 +293,28 @@ var AI_LOGIC = (function () {
     var maxLen = 0; out.forEach(function (p) { maxLen = Math.max(maxLen, normName(p.name).length); });
     out = out.filter(function (p) { return normName(p.name).length === maxLen; }); // 長い名前を優先(部分一致の取りこぼし防止)
     if (out.length) return out;
-    // 氏名の完全一致が無いとき: 姓だけ(「角さん」「角の」)。名簿の姓と名の間に空白がある場合だけ。同じ姓が複数なら呼び出し側で「複数該当」になる
+    var sh = surnameHit(sq, roster); // 氏名の完全一致が無いとき: 姓だけ(「角さん」「角の」)。同じ姓が複数なら呼び出し側で「複数該当」になる
+    return sh ? sh.people : [];
+  }
+  // 姓だけの指定を探す。名簿の姓と名の間に空白があれば空白で、空白が無ければ先頭1〜3文字で姓とみなす。
+  // 姓は、文頭か助詞(の・は…)の直後にあり、すぐあとに「さん・の・は…」が続くときだけ。戻り値: {sn, people} / null
+  function surnameRe(sn) { return new RegExp('((?:^|[のはがをにと、,〜~\\s\\d/]))' + escRe(sn) + '(?=さん|くん|君|の|は|が|を|に)'); }
+  function surnameHit(sq, roster) {
+    var hits = [], sn0 = '';
     roster.forEach(function (p) {
-      var parts = nfkc(p.name).trim().split(/\s+/);
-      if (parts.length < 2 || !parts[0]) return;
-      var sn = parts[0].replace(/[.\\^$*+?()[\]{}|\/-]/g, '\\$&');
-      if (new RegExp(sn + '(さん|くん|君|の|は|が|を|に)').test(sq)) out.push(p);
+      var sp = surnameOf(p.name); if (!sp) return;
+      var sn = squash(sp); if (surnameRe(sn).test(sq)) { hits.push(p); sn0 = sn0 || sn; }
     });
-    return out;
+    if (hits.length) return { sn: sn0, people: hits };
+    for (var L = 3; L >= 1; L--) {
+      var cand = [];
+      roster.forEach(function (p) {
+        var n = normName(p.name); if (surnameOf(p.name) || n.length <= L) return;
+        if (surnameRe(n.slice(0, L)).test(sq)) cand.push({ p: p, sn: n.slice(0, L) });
+      });
+      if (cand.length) { return { sn: cand[0].sn, people: cand.filter(function (c) { return c.sn === cand[0].sn; }).map(function (c) { return c.p; }) }; }
+    }
+    return null;
   }
   // 戻り値: null(就業規則の質問として扱う) / {who:'self'|'person'|'ambiguous', people, period, remain}
   function parseAbsenceQuery(q, today, roster) {
@@ -662,6 +676,7 @@ var AI_LOGIC = (function () {
       if (n.length >= 2) r = r.split(n).join('');
       if (sn) r = r.split(squash(sn)).join('');
     });
+    var sh = surnameHit(squash(q), roster); if (sh) r = r.replace(surnameRe(sh.sn), '$1');
     return r.replace(C_PERIOD, '').replace(C_TOPIC, '').replace(C_SELF, '').replace(C_FILLER, '');
   }
   var RULE_MENU = [
@@ -711,9 +726,9 @@ var AI_LOGIC = (function () {
     var people = (topic === 'abs' || topic === 'work') ? findPeople(q, roster) : [];
     // 人: 姓だけで複数に当たる
     if (people.length > 1 && !people.some(function (p) { return sq.indexOf(normName(p.name)) >= 0; })) {
-      var sn = surnameOf(people[0].name), re = new RegExp(escRe(squash(sn)) + '(?=さん|くん|君|の|は|が|を|に)');
-      return res('「' + sn + '」さんが複数います。どなたですか?', people.slice(0, 10).map(function (p) {
-        var q2 = sq.replace(re, normName(p.name)); if (q2 === sq) q2 = normName(p.name) + 'の' + sq;
+      var shit = surnameHit(sq, roster), re = surnameRe(shit ? shit.sn : '');
+      return res('「' + (shit ? shit.sn : '') + '」さんが複数います。どなたですか?', people.slice(0, 10).map(function (p) {
+        var q2 = sq.replace(re, '$1' + normName(p.name)); if (q2 === sq) q2 = normName(p.name) + 'の' + sq;
         return { label: p.name + '(社員No' + p.no + ')', q: q2 };
       }));
     }
