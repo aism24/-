@@ -29,3 +29,4 @@ textarea { width:100%; border:1px solid var(--line); border-radius:4px; padding:
 .fb textarea { margin-top:6px; }
 .thanks { color:var(--muted); font-size:12px; }
 .ask textarea { min-height:56px; }
+.warn { color:#d00; font-weight:700; margin-top:4px; }
