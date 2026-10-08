@@ -136,7 +136,7 @@
       good.disabled = bad.disabled = send.disabled = true;
       api('feedback', { qid: r.qid, rating: rating, comment: comment }).then(function () {
         thanks.textContent = rating === 'bad' ? '報告しました。担当者が確認します。' : 'ありがとうございます。';
-        box.style.display = 'none';
+        box.style.display = 'none'; good.style.display = bad.style.display = 'none'; // 評価を送ったら、ボタンは消して、お礼だけ残す
       }).catch(function (e) { good.disabled = bad.disabled = send.disabled = false; thanks.textContent = '送れませんでした: ' + e.message; });
     }
     good.type = bad.type = 'button';
