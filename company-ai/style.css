@@ -1,7 +1,7 @@
-:root { --bg:#f4f6f8; --card:#fff; --fg:#111; --muted:#555; --line:#b8c2cc; --accent:#1f6feb; --bad:#f8d7da; --ok:#e6f4ea; --head:#e8edf2; color-scheme:light; }
+:root { --bg:#d9c9a0; --card:#fbf3dc; --fg:#2b1b0e; --muted:#6b4a2a; --line:#6b4a2a; --accent:#a31621; --bad:#f4c9c4; --ok:#e6f4ea; --head:#efe2bd; color-scheme:light; }
 * { box-sizing:border-box; }
-body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,"Hiragino Sans","Yu Gothic",Meiryo,sans-serif; font-weight:700; }
-.page { max-width:none; margin:0 auto; padding:0 16px 80px; }
+body { margin:0; background:radial-gradient(circle at 50% 30%,#eadfc3,#cdb98a); min-height:100vh; color:var(--fg); font:15px/1.6 -apple-system,"Hiragino Sans","Yu Gothic",Meiryo,sans-serif; font-weight:700; }
+.page { max-width:none; margin:0 auto; padding:0 56px 80px; }
 .app-header { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; row-gap:2px; column-gap:8px; padding:16px 0 8px; }
 .app-header h1 { grid-column:2; grid-row:1; margin:0; font-size:20px; text-align:center; }
 .app-header .brand { grid-column:3; grid-row:1; justify-self:end; display:flex; align-items:center; gap:8px; }
@@ -35,3 +35,18 @@ textarea { width:100%; border:1px solid var(--line); border-radius:4px; padding:
 .tabs { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:8px; }
 .tabs .cg { color:var(--muted); font-size:13px; }
 .tabs .btn.sel { background:#cfe2ff; border-color:var(--accent); font-weight:bold; }
+/* 忍者の背景: 和紙、左右の竹、巻物風のカード(文面は変えない) */
+body::before, body::after { content:''; position:fixed; top:0; bottom:0; width:26px; z-index:0; background:linear-gradient(90deg,#3d6b32,#7fb069,#3d6b32); box-shadow:0 0 0 2px #2a4a22; }
+body::before { left:12px; } body::after { right:12px; }
+.page { position:relative; z-index:1; }
+.card, .msg .q, .msg .a { background:var(--card); border:3px solid var(--line); border-radius:4px; box-shadow:0 6px 0 #6b4a2a66; position:relative; }
+.msg .q { background:var(--head); }
+.msg .a { margin-right:0; } .msg .q { margin-left:0; }
+.card::before, .card::after, .msg .a::before, .msg .a::after { content:''; position:absolute; left:-16px; right:-16px; height:14px; background:#7a4a1c; border-radius:7px; }
+.card::before, .msg .a::before { top:-10px; } .card::after, .msg .a::after { bottom:-10px; }
+.card { margin:26px 0; } .msg .a { margin-top:26px; margin-bottom:10px; } .msg { margin:26px 0; }
+.app-header h1 { letter-spacing:6px; }
+.btn { background:#2b1b0e; color:#fbf3dc; border-color:#2b1b0e; } .btn.primary, .btn.sel, .btn.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+.tabs .btn { background:#7a4a1c; border-color:#7a4a1c; }
+textarea { background:#fffaf0; border:2px solid var(--line); }
+.status { background:var(--head); }
