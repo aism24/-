@@ -176,14 +176,15 @@ function splitLabor({ v, cell, sec, cats, amount, profit, profitCell }) {
     for (let r = s; r <= e; r++) {
       inSec.add(r);
       const c = v(r, 3);
+      // 工場加工費・事務図面費: C列かL列のどちらかに色があれば労務(色の塗り忘れで労務が0円になるのを防ぐ。26-16で発生)
       const isLabor = cat === '現場費'
         ? typeof c === 'string' && c.normalize('NFKC').replace(/\s/g, '') === '労務経費'
-        : isFilled(cell(r, 3));
+        : isFilled(cell(r, 3)) || isFilled(cell(r, 12));
       (isLabor ? lab : oth).push(r);
       if (isLabor) laborRows.add(r);
-      // 工場加工費・事務図面費: 労務の行は L列(請求計)にも色がある。C列と食い違えば色の塗り忘れの疑い
-      if (cat !== '現場費' && isLabor !== isFilled(cell(r, 12)) && (val(r, 0) || val(r, 1)))
-        add('warn', `${cat}の${rowName(r)}: C列とL列の色が食い違っています(C列=${isLabor ? '色あり' : '色なし'}、L列=${isLabor ? '色なし' : '色あり'})`);
+      // 工場加工費・事務図面費: 労務の行は L列(請求計)にも色がある。C列と食い違えば色の塗り忘れの疑い(労務として扱い、警告は残す)
+      if (cat !== '現場費' && isFilled(cell(r, 3)) !== isFilled(cell(r, 12)) && (val(r, 0) || val(r, 1)))
+        add('warn', `${cat}の${rowName(r)}: C列とL列の色が食い違っています(C列=${isFilled(cell(r, 3)) ? '色あり' : '色なし'}、L列=${isFilled(cell(r, 12)) ? '色あり' : '色なし'})。どちらかに色があれば労務として扱っています`);
     }
     const sum = (rows, side) => rows.reduce((t, r) => t + val(r, side), 0);
     breakdown[laborName] = [sum(lab, 0), sum(lab, 1)];
