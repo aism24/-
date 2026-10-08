@@ -746,19 +746,18 @@ var AI_LOGIC = (function () {
     }
     // 期間
     if (parseDay(q, today) || /\d{4}\/\d{1,2}\/\d{1,2}[〜~]/.test(t)) return null;
-    function span(label, from, to) { return { label: label + '(' + from + '〜' + to + ')', from: from, to: to }; }
+    function span(label, from, to) { return { label: label + ' ' + from + '〜' + to, from: from, to: to }; }
     function make(phrase, opts) {
       return res('期間は、どちらですか?', opts.map(function (o) { return { label: o.label, q: t.replace(phrase, o.from + '〜' + o.to) }; }));
     }
     if ((mm = /(今年|本年|去年|昨年|前年)(?!度)/.exec(t)) && !/暦年|会計/.test(t)) {
       var off = /^(去年|昨年|前年)$/.test(mm[1]) ? -1 : 0, yy = y + off, ys = ((m > 11 || (m === 11 && d >= 21)) ? y : y - 1) + off, s0 = (m >= 4 ? y : y - 1) + off;
-      var cal = span('暦年 ' + yy + '年', ymd(yy, 1, 1), ymd(yy, 12, 31));
-      return make(mm[0], [cal, topic === 'work' || topic === 'prod'
-        ? span('会計年度', ymd(ys, 11, 21), ymd(ys + 1, 11, 20)) : span('年度(4月〜3月)', ymd(s0, 4, 1), ymd(s0 + 1, 3, 31))]);
+      var cal = span('暦年', ymd(yy, 1, 1), ymd(yy, 12, 31)), fy = span('会計年度(11/21〜)', ymd(ys, 11, 21), ymd(ys + 1, 11, 20));
+      return make(mm[0], topic === 'abs' || topic === 'abs?' ? [cal, fy, span('有給の年度(4/1〜3/31)', ymd(s0, 4, 1), ymd(s0 + 1, 3, 31))] : [cal, fy]);
     }
     if (topic === 'work' && (mm = /(今年度|本年度|今期|昨年度|去年度|前年度)/.exec(t)) && !/会計/.test(t)) {
       var off2 = /(昨|去|前)/.test(mm[1]) ? -1 : 0, ys2 = ((m > 11 || (m === 11 && d >= 21)) ? y : y - 1) + off2, s2 = (m >= 4 ? y : y - 1) + off2;
-      return make(mm[0], [span('会計年度', ymd(ys2, 11, 21), ymd(ys2 + 1, 11, 20)), span('年度(4月〜3月)', ymd(s2, 4, 1), ymd(s2 + 1, 3, 31))]);
+      return make(mm[0], [span('会計年度(11/21〜)', ymd(ys2, 11, 21), ymd(ys2 + 1, 11, 20)), span('4月始まりの年度(4/1〜3/31)', ymd(s2, 4, 1), ymd(s2 + 1, 3, 31))]);
     }
     if (!/月度|暦月/.test(t) && ((mm = /(先々月|先月|前月|今月|当月)(?!度)/.exec(t)) || (mm = /(\d{1,2})月(?![曜度日\d])/.exec(t)))) {
       var md = parsePeriod(mm[0], today, 'month'), cmo = calMonth(today, mm[0]);
