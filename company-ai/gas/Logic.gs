@@ -677,13 +677,29 @@ var AI_LOGIC = (function () {
     return { from: ymd(y, m, 1), to: ymd(y, m, new Date(Date.UTC(y, m, 0)).getUTCDate()), label: y + '年' + m + '月' };
   }
   // get: {roster(), work(), prod()}。戻り値: null / {message, choices:[{label, q}]}
-  function clarify(q, today, get) {
+  function clarify(q, today, get, sel) {
     var t = nfkc(q), sq = squash(q), mm, y = +today.slice(0, 4), m = +today.slice(5, 7), d = +today.slice(8, 10);
     function res(msg, choices) { return { message: msg, choices: choices.slice(0, 10) }; }
     var bare = sq.replace(C_FILLER, '');
     for (var i = 0; i < RULE_MENU.length; i++) {
       if (RULE_MENU[i].re.test(bare)) return res(RULE_MENU[i].msg, RULE_MENU[i].qs.map(function (x) { return { label: x, q: x }; }));
     }
+    sel = sel || '';
+    if (sel === 'rules!') return null; // 就業規則のまま、と選び直した質問
+    var HAS_PROD = PROD_TOPIC.test(t), HAS_WORK = WORK_TOPIC.test(t), HAS_ABS = /(有給|有休|年休|欠勤|遅刻|早退|遅早|届)/.test(t);
+    function sw(label, topic) { return { label: label, q: q, topic: topic }; }
+    // 画面で話題のボタン(就業規則/日報アプリ/生産管理)を選んでいて、質問の内容が別の話題のとき
+    if (sel === 'rules' && (HAS_PROD || HAS_WORK)) {
+      return res('「就業規則」を選んでいますが、' + (HAS_PROD ? '生産管理' : '日報アプリ') + 'の質問のようです。どちらで調べますか?',
+        [sw(HAS_PROD ? '生産管理で調べる' : '日報アプリで調べる', HAS_PROD ? 'prod' : 'daily'), sw('就業規則で調べる', 'rules!')]);
+    }
+    if (sel === 'prod' && (HAS_ABS || HAS_WORK) && !HAS_PROD) return res('「生産管理」を選んでいますが、日報アプリの質問のようです。切り替えますか?', [sw('日報アプリで調べる', 'daily')]);
+    if (sel === 'daily' && HAS_PROD && !HAS_ABS && !HAS_WORK) return res('「日報アプリ」を選んでいますが、生産管理の質問のようです。切り替えますか?', [sw('生産管理で調べる', 'prod')]);
+    if (sel === 'daily' && !HAS_ABS && !HAS_WORK && !HAS_PROD && !parseCalendarQuery(q, today)) {
+      var core0 = sq.replace(/[はが]?[?？]*$/, '');
+      return res('日報アプリの何について調べますか?', [{ label: '工数(日報)', q: core0 + 'の工数', topic: 'daily' }, { label: '有給・欠勤・届', q: core0 + 'の有給状況', topic: 'daily' }]);
+    }
+    if (sel === 'rules') return null;
     if (/(出荷|組立|溶接|切断|塗装|検査|製作完了|製品完成)/.test(t) && /(量|重量|トン)/.test(t) && !/加工/.test(t)) {
       var cm = parsePeriod('今月', today, 'month');
       return res('このアプリで答えられるのは、「加工」が完了した生産重量だけです。出荷・組立など、ほかの工程の重量は集計していません。', [{ label: '今月度の生産重量(加工完了)', q: cm.from + '〜' + cm.to + 'の生産重量' }]);
@@ -757,6 +773,13 @@ var AI_LOGIC = (function () {
     }
     return null;
   }
+  // 「生産管理」を選んでいて、話題の語が無い質問(「今月は?」)は、生産重量の質問として扱う
+  function applyTopic(q, sel, today) {
+    if (sel !== 'prod') return q;
+    var t = nfkc(q);
+    if (PROD_TOPIC.test(t) || WORK_TOPIC.test(t) || /(有給|有休|年休|欠勤|遅刻|早退|遅早|届)/.test(t) || parseCalendarQuery(q, today)) return q;
+    return q.replace(/[はが]?[?？]*$/, '') + 'の生産重量';
+  }
   // 生産重量の回答の下に出す、加工先・部位の切り替えボタン。f: {sites, parts, period, project}
   function prodChoices(f) {
     var base = f.period.from + '〜' + f.period.to + 'の' + (f.project ? f.project.name + 'の' : ''), out = [];
@@ -764,10 +787,10 @@ var AI_LOGIC = (function () {
       return base + (sites.length ? sites.join('・') + 'の' : '') + (parts.length ? parts.map(function (x) { return x === '他' ? 'その他' : x; }).join('・') + 'の' : '') + '生産重量';
     }
     var fs = f.sites || [], fp = f.parts || [];
-    if (fs.length) out.push({ group: '加工先', label: '全社', q: mk([], fp) });
-    SITES.forEach(function (s) { if (fs.indexOf(s) < 0) out.push({ group: '加工先', label: s, q: mk([s], fp) }); });
-    if (fp.length) out.push({ group: '部位', label: '全部位', q: mk(fs, []) });
-    ['大梁', '小梁', '柱', '他'].forEach(function (x) { if (fp.indexOf(x) < 0) out.push({ group: '部位', label: x, q: mk(fs, [x]) }); });
+    if (fs.length) out.push({ group: '加工先', label: '全社', q: mk([], fp), topic: 'prod' });
+    SITES.forEach(function (s) { if (fs.indexOf(s) < 0) out.push({ group: '加工先', label: s, q: mk([s], fp), topic: 'prod' }); });
+    if (fp.length) out.push({ group: '部位', label: '全部位', q: mk(fs, []), topic: 'prod' });
+    ['大梁', '小梁', '柱', '他'].forEach(function (x) { if (fp.indexOf(x) < 0) out.push({ group: '部位', label: x, q: mk(fs, [x]), topic: 'prod' }); });
     return out;
   }
 
@@ -778,5 +801,5 @@ var AI_LOGIC = (function () {
            parseAbsenceQuery: parseAbsenceQuery, daysInPeriod: daysInPeriod, summarizeAbsence: summarizeAbsence, formatAbsenceAnswer: formatAbsenceAnswer,
            WORK_HEADER: WORK_HEADER, buildConsMap: buildConsMap, workFromB2: workFromB2, workFromB5: workFromB5, sortWork: sortWork, findProjects: findProjects,
            PROD_HEADER: PROD_HEADER, countWorkDays: countWorkDays, parseMasterRows: parseMasterRows, parseProdQuery: parseProdQuery, summarizeProd: summarizeProd, formatProdAnswer: formatProdAnswer,
-           clarify: clarify, prodChoices: prodChoices, parseCalendarQuery: parseCalendarQuery, answerCalendar: answerCalendar, parseDay: parseDay, parseWorkQuery: parseWorkQuery, summarizeWork: summarizeWork, formatWorkAnswer: formatWorkAnswer };
+           clarify: clarify, applyTopic: applyTopic, prodChoices: prodChoices, parseCalendarQuery: parseCalendarQuery, answerCalendar: answerCalendar, parseDay: parseDay, parseWorkQuery: parseWorkQuery, summarizeWork: summarizeWork, formatWorkAnswer: formatWorkAnswer };
 })();

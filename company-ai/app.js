@@ -104,7 +104,7 @@
       var g = c.group || '', row = rows[g];
       if (!row) { row = rows[g] = el('div', 'choices'); if (g) row.appendChild(el('span', 'cg', g + ':')); m.a.appendChild(row); }
       var b = el('button', 'btn', c.label); b.type = 'button';
-      b.onclick = function () { ask(c.q); };
+      b.onclick = function () { ask(c.q, c.topic); };
       row.appendChild(b);
     });
   }
@@ -147,15 +147,23 @@
     $('q').value = ''; $('qcnt').textContent = '0/300';
     ask(q);
   }
-  function ask(q) {
+  // 話題のボタン(就業規則/日報アプリ/生産管理)。押した話題を質問と一緒に送る。もう一度押すと解除
+  var topic = '';
+  function setTopic(t) {
+    topic = t === topic ? '' : t;
+    Array.prototype.forEach.call(document.querySelectorAll('#tabs .btn'), function (b) { b.classList.toggle('sel', b.getAttribute('data-t') === topic); });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('#tabs .btn'), function (b) { b.onclick = function () { setTopic(b.getAttribute('data-t')); }; });
+  function ask(q, forceTopic) {
     if ($('sendBtn').disabled) return;
+    if (forceTopic) { var ft = forceTopic.replace('!', ''); if (ft !== topic) setTopic(ft); }
     $('sendBtn').disabled = true;
     $('log').textContent = ''; // 1問1答: 前回の質問と回答を消す
     var m = addMessage(q), t0 = Date.now(), tries = 1;
     var tick = setInterval(function () {
       m.a.textContent = '考え中…' + Math.round((Date.now() - t0) / 1000) + '秒' + (tries > 1 ? '(混み合っているため再試行しています ' + tries + '/' + MAX_TRIES + ')' : '');
     }, 1000);
-    api('ask', { question: q }, function (n) { tries = n; }).then(function (r) { clearInterval(tick); renderAnswer(m, r); })
+    api('ask', { question: q, topic: forceTopic || topic }, function (n) { tries = n; }).then(function (r) { clearInterval(tick); renderAnswer(m, r); })
       .catch(function (e) {
         clearInterval(tick);
         m.a.classList.add('ng'); m.a.textContent = e.message;
