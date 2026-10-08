@@ -794,20 +794,36 @@ var AI_LOGIC = (function () {
     if (PROD_TOPIC.test(t) || WORK_TOPIC.test(t) || /(有給|有休|年休|欠勤|遅刻|早退|遅早|届)/.test(t) || parseCalendarQuery(q, today)) return q;
     return q.replace(/[はが]?[?？]*$/, '') + 'の生産重量';
   }
-  // 生産重量の回答の下に出す、加工先・部位の切り替えボタン。f: {sites, parts, period, project}
-  function prodChoices(f) {
-    var base = f.period.from + '〜' + f.period.to + 'の' + (f.project ? f.project.name + 'の' : ''), out = [];
-    function mk(sites, parts) {
-      return base + (sites.length ? sites.join('・') + 'の' : '') + (parts.length ? parts.map(function (x) { return x === '他' ? 'その他' : x; }).join('・') + 'の' : '') + '生産重量';
+  // 回答の下に出す、期間の切り替えボタン。cur: 今の期間。mk(範囲の文字)で、同じ質問を別の期間で出し直す文を作る
+  function periodChoices(today, cur, kind, mk) {
+    var y = +today.slice(0, 4), m = +today.slice(5, 7), d = +today.slice(8, 10), out = [];
+    function add(label, from, to) {
+      if (cur && cur.from === from && cur.to === to) return;
+      out.push({ group: '期間', label: label + ' ' + from + '〜' + to, q: mk(from + '〜' + to) });
+    }
+    var md = parsePeriod('今月', today, 'month'), pm = parsePeriod('先月', today, 'month'), cm = calMonth(today, '今月');
+    add('今月度', md.from, md.to); add('先月度', pm.from, pm.to); add('暦月(今月)', cm.from, cm.to);
+    var ys = (m > 11 || (m === 11 && d >= 21)) ? y : y - 1;
+    add('暦年(今年)', ymd(y, 1, 1), ymd(y, 12, 31));
+    add('会計年度(今年)', ymd(ys, 11, 21), ymd(ys + 1, 11, 20)); add('会計年度(昨年)', ymd(ys - 1, 11, 21), ymd(ys, 11, 20));
+    if (kind === 'abs') { var s0 = m >= 4 ? y : y - 1; add('有給の年度(今年度)', ymd(s0, 4, 1), ymd(s0 + 1, 3, 31)); add('有給の年度(昨年度)', ymd(s0 - 1, 4, 1), ymd(s0, 3, 31)); }
+    return out;
+  }
+  // 生産重量の回答の下に出す、加工先・部位・期間の切り替えボタン。f: {sites, parts, period, project}
+  function prodChoices(f, today) {
+    var out = [];
+    function mk(sites, parts, rng) {
+      return (rng || f.period.from + '〜' + f.period.to) + 'の' + (f.project ? f.project.name + 'の' : '') + (sites.length ? sites.join('・') + 'の' : '')
+        + (parts.length ? parts.map(function (x) { return x === '他' ? 'その他' : x; }).join('・') + 'の' : '') + '生産重量';
     }
     var fs = f.sites || [], fp = f.parts || [];
     if (fs.length) out.push({ group: '加工先', label: '全社', q: mk([], fp), topic: 'prod' });
     SITES.forEach(function (s) { if (fs.indexOf(s) < 0) out.push({ group: '加工先', label: s, q: mk([s], fp), topic: 'prod' }); });
     if (fp.length) out.push({ group: '部位', label: '全部位', q: mk(fs, []), topic: 'prod' });
     ['大梁', '小梁', '柱', '他'].forEach(function (x) { if (fp.indexOf(x) < 0) out.push({ group: '部位', label: x, q: mk(fs, [x]), topic: 'prod' }); });
+    if (today) periodChoices(today, f.period, 'prod', function (r) { return mk(fs, fp, r); }).forEach(function (c) { c.topic = 'prod'; out.push(c); });
     return out;
   }
-
   return { nfkc: nfkc, squash: squash, parseRules: parseRules, chunkLabel: chunkLabel, searchRules: searchRules,
            buildPrompt: buildPrompt, pickSources: pickSources, parseModelJson: parseModelJson, mergeRoster: mergeRoster, readRoster: readRoster,
            normEmail: normEmail, fixEmail: fixEmail, normName: normName,
@@ -815,5 +831,5 @@ var AI_LOGIC = (function () {
            parseAbsenceQuery: parseAbsenceQuery, daysInPeriod: daysInPeriod, summarizeAbsence: summarizeAbsence, formatAbsenceAnswer: formatAbsenceAnswer,
            WORK_HEADER: WORK_HEADER, buildConsMap: buildConsMap, workFromB2: workFromB2, workFromB5: workFromB5, sortWork: sortWork, findProjects: findProjects,
            PROD_HEADER: PROD_HEADER, countWorkDays: countWorkDays, parseMasterRows: parseMasterRows, parseProdQuery: parseProdQuery, summarizeProd: summarizeProd, formatProdAnswer: formatProdAnswer,
-           clarify: clarify, applyTopic: applyTopic, prodChoices: prodChoices, parseCalendarQuery: parseCalendarQuery, answerCalendar: answerCalendar, parseDay: parseDay, parseWorkQuery: parseWorkQuery, summarizeWork: summarizeWork, formatWorkAnswer: formatWorkAnswer };
+           clarify: clarify, applyTopic: applyTopic, prodChoices: prodChoices, periodChoices: periodChoices, parseCalendarQuery: parseCalendarQuery, answerCalendar: answerCalendar, parseDay: parseDay, parseWorkQuery: parseWorkQuery, summarizeWork: summarizeWork, formatWorkAnswer: formatWorkAnswer };
 })();
