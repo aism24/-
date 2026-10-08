@@ -55,10 +55,13 @@
     if (on) el.textContent = 'ログインを確認しています…' + (tries > 1 ? '(混み合っているため再試行しています ' + tries + '/' + MAX_TRIES + ')' : '(最大30秒ほどかかることがあります)');
     $('gsiBtn').style.display = on ? 'none' : '';
   }
+  // 名簿の確認(me)は、結果を待たずに質問画面を先に出して、裏で確かめる。登録が無い・期限切れのときだけログイン画面に戻す
   function checkMe() {
-    showLogin(''); loginBusy(true, 1);
-    return api('me', null, function (n) { loginBusy(true, n); }).then(function (me) { loginBusy(false); showChat(me); })
-      .catch(function (e) { loginBusy(false); tokenSet(''); token = ''; showLogin(e.message); renderBtn(); });
+    showChat({});
+    return api('me', null).catch(function (e) {
+      if (e.code === 'net') return; // 通信の失敗は、質問を送るときにもう一度確かめる
+      $('log').textContent = ''; tokenSet(''); token = ''; showLogin(e.message); renderBtn();
+    });
   }
   function onCredential(resp) { token = resp.credential; tokenSet(token); checkMe(); }
 
