@@ -97,8 +97,20 @@
     $('log').appendChild(wrap); wrap.scrollIntoView({ block: 'end', behavior: 'smooth' });
     return { wrap: wrap, a: a };
   }
+  // 選択肢のボタン(曖昧な質問の確認、生産重量の加工先・部位の切り替え)。押すと、その文が新しい1問になる
+  function addChoices(m, choices) {
+    var rows = {};
+    choices.forEach(function (c) {
+      var g = c.group || '', row = rows[g];
+      if (!row) { row = rows[g] = el('div', 'choices'); if (g) row.appendChild(el('span', 'cg', g + ':')); m.a.appendChild(row); }
+      var b = el('button', 'btn', c.label); b.type = 'button';
+      b.onclick = function () { ask(c.q); };
+      row.appendChild(b);
+    });
+  }
   function renderAnswer(m, r) {
     m.a.textContent = '';
+    if (r.clarify) { m.a.appendChild(el('div', '', r.answer)); addChoices(m, r.choices || []); return; }
     if (r.answerable) {
       m.a.appendChild(el('div', '', r.answer));
       m.a.appendChild(el('div', 'src', '根拠: ' + r.sources.join(' / ') + (r.asOf ? '\nデータ: ' + r.asOf : '')));
@@ -126,12 +138,18 @@
     fb.appendChild(good); fb.appendChild(bad); fb.appendChild(thanks);
     box.appendChild(ta); box.appendChild(send);
     m.a.appendChild(fb); m.a.appendChild(box);
+    if (r.choices && r.choices.length) addChoices(m, r.choices);
   }
 
   function onSubmit(ev) {
     ev.preventDefault();
     var q = $('q').value.trim(); if (!q) return;
-    $('q').value = ''; $('qcnt').textContent = '0/300'; $('sendBtn').disabled = true;
+    $('q').value = ''; $('qcnt').textContent = '0/300';
+    ask(q);
+  }
+  function ask(q) {
+    if ($('sendBtn').disabled) return;
+    $('sendBtn').disabled = true;
     $('log').textContent = ''; // 1問1答: 前回の質問と回答を消す
     var m = addMessage(q), t0 = Date.now(), tries = 1;
     var tick = setInterval(function () {
