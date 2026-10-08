@@ -259,7 +259,7 @@ function loadHolidays_() {
   return h;
 }
 function askAbsence_(user, question, abs, t0) {
-  var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), answer = '', ok = false, loadMs = 0;
+  var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), answer = '', ok = false, loadMs = 0, choices = [];
   var src = '有給・欠勤データ(日報アプリのAbsenteeism)';
   if (abs.who === 'ambiguous') {
     answer = '該当する方が複数います: ' + abs.people.map(function (p) { return p.name + '(社員No' + p.no + ')'; }).join('、') + '。お一人ずつ質問してください。';
@@ -271,10 +271,12 @@ function askAbsence_(user, question, abs, t0) {
     var sum = AI_LOGIC.summarizeAbsence(rows, p.no, abs.period, hol);
     answer = AI_LOGIC.formatAbsenceAnswer(p.name, p.no, abs.period, sum, abs.remain, getMeta_('absence_synced_at').slice(0, 10) || '更新日不明');
     ok = true;
+    var who = abs.who === 'self' ? '私' : AI_LOGIC.normName(p.name);
+    choices = AI_LOGIC.periodChoices(Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), abs.period, 'abs', function (r) { return who + 'の' + r + 'の有給・欠勤・届の状況'; });
   }
   var total = Date.now() - t0;
   logAsk_(qid, user, question, answer, '回答済', ok ? src : '', loadMs, 0, total, '');
-  return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], asOf: '有給・欠勤 ' + (getMeta_('absence_synced_at') || '(更新日不明)'),
+  return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], choices: choices, asOf: '有給・欠勤 ' + (getMeta_('absence_synced_at') || '(更新日不明)'),
            ms: { search: loadMs, ai: 0, total: total } };
 }
 
@@ -309,7 +311,7 @@ function askProd_(user, question, pq, t0) {
   }
   var total = Date.now() - t0;
   logAsk_(qid, user, question, answer, '回答済', src, 0, 0, total, '');
-  return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], choices: pq.projects.length > 1 ? [] : AI_LOGIC.prodChoices({ sites: pq.sites, parts: pq.parts, period: pq.period, project: pq.projects[0] }), asOf: '生産重量 ' + (getMeta_('prod_synced_at') || '(更新日不明)'), ms: { search: 0, ai: 0, total: total } };
+  return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], choices: pq.projects.length > 1 ? [] : AI_LOGIC.prodChoices({ sites: pq.sites, parts: pq.parts, period: pq.period, project: pq.projects[0] }, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd')), asOf: '生産重量 ' + (getMeta_('prod_synced_at') || '(更新日不明)'), ms: { search: 0, ai: 0, total: total } };
 }
 
 // 案件マスター(約34件)から「加工」完了分だけを「生産重量」シートへ。工事番号・工事名は「Excelマスタ一覧」の表を正とする。
@@ -448,7 +450,7 @@ function rangeRows_(sheetName, dateCol, ncols, fromNum, toNum) {
 }
 function workRows_(sheetName, fromNum, toNum) { return rangeRows_(sheetName, 3, AI_LOGIC.WORK_HEADER.length, fromNum, toNum); }
 function askWork_(user, question, wk, t0) {
-  var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), answer = '';
+  var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), answer = '', choices = [];
   var src = '日報データ(日報アプリのDailyReport)';
   if (wk.who === 'ambiguous') {
     answer = '該当する方が複数います: ' + wk.people.map(function (p) { return p.name + '(社員No' + p.no + ')'; }).join('、') + '。お一人ずつ質問してください。';
@@ -469,10 +471,14 @@ function askWork_(user, question, wk, t0) {
     answer = AI_LOGIC.formatWorkAnswer(sum, { title: title, period: wk.period, names: names, contentNames: loadContentNames_(),
       showPeople: !person, skipProject: !!f.project, asOf: (getMeta_('work_synced_at') || '').slice(0, 10) || '更新日不明' });
     if (!f.project && !person) answer = '誰の・どの工事の工数かを書いてください(例: 「私の今月の工数」「◯◯さんの先月の作業時間」)。';
+    else {
+      var wwho = person ? (wk.who === 'self' ? '私' : AI_LOGIC.normName(person.name)) + 'の' : '', wpj = f.project ? f.project.name + 'の' : '';
+      choices = AI_LOGIC.periodChoices(Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), wk.period, 'work', function (r) { return wwho + wpj + r + 'の工数'; });
+    }
   }
   var total = Date.now() - t0;
   logAsk_(qid, user, question, answer, '回答済', src, 0, 0, total, '');
-  return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], asOf: '日報 ' + (getMeta_('work_synced_at') || '(更新日不明)'),
+  return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], choices: choices, asOf: '日報 ' + (getMeta_('work_synced_at') || '(更新日不明)'),
            ms: { search: 0, ai: 0, total: total } };
 }
 
