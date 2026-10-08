@@ -161,14 +161,19 @@ function loadRules_() {
 }
 
 function callGemini_(prompt) {
-  var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent', {
-    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-    headers: { 'x-goog-api-key': prop_('GEMINI_API_KEY') },
-    payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                              generationConfig: { temperature: 0, responseMimeType: 'application/json' } })
-  });
-  var code = res.getResponseCode();
-  if (code === 429) throw err_('busy', 'ただいま混み合っています。少し待ってからもう一度お試しください');
+  var res, code;
+  for (var i = 0; i < 3; i++) { // 一時的な障害(500/502/503/504)は、少し待って最大3回まで送る
+    res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { 'x-goog-api-key': prop_('GEMINI_API_KEY') },
+      payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                                generationConfig: { temperature: 0, responseMimeType: 'application/json' } })
+    });
+    code = res.getResponseCode();
+    if (code !== 500 && code !== 502 && code !== 503 && code !== 504) break;
+    if (i < 2) Utilities.sleep(2000 * (i + 1));
+  }
+  if (code === 429 || code === 503) throw err_('busy', 'ただいま混み合っています。少し待ってからもう一度お試しください');
   if (code !== 200) throw err_('ai', 'AIの呼び出しに失敗しました(' + code + ')');
   var j = JSON.parse(res.getContentText());
   var parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
