@@ -120,15 +120,16 @@
   .menu { display:grid; grid-template-columns:1fr 1fr; gap:12px; max-width:620px; margin:0 auto; }
   @media (max-width: 520px) { .menu { grid-template-columns:1fr; } }
   /* ホームは3段(ボタン幅・文字サイズは同じ) */
-  #v-menu .menu { display:flex; flex-direction:column; align-items:center; max-width:none; }
-  #v-menu .menu-btn { width:min(304px, 100%); }
+  #v-menu .menu { display:flex; flex-direction:column; align-items:center; max-width:none; gap:26px; padding:20px 0 60px; }
+  #v-menu .menu-btn { width:min(340px, 100%); }
   /* メニューのボタンは薄い色で色分け(赤は危険を表す色として使わない) */
-  .menu-btn { font:inherit; font-size:18px; font-weight:bold; color:#1f2a37; border:2px solid transparent; border-radius:10px;
+  .menu-btn { font:inherit; font-size:22.5px; position:relative; font-weight:bold; color:#1f2a37; border:2px solid transparent; border-radius:10px;
               padding:17px 12px; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,.25); transition:filter .15s, transform .15s; }
+  .menu-btn.m4 { background:#ffedd5; border-color:#fdba74; }
   .menu-btn.m1 { background:#dbeafe; border-color:#93c5fd; }
   .menu-btn.m2 { background:#dcfce7; border-color:#86efac; }
   .menu-btn.m3 { background:#ede9fe; border-color:#c4b5fd; }
-  .menu-btn:hover:not(:disabled) { filter:brightness(1.04); transform:translateY(-2px); }
+  .menu-btn:hover:not(:disabled), .menu-btn:focus-visible:not(:disabled) { filter:brightness(1.04); transform:scale(1.5); z-index:5; box-shadow:0 8px 20px rgba(0,0,0,.4); }
   .menu-btn:disabled { background:#999; border-color:#999; color:#ddd; cursor:default; }
   .imp-status { font-size:14px; font-weight:bold; margin:6px 0 0; padding:8px 12px; border-radius:6px; background:#eef4ff; color:#1f3a8a; }
   .imp-status.ok { background:#e8f7ee; color:#166534; }
@@ -219,23 +220,16 @@
   <!-- メニュー(読み込みが終わるまでボタンは押せない) -->
   <section id="v-menu" class="view">
     <div class="menu">
-      <button class="menu-btn m3" type="button" data-go="analysis" disabled>進捗・結果確認</button>
-      <button class="menu-btn m1" type="button" data-go="budget" disabled>実行予算更新</button>
-      <button class="menu-btn m2" type="button" data-go="settings" disabled>設定</button>
-    </div>
-  </section>
-
-  <!-- 進捗・結果確認: 分析の種類を選ぶ -->
-  <section id="v-analysis" class="view" hidden>
-    <div class="menu">
-      <button class="menu-btn m3" type="button" data-analysis="work">工事別結果分析</button>
-      <button class="menu-btn m1" type="button" data-analysis="site">工場別進捗分析</button>
+      <button class="menu-btn m1" type="button" data-analysis="site" disabled>① 工場別進捗分析</button>
+      <button class="menu-btn m4" type="button" data-analysis="work" disabled>② 工事別結果分析</button>
+      <button class="menu-btn m3" type="button" data-go="budget" disabled>③ 実行予算更新＆確認</button>
+      <button class="menu-btn m2" type="button" data-go="settings" disabled>④ 設定</button>
     </div>
   </section>
 
   <!-- 工場別進捗分析: 詳細版 / シンプル版 を選ぶ -->
   <section id="v-sitemode" class="view" hidden>
-    <p class="home-row"><button class="btn orange stack-btn" type="button" data-go="analysis">戻る</button></p>
+    <p class="home-row"><button class="btn orange stack-btn" type="button" data-go="menu">戻る</button></p>
     <h2 class="an-title">工場別進捗分析</h2>
     <div class="menu">
       <button class="menu-btn m3" type="button" data-sitemode="detail">詳細版</button>
@@ -321,7 +315,7 @@
   <!-- 工事別結果分析: 実行予算にある工事をリストから選び、その工事の目標値と現状を詳細版(目標シミュレーター)と同じ表示で出す -->
   <section id="v-workone" class="view fullTab" hidden>
     <div class="sBar">
-    <div class="sTop"><button class="btn" type="button" data-go="analysis">戻る</button><span>工事別結果分析(目標シミュレーター)</span></div>
+    <div class="sTop"><button class="btn" type="button" data-go="menu">戻る</button><span>工事別結果分析(目標シミュレーター)</span></div>
     <div class="sFilters">
       <div class="sRow">
         <span class="woLbl">工事</span>
@@ -386,7 +380,7 @@
 
   <!-- 進捗・結果確認 -->
   <section id="v-progress" class="view" hidden>
-    <p class="home-row"><button class="btn orange stack-btn" type="button" data-go="analysis">戻る</button></p>
+    <p class="home-row"><button class="btn orange stack-btn" type="button" data-go="menu">戻る</button></p>
     <h2 id="an-title" class="an-title"></h2>
     <div class="card">
       <div id="filters">
@@ -434,7 +428,7 @@
 <script src="budgetview.js"></script>
 <script src="extract.js"></script>
 <script src="bepchart.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=menu4"></script>
 <script src="simple.js"></script>
 <script src="detail.js"></script>
 <script src="workone.js"></script>
