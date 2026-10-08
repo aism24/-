@@ -30,3 +30,5 @@ textarea { width:100%; border:1px solid var(--line); border-radius:4px; padding:
 .thanks { color:var(--muted); font-size:12px; }
 .ask textarea { min-height:56px; }
 .warn { color:#d00; font-weight:700; margin-top:4px; }
+.choices { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
+.choices .cg { color:var(--muted); font-size:13px; }

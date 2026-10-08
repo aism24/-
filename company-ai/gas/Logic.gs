@@ -5,6 +5,7 @@
 var AI_LOGIC = (function () {
   function nfkc(s) { return String(s == null ? '' : s).normalize('NFKC'); }
   function squash(s) { return nfkc(s).replace(/\s+/g, ''); }
+  var C_FILLER = /(ですか|ですね|でしょうか|みんな|全員|全体|総|です|ますか|ます|ください|下さい|教えて|おしえて|知りたい|いくら|いくつ|どれくらい|どのくらい|どれだけ|何|全部|合計|について|ありますか|ある|まで|から|分|現在|今|は|が|を|に|の|で|と|も|へ|や|か|ね|よ|、|。|,|\.|\?|!|\s|「|」|\(|\)|・)/g;
 
   // ---------- 就業規則(PDFを変換したテキスト)を条文に分割 ----------
   // 1つのPDFに「就業規則」と複数の別規程(退職金・再雇用・慶弔見舞金など)が入っていて、条番号が1から振り直される。
@@ -259,6 +260,7 @@ var AI_LOGIC = (function () {
       return { from: ymd(py, pm, 21), to: ymd(yy, mo, 20), label: yy + '年' + mo + '月度' };
     }
     var curMonthDo = d >= 21 ? (m === 12 ? { y: y + 1, m: 1 } : { y: y, m: m + 1 }) : { y: y, m: m };
+    if ((mm = /(\d{4}\/\d{1,2}\/\d{1,2})[〜~](\d{4}\/\d{1,2}\/\d{1,2})/.exec(t))) return { from: normDate(mm[1]), to: normDate(mm[2]), label: normDate(mm[1]) + '〜' + normDate(mm[2]) }; // 選択肢のボタンが作る範囲指定
     if (/(これまで|今まで|全期間|累計|通算|ずっと|全部)/.test(t)) return { from: '2000/01/01', to: '2099/12/31', label: '全期間' };
     if (/会計年度|会計年/.test(t)) {
       var fy = /(昨|去|前)/.test(t) ? -1 : 0, ys = (m > 11 || (m === 11 && d >= 21)) ? y : y - 1; ys += fy;
@@ -308,7 +310,7 @@ var AI_LOGIC = (function () {
     if (!people.length && !selfCue && !ABS_CUE.test(t)) return null;
     if (!people.length && !selfCue) return null; // 「誰の」が分からない取得系の質問は、規則の質問とみなす
     var who = people.length > 1 ? 'ambiguous' : people.length === 1 ? 'person' : 'self';
-    if (who === 'self' && !/(取った|取って|取得|使った|使って|消化|休んだ|遅刻|早退|欠勤|何日|何回|残|状況|確認|履歴|一覧)/.test(t)) return null;
+    if (who === 'self' && !/(取った|取って|取得|使った|使って|消化|休んだ|遅刻|早退|欠勤|何日|何回|残|状況|確認|履歴|一覧|届)/.test(t)) return null;
     return { who: who, people: people, period: parsePeriod(q, today), remain: /(残り|残数|残日|残って|あと何日|余り)/.test(t) };
   }
 
@@ -448,6 +450,7 @@ var AI_LOGIC = (function () {
   }
   function parseDay(q, today) {
     var t = nfkc(q), mm;
+    if (/\d{4}\/\d{1,2}\/\d{1,2}[〜~]\d{4}\/\d{1,2}\/\d{1,2}/.test(t)) return ''; // 範囲指定は日付ではなく期間
     if (/(一昨日|おととい)/.test(t)) return addDays(today, -2);
     if (/昨日/.test(t)) return addDays(today, -1);
     if (/(今日|本日)/.test(t)) return today;
@@ -537,7 +540,8 @@ var AI_LOGIC = (function () {
     if (/(今月|来月|先月|前月|\d{1,2}月)/.test(t) && /(出勤日|休日|営業日|休み)/.test(t) && /(何日|いくつ|日数|何回)/.test(t) && !/\d{1,2}月\d{1,2}日/.test(t))
       return { kind: 'month', want: /休日|休み/.test(t) && !/出勤日|営業日/.test(t) ? '休日' : '出勤', range: monthRange(today, t) };
     var d = resolveCalDate(t, today);
-    if (d && /(出勤|休日|休み|お休み|営業日|出社|会社|カレンダー|曜日|何曜|何日|いつ)/.test(t)) return { kind: 'day', date: d };
+    var bare = t.replace(/(\d{4}[\/年])?\d{1,2}[\/月]\d{1,2}日?|(再来週|来週|今週|今度|次|この)?の?[月火水木金土日]曜日?|明後日|あさって|明日|あした|昨日|今日|本日/g, '').replace(C_FILLER, '') === '';
+    if (d && (bare || /(出勤|休日|休み|お休み|営業日|出社|会社|カレンダー|曜日|何曜|何日|いつ)/.test(t))) return { kind: 'day', date: d };
     return null;
   }
   // hol: {'yyyy/MM/dd': '休日'|'出勤'}
@@ -642,6 +646,131 @@ var AI_LOGIC = (function () {
     return out.join('\n');
   }
 
+  // ---------- 曖昧な質問: 答えずに選択肢(ボタン)を返す。ボタンを押すと、補った完全な1問として送られる(会話の記憶は使わない) ----------
+  var C_PERIOD = /(\d{4}\/\d{1,2}\/\d{1,2}[〜~]\d{4}\/\d{1,2}\/\d{1,2}|\d{4}年度?|\d{1,2}月度?|\d{1,2}\/\d{1,2}|会計年度|会計|年度|暦年|暦月|月度|今年|去年|昨年|本年|前年|今月|先月|先々月|前月|当月|来月|今週|先週|来週|今日|昨日|明日|本日|最近|直近|先日|この前|これまで|今まで|全期間|累計|通算|今期|年間|今回|日|度|年|月|週)/g;
+  var C_TOPIC = /(生産重量|加工重量|生産量|加工量|生産実績|生産|加工|重量|トン|有給休暇|有給|有休|年休|欠勤|遅刻|早退|遅早|休暇|休み|届け?|一覧|日報|工数|作業時間|時間|働いた|働|状況|確認|履歴|取得|取った|使った|残り|日数|回数)/g;
+  var C_SELF = /(私|わたし|自分|僕|俺)/g;
+  var C_FILTER = /(本社|夢前|鳥取|全社|全部位|大梁|小梁|柱|その他)/g;
+  function escRe(x) { return String(x).replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'); }
+  function surnameOf(name) { var ps = nfkc(name).trim().split(/\s+/); return ps.length >= 2 ? ps[0] : ''; }
+  function validNo(p) { return /^[0-9]{2}-[0-9]+[A-Za-z]?$/.test(String(p.no)); }
+  // 質問から、期間・話題・人名・加工先などを取り除いた残り(空なら「話題だけ」の質問)
+  function residueOf(q, roster) {
+    var r = squash(q).replace(C_FILTER, '');
+    roster.forEach(function (p) {
+      var n = normName(p.name), sn = surnameOf(p.name);
+      if (n.length >= 2) r = r.split(n).join('');
+      if (sn) r = r.split(squash(sn)).join('');
+    });
+    return r.replace(C_PERIOD, '').replace(C_TOPIC, '').replace(C_SELF, '').replace(C_FILLER, '');
+  }
+  var RULE_MENU = [
+    { re: /^(お休み|休み|休暇)$/, msg: 'どの休みについてですか?', qs: ['年次有給休暇は何日もらえますか', '特別休暇にはどんな種類がありますか', '慶弔休暇について教えてください', '育児・介護休業について教えてください'] },
+    { re: /^退職金$/, msg: '退職金の何についてですか?', qs: ['退職金の支給条件を教えてください', '退職金の計算方法を教えてください', '再雇用になった場合の退職金はどうなりますか'] },
+    { re: /^(育児|介護)$/, msg: '育児と介護のどちらについてですか?', qs: ['育児休業の条件を教えてください', '介護休業の条件を教えてください'] }
+  ];
+  function calMonth(today, phrase) { // 暦月(1日〜末日)
+    var y = +today.slice(0, 4), m = +today.slice(5, 7), mm;
+    if (/先々月/.test(phrase)) m -= 2; else if (/(先月|前月)/.test(phrase)) m -= 1;
+    else if ((mm = /(\d{1,2})月/.exec(phrase))) { var n = +mm[1]; if (n > m) y--; m = n; }
+    while (m < 1) { m += 12; y--; }
+    return { from: ymd(y, m, 1), to: ymd(y, m, new Date(Date.UTC(y, m, 0)).getUTCDate()), label: y + '年' + m + '月' };
+  }
+  // get: {roster(), work(), prod()}。戻り値: null / {message, choices:[{label, q}]}
+  function clarify(q, today, get) {
+    var t = nfkc(q), sq = squash(q), mm, y = +today.slice(0, 4), m = +today.slice(5, 7), d = +today.slice(8, 10);
+    function res(msg, choices) { return { message: msg, choices: choices.slice(0, 10) }; }
+    var bare = sq.replace(C_FILLER, '');
+    for (var i = 0; i < RULE_MENU.length; i++) {
+      if (RULE_MENU[i].re.test(bare)) return res(RULE_MENU[i].msg, RULE_MENU[i].qs.map(function (x) { return { label: x, q: x }; }));
+    }
+    if (/(出荷|組立|溶接|切断|塗装|検査|製作完了|製品完成)/.test(t) && /(量|重量|トン)/.test(t) && !/加工/.test(t)) {
+      var cm = parsePeriod('今月', today, 'month');
+      return res('このアプリで答えられるのは、「加工」が完了した生産重量だけです。出荷・組立など、ほかの工程の重量は集計していません。', [{ label: '今月度の生産重量(加工完了)', q: cm.from + '〜' + cm.to + 'の生産重量' }]);
+    }
+    var roster = get.roster(), abs = parseAbsenceQuery(q, today, roster);
+    var ABS_STRONG = /(有給|有休|年休|欠勤|遅刻|早退|遅早|届)/;
+    var topic = abs ? 'abs' : WORK_TOPIC.test(t) ? 'work' : PROD_TOPIC.test(t) ? 'prod' : ABS_STRONG.test(t) ? 'abs?' : '';
+    if (!topic) return null;
+    var people = (topic === 'abs' || topic === 'work') ? findPeople(q, roster) : [];
+    // 人: 姓だけで複数に当たる
+    if (people.length > 1 && !people.some(function (p) { return sq.indexOf(normName(p.name)) >= 0; })) {
+      var sn = surnameOf(people[0].name), re = new RegExp(escRe(squash(sn)) + '(?=さん|くん|君|の|は|が|を|に)');
+      return res('「' + sn + '」さんが複数います。どなたですか?', people.slice(0, 10).map(function (p) {
+        var q2 = sq.replace(re, normName(p.name)); if (q2 === sq) q2 = normName(p.name) + 'の' + sq;
+        return { label: p.name + '(社員No' + p.no + ')', q: q2 };
+      }));
+    }
+    var self = /(私|わたし|自分|僕|俺)/.test(t);
+    // 人: 誰の質問か書かれていない(「有給は?」「工数は?」)
+    if (!people.length && !self && (topic === 'abs?' || topic === 'work') && residueOf(q, roster) === '') {
+      var core = sq.replace(/[はが]?[?？]*$/, '');
+      if (topic === 'abs?') return res('誰の有給・欠勤ですか?「私」を押すか、氏名を入れて質問し直してください。', [{ label: '私(自分)', q: '私の' + core + '状況' }]);
+      if (!findProjects(q, get.work()).length) return res('誰の・どの工事の工数ですか?「私」を押すか、氏名または工事名を入れて質問し直してください。' + (/(本社|夢前|鳥取|全社)/.test(t) ? '\n※日報には拠点の区分が無いため、拠点別・全社の工数は集計できません。' : ''), [{ label: '私(自分)', q: '私の' + core }]);
+    }
+    // 工事: 複数に当たる / 一部だけ書かれている
+    if (topic === 'work' || topic === 'prod') {
+      var projs = topic === 'work' ? get.work() : get.prod(), hits = findProjects(q, projs);
+      function plabel(p) { return (p.no ? p.no + ' ' : '') + p.name; }
+      if (hits.length > 1) {
+        return res('該当する工事が複数あります。どれですか?', hits.slice(0, 10).map(function (p) {
+          return { label: plabel(p), q: sq.replace(squash(p.name), validNo(p) ? p.no : p.name) };
+        }));
+      }
+      if (!hits.length) {
+        var rs = residueOf(q, roster).toLowerCase();
+        if (rs.length >= 3) {
+          var seen = {}, cand = projs.filter(function (p) {
+            var k = p.no + '|' + p.name; if (seen[k] || GENERIC_PROJECT.indexOf(squash(p.name)) >= 0) return false; seen[k] = 1;
+            return squash(p.name).toLowerCase().indexOf(rs) >= 0;
+          });
+          if (cand.length) return res('工事は、どれのことですか?', cand.slice(0, 10).map(function (p) { return { label: plabel(p), q: sq + (validNo(p) ? p.no : p.name) }; }));
+        }
+      }
+    }
+    // 期間
+    if (parseDay(q, today) || /\d{4}\/\d{1,2}\/\d{1,2}[〜~]/.test(t)) return null;
+    function span(label, from, to) { return { label: label + '(' + from + '〜' + to + ')', from: from, to: to }; }
+    function make(phrase, opts) {
+      return res('期間は、どちらですか?', opts.map(function (o) { return { label: o.label, q: t.replace(phrase, o.from + '〜' + o.to) }; }));
+    }
+    if ((mm = /(今年|本年|去年|昨年|前年)(?!度)/.exec(t)) && !/暦年|会計/.test(t)) {
+      var off = /^(去年|昨年|前年)$/.test(mm[1]) ? -1 : 0, yy = y + off, ys = ((m > 11 || (m === 11 && d >= 21)) ? y : y - 1) + off, s0 = (m >= 4 ? y : y - 1) + off;
+      var cal = span('暦年 ' + yy + '年', ymd(yy, 1, 1), ymd(yy, 12, 31));
+      return make(mm[0], [cal, topic === 'work' || topic === 'prod'
+        ? span('会計年度', ymd(ys, 11, 21), ymd(ys + 1, 11, 20)) : span('年度(4月〜3月)', ymd(s0, 4, 1), ymd(s0 + 1, 3, 31))]);
+    }
+    if (topic === 'work' && (mm = /(今年度|本年度|今期|昨年度|去年度|前年度)/.exec(t)) && !/会計/.test(t)) {
+      var off2 = /(昨|去|前)/.test(mm[1]) ? -1 : 0, ys2 = ((m > 11 || (m === 11 && d >= 21)) ? y : y - 1) + off2, s2 = (m >= 4 ? y : y - 1) + off2;
+      return make(mm[0], [span('会計年度', ymd(ys2, 11, 21), ymd(ys2 + 1, 11, 20)), span('年度(4月〜3月)', ymd(s2, 4, 1), ymd(s2 + 1, 3, 31))]);
+    }
+    if (!/月度|暦月/.test(t) && ((mm = /(先々月|先月|前月|今月|当月)(?!度)/.exec(t)) || (mm = /(\d{1,2})月(?![曜度日\d])/.exec(t)))) {
+      var md = parsePeriod(mm[0], today, 'month'), cmo = calMonth(today, mm[0]);
+      return make(mm[0], [span('月度(前月21日〜当月20日)', md.from, md.to), span('暦月 ' + cmo.label, cmo.from, cmo.to)]);
+    }
+    if ((mm = /(今週|先週)/.exec(t))) {
+      var back = mm[1] === '先週' ? 7 : 0, mon = addDays(today, -((dow(today) + 6) % 7) - back), sun = addDays(today, -dow(today) - back);
+      return make(mm[0], [span('月曜始まり', mon, addDays(mon, 6)), span('日曜始まり', sun, addDays(sun, 6))]);
+    }
+    if ((mm = /(最近|この前|先日|直近)/.exec(t))) {
+      return make(mm[0], [span('直近1か月', addDays(today, -30), today), span('直近3か月', addDays(today, -90), today), span('直近1年', addDays(today, -365), today)]);
+    }
+    return null;
+  }
+  // 生産重量の回答の下に出す、加工先・部位の切り替えボタン。f: {sites, parts, period, project}
+  function prodChoices(f) {
+    var base = f.period.from + '〜' + f.period.to + 'の' + (f.project ? f.project.name + 'の' : ''), out = [];
+    function mk(sites, parts) {
+      return base + (sites.length ? sites.join('・') + 'の' : '') + (parts.length ? parts.map(function (x) { return x === '他' ? 'その他' : x; }).join('・') + 'の' : '') + '生産重量';
+    }
+    var fs = f.sites || [], fp = f.parts || [];
+    if (fs.length) out.push({ group: '加工先', label: '全社', q: mk([], fp) });
+    SITES.forEach(function (s) { if (fs.indexOf(s) < 0) out.push({ group: '加工先', label: s, q: mk([s], fp) }); });
+    if (fp.length) out.push({ group: '部位', label: '全部位', q: mk(fs, []) });
+    ['大梁', '小梁', '柱', '他'].forEach(function (x) { if (fp.indexOf(x) < 0) out.push({ group: '部位', label: x, q: mk(fs, [x]) }); });
+    return out;
+  }
+
   return { nfkc: nfkc, squash: squash, parseRules: parseRules, chunkLabel: chunkLabel, searchRules: searchRules,
            buildPrompt: buildPrompt, pickSources: pickSources, parseModelJson: parseModelJson, mergeRoster: mergeRoster, readRoster: readRoster,
            normEmail: normEmail, fixEmail: fixEmail, normName: normName,
@@ -649,5 +778,5 @@ var AI_LOGIC = (function () {
            parseAbsenceQuery: parseAbsenceQuery, daysInPeriod: daysInPeriod, summarizeAbsence: summarizeAbsence, formatAbsenceAnswer: formatAbsenceAnswer,
            WORK_HEADER: WORK_HEADER, buildConsMap: buildConsMap, workFromB2: workFromB2, workFromB5: workFromB5, sortWork: sortWork, findProjects: findProjects,
            PROD_HEADER: PROD_HEADER, countWorkDays: countWorkDays, parseMasterRows: parseMasterRows, parseProdQuery: parseProdQuery, summarizeProd: summarizeProd, formatProdAnswer: formatProdAnswer,
-           parseCalendarQuery: parseCalendarQuery, answerCalendar: answerCalendar, parseDay: parseDay, parseWorkQuery: parseWorkQuery, summarizeWork: summarizeWork, formatWorkAnswer: formatWorkAnswer };
+           clarify: clarify, prodChoices: prodChoices, parseCalendarQuery: parseCalendarQuery, answerCalendar: answerCalendar, parseDay: parseDay, parseWorkQuery: parseWorkQuery, summarizeWork: summarizeWork, formatWorkAnswer: formatWorkAnswer };
 })();

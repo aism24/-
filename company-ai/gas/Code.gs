@@ -185,6 +185,8 @@ function ask_(user, question) {
   question = String(question || '').trim();
   if (!question) throw err_('bad_request', '質問を入力してください');
   if (question.length > 300) throw err_('bad_request', '質問は300文字以内にしてください');
+  var cl = AI_LOGIC.clarify(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), { roster: rosterList_, work: loadProjects_, prod: loadProdProjects_ });
+  if (cl) return askClarify_(user, question, cl, t0);
   var abs = AI_LOGIC.parseAbsenceQuery(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), rosterList_());
   if (abs) return askAbsence_(user, question, abs, t0);
   var wk = AI_LOGIC.parseWorkQuery(question, Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), rosterList_(), loadProjects_());
@@ -218,6 +220,13 @@ function ask_(user, question) {
   logAsk_(qid, user, question, answer, answerable ? '回答済' : '回答不可', sources.join(' / '), tSearch, tAi, total, answerable ? '' : '未対応');
   return { ok: true, qid: qid, answerable: answerable, answer: answer, sources: sources,
            asOf: getMeta_('rules_version'), ms: { search: tSearch, ai: tAi, total: total } };
+}
+
+// 曖昧な質問: 答えずに選択肢(ボタン)を返す。選ぶと、補った完全な1問として送られる
+function askClarify_(user, question, cl, t0) {
+  var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), total = Date.now() - t0;
+  logAsk_(qid, user, question, cl.message, '確認', '', 0, 0, total, '');
+  return { ok: true, qid: qid, answerable: true, clarify: true, answer: cl.message, choices: cl.choices, sources: [], asOf: '', ms: { search: 0, ai: 0, total: total } };
 }
 
 // 有給・欠勤の質問: 数字はコードが計算して文章にする(AIは使わない)
@@ -285,7 +294,7 @@ function askProd_(user, question, pq, t0) {
   }
   var total = Date.now() - t0;
   logAsk_(qid, user, question, answer, '回答済', src, 0, 0, total, '');
-  return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], asOf: '生産重量 ' + (getMeta_('prod_synced_at') || '(更新日不明)'), ms: { search: 0, ai: 0, total: total } };
+  return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], choices: pq.projects.length > 1 ? [] : AI_LOGIC.prodChoices({ sites: pq.sites, parts: pq.parts, period: pq.period, project: pq.projects[0] }), asOf: '生産重量 ' + (getMeta_('prod_synced_at') || '(更新日不明)'), ms: { search: 0, ai: 0, total: total } };
 }
 
 // 案件マスター(約34件)から「加工」完了分だけを「生産重量」シートへ。工事番号・工事名は「Excelマスタ一覧」の表を正とする。
