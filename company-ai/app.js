@@ -47,7 +47,6 @@
   }
   function showChat(me) {
     $('loginCard').style.display = 'none'; $('chatCard').style.display = '';
-    $('who').textContent = me.name + ' さん' + (me.isAdmin ? '(管理者)' : '');
   }
 
   // ログイン確認中の表示(Google側が遅いと30秒ほどかかることがあるため、待っていることを伝える)
