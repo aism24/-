@@ -139,6 +139,8 @@
                   width:fit-content; min-width:min(380px, 100%); max-width:100%; margin-left:auto; margin-right:auto; }
   .budget-stack h2 { align-self:stretch; text-align:left; }
   .budget-stack .stack-btn, .budget-stack .reg-next { width:min(340px, 100%); margin:6px 0; text-align:center; font-size:16px; padding:14px 20px; }
+  .budget-stack .stack-btn { box-sizing:border-box; min-height:84px; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.35; }
+  .budget-stack .stack-btn small { display:block; font-size:13px; font-weight:normal; margin-top:4px; }
   /* 設定: 左 更新を保存・右 ホームへ戻る(同じ幅、高さは縦並びのときの半分) */
   /* 注意書き: 赤文字・黄色の背景で点滅 */
   .warn-blink { align-self:stretch; margin:0; padding:4px 8px; border-radius:4px 4px 0 0; text-align:left;
@@ -355,9 +357,9 @@
     <!-- ①②③のボタンを縦に並べ、上合わせ・中央揃え -->
     <div class="card budget-stack">
       <h2>実行予算更新</h2>
-      <button id="regBtn" class="btn sub stack-btn" type="button" onclick="downloadReg()" title="PCごとに1回だけ。ダウンロードした 正光コストインサイト登録.reg をダブルクリックで開き、［はい］→［OK］">①初期設定をダウンロード</button>
-      <a class="btn pink stack-btn" href="costinsight://update" onclick="startImportWatch()" title="会社サーバーの 実行予算更新.bat を実行します(社内ネットワークのPCのみ)">②実行予算取込</a>
-      <button id="latestBtn" class="btn blue stack-btn" type="button" onclick="showLatestBudget()" title="最新の実行予算を読み込み直して、結果のテーブルを表示します">③実行予算最新確認</button>
+      <button id="regBtn" class="btn sub stack-btn" type="button" onclick="downloadReg()" title="PCごとに1回だけ。ダウンロードした 正光コストインサイト登録.reg をダブルクリックで開き、［はい］→［OK］">①初期設定をダウンロード<small>（ローカル環境設定確認）</small></button>
+      <a class="btn pink stack-btn" href="costinsight://update" onclick="startImportWatch()" title="会社サーバーの 実行予算更新.bat を実行します(社内ネットワークのPCのみ)">②実行予算取込<small>（ローカルで.bat実行）</small></a>
+      <button id="latestBtn" class="btn blue stack-btn" type="button" onclick="showLatestBudget()" title="最新の実行予算を読み込み直して、結果のテーブルを表示します">③実行予算最新確認<small>（テーブルで確認できます）</small></button>
       <p id="imp-status" class="imp-status" hidden></p>
       <p id="budget" class="note">前回取込: 確認中…</p>
     </div>
@@ -428,7 +430,7 @@
 <script src="budgetview.js"></script>
 <script src="extract.js"></script>
 <script src="bepchart.js"></script>
-<script src="app.js?v=menu5"></script>
+<script src="app.js?v=menu6"></script>
 <script src="simple.js"></script>
 <script src="detail.js"></script>
 <script src="workone.js"></script>
