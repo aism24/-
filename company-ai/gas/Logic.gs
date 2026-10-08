@@ -566,24 +566,29 @@ var AI_LOGIC = (function () {
 
 
   // ---------- 生産重量(第2弾): 「加工」完了日の重量(トン)を集計。期間は会社の締め日(21日区切り)が既定。AIは使わない ----------
-  var PROD_HEADER = ['工事番号', '工事名', '加工先', '部位', '加工日', '重量', '本数', '製品マーク', 'マスタNo'];
+  var PROD_HEADER = ['工事番号', '工事名', '加工先', '部位', '加工日', '重量', '本数', '点数', 'マスター'];
   var MAIN_PARTS = ['柱', '大梁', '小梁'];
-  // 案件マスターの1シート分(Code.gsが必要な列だけ取り出した表)を行に直す。reduced: 先頭行=見出し(部位・加工先・加工・本数・重量・製品マーク)
-  // 加工が日付(年つき)の行だけ=加工完了。「*」(不要)・空欄(未了)・年の無い文字は数えない。meta: {no, workNo, workName}
+  var PROD_SITES = ['本社', '夢前', '鳥取']; // 加工先はこの3つだけ(「中止」「にしわき」など他は除外)
+  // 案件マスターの1シート分(Code.gsが必要な列だけ取り出した表)を、「同じ生産日・加工先・部位」ごとに足し合わせた行に直す。
+  // reduced: 先頭行=見出し(部位・加工先・加工・本数・重量)。加工が日付(年つき)の行だけ=加工完了。「*」(不要)・空欄(未了)・年の無い文字は数えない。
+  // meta: {key(ドライブ:マスタNo), workNo, workName}。戻り値の行 = PROD_HEADER の並び(点数=製品の行数)
   function parseMasterRows(reduced, meta) {
-    var out = [], bad = 0;
-    if (!reduced || reduced.length < 2) return { rows: out, undated: 0 };
-    var ix = colIndex(reduced[0]), undated = 0;
+    var map = {}, order = [], undated = 0;
+    if (!reduced || reduced.length < 2) return { rows: [], undated: 0 };
+    var ix = colIndex(reduced[0]);
     for (var k = 1; k < reduced.length; k++) {
       var r = reduced[k], site = String(r[ix['加工先']] == null ? '' : r[ix['加工先']]).trim(), part = String(r[ix['部位']] == null ? '' : r[ix['部位']]).trim();
       var raw = r[ix['加工']], d = normDate(raw);
-      if (!site || !part) continue;
+      if (PROD_SITES.indexOf(site) < 0 || !part) continue;
       if (!d) { if (raw !== '' && raw != null && String(raw).trim() !== '*') undated++; continue; }
       var w = parseFloat(nfkc(r[ix['重量']])); if (isNaN(w)) w = 0;
       var q = parseFloat(nfkc(r[ix['本数']])); if (isNaN(q)) q = 0;
-      out.push([meta.workNo, meta.workName, site, MAIN_PARTS.indexOf(part) >= 0 ? part : '他', dnum(d), w, q, String(r[ix['製品マーク']] == null ? '' : r[ix['製品マーク']]).trim(), meta.no]);
+      var p = MAIN_PARTS.indexOf(part) >= 0 ? part : '他', dn = dnum(d), key = site + '|' + p + '|' + dn, row = map[key];
+      if (!row) { row = map[key] = [meta.workNo, meta.workName, site, p, dn, 0, 0, 0, meta.key]; order.push(key); }
+      row[5] += w; row[6] += q; row[7] += 1;
     }
-    return { rows: out, undated: undated };
+    var rows = order.map(function (k) { var x = map[k]; x[5] = Math.round(x[5] * 1000) / 1000; return x; });
+    return { rows: rows, undated: undated };
   }
   var PROD_TOPIC = /(生産重量|加工重量|生産量|加工量|生産実績|何トン|生産.{0,6}(重量|トン)|加工.{0,6}(重量|トン))/;
   var SITES = ['本社', '夢前', '鳥取'];
@@ -605,7 +610,7 @@ var AI_LOGIC = (function () {
       if (f.sites && f.sites.length && f.sites.indexOf(r[2]) < 0) return;
       if (f.parts && f.parts.length && f.parts.indexOf(r[3]) < 0) return;
       if (f.project && !(squash(r[1]) === squash(f.project.name) || (r[0] && r[0] === f.project.no))) return;
-      var w = Number(r[5]) || 0; total += w; n++; days[r[4]] = (days[r[4]] || 0) + w;
+      var w = Number(r[5]) || 0; total += w; n += Number(r[7]) || 0; days[r[4]] = (days[r[4]] || 0) + w;
       bySite[r[2]] = (bySite[r[2]] || 0) + w; byPart[r[3]] = (byPart[r[3]] || 0) + w;
       var pk = (r[1] || r[0]) + (r[0] && r[1] ? '(' + r[0] + ')' : ''); byProj[pk] = (byProj[pk] || 0) + w;
     });
