@@ -285,10 +285,11 @@ Git連携の接続/解除はClaudeのVercelツールではできない(ユーザ
 
 Vercelの「Import Git Repository」で候補が`-`だけになり分かりやすいよう、別リポジトリにあったアプリをこのリポジトリへ履歴ごと取り込んだ。
 
-- `dxf-launcher/`(元: aism24/dxf-launcher、master。Vercel: dxf-launcher.vercel.app)
-- `excel-drawing-link-tool/`(元: aism24/excel-drawing-link-tool、main。Vercel: excel-drawing-link-tool.vercel.app)
-- 両フォルダに `vercel.json`(`git.deploymentEnabled=false`)を置いた。Vercelプロジェクトは旧リポジトリ連携のままなので、今のURLは9/17の本番デプロイのまま動く。
-  今後修正して反映する場合は、ユーザーがVercelのSettings→Gitで連携先を`aism24/-`+Root Directory=各フォルダに変更→「デプロイして」で`create_deployment`。
+- `dxf-launcher/`(元: aism24/dxf-launcher、master。実際のURL: https://dxf-tdf-bat.vercel.app/ 。プロジェクト名のdxf-launcher.vercel.appは404)
+- `excel-drawing-link-tool/`(元: aism24/excel-drawing-link-tool、main。実際のURL: https://jissun-excel-link-tool.vercel.app/ 。プロジェクト名のexcel-drawing-link-tool.vercel.appは404)
+- 2026-10-09、2つとも `aism24/-` に連携(Root Directory=各フォルダ)→`create_deployment`で本番デプロイ(マージコミットa4e9932、READY、ファイルサイズ一致を確認)→ユーザーが連携を解除。`list_projects` 0件を確認。
+- 両フォルダに `vercel.json`(`git.deploymentEnabled=false`)を置いた。Vercelプロジェクトの連携先は`aism24/-`+Root Directory=各フォルダに設定済み(連携自体は解除)。
+  今後修正して反映する場合は、「デプロイして」で`create_deployment`(連携は不要。cost-insight等と同じ運用)。
 - 旧リポジトリは残置(Archive/削除はユーザーが判断)。旧リポジトリへはpushしない。
 
 ## 不要フォルダ(残置)(2026-09-24〜)
