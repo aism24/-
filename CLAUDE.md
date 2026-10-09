@@ -290,7 +290,7 @@ Vercelの「Import Git Repository」で候補が`-`だけになり分かりや�
 - 2026-10-09、2つとも `aism24/-` に連携(Root Directory=各フォルダ)→`create_deployment`で本番デプロイ(マージコミットa4e9932、READY、ファイルサイズ一致を確認)→ユーザーが連携を解除。`list_projects` 0件を確認。
 - 両フォルダに `vercel.json`(`git.deploymentEnabled=false`)を置いた。Vercelプロジェクトの連携先は`aism24/-`+Root Directory=各フォルダに設定済み(連携自体は解除)。
   今後修正して反映する場合は、「デプロイして」で`create_deployment`(連携は不要。cost-insight等と同じ運用)。
-- 旧リポジトリは残置(Archive/削除はユーザーが判断)。旧リポジトリへはpushしない。
+- 旧リポジトリ(aism24/dxf-launcher・aism24/excel-drawing-link-tool)は2026-10-09にユーザーがArchive済み(読み取り専用。Settingsから戻せる)。pushしない。Vercel「Import Git Repository」の候補を`-`だけにするのが目的。
 
 ## 不要フォルダ(残置)(2026-09-24〜)
 
