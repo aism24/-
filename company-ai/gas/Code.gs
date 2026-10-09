@@ -191,6 +191,8 @@ function ask_(user, question, sel) {
   var cl = AI_LOGIC.clarify(qq, today, { roster: rosterList_, work: loadProjects_, prod: loadProdProjects_ }, sel);
   if (cl) return askClarify_(user, question, cl, t0);
   if (sel.charAt(0) !== 'r') { // 就業規則を選んだときは、数字の集計に回さず就業規則の検索へ
+    var nos = AI_LOGIC.parseNoSubmitQuery(qq, today, rosterList_());
+    if (nos && nos.period) return askNoSubmit_(user, question, nos, t0);
     var abs = AI_LOGIC.parseAbsenceQuery(qq, today, rosterList_());
     if (abs) return askAbsence_(user, question, abs, t0);
     var wk = AI_LOGIC.parseWorkQuery(qq, today, rosterList_(), loadProjects_());
@@ -287,6 +289,33 @@ function askAbsence_(user, question, abs, t0) {
   logAsk_(qid, user, question, answer, '回答済', ok ? src : '', loadMs, 0, total, '');
   return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], choices: choices, asOf: '有給・欠勤 ' + (getMeta_('absence_synced_at') || '(更新日不明)'),
            ms: { search: loadMs, ai: 0, total: total } };
+}
+
+// 日報の未提出者: 在職中(Operator)で、出勤日に日報も届も無い人を「誰の・いつ」で答える(コードが集計。AIは使わない)
+function askNoSubmit_(user, question, nos, t0) {
+  var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), src = '日報データ+有給・欠勤+会社カレンダー+名簿(Operator)';
+  var today = Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd'), period = nos.period, ros = rosterList_(), answer, choices;
+  var last = AI_LOGIC.addDays(today, -1), to = period.to > last ? last : period.to;
+  if (to < period.from) {
+    answer = (nos.group ? nos.group.name + 'の' : '') + AI_LOGIC.periodWordNoSub(question, period, today) + 'は、まだ確認できません。日報は毎晩の更新で取り込むため、昨日(' + last + ')までが対象です。';
+  } else {
+    var span = (Date.parse(to.replace(/\//g, '-')) - Date.parse(period.from.replace(/\//g, '-'))) / 86400000;
+    if (span > 100) {
+      answer = '期間が長すぎます(100日まで)。期間を短くしてください(例: 「今月の日報未提出者」)。';
+    } else {
+      var fromN = Number(period.from.replace(/\//g, '')), toN = Number(to.replace(/\//g, ''));
+      var work = workRows_(SHEET.WORK, fromN, toN).concat(workRows_(SHEET.WORKP, fromN, toN));
+      if (!work.length && !ss_().getSheetByName(SHEET.WORK)) throw err_('no_data', '日報のデータがまだ取り込まれていません。管理者に連絡してください');
+      var rows = loadAbsence_(), hol = loadHolidays_();
+      var r = AI_LOGIC.findMissingReports({ roster: ros, workRows: work, absRows: rows, holidays: hol, period: period, today: today, group: nos.group });
+      answer = AI_LOGIC.formatMissingAnswer(r, AI_LOGIC.periodWordNoSub(question, period, today), (getMeta_('work_synced_at') || '').slice(0, 10) || '更新日不明', nos.group);
+    }
+  }
+  choices = AI_LOGIC.noSubAnswerChoices(today, period, nos.group, ros);
+  var total = Date.now() - t0;
+  logAsk_(qid, user, question, answer, '回答済', src, 0, 0, total, '');
+  return { ok: true, qid: qid, answerable: true, answer: answer, sources: [src], choices: choices, asOf: '日報 ' + (getMeta_('work_synced_at') || '(更新日不明)'),
+           ms: { search: 0, ai: 0, total: total } };
 }
 
 // ---------- 生産重量の質問(「加工」完了日の重量。締め日基準): コードが集計して答える ----------
