@@ -316,13 +316,27 @@ var AI_LOGIC = (function () {
     }
     return null;
   }
+  var ABS_LIST = /(有給|有休|年休|欠勤|遅刻|早退|遅早|届|休んで|休んだ)/;
+  var ABS_LISTCUE = /(一覧|誰|だれ|全員|みんな|皆|何人|人|休んで|休んだ|欠勤|遅刻|早退|遅早|届)/;
+  var ABS_RULEY = /(もらえ|付与|規則|規程|ルール|制度|手続|申請方法|届出|提出|前まで|までに|方法|とは|できま|繰越|繰り越|時効|取れ|取っても|可能|義務)/;
+  function hasPeriodWord(q, today) {
+    var t = nfkc(q);
+    return !!(parseDay(q, today) || /\d{4}\/\d{1,2}\/\d{1,2}[〜~]/.test(t)
+      || /(今日|昨日|明日|本日|一昨日|おととい|今週|先週|来週|今月|先月|来月|当月|前月|今年|去年|昨年|本年|前年|最近|直近|\d{1,2}月|会計年度|暦年|月度)/.test(t));
+  }
   // 戻り値: null(就業規則の質問として扱う) / {who:'self'|'person'|'ambiguous', people, period, remain}
   function parseAbsenceQuery(q, today, roster) {
     var t = nfkc(q);
     if (!ABS_TOPIC.test(t)) return null;
     var people = findPeople(q, roster), selfCue = /(私|わたし|自分|僕|俺)/.test(t);
-    if (!people.length && !selfCue && !ABS_CUE.test(t)) return null;
-    if (!people.length && !selfCue) return null; // 「誰の」が分からない取得系の質問は、規則の質問とみなす
+    if (!people.length && !selfCue && !ABS_CUE.test(t) && !ABS_LISTCUE.test(t)) return null;
+    if (!people.length && !selfCue) { // 「誰の」が無い質問: 日付・期間があり、届の一覧を求めているなら全員分。それ以外は規則の質問とみなす
+      if (!ABS_LIST.test(t) || !ABS_LISTCUE.test(t) || ABS_RULEY.test(t) || !hasPeriodWord(q, today)) return null;
+      var dayA = parseDay(q, today) || (/(明日|あした)/.test(t) ? addDays(today, 1) : ''), perA = dayA ? { from: dayA, to: dayA, label: dayA, isDay: true } : parsePeriod(q, today);
+      if (perA.isDefault) return null; // 期間を読み取れない(来週など)ときは、期間を選ばせる
+      if (perA.from === perA.to) perA.isDay = true;
+      return { who: 'all', people: [], period: perA, remain: false };
+    }
     var who = people.length > 1 ? 'ambiguous' : people.length === 1 ? 'person' : 'self';
     if (who === 'self' && !/(取った|取って|取得|使った|使って|消化|休んだ|遅刻|早退|欠勤|何日|何回|残|状況|確認|履歴|一覧|届)/.test(t)) return null;
     return { who: who, people: people, period: parsePeriod(q, today), remain: /(残り|残数|残日|残って|あと何日|余り)/.test(t) };
@@ -376,6 +390,47 @@ var AI_LOGIC = (function () {
     return out.join('\n');
   }
 
+  // 全員分: その期間に届が出ている人を、種類別にまとめる。roster: [{no,name}]
+  var ABS_KIND_ORDER = ['有給', '半日有給', '欠勤', '遅早'];
+  function summarizeAbsenceAll(rows, period, holidays, roster) {
+    var names = {}, byKind = {}, people = {}, count = 0;
+    (roster || []).forEach(function (p) { names[Number(p.no)] = p.name; });
+    rows.forEach(function (r) {
+      var n = daysInPeriod(r, period, holidays);
+      if (!n) return;
+      var kind = r[4] || '(項目なし)', no = Number(r[1]);
+      (byKind[kind] || (byKind[kind] = [])).push({ no: no, name: names[no] || '社員No' + no, from: r[2], to: r[3], days: n, reason: r[5] });
+      people[no] = 1; count++;
+    });
+    var kinds = Object.keys(byKind).sort(function (a, b) {
+      var ia = ABS_KIND_ORDER.indexOf(a), ib = ABS_KIND_ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || (a < b ? -1 : 1);
+    });
+    kinds.forEach(function (k) { byKind[k].sort(function (a, b) { return a.from < b.from ? -1 : a.from > b.from ? 1 : a.no - b.no; }); });
+    return { kinds: kinds, byKind: byKind, peopleCount: Object.keys(people).length, count: count };
+  }
+  // 質問の期間の言い方(今日・今月…)。無ければ日付か期間の文字
+  function periodWord(q, period, today) {
+    var mm = /(一昨日|おととい|今日|本日|昨日|明日|今週|先週|来週|今月|先月|来月|今年度|今年|去年|昨年|本年|前年|最近|直近)/.exec(nfkc(q));
+    if (mm) return mm[1] === '本日' ? '今日' : mm[1] === 'おととい' ? '一昨日' : mm[1];
+    if (period.isDay) return period.from === today ? '今日' : +period.from.slice(5, 7) + '/' + +period.from.slice(8, 10);
+    return period.label;
+  }
+  function formatAbsenceAllAnswer(period, sum, word, asOfDate) {
+    var range = period.from === period.to ? period.from : period.from + '〜' + period.to;
+    if (!sum.count) return word + 'はありません。\n(' + range + ' に、有給・欠勤・遅早などの届は1件もありません。' + asOfDate + ' 時点のデータ)';
+    var out = ['全員の ' + word + (word === range ? '' : '(' + range + ')') + 'の届です(' + asOfDate + ' 時点のデータ)。', '届が出ているのは ' + sum.peopleCount + '人(' + sum.count + '件)です。'];
+    sum.kinds.forEach(function (k) {
+      var list = sum.byKind[k], who = {};
+      list.forEach(function (d) { who[d.no] = 1; });
+      out.push('', '【' + k + '】' + Object.keys(who).length + '人(' + list.length + '件)');
+      list.forEach(function (d) {
+        var multi = d.to && d.to !== d.from;
+        out.push('・' + d.name + ' ' + (period.from === period.to && !multi ? '' : d.from + (multi ? '〜' + d.to : '') + ' ') + (d.reason ? '(' + d.reason + ')' : ''));
+      });
+    });
+    return out.join('\n').replace(/ $/gm, '');
+  }
 
   // ---------- 日報(第2弾): 工数の集計。数字はコードが計算し、AIは使わない ----------
   var WORK_HEADER = ['WorkReportNo', '社員No', '作業日', '工事ID', '工事No', '工事名', '作業内容', '時間', '元'];
@@ -692,6 +747,12 @@ var AI_LOGIC = (function () {
     return { from: ymd(y, m, 1), to: ymd(y, m, new Date(Date.UTC(y, m, 0)).getUTCDate()), label: y + '年' + m + '月' };
   }
   // get: {roster(), work(), prod()}。戻り値: null / {message, choices:[{label, q}]}
+  // 全員分の届一覧の期間ボタン
+  function allChoices(today) {
+    var md = parsePeriod('今月', today, 'month'), pm = parsePeriod('先月', today, 'month');
+    function c(label, from, to) { return { label: '全員 ' + label + (from === to ? ' ' + from : ' ' + from + '〜' + to), q: '全員の' + from + '〜' + to + 'の有給・欠勤・遅早の届一覧' }; }
+    return [c('今日', today, today), c('昨日', addDays(today, -1), addDays(today, -1)), c('明日', addDays(today, 1), addDays(today, 1)), c('今月度', md.from, md.to), c('先月度', pm.from, pm.to)];
+  }
   function clarify(q, today, get, sel) {
     var t = nfkc(q), sq = squash(q), mm, y = +today.slice(0, 4), m = +today.slice(5, 7), d = +today.slice(8, 10);
     function res(msg, choices) { return { message: msg, choices: choices.slice(0, 10) }; }
@@ -733,10 +794,12 @@ var AI_LOGIC = (function () {
       }));
     }
     var self = /(私|わたし|自分|僕|俺)/.test(t);
+    // 「全員の有給一覧」のように期間が無い: 期間を選ばせる
+    if (topic === 'abs?' && !people.length && !self && /(全員|みんな|皆|誰が|だれが)/.test(t)) return res('全員の有給・欠勤・届です。期間は、どれですか?', allChoices(today));
     // 人: 誰の質問か書かれていない(「有給は?」「工数は?」)
     if (!people.length && !self && (topic === 'abs?' || topic === 'work') && residueOf(q, roster) === '') {
       var core = sq.replace(/[はが]?[?？]*$/, '');
-      if (topic === 'abs?') return res('誰の有給・欠勤ですか?「私」を押すか、氏名を入れて質問し直してください。', [{ label: '私(自分)', q: '私の' + core + '状況' }]);
+      if (topic === 'abs?') return res('誰の有給・欠勤ですか?「私」か「全員」を押すか、氏名を入れて質問し直してください。', [{ label: '私(自分)', q: '私の' + core + '状況' }].concat(allChoices(today)));
       if (!findProjects(q, get.work()).length) return res('誰の・どの工事の工数ですか?「私」を押すか、氏名または工事名を入れて質問し直してください。' + (/(本社|夢前|鳥取|全社)/.test(t) ? '\n※日報には拠点の区分が無いため、拠点別・全社の工数は集計できません。' : ''), [{ label: '私(自分)', q: '私の' + core }]);
     }
     // 工事: 複数に当たる / 一部だけ書かれている
@@ -828,7 +891,7 @@ var AI_LOGIC = (function () {
            buildPrompt: buildPrompt, pickSources: pickSources, parseModelJson: parseModelJson, mergeRoster: mergeRoster, readRoster: readRoster,
            normEmail: normEmail, fixEmail: fixEmail, normName: normName,
            ABS_HEADER: ABS_HEADER, normDate: normDate, mergeAbsence: mergeAbsence, parsePeriod: parsePeriod, findPeople: findPeople,
-           parseAbsenceQuery: parseAbsenceQuery, daysInPeriod: daysInPeriod, summarizeAbsence: summarizeAbsence, formatAbsenceAnswer: formatAbsenceAnswer,
+           parseAbsenceQuery: parseAbsenceQuery, summarizeAbsenceAll: summarizeAbsenceAll, formatAbsenceAllAnswer: formatAbsenceAllAnswer, periodWord: periodWord, addDays: addDays, daysInPeriod: daysInPeriod, summarizeAbsence: summarizeAbsence, formatAbsenceAnswer: formatAbsenceAnswer,
            WORK_HEADER: WORK_HEADER, buildConsMap: buildConsMap, workFromB2: workFromB2, workFromB5: workFromB5, sortWork: sortWork, findProjects: findProjects,
            PROD_HEADER: PROD_HEADER, countWorkDays: countWorkDays, parseMasterRows: parseMasterRows, parseProdQuery: parseProdQuery, summarizeProd: summarizeProd, formatProdAnswer: formatProdAnswer,
            clarify: clarify, applyTopic: applyTopic, prodChoices: prodChoices, periodChoices: periodChoices, parseCalendarQuery: parseCalendarQuery, answerCalendar: answerCalendar, parseDay: parseDay, parseWorkQuery: parseWorkQuery, summarizeWork: summarizeWork, formatWorkAnswer: formatWorkAnswer };

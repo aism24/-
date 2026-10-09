@@ -261,7 +261,19 @@ function loadHolidays_() {
 function askAbsence_(user, question, abs, t0) {
   var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), answer = '', ok = false, loadMs = 0, choices = [];
   var src = '有給・欠勤データ(日報アプリのAbsenteeism)';
-  if (abs.who === 'ambiguous') {
+  var todayA = Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd');
+  if (abs.who === 'all') { // 全員分: 期間内に届が出ている人を種類別に並べる
+    var tL = Date.now(), rowsA = loadAbsence_();
+    if (!rowsA.length) throw err_('no_data', '有給・欠勤のデータがまだ取り込まれていません。管理者に連絡してください');
+    var holA = loadHolidays_(); loadMs = Date.now() - tL;
+    var sumA = AI_LOGIC.summarizeAbsenceAll(rowsA, abs.period, holA, rosterList_());
+    answer = AI_LOGIC.formatAbsenceAllAnswer(abs.period, sumA, AI_LOGIC.periodWord(question, abs.period, todayA), getMeta_('absence_synced_at').slice(0, 10) || '更新日不明');
+    ok = true;
+    [['今日', todayA], ['昨日', AI_LOGIC.addDays(todayA, -1)], ['明日', AI_LOGIC.addDays(todayA, 1)]].forEach(function (x) {
+      if (!(abs.period.from === x[1] && abs.period.to === x[1])) choices.push({ group: '日', label: x[0] + ' ' + x[1], q: '全員の' + x[1] + '〜' + x[1] + 'の有給・欠勤・遅早の届一覧' });
+    });
+    choices = choices.concat(AI_LOGIC.periodChoices(todayA, abs.period, 'abs', function (r) { return '全員の' + r + 'の有給・欠勤・遅早の届一覧'; }));
+  } else if (abs.who === 'ambiguous') {
     answer = '該当する方が複数います: ' + abs.people.map(function (p) { return p.name + '(社員No' + p.no + ')'; }).join('、') + '。お一人ずつ質問してください。';
   } else {
     var p = abs.who === 'self' ? { no: user.no, name: user.name } : abs.people[0];
