@@ -456,6 +456,97 @@ var AI_LOGIC = (function () {
     return out.join('\n').replace(/ $/gm, '');
   }
 
+  // ---------- 日報の未提出者: 在職中(Operatorの人)で、出勤日に、届も日報も無い人を「誰の・いつ」で出す ----------
+  var NOSUB_EXCLUDE = [2009, 2800]; // 日報を書かない人(対象外)
+  var NOSUB_CUE = /(未提出|未入力|未記入|出していない|出してない|入れていない|入れてない|入力していない|入力してない|書いていない|書いてない|入力漏れ|入力もれ|提出漏れ|提出もれ|出し忘れ|入れ忘れ|入力忘れ|催促)/;
+  function isNoSubmitQuery(q) {
+    var t = nfkc(q);
+    return NOSUB_CUE.test(t) && (/日報/.test(t) || /(誰|だれ|未提出者|未入力者|未提出の人|未入力の人)/.test(t));
+  }
+  // 戻り値: null / {period, group}。期間が読み取れないときは period=null(確認のボタンを出す)
+  function parseNoSubmitQuery(q, today, roster) {
+    if (!isNoSubmitQuery(q)) return null;
+    var t = nfkc(q), day = parseDay(q, today), period = null;
+    if (day) period = { from: day, to: day, label: day, isDay: true };
+    else if (hasPeriodWord(q, today)) { period = parsePeriod(q, today); if (period.isDefault) period = null; }
+    if (period && period.from === period.to) period.isDay = true;
+    return { period: period, group: findGroup(q, roster) };
+  }
+  function isWorkDayOf(d, holidays) {
+    var h = holidays[d];
+    return h === '休日' ? false : h == null ? !(dow(d) === 0 || dow(d) === 6) : true;
+  }
+  // 日報の行(日付は数字 yyyymmdd でも 'yyyy/MM/dd' でも可)から「社員No|日付」の集合を作る
+  function workKey(no, v) { var d = normDate(String(v).length === 8 && /^\d+$/.test(String(v)) ? String(v).replace(/(\d{4})(\d{2})(\d{2})/, '$1/$2/$3') : v); return Number(no) + '|' + d; }
+  var NOSUB_NOT_EXCUSE = ['半日有給', '遅早']; // 出勤しているので、日報が無ければ未提出
+  // opts: {roster, workRows, absRows, holidays, period, today, group, exclude}
+  function findMissingReports(o) {
+    var last = addDays(o.today, -1), from = o.period.from, to = o.period.to > last ? last : o.period.to;
+    var excl = {}; (o.exclude || NOSUB_EXCLUDE).forEach(function (n) { excl[Number(n)] = 1; });
+    var mem = o.group ? groupMembers(o.roster, o.group) : null;
+    var days = [], cur = from;
+    for (var i = 0; i < 400 && cur <= to; i++, cur = addDays(cur, 1)) if (isWorkDayOf(cur, o.holidays)) days.push(cur);
+    var done = {}, excuse = {};
+    o.workRows.forEach(function (r) { done[workKey(r[1], r[2])] = 1; });
+    o.absRows.forEach(function (r) {
+      if (NOSUB_NOT_EXCUSE.indexOf(r[4]) >= 0) return;
+      (excuse[Number(r[1])] || (excuse[Number(r[1])] = [])).push([r[2], r[3] || r[2]]);
+    });
+    var people = [], target = 0;
+    o.roster.slice().sort(function (a, b) { return Number(a.no) - Number(b.no); }).forEach(function (p) {
+      var no = Number(p.no);
+      if (excl[no] || (mem && !mem[no])) return;
+      target++;
+      var ex = excuse[no] || [], miss = [];
+      days.forEach(function (d) {
+        if (done[no + '|' + d]) return;
+        for (var k = 0; k < ex.length; k++) if (ex[k][0] <= d && d <= ex[k][1]) return;
+        miss.push(d);
+      });
+      if (miss.length) people.push({ no: no, name: p.name, missing: miss });
+    });
+    return { from: from, to: to, to0: o.period.to, last: last, days: days, target: target, people: people,
+             total: people.reduce(function (n, p) { return n + p.missing.length; }, 0) };
+  }
+  function mdw(d) { return +d.slice(5, 7) + '/' + +d.slice(8, 10) + '(' + '日月火水木金土'.charAt(dow(d)) + ')'; }
+  function periodWordNoSub(q, period, today) {
+    var mm = /(一昨日|おととい|今日|本日|昨日|今週|先週|今月度|先月度|今月|先月|今年度|今年|去年|昨年|最近|直近)/.exec(nfkc(q));
+    if (mm) return mm[1] === '本日' ? '今日' : mm[1] === 'おととい' ? '一昨日' : mm[1];
+    return period.isDay ? mdw(period.from) : period.from + '〜' + period.to;
+  }
+  function formatMissingAnswer(res, word, asOfDate, group) {
+    var scope = group ? group.name + 'の' : '';
+    if (res.to < res.from) return scope + word + 'は、まだ確認できません。日報は毎晩の更新で取り込むため、昨日(' + res.last + ')までが対象です。';
+    if (!res.days.length) return scope + word + '(' + (res.from === res.to ? res.from : res.from + '〜' + res.to) + ')は、会社カレンダー上の出勤日がありません。';
+    var range = res.from === res.to ? res.from : res.from + '〜' + res.to;
+    var foot = ['※対象: Operatorシートの' + (group ? group.name + 'の' : '') + res.target + '人(日報を書かない2009・2800は除く)。出勤日(会社カレンダー)に、日報の記録も届(有給・欠勤など。半日有給・遅早は除く)も無い日を、未提出としています。' + asOfDate + ' 時点のデータ。'];
+    if (!res.people.length) return scope + word + 'は、日報の未提出者はいません。\n(' + range + '・出勤日' + res.days.length + '日)\n' + foot.join('');
+    var out = [scope + word + '(' + range + '・出勤日' + res.days.length + '日)の日報未提出者は ' + res.people.length + '人(のべ' + res.total + '件)です。', ''];
+    res.people.forEach(function (p) {
+      out.push('・' + p.name + '(社員No' + p.no + ')' + (res.days.length === 1 ? '' : ' ' + p.missing.map(mdw).join('、') + '(' + p.missing.length + '日)'));
+    });
+    return out.concat(['', foot[0]]).join('\n');
+  }
+  function noSubQ(group, from, to) { return (group ? group.name : '全員') + 'の' + from + '〜' + to + 'の日報未提出者'; }
+  // 期間が書かれていないときの確認ボタン
+  function noSubChoices(today, roster) {
+    var y1 = addDays(today, -1), y2 = addDays(today, -2), md = parsePeriod('今月', today, 'month'), pm = parsePeriod('先月', today, 'month');
+    function c(label, from, to, g) { return { label: (g ? g.name + ' ' : '全員 ') + label + (from === to ? ' ' + from : ' ' + from + '〜' + to), q: noSubQ(g, from, to) }; }
+    var out = [c('昨日', y1, y1), c('一昨日', y2, y2), c('今月度', md.from, md.to), c('先月度', pm.from, pm.to)];
+    groupsOf(roster).forEach(function (g) { out.push(c('昨日', y1, y1, g)); });
+    return out;
+  }
+  function noSubAnswerChoices(today, period, group, roster) {
+    var out = [], y1 = addDays(today, -1), y2 = addDays(today, -2), md = parsePeriod('今月', today, 'month'), pm = parsePeriod('先月', today, 'month'), cm = calMonth(today, '今月');
+    if (group) out.push({ group: '対象', label: '全員', q: noSubQ(null, period.from, period.to) });
+    groupsOf(roster).forEach(function (g) { if (!group || g.name !== group.name) out.push({ group: '対象', label: g.name, q: noSubQ(g, period.from, period.to) }); });
+    [['昨日', y1, y1], ['一昨日', y2, y2]].forEach(function (x) { if (!(period.from === x[1] && period.to === x[2])) out.push({ group: '日', label: x[0] + ' ' + x[1], q: noSubQ(group, x[1], x[2]) }); });
+    [['今月度', md.from, md.to], ['先月度', pm.from, pm.to], ['暦月(今月)', cm.from, cm.to]].forEach(function (x) {
+      if (!(period.from === x[1] && period.to === x[2])) out.push({ group: '期間', label: x[0] + ' ' + x[1] + '〜' + x[2], q: noSubQ(group, x[1], x[2]) });
+    });
+    return out;
+  }
+
   // ---------- 日報(第2弾): 工数の集計。数字はコードが計算し、AIは使わない ----------
   var WORK_HEADER = ['WorkReportNo', '社員No', '作業日', '工事ID', '工事No', '工事名', '作業内容', '時間', '元'];
   function dnum(s) { return parseInt(String(s).replace(/\//g, ''), 10); }
@@ -820,7 +911,13 @@ var AI_LOGIC = (function () {
     }
     var roster = get.roster(), abs = parseAbsenceQuery(q, today, roster);
     var ABS_STRONG = /(有給|有休|年休|欠勤|遅刻|早退|遅早|届)/;
-    var topic = abs ? 'abs' : WORK_TOPIC.test(t) ? 'work' : PROD_TOPIC.test(t) ? 'prod' : ABS_STRONG.test(t) ? 'abs?' : '';
+    var nosub = false;
+    if (isNoSubmitQuery(q)) { // 日報の未提出者: 期間が読み取れなければ期間のボタン
+      var ns = parseNoSubmitQuery(q, today, roster);
+      if (!ns.period && !/(今月|先月|今週|先週|今年|去年|昨年|本年|前年|最近|直近|当月|前月|\d{1,2}月)/.test(t)) return res('日報の未提出者です。期間は、どれですか?', noSubChoices(today, roster));
+      nosub = true;
+    }
+    var topic = nosub ? 'nosub' : abs ? 'abs' : WORK_TOPIC.test(t) ? 'work' : PROD_TOPIC.test(t) ? 'prod' : ABS_STRONG.test(t) ? 'abs?' : '';
     if (!topic) return null;
     var people = (topic === 'abs' || topic === 'work') ? findPeople(q, roster) : [];
     // 人: 姓だけで複数に当たる
@@ -929,7 +1026,7 @@ var AI_LOGIC = (function () {
            buildPrompt: buildPrompt, pickSources: pickSources, parseModelJson: parseModelJson, mergeRoster: mergeRoster, readRoster: readRoster,
            normEmail: normEmail, fixEmail: fixEmail, normName: normName,
            ABS_HEADER: ABS_HEADER, normDate: normDate, mergeAbsence: mergeAbsence, parsePeriod: parsePeriod, findPeople: findPeople,
-           parseAbsenceQuery: parseAbsenceQuery, summarizeAbsenceAll: summarizeAbsenceAll, allAnswerChoices: allAnswerChoices, groupsOf: groupsOf, findGroup: findGroup, formatAbsenceAllAnswer: formatAbsenceAllAnswer, periodWord: periodWord, addDays: addDays, daysInPeriod: daysInPeriod, summarizeAbsence: summarizeAbsence, formatAbsenceAnswer: formatAbsenceAnswer,
+           parseAbsenceQuery: parseAbsenceQuery, summarizeAbsenceAll: summarizeAbsenceAll, parseNoSubmitQuery: parseNoSubmitQuery, isNoSubmitQuery: isNoSubmitQuery, findMissingReports: findMissingReports, formatMissingAnswer: formatMissingAnswer, noSubAnswerChoices: noSubAnswerChoices, periodWordNoSub: periodWordNoSub, NOSUB_EXCLUDE: NOSUB_EXCLUDE, allAnswerChoices: allAnswerChoices, groupsOf: groupsOf, findGroup: findGroup, formatAbsenceAllAnswer: formatAbsenceAllAnswer, periodWord: periodWord, addDays: addDays, daysInPeriod: daysInPeriod, summarizeAbsence: summarizeAbsence, formatAbsenceAnswer: formatAbsenceAnswer,
            WORK_HEADER: WORK_HEADER, buildConsMap: buildConsMap, workFromB2: workFromB2, workFromB5: workFromB5, sortWork: sortWork, findProjects: findProjects,
            PROD_HEADER: PROD_HEADER, countWorkDays: countWorkDays, parseMasterRows: parseMasterRows, parseProdQuery: parseProdQuery, summarizeProd: summarizeProd, formatProdAnswer: formatProdAnswer,
            clarify: clarify, applyTopic: applyTopic, prodChoices: prodChoices, periodChoices: periodChoices, parseCalendarQuery: parseCalendarQuery, answerCalendar: answerCalendar, parseDay: parseDay, parseWorkQuery: parseWorkQuery, summarizeWork: summarizeWork, formatWorkAnswer: formatWorkAnswer };
