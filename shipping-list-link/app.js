@@ -7,7 +7,7 @@
   var OPEN_BASE = 'https://shipping-list-link.vercel.app/open.html';
   var $ = function (id) { return document.getElementById(id); };
   var links = null, working = false, cur = null, refreshing = false;
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261009a';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261009b';
 
   // 日時は日本時間の「10/7 06:55」形式で表示する
   var jst = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -25,10 +25,10 @@
     var q = bust ? 't=' + Date.now() : '';
     try {
       var r = await fetch('api/links' + (q ? '?' + q : ''));
-      if (r.ok) { var m = await r.json(); if (m && m.links) return { m: m, via: '中継API' }; }
+      if (r.ok) { var m = await r.json(); if (m && m.links) return { m: ShippingCore.expandMaster(m), via: '中継API' }; }
     } catch (e) {}
     var r2 = await fetch(GAS_URL ? GAS_URL + '?action=links' + (q ? '&' + q : '') : 'sample/links.json', { cache: 'no-store' });
-    return { m: await r2.json(), via: GAS_URL ? 'GAS直接' : '動作確認用サンプル' };
+    return { m: ShippingCore.expandMaster(await r2.json()), via: GAS_URL ? 'GAS直接' : '動作確認用サンプル' };
   }
   // 「マスタ情報反映中」ポップアップ(中央揃え・流れるデータバー)
   function busy(on) { $('busyModal').classList.toggle('show', on); }
