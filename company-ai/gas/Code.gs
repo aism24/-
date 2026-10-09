@@ -140,7 +140,7 @@ function getRoster_() {
   var vals = sheet_(SHEET.OPERATOR, OPERATOR_HEADER).getDataRange().getValues(), map = {};
   for (var i = 1; i < vals.length; i++) {
     var em = AI_LOGIC.normEmail(vals[i][7]);
-    if (em) map[em] = { no: vals[i][0], name: vals[i][1], admin: String(vals[i][10]) === '管理者' };
+    if (em) map[em] = { no: vals[i][0], name: vals[i][1], div: vals[i][2], fac: vals[i][3], admin: String(vals[i][10]) === '管理者' };
   }
   if (Object.keys(map).length) putLarge_('roster', JSON.stringify(map), 360);
   return map;
@@ -237,7 +237,7 @@ function askClarify_(user, question, cl, t0) {
 // 有給・欠勤の質問: 数字はコードが計算して文章にする(AIは使わない)
 function rosterList_() {
   var m = getRoster_(), out = [];
-  Object.keys(m).forEach(function (k) { out.push({ no: m[k].no, name: m[k].name }); });
+  Object.keys(m).forEach(function (k) { out.push({ no: m[k].no, name: m[k].name, div: m[k].div, fac: m[k].fac }); });
   return out;
 }
 function loadAbsence_() {
@@ -262,17 +262,14 @@ function askAbsence_(user, question, abs, t0) {
   var qid = 'Q' + Utilities.getUuid().replace(/-/g, '').slice(0, 7).toUpperCase(), answer = '', ok = false, loadMs = 0, choices = [];
   var src = '有給・欠勤データ(日報アプリのAbsenteeism)';
   var todayA = Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd');
-  if (abs.who === 'all') { // 全員分: 期間内に届が出ている人を種類別に並べる
-    var tL = Date.now(), rowsA = loadAbsence_();
+  if (abs.who === 'all') { // 全員(または事業部・工場)分: 期間内に届が出ている人を種類別に並べる
+    var tL = Date.now(), rowsA = loadAbsence_(), rosA = rosterList_();
     if (!rowsA.length) throw err_('no_data', '有給・欠勤のデータがまだ取り込まれていません。管理者に連絡してください');
     var holA = loadHolidays_(); loadMs = Date.now() - tL;
-    var sumA = AI_LOGIC.summarizeAbsenceAll(rowsA, abs.period, holA, rosterList_());
-    answer = AI_LOGIC.formatAbsenceAllAnswer(abs.period, sumA, AI_LOGIC.periodWord(question, abs.period, todayA), getMeta_('absence_synced_at').slice(0, 10) || '更新日不明');
+    var sumA = AI_LOGIC.summarizeAbsenceAll(rowsA, abs.period, holA, rosA, abs.group);
+    answer = AI_LOGIC.formatAbsenceAllAnswer(abs.period, sumA, AI_LOGIC.periodWord(question, abs.period, todayA), getMeta_('absence_synced_at').slice(0, 10) || '更新日不明', abs.group);
     ok = true;
-    [['今日', todayA], ['昨日', AI_LOGIC.addDays(todayA, -1)], ['明日', AI_LOGIC.addDays(todayA, 1)]].forEach(function (x) {
-      if (!(abs.period.from === x[1] && abs.period.to === x[1])) choices.push({ group: '日', label: x[0] + ' ' + x[1], q: '全員の' + x[1] + '〜' + x[1] + 'の有給・欠勤・遅早の届一覧' });
-    });
-    choices = choices.concat(AI_LOGIC.periodChoices(todayA, abs.period, 'abs', function (r) { return '全員の' + r + 'の有給・欠勤・遅早の届一覧'; }));
+    choices = AI_LOGIC.allAnswerChoices(todayA, abs.period, abs.group, rosA);
   } else if (abs.who === 'ambiguous') {
     answer = '該当する方が複数います: ' + abs.people.map(function (p) { return p.name + '(社員No' + p.no + ')'; }).join('、') + '。お一人ずつ質問してください。';
   } else {

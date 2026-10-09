@@ -316,6 +316,28 @@ var AI_LOGIC = (function () {
     }
     return null;
   }
+  // 名簿の「事業部」「工場」の名前(多い順、最大12)。全員分の届一覧の対象ボタンと、質問文からの判定に使う
+  function groupsOf(roster) {
+    var cnt = {}, order = [];
+    (roster || []).forEach(function (p) {
+      [p.div, p.fac].forEach(function (v) {
+        v = squash(String(v == null ? '' : v)); if (v.length < 2 || v === '0') return;
+        if (!(v in cnt)) { cnt[v] = 0; order.push(v); }
+        cnt[v]++;
+      });
+    });
+    return order.sort(function (a, b) { return cnt[b] - cnt[a]; }).slice(0, 12).map(function (v) { return { name: v }; });
+  }
+  function findGroup(q, roster) {
+    var sq = squash(nfkc(q)), best = null;
+    groupsOf(roster).forEach(function (g) { if (sq.indexOf(g.name) >= 0 && (!best || g.name.length > best.name.length)) best = g; });
+    return best;
+  }
+  function groupMembers(roster, group) {
+    var m = {};
+    (roster || []).forEach(function (p) { if (squash(String(p.div || '')) === group.name || squash(String(p.fac || '')) === group.name) m[Number(p.no)] = 1; });
+    return m;
+  }
   var ABS_LIST = /(有給|有休|年休|欠勤|遅刻|早退|遅早|届|休んで|休んだ)/;
   var ABS_LISTCUE = /(一覧|誰|だれ|全員|みんな|皆|何人|人|休んで|休んだ|欠勤|遅刻|早退|遅早|届)/;
   var ABS_RULEY = /(もらえ|付与|規則|規程|ルール|制度|手続|申請方法|届出|提出|前まで|までに|方法|とは|できま|繰越|繰り越|時効|取れ|取っても|可能|義務)/;
@@ -335,7 +357,7 @@ var AI_LOGIC = (function () {
       var dayA = parseDay(q, today) || (/(明日|あした)/.test(t) ? addDays(today, 1) : ''), perA = dayA ? { from: dayA, to: dayA, label: dayA, isDay: true } : parsePeriod(q, today);
       if (perA.isDefault) return null; // 期間を読み取れない(来週など)ときは、期間を選ばせる
       if (perA.from === perA.to) perA.isDay = true;
-      return { who: 'all', people: [], period: perA, remain: false };
+      return { who: 'all', people: [], period: perA, remain: false, group: findGroup(q, roster) };
     }
     var who = people.length > 1 ? 'ambiguous' : people.length === 1 ? 'person' : 'self';
     if (who === 'self' && !/(取った|取って|取得|使った|使って|消化|休んだ|遅刻|早退|欠勤|何日|何回|残|状況|確認|履歴|一覧|届)/.test(t)) return null;
@@ -392,10 +414,11 @@ var AI_LOGIC = (function () {
 
   // 全員分: その期間に届が出ている人を、種類別にまとめる。roster: [{no,name}]
   var ABS_KIND_ORDER = ['有給', '半日有給', '欠勤', '遅早'];
-  function summarizeAbsenceAll(rows, period, holidays, roster) {
-    var names = {}, byKind = {}, people = {}, count = 0;
+  function summarizeAbsenceAll(rows, period, holidays, roster, group) {
+    var names = {}, byKind = {}, people = {}, count = 0, mem = group ? groupMembers(roster, group) : null;
     (roster || []).forEach(function (p) { names[Number(p.no)] = p.name; });
     rows.forEach(function (r) {
+      if (mem && !mem[Number(r[1])]) return;
       var n = daysInPeriod(r, period, holidays);
       if (!n) return;
       var kind = r[4] || '(項目なし)', no = Number(r[1]);
@@ -416,10 +439,11 @@ var AI_LOGIC = (function () {
     if (period.isDay) return period.from === today ? '今日' : +period.from.slice(5, 7) + '/' + +period.from.slice(8, 10);
     return period.label;
   }
-  function formatAbsenceAllAnswer(period, sum, word, asOfDate) {
+  function formatAbsenceAllAnswer(period, sum, word, asOfDate, group) {
+    var scope = group ? group.name : '全員';
     var range = period.from === period.to ? period.from : period.from + '〜' + period.to;
-    if (!sum.count) return word + 'はありません。\n(' + range + ' に、有給・欠勤・遅早などの届は1件もありません。' + asOfDate + ' 時点のデータ)';
-    var out = ['全員の ' + word + (word === range ? '' : '(' + range + ')') + 'の届です(' + asOfDate + ' 時点のデータ)。', '届が出ているのは ' + sum.peopleCount + '人(' + sum.count + '件)です。'];
+    if (!sum.count) return (group ? group.name + 'の' : '') + word + 'はありません。\n(' + range + ' に、有給・欠勤・遅早などの届は1件もありません。' + asOfDate + ' 時点のデータ)';
+    var out = [scope + 'の ' + word + (word === range ? '' : '(' + range + ')') + 'の届です(' + asOfDate + ' 時点のデータ)。', '届が出ているのは ' + sum.peopleCount + '人(' + sum.count + '件)です。'];
     sum.kinds.forEach(function (k) {
       var list = sum.byKind[k], who = {};
       list.forEach(function (d) { who[d.no] = 1; });
@@ -747,11 +771,25 @@ var AI_LOGIC = (function () {
     return { from: ymd(y, m, 1), to: ymd(y, m, new Date(Date.UTC(y, m, 0)).getUTCDate()), label: y + '年' + m + '月' };
   }
   // get: {roster(), work(), prod()}。戻り値: null / {message, choices:[{label, q}]}
-  // 全員分の届一覧の期間ボタン
-  function allChoices(today) {
-    var md = parsePeriod('今月', today, 'month'), pm = parsePeriod('先月', today, 'month');
-    function c(label, from, to) { return { label: '全員 ' + label + (from === to ? ' ' + from : ' ' + from + '〜' + to), q: '全員の' + from + '〜' + to + 'の有給・欠勤・遅早の届一覧' }; }
-    return [c('今日', today, today), c('昨日', addDays(today, -1), addDays(today, -1)), c('明日', addDays(today, 1), addDays(today, 1)), c('今月度', md.from, md.to), c('先月度', pm.from, pm.to)];
+  // 全員分・事業部/工場別の届一覧のボタン
+  function absAllQ(group, from, to) { return (group ? group.name : '全員') + 'の' + from + '〜' + to + 'の有給・欠勤・遅早の届一覧'; }
+  function allChoices(today, roster) { // 誰の分かが決まっていない質問に出す(今日)
+    var md = parsePeriod('今月', today, 'month'), pm = parsePeriod('先月', today, 'month'), y1 = addDays(today, -1), t1 = addDays(today, 1);
+    function c(label, from, to, g) { return { group: g ? '事業部・工場' : '全員', label: (g ? g.name : '全員') + ' ' + label + (from === to ? ' ' + from : ' ' + from + '〜' + to), q: absAllQ(g, from, to) }; }
+    var out = [c('今日', today, today), c('昨日', y1, y1), c('明日', t1, t1), c('今月度', md.from, md.to), c('先月度', pm.from, pm.to)];
+    groupsOf(roster).forEach(function (g) { out.push(c('今日', today, today, g)); });
+    return out;
+  }
+  // 全員分の回答の下に出すボタン: 対象(全員・事業部・工場) / 日 / 期間
+  function allAnswerChoices(today, period, group, roster) {
+    var out = [];
+    function add(g, label, grp, q) { out.push({ group: grp, label: label, q: q }); }
+    if (group) add(null, '全員', '対象', absAllQ(null, period.from, period.to));
+    groupsOf(roster).forEach(function (g) { if (!group || g.name !== group.name) add(g, g.name, '対象', absAllQ(g, period.from, period.to)); });
+    [['今日', today], ['昨日', addDays(today, -1)], ['明日', addDays(today, 1)]].forEach(function (x) {
+      if (!(period.from === x[1] && period.to === x[1])) add(null, x[0] + ' ' + x[1], '日', absAllQ(group, x[1], x[1]));
+    });
+    return out.concat(periodChoices(today, period, 'abs', function (r) { var a = r.split('〜'); return absAllQ(group, a[0], a[1]); }));
   }
   function clarify(q, today, get, sel) {
     var t = nfkc(q), sq = squash(q), mm, y = +today.slice(0, 4), m = +today.slice(5, 7), d = +today.slice(8, 10);
@@ -795,11 +833,11 @@ var AI_LOGIC = (function () {
     }
     var self = /(私|わたし|自分|僕|俺)/.test(t);
     // 「全員の有給一覧」のように期間が無い: 期間を選ばせる
-    if (topic === 'abs?' && !people.length && !self && /(全員|みんな|皆|誰が|だれが)/.test(t)) return res('全員の有給・欠勤・届です。期間は、どれですか?', allChoices(today));
+    if (topic === 'abs?' && !people.length && !self && (/(全員|みんな|皆|誰が|だれが)/.test(t) || findGroup(t, roster))) return res('全員(事業部・工場別も)の有給・欠勤・届です。期間は、どれですか?', allChoices(today, roster));
     // 人: 誰の質問か書かれていない(「有給は?」「工数は?」)
     if (!people.length && !self && (topic === 'abs?' || topic === 'work') && residueOf(q, roster) === '') {
       var core = sq.replace(/[はが]?[?？]*$/, '');
-      if (topic === 'abs?') return res('誰の有給・欠勤ですか?「私」か「全員」を押すか、氏名を入れて質問し直してください。', [{ label: '私(自分)', q: '私の' + core + '状況' }].concat(allChoices(today)));
+      if (topic === 'abs?') return res('誰の有給・欠勤ですか?「私」か「全員」を押すか、氏名を入れて質問し直してください。', [{ label: '私(自分)', q: '私の' + core + '状況' }].concat(allChoices(today, roster)));
       if (!findProjects(q, get.work()).length) return res('誰の・どの工事の工数ですか?「私」を押すか、氏名または工事名を入れて質問し直してください。' + (/(本社|夢前|鳥取|全社)/.test(t) ? '\n※日報には拠点の区分が無いため、拠点別・全社の工数は集計できません。' : ''), [{ label: '私(自分)', q: '私の' + core }]);
     }
     // 工事: 複数に当たる / 一部だけ書かれている
@@ -891,7 +929,7 @@ var AI_LOGIC = (function () {
            buildPrompt: buildPrompt, pickSources: pickSources, parseModelJson: parseModelJson, mergeRoster: mergeRoster, readRoster: readRoster,
            normEmail: normEmail, fixEmail: fixEmail, normName: normName,
            ABS_HEADER: ABS_HEADER, normDate: normDate, mergeAbsence: mergeAbsence, parsePeriod: parsePeriod, findPeople: findPeople,
-           parseAbsenceQuery: parseAbsenceQuery, summarizeAbsenceAll: summarizeAbsenceAll, formatAbsenceAllAnswer: formatAbsenceAllAnswer, periodWord: periodWord, addDays: addDays, daysInPeriod: daysInPeriod, summarizeAbsence: summarizeAbsence, formatAbsenceAnswer: formatAbsenceAnswer,
+           parseAbsenceQuery: parseAbsenceQuery, summarizeAbsenceAll: summarizeAbsenceAll, allAnswerChoices: allAnswerChoices, groupsOf: groupsOf, findGroup: findGroup, formatAbsenceAllAnswer: formatAbsenceAllAnswer, periodWord: periodWord, addDays: addDays, daysInPeriod: daysInPeriod, summarizeAbsence: summarizeAbsence, formatAbsenceAnswer: formatAbsenceAnswer,
            WORK_HEADER: WORK_HEADER, buildConsMap: buildConsMap, workFromB2: workFromB2, workFromB5: workFromB5, sortWork: sortWork, findProjects: findProjects,
            PROD_HEADER: PROD_HEADER, countWorkDays: countWorkDays, parseMasterRows: parseMasterRows, parseProdQuery: parseProdQuery, summarizeProd: summarizeProd, formatProdAnswer: formatProdAnswer,
            clarify: clarify, applyTopic: applyTopic, prodChoices: prodChoices, periodChoices: periodChoices, parseCalendarQuery: parseCalendarQuery, answerCalendar: answerCalendar, parseDay: parseDay, parseWorkQuery: parseWorkQuery, summarizeWork: summarizeWork, formatWorkAnswer: formatWorkAnswer };
