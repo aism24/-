@@ -144,11 +144,12 @@ function build_(force) {
     return { ok: false, rejected: rej };
   }
   var updated = new Date().toISOString();
-  var json = JSON.stringify({ updated: updated, sources: sources, links: merged });
+  var json = JSON.stringify(compactMaster_({ updated: updated, sources: sources, links: merged }));
   if (exFile) exFile.setContent(json); else folder.createFile(LINKS_FILE_NAME, json, 'application/json');
   var excelModified = maxModified_(sources);
   props.setProperty('meta', JSON.stringify({ updated: updated, count: count, excelModified: excelModified, sig: signature_(files) }));
   props.deleteProperty('rejected');
+  cacheClear_();
   return { ok: true, updated: updated, count: count, prevCount: prevCount, excelModified: excelModified };
 }
 /** 毎朝6時のトリガー用(トリガーは引数にイベントを渡すので、force を取らない形にしている) */
@@ -159,10 +160,47 @@ function setupDaily() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'buildMaster') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('buildMaster').timeBased().everyDays(1).atHour(6).inTimezone('Asia/Tokyo').create();
 }
+/** リンク表を圧縮形式にする: 同じフォルダ名(URLの最後の「/」まで)を d に1回だけ持ち、links の値は「d の番号|ファイル名」。6.6MB→約1.4MB */
+function compactMaster_(m) {
+  if (m.d) return m;
+  var d = [], idx = {}, links = {};
+  Object.keys(m.links).forEach(function (k) {
+    var v = m.links[k], i = v.lastIndexOf('/') + 1, p = v.slice(0, i);
+    if (!(p in idx)) { idx[p] = d.length; d.push(p); }
+    links[k] = idx[p] + '|' + v.slice(i);
+  });
+  return { updated: m.updated, sources: m.sources, d: d, links: links };
+}
+// GAS側キャッシュ(CacheService)。1キー約100KBまでなので、gzip+base64にして90,000文字ずつに分けて持つ。再生成(build_)で破棄
+var CACHE_CHUNK = 90000, CACHE_SEC = 21600;
+function cacheClear_() { try { CacheService.getScriptCache().remove('lk_meta'); } catch (e) {} }
+function cacheGet_() {
+  try {
+    var c = CacheService.getScriptCache(), n = Number(c.get('lk_meta') || 0);
+    if (!n) return null;
+    var keys = [], i; for (i = 0; i < n; i++) keys.push('lk_' + i);
+    var got = c.getAll(keys), s = '';
+    for (i = 0; i < n; i++) { if (!got['lk_' + i]) return null; s += got['lk_' + i]; }
+    return Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(s), 'application/x-gzip')).getDataAsString('UTF-8');
+  } catch (e) { return null; }
+}
+function cachePut_(json) {
+  try {
+    var s = Utilities.base64Encode(Utilities.gzip(Utilities.newBlob(json, 'application/json', 'l.json')).getBytes()), o = {}, n = 0;
+    for (var p = 0; p < s.length; p += CACHE_CHUNK) o['lk_' + (n++)] = s.slice(p, p + CACHE_CHUNK);
+    var c = CacheService.getScriptCache();
+    c.putAll(o, CACHE_SEC); c.put('lk_meta', String(n), CACHE_SEC);
+  } catch (e) {}
+}
 function loadLinksJson_() {
-  var ex = DriveApp.getFolderById(SAVE_FOLDER_ID).getFilesByName(LINKS_FILE_NAME);
-  if (!ex.hasNext()) { buildMaster(); ex = DriveApp.getFolderById(SAVE_FOLDER_ID).getFilesByName(LINKS_FILE_NAME); }
-  return ex.next().getBlob().getDataAsString('UTF-8');
+  var hit = cacheGet_();
+  if (hit) return hit;
+  var folder = DriveApp.getFolderById(SAVE_FOLDER_ID), ex = folder.getFilesByName(LINKS_FILE_NAME);
+  if (!ex.hasNext()) { buildMaster(); ex = folder.getFilesByName(LINKS_FILE_NAME); }
+  var file = ex.next(), json = file.getBlob().getDataAsString('UTF-8');
+  if (json.indexOf('"d":[') < 0) { json = JSON.stringify(compactMaster_(JSON.parse(json))); file.setContent(json); }   // 従来形式のファイルは、最初の1回だけ圧縮形式に変換して保存し直す
+  cachePut_(json);
+  return json;
 }
 function json_(o) { return ContentService.createTextOutput(typeof o === 'string' ? o : JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 

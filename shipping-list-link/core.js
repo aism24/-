@@ -186,6 +186,17 @@
     return base + '?p=' + encodeURIComponent(path);
   }
 
-  var api = { linkPdf: linkPdf, encodeUri: encodeUri, toOpenUrl: toOpenUrl };
+  // 圧縮形式のリンク表({d:[フォルダ…], links:{キー:"番号|ファイル名"}})を、従来の {キー:URL} に戻す。従来形式はそのまま返す
+  function expandMaster(m) {
+    if (!m || !m.d) return m;
+    var links = {}, k, v, i;
+    for (k in m.links) {
+      v = m.links[k]; i = v.indexOf('|');
+      links[k] = (i > 0 ? m.d[+v.slice(0, i)] : '') + v.slice(i + 1);
+    }
+    return { updated: m.updated, sources: m.sources, links: links };
+  }
+
+  var api = { expandMaster: expandMaster, linkPdf: linkPdf, encodeUri: encodeUri, toOpenUrl: toOpenUrl };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ShippingCore = api;
 })(typeof window !== 'undefined' ? window : this);
