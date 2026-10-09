@@ -149,7 +149,7 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 | pdf-diff-pythonapp (https://pdf-diff-pythonapp.vercel.app/) | pdf-diff-app | 解除(2026-09-24、関数統合版を本番デプロイ後に再解除) | |
 | daily-report (https://all-daily-report.vercel.app/) | daily-report | 解除(2026-09-24) | `daily-report/vercel.json` で `git.deploymentEnabled=false`。Ignored Build Step=`git diff HEAD^ HEAD --quiet -- .` |
 | shipping-list-link (https://shipping-list-link.vercel.app/) | shipping-list-link | 連携は現在解除(2026-10-07、ユーザーが解除し `list_projects` 0件を確認。10/7は一時連携→#640・#641を `create_deployment` で本番デプロイ(10/7計3回)→解除。作成時は連携済みで、10/5までに本番デプロイ5回) | 静的サイト+`api/links.js`(小さいNode関数)。`vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(連携を解除した状態でも実行できるかは未確認。連携を戻す場合は先に他アプリの連携が無いことを確認)。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
-| sonekibunki (https://sonekibunki.vercel.app/) | production-profit | 解除(2026-09-29、#416〜#424を本番デプロイ後にユーザーが解除。`list_projects` 0件を確認。`vercel.json` の `git.deploymentEnabled=false` は残置) | 静的サイト(関数なし)。本番反映は `create_deployment` で行う。GitHub Pages版は廃止(index.htmlでVercel版へ転送) |
+| sonekibunki(旧・運用停止。2026-10-09〜。https://sonekibunki.vercel.app/) | production-profit | 解除(2026-09-29、#416〜#424を本番デプロイ後にユーザーが解除。`list_projects` 0件を確認。`vercel.json` の `git.deploymentEnabled=false` は残置) | 静的サイト(関数なし)。本番反映は `create_deployment` で行う。GitHub Pages版は廃止(index.htmlでVercel版へ転送)。**【運用停止】コストインサイトと同じ内容になったため、損益分岐の旧アプリは使わない。フォルダ(production-profit/)はGitHubに削除せず残置。Vercelプロジェクトはユーザーが削除予定。新規の作業・デプロイ・ランチャー登録の対象にしないこと** |
 | cost-insight (https://cost-insight.vercel.app/) | cost-insight | 解除(2026-10-06、ユーザーが解除。`list_projects` 0件を確認) | 静的サイト。`cost-insight/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(project=cost-insight)。引き継ぎ書はDriveの保存先フォルダ(上の表) |
 | tori-robo (Vercelプロジェクト名「-tori-robo」。https://tori-robo.vercel.app/) | tori-robo | 解除(2026-10-07、10/6にユーザーが一時連携→sp43〜sp50(6回)を `create_deployment` で本番デプロイ→10/7にユーザーが解除。`list_projects` 0件を確認) | `tori-robo/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(teamIdは渡さない=403)。引き継ぎ書はDriveの保存先フォルダ(上の表) |
 | app-launcher (https://app-launcher-ashy.vercel.app/) | app-launcher | 解除(2026-10-05〜06にユーザーが解除。`list_projects` 0件を確認)| `app-launcher/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(同一SHAは `forceNew="1"` を付ける)。Ignored Build Stepに `-- ./app-launcher` のコマンドが入っていると常にスキップされる(原因判明・解消済み)。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
@@ -282,6 +282,9 @@ Git連携の接続/解除はClaudeのVercelツールではできない(ユーザ
   連携してもらう。
 
 ## 不要フォルダ(残置)(2026-09-24〜)
+
+- `production-profit/`(損益分岐の旧アプリ・sonekibunki): **2026-10-09〜運用停止**(ユーザー判断。コストインサイトと同じ内容になったため)。
+  削除はせずGitHubに残置している。新規の作業・デプロイ・ランチャー登録の対象にしないこと。
 
 - `open_jissun/`: **不要フォルダ**(ユーザー判断)。実際の「実寸法師を開く」は
   `jissun-open`(Vercel)→ jissun:// → 社内共有フォルダのHTML で運用しており、
