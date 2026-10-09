@@ -7,7 +7,7 @@
   var OPEN_BASE = 'https://shipping-list-link.vercel.app/open.html';
   var $ = function (id) { return document.getElementById(id); };
   var links = null, working = false, cur = null, refreshing = false;
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261009b';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261009c';
 
   // 日時は日本時間の「10/7 06:55」形式で表示する
   var jst = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -23,15 +23,17 @@
   // bust=true: 「最新を取得」ボタン用。URLに時刻を付けてCDNキャッシュを避ける
   async function fetchMaster(bust) {
     var q = bust ? 't=' + Date.now() : '';
-    try {
-      var r = await fetch('api/links' + (q ? '?' + q : ''));
-      if (r.ok) { var m = await r.json(); if (m && m.links) return { m: ShippingCore.expandMaster(m), via: '中継API' }; }
-    } catch (e) {}
+    // 中継APIは10秒で打ち切る。GASが遅いときは待ち続けず、CDNに残っている古いリンク表(最大1日前)を使う
+    var urls = bust ? ['api/links?' + q, 'api/links'] : ['api/links'];
+    for (var u = 0; u < urls.length; u++) {
+      try {
+        var r = await fetch(urls[u], { signal: AbortSignal.timeout(10000) });
+        if (r.ok) { var m = await r.json(); if (m && m.links) return { m: ShippingCore.expandMaster(m), via: u ? '中継API(古いデータ)' : '中継API' }; }
+      } catch (e) {}
+    }
     var r2 = await fetch(GAS_URL ? GAS_URL + '?action=links' + (q ? '&' + q : '') : 'sample/links.json', { cache: 'no-store' });
     return { m: ShippingCore.expandMaster(await r2.json()), via: GAS_URL ? 'GAS直接' : '動作確認用サンプル' };
   }
-  // 「マスタ情報反映中」ポップアップ(中央揃え・流れるデータバー)
-  function busy(on) { $('busyModal').classList.toggle('show', on); }
   async function loadMaster() {
     busy(true);
     try {
