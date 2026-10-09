@@ -281,6 +281,16 @@ Git連携の接続/解除はClaudeのVercelツールではできない(ユーザ
 - 他のアプリをVercel連携する場合も、先にそのフォルダへ同じ `vercel.json` を置いてから
   連携してもらう。
 
+## 旧リポジトリから「-」へ統合したアプリ(2026-10-09〜)
+
+Vercelの「Import Git Repository」で候補が`-`だけになり分かりやすいよう、別リポジトリにあったアプリをこのリポジトリへ履歴ごと取り込んだ。
+
+- `dxf-launcher/`(元: aism24/dxf-launcher、master。Vercel: dxf-launcher.vercel.app)
+- `excel-drawing-link-tool/`(元: aism24/excel-drawing-link-tool、main。Vercel: excel-drawing-link-tool.vercel.app)
+- 両フォルダに `vercel.json`(`git.deploymentEnabled=false`)を置いた。Vercelプロジェクトは旧リポジトリ連携のままなので、今のURLは9/17の本番デプロイのまま動く。
+  今後修正して反映する場合は、ユーザーがVercelのSettings→Gitで連携先を`aism24/-`+Root Directory=各フォルダに変更→「デプロイして」で`create_deployment`。
+- 旧リポジトリは残置(Archive/削除はユーザーが判断)。旧リポジトリへはpushしない。
+
 ## 不要フォルダ(残置)(2026-09-24〜)
 
 - `production-profit/`(損益分岐の旧アプリ・sonekibunki)と `jikko-yosan/`(実行予算まとめ): **2026-10-09〜運用停止**(ユーザー判断)。
