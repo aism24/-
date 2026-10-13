@@ -1,13 +1,15 @@
 (function () {
-  var drop = document.getElementById('drop'), file = document.getElementById('file');
+  var openBtn = document.getElementById('open'), file = document.getElementById('file');
   var out = document.getElementById('out'), info = document.getElementById('info');
   var layerEl = document.getElementById('layer'), xlsxBtn = document.getElementById('xlsx');
   var cur = null, last = null;
 
-  drop.onclick = function () { file.click(); };
-  drop.ondragover = function (e) { e.preventDefault(); drop.classList.add('over'); };
-  drop.ondragleave = function () { drop.classList.remove('over'); };
-  drop.ondrop = function (e) { e.preventDefault(); drop.classList.remove('over'); load(e.dataTransfer.files[0]); };
+  openBtn.onclick = function () { file.click(); };
+  var depth = 0;
+  window.addEventListener('dragenter', function (e) { e.preventDefault(); depth++; document.body.classList.add('dragging'); });
+  window.addEventListener('dragover', function (e) { e.preventDefault(); });
+  window.addEventListener('dragleave', function () { if (--depth <= 0) { depth = 0; document.body.classList.remove('dragging'); } });
+  window.addEventListener('drop', function (e) { e.preventDefault(); depth = 0; document.body.classList.remove('dragging'); load(e.dataTransfer.files[0]); });
   file.onchange = function () { load(file.files[0]); };
   layerEl.onchange = render;
   xlsxBtn.onclick = download;
