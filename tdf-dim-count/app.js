@@ -18,6 +18,15 @@
   file.onchange = function () { load(file.files[0]); };
   layerEl.onchange = render;
   xlsxBtn.onclick = download;
+  document.getElementById('reset').onclick = function () {
+    cur = null; last = null; width = 0;
+    file.value = '';
+    info.textContent = '';
+    layerEl.innerHTML = '<option value="">（先にTDFを選んでください）</option>';
+    layerEl.disabled = true;
+    Array.prototype.forEach.call(segEl.children, function (b) { b.classList.remove('on'); });
+    reset('レイヤを選ぶと表示されます');
+  };
 
   function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
   function reset(msg) { last = null; xlsxBtn.disabled = true; out.className = 'small'; out.innerHTML = msg; }
@@ -33,7 +42,7 @@
         info.textContent = f.name + '　レイヤ数 ' + p.layers.length + ' / テキスト ' + p.texts.length + ' / 線 ' + p.lines.length;
         if (!cur.choices.length) { layerEl.innerHTML = '<option value="">（斜めの数値テキストを持つレイヤがありません）</option>'; reset('該当レイヤなし'); return; }
         layerEl.innerHTML = '<option value="">（レイヤを選んでください）</option>' + cur.choices.map(function (c) {
-          return '<option value="' + c.no + '">' + esc(c.name) + '（斜め寸法 ' + c.count + '個）</option>';
+          return '<option value="' + c.no + '">' + esc(c.name) + '</option>';
         }).join('');
         layerEl.disabled = false;
         reset('レイヤを選ぶと表示されます');
