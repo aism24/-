@@ -140,7 +140,44 @@
     return { rows: rows, total: Object.keys(seen).length, textCount: rows.length }; // total=重複なしの線の本数
   }
 
-  var api = { parse: parse, summarize: summarize, layerChoices: layerChoices, extractContents: extractContents, readLayers: readLayers, DEFAULT_LAYER: DEFAULT_LAYER };
+
+  // 長さを±N(mm)でまとめる。代表の長さ=本数が最も多い長さ(0.1mm単位。同数なら±N内の本数が多い方、さらに小さい方)。
+  // 代表から±N以内の未割当の線を1グループにし、残りで繰り返す。対象はテキストと同じ長さの線(重複なし)
+  function groupLengths(parsed, layerNo, N) {
+    var texts = [];
+    parsed.texts.forEach(function (t) { if (t.layer === layerNo && NUM.test(t.text) && slanted(t.rot)) texts.push(t); });
+    var items = [];
+    parsed.lines.forEach(function (l) {
+      if (l.layer !== layerNo || !slanted(l.angle)) return;
+      var hit = [];
+      texts.forEach(function (t) { var v = parseFloat(t.text); if (Math.abs(l.length - v) <= Math.max(0.5, v * 0.002)) hit.push(t.text); });
+      if (hit.length) items.push({ len: l.length, texts: hit });
+    });
+    var left = items.slice().sort(function (a, b) { return a.len - b.len; });
+    var groups = [];
+    while (left.length) {
+      var cnt = {};
+      left.forEach(function (it) { var k = Math.round(it.len * 10); cnt[k] = (cnt[k] || 0) + 1; });
+      var best = null;
+      Object.keys(cnt).forEach(function (k) {
+        var rep = parseInt(k, 10) / 10, c = cnt[k];
+        var win = left.filter(function (it) { return Math.abs(it.len - rep) <= N; }).length;
+        if (!best || c > best.c || (c === best.c && (win > best.win || (win === best.win && rep < best.rep)))) best = { rep: rep, c: c, win: win };
+      });
+      var mem = [], rest = [];
+      left.forEach(function (it) { (Math.abs(it.len - best.rep) <= N ? mem : rest).push(it); });
+      if (!mem.length) { mem = [left[0]]; rest = left.slice(1); best.rep = Math.round(left[0].len * 10) / 10; }
+      var tx = {};
+      mem.forEach(function (it) { it.texts.forEach(function (t) { tx[t] = 1; }); });
+      groups.push({ rep: best.rep, min: mem[0].len, max: mem[mem.length - 1].len, count: mem.length,
+        texts: Object.keys(tx).sort(function (a, b) { return parseFloat(a) - parseFloat(b); }) });
+      left = rest;
+    }
+    groups.sort(function (a, b) { return a.rep - b.rep; });
+    return { groups: groups, total: items.length };
+  }
+
+  var api = { groupLengths: groupLengths, parse: parse, summarize: summarize, layerChoices: layerChoices, extractContents: extractContents, readLayers: readLayers, DEFAULT_LAYER: DEFAULT_LAYER };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TdfDim = api;
 })(typeof self !== 'undefined' ? self : this);
