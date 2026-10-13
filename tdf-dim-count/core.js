@@ -1,4 +1,4 @@
-// TDF(実寸法師)バイナリから、指定レイヤの「斜めの数値テキスト」と「同じ長さ・同じ角度の線」を数える(読み取り専用)。
+// TDF(実寸法師)バイナリから、指定レイヤの「斜めの数値テキスト」と「同じ長さの斜めの線」を数える(読み取り専用)。
 // 解析で判明したこと(2026-10-13、レイヤ違い・GEN抽出ファイルとの比較で検証):
 //  - 14MB級のTDFはOLE複合ファイルで、中の "Contents" ストリームがTDF本体
 //  - レイヤ名表: 先頭付近の "03 00 00 00"+名前 が並ぶ。各項目の先頭にサイズ語(項目全体の長さ)。レイヤ番号 = 表の並び順(0始まり)+1
@@ -116,7 +116,6 @@
 
   var NUM = /^[0-9]+(\.[0-9]+)?$/;
   function slanted(deg) { var m = ((deg % 90) + 90) % 90; return Math.min(m, 90 - m) > 1; }
-  function angDiff(a, b) { return Math.abs((((a - b) % 180) + 270) % 180 - 90); }
 
   // 斜めの数値テキストを持つレイヤ一覧(選択肢用)
   function layerChoices(parsed) {
@@ -126,22 +125,19 @@
       .map(function (l) { return { no: l.no, name: l.name, count: cnt[l.no] }; });
   }
 
-  function summarize(parsed, layerNo, opt) {
-    opt = opt || {};
+  function summarize(parsed, layerNo) {
     var lines = parsed.lines.filter(function (l) { return l.layer === layerNo && slanted(l.angle); });
-    var rows = [], total = 0;
+    var rows = [], seen = {};
     parsed.texts.forEach(function (t) {
       if (t.layer !== layerNo || !NUM.test(t.text) || !slanted(t.rot)) return;
       var v = parseFloat(t.text), tol = Math.max(0.5, v * 0.002), c = 0;
-      lines.forEach(function (l) {
-        if (Math.abs(l.length - v) > tol) return;
-        if (angDiff(l.angle, t.rot) < 1 || (opt.mirror && angDiff(l.angle, -t.rot) < 1)) c++;
+      lines.forEach(function (l, idx) {
+        if (Math.abs(l.length - v) <= tol) { c++; seen[idx] = 1; }
       });
       rows.push({ text: t.text, angle: t.rot, count: c });
-      total += c;
     });
     rows.sort(function (a, b) { return parseFloat(a.text) - parseFloat(b.text); });
-    return { rows: rows, total: total, textCount: rows.length };
+    return { rows: rows, total: Object.keys(seen).length, textCount: rows.length }; // total=重複なしの線の本数
   }
 
   var api = { parse: parse, summarize: summarize, layerChoices: layerChoices, extractContents: extractContents, readLayers: readLayers, DEFAULT_LAYER: DEFAULT_LAYER };

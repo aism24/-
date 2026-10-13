@@ -1,7 +1,7 @@
 (function () {
   var drop = document.getElementById('drop'), file = document.getElementById('file');
   var out = document.getElementById('out'), opts = document.getElementById('opts');
-  var layerEl = document.getElementById('layer'), mirrorEl = document.getElementById('mirror'), info = document.getElementById('info');
+  var layerEl = document.getElementById('layer'), info = document.getElementById('info');
   var cur = null, last = null;
 
   drop.onclick = function () { file.click(); };
@@ -9,7 +9,7 @@
   drop.ondragleave = function () { drop.classList.remove('over'); };
   drop.ondrop = function (e) { e.preventDefault(); drop.classList.remove('over'); load(e.dataTransfer.files[0]); };
   file.onchange = function () { load(file.files[0]); };
-  layerEl.onchange = render; mirrorEl.onchange = render;
+  layerEl.onchange = render;
 
   function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
 
@@ -39,21 +39,21 @@
     if (!cur.choices.length) { out.innerHTML = '<div class="card warn">斜めの数値テキストを持つレイヤがありません</div>'; return; }
     var no = parseInt(layerEl.value, 10);
     var ch = cur.choices.filter(function (c) { return c.no === no; })[0];
-    var s = TdfDim.summarize(cur.parsed, no, { mirror: mirrorEl.checked });
+    var s = TdfDim.summarize(cur.parsed, no);
     last = { name: cur.name, layer: ch.name, s: s };
     var h = '<div class="card"><b>' + esc(cur.name) + ' ／ レイヤ ' + esc(ch.name) + '</b>';
-    h += '<table><tr><th>テキスト(寸法)</th><th>角度</th><th>線の本数</th></tr>';
+    h += '<table><tr><th>テキスト(寸法)</th><th>線の本数</th></tr>';
     s.rows.forEach(function (r) {
-      h += '<tr><td>' + esc(r.text) + '</td><td>' + r.angle.toFixed(1) + '°</td><td' + (r.count ? '' : ' class="warn"') + '>' + r.count + '</td></tr>';
+      h += '<tr><td>' + esc(r.text) + '</td><td' + (r.count ? '' : ' class="warn"') + '>' + r.count + '</td></tr>';
     });
-    h += '<tr><th>合計(' + s.textCount + '個)</th><th></th><th>' + s.total + '</th></tr></table></div>';
+    h += '<tr><th>合計(' + s.textCount + '個)</th><th>' + s.total + '</th></tr></table></div>';
     h += '<button id="csv">CSVダウンロード</button>';
     out.innerHTML = h;
     document.getElementById('csv').onclick = csv;
   }
 
   function csv() {
-    var lines = ['ファイル,レイヤ,テキスト,角度,線の本数'];
+    var lines = ['ファイル,レイヤ,テキスト,線の本数'];
     last.s.rows.forEach(function (r) {
       lines.push('"' + last.name.replace(/"/g, '""') + '","' + last.layer.replace(/"/g, '""') + '",' + r.text + ',' + r.angle.toFixed(1) + ',' + r.count);
     });
