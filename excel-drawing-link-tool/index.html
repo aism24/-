@@ -1392,11 +1392,26 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // 完全一致または部分一致すれば「マッチあり」とみなす。runMatching()の
   // 判定ロジックと完全に同一の基準をファイル名側から流用している
   // （基準がずれないよう、意図的に同じ完全一致→部分一致の考え方を使う）。
+  // 部分一致は「図番の直前・直後が半角英数字でない」場合に限る。
+  // 例: 図番2B-70は「2B-70　260930」「WB3-2B-70」には一致するが、
+  // 「2B-70A　260930」（A付の別図面）や「M1B-01」（図番1B-01の別図面）には一致しない。
+  function nameContainsDrawingNo(baseName, dn) {
+    var from = 0;
+    var idx;
+    while ((idx = baseName.indexOf(dn, from)) !== -1) {
+      var before = idx === 0 ? '' : baseName.charAt(idx - 1);
+      var after = baseName.charAt(idx + dn.length);
+      if (!/[A-Za-z0-9]/.test(before) && !/[A-Za-z0-9]/.test(after)) return true;
+      from = idx + 1;
+    }
+    return false;
+  }
+
   function fileMatchesAnyRow(baseName) {
     for (var i = 0; i < state.rows.length; i++) {
       var dn = state.rows[i].drawingNo;
       if (dn === '') continue;
-      if (baseName === dn || baseName.indexOf(dn) !== -1) return true;
+      if (baseName === dn || nameContainsDrawingNo(baseName, dn)) return true;
     }
     return false;
   }
@@ -1617,7 +1632,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       if (exact.length > 0) {
         candidates = exact;
       } else {
-        candidates = state.filePool.filter(function (f) { return f.baseName.indexOf(row.drawingNo) !== -1; });
+        candidates = state.filePool.filter(function (f) { return nameContainsDrawingNo(f.baseName, row.drawingNo); });
       }
 
       if (candidates.length === 0) {
