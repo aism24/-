@@ -38,9 +38,9 @@
     r.onload = function () {
       try {
         var p = TdfDim.parse(r.result);
-        cur = { name: f.name, parsed: p, choices: TdfDim.layerChoices(p) };
+        cur = { name: f.name, parsed: p, choices: TdfDim.allLayers(p) };
         info.textContent = f.name + '　レイヤ数 ' + p.layers.length + ' / テキスト ' + p.texts.length + ' / 線 ' + p.lines.length;
-        if (!cur.choices.length) { layerEl.innerHTML = '<option value="">（斜めの数値テキストを持つレイヤがありません）</option>'; reset('該当レイヤなし'); return; }
+        if (!cur.choices.length) { layerEl.innerHTML = '<option value="">（レイヤが見つかりません）</option>'; reset('レイヤなし'); return; }
         layerEl.innerHTML = '<option value="">（レイヤを選んでください）</option>' + cur.choices.map(function (c) {
           return '<option value="' + c.no + '">' + esc(c.name) + '</option>';
         }).join('');
@@ -60,7 +60,9 @@
     last = { name: cur.name, layer: ch.name, s: s, g: g, width: width };
     Array.prototype.forEach.call(segEl.children, function (b) { b.classList.toggle('on', parseInt(b.dataset.n, 10) === width); });
     var h = '<b>' + esc(cur.name) + ' ／ レイヤ ' + esc(ch.name) + (width ? ' ／ 長さ ±' + width + 'mm でまとめ' : '') + '</b>';
-    if (!g) {
+    if (!s.rows.length) {
+      h += '<div class="small">このレイヤには、斜めの数値テキストがありません</div>';
+    } else if (!g) {
       h += '<table><tr><th>テキスト(寸法)</th><th>線の本数</th></tr>';
       s.rows.forEach(function (r) { h += '<tr><td>' + esc(r.text) + '</td><td' + (r.count ? '' : ' class="warn"') + '>' + r.count + '</td></tr>'; });
       h += '<tr><th>合計(テキスト' + s.textCount + '個・線は重複なし)</th><th>' + s.total + '</th></tr></table>';
@@ -70,7 +72,7 @@
       h += '<tr><th>合計(' + g.groups.length + 'グループ・線は重複なし)</th><th></th><th>' + g.total + '</th><th></th></tr></table>';
     }
     out.className = ''; out.innerHTML = h;
-    xlsxBtn.disabled = false;
+    xlsxBtn.disabled = !s.rows.length;
   }
 
   function download() {
