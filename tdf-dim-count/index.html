@@ -11,16 +11,17 @@ select{padding:6px 8px;font-size:15px;min-width:220px}
 table{border-collapse:collapse;width:100%;max-width:520px}th,td{border:1px solid #ccd;padding:6px 10px;text-align:right}
 th{background:#eef1f6}td:first-child,th:first-child{text-align:left}
 .warn{color:#b00}button{padding:7px 14px;font-size:14px;cursor:pointer;margin-right:6px}
-.small{font-size:12px;color:#777}
+.small{font-size:12px;color:#777;margin-top:6px}.step{font-weight:700;margin-bottom:8px}button:disabled{opacity:.4;cursor:default}
 </style></head><body>
 <h1>斜め寸法の本数抽出</h1>
 <div class="sub">実寸法師の .tdf（14MB級の原本も可）から、選んだレイヤの「斜めの数値テキスト」と「同じ長さの斜めの線（右上がり・右下がり問わず）」の本数を調べます（ブラウザ内で処理。ファイルは送信されません）。</div>
-<div class="card"><div id="drop">ここに .tdf をドラッグ＆ドロップ／クリックして選択（1ファイルずつ）</div>
-<input type="file" id="file" accept=".tdf" hidden></div>
-<div class="card" id="opts" hidden>
-<label>レイヤ: <select id="layer"></select></label>
-<div class="small" id="info"></div></div>
-<div id="out"></div>
-<script src="core.js?v=r3"></script>
-<script src="app.js?v=r3"></script>
+<div class="card"><div class="step">① TDFを選ぶ</div><div id="drop">ここに .tdf をドラッグ＆ドロップ／クリックして選択（1ファイルずつ）</div>
+<input type="file" id="file" accept=".tdf" hidden><div class="small" id="info"></div></div>
+<div class="card"><div class="step">② レイヤをリストから選ぶ</div>
+<select id="layer" disabled><option value="">（先にTDFを選んでください）</option></select></div>
+<div class="card"><div class="step">③ 集計テーブル</div><div id="out" class="small">レイヤを選ぶと表示されます</div></div>
+<div class="card"><div class="step">④ Excelでダウンロード</div><button id="xlsx" disabled>Excelダウンロード</button></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="core.js?v=r4"></script>
+<script src="app.js?v=r4"></script>
 </body></html>
