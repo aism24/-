@@ -33,7 +33,7 @@
         info.textContent = f.name + '　レイヤ数 ' + p.layers.length + ' / テキスト ' + p.texts.length + ' / 線 ' + p.lines.length;
         if (!cur.choices.length) { layerEl.innerHTML = '<option value="">（斜めの数値テキストを持つレイヤがありません）</option>'; reset('該当レイヤなし'); return; }
         layerEl.innerHTML = '<option value="">（レイヤを選んでください）</option>' + cur.choices.map(function (c) {
-          return '<option value="' + c.no + '">' + esc(c.name) + '（斜め寸法 ' + c.count + '個）</option>';
+          return '<option value="' + c.no + '">' + esc(c.name) + '</option>';
         }).join('');
         layerEl.disabled = false;
         reset('レイヤを選ぶと表示されます');
