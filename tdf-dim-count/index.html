@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>寸法線レイヤ抽出</title>
+<style>
+body{font-family:system-ui,"Yu Gothic",sans-serif;margin:0;padding:16px;background:#f5f6f8;color:#222}
+h1{font-size:20px;margin:0 0 4px}.sub{color:#666;font-size:13px;margin-bottom:14px}
+.card{background:#fff;border-radius:8px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px #0002}
+label{font-size:14px}input[type=text]{padding:6px 8px;font-size:15px;width:160px}
+#drop{border:2px dashed #8a9bb5;border-radius:8px;padding:28px;text-align:center;color:#556;cursor:pointer}
+#drop.over{background:#e8f0fe}
+table{border-collapse:collapse;width:100%;max-width:520px}th,td{border:1px solid #ccd;padding:6px 10px;text-align:right}
+th{background:#eef1f6}td:first-child,th:first-child{text-align:left}
+.warn{color:#b00}button{padding:7px 14px;font-size:14px;cursor:pointer;margin-right:6px}
+.small{font-size:12px;color:#777}
+</style></head><body>
+<h1>寸法線レイヤ抽出</h1>
+<div class="sub">実寸法師の .tdf から、指定レイヤの寸法線の「長さ」と「本数」を調べます(ブラウザ内で処理。ファイルは送信されません)。</div>
+<div class="card"><label>抽出するレイヤ名: <input type="text" id="layer" value="TB"></label>
+<span class="small">（現寸班が、抽出したい寸法線をこのレイヤにして保存）</span></div>
+<div class="card"><div id="drop">ここに .tdf をドラッグ＆ドロップ（複数可）／クリックして選択</div>
+<input type="file" id="file" accept=".tdf" multiple hidden></div>
+<div id="out"></div>
+<script src="core.js?v=r1"></script>
+<script src="app.js?v=r1"></script>
+</body></html>
