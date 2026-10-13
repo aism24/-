@@ -3,7 +3,9 @@
   var out = document.getElementById('out'), info = document.getElementById('info');
   var layerEl = document.getElementById('layer'), xlsxBtn = document.getElementById('xlsx');
   var cur = null, last = null, width = 0;
-  var segEl = document.getElementById('segbtns');
+  var segEl = document.getElementById('segbtns'), ttlEl = document.getElementById('ttl');
+  function setHH() { document.documentElement.style.setProperty('--hh', document.querySelector('header').offsetHeight + 'px'); }
+  setHH(); window.addEventListener('resize', setHH);
   [0, 10, 20, 30].forEach(function (n) {
     var b = document.createElement('button'); b.textContent = n === 0 ? 'まとめない' : '±' + n; b.dataset.n = n;
     b.onclick = function () { width = n; render(); }; segEl.appendChild(b);
@@ -29,7 +31,7 @@
   };
 
   function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
-  function reset(msg) { last = null; xlsxBtn.disabled = true; out.className = 'small'; out.innerHTML = msg; }
+  function reset(msg) { ttlEl.textContent = ''; last = null; xlsxBtn.disabled = true; out.className = 'small'; out.innerHTML = msg; }
 
   function load(f) {
     if (!f) return;
@@ -59,7 +61,8 @@
     var g = width ? TdfDim.groupLengths(cur.parsed, no, width) : null;
     last = { name: cur.name, layer: ch.name, s: s, g: g, width: width };
     Array.prototype.forEach.call(segEl.children, function (b) { b.classList.toggle('on', parseInt(b.dataset.n, 10) === width); });
-    var h = '<b>' + esc(cur.name) + ' ／ レイヤ ' + esc(ch.name) + (width ? ' ／ 長さ ±' + width + 'mm でまとめ' : '') + '</b>';
+    ttlEl.textContent = cur.name + ' ／ レイヤ ' + ch.name + (width ? ' ／ 長さ ±' + width + 'mm でまとめ' : '');
+    var h = '';
     if (!s.rows.length) {
       h += '<div class="small">このレイヤには、斜めの数値テキストがありません</div>';
     } else if (!g) {
