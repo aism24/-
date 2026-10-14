@@ -72,8 +72,8 @@
       h += '<div class="small c">このレイヤには、斜めの数値テキストがありません</div>';
     } else if (!g) {
       h += '<table><tr><th>テキスト(寸法)</th><th>線の本数</th></tr>';
-      s.rows.forEach(function (r) { h += '<tr><td>' + esc(r.text) + '</td><td' + (r.count ? '' : ' class="warn"') + '>' + r.count + '</td></tr>'; });
-      h += '<tr><th>合計(テキスト' + s.textCount + '個・線は重複なし)</th><th>' + s.total + '</th></tr></table>';
+      s.rows.forEach(function (r) { h += '<tr><td class="c">' + esc(r.text) + '</td><td class="c' + (r.count ? '' : ' warn') + '">' + r.count + '</td></tr>'; });
+      h += '<tr><th>合計(テキスト' + s.textCount + '個・線は重複なし)</th><th style="text-align:center">' + s.total + '</th></tr></table>';
     } else {
       h += '<table><tr><th>手配長さ</th><th>範囲</th><th>本数</th><th>元のテキスト</th></tr>';
       g.groups.forEach(function (x) { h += '<tr><td class="c">' + tehai(x.rep) + '</td><td class="c">' + x.min.toFixed(1) + '〜' + x.max.toFixed(1) + '</td><td>' + x.count + '</td><td style="text-align:left">' + esc(x.texts.join('、')) + '</td></tr>'; });
