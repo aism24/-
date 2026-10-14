@@ -3,7 +3,7 @@
 //  - 14MB級のTDFはOLE複合ファイルで、中の "Contents" ストリームがTDF本体
 //  - レイヤ名表: 先頭付近の "03 00 00 00"+名前 が並ぶ。各項目の先頭にサイズ語(項目全体の長さ)。レイヤ番号 = 表の並び順(0始まり)+1
 //  - 要素のレイヤ印: 先頭2バイトが 07 6c / 05 10 / 07 b4 の4バイト語で、3バイト目がレイヤ番号
-//      テキスト: テキスト記録のヘッダー(52バイト。座標のdoubleが印に似るため除く)の後、900バイト内で最初に出る印 / 線: 線記録の+88バイトにある印
+//      テキスト: テキスト記録のヘッダー(52バイト。座標のdoubleが印に似るため除く)の後、900バイト内で最初に出る印(なければ直前100バイト内の最後の印) / 線: 線記録の+88バイトにある印
 (function (root) {
   var SIZE_LINE = -2147483592;
   var DEFAULT_LAYER = 'GEN';
@@ -13,6 +13,14 @@
     var x = dv.getFloat64(rs + 4, true), y = dv.getFloat64(rs + 12, true), h = dv.getFloat64(rs + 20, true),
       w = dv.getFloat64(rs + 28, true), r = dv.getFloat64(rs + 36, true);
     return Math.abs(x) < 1e7 && Math.abs(y) < 1e7 && h > 0 && h < 5000 && Math.abs(w) < 5000 && Math.abs(r) < 10;
+  }
+
+  // 線のレイヤ: ref0が「xx yy 03 00」形式ならyy(+10バイト目)、そうでなければ線記録の直後(+56〜+200)の最初の印
+  function lineLayer(u8, dv, i) {
+    var w = dv.getUint32(i + 8, true), lo = w & 0xffff;
+    if (lo === 0x0003 || lo === 0x0043) return (w >>> 16) & 0xff;
+    for (var k = i + 56; k < i + 200; k++) { if (isTag(u8, k)) return u8[k + 2]; }
+    return -1;
   }
 
   function isTag(u8, i) {
@@ -100,7 +108,7 @@
         var x2 = dv.getFloat64(i + 40, true), y2 = dv.getFloat64(i + 48, true);
         if (Math.abs(x1) < 1e6 && Math.abs(y1) < 1e6 && Math.abs(x2) < 1e6 && Math.abs(y2) < 1e6) {
           lines.push({ length: Math.hypot(x2 - x1, y2 - y1), angle: Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI,
-            layer: isTag(u8, i + 88) ? u8[i + 90] : -1 });
+            layer: lineLayer(u8, dv, i) });
         }
       }
       // テキスト(マーカー 00 N 2N 00)。文字列を持つ「本体」と、同じid_fieldを指すだけの「参照」がある
@@ -115,6 +123,8 @@
         }
         var lay = -1;
         for (var k = rs + 52; k < rs + 900 && k < n - 3; k++) { if (isTag(u8, k)) { lay = u8[k + 2]; break; } }
+        // 後方に印がない(ファイル末尾に近い)場合は、直前100バイト内の最後の印を使う(2026-10-14、TBの7020.2で確認)
+        if (lay < 0) { for (var q = rs - 4; q >= rs - 100 && q >= 0; q--) { if (isTag(u8, q)) { lay = u8[q + 2]; break; } } }
         var rec = { text: tx, rot: dv.getFloat64(rs + 36, true) * 180 / Math.PI, layer: lay, id: dv.getUint32(rs + 48, true) };
         if (tx !== null) { texts.push(rec); if (!(rec.id in bodyById)) bodyById[rec.id] = tx; } else cands.push(rec);
       }
@@ -125,7 +135,8 @@
   }
 
   var NUM = /^[0-9]+(\.[0-9]+)?$/;
-  function tolOf(v) { return Math.max(0.5, v * 0.002); }
+  // 線の長さの許容: テキストの小数桁に応じて 0.5×10^-桁(+0.005)。整数なら±0.5、小数1桁なら±0.05
+  function tolOfText(text) { var d = (text.split('.')[1] || '').length; return 0.5 * Math.pow(10, -d) + 0.005; }
 
   // TDFにある全レイヤ(選択肢用)。count=そのレイヤの数値テキストの数。同名・名前なしは番号を付けて区別する
   function allLayers(parsed) {
@@ -144,14 +155,14 @@
     parsed.texts.forEach(function (t) {
       if (t.layer !== layerNo || !NUM.test(t.text)) return;
       var k = String(parseFloat(t.text));
-      if (!vals[k]) vals[k] = { v: parseFloat(t.text), text: t.text, t: 0, l: 0, lens: [] };
+      if (!vals[k]) vals[k] = { v: parseFloat(t.text), text: t.text, tol: tolOfText(t.text), t: 0, l: 0, lens: [] };
       vals[k].t++;
     });
     var list = Object.keys(vals).map(function (k) { return vals[k]; });
     parsed.lines.forEach(function (ln) {
       if (ln.layer !== layerNo) return;
       var best = null, bd = Infinity;
-      list.forEach(function (x) { var d = Math.abs(ln.length - x.v); if (d <= tolOf(x.v) && d < bd) { bd = d; best = x; } });
+      list.forEach(function (x) { var d = Math.abs(ln.length - x.v); if (d <= x.tol && d < bd) { bd = d; best = x; } });
       if (best) { best.l++; best.lens.push(ln.length); }
     });
     list.sort(function (a, b) { return a.v - b.v; });
