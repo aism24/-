@@ -70,8 +70,8 @@
       s.rows.forEach(function (r) { h += '<tr><td>' + esc(r.text) + '</td><td' + (r.count ? '' : ' class="warn"') + '>' + r.count + '</td></tr>'; });
       h += '<tr><th>合計(テキスト' + s.textCount + '個・線は重複なし)</th><th>' + s.total + '</th></tr></table>';
     } else {
-      h += '<table><tr><th>代表の長さ</th><th>範囲</th><th>本数</th><th>元のテキスト</th></tr>';
-      g.groups.forEach(function (x) { h += '<tr><td>' + x.rep.toFixed(1) + '</td><td>' + x.min.toFixed(1) + '〜' + x.max.toFixed(1) + '</td><td>' + x.count + '</td><td style="text-align:left">' + esc(x.texts.join('、')) + '</td></tr>'; });
+      h += '<table><tr><th>手配長さ</th><th>範囲</th><th>本数</th><th>元のテキスト</th></tr>';
+      g.groups.forEach(function (x) { h += '<tr><td class="c">' + Math.floor(x.rep) + '</td><td class="c">' + x.min.toFixed(1) + '〜' + x.max.toFixed(1) + '</td><td>' + x.count + '</td><td style="text-align:left">' + esc(x.texts.join('、')) + '</td></tr>'; });
       h += '<tr><th>合計(' + g.groups.length + 'グループ・線は重複なし)</th><th></th><th>' + g.total + '</th><th></th></tr></table>';
     }
     out.className = ''; out.innerHTML = h;
@@ -88,8 +88,8 @@
     ws['!cols'] = [{ wch: 36 }, { wch: 14 }, { wch: 18 }, { wch: 12 }];
     var wb = XLSX.utils.book_new();
     if (last.g) {
-      var gr = [['ファイル', 'レイヤ', 'まとめ幅(±mm)', '代表の長さ', '範囲(最小)', '範囲(最大)', '本数', '元のテキスト']];
-      last.g.groups.forEach(function (x) { gr.push([last.name, last.layer, last.width, x.rep, Math.round(x.min * 100) / 100, Math.round(x.max * 100) / 100, x.count, x.texts.join('、')]); });
+      var gr = [['ファイル', 'レイヤ', 'まとめ幅(±mm)', '手配長さ', '範囲(最小)', '範囲(最大)', '本数', '元のテキスト']];
+      last.g.groups.forEach(function (x) { gr.push([last.name, last.layer, last.width, Math.floor(x.rep), Math.round(x.min * 100) / 100, Math.round(x.max * 100) / 100, x.count, x.texts.join('、')]); });
       gr.push(['', '', '', '合計(線は重複なし)', '', '', last.g.total, '']);
       var wg = XLSX.utils.aoa_to_sheet(gr);
       wg['!cols'] = [{ wch: 36 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 40 }];
