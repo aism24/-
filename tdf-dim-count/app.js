@@ -1,6 +1,6 @@
 (function () {
   // 利用記録用GAS(WebアプリのURL。/execで終わる)。空のときは記録しない。gas/Code.gs を参照
-  var GAS_URL = '';
+  var GAS_URL = 'https://script.google.com/macros/s/AKfycbwPEdgh02ck9j_ykjBZ2EGsmYvmi6aHuVVExgkC_-Q04vxVwOGj-KR6g1fmGhdUNWo/exec';
   var openBtn = document.getElementById('open'), file = document.getElementById('file');
   var out = document.getElementById('out'), info = document.getElementById('info');
   var layerEl = document.getElementById('layer'), xlsxBtn = document.getElementById('xlsx');
