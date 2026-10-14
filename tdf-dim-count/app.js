@@ -70,7 +70,7 @@
     ttlEl.textContent = cur.name + ' ／ レイヤ ' + ch.name + (width ? ' ／ 長さ ±' + width + 'mm でまとめ' : '');
     var h = '';
     if (!s.rows.length) {
-      h += '<div class="small c">このレイヤには、集計できる数値テキスト(テキスト数と線の本数が一致するもの)がありません</div>';
+      h += '<div class="small c">このレイヤには、数値テキストがありません</div>';
     } else if (!g) {
       h += '<table><tr><th>テキスト(寸法)</th><th>線の本数</th></tr>';
       s.rows.forEach(function (r) { h += '<tr><td class="c">' + esc(r.text) + '</td><td class="c' + (r.count ? '' : ' warn') + '">' + r.count + '</td></tr>'; });
@@ -119,7 +119,7 @@
     var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = last.name.replace(/\.tdf$/i, '') + '_' + last.layer + '_斜め寸法本数.xlsx';
+    a.download = last.name.replace(/\.tdf$/i, '') + '_' + last.layer + '_寸法本数.xlsx';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
 })();
