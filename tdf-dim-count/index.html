@@ -40,7 +40,8 @@ body.dragging #overlay{display:flex}
 #sticky3{position:sticky;top:var(--hh,72px);z-index:200;background:#fff;margin:-14px -14px 8px;padding:14px 14px 8px;border-radius:8px 8px 0 0;box-shadow:0 3px 4px -2px #0003}
 #ttl{font-weight:700;margin-top:6px;min-height:0}
 #cond{margin-top:10px}
-#hdesc{grid-column:1/-1;text-align:center;font-weight:700;background:#f4f5f7;border-radius:6px;padding:6px 10px}
+#hdesc{text-align:center;font-weight:700}
+@media(min-width:761px){#hdesc{grid-column:2;grid-row:2;white-space:nowrap}header h1{grid-column:2;grid-row:1}#hleft{grid-column:1;grid-row:1/3;align-self:center}#brand{grid-column:3;grid-row:1/3;align-self:center}}
 .condtxt{font-size:16px;font-weight:700;color:#d00;padding:2px 10px;animation:blinkbg 2.4s steps(1,end) infinite}
 @keyframes blinkbg{0%,100%{background:#ffeb3b}50%{background:transparent}}
 #card2.alert{animation:blinkoutline 1s steps(1,end) infinite}
