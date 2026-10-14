@@ -1,4 +1,4 @@
-// TDF(実寸法師)バイナリから、指定レイヤの「斜めの数値テキスト」と「同じ長さの斜めの線」を数える(読み取り専用)。
+// TDF(実寸法師)バイナリから、指定レイヤの「数値テキスト」と「同じ長さの線」を数える(読み取り専用)。
 // 解析で判明したこと(2026-10-13、レイヤ違い・GEN抽出ファイルとの比較で検証):
 //  - 14MB級のTDFはOLE複合ファイルで、中の "Contents" ストリームがTDF本体
 //  - レイヤ名表: 先頭付近の "03 00 00 00"+名前 が並ぶ。各項目の先頭にサイズ語(項目全体の長さ)。レイヤ番号 = 表の並び順(0始まり)+1
@@ -85,7 +85,7 @@
     var u8 = new Uint8Array(buf), dv = new DataView(buf), n = u8.length;
     var dec = new TextDecoder('shift_jis');
     var layers = readLayers(u8);
-    var texts = [], lines = [];
+    var texts = [], lines = [], cands = [], bodyById = {};
     for (var i = 52; i < n - 80; i++) {
       // 線
       if (u8[i] === 0x38 && u8[i + 3] === 0x80 && dv.getInt32(i, true) === SIZE_LINE && dv.getInt32(i + 4, true) === 1) {
@@ -96,73 +96,73 @@
             layer: isTag(u8, i + 88) ? u8[i + 90] : -1 });
         }
       }
-      // テキスト(マーカー 00 N 2N 00)
+      // テキスト(マーカー 00 N 2N 00)。文字列を持つ「本体」と、同じid_fieldを指すだけの「参照」がある
       var b1 = u8[i + 1];
       if (u8[i] === 0 && u8[i + 3] === 0 && b1 >= 1 && b1 <= 63 && u8[i + 2] === b1 * 2) {
         var rs = i - 52, val1 = dv.getInt32(i + 4, true), len = val1 - 8, st = i + 12;
+        var tx = null;
         if (len > 0 && len <= 200 && st + len <= n) {
           var e = st; while (e < st + len && u8[e] !== 0) e++;
-          if (e > st) {
-            var tx = dec.decode(u8.subarray(st, e));
-            var lay = -1;
-            for (var k = rs; k < rs + 900 && k < n - 3; k++) { if (isTag(u8, k)) { lay = u8[k + 2]; break; } }
-            texts.push({ text: tx, rot: dv.getFloat64(rs + 36, true) * 180 / Math.PI, layer: lay });
-          }
+          if (e > st) tx = dec.decode(u8.subarray(st, e));
         }
+        var lay = -1;
+        for (var k = rs; k < rs + 900 && k < n - 3; k++) { if (isTag(u8, k)) { lay = u8[k + 2]; break; } }
+        var rec = { text: tx, rot: dv.getFloat64(rs + 36, true) * 180 / Math.PI, layer: lay, id: dv.getUint32(rs + 48, true) };
+        if (tx !== null) { texts.push(rec); if (!(rec.id in bodyById)) bodyById[rec.id] = tx; } else cands.push(rec);
       }
     }
+    // 参照(文字列なし)は、同じid_fieldを持つ本体の文字列を引き継ぐ
+    cands.forEach(function (r) { if (r.id in bodyById) { r.text = bodyById[r.id]; texts.push(r); } });
     return { layers: layers, texts: texts, lines: lines };
   }
 
   var NUM = /^[0-9]+(\.[0-9]+)?$/;
-  function slanted(deg) { var m = ((deg % 90) + 90) % 90; return Math.min(m, 90 - m) > 1; }
+  function tolOf(v) { return Math.max(0.5, v * 0.002); }
 
-  // 斜めの数値テキストを持つレイヤ一覧(選択肢用)
-  function layerChoices(parsed) {
-    var cnt = {};
-    parsed.texts.forEach(function (t) { if (NUM.test(t.text) && slanted(t.rot) && t.layer >= 0) cnt[t.layer] = (cnt[t.layer] || 0) + 1; });
-    return parsed.layers.filter(function (l) { return cnt[l.no]; })
-      .map(function (l) { return { no: l.no, name: l.name, count: cnt[l.no] }; });
-  }
-
-  // TDFにある全レイヤ(選択肢用)。count=そのレイヤの斜めの数値テキストの数。同名・名前なしは番号を付けて区別する
+  // TDFにある全レイヤ(選択肢用)。count=そのレイヤの数値テキストの数。同名・名前なしは番号を付けて区別する
   function allLayers(parsed) {
     var cnt = {}, nm = {};
-    parsed.texts.forEach(function (t) { if (NUM.test(t.text) && slanted(t.rot) && t.layer >= 0) cnt[t.layer] = (cnt[t.layer] || 0) + 1; });
+    parsed.texts.forEach(function (t) { if (NUM.test(t.text) && t.layer >= 0) cnt[t.layer] = (cnt[t.layer] || 0) + 1; });
     parsed.layers.forEach(function (l) { nm[l.name] = (nm[l.name] || 0) + 1; });
     return parsed.layers.map(function (l) {
       return { no: l.no, name: (l.raw || nm[l.name] > 1) ? l.name + ' (#' + l.no + ')' : l.name, count: cnt[l.no] || 0 };
     });
   }
 
-  function summarize(parsed, layerNo) {
-    var lines = parsed.lines.filter(function (l) { return l.layer === layerNo && slanted(l.angle); });
-    var rows = [], seen = {};
+  // 選んだレイヤの数値テキスト(参照を含む)を値ごとに数え、各線を最も近い値に割り当てる(許容±0.5mmまたは0.2%)。
+  // テキストの数 = 線の本数 の値だけを「抽出する本数」とする。不一致の値は対象外
+  function analyze(parsed, layerNo) {
+    var vals = {};
     parsed.texts.forEach(function (t) {
-      if (t.layer !== layerNo || !NUM.test(t.text) || !slanted(t.rot)) return;
-      var v = parseFloat(t.text), tol = Math.max(0.5, v * 0.002), c = 0;
-      lines.forEach(function (l, idx) {
-        if (Math.abs(l.length - v) <= tol) { c++; seen[idx] = 1; }
-      });
-      rows.push({ text: t.text, angle: t.rot, count: c });
+      if (t.layer !== layerNo || !NUM.test(t.text)) return;
+      var k = String(parseFloat(t.text));
+      if (!vals[k]) vals[k] = { v: parseFloat(t.text), text: t.text, t: 0, l: 0, lens: [] };
+      vals[k].t++;
     });
-    rows.sort(function (a, b) { return parseFloat(a.text) - parseFloat(b.text); });
-    return { rows: rows, total: Object.keys(seen).length, textCount: rows.length }; // total=重複なしの線の本数
+    var list = Object.keys(vals).map(function (k) { return vals[k]; });
+    parsed.lines.forEach(function (ln) {
+      if (ln.layer !== layerNo) return;
+      var best = null, bd = Infinity;
+      list.forEach(function (x) { var d = Math.abs(ln.length - x.v); if (d <= tolOf(x.v) && d < bd) { bd = d; best = x; } });
+      if (best) { best.l++; best.lens.push(ln.length); }
+    });
+    list.sort(function (a, b) { return a.v - b.v; });
+    return list.map(function (x) { return { text: x.text, v: x.v, textCount: x.t, lineCount: x.l, ok: x.t === x.l && x.l > 0, lens: x.lens }; });
   }
 
+  function summarize(parsed, layerNo) {
+    var all = analyze(parsed, layerNo);
+    var rows = all.filter(function (x) { return x.ok; }).map(function (x) { return { text: x.text, count: x.lineCount }; });
+    var ng = all.filter(function (x) { return !x.ok; }).map(function (x) { return { text: x.text, textCount: x.textCount, lineCount: x.lineCount }; });
+    var total = rows.reduce(function (a, r) { return a + r.count; }, 0);
+    return { rows: rows, ng: ng, total: total, textCount: rows.length };
+  }
 
   // 長さを±N(mm)でまとめる。代表の長さ=本数が最も多い長さ(0.1mm単位。同数なら±N内の本数が多い方、さらに小さい方)。
-  // 代表から±N以内の未割当の線を1グループにし、残りで繰り返す。対象はテキストと同じ長さの線(重複なし)
+  // 代表から±N以内の未割当の線を1グループにし、残りで繰り返す。対象は「テキスト数=線の本数」の値の線
   function groupLengths(parsed, layerNo, N) {
-    var texts = [];
-    parsed.texts.forEach(function (t) { if (t.layer === layerNo && NUM.test(t.text) && slanted(t.rot)) texts.push(t); });
     var items = [];
-    parsed.lines.forEach(function (l) {
-      if (l.layer !== layerNo || !slanted(l.angle)) return;
-      var hit = [];
-      texts.forEach(function (t) { var v = parseFloat(t.text); if (Math.abs(l.length - v) <= Math.max(0.5, v * 0.002)) hit.push(t.text); });
-      if (hit.length) items.push({ len: l.length, texts: hit });
-    });
+    analyze(parsed, layerNo).forEach(function (x) { if (x.ok) x.lens.forEach(function (len) { items.push({ len: len, texts: [x.text] }); }); });
     var left = items.slice().sort(function (a, b) { return a.len - b.len; });
     var groups = [];
     while (left.length) {
@@ -187,7 +187,7 @@
     return { groups: groups, total: items.length };
   }
 
-  var api = { groupLengths: groupLengths, allLayers: allLayers, parse: parse, summarize: summarize, layerChoices: layerChoices, extractContents: extractContents, readLayers: readLayers, DEFAULT_LAYER: DEFAULT_LAYER };
+  var api = { groupLengths: groupLengths, allLayers: allLayers, analyze: analyze, parse: parse, summarize: summarize, extractContents: extractContents, readLayers: readLayers, DEFAULT_LAYER: DEFAULT_LAYER };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TdfDim = api;
 })(typeof self !== 'undefined' ? self : this);
