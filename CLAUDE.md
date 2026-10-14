@@ -154,7 +154,7 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 | tori-robo (Vercelプロジェクト名「-tori-robo」。https://tori-robo.vercel.app/) | tori-robo | 解除(2026-10-07、10/6にユーザーが一時連携→sp43〜sp50(6回)を `create_deployment` で本番デプロイ→10/7にユーザーが解除。`list_projects` 0件を確認) | `tori-robo/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(teamIdは渡さない=403)。引き継ぎ書はDriveの保存先フォルダ(上の表) |
 | app-launcher (https://app-launcher-ashy.vercel.app/) | app-launcher | 解除(2026-10-05〜06にユーザーが解除。`list_projects` 0件を確認)| `app-launcher/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(同一SHAは `forceNew="1"` を付ける)。Ignored Build Stepに `-- ./app-launcher` のコマンドが入っていると常にスキップされる(原因判明・解消済み)。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
 | company-ai (Vercelプロジェクト名「company-ai」) | company-ai | 解除(2026-10-08、ユーザーが誤って連携→解除。`list_projects` 0件を確認。連携中の約16分間〜数時間に、company-ai自身のコミット#662・#668・#676・#678で自動デプロイが発生) | 連携なしでの `create_deployment` は未検証(次の「デプロイして」で確認する)。`vercel.json` の `git.deploymentEnabled=false` があるかは未確認。引き継ぎ書はDriveの保存先フォルダ(上の表) |
-| tdf-dim-count (https://tdf-dim-count.vercel.app/) | tdf-dim-count | 解除(2026-10-14、ユーザーがVercelでプロジェクトを新規作成=Root Directory `tdf-dim-count`。作成時に自動で本番デプロイ1回(dpl_G84HA3B、コミットb9d10fd=PR #711)→直後にユーザーが連携を解除。`list_projects` 0件を確認) | アプリ名「実寸データより長さと本数集計」。静的サイト(関数なし)。`tdf-dim-count/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(連携は不要)。TDF(OLE原本14MB含む)のレイヤ選択で、斜め寸法の手配長さ・本数を集計しExcel出力。解析のやり方は `docs/know-how.md` |
+| tdf-dim-count (https://tdf-dim-count.vercel.app/) | tdf-dim-count | 解除(2026-10-14、ユーザーがVercelでプロジェクトを新規作成=Root Directory `tdf-dim-count`。作成時に自動で本番デプロイ1回(dpl_G84HA3B、コミットb9d10fd=PR #711)→直後にユーザーが連携を解除。`list_projects` 0件を確認。同日、連携なしのまま `create_deployment` で2回目を本番デプロイ(dpl_quJeD8U、コミットe748bcb=PR #713。連携なしでもデプロイできることを確認)) | アプリ名「実寸データより長さと本数集計」。静的サイト(関数なし)。`tdf-dim-count/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(連携は不要)。TDF(OLE原本14MB含む)のレイヤ選択で、斜め寸法の手配長さ・本数を集計しExcel出力。解析のやり方は `docs/know-how.md` |
 
 2026-10-14、tdf-dim-count(新規)も作成直後に連携を解除し、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。
 2026-10-08、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。cost-insightは連携なしのまま `create_deployment` で本番デプロイできた(dpl_EthcYT7、コミット5c49df9)。
@@ -257,6 +257,12 @@ Previewデプロイが発生する)
   4. 429が出たら、その時点で raw.githack へのアクセスを止める(再試行しない)。ユーザーに「制限中」と伝え、確認は htmlpreview.github.io(試験用・動作未保証)か、指示があれば Vercelへ「デプロイして」で行う。
   5. 見た目の確認が不要な修正(ロジックのみ・ドキュメントのみ)では、raw.githack にアクセスしない(ローカルのテストとraw.githubusercontentで足りる)。
 - jsDelivr・Statically はHTMLを text/plain で返すため、画面確認には使えない(2026-10-08確認)。
+
+## 【ルール】tdf-dim-count(TDF抽出)は、変更のたびに回帰テストを実行する(2026-10-14〜、ユーザー指示)
+
+- `tdf-dim-count/core.js` を変えたら、コミット前に `node tests/tdf-dim-count/run.js` を実行し、正解値が悪化していない(全件OK)ことを確認する。
+  正解のTDF(原本14MB・GEN単独・TB見本。gzipで `tests/tdf-dim-count/fixtures/`)と正解値(`expected.json`)は、アプリのフォルダの外にあり、Vercelのデプロイには含まれない。
+- 正解値(GEN=592本、TB=16本など)を変えるのは、ユーザーが正解を確認したときだけ(`--update`)。詳細は `tests/tdf-dim-count/README.md`。
 
 ## 【ルール】ノウハウ集の参照と更新(2026-10-06〜、ユーザー指示)
 
