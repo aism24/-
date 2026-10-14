@@ -5,7 +5,8 @@
   var cur = null, last = null, width = 0;
   var segEl = document.getElementById('segbtns'), ttlEl = document.getElementById('ttl');
   function setHH() { document.documentElement.style.setProperty('--hh', document.querySelector('header').offsetHeight + 'px'); }
-  setHH(); window.addEventListener('resize', setHH);
+  function setS3() { document.documentElement.style.setProperty('--s3h', document.getElementById('sticky3').offsetHeight + 'px'); }
+  setHH(); setS3(); window.addEventListener('resize', function () { setHH(); setS3(); });
   [0, 10, 20, 30].forEach(function (n) {
     var b = document.createElement('button'); b.textContent = n === 0 ? 'まとめない' : '±' + n; b.dataset.n = n;
     b.onclick = function () { width = n; render(); }; segEl.appendChild(b);
@@ -79,7 +80,7 @@
       g.groups.forEach(function (x) { h += '<tr><td class="c">' + tehai(x.rep) + '</td><td class="c">' + x.min.toFixed(1) + '〜' + x.max.toFixed(1) + '</td><td>' + x.count + '</td><td style="text-align:left">' + esc(x.texts.join('、')) + '</td></tr>'; });
       h += '<tr><th>合計(' + g.groups.length + 'グループ・線は重複なし)</th><th></th><th>' + g.total + '</th><th></th></tr></table>';
     }
-    out.className = ''; out.innerHTML = h;
+    out.className = ''; out.innerHTML = h; setS3();
     xlsxBtn.disabled = !s.rows.length;
     card2.classList.toggle('alert', !s.rows.length);
   }
