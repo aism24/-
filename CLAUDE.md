@@ -154,7 +154,9 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 | tori-robo (Vercelプロジェクト名「-tori-robo」。https://tori-robo.vercel.app/) | tori-robo | 解除(2026-10-07、10/6にユーザーが一時連携→sp43〜sp50(6回)を `create_deployment` で本番デプロイ→10/7にユーザーが解除。`list_projects` 0件を確認) | `tori-robo/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(teamIdは渡さない=403)。引き継ぎ書はDriveの保存先フォルダ(上の表) |
 | app-launcher (https://app-launcher-ashy.vercel.app/) | app-launcher | 解除(2026-10-05〜06にユーザーが解除。`list_projects` 0件を確認)| `app-launcher/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(同一SHAは `forceNew="1"` を付ける)。Ignored Build Stepに `-- ./app-launcher` のコマンドが入っていると常にスキップされる(原因判明・解消済み)。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
 | company-ai (Vercelプロジェクト名「company-ai」) | company-ai | 解除(2026-10-08、ユーザーが誤って連携→解除。`list_projects` 0件を確認。連携中の約16分間〜数時間に、company-ai自身のコミット#662・#668・#676・#678で自動デプロイが発生) | 連携なしでの `create_deployment` は未検証(次の「デプロイして」で確認する)。`vercel.json` の `git.deploymentEnabled=false` があるかは未確認。引き継ぎ書はDriveの保存先フォルダ(上の表) |
+| tdf-dim-count (https://tdf-dim-count.vercel.app/) | tdf-dim-count | 解除(2026-10-14、ユーザーがVercelでプロジェクトを新規作成=Root Directory `tdf-dim-count`。作成時に自動で本番デプロイ1回(dpl_G84HA3B、コミットb9d10fd=PR #711)→直後にユーザーが連携を解除。`list_projects` 0件を確認) | アプリ名「実寸データより長さと本数集計」。静的サイト(関数なし)。`tdf-dim-count/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(連携は不要)。TDF(OLE原本14MB含む)のレイヤ選択で、斜め寸法の手配長さ・本数を集計しExcel出力。解析のやり方は `docs/know-how.md` |
 
+2026-10-14、tdf-dim-count(新規)も作成直後に連携を解除し、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。
 2026-10-08、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。cost-insightは連携なしのまま `create_deployment` で本番デプロイできた(dpl_EthcYT7、コミット5c49df9)。
 **運用の原則**: 全アプリのGit連携を解除したままにする。連携が無ければpush・マージでデプロイは起きず、ユーザーが「デプロイして」と指示したアプリだけを `create_deployment` で1つずつデプロイする(連携は不要。Vercelプロジェクトの新規作成と連携の付け外しだけがユーザー操作)。連携が1件でも残っていたら、これまで通りpush・マージ前にユーザーへ解除を依頼する。
 
