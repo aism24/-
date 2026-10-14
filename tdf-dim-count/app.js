@@ -70,7 +70,7 @@
     ttlEl.textContent = cur.name + ' ／ レイヤ ' + ch.name + (width ? ' ／ 長さ ±' + width + 'mm でまとめ' : '');
     var h = '';
     if (!s.rows.length) {
-      h += '<div class="small c">このレイヤには、斜めの数値テキストがありません</div>';
+      h += '<div class="small c">このレイヤには、数値テキストがありません</div>';
     } else if (!g) {
       h += '<table><tr><th>テキスト(寸法)</th><th>線の本数</th></tr>';
       s.rows.forEach(function (r) { h += '<tr><td class="c">' + esc(r.text) + '</td><td class="c' + (r.count ? '' : ' warn') + '">' + r.count + '</td></tr>'; });
@@ -79,6 +79,11 @@
       h += '<table><tr><th>手配長さ</th><th>範囲</th><th>本数</th><th>元のテキスト</th></tr>';
       g.groups.forEach(function (x) { h += '<tr><td class="c">' + tehai(x.rep) + '</td><td class="c">' + x.min.toFixed(1) + '〜' + x.max.toFixed(1) + '</td><td>' + x.count + '</td><td style="text-align:left">' + esc(x.texts.join('、')) + '</td></tr>'; });
       h += '<tr><th>合計(' + g.groups.length + 'グループ・線は重複なし)</th><th></th><th>' + g.total + '</th><th></th></tr></table>';
+    }
+    if (s.ng.length) {
+      h += '<div class="ng"><div class="small c">集計対象外（テキストの数と線の本数が不一致）</div><table><tr><th>テキスト(寸法)</th><th>テキストの数</th><th>線の本数</th></tr>';
+      s.ng.forEach(function (r) { h += '<tr><td class="c">' + esc(r.text) + '</td><td class="c">' + r.textCount + '</td><td class="c">' + r.lineCount + '</td></tr>'; });
+      h += '</table></div>';
     }
     out.className = ''; out.innerHTML = h; setS3();
     xlsxBtn.disabled = !s.rows.length;
@@ -103,11 +108,18 @@
       XLSX.utils.book_append_sheet(wb, wg, '長さまとめ(±' + last.width + ')');
     }
     XLSX.utils.book_append_sheet(wb, ws, 'テキスト別');
+    if (last.s.ng.length) {
+      var nr = [['ファイル', 'レイヤ', 'テキスト(寸法)', 'テキストの数', '線の本数']];
+      last.s.ng.forEach(function (r) { nr.push([last.name, last.layer, parseFloat(r.text), r.textCount, r.lineCount]); });
+      var wn = XLSX.utils.aoa_to_sheet(nr);
+      wn['!cols'] = [{ wch: 36 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, wn, '不一致(対象外)');
+    }
     var buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
     var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = last.name.replace(/\.tdf$/i, '') + '_' + last.layer + '_斜め寸法本数.xlsx';
+    a.download = last.name.replace(/\.tdf$/i, '') + '_' + last.layer + '_寸法本数.xlsx';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
 })();
