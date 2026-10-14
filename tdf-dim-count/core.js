@@ -8,6 +8,13 @@
   var SIZE_LINE = -2147483592;
   var DEFAULT_LAYER = 'GEN';
 
+  function okHeader(dv, rs) {
+    if (rs < 0) return false;
+    var x = dv.getFloat64(rs + 4, true), y = dv.getFloat64(rs + 12, true), h = dv.getFloat64(rs + 20, true),
+      w = dv.getFloat64(rs + 28, true), r = dv.getFloat64(rs + 36, true);
+    return Math.abs(x) < 1e7 && Math.abs(y) < 1e7 && h > 0 && h < 5000 && Math.abs(w) < 5000 && Math.abs(r) < 10;
+  }
+
   function isTag(u8, i) {
     var a = u8[i], b = u8[i + 1];
     return (a === 0x07 && (b === 0x6c || b === 0xb4)) || (a === 0x05 && b === 0x10);
@@ -98,7 +105,8 @@
       }
       // テキスト(マーカー 00 N 2N 00)。文字列を持つ「本体」と、同じid_fieldを指すだけの「参照」がある
       var b1 = u8[i + 1];
-      if (u8[i] === 0 && u8[i + 3] === 0 && b1 >= 1 && b1 <= 63 && u8[i + 2] === b1 * 2) {
+      // 先頭1バイトは0とは限らない(0x02/0x20/0x60など。2026-10-14、4547.6が漏れた原因)。0以外はヘッダーの座標・高さが妥当なものだけ採用
+      if (u8[i + 3] === 0 && b1 >= 1 && b1 <= 63 && u8[i + 2] === b1 * 2 && (u8[i] === 0 || okHeader(dv, i - 52))) {
         var rs = i - 52, val1 = dv.getInt32(i + 4, true), len = val1 - 8, st = i + 12;
         var tx = null;
         if (len > 0 && len <= 200 && st + len <= n) {
