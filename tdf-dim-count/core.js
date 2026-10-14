@@ -3,7 +3,7 @@
 //  - 14MB級のTDFはOLE複合ファイルで、中の "Contents" ストリームがTDF本体
 //  - レイヤ名表: 先頭付近の "03 00 00 00"+名前 が並ぶ。各項目の先頭にサイズ語(項目全体の長さ)。レイヤ番号 = 表の並び順(0始まり)+1
 //  - 要素のレイヤ印: 先頭2バイトが 07 6c / 05 10 / 07 b4 の4バイト語で、3バイト目がレイヤ番号
-//      テキスト: テキスト記録の先頭から900バイト内で最初に出る印 / 線: 線記録の+88バイトにある印
+//      テキスト: テキスト記録のヘッダー(52バイト。座標のdoubleが印に似るため除く)の後、900バイト内で最初に出る印 / 線: 線記録の+88バイトにある印
 (function (root) {
   var SIZE_LINE = -2147483592;
   var DEFAULT_LAYER = 'GEN';
@@ -114,7 +114,7 @@
           if (e > st) tx = dec.decode(u8.subarray(st, e));
         }
         var lay = -1;
-        for (var k = rs; k < rs + 900 && k < n - 3; k++) { if (isTag(u8, k)) { lay = u8[k + 2]; break; } }
+        for (var k = rs + 52; k < rs + 900 && k < n - 3; k++) { if (isTag(u8, k)) { lay = u8[k + 2]; break; } }
         var rec = { text: tx, rot: dv.getFloat64(rs + 36, true) * 180 / Math.PI, layer: lay, id: dv.getUint32(rs + 48, true) };
         if (tx !== null) { texts.push(rec); if (!(rec.id in bodyById)) bodyById[rec.id] = tx; } else cands.push(rec);
       }
