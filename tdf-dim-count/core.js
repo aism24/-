@@ -125,6 +125,16 @@
       .map(function (l) { return { no: l.no, name: l.name, count: cnt[l.no] }; });
   }
 
+  // TDFにある全レイヤ(選択肢用)。count=そのレイヤの斜めの数値テキストの数。同名・名前なしは番号を付けて区別する
+  function allLayers(parsed) {
+    var cnt = {}, nm = {};
+    parsed.texts.forEach(function (t) { if (NUM.test(t.text) && slanted(t.rot) && t.layer >= 0) cnt[t.layer] = (cnt[t.layer] || 0) + 1; });
+    parsed.layers.forEach(function (l) { nm[l.name] = (nm[l.name] || 0) + 1; });
+    return parsed.layers.map(function (l) {
+      return { no: l.no, name: (l.raw || nm[l.name] > 1) ? l.name + ' (#' + l.no + ')' : l.name, count: cnt[l.no] || 0 };
+    });
+  }
+
   function summarize(parsed, layerNo) {
     var lines = parsed.lines.filter(function (l) { return l.layer === layerNo && slanted(l.angle); });
     var rows = [], seen = {};
@@ -177,7 +187,7 @@
     return { groups: groups, total: items.length };
   }
 
-  var api = { groupLengths: groupLengths, parse: parse, summarize: summarize, layerChoices: layerChoices, extractContents: extractContents, readLayers: readLayers, DEFAULT_LAYER: DEFAULT_LAYER };
+  var api = { groupLengths: groupLengths, allLayers: allLayers, parse: parse, summarize: summarize, layerChoices: layerChoices, extractContents: extractContents, readLayers: readLayers, DEFAULT_LAYER: DEFAULT_LAYER };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TdfDim = api;
 })(typeof self !== 'undefined' ? self : this);
