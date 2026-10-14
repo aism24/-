@@ -64,7 +64,7 @@
     ttlEl.textContent = cur.name + ' ／ レイヤ ' + ch.name + (width ? ' ／ 長さ ±' + width + 'mm でまとめ' : '');
     var h = '';
     if (!s.rows.length) {
-      h += '<div class="small">このレイヤには、斜めの数値テキストがありません</div>';
+      h += '<div class="small c">このレイヤには、斜めの数値テキストがありません</div>';
     } else if (!g) {
       h += '<table><tr><th>テキスト(寸法)</th><th>線の本数</th></tr>';
       s.rows.forEach(function (r) { h += '<tr><td>' + esc(r.text) + '</td><td' + (r.count ? '' : ' class="warn"') + '>' + r.count + '</td></tr>'; });

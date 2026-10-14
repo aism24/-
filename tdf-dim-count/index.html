@@ -13,7 +13,7 @@ th{background:#eef1f6}td:first-child,th:first-child{text-align:left}
 .warn{color:#b00}button{padding:7px 14px;font-size:14px;cursor:pointer;margin-right:6px}
 .small{font-size:12px;color:#777;margin-top:6px}.step{font-weight:700;margin-bottom:8px}#segbtns button{margin:0 4px 0 0;padding:4px 14px}#segbtns button.on{background:#1a73e8;color:#fff;border-color:#1a73e8}button:disabled{opacity:.4;cursor:default}
 header{position:sticky;top:0;z-index:300;background:#fff;box-shadow:0 2px 8px #0003;margin:-16px -16px 14px;padding:10px 16px;min-height:52px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px}
-header h1{margin:0;font-size:18px;text-align:center;white-space:nowrap}
+header h1{margin:0;font-size:clamp(24px,3.6vw,36px);text-align:center;white-space:nowrap}
 #brand{justify-self:end}
 .header-logo{width:36px;height:36px;object-fit:contain;flex-shrink:0;display:block}
 .logo-frame{display:flex;flex-direction:column;align-items:stretch;flex-shrink:0}
@@ -23,11 +23,11 @@ header h1{margin:0;font-size:18px;text-align:center;white-space:nowrap}
 .logo-frame::after{content:'';display:block;height:7px;background:#1a73e8;border-radius:0 0 2px 2px}
 #overlay{display:none;position:fixed;inset:0;z-index:500;background:#1a73e8cc;color:#fff;font-size:26px;align-items:center;justify-content:center}
 body.dragging #overlay{display:flex}
-@media(max-width:700px){header{grid-template-columns:1fr;justify-items:center}#brand,#hleft{justify-self:center}}
+@media(max-width:760px){header{grid-template-columns:1fr;justify-items:center}#brand,#hleft{justify-self:center}}
 .row{display:flex;justify-content:center;align-items:center;gap:12px;flex-wrap:wrap}
 .row .step,.row .small{margin:0}.c{text-align:center}
 #out table{margin:8px auto 0;width:auto}#out th,#out td{white-space:nowrap}#out tr:first-child th{text-align:center}#out td.c{text-align:center}#out b{display:block;text-align:center}
-#hleft{justify-self:start;display:flex;align-items:center;gap:8px}#reset{margin:0}
+#hleft{justify-self:start;display:flex;align-items:center;gap:8px}#hleft button{white-space:nowrap}#reset{margin:0}
 #xlsx{background:#27ae60;color:#fff;font-weight:700;border:1px solid #1e8449;border-radius:4px}
 #xlsx:disabled{background:#c8c8c8;color:#fff;border-color:#b0b0b0;opacity:1;cursor:not-allowed}
 #main{width:max-content;min-width:640px;max-width:100%;margin:0 auto}#main .card{box-sizing:border-box}
@@ -45,6 +45,6 @@ body.dragging #overlay{display:flex}
 <div id="out" class="small c">レイヤを選ぶと表示されます</div></div>
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="core.js?v=r13"></script>
-<script src="app.js?v=r13"></script>
+<script src="core.js?v=r14"></script>
+<script src="app.js?v=r14"></script>
 </body></html>
