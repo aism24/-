@@ -33,7 +33,8 @@
   // 手配長さ: 代表の長さを1の位で四捨五入して10単位にする(876→880, 2551→2550)
   function tehai(v) { return Math.round(v / 10) * 10; }
   function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
-  function reset(msg) { ttlEl.textContent = ''; last = null; xlsxBtn.disabled = true; out.className = 'small'; out.innerHTML = msg; }
+  var card2 = document.getElementById('card2');
+  function reset(msg) { card2.classList.remove('alert'); ttlEl.textContent = ''; last = null; xlsxBtn.disabled = true; out.className = 'small'; out.innerHTML = msg; }
 
   function load(f) {
     if (!f) return;
@@ -50,6 +51,8 @@
         }).join('');
         layerEl.disabled = false;
         reset('レイヤを選ぶと表示されます');
+        var gen = cur.choices.filter(function (c) { return c.name === 'GEN'; })[0];
+        if (gen) { layerEl.value = gen.no; render(); }
       } catch (e) { reset('<span class="warn">読み込みに失敗しました: ' + esc(e.message || e) + '</span>'); }
     };
     r.readAsArrayBuffer(f);
@@ -78,6 +81,7 @@
     }
     out.className = ''; out.innerHTML = h;
     xlsxBtn.disabled = !s.rows.length;
+    card2.classList.toggle('alert', !s.rows.length);
   }
 
   function download() {
