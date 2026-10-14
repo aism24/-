@@ -3,3 +3,9 @@
 - 条件: レイヤ=選択(番号の完全一致)。数値テキスト(参照も含む)の値ごとに、近い長さ(±0.5mmまたは0.2%)の線を最寄りの値へ割り当て、**テキストの数=線の本数**の値だけを集計(不一致は対象外として別表示)。角度は問わない(0/90/180度も対象)。
 - 仕組みは `core.js` 冒頭コメントと `docs/know-how.md` 参照。回帰テスト用の正解値: 原本のGEN=テキスト55個(本数は画面参照)。
 - `vercel.json` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`。
+
+## 利用記録(GAS → スプレッドシート「tdf-dim-count」)
+- 「Excelダウンロード」を押すたびに、シート「記録」へ1行追記(A:タイムスタンプ / B:ファイル名 / C:指定レイヤ / D:総本数)。**常に2行目が最新**(下に行くほど古い)。
+- 送るのはファイル名・レイヤ名・総本数だけ(TDFの中身は送らない)。記録に失敗しても、抽出・Excel出力は止めない。
+- セットアップ: スプレッドシートの「拡張機能→Apps Script」に `gas/Code.gs` を貼り付け → デプロイ(ウェブアプリ、実行=自分、アクセス=全員)→ `/exec` のURLを `app.js` の `GAS_URL` に設定 → 本番デプロイ。`GAS_URL` が空の間は記録しない。
+- スプレッドシート: https://docs.google.com/spreadsheets/d/1B7LsTgP3iRCZtwm_EOgL1D53JP5NUqMg9mCp7Crhvh8/edit (フォルダ https://drive.google.com/drive/folders/1SHZZBXgv6Z21E-vDi4VldUUuuPsZVn4R)

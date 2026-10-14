@@ -1,4 +1,6 @@
 (function () {
+  // 利用記録用GAS(WebアプリのURL。/execで終わる)。空のときは記録しない。gas/Code.gs を参照
+  var GAS_URL = '';
   var openBtn = document.getElementById('open'), file = document.getElementById('file');
   var out = document.getElementById('out'), info = document.getElementById('info');
   var layerEl = document.getElementById('layer'), xlsxBtn = document.getElementById('xlsx');
@@ -90,6 +92,15 @@
     card2.classList.toggle('alert', !s.rows.length);
   }
 
+  // Excelダウンロード時に、ファイル名・レイヤ名・総本数だけを記録(失敗しても作業は止めない)
+  function logDownload(fileName, layer, total) {
+    if (!GAS_URL) return;
+    try {
+      fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, keepalive: true,
+        body: JSON.stringify({ action: 'logDownload', fileName: fileName, layer: layer, total: total }) }).catch(function () {});
+    } catch (e) { /* 記録の失敗は無視 */ }
+  }
+
   function download() {
     if (!last) return;
     if (typeof XLSX === 'undefined') { alert('Excel出力用ライブラリを読み込めませんでした。ネットワークを確認してください。'); return; }
@@ -121,5 +132,6 @@
     a.href = URL.createObjectURL(blob);
     a.download = last.name.replace(/\.tdf$/i, '') + '_' + last.layer + '_寸法本数.xlsx';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    logDownload(last.name, last.layer, last.s.total);
   }
 })();
