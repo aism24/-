@@ -70,7 +70,8 @@ function getConfig_() {
     driveFolderId: map['写真保存用DriveフォルダID'],
     geminiModel: map['Geminiモデル名'],
     timezone: map['タイムゾーン'] || 'Asia/Tokyo',
-    productionWeightSpreadsheetId: map['生産重量マスタ']
+    productionWeightSpreadsheetId: map['生産重量マスタ'],
+    apiKey: map['APIKEY']
   };
   return _configCache_;
 }
@@ -788,9 +789,10 @@ function uploadPhoto(base64Data, mimeType, filename) {
 
 function ocrProductName(base64Data, mimeType) {
   var cfg = getConfig_();
-  var apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  // 情報シートのAPIKEY行(B5)から取得
+  var apiKey = cfg.apiKey;
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY が設定されていません。スクリプトプロパティを確認してください。');
+    throw new Error('情報シートの APIKEY（B5）が空です。');
   }
 
   var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + cfg.geminiModel + ':generateContent?key=' + apiKey;
