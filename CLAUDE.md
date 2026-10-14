@@ -209,7 +209,7 @@ Previewデプロイが発生する)
 | アプリランチャー(app-launcher。アプリ一覧・検索。管理用スプレッドシート「アプリ一Launcher」も同じフォルダ内。引き継ぎ書のGoogleドキュメントのタイトルは「アプリランチャー引き継ぎ書 (vN) 最新版」。2026-10-05登録) | https://drive.google.com/drive/folders/1wjoBjlZ4lzCt7weocczUVRfjZV4axbpX | `1wjoBjlZ4lzCt7weocczUVRfjZV4axbpX` |
 | 日報全期間集計(daily-report。管理用スプレッドシート「日報集計アプリ」も同じフォルダ内。引き継ぎ書のタイトルは「日報アプリ引き継ぎ書」。2026-10-06登録) | https://drive.google.com/drive/folders/1RYjLWyC2mxSq8_Jzan-pWnpxrsvcTYgL | `1RYjLWyC2mxSq8_Jzan-pWnpxrsvcTYgL` |
 | 社内AI(company-ai。就業規則などへの質問応答。管理用スプレッドシート「社内AI」も同じフォルダ内。引き継ぎ書のGoogleドキュメントのタイトルは「社内AI 引き継ぎ書 (vN) 最新版」。2026-10-07登録) | https://drive.google.com/drive/folders/1cu5MjHLvq4Vw5D4XT74tp43heg6lA3RT | `1cu5MjHLvq4Vw5D4XT74tp43heg6lA3RT` |
-| 実寸データより長さと本数集計(tdf-dim-count。TDFのレイヤ別に寸法の長さ・本数を集計。管理用スプレッドシート「tdf-dim-count」(シート「記録」=Excelダウンロード時の利用履歴。GAS経由)も同じフォルダ内。2026-10-14登録。引き継ぎ書のGoogleドキュメントは未作成。当面はリポジトリ内のREADME・tests・know-howが記録) | https://drive.google.com/drive/folders/1SHZZBXgv6Z21E-vDi4VldUUuuPsZVn4R | `1SHZZBXgv6Z21E-vDi4VldUUuuPsZVn4R` |
+| 実寸データより長さと本数集計(tdf-dim-count。TDFのレイヤ別に寸法の長さ・本数を集計。管理用スプレッドシート「tdf-dim-count」(シート「記録」=Excelダウンロード時の利用履歴。GAS経由)も同じフォルダ内。2026-10-14登録。引き継ぎ書のGoogleドキュメントのタイトルは「実寸データより長さと本数集計 引き継ぎ書 (vN) 最新版」(2026-10-14に v1 を作成)。リポジトリ内のREADME・tests・know-howも記録) | https://drive.google.com/drive/folders/1SHZZBXgv6Z21E-vDi4VldUUuuPsZVn4R | `1SHZZBXgv6Z21E-vDi4VldUUuuPsZVn4R` |
 | 上記以外のアプリ | 未登録(ユーザーがアプリごとに指示する。指示されたらこの表に追記する) | - |
 
 - **保存先フォルダはユーザーがアプリごとに指示する。** 指示が無いアプリは、推測で決めずにユーザーに聞く。
