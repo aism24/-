@@ -210,6 +210,7 @@ Previewデプロイが発生する)
 | 日報全期間集計(daily-report。管理用スプレッドシート「日報集計アプリ」も同じフォルダ内。引き継ぎ書のタイトルは「日報アプリ引き継ぎ書」。2026-10-06登録) | https://drive.google.com/drive/folders/1RYjLWyC2mxSq8_Jzan-pWnpxrsvcTYgL | `1RYjLWyC2mxSq8_Jzan-pWnpxrsvcTYgL` |
 | 社内AI(company-ai。就業規則などへの質問応答。管理用スプレッドシート「社内AI」も同じフォルダ内。引き継ぎ書のGoogleドキュメントのタイトルは「社内AI 引き継ぎ書 (vN) 最新版」。2026-10-07登録) | https://drive.google.com/drive/folders/1cu5MjHLvq4Vw5D4XT74tp43heg6lA3RT | `1cu5MjHLvq4Vw5D4XT74tp43heg6lA3RT` |
 | 実寸データより長さと本数集計(tdf-dim-count。TDFのレイヤ別に寸法の長さ・本数を集計。管理用スプレッドシート「tdf-dim-count」(シート「記録」=Excelダウンロード時の利用履歴。GAS経由)も同じフォルダ内。2026-10-14登録。引き継ぎ書のGoogleドキュメントのタイトルは「実寸データより長さと本数集計 引き継ぎ書 (vN) 最新版」(2026-10-14に v1〜v3 を作成。最新は v3)。リポジトリ内のREADME・tests・know-howも記録) | https://drive.google.com/drive/folders/1SHZZBXgv6Z21E-vDi4VldUUuuPsZVn4R | `1SHZZBXgv6Z21E-vDi4VldUUuuPsZVn4R` |
+| 社内不具合アプリ（huguai。不具合記録アプリ(鳥取)のVercel版。`huguai/`。管理用スプレッドシート「社内不具合アプリVercel版」「社内不具合アプリHTML」「不具合アプリ結果表示」も同じフォルダ内。2026-10-15登録。引き継ぎ書のGoogleドキュメントのタイトルは「社内不具合アプリ（huguai） 引き継ぎ書 (vN) 最新版」(2026-10-15に v1 を作成)) | https://drive.google.com/drive/folders/109FIFxFVC3sQU9S2tx596jMLJzrAkmgD | `109FIFxFVC3sQU9S2tx596jMLJzrAkmgD` |
 | 上記以外のアプリ | 未登録(ユーザーがアプリごとに指示する。指示されたらこの表に追記する) | - |
 
 - **保存先フォルダはユーザーがアプリごとに指示する。** 指示が無いアプリは、推測で決めずにユーザーに聞く。
@@ -326,3 +327,20 @@ Vercelの「Import Git Repository」で候補が`-`だけになり分かりや�
 - 注意: Vercel関数は動かすのに本番デプロイが必要(deploymentEnabled=falseでも create_deployment は「デプロイして」の指示時のみ)。
   raw.githack の確認用URLには関数が無いため、フォールバックでGAS直接になる(速さの確認は本番デプロイ後)。
   関数が小さいNodeなら Functions Storage への影響はほぼ無い(Python+重いライブラリのpdf-diff-appとは別扱い)。
+
+## 【厳守】ユーザーの共通指示(2026-10-15、ユーザー指示で明文化。以前から有効)
+
+- **完全無料で実装する**(GAS・Googleスプレッドシート・Vercel無料枠の範囲)。アプリはURLで配布し、ユーザーはURLで常に最新版を操作できる状態にする。
+- **Gemini APIを使うコード**: モデル名は `gemini-3.5-flash-lite` に固定(定数でハードコード。自動選択・可変にしない。他モデル名は使わない)。ユーザーが明示的に別モデルを指定したときだけ変更する。
+- **回帰テスト**: コードを変えたら、前回値(正解値)が悪化していないか必ず確認する。
+- **テストファイル**は作業中だけ作り、使い終わったら削除する(リポジトリに残さない。tdf-dim-count の正解データ・テストは例外で、下記の専用ルールに従う)。
+- **GitHubでの作業は、pushとmainへのマージまで完結**させ、アプリを開いて対応できたことを確認してから報告する。マージが権限等で止まったら、ブランチ(またはPR)のURLを案内して、ユーザーにマージの可否を確認する。
+- **Code.gs・Index.html等のGAS関連コード**を直したら、案内するURLは GitHub の通常のファイル表示ページ(`https://github.com/<owner>/<repo>/blob/main/<path>`。右上の「Copy raw contents」で全文コピーできる)にする。反映ラグがあるため、差し替わりを確認してから報告する。
+- **リポジトリ**: アプリ・コードはすべて既存の `aism24/-` に入れる。新しいリポジトリは作らず、アプリごとに直下へフォルダを作る(例: `huguai/`、`tori-robo/`)。作業開始時に `aism24/-` をセッションへ接続(add_repo)し、このCLAUDE.mdに従う。
+- **Vercel**: 最終的にはGitHubで作ったものをVercelにデプロイしてURLを取得する。ただしデプロイは「デプロイして」の指示があったときだけ。push・マージでビルドが走らないよう、各アプリのフォルダに `vercel.json`(`{"git":{"deploymentEnabled":false}}`)を置く。確認はGitHub(raw配信)側を優先する。
+
+## huguai(社内不具合アプリ鳥取のVercel版)のルール(2026-10-15〜)
+
+- 結果分析の「PDFダウンロード」は、**現在の画面表示のまま、A4縦向き1ページに収めて出力する**(`huguai/app.js` の `KekkaBunseki.downloadPdf`)。画面(左右2列)を画像化し、縦横比を保って縮小する。縦が長いときはさらに縮小し、複数ページにしない。背景は印刷向けに白にする。
+- PDFの出力内容は画面表示と揃える。画面の表示仕様を変えたら、PDFも同じ見た目になっているか確認する(別レイアウトを作り直さない)。
+- 引き継ぎ書は上の表の保存先フォルダに保存する(個人のマイドライブには保存しない)。

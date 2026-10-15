@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>社内不具合アプリNew</title>
+  <link rel="stylesheet" href="style.css?v=20261016b">
+</head>
+<body>
+  <div id="app">
+    <div class="header">
+      <button id="backBtn" class="back-btn hidden" onclick="App.goHome()">← 戻る</button>
+      <button id="homeBtn" class="back-btn home-btn hidden" onclick="App.goHome()">ホームへ</button>
+      <h1 id="pageTitle"></h1>
+      <button id="headerAction2Btn" class="back-btn header-action-btn hidden"></button>
+      <button id="headerActionBtn" class="back-btn header-action-btn hidden"></button>
+    </div>
+    <div id="view"></div>
+  </div>
+  <div id="modalRoot"></div>
+  <div id="toastRoot"></div>
+  <div id="loadingRoot"></div>
+  <script src="https://www.gstatic.com/charts/loader.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js?v=20261016j"></script>
+</body>
+</html>
