@@ -27,7 +27,8 @@ var API_FUNCTIONS = {
   getFilteredRecords: getFilteredRecords, getKekkaBunsekiContentRecords: getKekkaBunsekiContentRecords,
   getKekkaBunsekiBootstrap: getKekkaBunsekiBootstrap, getKekkaBunsekiYear: getKekkaBunsekiYear,
   getKekkaBunsekiMonth: getKekkaBunsekiMonth, getKekkaBunsekiByProject: getKekkaBunsekiByProject,
-  uploadPhoto: uploadPhoto, ocrProductName: ocrProductName, logPdfDownload: logPdfDownload
+  uploadPhoto: uploadPhoto, ocrProductName: ocrProductName, logPdfDownload: logPdfDownload,
+  getProductionWeights: getProductionWeights
 };
 
 function doGet() {
@@ -36,6 +37,7 @@ function doGet() {
 
 function doPost(e) {
   var out;
+  var t0 = Date.now();
   try {
     var req = JSON.parse(e.postData.contents);
     var fn = API_FUNCTIONS[req.fn];
@@ -44,6 +46,7 @@ function doPost(e) {
   } catch (err) {
     out = { ok: false, error: String(err && err.message || err) };
   }
+  out.ms = Date.now() - t0; // サーバー側の処理時間（画面のコンソールで通信時間と比較できる）
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -58,6 +61,9 @@ var _configCache_ = null;
 
 function getConfig_() {
   if (_configCache_) return _configCache_;
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('config_v1');
+  if (hit) { _configCache_ = JSON.parse(hit); return _configCache_; }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(CONFIG_SHEET_NAME);
   var rows = sheet.getDataRange().getValues();
@@ -73,6 +79,7 @@ function getConfig_() {
     productionWeightSpreadsheetId: map['生産重量マスタ'],
     apiKey: map['APIKEY']
   };
+  try { cache.put('config_v1', JSON.stringify(_configCache_), 600); } catch (e) {}
   return _configCache_;
 }
 
@@ -98,11 +105,21 @@ function sheetToObjects_(sheet) {
     });
 }
 
+/** yyyy-MM-dd。Asia/Tokyoは夏時間なし(UTC+9固定)のため、GASサービスを呼ばず計算する(行数分の呼び出しを省く) */
+function formatYmd_(d, tz) {
+  if (tz === 'Asia/Tokyo') {
+    var t = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+    var m = t.getUTCMonth() + 1, day = t.getUTCDate();
+    return t.getUTCFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+  }
+  return Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+}
+
 function rowToObject_(headers, row, tz) {
   var obj = {};
   headers.forEach(function (h, i) {
     var v = row[i];
-    obj[h] = (v instanceof Date) ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : v;
+    obj[h] = (v instanceof Date) ? formatYmd_(v, tz) : v;
   });
   return obj;
 }
@@ -110,6 +127,15 @@ function rowToObject_(headers, row, tz) {
 /** ===================== マスタデータ ===================== */
 
 function getMasterData() {
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('masterData_v1');
+  if (hit) return JSON.parse(hit);
+  var data = buildMasterData_();
+  try { cache.put('masterData_v1', JSON.stringify(data), 600); } catch (e) {}
+  return data;
+}
+
+function buildMasterData_() {
   var ss = getSourceSS_();
 
   var HIDDEN_INSPECTORS = ['角賢二'];
@@ -190,6 +216,7 @@ function saveRecord(formData) {
 
   if (formData.isNewProperty) {
     addNewProperty_(ss, formData['選択物件名']);
+    CacheService.getScriptCache().remove('masterData_v1');
   }
 
   var rowData = COLUMNS.map(function (col) { return mapFormToColumn_(col, formData); });
@@ -368,6 +395,17 @@ function getBunsekiByProcessType(mode) {
  * 15分おきに先回りしてこの関数を呼び直しキャッシュを温め続ける。
  * 列構成: A工事番号 B部位 C加工先 D製品マーク E長さ F本数 G重量 H加工(日付)
  */
+/** キャッシュ済みの生産重量だけを返す(未計算ならnull)。結果分析の表示を12秒の再計算で止めないため */
+function readWeightCache_() {
+  var c = CacheService.getScriptCache().get('productionWeightByMonth');
+  return c ? JSON.parse(c) : null;
+}
+
+/** 画面が起動時に裏で呼ぶ: 重い再計算をここで済ませ、結果分析はキャッシュだけを読む */
+function getProductionWeights() {
+  return getProductionWeightByMonth_();
+}
+
 function getProductionWeightByMonth_() {
   var cache = CacheService.getScriptCache();
   var cached = cache.get('productionWeightByMonth');
@@ -521,7 +559,9 @@ function getKekkaBunsekiYear(year) {
     contentCounts[content] = (contentCounts[content] || 0) + 1;
   });
 
-  var weightMap = getProductionWeightByMonth_();
+  var weightCache = readWeightCache_();
+  var weightReady = !!weightCache;
+  var weightMap = weightCache || {};
   var nowInfo = getClosingInfo_(new Date());
 
   var months = MONTH_ORDER.filter(function (m) {
@@ -538,11 +578,12 @@ function getKekkaBunsekiYear(year) {
       '柱': data['柱'],
       '梁': data['梁'],
       '合計': data['柱'] + data['梁'],
-      '生産重量': Math.round(weight * 10) / 10
+      '生産重量': weightReady ? Math.round(weight * 10) / 10 : null
     };
   });
 
   return {
+    weightReady: weightReady,
     year: year,
     months: months,
     pillarTotal: pillarTotal,
@@ -576,18 +617,21 @@ function getKekkaBunsekiMonth(year, month) {
     contentCounts[content] = (contentCounts[content] || 0) + 1;
   });
 
-  var weightMap = getProductionWeightByMonth_();
+  var weightCache = readWeightCache_();
+  var weightReady = !!weightCache;
+  var weightMap = weightCache || {};
   var weight = weightMap[year + '-' + month] || 0;
   var displayYear = (month === 12) ? year - 1 : year;
 
   return {
+    weightReady: weightReady,
     year: year,
     month: month,
     label: displayYear + '/' + month,
     '柱': counts['柱'],
     '梁': counts['梁'],
     '合計': counts['柱'] + counts['梁'],
-    '生産重量': Math.round(weight * 10) / 10,
+    '生産重量': weightReady ? Math.round(weight * 10) / 10 : null,
     contentCounts: sortedCounts_(contentCounts, getClassGroupMap_(ss))
   };
 }
@@ -641,7 +685,9 @@ function getKekkaBunsekiBootstrap() {
     perYearMonthContentCounts[ymKey][content] = (perYearMonthContentCounts[ymKey][content] || 0) + 1;
   });
 
-  var weightMap = getProductionWeightByMonth_();
+  var weightCache = readWeightCache_();
+  var weightReady = !!weightCache;
+  var weightMap = weightCache || {};
   var nowInfo = getClosingInfo_(new Date());
 
   var years = Object.keys(yearCounts).map(Number).sort(function (a, b) { return b - a; });
@@ -665,7 +711,7 @@ function getKekkaBunsekiBootstrap() {
         '柱': data['柱'],
         '梁': data['梁'],
         '合計': data['柱'] + data['梁'],
-        '生産重量': Math.round(weight * 10) / 10
+        '生産重量': weightReady ? Math.round(weight * 10) / 10 : null
       };
     });
     return {
@@ -690,12 +736,13 @@ function getKekkaBunsekiBootstrap() {
       '柱': counts['柱'],
       '梁': counts['梁'],
       '合計': counts['柱'] + counts['梁'],
-      '生産重量': Math.round(weight * 10) / 10,
+      '生産重量': weightReady ? Math.round(weight * 10) / 10 : null,
       contentCounts: sortedCounts_(perYearMonthContentCounts[key] || {}, classMap)
     };
   }
 
   var result = {
+    weightReady: weightReady,
     summary: { yearCounts: yearCounts, yearMonthCounts: yearMonthCounts },
     defaultYear: defaultYear,
     defaultMonth: defaultMonth,

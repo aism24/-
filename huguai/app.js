@@ -47,11 +47,14 @@ function hideLoading() {
 function callServer(fnName) {
   var args = Array.prototype.slice.call(arguments, 1);
   // text/plain にすることでCORSプリフライトを避ける（GASはOPTIONS非対応）
+  var t0 = Date.now();
   return fetch(GAS_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ fn: fnName, args: args })
   }).then(function (r) { return r.json(); }).then(function (res) {
+    // 合計時間とGAS内の処理時間(server)の差が通信・起動のオーバーヘッド
+    console.log('[API] ' + fnName + ' total=' + (Date.now() - t0) + 'ms server=' + res.ms + 'ms');
     if (!res.ok) throw new Error(res.error || 'サーバーエラー');
     return res.data;
   });
@@ -99,7 +102,18 @@ var LOGO_SRC_WHITE = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53
 var App = {
   master: null,
 
+  weightPromise: null,
+
+  /** 生産重量(約12秒かかる集計)を、画面操作と並行して裏で取得しておく */
+  prefetchWeights: function () {
+    App.weightPromise = callServer('getProductionWeights').catch(function () {
+      App.weightPromise = null;
+      return null;
+    });
+  },
+
   init: function () {
+    App.prefetchWeights();
     showLoading('読み込み中...');
     callServer('getMasterData').then(function (data) {
       App.master = data;
@@ -760,6 +774,8 @@ var KekkaBunseki = {
         KekkaBunseki.renderYear(boot.yearData);
         KekkaBunseki.renderMonth(boot.monthData);
         KekkaBunseki.alignPreChartBlocks_();
+        KekkaBunseki.syncWeights_(boot.yearData, boot.weightReady);
+        KekkaBunseki.syncWeights_(boot.monthData, boot.weightReady);
       });
     }).catch(function (err) {
       hideLoading();
@@ -1141,6 +1157,7 @@ var KekkaBunseki = {
       return GoogleChartsReady.then(function () {
         hideLoading();
         KekkaBunseki.renderYear(data);
+        KekkaBunseki.syncWeights_(data, data.weightReady);
       });
     }).catch(function (err) {
       hideLoading();
@@ -1154,6 +1171,7 @@ var KekkaBunseki = {
       return GoogleChartsReady.then(function () {
         hideLoading();
         KekkaBunseki.renderMonth(data);
+        KekkaBunseki.syncWeights_(data, data.weightReady);
       });
     }).catch(function (err) {
       hideLoading();
@@ -1220,7 +1238,7 @@ var KekkaBunseki = {
       '<div class="kekka-card"><div class="kekka-num">' + data['合計'] + '</div><div class="kekka-label">合計件数</div></div>' +
       '<div class="kekka-card"><div class="kekka-num">' + data['柱'] + '</div><div class="kekka-label">柱</div></div>' +
       '<div class="kekka-card"><div class="kekka-num">' + data['梁'] + '</div><div class="kekka-label">梁</div></div>' +
-      '<div class="kekka-card"><div class="kekka-num">' + data['生産重量'] + '</div><div class="kekka-label">生産重量(t)</div></div>' +
+      '<div class="kekka-card"><div class="kekka-num">' + (data['生産重量'] == null ? '…' : data['生産重量']) + '</div><div class="kekka-label">生産重量(t)</div></div>' +
       '</div>' +
       '<div class="card"><div id="monthPieChart" style="width:100%;height:230px;"></div></div>' +
       '</div>' +
@@ -1242,6 +1260,32 @@ var KekkaBunseki = {
       pieSliceText: 'value'
     });
     requestAnimationFrame(KekkaBunseki.alignChartHeights);
+  },
+
+  applyWeights_: function (data, map) {
+    var r1 = function (v) { return Math.round((v || 0) * 10) / 10; };
+    if (data.months) {
+      data.months.forEach(function (m) { m['生産重量'] = r1(map[data.year + '-' + m.closingMonth]); });
+      return true;
+    }
+    if (data.month !== undefined) {
+      data['生産重量'] = r1(map[data.year + '-' + data.month]);
+      return true;
+    }
+    return false;
+  },
+
+  /** サーバーが重量を未計算(weightReady=false)で返したとき、先読み結果が届き次第、重量だけ差し替えて再描画する */
+  syncWeights_: function (data, weightReady) {
+    if (weightReady !== false || !data) return;
+    if (!App.weightPromise) App.prefetchWeights();
+    App.weightPromise.then(function (map) {
+      if (!map || !KekkaBunseki.applyWeights_(data, map)) return;
+      if (KekkaBunseki.mode !== 'yearMonth') return;
+      if (data === KekkaBunseki.yearData) KekkaBunseki.renderYear(data);
+      else if (data === KekkaBunseki.monthData) KekkaBunseki.renderMonth(data);
+      KekkaBunseki.alignPreChartBlocks_();
+    });
   },
 
   alignChartHeights: function () {
@@ -1355,7 +1399,7 @@ var KekkaBunseki = {
 
     var monthLabelHtml = '<div style="font-family:' + fontFamily + ';color:#000;">' +
       '<div style="font-size:14px;font-weight:bold;">' + (isProject ? '選択した締め月の合計' : ((md ? md.label : '') + ' 締め')) + '</div>' +
-      (md ? '<div style="font-size:10px;margin-top:3px;">合計: ' + md['合計'] + '件（柱' + md['柱'] + ' / 梁' + md['梁'] + '）' + (isProject ? '' : ('　生産重量: ' + md['生産重量'] + 't')) + '</div>' : '') +
+      (md ? '<div style="font-size:10px;margin-top:3px;">合計: ' + md['合計'] + '件（柱' + md['柱'] + ' / 梁' + md['梁'] + '）' + (isProject ? '' : ('　生産重量: ' + (md['生産重量'] == null ? '-' : md['生産重量']) + 't')) + '</div>' : '') +
       '</div>';
 
     var monthTableHtml = '<div style="font-family:' + fontFamily + ';color:#000;">' +
