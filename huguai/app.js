@@ -61,6 +61,35 @@ function loadScript(src) {
   });
 }
 
+/**
+ * PDF用ライブラリと日本語フォント。PDFを作るとき(または結果分析を開いた少し後に裏で)だけ読み込む。
+ * フォントは M PLUS 1p Regular(OFL・無料。約1.7MB。ブラウザのキャッシュに残る)。太字は輪郭を足して表現する。
+ * 注意: pdf-lib のサブセット埋め込み(subset:true)は、日本語フォントで一部の文字が欠けるため使わない(全体を埋め込む。PDFは約1MB)。
+ */
+var PdfLibs = {
+  p: null,
+  font: null,
+  FONT_URL: 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/m-plus-1p@0.4.2/400Regular/MPLUS1p_400Regular.ttf',
+  load: function () {
+    if (!PdfLibs.p) {
+      PdfLibs.p = Promise.all([
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js'),
+        loadScript('https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js'),
+        fetch(PdfLibs.FONT_URL).then(function (r) {
+          if (!r.ok) throw new Error('フォント取得失敗 ' + r.status);
+          return r.arrayBuffer();
+        })
+      ]).then(function (r) {
+        PdfLibs.font = r[2];
+        // 画面側でも同じフォントで文字の幅を測る(PDFの文字位置を画面の測定値どおりにするため)
+        var face = new FontFace('HgPdfJP', r[2].slice(0), { weight: '100 900' });
+        return face.load().then(function (f) { document.fonts.add(f); });
+      }).catch(function (e) { PdfLibs.p = null; throw e; });
+    }
+    return PdfLibs.p;
+  }
+};
+
 function callServer(fnName) {
   var args = Array.prototype.slice.call(arguments, 1);
   // text/plain にすることでCORSプリフライトを避ける（GASはOPTIONS非対応）
@@ -701,6 +730,7 @@ var Records = {
     var cached = Store.get('rb');
     var fresh = App.fetchBoot('rb', 'getRecordsBootstrap');
     var fail = function (err) { hideLoading(); showToast('取得失敗: ' + (err.message || err)); };
+    KekkaBunseki.preloadPdfLibs_();
     if (cached) {
       Records.applyBoot_(cached);
       fresh.then(function (boot) {
@@ -924,6 +954,11 @@ var KekkaBunseki = {
     KekkaBunseki.syncWeights_(boot.yearData, boot.weightReady, boot.weightStale);
     KekkaBunseki.syncWeights_(boot.monthData, boot.weightReady, boot.weightStale);
     KekkaBunseki.prefetchNeighbors_();
+  },
+
+  /** PDFを押す前に、ライブラリとフォントを裏で読み込んでおく(2回目以降はブラウザのキャッシュから) */
+  preloadPdfLibs_: function () {
+    setTimeout(function () { PdfLibs.load().catch(function () {}); }, 3000);
   },
 
   toggleMode: function () {
@@ -1537,23 +1572,21 @@ var KekkaBunseki = {
   },
 
   /**
-   * 印刷用の表示(PRINT_ID)を作る。結果分析の現在の表示(左右2列)を複製し、A4縦1ページに収まるよう縮小する。
-   * 画像ではなく文字のまま印刷するため、PDFに保存しても文字を選択・検索・コピーできる。
-   * 戻り値: 縮小率など。作れないときは null。
+   * PDF用の表示(#pdfRoot)を画面の外に作る。結果分析の現在の表示(左右2列)を複製し、上部に見出しと印刷日を付ける。
+   * ここで測った位置・大きさ・文字をそのままPDFに描く(renderPdf_)ので、画面と同じ見た目になる。
    */
-  buildPrintRoot_: function () {
+  buildPdfRoot_: function () {
     var target = document.querySelector('#view .kekka-split');
     if (!target) return null;
-    KekkaBunseki.removePrintRoot_();
+    KekkaBunseki.removePdfRoot_();
     // 画面が2列で表示される幅ならその幅のまま、狭い画面(携帯)は2列になる幅に広げる
     var live = target.offsetWidth;
     var capW = live >= 860 ? live : 960;
 
     var root = document.createElement('div');
-    root.id = 'printRoot';
+    root.id = 'pdfRoot';
     var clone = target.cloneNode(true);
     Array.prototype.forEach.call(clone.querySelectorAll('[id]'), function (n) { n.removeAttribute('id'); });
-    Array.prototype.forEach.call(clone.querySelectorAll('[onclick],[onchange]'), function (n) { n.removeAttribute('onclick'); n.removeAttribute('onchange'); });
     // 年度・月の選択は、枠とボタンを外してテキストだけにする
     Array.prototype.forEach.call(clone.querySelectorAll('.filter-bar'), function (bar) {
       var texts = Array.prototype.map.call(bar.querySelectorAll('select'), function (sel) {
@@ -1562,19 +1595,12 @@ var KekkaBunseki = {
       if (!texts.length) return;
       bar.innerHTML = '<div style="font-size:14px;font-weight:bold;color:#000;">' + escapeHtml(texts.join('　')) + '</div>';
     });
-    // グラフは描画済みのものをそのまま複製する(ベクターのSVGなので文字のまま)
+    // グラフは画像としてPDFに貼る。置き場所の箱を、画面のグラフと同じ縦横比で用意する
     var liveChart = document.getElementById('yearComboChart');
-    var cloneChart = clone.querySelector('.kekka-pretable .card > div');
-    if (liveChart && cloneChart && cloneChart.style.height) {
-      cloneChart.innerHTML = liveChart.innerHTML;
-      // 表示幅が画面と違っても、グラフが枠いっぱいに縮尺どおり収まるようにする
-      var svg = cloneChart.querySelector('svg');
-      if (svg && svg.getAttribute('width') && svg.getAttribute('height') && !svg.getAttribute('viewBox')) {
-        svg.setAttribute('viewBox', '0 0 ' + parseFloat(svg.getAttribute('width')) + ' ' + parseFloat(svg.getAttribute('height')));
-        svg.style.width = '100%';
-        svg.style.height = 'auto';
-        cloneChart.style.height = 'auto';
-      }
+    var chartBox = clone.querySelector('.kekka-pretable .card > div');
+    if (liveChart && chartBox && chartBox.style.height) {
+      chartBox.id = 'pdfChartBox';
+      chartBox.innerHTML = '';
     }
     // ページ上部: 見出し(中央・2倍の大きさ)と印刷日(右端)
     var jst = new Date(Date.now() + 9 * 3600 * 1000);
@@ -1587,67 +1613,230 @@ var KekkaBunseki = {
     root.appendChild(clone);
 
     var st = document.createElement('style');
-    st.id = 'printStyle';
-    st.textContent = '#printRoot{display:none;}' +
-      '@page{size:A4 portrait;margin:8mm;}' +
-      '@media print{' +
-      'body>*:not(#printRoot){display:none !important;}' +
-      'html,body{background:#fff !important;margin:0;padding:0;}' +
-      '#printRoot{display:block !important;overflow:hidden;font-family:"Hiragino Kaku Gothic ProN","Meiryo",sans-serif;}' +
-      '#printRoot *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}' +
-      '#printRoot .kekka-split{display:flex;flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:20px;width:' + capW + 'px;}' +
-      '#printRoot .kekka-col{flex:1;min-width:0;}' +
-      '#printRoot .kekka-sticky{position:static;background:transparent;}' +
-      '#printRoot .kekka-col-title{display:none;}' +
-      '#printRoot .card{background:#fff;border-radius:10px;padding:16px;margin-bottom:12px;border:1px solid #ccc;box-shadow:none;}' +
-      '#printRoot .table-scroll{border-radius:0;overflow:visible;max-height:none;}' +
-      // 表の罫線: 黒の実線。外形は二重線(角は丸めず直角)、外形を除く縦線は破線
-      '#printRoot table.record-table{border:3px double #000;border-radius:0;}' +
-      '#printRoot table.record-table th,#printRoot table.record-table td{border:1px solid #000;border-left:1px dashed #000;border-right:1px dashed #000;}' +
-      '#printRoot table.record-table tr>:first-child{border-left:3px double #000;}' +
-      '#printRoot table.record-table tr>:last-child{border-right:3px double #000;}' +
-      '#printRoot table.record-table th{position:static;}';
+    st.id = 'pdfStyle';
+    st.textContent = '#pdfRoot{position:fixed;left:-99999px;top:0;width:' + capW + 'px;background:#fff;color:#222;font-family:HgPdfJP,sans-serif;}' +
+      '#pdfRoot .kekka-split{display:flex;flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:20px;width:' + capW + 'px;}' +
+      '#pdfRoot .kekka-col{flex:1;min-width:0;}' +
+      '#pdfRoot .kekka-sticky{position:static;background:transparent;}' +
+      '#pdfRoot .kekka-col-title{display:none;}' +
+      '#pdfRoot .card{background:#fff;border-radius:10px;padding:16px;margin-bottom:12px;border:1px solid #ccc;box-shadow:none;}' +
+      '#pdfRoot .table-scroll{display:block;border:3px double #000;border-radius:0;overflow:visible !important;max-height:none !important;}' +
+      '#pdfRoot table.record-table{border:none;border-radius:0;width:100%;}' +
+      '#pdfRoot table.record-table th,#pdfRoot table.record-table td{border:1px solid #000;border-left:none;border-right:none;}' +
+      '#pdfRoot table.record-table th:not(:first-child),#pdfRoot table.record-table td:not(:first-child){border-left:1px dashed #000;}' +
+      '#pdfRoot table.record-table thead tr:first-child>*{border-top:none;}' +
+      '#pdfRoot table.record-table tbody tr:last-child>*{border-bottom:none;}' +
+      '#pdfRoot table.record-table th{position:static;}';
     document.head.appendChild(st);
     document.body.appendChild(root);
-
-    // 縮小率: 用紙の印刷範囲(A4から余白8mmを引いた範囲)に、幅・高さとも収まる大きさにする
-    var pageW = (210 - 16) / 25.4 * 96;
-    var pageH = (297 - 16) / 25.4 * 96;
-    root.style.cssText = 'display:block;position:fixed;left:-99999px;top:0;width:' + capW + 'px;';
-    var contentH = root.offsetHeight;
-    var scale = Math.min(pageW / capW, pageH / contentH) * 0.99;
-    root.style.cssText = '';
-    root.style.zoom = scale;
-    return { scale: scale, width: capW, height: contentH };
+    if (chartBox && chartBox.id === 'pdfChartBox') {
+      var box = document.getElementById('pdfChartBox');
+      var lw = liveChart.offsetWidth || 1, lh = liveChart.offsetHeight || 280;
+      box.style.height = Math.round(box.offsetWidth * lh / lw) + 'px';
+    }
+    return { root: root, width: capW };
   },
 
-  removePrintRoot_: function () {
-    ['printRoot', 'printStyle'].forEach(function (id) {
+  removePdfRoot_: function () {
+    ['pdfRoot', 'pdfStyle'].forEach(function (id) {
       var n = document.getElementById(id);
       if (n) n.remove();
     });
   },
 
   /**
-   * 結果分析を、現在の画面のままA4縦1ページで印刷する。印刷画面の送信先で「PDFに保存」を選ぶと、
-   * 文字のままのPDFになる。ファイル名の初期値は 結果分析_年度_日時(日本時間 yyyyMMddHHmmss)。
+   * #pdfRoot の中身を、位置・背景・罫線・文字ごとにPDFへ描く(文字は選択・コピーできる)。
+   * 戻り値: Promise<Uint8Array>(PDFのデータ)
+   */
+  renderPdf_: function (root, capW, chartDataUri, title) {
+    var PL = window.PDFLib;
+    var PW = 595.28, PH = 841.89, M = 22.68; // A4縦、余白8mm
+    var rr = root.getBoundingClientRect();
+    var contentH = rr.height;
+    var S = Math.min((PW - 2 * M) / capW, (PH - 2 * M) / contentH);
+    var offX = M + ((PW - 2 * M) - capW * S) / 2;
+    var X = function (px) { return offX + (px - rr.left) * S; };
+    var Y = function (px) { return PH - (M + (px - rr.top) * S); };
+
+    var doc, page, f400;
+    var rgb = function (str) {
+      var m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(str || '');
+      if (!m) return null;
+      var a = m[4] === undefined ? 1 : parseFloat(m[4]);
+      if (a === 0) return null;
+      return { c: PL.rgb(m[1] / 255, m[2] / 255, m[3] / 255), a: a };
+    };
+    var px = function (v) { return parseFloat(v) || 0; };
+
+    // 角丸の四角のパス(単位はpx。drawSvgPathで S 倍して描く)
+    var roundPath = function (w, h, r) {
+      r = Math.min(r, w / 2, h / 2);
+      var k = r * 0.5523;
+      return 'M' + r + ',0 L' + (w - r) + ',0 C' + (w - r + k) + ',0 ' + w + ',' + (r - k) + ' ' + w + ',' + r +
+        ' L' + w + ',' + (h - r) + ' C' + w + ',' + (h - r + k) + ' ' + (w - r + k) + ',' + h + ' ' + (w - r) + ',' + h +
+        ' L' + r + ',' + h + ' C' + (r - k) + ',' + h + ' 0,' + (h - r + k) + ' 0,' + (h - r) +
+        ' L0,' + r + ' C0,' + (r - k) + ' ' + (r - k) + ',0 ' + r + ',0 Z';
+    };
+
+    var line = function (x1, y1, x2, y2, w, color, dashed) {
+      var o = { start: { x: X(x1), y: Y(y1) }, end: { x: X(x2), y: Y(y2) }, thickness: w * S, color: color };
+      if (dashed) o.dashArray = [2 * S * Math.max(w, 1), 2 * S * Math.max(w, 1)];
+      page.drawLine(o);
+    };
+
+    var drawBox = function (el, cs, r) {
+      var radius = px(cs.borderTopLeftRadius);
+      var bg = rgb(cs.backgroundColor);
+      var bw = [px(cs.borderTopWidth), px(cs.borderRightWidth), px(cs.borderBottomWidth), px(cs.borderLeftWidth)];
+      var bs = [cs.borderTopStyle, cs.borderRightStyle, cs.borderBottomStyle, cs.borderLeftStyle];
+      var bc = [rgb(cs.borderTopColor), rgb(cs.borderRightColor), rgb(cs.borderBottomColor), rgb(cs.borderLeftColor)];
+      var uniform = bw[0] > 0 && bw[0] === bw[1] && bw[1] === bw[2] && bw[2] === bw[3] && bs[0] === 'solid' && bs[0] === bs[1] && bs[1] === bs[2] && bs[2] === bs[3];
+      if (radius > 0 && (bg || uniform)) {
+        // 角丸: 背景と(一様な)枠線を1つのパスで描く
+        var path = roundPath(r.width - (uniform ? bw[0] : 0), r.height - (uniform ? bw[0] : 0), radius);
+        var o = { x: X(r.left + (uniform ? bw[0] / 2 : 0)), y: Y(r.top + (uniform ? bw[0] / 2 : 0)), scale: S };
+        if (bg) { o.color = bg.c; o.opacity = bg.a; }
+        if (uniform && bc[0]) { o.borderColor = bc[0].c; o.borderWidth = bw[0]; }
+        page.drawSvgPath(path, o);
+        return;
+      }
+      if (bg) page.drawRectangle({ x: X(r.left), y: Y(r.bottom), width: r.width * S, height: r.height * S, color: bg.c, opacity: bg.a });
+      var isCell = (el.tagName === 'TD' || el.tagName === 'TH');
+      for (var i = 0; i < 4; i++) {
+        var w = bw[i];
+        if (!(w > 0) || !bc[i] || bs[i] === 'none' || bs[i] === 'hidden') continue;
+        if (isCell && i === 1 && el.nextElementSibling) continue; // 隣のセルの左線と重なるので描かない
+        if (isCell && i === 2 && el.parentElement.nextElementSibling) continue;
+        if (bs[i] === 'double' && w >= 3) {
+          // 二重線: 外側と内側の2本の枠(各 w/3 の太さ)。表を囲む枠なので四隅は直角につながる
+          if (i === 0) {
+            var t = w / 3;
+            page.drawRectangle({ x: X(r.left + t / 2), y: Y(r.bottom - t / 2), width: (r.width - t) * S, height: (r.height - t) * S, borderColor: bc[i].c, borderWidth: t * S });
+            page.drawRectangle({ x: X(r.left + w - t / 2), y: Y(r.bottom - w + t / 2), width: (r.width - 2 * w + t) * S, height: (r.height - 2 * w + t) * S, borderColor: bc[i].c, borderWidth: t * S });
+          }
+          continue;
+        }
+        var dashed = (bs[i] === 'dashed' || bs[i] === 'dotted');
+        if (i === 0) line(r.left, r.top + w / 2, r.right, r.top + w / 2, w, bc[i].c, dashed);
+        else if (i === 2) line(r.left, r.bottom - w / 2, r.right, r.bottom - w / 2, w, bc[i].c, dashed);
+        else if (i === 3) line(r.left + w / 2, r.top, r.left + w / 2, r.bottom, w, bc[i].c, dashed);
+        else line(r.right - w / 2, r.top, r.right - w / 2, r.bottom, w, bc[i].c, dashed);
+      }
+    };
+
+    var drawText = function (node) {
+      var parent = node.parentElement;
+      if (!parent) return;
+      var cs = getComputedStyle(parent);
+      if (cs.visibility === 'hidden' || cs.display === 'none') return;
+      var fs = px(cs.fontSize);
+      var col = rgb(cs.color) || { c: PL.rgb(0, 0, 0), a: 1 };
+      var bold = parseInt(cs.fontWeight, 10) >= 600;
+      var range = document.createRange();
+      var lines = [], cur = null;
+      var str = node.data;
+      for (var i = 0; i < str.length; i++) {
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        var rects = range.getClientRects();
+        if (!rects.length) continue;
+        var rc = rects[0];
+        if (rc.width === 0 && /\s/.test(str[i])) continue;
+        if (!cur || Math.abs(rc.top - cur.top) > fs * 0.5) {
+          cur = { top: rc.top, left: rc.left, height: rc.height, text: '' };
+          lines.push(cur);
+        }
+        cur.text += str[i];
+      }
+      lines.forEach(function (ln) {
+        var t = ln.text.replace(/\s+$/, '').replace(/^\s+/, '');
+        if (!t) return;
+        // 先頭の空白を除いた分だけ開始位置を詰める必要はない(空白は幅0で省かれる/折り返しで消える)
+        var base = ln.top + ln.height * 0.7706; // M PLUS 1p: ascent 1.075 / (ascent+descent 1.395)
+        var o = { x: X(ln.left), y: Y(base), size: fs * S, font: f400, color: col.c, opacity: col.a };
+        if (bold) {
+          // 太字: 同じ文字に輪郭を足す(文字は1つのまま。コピーしても重複しない)
+          page.pushOperators(PL.setTextRenderingMode(PL.TextRenderingMode.FillAndOutline), PL.setLineWidth(fs * S * 0.04), PL.setStrokingColor(col.c));
+          page.drawText(t, o);
+          page.pushOperators(PL.setTextRenderingMode(PL.TextRenderingMode.Fill));
+        } else {
+          page.drawText(t, o);
+        }
+      });
+    };
+
+    var walk = function (node) {
+      if (node.nodeType === 3) { if (node.data.trim()) drawText(node); return; }
+      if (node.nodeType !== 1) return;
+      var cs = getComputedStyle(node);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return;
+      var r = node.getBoundingClientRect();
+      if (node.tagName === 'INPUT' && node.type === 'checkbox') {
+        page.drawRectangle({ x: X(r.left), y: Y(r.bottom), width: r.width * S, height: r.height * S, borderColor: PL.rgb(0, 0, 0), borderWidth: 0.7 });
+        if (node.checked) {
+          line(r.left + r.width * 0.2, r.top + r.height * 0.55, r.left + r.width * 0.43, r.top + r.height * 0.78, 1.5, PL.rgb(0, 0, 0));
+          line(r.left + r.width * 0.43, r.top + r.height * 0.78, r.left + r.width * 0.82, r.top + r.height * 0.22, 1.5, PL.rgb(0, 0, 0));
+        }
+        return;
+      }
+      if (r.width > 0 && r.height > 0) drawBox(node, cs, r);
+      for (var c = node.firstChild; c; c = c.nextSibling) walk(c);
+    };
+
+    return PL.PDFDocument.create().then(function (d) {
+      doc = d;
+      doc.registerFontkit(window.fontkit);
+      doc.setTitle(title);
+      doc.setProducer('huguai');
+      return doc.embedFont(PdfLibs.font, { subset: false });
+    }).then(function (font) {
+      f400 = font;
+      page = doc.addPage([PW, PH]);
+      walk(root.firstChild);
+      var box = document.getElementById('pdfChartBox');
+      if (box && chartDataUri) {
+        return doc.embedPng(chartDataUri).then(function (img) {
+          var b = box.getBoundingClientRect();
+          page.drawImage(img, { x: X(b.left), y: Y(b.bottom), width: b.width * S, height: b.height * S });
+        });
+      }
+    }).then(function () { return doc.save(); });
+  },
+
+  /**
+   * 結果分析を、現在の画面のままA4縦1ページの文字入りPDFにして、そのままダウンロードする。
+   * ファイル名は 結果分析_年度_日時(日本時間 yyyyMMddHHmmss)。
    */
   downloadPdf: function () {
     var yd = KekkaBunseki.yearData;
     var isProject = (KekkaBunseki.mode === 'project');
-    if (!KekkaBunseki.buildPrintRoot_()) { showToast('結果分析の画面を表示してからPDFを作成してください'); return; }
+    if (!document.querySelector('#view .kekka-split')) { showToast('結果分析の画面を表示してからPDFを作成してください'); return; }
+    var chartUri = null;
+    try { if (KekkaBunseki.yearChart) chartUri = KekkaBunseki.yearChart.getImageURI(); } catch (e) { chartUri = null; }
     var stamp = new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace(/[-:T]/g, '').slice(0, 14);
     var filenamePart = (isProject ? ('工事別_' + (KekkaBunseki.projectSel || '')) : ((yd ? yd.year + '年度' : '') + '')) + '_' + stamp;
-    var pdfName = '結果分析_' + filenamePart;
-    var oldTitle = document.title;
-    document.title = pdfName; // ブラウザの「PDFに保存」の初期ファイル名になる
-    var done = function () {
-      window.removeEventListener('afterprint', done);
-      document.title = oldTitle;
-      KekkaBunseki.removePrintRoot_();
-      callServer('logPdfDownload', pdfName + '.pdf').catch(function () {});
-    };
-    window.addEventListener('afterprint', done);
-    setTimeout(function () { window.print(); }, 50);
+    var pdfName = '結果分析_' + filenamePart + '.pdf';
+
+    showLoading('PDF作成中...');
+    PdfLibs.load().then(function () {
+      var built = KekkaBunseki.buildPdfRoot_();
+      if (!built) throw new Error('画面がありません');
+      return KekkaBunseki.renderPdf_(built.root, built.width, chartUri, pdfName).then(function (bytes) {
+        KekkaBunseki.removePdfRoot_();
+        return bytes;
+      }, function (e) { KekkaBunseki.removePdfRoot_(); throw e; });
+    }).then(function (bytes) {
+      hideLoading();
+      var url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      var a = document.createElement('a');
+      a.href = url; a.download = pdfName;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { a.remove(); URL.revokeObjectURL(url); }, 3000);
+      callServer('logPdfDownload', pdfName).catch(function () {});
+    }).catch(function (err) {
+      hideLoading();
+      showToast('PDF作成失敗: ' + (err.message || err));
+    });
   }
 };
