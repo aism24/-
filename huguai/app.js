@@ -1050,6 +1050,22 @@ var KekkaBunseki = {
       '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
   },
 
+  /** 月の詳細: 日付(m/d)｜工事名｜分類(柱・梁)｜不具合内容。日付の古い順 */
+  detailTableHtml: function (details) {
+    var list = details || [];
+    var rows = list.map(function (d) {
+      var bg = d.proc === '柱' ? ' class="row-pillar"' : (d.proc === '梁' ? ' class="row-beam"' : '');
+      return '<tr' + bg + '><td style="text-align:center;">' + escapeHtml(d.date) + '</td><td>' + escapeHtml(d.project) + '</td>' +
+        '<td style="text-align:center;">' + escapeHtml(d.proc) + '</td>' +
+        '<td style="white-space:normal;min-width:260px;">' + escapeHtml(d.content) + '</td></tr>';
+    }).join('');
+    if (!rows) rows = '<tr><td colspan="4">該当なし</td></tr>';
+    return '<div class="card"><div class="kekka-subtitle">詳細（' + list.length + '件）</div>' +
+      '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr>' +
+      ['日付', '工事名', '分類', '不具合内容'].map(function (h) { return '<th style="text-align:center;">' + h + '</th>'; }).join('') +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  },
+
   contentTableHtml: function (contentCounts, side) {
     return '<div class="card"><div class="kekka-subtitle">不具合内容（件数）</div>' +
       '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr><th>不具合内容</th><th>件数</th></tr></thead><tbody>' +
@@ -1256,7 +1272,8 @@ var KekkaBunseki = {
       KekkaBunseki.ratioCardHtml(data.label, data['柱'], data['梁']) +
       '</div>' +
       KekkaBunseki.projectTableHtml(data.projectCounts, '年度比率', data.year + '年度' + data.month + '月分　工事別 不具合件数') +
-      KekkaBunseki.contentTableHtml(data.contentCounts, 'month');
+      KekkaBunseki.contentTableHtml(data.contentCounts, 'month') +
+      KekkaBunseki.detailTableHtml(data.details);
 
     requestAnimationFrame(KekkaBunseki.alignChartHeights);
   },

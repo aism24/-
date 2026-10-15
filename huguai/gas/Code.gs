@@ -115,6 +115,22 @@ function formatYmd_(d, tz) {
   return Utilities.formatDate(d, tz, 'yyyy-MM-dd');
 }
 
+/** m/d 形式(例 10/5)。Asia/Tokyoは固定オフセットで計算 */
+function formatMd_(d, tz) {
+  if (tz === 'Asia/Tokyo') {
+    var t = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+    return (t.getUTCMonth() + 1) + '/' + t.getUTCDate();
+  }
+  return Utilities.formatDate(d, tz, 'M/d');
+}
+
+/** 月の明細: 日付の古い順(同日は元の並び順)。並べ替え用の時刻は外して返す */
+function detailsList_(list) {
+  return (list || []).map(function (d, i) { return { d: d, i: i }; })
+    .sort(function (a, b) { return a.d.t - b.d.t || a.i - b.i; })
+    .map(function (x) { return { date: x.d.date, project: x.d.project, proc: x.d.proc, content: x.d.content }; });
+}
+
 function rowToObject_(headers, row, tz) {
   var obj = {};
   headers.forEach(function (h, i) {
@@ -629,9 +645,12 @@ function getKekkaBunsekiMonth(year, month) {
   var classIdx = headers.indexOf('分類選択');
 
   var propIdx = headers.indexOf('選択物件名');
+  var detailIdx = headers.indexOf('不具合内容、原因');
+  var tz = getConfig_().timezone;
   var counts = { '柱': 0, '梁': 0 };
   var contentCounts = {};
   var projects = {};
+  var details = [];
   values.slice(1).forEach(function (r) {
     if (!r[idIdx] || !(r[dateIdx] instanceof Date)) return;
     var info = getClosingInfo_(r[dateIdx]);
@@ -641,6 +660,7 @@ function getKekkaBunsekiMonth(year, month) {
     var content = r[classIdx] || '(未設定)';
     contentCounts[content] = (contentCounts[content] || 0) + 1;
     addProjectCount_(projects, r[propIdx] || '(未設定)', proc);
+    details.push({ t: r[dateIdx].getTime(), date: formatMd_(r[dateIdx], tz), project: r[propIdx] || '(未設定)', proc: proc || '', content: r[detailIdx] || '' });
   });
 
   var weightCache = readWeightCache_();
@@ -652,6 +672,7 @@ function getKekkaBunsekiMonth(year, month) {
   return {
     weightReady: weightReady,
     projectCounts: projectCountsList_(projects),
+    details: detailsList_(details),
     year: year,
     month: month,
     label: displayYear + '/' + month,
@@ -678,6 +699,8 @@ function getKekkaBunsekiBootstrap() {
   var procIdx = headers.indexOf('加工先');
   var classIdx = headers.indexOf('分類選択');
   var propIdx = headers.indexOf('選択物件名');
+  var detailIdx = headers.indexOf('不具合内容、原因');
+  var tz = getConfig_().timezone;
   var classMap = getClassGroupMap_(ss);
 
   var yearCounts = {};
@@ -688,6 +711,7 @@ function getKekkaBunsekiBootstrap() {
   var perYearMonthContentCounts = {};
   var perYearProjects = {};
   var perYearMonthProjects = {};
+  var perYearMonthDetails = {};
 
   values.slice(1).forEach(function (r) {
     if (!r[idIdx] || !(r[dateIdx] instanceof Date)) return;
@@ -719,6 +743,8 @@ function getKekkaBunsekiBootstrap() {
     addProjectCount_(perYearProjects[y], prop, proc);
     if (!perYearMonthProjects[ymKey]) perYearMonthProjects[ymKey] = {};
     addProjectCount_(perYearMonthProjects[ymKey], prop, proc);
+    if (!perYearMonthDetails[ymKey]) perYearMonthDetails[ymKey] = [];
+    perYearMonthDetails[ymKey].push({ t: r[dateIdx].getTime(), date: formatMd_(r[dateIdx], tz), project: prop, proc: proc || '', content: r[detailIdx] || '' });
   });
 
   var weightCache = readWeightCache_();
@@ -768,6 +794,7 @@ function getKekkaBunsekiBootstrap() {
     var displayYear = (month === 12) ? year - 1 : year;
     return {
       projectCounts: projectCountsList_(perYearMonthProjects[key]),
+      details: detailsList_(perYearMonthDetails[key]),
       year: year,
       month: month,
       label: displayYear + '/' + month,
