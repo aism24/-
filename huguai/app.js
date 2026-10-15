@@ -1207,12 +1207,12 @@ var KekkaBunseki = {
         '<td style="min-width:200px;"><div style="display:flex;align-items:center;gap:6px;">' +
         '<div title="' + start.toFixed(1) + '%〜' + end.toFixed(1) + '%" style="flex:1;position:relative;overflow:hidden;background:#e6edfa;border:1px solid #9bb3e0;border-radius:3px;height:14px;box-sizing:border-box;">' +
         '<div style="position:absolute;top:0;left:' + start.toFixed(2) + '%;width:' + ratio.toFixed(2) + '%;min-width:2px;height:100%;background:#1a73e8;"></div></div>' +
-        '<span style="font-size:11px;color:#777;">100%</span></div></td></tr>';
+        '</div></td></tr>';
     }).join('');
     if (!rows) rows = '<tr><td colspan="6">該当なし</td></tr>';
     return '<div class="card"><div class="kekka-subtitle">' + escapeHtml(title || '工事別 不具合件数') + '</div>' +
       '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr>' +
-      ['工事名', '柱', '梁', '合計', ratioLabel, '比率データバー（0〜100%）'].map(function (h) { return '<th style="text-align:center;">' + h + '</th>'; }).join('') +
+      ['工事名', '柱', '梁', '合計', ratioLabel, '比率データバー'].map(function (h) { return '<th style="text-align:center;">' + h + '</th>'; }).join('') +
       '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
   },
 
