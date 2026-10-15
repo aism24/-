@@ -1629,9 +1629,9 @@ var KekkaBunseki = {
       doc.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin + (maxW - w) / 2, margin, w, h);
 
       hideLoading();
-      var filenamePart = isProject
-        ? ('工事別_' + (KekkaBunseki.projectSel || ''))
-        : ((yd ? yd.year + '年度' : '') + '_' + (md ? md.label.replace('/', '_') : ''));
+      // ファイル名の末尾は日本時間の日時(yyyyMMddHHmmss)。同じ内容でも重複しない
+      var stamp = new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace(/[-:T]/g, '').slice(0, 14);
+      var filenamePart = (isProject ? ('工事別_' + (KekkaBunseki.projectSel || '')) : ((yd ? yd.year + '年度' : '') + '')) + '_' + stamp;
       var pdfName = '結果分析_' + filenamePart + '.pdf';
       doc.save(pdfName);
       callServer('logPdfDownload', pdfName).catch(function () {});
