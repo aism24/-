@@ -1579,12 +1579,33 @@ var KekkaBunseki = {
         width: capW, windowWidth: capW + 24,
         onclone: function (doc, el) {
           var st = doc.createElement('style');
-          st.textContent = '.kekka-split{width:' + capW + 'px !important;flex-direction:row !important;align-items:flex-start !important;}' +
+          st.textContent = '.kekka-split{width:' + capW + 'px !important;flex-direction:row !important;flex-wrap:wrap;align-items:flex-start !important;}' +
             '.kekka-sticky,#app.sticky-analysis .kekka-sticky{position:static !important;background:transparent !important;}' +
-            '.kekka-col-title{color:#000 !important;}' +
-            '.card,.kekka-checklist{box-shadow:none !important;border:1px solid #ccc;}';
+            '.kekka-col-title{display:none !important;}' +
+            '.card,.kekka-checklist{box-shadow:none !important;border:1px solid #ccc;}' +
+            // 表の罫線: 黒の実線。外形を除く縦線は破線
+            'table.record-table{border:1px solid #000 !important;}' +
+            'table.record-table th,table.record-table td{border:1px solid #000 !important;border-left:1px dashed #000 !important;border-right:1px dashed #000 !important;}' +
+            'table.record-table tr>:first-child{border-left:1px solid #000 !important;}' +
+            'table.record-table tr>:last-child{border-right:1px solid #000 !important;}';
           doc.head.appendChild(st);
           doc.body.style.background = '#fff';
+          // 年度・月の選択は、枠とボタンを外してテキストだけにする
+          Array.prototype.forEach.call(el.querySelectorAll('.filter-bar'), function (bar) {
+            var texts = Array.prototype.map.call(bar.querySelectorAll('select'), function (sel) {
+              return sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+            }).filter(Boolean);
+            if (!texts.length) return;
+            bar.innerHTML = '<div style="font-size:14px;font-weight:bold;color:#000;">' + escapeHtml(texts.join('　')) + '</div>';
+          });
+          // ページ上部: 【分析結果表示】(左) と 印刷日(右端=表の右端に揃える)
+          var jst = new Date(Date.now() + 9 * 3600 * 1000);
+          var printed = jst.getUTCFullYear() + '.' + String(jst.getUTCMonth() + 1).padStart(2, '0') + '.' + String(jst.getUTCDate()).padStart(2, '0') + '印刷';
+          var head = doc.createElement('div');
+          head.style.cssText = 'flex:0 0 100%;display:flex;justify-content:space-between;align-items:baseline;' +
+            'font-size:16px;font-weight:bold;color:#000;margin-bottom:10px;';
+          head.innerHTML = '<span>【分析結果表示】</span><span>' + printed + '</span>';
+          el.insertBefore(head, el.firstChild);
           if (chartImg) {
             var box = el.querySelector('#yearComboChart');
             if (box) {
