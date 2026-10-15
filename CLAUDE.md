@@ -155,6 +155,7 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 | app-launcher (https://app-launcher-ashy.vercel.app/) | app-launcher | 解除(2026-10-05〜06にユーザーが解除。`list_projects` 0件を確認)| `app-launcher/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(同一SHAは `forceNew="1"` を付ける)。Ignored Build Stepに `-- ./app-launcher` のコマンドが入っていると常にスキップされる(原因判明・解消済み)。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
 | company-ai (Vercelプロジェクト名「company-ai」) | company-ai | 解除(2026-10-08、ユーザーが誤って連携→解除。`list_projects` 0件を確認。連携中の約16分間〜数時間に、company-ai自身のコミット#662・#668・#676・#678で自動デプロイが発生) | 連携なしでの `create_deployment` は未検証(次の「デプロイして」で確認する)。`vercel.json` の `git.deploymentEnabled=false` があるかは未確認。引き継ぎ書はDriveの保存先フォルダ(上の表) |
 | tdf-dim-count (https://tdf-dim-count.vercel.app/) | tdf-dim-count | 解除(2026-10-14、ユーザーがVercelでプロジェクトを新規作成=Root Directory `tdf-dim-count`。作成時に自動で本番デプロイ1回(dpl_G84HA3B、コミットb9d10fd=PR #711)→直後にユーザーが連携を解除。`list_projects` 0件を確認。同日、連携なしのまま `create_deployment` で2回目(dpl_quJeD8U、コミットe748bcb=PR #713。連携なしでもデプロイできることを確認)と3回目(dpl_6cPiPf3、コミットcddd081=PR #716。利用記録のGAS URL設定)を本番デプロイ。4回目(dpl_5dvBaEK、コミットd2a41e5=PR #719。手順書ビューア・説明文ヘッダー)を「デプロイして」の指示で本番デプロイ=連携なし。10/14のデプロイは計4回) | アプリ名「実寸データより長さと本数集計」。静的サイト(関数なし)。Excelダウンロード時に、GAS(`tdf-dim-count/gas/Code.gs`、スプレッドシート「tdf-dim-count」にコンテナバインド)へファイル名・レイヤ・総本数を送り、シート「記録」の2行目に追記(2026-10-14、`app.js` の `GAS_URL` に設定)。`tdf-dim-count/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(連携は不要)。TDF(OLE原本14MB含む)のレイヤ選択で、斜め寸法の手配長さ・本数を集計しExcel出力。解析のやり方は `docs/know-how.md`。ヘッダー右の「操作・準備説明書」ボタンで手順書(全8ページ)を表示(画像 `tdf-dim-count/manual/p-1〜8.jpg`、元PDFは `docs/manual-draft/`。ページ数を変えたら `index.html` のスクリプトの `N` も直す) |
+| huguai (Vercelプロジェクト名「tori-huguai」。https://tori-huguai.vercel.app/) | huguai | 解除(2026-10-15、ユーザーがVercelでプロジェクトを作成し、本番デプロイ1回(dpl_CPJjCRe、コミット1d00b81=PR #726)→直後にユーザーが連携を解除。`list_projects`(repoUrl=aism24/-)0件を確認。ユーザーの手動デプロイでClaudeの `create_deployment` ではない) | アプリ名「社内不具合アプリNew」(社内不具合記録アプリ(鳥取)のVercel版)。静的サイト(関数なし)。`huguai/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。GAS(`huguai/gas/Code.gs`、スプレッドシート「社内不具合アプリVercel版」にバインド)がデータ処理。本番反映は「デプロイして」の指示時のみ `create_deployment`(teamIdは渡さない=403。project=tori-huguai)。2026-10-15時点でClaudeのVercelツールは `get_project` 等がteam指定で403、`web_fetch_vercel_url` も403(本番ページの中身は未確認)。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
 
 2026-10-14、tdf-dim-count(新規)も作成直後に連携を解除し、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。
 2026-10-08、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。cost-insightは連携なしのまま `create_deployment` で本番デプロイできた(dpl_EthcYT7、コミット5c49df9)。
@@ -210,7 +211,7 @@ Previewデプロイが発生する)
 | 日報全期間集計(daily-report。管理用スプレッドシート「日報集計アプリ」も同じフォルダ内。引き継ぎ書のタイトルは「日報アプリ引き継ぎ書」。2026-10-06登録) | https://drive.google.com/drive/folders/1RYjLWyC2mxSq8_Jzan-pWnpxrsvcTYgL | `1RYjLWyC2mxSq8_Jzan-pWnpxrsvcTYgL` |
 | 社内AI(company-ai。就業規則などへの質問応答。管理用スプレッドシート「社内AI」も同じフォルダ内。引き継ぎ書のGoogleドキュメントのタイトルは「社内AI 引き継ぎ書 (vN) 最新版」。2026-10-07登録) | https://drive.google.com/drive/folders/1cu5MjHLvq4Vw5D4XT74tp43heg6lA3RT | `1cu5MjHLvq4Vw5D4XT74tp43heg6lA3RT` |
 | 実寸データより長さと本数集計(tdf-dim-count。TDFのレイヤ別に寸法の長さ・本数を集計。管理用スプレッドシート「tdf-dim-count」(シート「記録」=Excelダウンロード時の利用履歴。GAS経由)も同じフォルダ内。2026-10-14登録。引き継ぎ書のGoogleドキュメントのタイトルは「実寸データより長さと本数集計 引き継ぎ書 (vN) 最新版」(2026-10-14に v1〜v3 を作成。最新は v3)。リポジトリ内のREADME・tests・know-howも記録) | https://drive.google.com/drive/folders/1SHZZBXgv6Z21E-vDi4VldUUuuPsZVn4R | `1SHZZBXgv6Z21E-vDi4VldUUuuPsZVn4R` |
-| 社内不具合アプリ（huguai。不具合記録アプリ(鳥取)のVercel版。`huguai/`。管理用スプレッドシート「社内不具合アプリVercel版」「社内不具合アプリHTML」「不具合アプリ結果表示」も同じフォルダ内。2026-10-15登録。引き継ぎ書のGoogleドキュメントのタイトルは「社内不具合アプリ（huguai） 引き継ぎ書 (vN) 最新版」(2026-10-15に v1 を作成)) | https://drive.google.com/drive/folders/109FIFxFVC3sQU9S2tx596jMLJzrAkmgD | `109FIFxFVC3sQU9S2tx596jMLJzrAkmgD` |
+| 社内不具合アプリ（huguai。不具合記録アプリ(鳥取)のVercel版。`huguai/`。管理用スプレッドシート「社内不具合アプリVercel版」「社内不具合アプリHTML」「不具合アプリ結果表示」も同じフォルダ内。2026-10-15登録。引き継ぎ書のGoogleドキュメントのタイトルは「社内不具合アプリ（huguai） 引き継ぎ書 (vN) 最新版」(2026-10-15に v1〜v3 を作成。最新は v3)) | https://drive.google.com/drive/folders/109FIFxFVC3sQU9S2tx596jMLJzrAkmgD | `109FIFxFVC3sQU9S2tx596jMLJzrAkmgD` |
 | 上記以外のアプリ | 未登録(ユーザーがアプリごとに指示する。指示されたらこの表に追記する) | - |
 
 - **保存先フォルダはユーザーがアプリごとに指示する。** 指示が無いアプリは、推測で決めずにユーザーに聞く。
@@ -351,6 +352,6 @@ Vercelの「Import Git Repository」で候補が`-`だけになり分かりや�
 
 ## huguai(社内不具合アプリ鳥取のVercel版)のルール(2026-10-15〜)
 
-- 結果分析の「PDFダウンロード」は、**現在の画面表示のまま、A4縦向き1ページに収めて出力する**(`huguai/app.js` の `KekkaBunseki.downloadPdf`)。画面(左右2列)を画像化し、縦横比を保って縮小する。縦が長いときはさらに縮小し、複数ページにしない。背景は印刷向けに白にする。
+- 結果分析の「PDFダウンロード」は、**現在の画面表示のまま、A4縦向き1ページに収めて出力する**(`huguai/app.js` の `KekkaBunseki.downloadPdf`)。画面(左右2列)を複製して測った位置・背景・罫線・文字を、pdf-lib で文字入りのまま1ページに描く(画像ではない。文字はコピー可。グラフだけ画像)。縦が長いときはさらに縮小し、複数ページにしない。背景は印刷向けに白にする。日本語フォントは M PLUS 1p(フォントのサブセット埋め込みは文字が欠けるので使わない)。
 - PDFの出力内容は画面表示と揃える。画面の表示仕様を変えたら、PDFも同じ見た目になっているか確認する(別レイアウトを作り直さない)。
 - 引き継ぎ書は上の表の保存先フォルダに保存する(個人のマイドライブには保存しない)。
