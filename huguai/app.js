@@ -1599,14 +1599,14 @@ var KekkaBunseki = {
             if (!texts.length) return;
             bar.innerHTML = '<div style="font-size:14px;font-weight:bold;color:#000;">' + escapeHtml(texts.join('　')) + '</div>';
           });
-          // ページ上部: 【分析結果表示】(左) と 印刷日(右端=表の右端に揃える)
+          // ページ上部: 見出し(中央) と 印刷日(右端=表の右端に揃える)
           var jst = new Date(Date.now() + 9 * 3600 * 1000);
           var printed = jst.getUTCFullYear() + '.' + String(jst.getUTCMonth() + 1).padStart(2, '0') + '.' + String(jst.getUTCDate()).padStart(2, '0') + '印刷';
           var head = doc.createElement('div');
           // 見出しは中央・2倍の大きさ(32px)。印刷日は右端
           head.style.cssText = 'flex:0 0 100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:end;' +
             'color:#000;margin-bottom:10px;';
-          head.innerHTML = '<span></span><span style="font-size:32px;font-weight:bold;text-align:center;">社内不具合記録【分析結果表示】</span>' +
+          head.innerHTML = '<span></span><span style="font-size:32px;font-weight:bold;text-align:center;">社内不具合記録【分析結果】</span>' +
             '<span style="font-size:16px;font-weight:bold;text-align:right;">' + printed + '</span>';
           el.insertBefore(head, el.firstChild);
           if (chartImg) {
