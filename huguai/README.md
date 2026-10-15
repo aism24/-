@@ -8,6 +8,6 @@
 
 ## 高速化メモ
 - 結果分析の生産重量(約12秒)は、起動時に裏で先読みし、未計算でも画面を先に表示して後から差し替える。
-- GASを新規にデプロイしたら、Apps Scriptエディタで `setupProductionWeightCacheTrigger` を1回だけ手動実行する(15分おきにキャッシュを温める)。
+- GASを新規にデプロイしたら、Apps Scriptエディタで `setupProductionWeightCacheTrigger` を1回だけ手動実行する(毎日2時台に1回、キャッシュを温める)。
 - 設定とマスタは10分キャッシュ(物件を追加すると自動で無効化)。シートを直接編集した内容は最大10分で反映。
 - ブラウザのコンソールに `[API] 関数名 total=…ms server=…ms` を出力(totalとserverの差が通信オーバーヘッド)。

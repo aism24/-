@@ -391,8 +391,8 @@ function getBunsekiByProcessType(mode) {
 /**
  * 生産重量マスタ（マスタQUERY）の「QUERY」シートを締め月単位（fiscalYear-closingMonth）で
  * 重量合計にまとめる。このスプレッドシートを開くだけで約12秒かかる(QUERY数式の再計算と推測)ため、
- * 30分間キャッシュし、かつ setupProductionWeightCacheTrigger() で仕込む時間主導トリガーが
- * 15分おきに先回りしてこの関数を呼び直しキャッシュを温め続ける。
+ * 最大6時間キャッシュし、かつ setupProductionWeightCacheTrigger() で仕込む時間主導トリガーが
+ * 毎日2時台に1回この処理を呼び直してキャッシュを温める。
  * 列構成: A工事番号 B部位 C加工先 D製品マーク E長さ F本数 G重量 H加工(日付)
  */
 /** キャッシュ済みの生産重量だけを返す(未計算ならnull)。結果分析の表示を12秒の再計算で止めないため */
@@ -430,7 +430,7 @@ function getProductionWeightByMonth_() {
     }
   }
 
-  cache.put('productionWeightByMonth', JSON.stringify(result), 1800);
+  cache.put('productionWeightByMonth', JSON.stringify(result), 21600); // 最大6時間
   return result;
 }
 
@@ -439,18 +439,21 @@ function getProductionWeightByMonth_() {
  * 期限が近い/切れている場合だけ実際に重い再計算が走り、ユーザーが踏む前に温め直す。
  */
 function warmProductionWeightCache() {
+  // 毎日の定期実行では、前回のキャッシュが残っていても必ず作り直して最新にする
+  CacheService.getScriptCache().remove('productionWeightByMonth');
   getProductionWeightByMonth_();
 }
 
 /**
  * セットアップ用(初回のみApps Scriptエディタから手動実行): warmProductionWeightCacheを
- * 15分おきに実行する時間主導トリガーを登録する。再実行しても重複登録しないよう既存分を削除してから作る。
+ * 毎日2時台に1回実行する時間主導トリガーを登録する。再実行しても重複登録しないよう既存分を削除してから作る。
+ * (キャッシュは最大6時間。切れても画面の先読みが裏で作り直すので、画面表示は止まらない)
  */
 function setupProductionWeightCacheTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'warmProductionWeightCache') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('warmProductionWeightCache').timeBased().everyMinutes(15).create();
+  ScriptApp.newTrigger('warmProductionWeightCache').timeBased().everyDays(1).atHour(2).create();
 }
 
 function sortedCounts_(counts, classMap) {
