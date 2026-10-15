@@ -1600,12 +1600,13 @@ var KekkaBunseki = {
       '#printRoot .kekka-sticky{position:static;background:transparent;}' +
       '#printRoot .kekka-col-title{display:none;}' +
       '#printRoot .card{background:#fff;border-radius:10px;padding:16px;margin-bottom:12px;border:1px solid #ccc;box-shadow:none;}' +
-      // 表の罫線: 黒の実線。外形は二重線(表を囲む枠に引く=四隅が欠けない。角は丸めず直角)、外形を除く縦線は破線
+      // 表の罫線: 黒の実線。外形は二重線(表を囲む枠に引く=四隅が欠けない。角は丸めず直角)、外形を除く縦線は細い破線
       '#printRoot .table-scroll{display:block;border:var(--bw,4px) double #000;border-radius:0;overflow:visible !important;max-height:none !important;}' +
       '#printRoot table.record-table{border:none;border-radius:0;width:100%;}' +
-      '#printRoot table.record-table th,#printRoot table.record-table td{border:1px solid #000;border-left:1px dashed #000;border-right:1px dashed #000;}' +
-      '#printRoot table.record-table tr>:first-child{border-left:none;}' +
-      '#printRoot table.record-table tr>:last-child{border-right:none;}' +
+      '#printRoot table.record-table th,#printRoot table.record-table td{border:1px solid #000;border-left:none;border-right:none;}' +
+      // 縦線(外形を除く)は罫線では細くできないため、細い線を断続的に並べた背景で破線にする
+      '#printRoot table.record-table th:not(:first-child),#printRoot table.record-table td:not(:first-child){' +
+      'background-image:linear-gradient(to bottom,#000 50%,transparent 50%);background-size:1px 4px;background-repeat:repeat-y;background-position:left top;}' +
       '#printRoot table.record-table thead tr:first-child>*{border-top:none;}' +
       '#printRoot table.record-table tbody tr:last-child>*{border-bottom:none;}' +
       '#printRoot table.record-table th{position:static;}';
