@@ -271,6 +271,9 @@ var Wizard = {
 
   setField: function (key, value) {
     Wizard.formData[key] = value;
+    // 入力し直した項目の「未記入あり」表示は消す
+    var errEl = document.getElementById('err_' + key);
+    if (errEl && value) errEl.classList.add('hidden');
     Wizard.updateSaveButtonState();
   },
 
