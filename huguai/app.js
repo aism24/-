@@ -1031,7 +1031,7 @@ var KekkaBunseki = {
   },
 
   /** 工事名｜柱｜梁｜合計｜比率(%)｜比率データバー の表。工事は合計の多い順。比率は全工事の合計に対する割合 */
-  projectTableHtml: function (projectCounts, ratioLabel) {
+  projectTableHtml: function (projectCounts, ratioLabel, title) {
     var list = projectCounts || [];
     var grand = list.reduce(function (a, p) { return a + p.total; }, 0);
     var maxRatio = list.reduce(function (a, p) { return Math.max(a, grand ? p.total / grand : 0); }, 0);
@@ -1044,7 +1044,7 @@ var KekkaBunseki = {
         '<div style="width:' + barW.toFixed(1) + '%;height:100%;background:#1a73e8;border-radius:3px;"></div></div></td></tr>';
     }).join('');
     if (!rows) rows = '<tr><td colspan="6">該当なし</td></tr>';
-    return '<div class="card"><div class="kekka-subtitle">工事別 不具合件数</div>' +
+    return '<div class="card"><div class="kekka-subtitle">' + escapeHtml(title || '工事別 不具合件数') + '</div>' +
       '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr>' +
       '<th>工事名</th><th>柱</th><th>梁</th><th>合計</th><th>' + ratioLabel + '</th><th>比率データバー</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
   },
@@ -1254,7 +1254,7 @@ var KekkaBunseki = {
       '</div>' +
       KekkaBunseki.ratioCardHtml(data.label, data['柱'], data['梁']) +
       '</div>' +
-      KekkaBunseki.projectTableHtml(data.projectCounts, '年度比率') +
+      KekkaBunseki.projectTableHtml(data.projectCounts, '年度比率', data.year + '年度' + data.month + '月分　工事別 不具合件数') +
       KekkaBunseki.contentTableHtml(data.contentCounts, 'month');
 
     requestAnimationFrame(KekkaBunseki.alignChartHeights);
