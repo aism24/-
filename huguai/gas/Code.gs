@@ -2,6 +2,12 @@
  * 社内不具合記録アプリ（鳥取）GAS版
  * このスクリプトは「社内不具合アプリVercel版」スプレッドシート（設定用コンテナ）にバインドする。
  * データ本体は別スプレッドシート（データソース）を ID 経由で読み書きする。
+ *
+ * 【構成】
+ *  - 共通: キャッシュ(データ版数方式)・設定・日付ヘルパー
+ *  - データ読込: loadData_()が1リクエスト1回だけ不具合記録シートを読む
+ *  - 集計: buildAgg_()が1回の走査で年度/月/工事/明細の集計をまとめて作る
+ *  - 生産重量: 6時間キャッシュ+スクリプトプロパティに永続保存(毎日2時に更新)
  */
 
 var CONFIG_SHEET_NAME = '情報';
@@ -12,6 +18,9 @@ var PROPERTY_SHEET = '物件名';
 var NAME_SHEET = '氏名';
 var PRODUCTION_SHEET_NAME = 'QUERY';
 var MONTH_ORDER = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+
+/** Geminiのモデル名はコードに固定する(情報シートの値は使わない) */
+var GEMINI_MODEL = 'gemini-3.5-flash-lite';
 
 var COLUMNS = [
   '不具合記録ID', '発生日', '選択物件名', '製品名', '部署選択(対象者)', '対象者',
@@ -28,7 +37,7 @@ var API_FUNCTIONS = {
   getKekkaBunsekiBootstrap: getKekkaBunsekiBootstrap, getKekkaBunsekiYear: getKekkaBunsekiYear,
   getKekkaBunsekiMonth: getKekkaBunsekiMonth, getKekkaBunsekiByProject: getKekkaBunsekiByProject,
   uploadPhoto: uploadPhoto, ocrProductName: ocrProductName, logPdfDownload: logPdfDownload,
-  getProductionWeights: getProductionWeights
+  getProductionWeights: getProductionWeights, clearCache: clearCache
 };
 
 function doGet() {
@@ -57,12 +66,116 @@ function logPdfDownload(filename) {
   return true;
 }
 
+/** ===================== キャッシュ(データ版数方式) ===================== */
+
+/*
+ * 集計結果などをCacheServiceに最大6時間保存する。キー名にデータ版数を含め、
+ * 保存(saveRecord)や clearCache() で版数を更新すると、古いキャッシュは自動的に使われなくなる。
+ *  - dataVer  : 不具合記録・集計用   - masterVer: マスタ用(物件追加などで更新)
+ * CacheServiceは1件100KBまで・キーは250文字までのため、大きい値は分割し、長いキーはハッシュにする。
+ */
+var CACHE_TTL = 21600;      // 6時間(CacheServiceの上限)
+var CHUNK_CHARS = 25000;    // 日本語は1文字3バイトでも 75KB < 100KB
+var _verMemo_ = {};
+
+function ver_(name) {
+  if (_verMemo_[name]) return _verMemo_[name];
+  var cache = CacheService.getScriptCache();
+  var v = cache.get(name);
+  if (!v) { v = String(Date.now()); cache.put(name, v, CACHE_TTL); }
+  _verMemo_[name] = v;
+  return v;
+}
+
+function bumpVer_(name) {
+  var v = String(Date.now());
+  CacheService.getScriptCache().put(name, v, CACHE_TTL);
+  _verMemo_[name] = v;
+}
+
+function hashStr_(s) {
+  var h1 = 5381, h2 = 52711;
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    h1 = ((h1 * 33) ^ c) >>> 0;
+    h2 = ((h2 * 31) + c) >>> 0;
+  }
+  return h1.toString(36) + h2.toString(36) + s.length.toString(36);
+}
+
+function cacheKey_(prefix, sub) {
+  var key = prefix + ':' + sub;
+  return key.length > 200 ? prefix + ':h' + hashStr_(sub) : key;
+}
+
+/** 値(JSON化できるもの)を保存用のキー/値の組にする。短ければ1件、長ければ分割 */
+function packBig_(key, obj) {
+  var s = JSON.stringify(obj);
+  var pairs = {};
+  if (s.length <= CHUNK_CHARS) {
+    pairs[key] = 's' + s;
+    return pairs;
+  }
+  var n = Math.ceil(s.length / CHUNK_CHARS);
+  for (var i = 0; i < n; i++) pairs[key + '#' + i] = s.substr(i * CHUNK_CHARS, CHUNK_CHARS);
+  pairs[key] = 'c' + n;
+  return pairs;
+}
+
+function cachePutPairs_(pairs) {
+  try { CacheService.getScriptCache().putAll(pairs, CACHE_TTL); } catch (e) {}
+}
+
+function cachePutBig_(key, obj) {
+  cachePutPairs_(packBig_(key, obj));
+}
+
+/** 保存済みの値を返す。無い/欠けているときはnull */
+function cacheGetBig_(key) {
+  var cache = CacheService.getScriptCache();
+  var head = cache.get(key);
+  if (head === null || head === undefined) return null;
+  try {
+    if (head.charAt(0) === 's') return JSON.parse(head.substr(1));
+    var n = Number(head.substr(1)), keys = [];
+    for (var i = 0; i < n; i++) keys.push(key + '#' + i);
+    var got = cache.getAll(keys), s = '';
+    for (var j = 0; j < n; j++) {
+      var part = got[keys[j]];
+      if (part === null || part === undefined) return null;
+      s += part;
+    }
+    return JSON.parse(s);
+  } catch (e) { return null; }
+}
+
+/** 不具合記録に関する結果を、データ版数つきでキャッシュして返す */
+function cachedData_(sub, build) {
+  var key = cacheKey_('kd:' + ver_('dataVer'), sub);
+  var hit = cacheGetBig_(key);
+  if (hit !== null) return hit;
+  var out = build();
+  cachePutBig_(key, out);
+  return out;
+}
+
+/** 画面の「最新に更新」用: すべてのキャッシュを無効にする(生産重量は残す) */
+function clearCache() {
+  bumpVer_('dataVer');
+  bumpVer_('masterVer');
+  _dataMemo_ = null;
+  _aggMemo_ = null;
+  return true;
+}
+
+/** ===================== 設定 ===================== */
+
 var _configCache_ = null;
 
 function getConfig_() {
   if (_configCache_) return _configCache_;
   var cache = CacheService.getScriptCache();
-  var hit = cache.get('config_v1');
+  var hit = cache.get('config_v2');
   if (hit) { _configCache_ = JSON.parse(hit); return _configCache_; }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(CONFIG_SHEET_NAME);
@@ -74,23 +187,20 @@ function getConfig_() {
   _configCache_ = {
     sourceSpreadsheetId: map['データソーススプシID'],
     driveFolderId: map['写真保存用DriveフォルダID'],
-    geminiModel: map['Geminiモデル名'],
     timezone: map['タイムゾーン'] || 'Asia/Tokyo',
     productionWeightSpreadsheetId: map['生産重量マスタ'],
     apiKey: map['APIKEY']
   };
-  try { cache.put('config_v1', JSON.stringify(_configCache_), 600); } catch (e) {}
+  try { cache.put('config_v2', JSON.stringify(_configCache_), 600); } catch (e) {}
   return _configCache_;
 }
 
 function getSourceSS_() {
-  var cfg = getConfig_();
-  return SpreadsheetApp.openById(cfg.sourceSpreadsheetId);
+  return SpreadsheetApp.openById(getConfig_().sourceSpreadsheetId);
 }
 
 function getProductionSS_() {
-  var cfg = getConfig_();
-  return SpreadsheetApp.openById(cfg.productionWeightSpreadsheetId);
+  return SpreadsheetApp.openById(getConfig_().productionWeightSpreadsheetId);
 }
 
 function sheetToObjects_(sheet) {
@@ -104,6 +214,8 @@ function sheetToObjects_(sheet) {
       return obj;
     });
 }
+
+/** ===================== 日付ヘルパー ===================== */
 
 /** yyyy-MM-dd。Asia/Tokyoは夏時間なし(UTC+9固定)のため、GASサービスを呼ばず計算する(行数分の呼び出しを省く) */
 function formatYmd_(d, tz) {
@@ -124,11 +236,30 @@ function formatMd_(d, tz) {
   return Utilities.formatDate(d, tz, 'M/d');
 }
 
-/** 月の明細: 日付の古い順(同日は元の並び順)。並べ替え用の時刻は外して返す */
-function detailsList_(list) {
-  return (list || []).map(function (d, i) { return { d: d, i: i }; })
-    .sort(function (a, b) { return a.d.t - b.d.t || a.i - b.i; })
-    .map(function (x) { return { date: x.d.date, project: x.d.project, proc: x.d.proc, content: x.d.content }; });
+/**
+ * 締め月ルール: 21日始まり・20日締め（前月21日〜当月20日が対象期間）。
+ * 会計年度は11月21日スタート・翌年11月20日決算（例: 2026年度＝2025/11/21〜2026/11/20）のため、
+ * 締め月が12月の場合のみ「締め年+1=会計年度」、それ以外は「締め年=会計年度」となる。
+ * 日付は日本時間(UTC+9)で判定する(スクリプトのタイムゾーン設定に左右されない)。
+ */
+function getClosingInfo_(d) {
+  var t = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  var y = t.getUTCFullYear();
+  var m = t.getUTCMonth() + 1;
+  var day = t.getUTCDate();
+  var closingMonth, closingYear;
+  if (day <= 20) {
+    closingMonth = m;
+    closingYear = y;
+  } else if (m === 12) {
+    closingMonth = 1;
+    closingYear = y + 1;
+  } else {
+    closingMonth = m + 1;
+    closingYear = y;
+  }
+  var fiscalYear = (closingMonth === 12) ? closingYear + 1 : closingYear;
+  return { fiscalYear: fiscalYear, closingMonth: closingMonth };
 }
 
 function rowToObject_(headers, row, tz) {
@@ -143,11 +274,11 @@ function rowToObject_(headers, row, tz) {
 /** ===================== マスタデータ ===================== */
 
 function getMasterData() {
-  var cache = CacheService.getScriptCache();
-  var hit = cache.get('masterData_v1');
-  if (hit) return JSON.parse(hit);
+  var key = cacheKey_('mst:' + ver_('masterVer'), 'all');
+  var hit = cacheGetBig_(key);
+  if (hit !== null) return hit;
   var data = buildMasterData_();
-  try { cache.put('masterData_v1', JSON.stringify(data), 600); } catch (e) {}
+  cachePutBig_(key, data);
   return data;
 }
 
@@ -175,6 +306,13 @@ function buildMasterData_() {
     names: names,
     departments: departments
   };
+}
+
+/** 分類 -> 加工分類(柱/梁)。マスタ(キャッシュ済み)から作るので分類シートは読み直さない */
+function getClassGroupMap_() {
+  var map = {};
+  getMasterData().classifications.forEach(function (c) { map[c['分類']] = c['加工分類']; });
+  return map;
 }
 
 function addNewProperty_(ss, name) {
@@ -223,210 +361,301 @@ function mapFormToColumn_(col, f) {
   }
 }
 
+/**
+ * 保存: ID列だけを読み(全列は読まない)、同時保存で重複しないようロックを取る。
+ * 記録の保存が成功してから、新規物件をマスタへ追加する(保存に失敗して物件だけ残るのを防ぐ)。
+ */
 function saveRecord(formData) {
   var ss = getSourceSS_();
   var sheet = ss.getSheetByName(DATA_SHEET);
-  var values = sheet.getDataRange().getValues();
-  var headers = values[0];
-  var idColIdx = headers.indexOf('不具合記録ID');
+  var rowData = COLUMNS.map(function (col) { return mapFormToColumn_(col, formData); });
+  var result;
 
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var lastRow = sheet.getLastRow();
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var idCol = headers.indexOf('不具合記録ID') + 1;
+    var ids = lastRow > 1 ? sheet.getRange(2, idCol, lastRow - 1, 1).getValues() : [];
+
+    if (formData.id) {
+      var targetRow = -1;
+      for (var i = 0; i < ids.length; i++) {
+        if (String(ids[i][0]) === String(formData.id)) { targetRow = i + 2; break; }
+      }
+      if (targetRow === -1) throw new Error('レコードが見つかりません: ' + formData.id);
+      rowData[0] = formData.id;
+      sheet.getRange(targetRow, 1, 1, rowData.length).setValues([rowData]);
+      result = { id: formData.id, isNew: false };
+    } else {
+      var existingIds = ids.map(function (r) { return String(r[0]); });
+      var newId = generateId_(existingIds);
+      rowData[0] = newId;
+      sheet.appendRow(rowData);
+      result = { id: newId, isNew: true };
+    }
+  } finally {
+    lock.releaseLock();
+  }
+
+  _dataMemo_ = null;
+  _aggMemo_ = null;
+  bumpVer_('dataVer');
   if (formData.isNewProperty) {
     addNewProperty_(ss, formData['選択物件名']);
-    CacheService.getScriptCache().remove('masterData_v1');
+    bumpVer_('masterVer');
   }
+  return result;
+}
 
-  var rowData = COLUMNS.map(function (col) { return mapFormToColumn_(col, formData); });
+/** ===================== 不具合記録の読込(1リクエスト1回) ===================== */
 
-  if (formData.id) {
-    var targetRow = -1;
-    for (var i = 1; i < values.length; i++) {
-      if (String(values[i][idColIdx]) === String(formData.id)) { targetRow = i + 1; break; }
-    }
-    if (targetRow === -1) throw new Error('レコードが見つかりません: ' + formData.id);
-    rowData[0] = formData.id;
-    sheet.getRange(targetRow, 1, 1, rowData.length).setValues([rowData]);
-    return { id: formData.id, isNew: false };
-  } else {
-    var existingIds = values.slice(1).map(function (r) { return String(r[idColIdx]); });
-    var newId = generateId_(existingIds);
-    rowData[0] = newId;
-    sheet.appendRow(rowData);
-    return { id: newId, isNew: true };
-  }
+var _dataMemo_ = null;
+
+function loadData_() {
+  if (_dataMemo_) return _dataMemo_;
+  var sheet = getSourceSS_().getSheetByName(DATA_SHEET);
+  var values = sheet.getDataRange().getValues();
+  var headers = values[0];
+  _dataMemo_ = {
+    headers: headers,
+    rows: values.slice(1),
+    id: headers.indexOf('不具合記録ID'),
+    date: headers.indexOf('発生日'),
+    prop: headers.indexOf('選択物件名'),
+    proc: headers.indexOf('加工先'),
+    cls: headers.indexOf('分類選択'),
+    detail: headers.indexOf('不具合内容、原因')
+  };
+  return _dataMemo_;
+}
+
+/** 日付の新しい順に並べる(同日は元の並び順) */
+function sortByDateDesc_(rows, dateIdx) {
+  return rows.slice().sort(function (a, b) { return b[dateIdx] - a[dateIdx]; });
 }
 
 /** ===================== 不具合記録の取得 ===================== */
 
 /**
- * 締め月ルール: 21日始まり・20日締め（前月21日〜当月20日が対象期間）。
- * 会計年度は11月21日スタート・翌年11月20日決算（例: 2026年度＝2025/11/21〜2026/11/20）のため、
- * 締め月が12月の場合のみ「締め年+1=会計年度」、それ以外は「締め年=会計年度」となる。
+ * 全記録を年度ごとにまとめた一覧データを作る(キャッシュ用)。
+ * years[年度] = { rows: 日付の新しい順の記録, cm: 各記録の締め月 }
  */
-function getClosingInfo_(d) {
-  var y = d.getFullYear();
-  var m = d.getMonth() + 1;
-  var day = d.getDate();
-  var closingMonth, closingYear;
-  if (day <= 20) {
-    closingMonth = m;
-    closingYear = y;
-  } else if (m === 12) {
-    closingMonth = 1;
-    closingYear = y + 1;
-  } else {
-    closingMonth = m + 1;
-    closingYear = y;
-  }
-  var fiscalYear = (closingMonth === 12) ? closingYear + 1 : closingYear;
-  return { fiscalYear: fiscalYear, closingMonth: closingMonth };
-}
-
-function getRecords(year, month) {
-  var ss = getSourceSS_();
-  var cfg = getConfig_();
-  var sheet = ss.getSheetByName(DATA_SHEET);
-  var values = sheet.getDataRange().getValues();
-  var headers = values[0];
-  var idIdx = headers.indexOf('不具合記録ID');
-  var dateIdx = headers.indexOf('発生日');
-
-  var rows = values.slice(1).filter(function (r) { return r[idIdx]; });
-
-  var filtered = rows.filter(function (r) {
-    var d = r[dateIdx];
-    if (!(d instanceof Date)) return false;
-    var info = getClosingInfo_(d);
-    if (year && info.fiscalYear !== Number(year)) return false;
-    if (month && info.closingMonth !== Number(month)) return false;
-    return true;
-  });
-
-  filtered.sort(function (a, b) { return b[dateIdx] - a[dateIdx]; });
-
-  return {
-    rows: filtered.map(function (r) { return rowToObject_(headers, r, cfg.timezone); }),
-    total: filtered.length
-  };
-}
-
-/**
- * 不具合記録一覧の初回表示専用: 年度サマリー(年度/月セレクト用件数)と最新年度分の一覧を
- * 不具合記録シートの1回の読み込みだけでまとめて計算する。
- */
-function getRecordsBootstrap() {
-  var ss = getSourceSS_();
-  var cfg = getConfig_();
-  var sheet = ss.getSheetByName(DATA_SHEET);
-  var values = sheet.getDataRange().getValues();
-  var headers = values[0];
-  var idIdx = headers.indexOf('不具合記録ID');
-  var dateIdx = headers.indexOf('発生日');
-
-  var rows = values.slice(1).filter(function (r) { return r[idIdx] && (r[dateIdx] instanceof Date); });
-
-  var yearCounts = {};
-  var yearMonthCounts = {};
-  var perYear = {};
-  rows.forEach(function (r) {
-    var info = getClosingInfo_(r[dateIdx]);
+function buildRecordsAll_() {
+  var d = loadData_();
+  var tz = getConfig_().timezone;
+  var yearCounts = {}, yearMonthCounts = {}, perYear = {}, undated = 0;
+  d.rows.forEach(function (r) {
+    if (!r[d.id]) return;
+    if (!(r[d.date] instanceof Date)) { undated++; return; }
+    var info = getClosingInfo_(r[d.date]);
     yearCounts[info.fiscalYear] = (yearCounts[info.fiscalYear] || 0) + 1;
     var key = info.fiscalYear + '-' + info.closingMonth;
     yearMonthCounts[key] = (yearMonthCounts[key] || 0) + 1;
     if (!perYear[info.fiscalYear]) perYear[info.fiscalYear] = [];
-    perYear[info.fiscalYear].push(r);
+    perYear[info.fiscalYear].push({ r: r, cm: info.closingMonth });
   });
+  var years = {};
+  Object.keys(perYear).forEach(function (y) {
+    var list = perYear[y].slice().sort(function (a, b) { return b.r[d.date] - a.r[d.date]; });
+    years[y] = {
+      rows: list.map(function (x) { return rowToObject_(d.headers, x.r, tz); }),
+      cm: list.map(function (x) { return x.cm; })
+    };
+  });
+  return { sum: { yearCounts: yearCounts, yearMonthCounts: yearMonthCounts, undated: undated }, years: years };
+}
 
-  var years = Object.keys(yearCounts).map(Number).sort(function (a, b) { return b - a; });
+/** 一覧データの1項目('sum'または年度)を返す。無ければ全体を作って保存する */
+function recordsEntry_(sub) {
+  var prefix = 'kr:' + ver_('dataVer');
+  var hit = cacheGetBig_(cacheKey_(prefix, String(sub)));
+  if (hit !== null) return hit;
+  var all = buildRecordsAll_();
+  fillRecordsCache_(all);
+  return String(sub) === 'sum' ? all.sum : (all.years[sub] || { rows: [], cm: [] });
+}
+
+function fillRecordsCache_(all) {
+  all = all || buildRecordsAll_();
+  var prefix = 'kr:' + ver_('dataVer');
+  var pairs = packBig_(cacheKey_(prefix, 'sum'), all.sum);
+  Object.keys(all.years).forEach(function (y) {
+    var p = packBig_(cacheKey_(prefix, y), all.years[y]);
+    for (var k in p) pairs[k] = p[k];
+  });
+  cachePutPairs_(pairs);
+}
+
+/** 旧仕様(年度の指定なし=全期間)用。画面からは使われないためキャッシュしない */
+function recordsDirect_(year, month) {
+  var d = loadData_();
+  var tz = getConfig_().timezone;
+  var rows = d.rows.filter(function (r) { return r[d.id]; }).filter(function (r) {
+    var dt = r[d.date];
+    if (!(dt instanceof Date)) return false;
+    var info = getClosingInfo_(dt);
+    if (year && info.fiscalYear !== Number(year)) return false;
+    if (month && info.closingMonth !== Number(month)) return false;
+    return true;
+  });
+  rows = sortByDateDesc_(rows, d.date);
+  return { rows: rows.map(function (r) { return rowToObject_(d.headers, r, tz); }), total: rows.length };
+}
+
+function getRecords(year, month) {
+  if (!year) return recordsDirect_(year, month);
+  var sum = recordsEntry_('sum');
+  if (!sum.yearCounts[Number(year)]) return { rows: [], total: 0 };
+  var entry = recordsEntry_(Number(year));
+  if (!month) return { rows: entry.rows, total: entry.rows.length };
+  var rows = entry.rows.filter(function (x, i) { return entry.cm[i] === Number(month); });
+  return { rows: rows, total: rows.length };
+}
+
+/** 不具合記録一覧の初回表示専用: 年度サマリーと最新年度分の一覧 */
+function getRecordsBootstrap() {
+  var sum = recordsEntry_('sum');
+  var years = Object.keys(sum.yearCounts).map(Number).sort(function (a, b) { return b - a; });
   var defaultYear = years.length ? years[0] : null;
-  var defaultRows = (defaultYear !== null) ? (perYear[defaultYear] || []) : [];
-  defaultRows.sort(function (a, b) { return b[dateIdx] - a[dateIdx]; });
-
+  var rows = defaultYear !== null ? recordsEntry_(defaultYear).rows : [];
   return {
-    summary: { yearCounts: yearCounts, yearMonthCounts: yearMonthCounts },
+    summary: { yearCounts: sum.yearCounts, yearMonthCounts: sum.yearMonthCounts },
     year: defaultYear,
-    rows: defaultRows.map(function (r) { return rowToObject_(headers, r, cfg.timezone); }),
-    total: defaultRows.length
+    rows: rows,
+    total: rows.length,
+    undated: sum.undated
   };
 }
 
 /** ===================== 結果仕訳け ===================== */
 
 function getBunsekiByField(fieldName) {
-  var ss = getSourceSS_();
-  var sheet = ss.getSheetByName(DATA_SHEET);
-  var values = sheet.getDataRange().getValues();
-  var headers = values[0];
-  var idIdx = headers.indexOf('不具合記録ID');
-  var idx = headers.indexOf(fieldName);
-
-  var rows = values.slice(1).filter(function (r) { return r[idIdx]; });
-  var counts = {};
-  rows.forEach(function (r) {
-    var v = r[idx] || '(未設定)';
-    counts[v] = (counts[v] || 0) + 1;
+  return cachedData_('bf:' + fieldName, function () {
+    var d = loadData_();
+    var idx = d.headers.indexOf(fieldName);
+    var counts = {};
+    d.rows.forEach(function (r) {
+      if (!r[d.id]) return;
+      var v = r[idx] || '(未設定)';
+      counts[v] = (counts[v] || 0) + 1;
+    });
+    return counts;
   });
-  return counts;
-}
-
-function getClassGroupMap_(ss) {
-  var classData = sheetToObjects_(ss.getSheetByName(CLASS_SHEET));
-  var map = {};
-  classData.forEach(function (c) { map[c['分類']] = c['加工分類']; });
-  return map;
 }
 
 function getBunsekiByProcessType(mode) {
-  var ss = getSourceSS_();
-  var sheet = ss.getSheetByName(DATA_SHEET);
-  var values = sheet.getDataRange().getValues();
-  var headers = values[0];
-  var idIdx = headers.indexOf('不具合記録ID');
-  var rows = values.slice(1).filter(function (r) { return r[idIdx]; });
-
-  var counts = { '柱': 0, '梁': 0 };
-
-  if (mode === '加工先') {
-    var idx = headers.indexOf('加工先');
-    rows.forEach(function (r) {
-      var v = r[idx];
-      if (counts[v] !== undefined) counts[v]++;
-    });
-  } else if (mode === '分類') {
-    var classIdx = headers.indexOf('分類選択');
-    var classMap = getClassGroupMap_(ss);
-    rows.forEach(function (r) {
-      var group = classMap[r[classIdx]];
-      if (counts[group] !== undefined) counts[group]++;
-    });
-  }
-  return counts;
+  return cachedData_('bp:' + mode, function () {
+    var d = loadData_();
+    var rows = d.rows.filter(function (r) { return r[d.id]; });
+    var counts = { '柱': 0, '梁': 0 };
+    if (mode === '加工先') {
+      rows.forEach(function (r) {
+        var v = r[d.proc];
+        if (counts[v] !== undefined) counts[v]++;
+      });
+    } else if (mode === '分類') {
+      var classMap = getClassGroupMap_();
+      rows.forEach(function (r) {
+        var group = classMap[r[d.cls]];
+        if (counts[group] !== undefined) counts[group]++;
+      });
+    }
+    return counts;
+  });
 }
 
-/** ===================== 結果分析（年度/月別グラフ） ===================== */
+function getFilteredRecords(field, value) {
+  return cachedData_('fr:' + field + '|' + value, function () {
+    var d = loadData_();
+    var tz = getConfig_().timezone;
+    var rows = d.rows.filter(function (r) { return r[d.id]; });
+    if (field === '分類グループ') {
+      var classMap = getClassGroupMap_();
+      rows = rows.filter(function (r) { return classMap[r[d.cls]] === value; });
+    } else {
+      var idx = d.headers.indexOf(field);
+      rows = rows.filter(function (r) { return (r[idx] || '(未設定)') === value; });
+    }
+    rows = sortByDateDesc_(rows, d.date);
+    return rows.map(function (r) { return rowToObject_(d.headers, r, tz); });
+  });
+}
 
 /**
+ * 結果分析画面の「不具合内容（件数）」テーブル行クリック用: 指定した分類（不具合内容）に
+ * 一致し、かつ表示中のスコープ（年度/月/工事/工事+選択締め月）に該当する記録一覧を返す。
+ */
+function getKekkaBunsekiContentRecords(filter) {
+  return cachedData_('cr:' + JSON.stringify(filter), function () {
+    var d = loadData_();
+    var tz = getConfig_().timezone;
+    var rows = d.rows.filter(function (r) { return r[d.id] && (r[d.date] instanceof Date); });
+    rows = rows.filter(function (r) {
+      var content = r[d.cls] || '(未設定)';
+      if (content !== filter.content) return false;
+      if (filter.scope === 'year') {
+        return getClosingInfo_(r[d.date]).fiscalYear === Number(filter.year);
+      }
+      if (filter.scope === 'month') {
+        var info = getClosingInfo_(r[d.date]);
+        return info.fiscalYear === Number(filter.year) && info.closingMonth === Number(filter.month);
+      }
+      if (filter.scope === 'project') {
+        return r[d.prop] === filter.project;
+      }
+      if (filter.scope === 'projectPeriods') {
+        if (r[d.prop] !== filter.project) return false;
+        var info2 = getClosingInfo_(r[d.date]);
+        var key = info2.fiscalYear + '-' + info2.closingMonth;
+        return (filter.periodKeys || []).indexOf(key) !== -1;
+      }
+      return false;
+    });
+    rows = sortByDateDesc_(rows, d.date);
+    return rows.map(function (r) { return rowToObject_(d.headers, r, tz); });
+  });
+}
+
+/** ===================== 生産重量 ===================== */
+
+/*
  * 生産重量マスタ（マスタQUERY）の「QUERY」シートを締め月単位（fiscalYear-closingMonth）で
- * 重量合計にまとめる。このスプレッドシートを開くだけで約12秒かかる(QUERY数式の再計算と推測)ため、
- * 最大6時間キャッシュし、かつ setupProductionWeightCacheTrigger() で仕込む時間主導トリガーが
- * 毎日2時台に1回この処理を呼び直してキャッシュを温める。
+ * 重量合計にまとめる。このスプレッドシートを開くだけで約12秒かかる(QUERY数式の再計算と推測)。
+ * 重量の反映は1日1回のため、結果は CacheService(6時間) と スクリプトプロパティ(永続) の2か所に保存し、
+ * 毎日2時のトリガー(warmProductionWeightCache)で更新する。画面は保存済みの値を即表示する。
  * 列構成: A工事番号 B部位 C加工先 D製品マーク E長さ F本数 G重量 H加工(日付)
  */
-/** キャッシュ済みの生産重量だけを返す(未計算ならnull)。結果分析の表示を12秒の再計算で止めないため */
-function readWeightCache_() {
-  var c = CacheService.getScriptCache().get('productionWeightByMonth');
-  return c ? JSON.parse(c) : null;
-}
+var WEIGHT_KEY = 'pw2';
+var WEIGHT_FRESH_MS = 26 * 60 * 60 * 1000; // これより古い場合は「更新が必要」として画面が裏で再取得する
 
-/** 画面が起動時に裏で呼ぶ: 重い再計算をここで済ませ、結果分析はキャッシュだけを読む */
-function getProductionWeights() {
-  return getProductionWeightByMonth_();
-}
-
-function getProductionWeightByMonth_() {
+/** 保存済みの重量 { t: 保存時刻, map: {'年度-締め月': 重量} } を返す。無ければnull */
+function readWeightStore_() {
   var cache = CacheService.getScriptCache();
-  var cached = cache.get('productionWeightByMonth');
-  if (cached) return JSON.parse(cached);
+  var c = cache.get(WEIGHT_KEY);
+  if (c) { try { return JSON.parse(c); } catch (e) {} }
+  var p = PropertiesService.getScriptProperties().getProperty(WEIGHT_KEY);
+  if (p) {
+    try {
+      var o = JSON.parse(p);
+      try { cache.put(WEIGHT_KEY, p, CACHE_TTL); } catch (e2) {}
+      return o;
+    } catch (e3) {}
+  }
+  return null;
+}
 
+function writeWeightStore_(map) {
+  var o = { t: Date.now(), map: map };
+  var s = JSON.stringify(o);
+  try { CacheService.getScriptCache().put(WEIGHT_KEY, s, CACHE_TTL); } catch (e) {}
+  PropertiesService.getScriptProperties().setProperty(WEIGHT_KEY, s);
+  return o;
+}
+
+/** 重い再計算(約12秒)。QUERYシートを読んで締め月ごとの重量にまとめる */
+function computeProductionWeights_() {
   var ss = getProductionSS_();
   var sheet = ss.getSheetByName(PRODUCTION_SHEET_NAME);
   // getDataRange()はA列末尾の見かけ上の使用範囲(書式のみの空セル等)まで含んでしまうことがあるため、
@@ -446,31 +675,78 @@ function getProductionWeightByMonth_() {
     }
   }
 
-  cache.put('productionWeightByMonth', JSON.stringify(result), 21600); // 最大6時間
   return result;
 }
 
-/**
- * 時間主導トリガー用ハンドラ: キャッシュが有効な間は再計算せずすぐ返るだけなので軽い。
- * 期限が近い/切れている場合だけ実際に重い再計算が走り、ユーザーが踏む前に温め直す。
- */
+/** 重量を再計算して保存する */
+function refreshWeights_() {
+  return writeWeightStore_(computeProductionWeights_());
+}
+
+/** 画面が起動時に裏で呼ぶ: 新しい保存値があればそのまま返し、古い/無いときだけ再計算する */
+function getProductionWeights() {
+  var st = readWeightStore_();
+  if (st && Date.now() - st.t <= WEIGHT_FRESH_MS) return st.map;
+  return refreshWeights_().map;
+}
+
+/** 重量を付ける(年度・月の中身だけ。印は付けない) */
+function setWeights_(out, kind, st) {
+  var map = st ? st.map : {};
+  var r1 = function (w) { return st ? Math.round((w || 0) * 10) / 10 : null; };
+  if (kind === 'year') {
+    out.months.forEach(function (m) { m['生産重量'] = r1(map[out.year + '-' + m.closingMonth]); });
+  } else if (kind === 'month') {
+    out['生産重量'] = r1(map[out.year + '-' + out.month]);
+  }
+}
+
+/** 結果分析の出力に重量を付ける。保存値が無ければ重量はnull(画面が後から差し替える) */
+function applyWeights_(out, kind) {
+  var st = readWeightStore_();
+  if (kind === 'bootstrap') {
+    if (out.yearData) setWeights_(out.yearData, 'year', st);
+    if (out.monthData) setWeights_(out.monthData, 'month', st);
+  } else {
+    setWeights_(out, kind, st);
+  }
+  out.weightReady = !!st;
+  out.weightStale = !st || (Date.now() - st.t > WEIGHT_FRESH_MS);
+  return out;
+}
+
+/** 毎日2時のトリガー: 重量を再計算して保存し、集計・一覧のキャッシュも作り直す */
 function warmProductionWeightCache() {
-  // 毎日の定期実行では、前回のキャッシュが残っていても必ず作り直して最新にする
-  CacheService.getScriptCache().remove('productionWeightByMonth');
-  getProductionWeightByMonth_();
+  refreshWeights_();
+  warmCaches_();
+}
+
+/** 毎日7時のトリガー: 集計・一覧・マスタのキャッシュを作り直す(朝の最初の表示を速くする) */
+function warmAnalysisCaches() {
+  warmCaches_();
+}
+
+function warmCaches_() {
+  var key = cacheKey_('mst:' + ver_('masterVer'), 'all');
+  cachePutBig_(key, buildMasterData_());
+  fillAnalysisCache_();
+  fillRecordsCache_();
 }
 
 /**
- * セットアップ用(初回のみApps Scriptエディタから手動実行): warmProductionWeightCacheを
- * 毎日2時台に1回実行する時間主導トリガーを登録する。再実行しても重複登録しないよう既存分を削除してから作る。
- * (キャッシュは最大6時間。切れても画面の先読みが裏で作り直すので、画面表示は止まらない)
+ * セットアップ用(初回のみApps Scriptエディタから手動実行): 毎日2時(重量の更新)と7時(キャッシュの作り直し)の
+ * 時間主導トリガーを登録する。再実行しても重複登録しないよう既存分を削除してから作る。
  */
 function setupProductionWeightCacheTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'warmProductionWeightCache') ScriptApp.deleteTrigger(t);
+    var f = t.getHandlerFunction();
+    if (f === 'warmProductionWeightCache' || f === 'warmAnalysisCaches') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('warmProductionWeightCache').timeBased().everyDays(1).atHour(2).create();
+  ScriptApp.newTrigger('warmAnalysisCaches').timeBased().everyDays(1).atHour(7).create();
 }
+
+/** ===================== 結果分析(集計) ===================== */
 
 /** 工事(物件)別の 柱/梁 件数を加算する。キーに接頭辞を付けて予約語(constructor等)と衝突させない */
 function addProjectCount_(map, prop, proc) {
@@ -488,6 +764,13 @@ function projectCountsList_(map) {
     .sort(function (a, b) { return b.total - a.total || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); });
 }
 
+/** 月の明細: 日付の古い順(同日は元の並び順)。並べ替え用の時刻は外して返す */
+function detailsList_(list) {
+  return (list || []).map(function (d, i) { return { d: d, i: i }; })
+    .sort(function (a, b) { return a.d.t - b.d.t || a.i - b.i; })
+    .map(function (x) { return { date: x.d.date, project: x.d.project, proc: x.d.proc, content: x.d.content }; });
+}
+
 function sortedCounts_(counts, classMap) {
   return Object.keys(counts)
     .map(function (k) {
@@ -498,392 +781,226 @@ function sortedCounts_(counts, classMap) {
     .sort(function (a, b) { return b.count - a.count; });
 }
 
-/**
- * 工事別分析用: 指定した物件名（工事）の不具合記録を全期間（締め月単位）で集計する。
- * 生産重量マスタは工事番号キーのため物件名では突合できず、この集計には含めない。
- */
-function getKekkaBunsekiByProject(projectName) {
-  var ss = getSourceSS_();
-  var sheet = ss.getSheetByName(DATA_SHEET);
-  var values = sheet.getDataRange().getValues();
-  var headers = values[0];
-  var idIdx = headers.indexOf('不具合記録ID');
-  var dateIdx = headers.indexOf('発生日');
-  var procIdx = headers.indexOf('加工先');
-  var classIdx = headers.indexOf('分類選択');
-  var propIdx = headers.indexOf('選択物件名');
-  var classMap = getClassGroupMap_(ss);
+var _aggMemo_ = null;
 
-  var byPeriod = {};
-  var pillarTotal = 0, beamTotal = 0;
-  var contentCountsTotal = {};
-
-  values.slice(1).forEach(function (r) {
-    if (!r[idIdx] || !(r[dateIdx] instanceof Date)) return;
-    if (r[propIdx] !== projectName) return;
-    var info = getClosingInfo_(r[dateIdx]);
-    var key = info.fiscalYear + '-' + info.closingMonth;
-    if (!byPeriod[key]) {
-      byPeriod[key] = {
-        key: key,
-        fiscalYear: info.fiscalYear,
-        closingMonth: info.closingMonth,
-        sortOrder: info.fiscalYear * 12 + MONTH_ORDER.indexOf(info.closingMonth),
-        '柱': 0, '梁': 0, '合計': 0,
-        contentCounts: {}
-      };
-    }
-    var proc = r[procIdx];
-    if (byPeriod[key][proc] !== undefined) byPeriod[key][proc]++;
-    byPeriod[key]['合計']++;
-    if (proc === '柱') pillarTotal++;
-    else if (proc === '梁') beamTotal++;
-
-    var content = r[classIdx] || '(未設定)';
-    byPeriod[key].contentCounts[content] = (byPeriod[key].contentCounts[content] || 0) + 1;
-    contentCountsTotal[content] = (contentCountsTotal[content] || 0) + 1;
-  });
-
-  var periods = Object.keys(byPeriod).map(function (k) {
-    var p = byPeriod[k];
-    var displayYear = (p.closingMonth === 12) ? p.fiscalYear - 1 : p.fiscalYear;
-    return {
-      key: p.key,
-      label: displayYear + '/' + p.closingMonth,
-      '柱': p['柱'], '梁': p['梁'], '合計': p['合計'],
-      contentCounts: sortedCounts_(p.contentCounts, classMap),
-      sortOrder: p.sortOrder
-    };
-  }).sort(function (a, b) { return a.sortOrder - b.sortOrder; });
-
-  return {
-    project: projectName,
-    periods: periods,
-    pillarTotal: pillarTotal,
-    beamTotal: beamTotal,
-    total: pillarTotal + beamTotal,
-    contentCounts: sortedCounts_(contentCountsTotal, classMap)
-  };
+/** 集計は1リクエストにつき1回だけ作る(キャッシュミス時の「要求分」と「まとめ保存」で使い回す) */
+function buildAgg_() {
+  if (!_aggMemo_) _aggMemo_ = computeAgg_();
+  return _aggMemo_;
 }
 
-function getKekkaBunsekiYear(year) {
-  year = Number(year);
-  var ss = getSourceSS_();
-  var sheet = ss.getSheetByName(DATA_SHEET);
-  var values = sheet.getDataRange().getValues();
-  var headers = values[0];
-  var idIdx = headers.indexOf('不具合記録ID');
-  var dateIdx = headers.indexOf('発生日');
-  var procIdx = headers.indexOf('加工先');
-  var classIdx = headers.indexOf('分類選択');
-  var propIdx = headers.indexOf('選択物件名');
+/** 全記録を1回走査して、年度/月/工事/明細の集計をまとめて作る(Year・Month・Bootstrap・ByProject共通) */
+function computeAgg_() {
+  var d = loadData_();
+  var tz = getConfig_().timezone;
+  var agg = {
+    classMap: getClassGroupMap_(),
+    yearCounts: {}, yearMonthCounts: {},
+    perYearMonth: {}, perYearProc: {},
+    perYearContent: {}, perYMContent: {},
+    perYearProjects: {}, perYMProjects: {}, perYMDetails: {},
+    byProject: {}
+  };
+  d.rows.forEach(function (r) {
+    if (!r[d.id] || !(r[d.date] instanceof Date)) return;
+    var info = getClosingInfo_(r[d.date]);
+    var y = info.fiscalYear, m = info.closingMonth;
+    var ymKey = y + '-' + m;
+    var proc = r[d.proc];
+    var content = r[d.cls] || '(未設定)';
+    var rawProp = r[d.prop];
+    var prop = rawProp || '(未設定)';
 
-  var byMonth = {};
-  var pillarTotal = 0, beamTotal = 0;
-  var contentCounts = {};
-  var projects = {};
-  values.slice(1).forEach(function (r) {
-    if (!r[idIdx] || !(r[dateIdx] instanceof Date)) return;
-    var info = getClosingInfo_(r[dateIdx]);
-    if (info.fiscalYear !== year) return;
-    var m = info.closingMonth;
-    if (!byMonth[m]) byMonth[m] = { '柱': 0, '梁': 0 };
-    var proc = r[procIdx];
-    if (byMonth[m][proc] !== undefined) byMonth[m][proc]++;
-    if (proc === '柱') pillarTotal++;
-    else if (proc === '梁') beamTotal++;
-    var content = r[classIdx] || '(未設定)';
-    contentCounts[content] = (contentCounts[content] || 0) + 1;
-    addProjectCount_(projects, r[propIdx] || '(未設定)', proc);
+    agg.yearCounts[y] = (agg.yearCounts[y] || 0) + 1;
+    agg.yearMonthCounts[ymKey] = (agg.yearMonthCounts[ymKey] || 0) + 1;
+
+    if (!agg.perYearMonth[y]) agg.perYearMonth[y] = {};
+    if (!agg.perYearMonth[y][m]) agg.perYearMonth[y][m] = { '柱': 0, '梁': 0 };
+    if (agg.perYearMonth[y][m][proc] !== undefined) agg.perYearMonth[y][m][proc]++;
+
+    if (!agg.perYearProc[y]) agg.perYearProc[y] = { pillarTotal: 0, beamTotal: 0 };
+    if (proc === '柱') agg.perYearProc[y].pillarTotal++;
+    else if (proc === '梁') agg.perYearProc[y].beamTotal++;
+
+    if (!agg.perYearContent[y]) agg.perYearContent[y] = {};
+    agg.perYearContent[y][content] = (agg.perYearContent[y][content] || 0) + 1;
+    if (!agg.perYMContent[ymKey]) agg.perYMContent[ymKey] = {};
+    agg.perYMContent[ymKey][content] = (agg.perYMContent[ymKey][content] || 0) + 1;
+
+    if (!agg.perYearProjects[y]) agg.perYearProjects[y] = {};
+    addProjectCount_(agg.perYearProjects[y], prop, proc);
+    if (!agg.perYMProjects[ymKey]) agg.perYMProjects[ymKey] = {};
+    addProjectCount_(agg.perYMProjects[ymKey], prop, proc);
+
+    if (!agg.perYMDetails[ymKey]) agg.perYMDetails[ymKey] = [];
+    agg.perYMDetails[ymKey].push({ t: r[d.date].getTime(), date: formatMd_(r[d.date], tz), project: prop, proc: proc || '', content: r[d.detail] || '' });
+
+    // 工事別分析(物件名は空欄も含めた元の値で突き合わせる)
+    var pk = typeof rawProp + ':' + rawProp;
+    var bp = agg.byProject[pk] || (agg.byProject[pk] = { byPeriod: {}, pillarTotal: 0, beamTotal: 0, contentTotal: {} });
+    if (!bp.byPeriod[ymKey]) {
+      bp.byPeriod[ymKey] = {
+        key: ymKey, fiscalYear: y, closingMonth: m,
+        sortOrder: y * 12 + MONTH_ORDER.indexOf(m),
+        '柱': 0, '梁': 0, '合計': 0, contentCounts: {}
+      };
+    }
+    var per = bp.byPeriod[ymKey];
+    if (per[proc] !== undefined) per[proc]++;
+    per['合計']++;
+    if (proc === '柱') bp.pillarTotal++;
+    else if (proc === '梁') bp.beamTotal++;
+    per.contentCounts[content] = (per.contentCounts[content] || 0) + 1;
+    bp.contentTotal[content] = (bp.contentTotal[content] || 0) + 1;
   });
+  return agg;
+}
 
-  var weightCache = readWeightCache_();
-  var weightReady = !!weightCache;
-  var weightMap = weightCache || {};
-  var nowInfo = getClosingInfo_(new Date());
-
+/** 年度の出力(重量は含まない。重量は返す直前にapplyWeights_で付ける) */
+function buildYearOut_(agg, year, now) {
+  var byMonth = agg.perYearMonth[year] || {};
+  var totals = agg.perYearProc[year] || { pillarTotal: 0, beamTotal: 0 };
   var months = MONTH_ORDER.filter(function (m) {
-    if (year < nowInfo.fiscalYear) return true;
-    if (year > nowInfo.fiscalYear) return false;
-    return MONTH_ORDER.indexOf(m) <= MONTH_ORDER.indexOf(nowInfo.closingMonth);
+    if (year < now.fiscalYear) return true;
+    if (year > now.fiscalYear) return false;
+    return MONTH_ORDER.indexOf(m) <= MONTH_ORDER.indexOf(now.closingMonth);
   }).map(function (m) {
     var data = byMonth[m] || { '柱': 0, '梁': 0 };
     var displayYear = (m === 12) ? year - 1 : year;
-    var weight = weightMap[year + '-' + m] || 0;
-    return {
-      closingMonth: m,
-      label: displayYear + '/' + m,
-      '柱': data['柱'],
-      '梁': data['梁'],
-      '合計': data['柱'] + data['梁'],
-      '生産重量': weightReady ? Math.round(weight * 10) / 10 : null
-    };
+    return { closingMonth: m, label: displayYear + '/' + m, '柱': data['柱'], '梁': data['梁'], '合計': data['柱'] + data['梁'] };
   });
-
   return {
-    weightReady: weightReady,
-    projectCounts: projectCountsList_(projects),
+    projectCounts: projectCountsList_(agg.perYearProjects[year]),
     year: year,
     months: months,
-    pillarTotal: pillarTotal,
-    beamTotal: beamTotal,
-    total: pillarTotal + beamTotal,
-    contentCounts: sortedCounts_(contentCounts, getClassGroupMap_(ss))
+    pillarTotal: totals.pillarTotal,
+    beamTotal: totals.beamTotal,
+    total: totals.pillarTotal + totals.beamTotal,
+    contentCounts: sortedCounts_(agg.perYearContent[year] || {}, agg.classMap)
   };
 }
 
-function getKekkaBunsekiMonth(year, month) {
-  year = Number(year);
-  month = Number(month);
-  var ss = getSourceSS_();
-  var sheet = ss.getSheetByName(DATA_SHEET);
-  var values = sheet.getDataRange().getValues();
-  var headers = values[0];
-  var idIdx = headers.indexOf('不具合記録ID');
-  var dateIdx = headers.indexOf('発生日');
-  var procIdx = headers.indexOf('加工先');
-  var classIdx = headers.indexOf('分類選択');
-
-  var propIdx = headers.indexOf('選択物件名');
-  var detailIdx = headers.indexOf('不具合内容、原因');
-  var tz = getConfig_().timezone;
-  var counts = { '柱': 0, '梁': 0 };
-  var contentCounts = {};
-  var projects = {};
-  var details = [];
-  values.slice(1).forEach(function (r) {
-    if (!r[idIdx] || !(r[dateIdx] instanceof Date)) return;
-    var info = getClosingInfo_(r[dateIdx]);
-    if (info.fiscalYear !== year || info.closingMonth !== month) return;
-    var proc = r[procIdx];
-    if (counts[proc] !== undefined) counts[proc]++;
-    var content = r[classIdx] || '(未設定)';
-    contentCounts[content] = (contentCounts[content] || 0) + 1;
-    addProjectCount_(projects, r[propIdx] || '(未設定)', proc);
-    details.push({ t: r[dateIdx].getTime(), date: formatMd_(r[dateIdx], tz), project: r[propIdx] || '(未設定)', proc: proc || '', content: r[detailIdx] || '' });
-  });
-
-  var weightCache = readWeightCache_();
-  var weightReady = !!weightCache;
-  var weightMap = weightCache || {};
-  var weight = weightMap[year + '-' + month] || 0;
+function buildMonthOut_(agg, year, month) {
+  var key = year + '-' + month;
+  var counts = (agg.perYearMonth[year] && agg.perYearMonth[year][month]) || { '柱': 0, '梁': 0 };
   var displayYear = (month === 12) ? year - 1 : year;
-
   return {
-    weightReady: weightReady,
-    projectCounts: projectCountsList_(projects),
-    details: detailsList_(details),
+    projectCounts: projectCountsList_(agg.perYMProjects[key]),
+    details: detailsList_(agg.perYMDetails[key]),
     year: year,
     month: month,
     label: displayYear + '/' + month,
     '柱': counts['柱'],
     '梁': counts['梁'],
     '合計': counts['柱'] + counts['梁'],
-    '生産重量': weightReady ? Math.round(weight * 10) / 10 : null,
-    contentCounts: sortedCounts_(contentCounts, getClassGroupMap_(ss))
+    contentCounts: sortedCounts_(agg.perYMContent[key] || {}, agg.classMap)
   };
 }
 
-/**
- * 結果分析の初回表示専用: 年度サマリー(年度/月セレクト用件数)・当日該当年度分・当日該当月分を
- * 不具合記録シートの1回の読み込みだけでまとめて計算する。
- * (個別にgetYearMonthSummary/getKekkaBunsekiYear/Monthを呼ぶと同じシートを何度も読み直してしまうため)
- */
-function getKekkaBunsekiBootstrap() {
-  var ss = getSourceSS_();
-  var sheet = ss.getSheetByName(DATA_SHEET);
-  var values = sheet.getDataRange().getValues();
-  var headers = values[0];
-  var idIdx = headers.indexOf('不具合記録ID');
-  var dateIdx = headers.indexOf('発生日');
-  var procIdx = headers.indexOf('加工先');
-  var classIdx = headers.indexOf('分類選択');
-  var propIdx = headers.indexOf('選択物件名');
-  var detailIdx = headers.indexOf('不具合内容、原因');
-  var tz = getConfig_().timezone;
-  var classMap = getClassGroupMap_(ss);
-
-  var yearCounts = {};
-  var yearMonthCounts = {};
-  var perYearMonth = {};
-  var perYearProcTotals = {};
-  var perYearContentCounts = {};
-  var perYearMonthContentCounts = {};
-  var perYearProjects = {};
-  var perYearMonthProjects = {};
-  var perYearMonthDetails = {};
-
-  values.slice(1).forEach(function (r) {
-    if (!r[idIdx] || !(r[dateIdx] instanceof Date)) return;
-    var info = getClosingInfo_(r[dateIdx]);
-    var y = info.fiscalYear, m = info.closingMonth;
-    var proc = r[procIdx];
-    var content = r[classIdx] || '(未設定)';
-    var ymKey = y + '-' + m;
-
-    yearCounts[y] = (yearCounts[y] || 0) + 1;
-    yearMonthCounts[ymKey] = (yearMonthCounts[ymKey] || 0) + 1;
-
-    if (!perYearMonth[y]) perYearMonth[y] = {};
-    if (!perYearMonth[y][m]) perYearMonth[y][m] = { '柱': 0, '梁': 0 };
-    if (perYearMonth[y][m][proc] !== undefined) perYearMonth[y][m][proc]++;
-
-    if (!perYearProcTotals[y]) perYearProcTotals[y] = { pillarTotal: 0, beamTotal: 0 };
-    if (proc === '柱') perYearProcTotals[y].pillarTotal++;
-    else if (proc === '梁') perYearProcTotals[y].beamTotal++;
-
-    if (!perYearContentCounts[y]) perYearContentCounts[y] = {};
-    perYearContentCounts[y][content] = (perYearContentCounts[y][content] || 0) + 1;
-
-    if (!perYearMonthContentCounts[ymKey]) perYearMonthContentCounts[ymKey] = {};
-    perYearMonthContentCounts[ymKey][content] = (perYearMonthContentCounts[ymKey][content] || 0) + 1;
-
-    var prop = r[propIdx] || '(未設定)';
-    if (!perYearProjects[y]) perYearProjects[y] = {};
-    addProjectCount_(perYearProjects[y], prop, proc);
-    if (!perYearMonthProjects[ymKey]) perYearMonthProjects[ymKey] = {};
-    addProjectCount_(perYearMonthProjects[ymKey], prop, proc);
-    if (!perYearMonthDetails[ymKey]) perYearMonthDetails[ymKey] = [];
-    perYearMonthDetails[ymKey].push({ t: r[dateIdx].getTime(), date: formatMd_(r[dateIdx], tz), project: prop, proc: proc || '', content: r[detailIdx] || '' });
-  });
-
-  var weightCache = readWeightCache_();
-  var weightReady = !!weightCache;
-  var weightMap = weightCache || {};
-  var nowInfo = getClosingInfo_(new Date());
-
-  var years = Object.keys(yearCounts).map(Number).sort(function (a, b) { return b - a; });
-  var defaultYear = (yearCounts[nowInfo.fiscalYear] !== undefined) ? nowInfo.fiscalYear : (years.length ? years[0] : null);
-  var defaultMonth = nowInfo.closingMonth;
-
-  function buildYearData(year) {
-    var byMonth = perYearMonth[year] || {};
-    var totals = perYearProcTotals[year] || { pillarTotal: 0, beamTotal: 0 };
-    var months = MONTH_ORDER.filter(function (m) {
-      if (year < nowInfo.fiscalYear) return true;
-      if (year > nowInfo.fiscalYear) return false;
-      return MONTH_ORDER.indexOf(m) <= MONTH_ORDER.indexOf(nowInfo.closingMonth);
-    }).map(function (m) {
-      var data = byMonth[m] || { '柱': 0, '梁': 0 };
-      var displayYear = (m === 12) ? year - 1 : year;
-      var weight = weightMap[year + '-' + m] || 0;
-      return {
-        closingMonth: m,
-        label: displayYear + '/' + m,
-        '柱': data['柱'],
-        '梁': data['梁'],
-        '合計': data['柱'] + data['梁'],
-        '生産重量': weightReady ? Math.round(weight * 10) / 10 : null
-      };
-    });
-    return {
-      projectCounts: projectCountsList_(perYearProjects[year]),
-      year: year,
-      months: months,
-      pillarTotal: totals.pillarTotal,
-      beamTotal: totals.beamTotal,
-      total: totals.pillarTotal + totals.beamTotal,
-      contentCounts: sortedCounts_(perYearContentCounts[year] || {}, classMap)
-    };
-  }
-
-  function buildMonthData(year, month) {
-    var key = year + '-' + month;
-    var counts = (perYearMonth[year] && perYearMonth[year][month]) || { '柱': 0, '梁': 0 };
-    var weight = weightMap[key] || 0;
-    var displayYear = (month === 12) ? year - 1 : year;
-    return {
-      projectCounts: projectCountsList_(perYearMonthProjects[key]),
-      details: detailsList_(perYearMonthDetails[key]),
-      year: year,
-      month: month,
-      label: displayYear + '/' + month,
-      '柱': counts['柱'],
-      '梁': counts['梁'],
-      '合計': counts['柱'] + counts['梁'],
-      '生産重量': weightReady ? Math.round(weight * 10) / 10 : null,
-      contentCounts: sortedCounts_(perYearMonthContentCounts[key] || {}, classMap)
-    };
-  }
-
-  var result = {
-    weightReady: weightReady,
-    summary: { yearCounts: yearCounts, yearMonthCounts: yearMonthCounts },
+function buildBootstrapOut_(agg, now) {
+  var years = Object.keys(agg.yearCounts).map(Number).sort(function (a, b) { return b - a; });
+  var defaultYear = (agg.yearCounts[now.fiscalYear] !== undefined) ? now.fiscalYear : (years.length ? years[0] : null);
+  var defaultMonth = now.closingMonth;
+  return {
+    summary: { yearCounts: agg.yearCounts, yearMonthCounts: agg.yearMonthCounts },
     defaultYear: defaultYear,
     defaultMonth: defaultMonth,
-    yearData: defaultYear !== null ? buildYearData(defaultYear) : null,
-    monthData: defaultYear !== null ? buildMonthData(defaultYear, defaultMonth) : null
+    yearData: defaultYear !== null ? buildYearOut_(agg, defaultYear, now) : null,
+    monthData: defaultYear !== null ? buildMonthOut_(agg, defaultYear, defaultMonth) : null
   };
-  return result;
 }
 
-function getFilteredRecords(field, value) {
-  var ss = getSourceSS_();
-  var cfg = getConfig_();
-  var sheet = ss.getSheetByName(DATA_SHEET);
-  var values = sheet.getDataRange().getValues();
-  var headers = values[0];
-  var idIdx = headers.indexOf('不具合記録ID');
-  var rows = values.slice(1).filter(function (r) { return r[idIdx]; });
+function buildProjectOut_(agg, projectName) {
+  var bp = agg.byProject['string:' + projectName] || { byPeriod: {}, pillarTotal: 0, beamTotal: 0, contentTotal: {} };
+  var periods = Object.keys(bp.byPeriod).map(function (k) {
+    var p = bp.byPeriod[k];
+    var displayYear = (p.closingMonth === 12) ? p.fiscalYear - 1 : p.fiscalYear;
+    return {
+      key: p.key,
+      label: displayYear + '/' + p.closingMonth,
+      '柱': p['柱'], '梁': p['梁'], '合計': p['合計'],
+      contentCounts: sortedCounts_(p.contentCounts, agg.classMap),
+      sortOrder: p.sortOrder
+    };
+  }).sort(function (a, b) { return a.sortOrder - b.sortOrder; });
+  return {
+    project: projectName,
+    periods: periods,
+    pillarTotal: bp.pillarTotal,
+    beamTotal: bp.beamTotal,
+    total: bp.pillarTotal + bp.beamTotal,
+    contentCounts: sortedCounts_(bp.contentTotal, agg.classMap)
+  };
+}
 
-  if (field === '分類グループ') {
-    var classIdx = headers.indexOf('分類選択');
-    var classMap = getClassGroupMap_(ss);
-    rows = rows.filter(function (r) { return classMap[r[classIdx]] === value; });
-  } else {
-    var idx = headers.indexOf(field);
-    rows = rows.filter(function (r) { return (r[idx] || '(未設定)') === value; });
+/** 集計結果のキー。「今」の締め月(結果分析の表示範囲が変わる)も含める */
+function analysisPrefix_(now) {
+  return 'ka:' + ver_('dataVer') + ':' + now.fiscalYear + '-' + now.closingMonth;
+}
+
+var _analysisFilled_ = false;
+
+/** 集計結果を返す。無ければ作って保存し、初回はほかの年度・月・工事の分も先にまとめて保存する */
+function analysis_(sub, build) {
+  var now = getClosingInfo_(new Date());
+  var key = cacheKey_(analysisPrefix_(now), sub);
+  var hit = cacheGetBig_(key);
+  if (hit !== null) return hit;
+  var out = build(buildAgg_(), now);
+  cachePutBig_(key, out);
+  if (!_analysisFilled_) {
+    _analysisFilled_ = true;
+    try { fillAnalysisCache_(); } catch (e) {}
   }
+  return out;
+}
 
-  var dateIdx = headers.indexOf('発生日');
-  rows.sort(function (a, b) { return b[dateIdx] - a[dateIdx]; });
+/** 全年度・全月・全工事の集計結果を1回の走査から作り、まとめて保存する */
+function fillAnalysisCache_() {
+  _analysisFilled_ = true;
+  var agg = buildAgg_();
+  var now = getClosingInfo_(new Date());
+  var prefix = analysisPrefix_(now);
+  var pairs = {};
+  var put = function (sub, obj) {
+    var p = packBig_(cacheKey_(prefix, sub), obj);
+    for (var k in p) pairs[k] = p[k];
+  };
+  put('kb', buildBootstrapOut_(agg, now));
+  Object.keys(agg.yearCounts).forEach(function (y) { put('ky:' + y, buildYearOut_(agg, Number(y), now)); });
+  Object.keys(agg.yearMonthCounts).forEach(function (ym) {
+    var parts = ym.split('-');
+    put('km:' + ym, buildMonthOut_(agg, Number(parts[0]), Number(parts[1])));
+  });
+  Object.keys(agg.byProject).forEach(function (pk) {
+    if (pk.indexOf('string:') !== 0) return;
+    var name = pk.substr(7);
+    put('kp:' + name, buildProjectOut_(agg, name));
+  });
+  cachePutPairs_(pairs);
+}
 
-  return rows.map(function (r) { return rowToObject_(headers, r, cfg.timezone); });
+function getKekkaBunsekiBootstrap() {
+  return applyWeights_(analysis_('kb', buildBootstrapOut_), 'bootstrap');
+}
+
+function getKekkaBunsekiYear(year) {
+  year = Number(year);
+  return applyWeights_(analysis_('ky:' + year, function (agg, now) { return buildYearOut_(agg, year, now); }), 'year');
+}
+
+function getKekkaBunsekiMonth(year, month) {
+  year = Number(year);
+  month = Number(month);
+  return applyWeights_(analysis_('km:' + year + '-' + month, function (agg) { return buildMonthOut_(agg, year, month); }), 'month');
 }
 
 /**
- * 結果分析画面の「不具合内容（件数）」テーブル行クリック用: 指定した分類（不具合内容）に
- * 一致し、かつ表示中のスコープ（年度/月/工事/工事+選択締め月）に該当する記録一覧を返す。
+ * 工事別分析用: 指定した物件名（工事）の不具合記録を全期間（締め月単位）で集計する。
+ * 生産重量マスタは工事番号キーのため物件名では突合できず、この集計には含めない。
  */
-function getKekkaBunsekiContentRecords(filter) {
-  var ss = getSourceSS_();
-  var cfg = getConfig_();
-  var sheet = ss.getSheetByName(DATA_SHEET);
-  var values = sheet.getDataRange().getValues();
-  var headers = values[0];
-  var idIdx = headers.indexOf('不具合記録ID');
-  var dateIdx = headers.indexOf('発生日');
-  var classIdx = headers.indexOf('分類選択');
-  var propIdx = headers.indexOf('選択物件名');
-
-  var rows = values.slice(1).filter(function (r) { return r[idIdx] && (r[dateIdx] instanceof Date); });
-
-  rows = rows.filter(function (r) {
-    var content = r[classIdx] || '(未設定)';
-    if (content !== filter.content) return false;
-
-    if (filter.scope === 'year') {
-      return getClosingInfo_(r[dateIdx]).fiscalYear === Number(filter.year);
-    }
-    if (filter.scope === 'month') {
-      var info = getClosingInfo_(r[dateIdx]);
-      return info.fiscalYear === Number(filter.year) && info.closingMonth === Number(filter.month);
-    }
-    if (filter.scope === 'project') {
-      return r[propIdx] === filter.project;
-    }
-    if (filter.scope === 'projectPeriods') {
-      if (r[propIdx] !== filter.project) return false;
-      var info2 = getClosingInfo_(r[dateIdx]);
-      var key = info2.fiscalYear + '-' + info2.closingMonth;
-      return (filter.periodKeys || []).indexOf(key) !== -1;
-    }
-    return false;
-  });
-
-  rows.sort(function (a, b) { return b[dateIdx] - a[dateIdx]; });
-
-  return rows.map(function (r) { return rowToObject_(headers, r, cfg.timezone); });
+function getKekkaBunsekiByProject(projectName) {
+  return analysis_('kp:' + projectName, function (agg) { return buildProjectOut_(agg, projectName); });
 }
 
 /** ===================== 写真アップロード ===================== */
@@ -907,7 +1024,7 @@ function ocrProductName(base64Data, mimeType) {
     throw new Error('情報シートの APIKEY（B5）が空です。');
   }
 
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + cfg.geminiModel + ':generateContent?key=' + apiKey;
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
   var payload = {
     contents: [{
       parts: [

@@ -200,3 +200,10 @@
 }
 #app.sticky-analysis #headerAction2Btn { margin-left: auto; }
 #app.sticky-analysis #headerActionBtn { margin-left: 8px; }
+
+/* ホームの「最新データに更新」 */
+.refresh-link {
+  margin-top: 28px; background: none; border: 1px solid #666; color: #aaa;
+  border-radius: 16px; padding: 6px 14px; font-size: 12px; cursor: pointer;
+}
+.refresh-link:hover { color: #fff; border-color: #aaa; }

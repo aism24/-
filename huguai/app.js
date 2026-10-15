@@ -4,7 +4,7 @@ function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function stripLeadingNumber(str) {
@@ -44,6 +44,37 @@ function hideLoading() {
 }
 
 /** GAS WebアプリのURL（config.js で定義） */
+/** localStorage(使えない環境でも動くよう、失敗は無視する) */
+var Store = {
+  get: function (k) { try { var v = localStorage.getItem('hg:' + k); return v ? JSON.parse(v) : null; } catch (e) { return null; } },
+  set: function (k, v) { try { localStorage.setItem('hg:' + k, JSON.stringify(v)); } catch (e) {} },
+  del: function (k) { try { localStorage.removeItem('hg:' + k); } catch (e) {} }
+};
+
+function loadScript(src) {
+  return new Promise(function (resolve, reject) {
+    var el = document.createElement('script');
+    el.src = src;
+    el.onload = resolve;
+    el.onerror = function () { reject(new Error('読み込みに失敗しました: ' + src)); };
+    document.head.appendChild(el);
+  });
+}
+
+/** PDF用ライブラリは、PDFを作るときだけ読み込む(通常の画面表示を軽くする) */
+var PdfLibs = {
+  p: null,
+  load: function () {
+    if (!PdfLibs.p) {
+      PdfLibs.p = Promise.all([
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')
+      ]).catch(function (e) { PdfLibs.p = null; throw e; });
+    }
+    return PdfLibs.p;
+  }
+};
+
 function callServer(fnName) {
   var args = Array.prototype.slice.call(arguments, 1);
   // text/plain にすることでCORSプリフライトを避ける（GASはOPTIONS非対応）
@@ -101,10 +132,12 @@ var LOGO_SRC_WHITE = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53
 
 var App = {
   master: null,
-
+  masterPromise: null,
   weightPromise: null,
+  pf: {},
+  navId: 0,
 
-  /** 生産重量(約12秒かかる集計)を、画面操作と並行して裏で取得しておく */
+  /** 生産重量(約12秒かかる集計)を、画面操作と並行して裏で取得しておく(保存済みなら即返る) */
   prefetchWeights: function () {
     App.weightPromise = callServer('getProductionWeights').catch(function () {
       App.weightPromise = null;
@@ -112,20 +145,77 @@ var App = {
     });
   },
 
-  init: function () {
-    App.prefetchWeights();
-    showLoading('読み込み中...');
-    callServer('getMasterData').then(function (data) {
+  /** マスタを取得する。前回の値があればそれで先に動き、取得できたら差し替える */
+  loadMaster: function () {
+    App.masterPromise = callServer('getMasterData').then(function (data) {
       App.master = data;
-      hideLoading();
-      App.showHome();
-    }).catch(function (err) {
-      hideLoading();
-      showToast('マスタデータの取得に失敗: ' + (err.message || err));
+      Store.set('master', data);
+      return data;
+    });
+    App.masterPromise.catch(function (err) {
+      if (!App.master) showToast('マスタデータの取得に失敗: ' + (err.message || err));
     });
   },
 
+  /** マスタが必要な処理の前に呼ぶ。まだ無ければ読み込みを待つ */
+  ready: function (fn) {
+    if (App.master) { fn(); return; }
+    showLoading('読み込み中...');
+    App.masterPromise.then(function () { hideLoading(); fn(); })
+      .catch(function (err) { hideLoading(); showToast('マスタデータの取得に失敗: ' + (err.message || err)); });
+  },
+
+  /** 結果分析・一覧の初回データ。直近(30秒以内)に取得済み/取得中のものがあればそれを使う */
+  fetchBoot: function (name, fn) {
+    var e = App.pf[name];
+    if (e && Date.now() - e.t < 30000) return e.p;
+    var p = callServer(fn);
+    p.catch(function () { if (App.pf[name] && App.pf[name].p === p) delete App.pf[name]; });
+    App.pf[name] = { t: Date.now(), p: p };
+    return p;
+  },
+
+  /** ホームにいる間に、結果分析と一覧のデータを裏で取得しておく(サーバー側のキャッシュも温まる) */
+  prefetchBoots: function () {
+    App.fetchBoot('kb', 'getKekkaBunsekiBootstrap').catch(function () {});
+    App.fetchBoot('rb', 'getRecordsBootstrap').catch(function () {});
+  },
+
+  /** 保存したときなど、前回の結果を捨てる */
+  invalidate: function () {
+    App.pf = {};
+    Store.del('kb');
+    Store.del('rb');
+  },
+
+  /** 「最新データに更新」: サーバーのキャッシュも捨てて取り直す(シートを直接編集したとき用) */
+  refreshData: function () {
+    showLoading('更新中...');
+    callServer('clearCache').then(function () {
+      App.invalidate();
+      Store.del('master');
+      App.loadMaster();
+      App.prefetchBoots();
+      return App.masterPromise;
+    }).then(function () {
+      hideLoading();
+      showToast('最新データに更新しました');
+    }).catch(function (err) {
+      hideLoading();
+      showToast('更新に失敗: ' + (err.message || err));
+    });
+  },
+
+  init: function () {
+    App.master = Store.get('master');
+    App.loadMaster();
+    App.prefetchWeights();
+    App.showHome();
+    setTimeout(App.prefetchBoots, 400);
+  },
+
   setHeader: function (title, showBack, backFn) {
+    App.navId++;
     var isHome = !showBack;
     document.getElementById('pageTitle').textContent = isHome ? '' : title;
     var backBtn = document.getElementById('backBtn');
@@ -188,13 +278,15 @@ var App = {
       '<button class="menu-btn secondary" onclick="App.showRecords()">不具合記録</button>' +
       '<button class="menu-btn tertiary" onclick="App.showBunseki()">結果仕訳け</button>' +
       '<button class="menu-btn quaternary" onclick="App.showKekkaBunseki()">結果分析</button>' +
-      '</div></div>';
+      '</div><button class="refresh-link" onclick="App.refreshData()">最新データに更新</button></div>';
   },
 
   showInput: function () {
-    App.setWide(false);
-    App.setHeader('新規入力', true, App.goHome);
-    Wizard.start(null);
+    App.ready(function () {
+      App.setWide(false);
+      App.setHeader('新規入力', true, App.goHome);
+      Wizard.start(null);
+    });
   },
 
   showRecords: function () {
@@ -285,12 +377,14 @@ var Wizard = {
     var html = '<div class="radio-group" id="rg_' + name + '">';
     options.forEach(function (opt) {
       var sel = (String(selected) === String(opt)) ? ' selected' : '';
-      html += '<label class="' + sel.trim() + '" onclick="Wizard.pickRadio(\'' + name + '\',\'' + escapeHtml(opt) + '\')">' +
+      html += '<label class="' + sel.trim() + '" data-name="' + name + '" data-v="' + escapeHtml(opt) + '" onclick="Wizard.pickRadioEl(this)">' +
         '<input type="radio" name="' + name + '">' + escapeHtml(opt) + '</label>';
     });
     html += '</div>';
     return html;
   },
+
+  pickRadioEl: function (el) { Wizard.pickRadio(el.getAttribute('data-name'), el.getAttribute('data-v')); },
 
   pickRadio: function (name, value) {
     Wizard.setField(name, value);
@@ -562,6 +656,8 @@ var Wizard = {
     }).then(function (res) {
       hideLoading();
       showToast('保存しました');
+      App.invalidate();
+      if (f.isNewProperty) { Store.del('master'); App.loadMaster(); }
       if (wasNew && f['検査確認者']) localStorage.setItem('lastInspector', f['検査確認者']);
       if (Wizard.modalMode) {
         Modal.close();
@@ -581,6 +677,9 @@ var Wizard = {
 var Modal = {
   onSaved: null,
   open: function (record, onSaved) {
+    App.ready(function () { Modal.openNow_(record, onSaved); });
+  },
+  openNow_: function (record, onSaved) {
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.id = 'wizardModalOverlay';
@@ -604,22 +703,42 @@ var Records = {
   month: '',
   summary: null,
 
+  touched: false,
+
   show: function () {
     App.currentBack = App.goHome;
-    document.getElementById('view').innerHTML = '<div id="recordsFilterBar" class="filter-bar"></div><div id="recordsTableArea"></div>';
-    showLoading('読み込み中...');
-    callServer('getRecordsBootstrap').then(function (boot) {
-      Records.summary = boot.summary;
-      var years = Object.keys(boot.summary.yearCounts).sort(function (a, b) { return b - a; });
-      Records.year = (boot.year !== null) ? String(boot.year) : null;
-      Records.month = '';
-      Records.renderFilterBar(years);
-      hideLoading();
-      renderRecordTable(boot.rows, document.getElementById('recordsTableArea'), boot.total, Records.refresh);
-    }).catch(function (err) {
-      hideLoading();
-      showToast('取得失敗: ' + (err.message || err));
-    });
+    Records.touched = false;
+    var nav = App.navId;
+    document.getElementById('view').innerHTML = '<div id="recordsNotice"></div><div id="recordsFilterBar" class="filter-bar"></div><div id="recordsTableArea"></div>';
+    var cached = Store.get('rb');
+    var fresh = App.fetchBoot('rb', 'getRecordsBootstrap');
+    var fail = function (err) { hideLoading(); showToast('取得失敗: ' + (err.message || err)); };
+    if (cached) {
+      Records.applyBoot_(cached);
+      fresh.then(function (boot) {
+        Store.set('rb', boot);
+        if (nav === App.navId && !Records.touched && JSON.stringify(boot) !== JSON.stringify(cached)) Records.applyBoot_(boot);
+      }).catch(fail);
+    } else {
+      showLoading('読み込み中...');
+      fresh.then(function (boot) {
+        Store.set('rb', boot);
+        hideLoading();
+        if (nav === App.navId) Records.applyBoot_(boot);
+      }).catch(fail);
+    }
+  },
+
+  applyBoot_: function (boot) {
+    if (!document.getElementById('recordsTableArea')) return;
+    Records.summary = boot.summary;
+    var years = Object.keys(boot.summary.yearCounts).sort(function (a, b) { return b - a; });
+    Records.year = (boot.year !== null) ? String(boot.year) : null;
+    Records.month = '';
+    Records.renderFilterBar(years);
+    document.getElementById('recordsNotice').innerHTML = boot.undated
+      ? '<div class="count-badge" style="color:#ffb300;margin-bottom:8px;">⚠ 発生日が未入力の記録が ' + boot.undated + ' 件あります（年度・月の一覧と結果分析の対象外）</div>' : '';
+    renderRecordTable(boot.rows, document.getElementById('recordsTableArea'), boot.total, Records.refresh);
   },
 
   CLOSING_PERIODS: {
@@ -648,6 +767,7 @@ var Records = {
   },
 
   onYearChange: function (year) {
+    Records.touched = true;
     Records.year = year;
     Records.month = '';
     var years = Object.keys(Records.summary.yearCounts).sort(function (a, b) { return b - a; });
@@ -656,6 +776,7 @@ var Records = {
   },
 
   onMonthChange: function (month) {
+    Records.touched = true;
     Records.month = month;
     Records.load();
   },
@@ -722,7 +843,7 @@ var Bunseki = {
 
       var html = '<div class="bunseki-list">';
       entries.forEach(function (e) {
-        html += '<div class="bunseki-item" onclick="Bunseki.showTable(\'' + mode + '\',\'' + field + '\',\'' + escapeHtml(e.name) + '\')">' +
+        html += '<div class="bunseki-item" data-mode="' + mode + '" data-field="' + escapeHtml(field) + '" data-v="' + escapeHtml(e.name) + '" onclick="Bunseki.showTableEl(this)">' +
           '<span>' + escapeHtml(e.name) + '</span><span class="count">' + e.count + ' 件</span></div>';
       });
       html += '</div>';
@@ -732,6 +853,8 @@ var Bunseki = {
       showToast('集計失敗: ' + (err.message || err));
     });
   },
+
+  showTableEl: function (el) { Bunseki.showTable(el.getAttribute('data-mode'), el.getAttribute('data-field'), el.getAttribute('data-v')); },
 
   showTable: function (mode, field, value) {
     App.currentBack = function () { Bunseki.showCounts(mode, field, field); };
@@ -761,8 +884,8 @@ var KekkaBunseki = {
   yearData: null,
   monthData: null,
   yearChart: null,
-  yearPieChart: null,
-  monthPieChart: null,
+  touched: false,
+  ym: null,
 
   mode: 'yearMonth',
   projectSel: null,
@@ -772,46 +895,77 @@ var KekkaBunseki = {
   showTabs: function () {
     App.currentBack = App.goHome;
     KekkaBunseki.mode = 'yearMonth';
+    KekkaBunseki.touched = false;
     App.setHeaderAction('PDFダウンロード', KekkaBunseki.downloadPdf);
     App.setHeaderAction2('工事別分析', KekkaBunseki.toggleMode, 'header-action-btn-yellow');
-    showLoading('読み込み中...');
-    callServer('getKekkaBunsekiBootstrap').then(function (boot) {
-      KekkaBunseki.summary = boot.summary;
-      var years = Object.keys(boot.summary.yearCounts).sort(function (a, b) { return b - a; });
-      KekkaBunseki.years = years;
-      KekkaBunseki.yearSel = (boot.defaultYear !== null) ? String(boot.defaultYear) : null;
-      KekkaBunseki.monthYearSel = KekkaBunseki.yearSel;
-      KekkaBunseki.monthSel = boot.defaultMonth;
-      KekkaBunseki.renderShell();
-      return GoogleChartsReady.then(function () {
-        hideLoading();
-        KekkaBunseki.renderYear(boot.yearData);
-        KekkaBunseki.renderMonth(boot.monthData);
-        KekkaBunseki.alignPreChartBlocks_();
-        KekkaBunseki.syncWeights_(boot.yearData, boot.weightReady);
-        KekkaBunseki.syncWeights_(boot.monthData, boot.weightReady);
-      });
-    }).catch(function (err) {
-      hideLoading();
-      showToast('取得失敗: ' + (err.message || err));
-    });
+    var nav = App.navId;
+    var cached = Store.get('kb');
+    var fresh = App.fetchBoot('kb', 'getKekkaBunsekiBootstrap');
+    var fail = function (err) { hideLoading(); showToast('取得失敗: ' + (err.message || err)); };
+    if (cached) {
+      // 前回の結果を先に表示し、裏で最新を取得。変わっていて、まだ操作していなければ差し替える
+      GoogleChartsReady.then(function () { if (nav === App.navId) KekkaBunseki.applyBoot_(cached); });
+      fresh.then(function (boot) {
+        Store.set('kb', boot);
+        if (nav !== App.navId || KekkaBunseki.touched || JSON.stringify(boot) === JSON.stringify(cached)) return;
+        return GoogleChartsReady.then(function () { if (nav === App.navId && !KekkaBunseki.touched) KekkaBunseki.applyBoot_(boot); });
+      }).catch(fail);
+    } else {
+      showLoading('読み込み中...');
+      fresh.then(function (boot) {
+        Store.set('kb', boot);
+        return GoogleChartsReady.then(function () {
+          hideLoading();
+          if (nav === App.navId) KekkaBunseki.applyBoot_(boot);
+        });
+      }).catch(fail);
+    }
+    KekkaBunseki.preloadPdfLibs_();
+  },
+
+  applyBoot_: function (boot) {
+    KekkaBunseki.summary = boot.summary;
+    var years = Object.keys(boot.summary.yearCounts).sort(function (a, b) { return b - a; });
+    KekkaBunseki.years = years;
+    KekkaBunseki.yearSel = (boot.defaultYear !== null) ? String(boot.defaultYear) : null;
+    KekkaBunseki.monthYearSel = KekkaBunseki.yearSel;
+    KekkaBunseki.monthSel = boot.defaultMonth;
+    KekkaBunseki.renderShell();
+    KekkaBunseki.renderYear(boot.yearData);
+    KekkaBunseki.renderMonth(boot.monthData);
+    KekkaBunseki.alignPreChartBlocks_();
+    KekkaBunseki.syncWeights_(boot.yearData, boot.weightReady, boot.weightStale);
+    KekkaBunseki.syncWeights_(boot.monthData, boot.weightReady, boot.weightStale);
+  },
+
+  /** PDFを押す前に、ライブラリを裏で読み込んでおく */
+  preloadPdfLibs_: function () {
+    setTimeout(function () { PdfLibs.load().catch(function () {}); }, 1500);
   },
 
   toggleMode: function () {
+    KekkaBunseki.touched = true;
     if (KekkaBunseki.mode === 'yearMonth') {
-      KekkaBunseki.mode = 'project';
-      App.setHeaderAction2('年度/月別に戻る', KekkaBunseki.toggleMode);
-      KekkaBunseki.renderShell();
-      if (!KekkaBunseki.projectSel && App.master.properties.length) {
-        KekkaBunseki.projectSel = App.master.properties[0];
-      }
-      if (KekkaBunseki.projectSel) {
-        KekkaBunseki.loadProject();
-      } else {
-        document.getElementById('kekkaYearBody').innerHTML = '<div class="card">物件名が登録されていません</div>';
-      }
+      App.ready(function () {
+        KekkaBunseki.mode = 'project';
+        KekkaBunseki.ym = { yearData: KekkaBunseki.yearData, monthData: KekkaBunseki.monthData };
+        App.setHeaderAction2('年度/月別に戻る', KekkaBunseki.toggleMode);
+        KekkaBunseki.renderShell();
+        if (!KekkaBunseki.projectSel && App.master.properties.length) {
+          KekkaBunseki.projectSel = App.master.properties[0];
+        }
+        if (KekkaBunseki.projectSel) {
+          KekkaBunseki.loadProject();
+        } else {
+          document.getElementById('kekkaYearBody').innerHTML = '<div class="card">物件名が登録されていません</div>';
+        }
+      });
     } else {
       KekkaBunseki.mode = 'yearMonth';
+      if (KekkaBunseki.ym) {
+        KekkaBunseki.yearData = KekkaBunseki.ym.yearData;
+        KekkaBunseki.monthData = KekkaBunseki.ym.monthData;
+      }
       App.setHeaderAction2('工事別分析', KekkaBunseki.toggleMode, 'header-action-btn-yellow');
       KekkaBunseki.renderShell();
       KekkaBunseki.renderYear(KekkaBunseki.yearData);
@@ -909,7 +1063,6 @@ var KekkaBunseki = {
   renderProjectLeft: function (data) {
     if (!data.periods.length) {
       document.getElementById('kekkaYearBody').innerHTML = '<div class="card">この工事の不具合記録はありません</div>';
-      KekkaBunseki.yearPieChart = null;
       KekkaBunseki.yearChart = null;
       return;
     }
@@ -1000,7 +1153,6 @@ var KekkaBunseki = {
       KekkaBunseki.contentTableHtml(contentCounts, 'projectSelected');
 
     if (!total) {
-      KekkaBunseki.monthPieChart = null;
       requestAnimationFrame(KekkaBunseki.alignChartHeights);
       return;
     }
@@ -1074,13 +1226,15 @@ var KekkaBunseki = {
       '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr><th>不具合内容</th><th>件数</th></tr></thead><tbody>' +
       contentCounts.map(function (c) {
         var rowClass = (c.group === '柱') ? 'row-pillar' : (c.group === '梁') ? 'row-beam' : '';
-        return '<tr class="' + rowClass + '" onclick="KekkaBunseki.showContentDetail(\'' + side + '\',\'' + escapeHtml(c.name) + '\')">' +
+        return '<tr class="' + rowClass + '" data-side="' + side + '" data-v="' + escapeHtml(c.name) + '" onclick="KekkaBunseki.showContentDetailEl(this)">' +
           '<td>' + escapeHtml(stripLeadingNumber(c.name)) + '</td><td>' + c.count + '</td></tr>';
       }).join('') +
       '</tbody></table></div></div>';
   },
 
   openDetail: { left: null, right: null },
+
+  showContentDetailEl: function (el) { KekkaBunseki.showContentDetail(el.getAttribute('data-side'), el.getAttribute('data-v')); },
 
   showContentDetail: function (side, contentName) {
     var filter = { content: contentName };
@@ -1181,11 +1335,13 @@ var KekkaBunseki = {
   },
 
   onYearSelChange: function (year) {
+    KekkaBunseki.touched = true;
     KekkaBunseki.yearSel = year;
     KekkaBunseki.loadYear();
   },
 
   onMonthYearSelChange: function (year) {
+    KekkaBunseki.touched = true;
     KekkaBunseki.monthYearSel = year;
     KekkaBunseki.monthSel = 1;
     KekkaBunseki.renderMonthFilterBar();
@@ -1193,6 +1349,7 @@ var KekkaBunseki = {
   },
 
   onMonthSelChange: function (month) {
+    KekkaBunseki.touched = true;
     KekkaBunseki.monthSel = month;
     KekkaBunseki.loadMonth();
   },
@@ -1203,7 +1360,7 @@ var KekkaBunseki = {
       return GoogleChartsReady.then(function () {
         hideLoading();
         KekkaBunseki.renderYear(data);
-        KekkaBunseki.syncWeights_(data, data.weightReady);
+        KekkaBunseki.syncWeights_(data, data.weightReady, data.weightStale);
       });
     }).catch(function (err) {
       hideLoading();
@@ -1217,7 +1374,7 @@ var KekkaBunseki = {
       return GoogleChartsReady.then(function () {
         hideLoading();
         KekkaBunseki.renderMonth(data);
-        KekkaBunseki.syncWeights_(data, data.weightReady);
+        KekkaBunseki.syncWeights_(data, data.weightReady, data.weightStale);
       });
     }).catch(function (err) {
       hideLoading();
@@ -1295,8 +1452,8 @@ var KekkaBunseki = {
   },
 
   /** サーバーが重量を未計算(weightReady=false)で返したとき、先読み結果が届き次第、重量だけ差し替えて再描画する */
-  syncWeights_: function (data, weightReady) {
-    if (weightReady !== false || !data) return;
+  syncWeights_: function (data, weightReady, weightStale) {
+    if ((weightReady !== false && !weightStale) || !data) return;
     if (!App.weightPromise) App.prefetchWeights();
     App.weightPromise.then(function (map) {
       if (!map || !KekkaBunseki.applyWeights_(data, map)) return;
@@ -1438,7 +1595,7 @@ var KekkaBunseki = {
     if (rightDetail) captureJobs.push({ key: 'rightDetail', html: KekkaBunseki.detailTableHtmlForPdf(rightDetail, 9), w: 500 });
 
     showLoading('PDF作成中...');
-    Promise.all(captureJobs.map(function (j) { return KekkaBunseki.captureHtml(j.html, j.w); }))
+    PdfLibs.load().then(function () { return Promise.all(captureJobs.map(function (j) { return KekkaBunseki.captureHtml(j.html, j.w); })); })
       .then(function (canvases) {
       var canvasByKey = {};
       captureJobs.forEach(function (j, i) { canvasByKey[j.key] = canvases[i]; });
@@ -1453,7 +1610,6 @@ var KekkaBunseki = {
       var contentBottom = pageH - margin;
       var chartW = Math.min(contentW, 170);
       var comboH = 55;
-      var pieH = 45;
 
       // ページ1: 年度指定/工事全期間
       var yL = margin;
