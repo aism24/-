@@ -1583,11 +1583,12 @@ var KekkaBunseki = {
             '.kekka-sticky,#app.sticky-analysis .kekka-sticky{position:static !important;background:transparent !important;}' +
             '.kekka-col-title{display:none !important;}' +
             '.card,.kekka-checklist{box-shadow:none !important;border:1px solid #ccc;}' +
-            // 表の罫線: 黒の実線。外形を除く縦線は破線
-            'table.record-table{border:1px solid #000 !important;}' +
+            // 表の罫線: 黒の実線。外形は二重線(角は丸めず直角)、外形を除く縦線は破線
+            '.table-scroll{border-radius:0 !important;overflow:visible !important;}' +
+            'table.record-table{border:3px double #000 !important;border-radius:0 !important;}' +
             'table.record-table th,table.record-table td{border:1px solid #000 !important;border-left:1px dashed #000 !important;border-right:1px dashed #000 !important;}' +
-            'table.record-table tr>:first-child{border-left:1px solid #000 !important;}' +
-            'table.record-table tr>:last-child{border-right:1px solid #000 !important;}';
+            'table.record-table tr>:first-child{border-left:3px double #000 !important;}' +
+            'table.record-table tr>:last-child{border-right:3px double #000 !important;}';
           doc.head.appendChild(st);
           doc.body.style.background = '#fff';
           // 年度・月の選択は、枠とボタンを外してテキストだけにする
