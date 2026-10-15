@@ -7,7 +7,7 @@
   var OPEN_BASE = 'https://shipping-list-link.vercel.app/open.html';
   var $ = function (id) { return document.getElementById(id); };
   var links = null, working = false, cur = null, refreshing = false;
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261009c';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js?v=20261015a';
 
   // 日時は日本時間の「10/7 06:55」形式で表示する
   var jst = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -33,6 +33,15 @@
     }
     var r2 = await fetch(GAS_URL ? GAS_URL + '?action=links' + (q ? '&' + q : '') : 'sample/links.json', { cache: 'no-store' });
     return { m: ShippingCore.expandMaster(await r2.json()), via: GAS_URL ? 'GAS直接' : '動作確認用サンプル' };
+  }
+  // 「マスタ更新分確認中」ポップアップ。取得中は流れるバー、終了時はバーを100%にしてから閉じる
+  var busyTimer = null;
+  function busy(on) {
+    var m = $('busyModal'), bar = $('busyBar');
+    clearTimeout(busyTimer);
+    if (on) { bar.classList.remove('full'); m.classList.add('show'); return; }
+    bar.classList.add('full');
+    busyTimer = setTimeout(function () { m.classList.remove('show'); bar.classList.remove('full'); }, 500);
   }
   async function loadMaster() {
     busy(true);
