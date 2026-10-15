@@ -1606,7 +1606,7 @@ var KekkaBunseki = {
           // 見出しは中央・2倍の大きさ(32px)。印刷日は右端
           head.style.cssText = 'flex:0 0 100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:end;' +
             'color:#000;margin-bottom:10px;';
-          head.innerHTML = '<span></span><span style="font-size:32px;font-weight:bold;text-align:center;">【分析結果表示】</span>' +
+          head.innerHTML = '<span></span><span style="font-size:32px;font-weight:bold;text-align:center;">社内不具合記録【分析結果表示】</span>' +
             '<span style="font-size:16px;font-weight:bold;text-align:right;">' + printed + '</span>';
           el.insertBefore(head, el.firstChild);
           if (chartImg) {
