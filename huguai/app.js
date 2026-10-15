@@ -7,6 +7,14 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/** <option>の並び。items は {value,label}。selected と value は文字列として比較する */
+function optionsHtml(items, selected) {
+  return items.map(function (it) {
+    var sel = (String(it.value) === String(selected)) ? ' selected' : '';
+    return '<option value="' + it.value + '"' + sel + '>' + it.label + '</option>';
+  }).join('');
+}
+
 function stripLeadingNumber(str) {
   return String(str || '').replace(/^\d+\.\s*/, '');
 }
@@ -48,7 +56,13 @@ function hideLoading() {
 var Store = {
   get: function (k) { try { var v = localStorage.getItem('hg:' + k); return v ? JSON.parse(v) : null; } catch (e) { return null; } },
   set: function (k, v) { try { localStorage.setItem('hg:' + k, JSON.stringify(v)); } catch (e) {} },
-  del: function (k) { try { localStorage.removeItem('hg:' + k); } catch (e) {} }
+  del: function (k) { try { localStorage.removeItem('hg:' + k); } catch (e) {} },
+  delPrefix: function (p) {
+    try {
+      Object.keys(localStorage).filter(function (k) { return k.indexOf('hg:' + p) === 0; })
+        .forEach(function (k) { localStorage.removeItem(k); });
+    } catch (e) {}
+  }
 };
 
 function loadScript(src) {
@@ -151,6 +165,7 @@ var App = {
   weightPromise: null,
   pf: {},
   mc: {},
+  tc: {},
   navId: 0,
 
   /** 生産重量(約12秒かかる集計)を、画面操作と並行して裏で取得しておく(保存済みなら即返る) */
@@ -182,10 +197,10 @@ var App = {
   },
 
   /** 結果分析・一覧の初回データ。直近(30秒以内)に取得済み/取得中のものがあればそれを使う */
-  fetchBoot: function (name, fn) {
+  fetchBoot: function (name, fn, args) {
     var e = App.pf[name];
     if (e && Date.now() - e.t < 30000) return e.p;
-    var p = callServer(fn);
+    var p = callServer.apply(null, [fn].concat(args || []));
     p.catch(function () { if (App.pf[name] && App.pf[name].p === p) delete App.pf[name]; });
     App.pf[name] = { t: Date.now(), p: p };
     return p;
@@ -201,8 +216,10 @@ var App = {
   invalidate: function () {
     App.pf = {};
     App.mc = {};
+    App.tc = {};
     Store.del('kb');
     Store.del('rb');
+    Store.delPrefix('bn:');
   },
 
   /** 「最新データに更新」: サーバーのキャッシュも捨てて取り直す(シートを直接編集したとき用) */
@@ -352,9 +369,17 @@ var Wizard = {
     Wizard.editingId = record ? record['不具合記録ID'] : null;
     Wizard.formData = record ? Wizard.recordToForm(record) : {
       '発生日': todayStr(),
-      '検査確認者': localStorage.getItem('lastInspector') || ''
+      '検査確認者': Wizard.lastInspector_() || ''
     };
     Wizard.render();
+  },
+
+  /** 前回の検査員(保存領域が使えない環境でも落ちない)。引数ありで保存、なしで取得 */
+  lastInspector_: function (v) {
+    try {
+      if (v === undefined) return localStorage.getItem('lastInspector');
+      localStorage.setItem('lastInspector', v);
+    } catch (e) { return null; }
   },
 
   recordToForm: function (r) {
@@ -675,7 +700,7 @@ var Wizard = {
       showToast('保存しました');
       App.invalidate();
       if (f.isNewProperty) { Store.del('master'); App.loadMaster(); }
-      if (wasNew && f['検査確認者']) localStorage.setItem('lastInspector', f['検査確認者']);
+      if (wasNew && f['検査確認者']) Wizard.lastInspector_(f['検査確認者']);
       if (Wizard.modalMode) {
         Modal.close();
         if (Modal.onSaved) Modal.onSaved();
@@ -730,7 +755,6 @@ var Records = {
     var cached = Store.get('rb');
     var fresh = App.fetchBoot('rb', 'getRecordsBootstrap');
     var fail = function (err) { hideLoading(); showToast('取得失敗: ' + (err.message || err)); };
-    KekkaBunseki.preloadPdfLibs_();
     if (cached) {
       Records.applyBoot_(cached);
       fresh.then(function (boot) {
@@ -765,19 +789,22 @@ var Records = {
     9: '8/21〜9/20', 10: '9/21〜10/20', 11: '10/21〜11/20（決算）', 12: '11/21〜12/20'
   },
 
-  renderFilterBar: function (years) {
-    var yearOptions = years.map(function (y) {
-      var sel = (String(y) === String(Records.year)) ? ' selected' : '';
-      return '<option value="' + y + '"' + sel + '>' + y + '年度 (' + Records.summary.yearCounts[y] + '件)</option>';
-    }).join('');
-
-    var monthOptions = '<option value="">全月</option>';
+  /** 「m月20日締め（期間）(件数)」の選択肢(1〜12月) */
+  monthOptionsHtml_: function (summary, year, selected) {
+    var items = [];
     for (var m = 1; m <= 12; m++) {
-      var key = Records.year + '-' + m;
-      var cnt = Records.summary.yearMonthCounts[key] || 0;
-      var sel = (String(m) === String(Records.month)) ? ' selected' : '';
-      monthOptions += '<option value="' + m + '"' + sel + '>' + m + '月20日締め（' + Records.CLOSING_PERIODS[m] + '）(' + cnt + '件)</option>';
+      var cnt = summary.yearMonthCounts[year + '-' + m] || 0;
+      items.push({ value: m, label: m + '月20日締め（' + Records.CLOSING_PERIODS[m] + '）(' + cnt + '件)' });
     }
+    return optionsHtml(items, selected);
+  },
+
+  renderFilterBar: function (years) {
+    var yearOptions = optionsHtml(years.map(function (y) {
+      return { value: y, label: y + '年度 (' + Records.summary.yearCounts[y] + '件)' };
+    }), Records.year);
+
+    var monthOptions = '<option value="">全月</option>' + Records.monthOptionsHtml_(Records.summary, Records.year, Records.month);
 
     document.getElementById('recordsFilterBar').innerHTML =
       '<select onchange="Records.onYearChange(this.value)">' + yearOptions + '</select>' +
@@ -813,15 +840,25 @@ var TABLE_COLUMNS = [
   '不具合内容、原因', '対象者', '処理者', '対策', '検査確認者', 'コメント有無'
 ];
 
+var RecordTables = { seq: 0, map: {} };
+
 function renderRecordTable(rows, container, total, refreshFn, columns) {
   var cols = columns || TABLE_COLUMNS;
+  // 画面に無くなった表の行データは捨てる。表ごとに別の登録にして、左右の詳細カードなどが混ざらないようにする
+  Object.keys(RecordTables.map).forEach(function (k) {
+    if (!document.querySelector('[data-rt="' + k + '"]')) delete RecordTables.map[k];
+  });
+  var rtId = container.getAttribute('data-rt') || ('rt' + (++RecordTables.seq));
+  container.setAttribute('data-rt', rtId);
+  RecordTables.map[rtId] = { rows: rows, refreshFn: refreshFn };
+
   var html = '<div class="count-badge">' + (total !== undefined ? total : rows.length) + ' 件</div>' +
     '<div class="table-scroll"><table class="record-table"><thead><tr>' +
     cols.map(function (c) { return '<th>' + escapeHtml(c) + '</th>'; }).join('') +
     '</tr></thead><tbody>';
 
   rows.forEach(function (r, idx) {
-    html += '<tr onclick="renderRecordTable._openRow(' + idx + ')">' +
+    html += '<tr onclick="renderRecordTable._openRow(\'' + rtId + '\',' + idx + ')">' +
       cols.map(function (c) {
         var v = (c === '分類選択') ? stripLeadingNumber(r[c]) : r[c];
         return '<td>' + escapeHtml(v) + '</td>';
@@ -830,32 +867,50 @@ function renderRecordTable(rows, container, total, refreshFn, columns) {
   });
   html += '</tbody></table></div>';
   container.innerHTML = html;
-
-  renderRecordTable._rows = rows;
-  renderRecordTable._openRow = function (idx) {
-    Modal.open(renderRecordTable._rows[idx], refreshFn);
-  };
 }
+
+renderRecordTable._openRow = function (rtId, idx) {
+  var t = RecordTables.map[rtId];
+  if (t) Modal.open(t.rows[idx], t.refreshFn);
+};
 
 /** ===================== 結果仕訳け画面 ===================== */
 
 var Bunseki = {
+  token: 0, // 画面を切り替えるたびに進める。古い取得結果が、移動後の画面に描かれないようにする
+
+  /** メニューの3項目(件数一覧の取得先) */
+  COUNT_DEFS: [
+    { mode: 'field', field: '選択物件名' },
+    { mode: 'process', field: '加工先' },
+    { mode: 'process', field: '分類' }
+  ],
+
   showMenu: function () {
     App.currentBack = App.goHome;
+    Bunseki.token++;
     document.getElementById('view').innerHTML =
       '<div class="menu-grid">' +
       '<button class="menu-btn secondary" onclick="Bunseki.showCounts(\'field\',\'選択物件名\',\'物件\')">物件</button>' +
       '<button class="menu-btn tertiary" onclick="Bunseki.showCounts(\'process\',\'加工先\',\'加工先\')">加工先</button>' +
       '<button class="menu-btn" style="background:#9334e8;" onclick="Bunseki.showCounts(\'process\',\'分類\',\'分類\')">分類</button>' +
       '</div>';
+    // メニューを開いたらすぐ3つの件数を裏で取得しておく(押したとき待たずに表示できる)
+    Bunseki.COUNT_DEFS.forEach(function (d) { Bunseki.fetchCounts_(d.mode, d.field).catch(function () {}); });
+  },
+
+  fetchCounts_: function (mode, field) {
+    return App.fetchBoot('bn:' + mode + ':' + field, mode === 'field' ? 'getBunsekiByField' : 'getBunsekiByProcessType', [field]);
   },
 
   showCounts: function (mode, field, title) {
     App.currentBack = Bunseki.showMenu;
-    showLoading('集計中...');
-    var call = (mode === 'field') ? callServer('getBunsekiByField', field) : callServer('getBunsekiByProcessType', field);
-    call.then(function (counts) {
-      hideLoading();
+    var token = ++Bunseki.token;
+    var key = 'bn:' + mode + ':' + field;
+    var cached = Store.get(key);
+    var fresh = Bunseki.fetchCounts_(mode, field);
+
+    var render = function (counts) {
       var entries = Object.keys(counts).map(function (k) { return { name: k, count: counts[k] }; });
       entries.sort(function (a, b) { return b.count - a.count; });
 
@@ -866,28 +921,64 @@ var Bunseki = {
       });
       html += '</div>';
       document.getElementById('view').innerHTML = html;
-    }).catch(function (err) {
-      hideLoading();
-      showToast('集計失敗: ' + (err.message || err));
-    });
+    };
+
+    if (cached) {
+      // 前回の結果を先に表示し、裏で最新を取得。変わっていれば差し替える
+      render(cached);
+      fresh.then(function (counts) {
+        Store.set(key, counts);
+        if (token === Bunseki.token && JSON.stringify(counts) !== JSON.stringify(cached)) render(counts);
+      }).catch(function () {});
+    } else {
+      showLoading('集計中...');
+      fresh.then(function (counts) {
+        Store.set(key, counts);
+        hideLoading();
+        if (token === Bunseki.token) render(counts);
+      }).catch(function (err) {
+        hideLoading();
+        showToast('集計失敗: ' + (err.message || err));
+      });
+    }
   },
 
   showTableEl: function (el) { Bunseki.showTable(el.getAttribute('data-mode'), el.getAttribute('data-field'), el.getAttribute('data-v')); },
 
   showTable: function (mode, field, value) {
     App.currentBack = function () { Bunseki.showCounts(mode, field, field); };
+    var token = ++Bunseki.token;
     var serverField = (mode === 'process' && field === '分類') ? '分類グループ' : field;
-    showLoading('読み込み中...');
-    callServer('getFilteredRecords', serverField, value).then(function (rows) {
-      hideLoading();
+    var key = serverField + '|' + value;
+    var cached = App.tc[key];
+    if (Object.keys(App.tc).length > 30) App.tc = {};
+
+    var show = function (rows) {
       var area = document.createElement('div');
       document.getElementById('view').innerHTML = '';
       document.getElementById('view').appendChild(area);
       renderRecordTable(rows, area, undefined, function () { Bunseki.showTable(mode, field, value); });
-    }).catch(function (err) {
-      hideLoading();
-      showToast('取得失敗: ' + (err.message || err));
-    });
+    };
+    var p = callServer('getFilteredRecords', serverField, value);
+
+    if (cached) {
+      // 一度開いた表は先に表示し、裏で最新を取得。変わっていれば差し替える(保存・更新すると破棄される)
+      show(cached);
+      p.then(function (rows) {
+        App.tc[key] = rows;
+        if (token === Bunseki.token && JSON.stringify(rows) !== JSON.stringify(cached)) show(rows);
+      }).catch(function () {});
+    } else {
+      showLoading('読み込み中...');
+      p.then(function (rows) {
+        App.tc[key] = rows;
+        hideLoading();
+        if (token === Bunseki.token) show(rows);
+      }).catch(function (err) {
+        hideLoading();
+        showToast('取得失敗: ' + (err.message || err));
+      });
+    }
   }
 };
 
@@ -920,6 +1011,7 @@ var KekkaBunseki = {
     var cached = Store.get('kb');
     var fresh = App.fetchBoot('kb', 'getKekkaBunsekiBootstrap');
     var fail = function (err) { hideLoading(); showToast('取得失敗: ' + (err.message || err)); };
+    KekkaBunseki.preloadPdfLibs_();
     if (cached) {
       // 前回の結果を先に表示し、裏で最新を取得。変わっていて、まだ操作していなければ差し替える
       GoogleChartsReady.then(function () { if (nav === App.navId) KekkaBunseki.applyBoot_(cached); });
@@ -1036,9 +1128,8 @@ var KekkaBunseki = {
     if (!leftFirst || !rightFirst) return;
     leftFirst.style.marginBottom = '';
     rightFirst.style.marginBottom = '';
-    var leftH = leftFirst.getBoundingClientRect().height;
-    var rightH = rightFirst.getBoundingClientRect().height;
-    var delta = Math.round(leftH - rightH);
+    // 下端の位置で揃える(工事別では右列の上に締め月の一覧があり、左右で上端の位置が違うため)
+    var delta = Math.round(leftFirst.getBoundingClientRect().bottom - rightFirst.getBoundingClientRect().bottom);
     var baseMargin = 12;
     if (delta > 0) rightFirst.style.marginBottom = (baseMargin + delta) + 'px';
     else if (delta < 0) leftFirst.style.marginBottom = (baseMargin - delta) + 'px';
@@ -1078,6 +1169,19 @@ var KekkaBunseki = {
     });
   },
 
+  /** 柱/梁の積み上げ棒(+生産重量)のグラフ用データ表 */
+  chartTable_: function (withWeight, rows) {
+    var table = new google.visualization.DataTable();
+    table.addColumn('string', '締め月');
+    table.addColumn('number', '柱');
+    table.addColumn({ type: 'string', role: 'annotation' });
+    table.addColumn('number', '梁');
+    table.addColumn({ type: 'string', role: 'annotation' });
+    if (withWeight) table.addColumn('number', '生産重量');
+    table.addRows(rows);
+    return table;
+  },
+
   renderProjectLeft: function (data) {
     if (!data.periods.length) {
       document.getElementById('kekkaYearBody').innerHTML = '<div class="card">この工事の不具合記録はありません</div>';
@@ -1091,13 +1195,7 @@ var KekkaBunseki = {
       '</div>' +
       KekkaBunseki.contentTableHtml(data.contentCounts, 'projectAll');
 
-    var table = new google.visualization.DataTable();
-    table.addColumn('string', '締め月');
-    table.addColumn('number', '柱');
-    table.addColumn({ type: 'string', role: 'annotation' });
-    table.addColumn('number', '梁');
-    table.addColumn({ type: 'string', role: 'annotation' });
-    table.addRows(data.periods.map(function (p) {
+    var table = KekkaBunseki.chartTable_(false, data.periods.map(function (p) {
       return [p.label, p['柱'], String(p['柱']), p['梁'], String(p['梁'])];
     }));
 
@@ -1170,15 +1268,10 @@ var KekkaBunseki = {
       '</div>' +
       KekkaBunseki.contentTableHtml(contentCounts, 'projectSelected');
 
-    if (!total) {
-      requestAnimationFrame(KekkaBunseki.alignChartHeights);
-      return;
-    }
-
     requestAnimationFrame(KekkaBunseki.alignChartHeights);
   },
 
-  /** 柱/梁の比率: 1本の横バー + 件数・%のテキスト（画面・PDF共通。インラインスタイルでhtml2canvasにも対応） */
+  /** 柱/梁の比率: 1本の横バー + 件数・%のテキスト（画面・PDF共通） */
   ratioBlockHtml_: function (title, pillar, beam) {
     var total = (pillar || 0) + (beam || 0);
     var pP = total ? pillar / total * 100 : 0;
@@ -1203,6 +1296,18 @@ var KekkaBunseki = {
     return '<div class="card">' + KekkaBunseki.ratioBlockHtml_(title, pillar, beam) + '</div>';
   },
 
+  /** 見出し(タイトル)つきカードの中に表を置く共通の枠。headHtml は <th>…</th> の並び */
+  tableCardHtml_: function (titleHtml, headHtml, bodyHtml) {
+    return '<div class="card"><div class="kekka-subtitle">' + titleHtml + '</div>' +
+      '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr>' +
+      headHtml + '</tr></thead><tbody>' + bodyHtml + '</tbody></table></div></div>';
+  },
+
+  /** 見出しセルを中央揃えで並べる */
+  centerHeadHtml_: function (labels) {
+    return labels.map(function (h) { return '<th style="text-align:center;">' + h + '</th>'; }).join('');
+  },
+
   /**
    * 工事名｜柱｜梁｜合計｜年度比率｜比率データバー の表。工事は合計の多い順。
    * 年度比率は、全工事の合計に対する割合。データバーは0〜100%の1本の帯で、前の工事の累積%から
@@ -1225,10 +1330,8 @@ var KekkaBunseki = {
         '</div></td></tr>';
     }).join('');
     if (!rows) rows = '<tr><td colspan="6">該当なし</td></tr>';
-    return '<div class="card"><div class="kekka-subtitle">' + escapeHtml(title || '工事別 不具合件数') + '</div>' +
-      '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr>' +
-      ['工事名', '柱', '梁', '合計', ratioLabel, '比率データバー'].map(function (h) { return '<th style="text-align:center;">' + h + '</th>'; }).join('') +
-      '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+    return KekkaBunseki.tableCardHtml_(escapeHtml(title || '工事別 不具合件数'),
+      KekkaBunseki.centerHeadHtml_(['工事名', '柱', '梁', '合計', ratioLabel, '比率データバー']), rows);
   },
 
   /** 月の詳細: 日付(m/d)｜工事名｜分類(柱・梁)｜不具合内容。日付の古い順 */
@@ -1241,21 +1344,18 @@ var KekkaBunseki = {
         '<td style="white-space:normal;min-width:260px;">' + escapeHtml(d.content) + '</td></tr>';
     }).join('');
     if (!rows) rows = '<tr><td colspan="4">該当なし</td></tr>';
-    return '<div class="card"><div class="kekka-subtitle">詳細（' + list.length + '件）</div>' +
-      '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr>' +
-      ['日付', '工事名', '分類', '不具合内容'].map(function (h) { return '<th style="text-align:center;">' + h + '</th>'; }).join('') +
-      '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+    return KekkaBunseki.tableCardHtml_('詳細（' + list.length + '件）',
+      KekkaBunseki.centerHeadHtml_(['日付', '工事名', '分類', '不具合内容']), rows);
   },
 
   contentTableHtml: function (contentCounts, side) {
-    return '<div class="card"><div class="kekka-subtitle">不具合内容（件数）</div>' +
-      '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr><th>不具合内容</th><th style="text-align:center;">件数</th></tr></thead><tbody>' +
+    return KekkaBunseki.tableCardHtml_('不具合内容（件数）',
+      '<th>不具合内容</th><th style="text-align:center;">件数</th>',
       contentCounts.map(function (c) {
         var rowClass = (c.group === '柱') ? 'row-pillar' : (c.group === '梁') ? 'row-beam' : '';
         return '<tr class="' + rowClass + '" data-side="' + side + '" data-v="' + escapeHtml(c.name) + '" onclick="KekkaBunseki.showContentDetailEl(this)">' +
           '<td>' + escapeHtml(stripLeadingNumber(c.name)) + '</td><td style="text-align:center;">' + c.count + '</td></tr>';
-      }).join('') +
-      '</tbody></table></div></div>';
+      }).join(''));
   },
 
   openDetail: { left: null, right: null },
@@ -1335,10 +1435,9 @@ var KekkaBunseki = {
   },
 
   renderYearFilterBar: function () {
-    var options = KekkaBunseki.years.map(function (y) {
-      var sel = (String(y) === String(KekkaBunseki.yearSel)) ? ' selected' : '';
-      return '<option value="' + y + '"' + sel + '>' + y + '年度 (' + KekkaBunseki.summary.yearCounts[y] + '件)</option>';
-    }).join('');
+    var options = optionsHtml(KekkaBunseki.years.map(function (y) {
+      return { value: y, label: y + '年度 (' + KekkaBunseki.summary.yearCounts[y] + '件)' };
+    }), KekkaBunseki.yearSel);
     document.getElementById('kekkaYearFilterBar').innerHTML =
       '<select onchange="KekkaBunseki.onYearSelChange(this.value)">' + options + '</select>';
   },
@@ -1369,17 +1468,8 @@ var KekkaBunseki = {
   },
 
   renderMonthFilterBar: function () {
-    var yearOptions = KekkaBunseki.years.map(function (y) {
-      var sel = (String(y) === String(KekkaBunseki.monthYearSel)) ? ' selected' : '';
-      return '<option value="' + y + '"' + sel + '>' + y + '年度</option>';
-    }).join('');
-    var monthOptions = '';
-    for (var m = 1; m <= 12; m++) {
-      var key = KekkaBunseki.monthYearSel + '-' + m;
-      var cnt = KekkaBunseki.summary.yearMonthCounts[key] || 0;
-      var sel = (Number(m) === Number(KekkaBunseki.monthSel)) ? ' selected' : '';
-      monthOptions += '<option value="' + m + '"' + sel + '>' + m + '月20日締め（' + Records.CLOSING_PERIODS[m] + '）(' + cnt + '件)</option>';
-    }
+    var yearOptions = optionsHtml(KekkaBunseki.years.map(function (y) { return { value: y, label: y + '年度' }; }), KekkaBunseki.monthYearSel);
+    var monthOptions = Records.monthOptionsHtml_(KekkaBunseki.summary, KekkaBunseki.monthYearSel, KekkaBunseki.monthSel);
     var idx = KekkaBunseki.monthIndex_(Number(KekkaBunseki.monthYearSel), Number(KekkaBunseki.monthSel));
     var prevOk = KekkaBunseki.monthAllowed_(idx - 1), nextOk = KekkaBunseki.monthAllowed_(idx + 1);
     document.getElementById('kekkaMonthFilterBar').innerHTML =
@@ -1488,14 +1578,7 @@ var KekkaBunseki = {
       KekkaBunseki.projectTableHtml(data.projectCounts, '年度比率') +
       KekkaBunseki.contentTableHtml(data.contentCounts, 'year');
 
-    var table = new google.visualization.DataTable();
-    table.addColumn('string', '締め月');
-    table.addColumn('number', '柱');
-    table.addColumn({ type: 'string', role: 'annotation' });
-    table.addColumn('number', '梁');
-    table.addColumn({ type: 'string', role: 'annotation' });
-    table.addColumn('number', '生産重量');
-    table.addRows(data.months.map(function (m) {
+    var table = KekkaBunseki.chartTable_(true, data.months.map(function (m) {
       return [m.label, m['柱'], String(m['柱']), m['梁'], String(m['梁']), m['生産重量']];
     }));
 
@@ -1566,9 +1649,11 @@ var KekkaBunseki = {
     if (!l || !r) return;
     l.style.minHeight = '';
     r.style.minHeight = '';
-    var h = Math.max(l.offsetHeight, r.offsetHeight);
-    l.style.minHeight = h + 'px';
-    r.style.minHeight = h + 'px';
+    // 下端の位置を揃える(これより下の表が左右で並ぶ)。左右の上端が同じなら、高さを揃えるのと同じ
+    var lt = l.getBoundingClientRect().top, rt = r.getBoundingClientRect().top;
+    var bottom = Math.max(lt + l.offsetHeight, rt + r.offsetHeight);
+    l.style.minHeight = (bottom - lt) + 'px';
+    r.style.minHeight = (bottom - rt) + 'px';
   },
 
   /**
