@@ -456,6 +456,22 @@ function setupProductionWeightCacheTrigger() {
   ScriptApp.newTrigger('warmProductionWeightCache').timeBased().everyDays(1).atHour(2).create();
 }
 
+/** 工事(物件)別の 柱/梁 件数を加算する。キーに接頭辞を付けて予約語(constructor等)と衝突させない */
+function addProjectCount_(map, prop, proc) {
+  var k = 'p_' + prop;
+  if (!map[k]) map[k] = { name: prop, '柱': 0, '梁': 0 };
+  if (proc === '柱' || proc === '梁') map[k][proc]++;
+}
+
+/** 件数の多い工事順(同数は工事名順)。柱・梁どちらも0件の工事は除く(合計件数の定義と同じ) */
+function projectCountsList_(map) {
+  return Object.keys(map || {}).map(function (k) {
+    var o = map[k];
+    return { name: o.name, '柱': o['柱'], '梁': o['梁'], total: o['柱'] + o['梁'] };
+  }).filter(function (o) { return o.total > 0; })
+    .sort(function (a, b) { return b.total - a.total || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); });
+}
+
 function sortedCounts_(counts, classMap) {
   return Object.keys(counts)
     .map(function (k) {
@@ -544,10 +560,12 @@ function getKekkaBunsekiYear(year) {
   var dateIdx = headers.indexOf('発生日');
   var procIdx = headers.indexOf('加工先');
   var classIdx = headers.indexOf('分類選択');
+  var propIdx = headers.indexOf('選択物件名');
 
   var byMonth = {};
   var pillarTotal = 0, beamTotal = 0;
   var contentCounts = {};
+  var projects = {};
   values.slice(1).forEach(function (r) {
     if (!r[idIdx] || !(r[dateIdx] instanceof Date)) return;
     var info = getClosingInfo_(r[dateIdx]);
@@ -560,6 +578,7 @@ function getKekkaBunsekiYear(year) {
     else if (proc === '梁') beamTotal++;
     var content = r[classIdx] || '(未設定)';
     contentCounts[content] = (contentCounts[content] || 0) + 1;
+    addProjectCount_(projects, r[propIdx] || '(未設定)', proc);
   });
 
   var weightCache = readWeightCache_();
@@ -587,6 +606,7 @@ function getKekkaBunsekiYear(year) {
 
   return {
     weightReady: weightReady,
+    projectCounts: projectCountsList_(projects),
     year: year,
     months: months,
     pillarTotal: pillarTotal,
@@ -608,8 +628,10 @@ function getKekkaBunsekiMonth(year, month) {
   var procIdx = headers.indexOf('加工先');
   var classIdx = headers.indexOf('分類選択');
 
+  var propIdx = headers.indexOf('選択物件名');
   var counts = { '柱': 0, '梁': 0 };
   var contentCounts = {};
+  var projects = {};
   values.slice(1).forEach(function (r) {
     if (!r[idIdx] || !(r[dateIdx] instanceof Date)) return;
     var info = getClosingInfo_(r[dateIdx]);
@@ -618,6 +640,7 @@ function getKekkaBunsekiMonth(year, month) {
     if (counts[proc] !== undefined) counts[proc]++;
     var content = r[classIdx] || '(未設定)';
     contentCounts[content] = (contentCounts[content] || 0) + 1;
+    addProjectCount_(projects, r[propIdx] || '(未設定)', proc);
   });
 
   var weightCache = readWeightCache_();
@@ -628,6 +651,7 @@ function getKekkaBunsekiMonth(year, month) {
 
   return {
     weightReady: weightReady,
+    projectCounts: projectCountsList_(projects),
     year: year,
     month: month,
     label: displayYear + '/' + month,
@@ -653,6 +677,7 @@ function getKekkaBunsekiBootstrap() {
   var dateIdx = headers.indexOf('発生日');
   var procIdx = headers.indexOf('加工先');
   var classIdx = headers.indexOf('分類選択');
+  var propIdx = headers.indexOf('選択物件名');
   var classMap = getClassGroupMap_(ss);
 
   var yearCounts = {};
@@ -661,6 +686,8 @@ function getKekkaBunsekiBootstrap() {
   var perYearProcTotals = {};
   var perYearContentCounts = {};
   var perYearMonthContentCounts = {};
+  var perYearProjects = {};
+  var perYearMonthProjects = {};
 
   values.slice(1).forEach(function (r) {
     if (!r[idIdx] || !(r[dateIdx] instanceof Date)) return;
@@ -686,6 +713,12 @@ function getKekkaBunsekiBootstrap() {
 
     if (!perYearMonthContentCounts[ymKey]) perYearMonthContentCounts[ymKey] = {};
     perYearMonthContentCounts[ymKey][content] = (perYearMonthContentCounts[ymKey][content] || 0) + 1;
+
+    var prop = r[propIdx] || '(未設定)';
+    if (!perYearProjects[y]) perYearProjects[y] = {};
+    addProjectCount_(perYearProjects[y], prop, proc);
+    if (!perYearMonthProjects[ymKey]) perYearMonthProjects[ymKey] = {};
+    addProjectCount_(perYearMonthProjects[ymKey], prop, proc);
   });
 
   var weightCache = readWeightCache_();
@@ -718,6 +751,7 @@ function getKekkaBunsekiBootstrap() {
       };
     });
     return {
+      projectCounts: projectCountsList_(perYearProjects[year]),
       year: year,
       months: months,
       pillarTotal: totals.pillarTotal,
@@ -733,6 +767,7 @@ function getKekkaBunsekiBootstrap() {
     var weight = weightMap[key] || 0;
     var displayYear = (month === 12) ? year - 1 : year;
     return {
+      projectCounts: projectCountsList_(perYearMonthProjects[key]),
       year: year,
       month: month,
       label: displayYear + '/' + month,
