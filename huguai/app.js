@@ -1602,10 +1602,10 @@ var KekkaBunseki = {
       '#printRoot .card{background:#fff;border-radius:10px;padding:16px;margin-bottom:12px;border:1px solid #ccc;box-shadow:none;}' +
       '#printRoot .table-scroll{border-radius:0;overflow:visible;max-height:none;}' +
       // 表の罫線: 黒の実線。外形は二重線(角は丸めず直角)、外形を除く縦線は破線
-      '#printRoot table.record-table{border:3px double #000;border-radius:0;}' +
+      '#printRoot table.record-table{border:var(--bw,4px) double #000;border-radius:0;}' +
       '#printRoot table.record-table th,#printRoot table.record-table td{border:1px solid #000;border-left:1px dashed #000;border-right:1px dashed #000;}' +
-      '#printRoot table.record-table tr>:first-child{border-left:3px double #000;}' +
-      '#printRoot table.record-table tr>:last-child{border-right:3px double #000;}' +
+      '#printRoot table.record-table tr>:first-child{border-left:var(--bw,4px) double #000;}' +
+      '#printRoot table.record-table tr>:last-child{border-right:var(--bw,4px) double #000;}' +
       '#printRoot table.record-table th{position:static;}';
     document.head.appendChild(st);
     document.body.appendChild(root);
@@ -1614,9 +1614,15 @@ var KekkaBunseki = {
     var pageW = (210 - 16) / 25.4 * 96;
     var pageH = (297 - 16) / 25.4 * 96;
     root.style.cssText = 'display:block;position:fixed;left:-99999px;top:0;width:' + capW + 'px;';
-    var contentH = root.offsetHeight;
-    var scale = Math.min(pageW / capW, pageH / contentH) * 0.99;
+    // 外枠の二重線は縮小すると線が潰れるので、縮小後に約4pxになる太さにする(太さが変わると高さも変わるため2回求める)
+    var contentH, scale = 0.5;
+    for (var i = 0; i < 2; i++) {
+      root.style.setProperty('--bw', (4 / scale) + 'px');
+      contentH = root.offsetHeight;
+      scale = Math.min(pageW / capW, pageH / contentH) * 0.99;
+    }
     root.style.cssText = '';
+    root.style.setProperty('--bw', (4 / scale) + 'px');
     root.style.zoom = scale;
     return { scale: scale, width: capW, height: contentH };
   },
