@@ -210,6 +210,7 @@ Previewデプロイが発生する)
 | 日報全期間集計(daily-report。管理用スプレッドシート「日報集計アプリ」も同じフォルダ内。引き継ぎ書のタイトルは「日報アプリ引き継ぎ書」。2026-10-06登録) | https://drive.google.com/drive/folders/1RYjLWyC2mxSq8_Jzan-pWnpxrsvcTYgL | `1RYjLWyC2mxSq8_Jzan-pWnpxrsvcTYgL` |
 | 社内AI(company-ai。就業規則などへの質問応答。管理用スプレッドシート「社内AI」も同じフォルダ内。引き継ぎ書のGoogleドキュメントのタイトルは「社内AI 引き継ぎ書 (vN) 最新版」。2026-10-07登録) | https://drive.google.com/drive/folders/1cu5MjHLvq4Vw5D4XT74tp43heg6lA3RT | `1cu5MjHLvq4Vw5D4XT74tp43heg6lA3RT` |
 | 実寸データより長さと本数集計(tdf-dim-count。TDFのレイヤ別に寸法の長さ・本数を集計。管理用スプレッドシート「tdf-dim-count」(シート「記録」=Excelダウンロード時の利用履歴。GAS経由)も同じフォルダ内。2026-10-14登録。引き継ぎ書のGoogleドキュメントのタイトルは「実寸データより長さと本数集計 引き継ぎ書 (vN) 最新版」(2026-10-14に v1〜v3 を作成。最新は v3)。リポジトリ内のREADME・tests・know-howも記録) | https://drive.google.com/drive/folders/1SHZZBXgv6Z21E-vDi4VldUUuuPsZVn4R | `1SHZZBXgv6Z21E-vDi4VldUUuuPsZVn4R` |
+| 社内不具合アプリ（huguai。不具合記録アプリ(鳥取)のVercel版。`huguai/`。管理用スプレッドシート「社内不具合アプリVercel版」「社内不具合アプリHTML」「不具合アプリ結果表示」も同じフォルダ内。2026-10-15登録。引き継ぎ書のGoogleドキュメントのタイトルは「社内不具合アプリ（huguai） 引き継ぎ書 (vN) 最新版」(2026-10-15に v1 を作成)) | https://drive.google.com/drive/folders/109FIFxFVC3sQU9S2tx596jMLJzrAkmgD | `109FIFxFVC3sQU9S2tx596jMLJzrAkmgD` |
 | 上記以外のアプリ | 未登録(ユーザーがアプリごとに指示する。指示されたらこの表に追記する) | - |
 
 - **保存先フォルダはユーザーがアプリごとに指示する。** 指示が無いアプリは、推測で決めずにユーザーに聞く。
