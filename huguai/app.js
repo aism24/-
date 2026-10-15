@@ -135,6 +135,7 @@ var App = {
   masterPromise: null,
   weightPromise: null,
   pf: {},
+  mc: {},
   navId: 0,
 
   /** 生産重量(約12秒かかる集計)を、画面操作と並行して裏で取得しておく(保存済みなら即返る) */
@@ -184,6 +185,7 @@ var App = {
   /** 保存したときなど、前回の結果を捨てる */
   invalidate: function () {
     App.pf = {};
+    App.mc = {};
     Store.del('kb');
     Store.del('rb');
   },
@@ -936,6 +938,7 @@ var KekkaBunseki = {
     KekkaBunseki.alignPreChartBlocks_();
     KekkaBunseki.syncWeights_(boot.yearData, boot.weightReady, boot.weightStale);
     KekkaBunseki.syncWeights_(boot.monthData, boot.weightReady, boot.weightStale);
+    KekkaBunseki.prefetchNeighbors_();
   },
 
   /** PDFを押す前に、ライブラリを裏で読み込んでおく */
@@ -1185,23 +1188,31 @@ var KekkaBunseki = {
     return '<div class="card">' + KekkaBunseki.ratioBlockHtml_(title, pillar, beam) + '</div>';
   },
 
-  /** 工事名｜柱｜梁｜合計｜比率(%)｜比率データバー の表。工事は合計の多い順。比率は全工事の合計に対する割合 */
+  /**
+   * 工事名｜柱｜梁｜合計｜年度比率｜比率データバー の表。工事は合計の多い順。
+   * 年度比率は、全工事の合計に対する割合。データバーは0〜100%の1本の帯で、前の工事の累積%から
+   * 自分の累積%までを塗る(例: 0〜74.7%、74.7〜95.4%、…、98.8〜100%)。
+   */
   projectTableHtml: function (projectCounts, ratioLabel, title) {
     var list = projectCounts || [];
     var grand = list.reduce(function (a, p) { return a + p.total; }, 0);
-    var maxRatio = list.reduce(function (a, p) { return Math.max(a, grand ? p.total / grand : 0); }, 0);
+    var cum = 0;
     var rows = list.map(function (p) {
-      var ratio = grand ? p.total / grand : 0;
-      var barW = maxRatio ? ratio / maxRatio * 100 : 0;
+      var start = grand ? cum / grand * 100 : 0;
+      cum += p.total;
+      var end = grand ? cum / grand * 100 : 0;
+      var ratio = end - start;
       return '<tr><td>' + escapeHtml(p.name) + '</td><td style="text-align:right;">' + p['柱'] + '</td><td style="text-align:right;">' + p['梁'] + '</td><td style="text-align:right;">' + p.total + '</td>' +
-        '<td style="text-align:right;">' + (ratio * 100).toFixed(1) + '%</td>' +
-        '<td style="min-width:140px;"><div style="background:#e6edfa;border-radius:3px;height:14px;">' +
-        '<div style="width:' + barW.toFixed(1) + '%;height:100%;background:#1a73e8;border-radius:3px;"></div></div></td></tr>';
+        '<td style="text-align:right;">' + ratio.toFixed(1) + '%</td>' +
+        '<td style="min-width:200px;"><div style="display:flex;align-items:center;gap:6px;">' +
+        '<div title="' + start.toFixed(1) + '%〜' + end.toFixed(1) + '%" style="flex:1;position:relative;overflow:hidden;background:#e6edfa;border:1px solid #9bb3e0;border-radius:3px;height:14px;box-sizing:border-box;">' +
+        '<div style="position:absolute;top:0;left:' + start.toFixed(2) + '%;width:' + ratio.toFixed(2) + '%;min-width:2px;height:100%;background:#1a73e8;"></div></div>' +
+        '<span style="font-size:11px;color:#777;">100%</span></div></td></tr>';
     }).join('');
     if (!rows) rows = '<tr><td colspan="6">該当なし</td></tr>';
     return '<div class="card"><div class="kekka-subtitle">' + escapeHtml(title || '工事別 不具合件数') + '</div>' +
       '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr>' +
-      ['工事名', '柱', '梁', '合計', ratioLabel, '比率データバー'].map(function (h) { return '<th style="text-align:center;">' + h + '</th>'; }).join('') +
+      ['工事名', '柱', '梁', '合計', ratioLabel, '比率データバー（0〜100%）'].map(function (h) { return '<th style="text-align:center;">' + h + '</th>'; }).join('') +
       '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
   },
 
@@ -1317,6 +1328,31 @@ var KekkaBunseki = {
       '<select onchange="KekkaBunseki.onYearSelChange(this.value)">' + options + '</select>';
   },
 
+  /** 今の締め月(日本時間)。◀▶で未来の月へ進めないようにする */
+  nowClosing_: function () {
+    var t = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    var y = t.getUTCFullYear(), m = t.getUTCMonth() + 1, d = t.getUTCDate();
+    var cm = d <= 20 ? m : (m === 12 ? 1 : m + 1);
+    var cy = d <= 20 ? y : (m === 12 ? y + 1 : y);
+    return { fy: cm === 12 ? cy + 1 : cy, cm: cm };
+  },
+
+  MONTH_ORDER_: [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+
+  /** 年度+締め月を、時系列の通し番号にする(会計年度は12月締めから始まる) */
+  monthIndex_: function (fy, cm) { return fy * 12 + KekkaBunseki.MONTH_ORDER_.indexOf(cm); },
+
+  /** 指定した通し番号の月へ移動できるか(データのある年度で、今の締め月まで) */
+  monthAllowed_: function (idx) {
+    var fy = Math.floor(idx / 12);
+    var now = KekkaBunseki.nowClosing_();
+    return idx >= 0 && KekkaBunseki.years.map(String).indexOf(String(fy)) !== -1 && idx <= KekkaBunseki.monthIndex_(now.fy, now.cm);
+  },
+
+  monthFromIndex_: function (idx) {
+    return { fy: Math.floor(idx / 12), cm: KekkaBunseki.MONTH_ORDER_[idx % 12] };
+  },
+
   renderMonthFilterBar: function () {
     var yearOptions = KekkaBunseki.years.map(function (y) {
       var sel = (String(y) === String(KekkaBunseki.monthYearSel)) ? ' selected' : '';
@@ -1329,9 +1365,49 @@ var KekkaBunseki = {
       var sel = (Number(m) === Number(KekkaBunseki.monthSel)) ? ' selected' : '';
       monthOptions += '<option value="' + m + '"' + sel + '>' + m + '月20日締め（' + Records.CLOSING_PERIODS[m] + '）(' + cnt + '件)</option>';
     }
+    var idx = KekkaBunseki.monthIndex_(Number(KekkaBunseki.monthYearSel), Number(KekkaBunseki.monthSel));
+    var prevOk = KekkaBunseki.monthAllowed_(idx - 1), nextOk = KekkaBunseki.monthAllowed_(idx + 1);
     document.getElementById('kekkaMonthFilterBar').innerHTML =
       '<select onchange="KekkaBunseki.onMonthYearSelChange(this.value)">' + yearOptions + '</select>' +
-      '<select onchange="KekkaBunseki.onMonthSelChange(this.value)">' + monthOptions + '</select>';
+      '<div class="month-step">' +
+      '<button class="step-btn" title="前の月" aria-label="前の月" onclick="KekkaBunseki.stepMonth(-1)"' + (prevOk ? '' : ' disabled') + '>◀</button>' +
+      '<select onchange="KekkaBunseki.onMonthSelChange(this.value)">' + monthOptions + '</select>' +
+      '<button class="step-btn" title="次の月" aria-label="次の月" onclick="KekkaBunseki.stepMonth(1)"' + (nextOk ? '' : ' disabled') + '>▶</button>' +
+      '</div>';
+  },
+
+  /** ◀▶: 前の月/次の月へ(年度をまたぐときは年度も切り替える) */
+  stepMonth: function (delta) {
+    var idx = KekkaBunseki.monthIndex_(Number(KekkaBunseki.monthYearSel), Number(KekkaBunseki.monthSel)) + delta;
+    if (!KekkaBunseki.monthAllowed_(idx)) return;
+    var t = KekkaBunseki.monthFromIndex_(idx);
+    KekkaBunseki.touched = true;
+    KekkaBunseki.monthYearSel = String(t.fy);
+    KekkaBunseki.monthSel = t.cm;
+    KekkaBunseki.renderMonthFilterBar();
+    KekkaBunseki.loadMonth();
+  },
+
+  /** 月の集計を取得する。取得済み・取得中(2分以内)のものは使い回す */
+  monthFetch_: function (year, month) {
+    var key = year + '-' + month;
+    var e = App.mc[key];
+    if (e && Date.now() - e.t < 120000) return e;
+    e = { t: Date.now(), done: false };
+    e.p = callServer('getKekkaBunsekiMonth', year, month).then(function (d) { e.done = true; return d; });
+    e.p.catch(function () { if (App.mc[key] === e) delete App.mc[key]; });
+    App.mc[key] = e;
+    return e;
+  },
+
+  /** 前後の月を裏で取得しておく(◀▶を押したとき、すぐ切り替わる) */
+  prefetchNeighbors_: function () {
+    var idx = KekkaBunseki.monthIndex_(Number(KekkaBunseki.monthYearSel), Number(KekkaBunseki.monthSel));
+    [-1, 1].forEach(function (dlt) {
+      if (!KekkaBunseki.monthAllowed_(idx + dlt)) return;
+      var t = KekkaBunseki.monthFromIndex_(idx + dlt);
+      KekkaBunseki.monthFetch_(t.fy, t.cm).p.catch(function () {});
+    });
   },
 
   onYearSelChange: function (year) {
@@ -1369,12 +1445,17 @@ var KekkaBunseki = {
   },
 
   loadMonth: function () {
-    showLoading('集計中...');
-    return callServer('getKekkaBunsekiMonth', KekkaBunseki.monthYearSel, KekkaBunseki.monthSel).then(function (data) {
+    var year = KekkaBunseki.monthYearSel, month = KekkaBunseki.monthSel;
+    var e = KekkaBunseki.monthFetch_(year, month);
+    if (!e.done) showLoading('集計中...');
+    return e.p.then(function (data) {
       return GoogleChartsReady.then(function () {
         hideLoading();
+        // 取得中に別の月へ移動していたら、この結果は表示しない
+        if (String(year) !== String(KekkaBunseki.monthYearSel) || Number(month) !== Number(KekkaBunseki.monthSel)) return;
         KekkaBunseki.renderMonth(data);
         KekkaBunseki.syncWeights_(data, data.weightReady, data.weightStale);
+        KekkaBunseki.prefetchNeighbors_();
       });
     }).catch(function (err) {
       hideLoading();

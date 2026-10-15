@@ -207,3 +207,14 @@
   border-radius: 16px; padding: 6px 14px; font-size: 12px; cursor: pointer;
 }
 .refresh-link:hover { color: #fff; border-color: #aaa; }
+
+/* 月指定の ◀▶ */
+.step-btn {
+  padding: 8px 12px; font-size: 14px; border-radius: 6px; border: 1px solid #ccc;
+  background: #fff; color: #333; cursor: pointer; line-height: 1;
+}
+.step-btn:hover:not(:disabled) { background: #e8f0fe; }
+.step-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+/* ◀ 月の選択 ▶ は1つのまとまりにして、狭い画面では年度の下の段に収める */
+.month-step { display: flex; gap: 8px; align-items: center; flex: 1 1 280px; min-width: 0; }
+.month-step select { flex: 1; min-width: 0; }
