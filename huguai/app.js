@@ -1603,9 +1603,11 @@ var KekkaBunseki = {
           var jst = new Date(Date.now() + 9 * 3600 * 1000);
           var printed = jst.getUTCFullYear() + '.' + String(jst.getUTCMonth() + 1).padStart(2, '0') + '.' + String(jst.getUTCDate()).padStart(2, '0') + '印刷';
           var head = doc.createElement('div');
-          head.style.cssText = 'flex:0 0 100%;display:flex;justify-content:space-between;align-items:baseline;' +
-            'font-size:16px;font-weight:bold;color:#000;margin-bottom:10px;';
-          head.innerHTML = '<span>【分析結果表示】</span><span>' + printed + '</span>';
+          // 見出しは中央・2倍の大きさ(32px)。印刷日は右端
+          head.style.cssText = 'flex:0 0 100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:end;' +
+            'color:#000;margin-bottom:10px;';
+          head.innerHTML = '<span></span><span style="font-size:32px;font-weight:bold;text-align:center;">【分析結果表示】</span>' +
+            '<span style="font-size:16px;font-weight:bold;text-align:right;">' + printed + '</span>';
           el.insertBefore(head, el.firstChild);
           if (chartImg) {
             var box = el.querySelector('#yearComboChart');
