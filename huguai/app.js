@@ -1038,7 +1038,7 @@ var KekkaBunseki = {
     var rows = list.map(function (p) {
       var ratio = grand ? p.total / grand : 0;
       var barW = maxRatio ? ratio / maxRatio * 100 : 0;
-      return '<tr><td>' + escapeHtml(p.name) + '</td><td>' + p['柱'] + '</td><td>' + p['梁'] + '</td><td>' + p.total + '</td>' +
+      return '<tr><td>' + escapeHtml(p.name) + '</td><td style="text-align:right;">' + p['柱'] + '</td><td style="text-align:right;">' + p['梁'] + '</td><td style="text-align:right;">' + p.total + '</td>' +
         '<td style="text-align:right;">' + (ratio * 100).toFixed(1) + '%</td>' +
         '<td style="min-width:140px;"><div style="background:#e6edfa;border-radius:3px;height:14px;">' +
         '<div style="width:' + barW.toFixed(1) + '%;height:100%;background:#1a73e8;border-radius:3px;"></div></div></td></tr>';
@@ -1046,7 +1046,8 @@ var KekkaBunseki = {
     if (!rows) rows = '<tr><td colspan="6">該当なし</td></tr>';
     return '<div class="card"><div class="kekka-subtitle">' + escapeHtml(title || '工事別 不具合件数') + '</div>' +
       '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr>' +
-      '<th>工事名</th><th>柱</th><th>梁</th><th>合計</th><th>' + ratioLabel + '</th><th>比率データバー</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+      ['工事名', '柱', '梁', '合計', ratioLabel, '比率データバー'].map(function (h) { return '<th style="text-align:center;">' + h + '</th>'; }).join('') +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
   },
 
   contentTableHtml: function (contentCounts, side) {
