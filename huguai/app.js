@@ -1556,168 +1556,56 @@ var KekkaBunseki = {
     r.style.minHeight = h + 'px';
   },
 
-  captureHtml: function (html, widthPx) {
-    var el = document.getElementById('pdfCapture');
-    if (widthPx) {
-      el.style.display = '';
-      el.style.width = widthPx + 'px';
-    } else {
-      el.style.display = 'inline-block';
-      el.style.width = 'auto';
-    }
-    el.innerHTML = html;
-    return html2canvas(el, { scale: 2, backgroundColor: '#ffffff' }).then(function (canvas) {
-      el.innerHTML = '';
-      el.style.display = '';
-      el.style.width = '';
-      return canvas;
-    });
-  },
-
-  contentTableHtmlForPdf: function (contentCounts, fontSize) {
-    var fs = fontSize || 12;
-    var pad = Math.max(2, Math.round(fs * 0.4));
-    return '<table style="border-collapse:collapse;font-size:' + fs + 'px;">' +
-      '<thead><tr><th style="border:1px solid #999;padding:' + pad + 'px 6px;background:#eee;text-align:left;width:' + (fs * 18) + 'px;">不具合内容</th>' +
-      '<th style="border:1px solid #999;padding:' + pad + 'px 6px;background:#eee;width:' + (fs * 4) + 'px;">件数</th></tr></thead><tbody>' +
-      (contentCounts || []).map(function (c) {
-        var bg = (c.group === '柱') ? '#fdf0d9' : (c.group === '梁') ? '#e3f2e8' : '#fff';
-        return '<tr style="background:' + bg + ';">' +
-          '<td style="border:1px solid #ccc;padding:' + pad + 'px 6px;">' + escapeHtml(stripLeadingNumber(c.name)) + '</td>' +
-          '<td style="border:1px solid #ccc;padding:' + pad + 'px 6px;text-align:right;">' + c.count + '</td></tr>';
-      }).join('') +
-      '</tbody></table>';
-  },
-
-  placeScaledToFit: function (doc, canvas, x, y, maxW, maxH) {
-    var naturalH = canvas.height / canvas.width * maxW;
-    var w, h;
-    if (naturalH <= maxH) {
-      w = maxW; h = naturalH;
-    } else {
-      h = maxH; w = canvas.width / canvas.height * maxH;
-    }
-    doc.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, w, h);
-    return h;
-  },
-
-  placeChartImageScaledToFit: function (doc, dataUri, x, y, maxW, maxH) {
-    var props = doc.getImageProperties(dataUri);
-    var naturalH = props.height / props.width * maxW;
-    var w, h;
-    if (naturalH <= maxH) {
-      w = maxW; h = naturalH;
-    } else {
-      h = maxH; w = props.width / props.height * maxH;
-    }
-    doc.addImage(dataUri, 'PNG', x, y, w, h);
-    return h;
-  },
-
-  placeNaturalOrFit: function (doc, canvas, x, y, maxW, maxH) {
-    var pxToMm = 25.4 / 96 / 2;
-    var w = canvas.width * pxToMm;
-    var h = canvas.height * pxToMm;
-    if (w > maxW) { h = h * maxW / w; w = maxW; }
-    if (h > maxH) { w = w * maxH / h; h = maxH; }
-    doc.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, w, h);
-    return { w: w, h: h };
-  },
-
-  detailTableHtmlForPdf: function (detail, fontSize) {
-    var fontFamily = "'Hiragino Kaku Gothic ProN','Meiryo',sans-serif";
-    var fs = fontSize || 8;
-    var pad = Math.max(2, Math.round(fs * 0.4));
-    return '<div style="font-family:' + fontFamily + ';color:#000;">' +
-      '<div style="font-size:' + (fs + 2) + 'px;font-weight:bold;margin-bottom:4px;">' +
-      escapeHtml(stripLeadingNumber(detail.title)) + '（' + detail.rows.length + '件）</div>' +
-      '<table style="border-collapse:collapse;width:100%;font-size:' + fs + 'px;">' +
-      '<thead><tr><th style="border:1px solid #999;padding:' + pad + 'px 6px;background:#eee;text-align:left;">不具合内容、原因</th></tr></thead><tbody>' +
-      detail.rows.map(function (r) {
-        return '<tr><td style="border:1px solid #ccc;padding:' + pad + 'px 6px;">' + escapeHtml(r['不具合内容、原因'] || '') + '</td></tr>';
-      }).join('') +
-      '</tbody></table></div>';
-  },
-
+  /**
+   * 結果分析の現在の表示(左右2列)を、そのままA4縦1ページに収めてPDFにする。
+   * 画面を画像化して縦横の比率を保ったまま縮小する。グラフは描画済みの画像に差し替えて取り込む。
+   */
   downloadPdf: function () {
     var yd = KekkaBunseki.yearData;
     var md = KekkaBunseki.monthData;
-    var fontFamily = "'Hiragino Kaku Gothic ProN','Meiryo',sans-serif";
     var isProject = (KekkaBunseki.mode === 'project');
-    var leftDetail = KekkaBunseki.openDetail.left;
-    var rightDetail = KekkaBunseki.openDetail.right;
-
-    var yearLabelHtml = '<div style="font-family:' + fontFamily + ';color:#000;font-size:14px;font-weight:bold;">' +
-      (isProject ? (KekkaBunseki.projectSel || '') + '（全期間）' : ((yd ? yd.year : '') + '年度')) + '</div>';
-
-    var yearTableHtml = '<div style="font-family:' + fontFamily + ';color:#000;">' +
-      '<div style="font-size:11px;font-weight:bold;margin-bottom:4px;">不具合内容（件数）</div>' +
-      KekkaBunseki.contentTableHtmlForPdf(yd ? yd.contentCounts : [], 9) + '</div>';
-
-    var monthLabelHtml = '<div style="font-family:' + fontFamily + ';color:#000;">' +
-      '<div style="font-size:14px;font-weight:bold;">' + (isProject ? '選択した締め月の合計' : ((md ? md.label : '') + ' 締め')) + '</div>' +
-      (md ? '<div style="font-size:10px;margin-top:3px;">合計: ' + md['合計'] + '件（柱' + md['柱'] + ' / 梁' + md['梁'] + '）' + (isProject ? '' : ('　生産重量: ' + (md['生産重量'] == null ? '-' : md['生産重量']) + 't')) + '</div>' : '') +
-      '</div>';
-
-    var monthTableHtml = '<div style="font-family:' + fontFamily + ';color:#000;">' +
-      '<div style="font-size:11px;font-weight:bold;margin-bottom:4px;">不具合内容（件数）</div>' +
-      KekkaBunseki.contentTableHtmlForPdf(md ? md.contentCounts : [], 9) + '</div>';
-
-    var captureJobs = [
-      { key: 'yearLabel', html: yearLabelHtml, w: 500 },
-      { key: 'yearTable', html: yearTableHtml, w: 0 },
-      { key: 'monthLabel', html: monthLabelHtml, w: 500 },
-      { key: 'monthTable', html: monthTableHtml, w: 0 }
-    ];
-    var barWrap = function (inner) { return '<div style="font-family:' + fontFamily + ';color:#000;background:#fff;padding:4px 2px;">' + inner + '</div>'; };
-    captureJobs.push({ key: 'yearBar', w: 500, html: barWrap(KekkaBunseki.ratioBlockHtml_(isProject ? (KekkaBunseki.projectSel || '') + ' 全期間' : ((yd ? yd.year : '') + '年度'), yd ? yd.pillarTotal : 0, yd ? yd.beamTotal : 0)) });
-    captureJobs.push({ key: 'monthBar', w: 500, html: barWrap(KekkaBunseki.ratioBlockHtml_(isProject ? '選択期間' : (md ? md.label : ''), md ? md['柱'] : 0, md ? md['梁'] : 0)) });
-    if (leftDetail) captureJobs.push({ key: 'leftDetail', html: KekkaBunseki.detailTableHtmlForPdf(leftDetail, 9), w: 500 });
-    if (rightDetail) captureJobs.push({ key: 'rightDetail', html: KekkaBunseki.detailTableHtmlForPdf(rightDetail, 9), w: 500 });
+    var target = document.querySelector('#view .kekka-split');
+    if (!target) { showToast('結果分析の画面を表示してからPDFを作成してください'); return; }
+    var chartImg = null;
+    try { if (KekkaBunseki.yearChart) chartImg = KekkaBunseki.yearChart.getImageURI(); } catch (e) { chartImg = null; }
+    // 画面が2列で表示される幅ならその幅のまま、狭い画面(携帯)は2列になる幅に広げて取り込む
+    var live = target.offsetWidth;
+    var capW = live >= 860 ? live : 960;
 
     showLoading('PDF作成中...');
-    PdfLibs.load().then(function () { return Promise.all(captureJobs.map(function (j) { return KekkaBunseki.captureHtml(j.html, j.w); })); })
-      .then(function (canvases) {
-      var canvasByKey = {};
-      captureJobs.forEach(function (j, i) { canvasByKey[j.key] = canvases[i]; });
-
+    PdfLibs.load().then(function () {
+      return html2canvas(target, {
+        scale: 2, backgroundColor: '#ffffff', useCORS: true,
+        width: capW, windowWidth: capW + 24,
+        onclone: function (doc, el) {
+          var st = doc.createElement('style');
+          st.textContent = '.kekka-split{width:' + capW + 'px !important;flex-direction:row !important;align-items:flex-start !important;}' +
+            '.kekka-sticky,#app.sticky-analysis .kekka-sticky{position:static !important;background:transparent !important;}' +
+            '.kekka-col-title{color:#000 !important;}' +
+            '.card,.kekka-checklist{box-shadow:none !important;border:1px solid #ccc;}';
+          doc.head.appendChild(st);
+          doc.body.style.background = '#fff';
+          if (chartImg) {
+            var box = el.querySelector('#yearComboChart');
+            if (box) {
+              box.innerHTML = '<img src="' + chartImg + '" style="width:100%;height:' + (capW === live ? '100%' : 'auto') + ';display:block;">';
+              if (capW !== live) box.style.height = 'auto';
+            }
+          }
+        }
+      });
+    }).then(function (canvas) {
       var JsPdf = window.jspdf.jsPDF;
       var doc = new JsPdf({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       var pageW = doc.internal.pageSize.getWidth();
       var pageH = doc.internal.pageSize.getHeight();
-      var margin = 10;
-      var subGap = 4;
-      var contentW = pageW - margin * 2;
-      var contentBottom = pageH - margin;
-      var chartW = Math.min(contentW, 170);
-      var comboH = 55;
-
-      // ページ1: 年度指定/工事全期間
-      var yL = margin;
-      yL += KekkaBunseki.placeScaledToFit(doc, canvasByKey.yearLabel, margin, yL, contentW, 10);
-      yL += 2;
-      if (KekkaBunseki.yearChart) {
-        yL += KekkaBunseki.placeChartImageScaledToFit(doc, KekkaBunseki.yearChart.getImageURI(), margin, yL, chartW, comboH) + 3;
-      }
-      yL += KekkaBunseki.placeScaledToFit(doc, canvasByKey.yearBar, margin, yL, chartW, 26) + 3;
-      var yearTableRes = KekkaBunseki.placeNaturalOrFit(doc, canvasByKey.yearTable, margin, yL, contentW, contentBottom - yL);
-      if (leftDetail) {
-        var leftDetailX = margin + yearTableRes.w + subGap;
-        var leftDetailW = contentW - yearTableRes.w - subGap;
-        KekkaBunseki.placeScaledToFit(doc, canvasByKey.leftDetail, leftDetailX, yL, leftDetailW, contentBottom - yL);
-      }
-
-      // ページ2: 月指定/選択締め月（すべて縦並び）
-      doc.addPage('a4', 'portrait');
-      var yR = margin;
-      yR += KekkaBunseki.placeScaledToFit(doc, canvasByKey.monthLabel, margin, yR, contentW, 16);
-      yR += 2;
-      yR += KekkaBunseki.placeScaledToFit(doc, canvasByKey.monthBar, margin, yR, chartW, 26) + 3;
-      var monthTableRes = KekkaBunseki.placeNaturalOrFit(doc, canvasByKey.monthTable, margin, yR, contentW, contentBottom - yR);
-      yR += monthTableRes.h + 3;
-      if (rightDetail) {
-        KekkaBunseki.placeScaledToFit(doc, canvasByKey.rightDetail, margin, yR, contentW, contentBottom - yR);
-      }
+      var margin = 8;
+      var maxW = pageW - margin * 2;
+      var maxH = pageH - margin * 2;
+      var w = maxW;
+      var h = canvas.height / canvas.width * w;
+      if (h > maxH) { h = maxH; w = canvas.width / canvas.height * h; }
+      doc.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin + (maxW - w) / 2, margin, w, h);
 
       hideLoading();
       var filenamePart = isProject
