@@ -61,20 +61,6 @@ function loadScript(src) {
   });
 }
 
-/** PDF用ライブラリは、PDFを作るときだけ読み込む(通常の画面表示を軽くする) */
-var PdfLibs = {
-  p: null,
-  load: function () {
-    if (!PdfLibs.p) {
-      PdfLibs.p = Promise.all([
-        loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
-        loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')
-      ]).catch(function (e) { PdfLibs.p = null; throw e; });
-    }
-    return PdfLibs.p;
-  }
-};
-
 function callServer(fnName) {
   var args = Array.prototype.slice.call(arguments, 1);
   // text/plain にすることでCORSプリフライトを避ける（GASはOPTIONS非対応）
@@ -922,7 +908,6 @@ var KekkaBunseki = {
         });
       }).catch(fail);
     }
-    KekkaBunseki.preloadPdfLibs_();
   },
 
   applyBoot_: function (boot) {
@@ -939,11 +924,6 @@ var KekkaBunseki = {
     KekkaBunseki.syncWeights_(boot.yearData, boot.weightReady, boot.weightStale);
     KekkaBunseki.syncWeights_(boot.monthData, boot.weightReady, boot.weightStale);
     KekkaBunseki.prefetchNeighbors_();
-  },
-
-  /** PDFを押す前に、ライブラリを裏で読み込んでおく */
-  preloadPdfLibs_: function () {
-    setTimeout(function () { PdfLibs.load().catch(function () {}); }, 1500);
   },
 
   toggleMode: function () {
@@ -1557,90 +1537,117 @@ var KekkaBunseki = {
   },
 
   /**
-   * 結果分析の現在の表示(左右2列)を、そのままA4縦1ページに収めてPDFにする。
-   * 画面を画像化して縦横の比率を保ったまま縮小する。グラフは描画済みの画像に差し替えて取り込む。
+   * 印刷用の表示(PRINT_ID)を作る。結果分析の現在の表示(左右2列)を複製し、A4縦1ページに収まるよう縮小する。
+   * 画像ではなく文字のまま印刷するため、PDFに保存しても文字を選択・検索・コピーできる。
+   * 戻り値: 縮小率など。作れないときは null。
    */
-  downloadPdf: function () {
-    var yd = KekkaBunseki.yearData;
-    var md = KekkaBunseki.monthData;
-    var isProject = (KekkaBunseki.mode === 'project');
+  buildPrintRoot_: function () {
     var target = document.querySelector('#view .kekka-split');
-    if (!target) { showToast('結果分析の画面を表示してからPDFを作成してください'); return; }
-    var chartImg = null;
-    try { if (KekkaBunseki.yearChart) chartImg = KekkaBunseki.yearChart.getImageURI(); } catch (e) { chartImg = null; }
-    // 画面が2列で表示される幅ならその幅のまま、狭い画面(携帯)は2列になる幅に広げて取り込む
+    if (!target) return null;
+    KekkaBunseki.removePrintRoot_();
+    // 画面が2列で表示される幅ならその幅のまま、狭い画面(携帯)は2列になる幅に広げる
     var live = target.offsetWidth;
     var capW = live >= 860 ? live : 960;
 
-    showLoading('PDF作成中...');
-    PdfLibs.load().then(function () {
-      return html2canvas(target, {
-        scale: 2, backgroundColor: '#ffffff', useCORS: true,
-        width: capW, windowWidth: capW + 24,
-        onclone: function (doc, el) {
-          var st = doc.createElement('style');
-          st.textContent = '.kekka-split{width:' + capW + 'px !important;flex-direction:row !important;flex-wrap:wrap;align-items:flex-start !important;}' +
-            '.kekka-sticky,#app.sticky-analysis .kekka-sticky{position:static !important;background:transparent !important;}' +
-            '.kekka-col-title{display:none !important;}' +
-            '.card,.kekka-checklist{box-shadow:none !important;border:1px solid #ccc;}' +
-            // 表の罫線: 黒の実線。外形は二重線(角は丸めず直角)、外形を除く縦線は破線
-            '.table-scroll{border-radius:0 !important;overflow:visible !important;}' +
-            'table.record-table{border:3px double #000 !important;border-radius:0 !important;}' +
-            'table.record-table th,table.record-table td{border:1px solid #000 !important;border-left:1px dashed #000 !important;border-right:1px dashed #000 !important;}' +
-            'table.record-table tr>:first-child{border-left:3px double #000 !important;}' +
-            'table.record-table tr>:last-child{border-right:3px double #000 !important;}';
-          doc.head.appendChild(st);
-          doc.body.style.background = '#fff';
-          // 年度・月の選択は、枠とボタンを外してテキストだけにする
-          Array.prototype.forEach.call(el.querySelectorAll('.filter-bar'), function (bar) {
-            var texts = Array.prototype.map.call(bar.querySelectorAll('select'), function (sel) {
-              return sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
-            }).filter(Boolean);
-            if (!texts.length) return;
-            bar.innerHTML = '<div style="font-size:14px;font-weight:bold;color:#000;">' + escapeHtml(texts.join('　')) + '</div>';
-          });
-          // ページ上部: 見出し(中央) と 印刷日(右端=表の右端に揃える)
-          var jst = new Date(Date.now() + 9 * 3600 * 1000);
-          var printed = jst.getUTCFullYear() + '.' + String(jst.getUTCMonth() + 1).padStart(2, '0') + '.' + String(jst.getUTCDate()).padStart(2, '0') + '印刷';
-          var head = doc.createElement('div');
-          // 見出しは中央・2倍の大きさ(32px)。印刷日は右端
-          head.style.cssText = 'flex:0 0 100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:end;' +
-            'color:#000;margin-bottom:10px;';
-          head.innerHTML = '<span></span><span style="font-size:32px;font-weight:bold;text-align:center;">社内不具合記録【分析結果】</span>' +
-            '<span style="font-size:16px;font-weight:bold;text-align:right;">' + printed + '</span>';
-          el.insertBefore(head, el.firstChild);
-          if (chartImg) {
-            var box = el.querySelector('#yearComboChart');
-            if (box) {
-              box.innerHTML = '<img src="' + chartImg + '" style="width:100%;height:' + (capW === live ? '100%' : 'auto') + ';display:block;">';
-              if (capW !== live) box.style.height = 'auto';
-            }
-          }
-        }
-      });
-    }).then(function (canvas) {
-      var JsPdf = window.jspdf.jsPDF;
-      var doc = new JsPdf({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      var pageW = doc.internal.pageSize.getWidth();
-      var pageH = doc.internal.pageSize.getHeight();
-      var margin = 8;
-      var maxW = pageW - margin * 2;
-      var maxH = pageH - margin * 2;
-      var w = maxW;
-      var h = canvas.height / canvas.width * w;
-      if (h > maxH) { h = maxH; w = canvas.width / canvas.height * h; }
-      doc.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin + (maxW - w) / 2, margin, w, h);
-
-      hideLoading();
-      // ファイル名の末尾は日本時間の日時(yyyyMMddHHmmss)。同じ内容でも重複しない
-      var stamp = new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace(/[-:T]/g, '').slice(0, 14);
-      var filenamePart = (isProject ? ('工事別_' + (KekkaBunseki.projectSel || '')) : ((yd ? yd.year + '年度' : '') + '')) + '_' + stamp;
-      var pdfName = '結果分析_' + filenamePart + '.pdf';
-      doc.save(pdfName);
-      callServer('logPdfDownload', pdfName).catch(function () {});
-    }).catch(function (err) {
-      hideLoading();
-      showToast('PDF作成失敗: ' + (err.message || err));
+    var root = document.createElement('div');
+    root.id = 'printRoot';
+    var clone = target.cloneNode(true);
+    Array.prototype.forEach.call(clone.querySelectorAll('[id]'), function (n) { n.removeAttribute('id'); });
+    Array.prototype.forEach.call(clone.querySelectorAll('[onclick],[onchange]'), function (n) { n.removeAttribute('onclick'); n.removeAttribute('onchange'); });
+    // 年度・月の選択は、枠とボタンを外してテキストだけにする
+    Array.prototype.forEach.call(clone.querySelectorAll('.filter-bar'), function (bar) {
+      var texts = Array.prototype.map.call(bar.querySelectorAll('select'), function (sel) {
+        return sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+      }).filter(Boolean);
+      if (!texts.length) return;
+      bar.innerHTML = '<div style="font-size:14px;font-weight:bold;color:#000;">' + escapeHtml(texts.join('　')) + '</div>';
     });
+    // グラフは描画済みのものをそのまま複製する(ベクターのSVGなので文字のまま)
+    var liveChart = document.getElementById('yearComboChart');
+    var cloneChart = clone.querySelector('.kekka-pretable .card > div');
+    if (liveChart && cloneChart && cloneChart.style.height) {
+      cloneChart.innerHTML = liveChart.innerHTML;
+      // 表示幅が画面と違っても、グラフが枠いっぱいに縮尺どおり収まるようにする
+      var svg = cloneChart.querySelector('svg');
+      if (svg && svg.getAttribute('width') && svg.getAttribute('height') && !svg.getAttribute('viewBox')) {
+        svg.setAttribute('viewBox', '0 0 ' + parseFloat(svg.getAttribute('width')) + ' ' + parseFloat(svg.getAttribute('height')));
+        svg.style.width = '100%';
+        svg.style.height = 'auto';
+        cloneChart.style.height = 'auto';
+      }
+    }
+    // ページ上部: 見出し(中央・2倍の大きさ)と印刷日(右端)
+    var jst = new Date(Date.now() + 9 * 3600 * 1000);
+    var printed = jst.getUTCFullYear() + '.' + String(jst.getUTCMonth() + 1).padStart(2, '0') + '.' + String(jst.getUTCDate()).padStart(2, '0') + '印刷';
+    var head = document.createElement('div');
+    head.style.cssText = 'flex:0 0 100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:end;color:#000;margin-bottom:10px;';
+    head.innerHTML = '<span></span><span style="font-size:32px;font-weight:bold;text-align:center;">社内不具合記録【分析結果】</span>' +
+      '<span style="font-size:16px;font-weight:bold;text-align:right;">' + printed + '</span>';
+    clone.insertBefore(head, clone.firstChild);
+    root.appendChild(clone);
+
+    var st = document.createElement('style');
+    st.id = 'printStyle';
+    st.textContent = '#printRoot{display:none;}' +
+      '@page{size:A4 portrait;margin:8mm;}' +
+      '@media print{' +
+      'body>*:not(#printRoot){display:none !important;}' +
+      'html,body{background:#fff !important;margin:0;padding:0;}' +
+      '#printRoot{display:block !important;overflow:hidden;font-family:"Hiragino Kaku Gothic ProN","Meiryo",sans-serif;}' +
+      '#printRoot *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}' +
+      '#printRoot .kekka-split{display:flex;flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:20px;width:' + capW + 'px;}' +
+      '#printRoot .kekka-col{flex:1;min-width:0;}' +
+      '#printRoot .kekka-sticky{position:static;background:transparent;}' +
+      '#printRoot .kekka-col-title{display:none;}' +
+      '#printRoot .card{background:#fff;border-radius:10px;padding:16px;margin-bottom:12px;border:1px solid #ccc;box-shadow:none;}' +
+      '#printRoot .table-scroll{border-radius:0;overflow:visible;max-height:none;}' +
+      // 表の罫線: 黒の実線。外形は二重線(角は丸めず直角)、外形を除く縦線は破線
+      '#printRoot table.record-table{border:3px double #000;border-radius:0;}' +
+      '#printRoot table.record-table th,#printRoot table.record-table td{border:1px solid #000;border-left:1px dashed #000;border-right:1px dashed #000;}' +
+      '#printRoot table.record-table tr>:first-child{border-left:3px double #000;}' +
+      '#printRoot table.record-table tr>:last-child{border-right:3px double #000;}' +
+      '#printRoot table.record-table th{position:static;}';
+    document.head.appendChild(st);
+    document.body.appendChild(root);
+
+    // 縮小率: 用紙の印刷範囲(A4から余白8mmを引いた範囲)に、幅・高さとも収まる大きさにする
+    var pageW = (210 - 16) / 25.4 * 96;
+    var pageH = (297 - 16) / 25.4 * 96;
+    root.style.cssText = 'display:block;position:fixed;left:-99999px;top:0;width:' + capW + 'px;';
+    var contentH = root.offsetHeight;
+    var scale = Math.min(pageW / capW, pageH / contentH) * 0.99;
+    root.style.cssText = '';
+    root.style.zoom = scale;
+    return { scale: scale, width: capW, height: contentH };
+  },
+
+  removePrintRoot_: function () {
+    ['printRoot', 'printStyle'].forEach(function (id) {
+      var n = document.getElementById(id);
+      if (n) n.remove();
+    });
+  },
+
+  /**
+   * 結果分析を、現在の画面のままA4縦1ページで印刷する。印刷画面の送信先で「PDFに保存」を選ぶと、
+   * 文字のままのPDFになる。ファイル名の初期値は 結果分析_年度_日時(日本時間 yyyyMMddHHmmss)。
+   */
+  downloadPdf: function () {
+    var yd = KekkaBunseki.yearData;
+    var isProject = (KekkaBunseki.mode === 'project');
+    if (!KekkaBunseki.buildPrintRoot_()) { showToast('結果分析の画面を表示してからPDFを作成してください'); return; }
+    var stamp = new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace(/[-:T]/g, '').slice(0, 14);
+    var filenamePart = (isProject ? ('工事別_' + (KekkaBunseki.projectSel || '')) : ((yd ? yd.year + '年度' : '') + '')) + '_' + stamp;
+    var pdfName = '結果分析_' + filenamePart;
+    var oldTitle = document.title;
+    document.title = pdfName; // ブラウザの「PDFに保存」の初期ファイル名になる
+    var done = function () {
+      window.removeEventListener('afterprint', done);
+      document.title = oldTitle;
+      KekkaBunseki.removePrintRoot_();
+      callServer('logPdfDownload', pdfName + '.pdf').catch(function () {});
+    };
+    window.addEventListener('afterprint', done);
+    setTimeout(function () { window.print(); }, 50);
   }
 };
