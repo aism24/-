@@ -183,3 +183,20 @@
 
   .hidden { display: none !important; }
   .error-text { color: #ea4335; font-size: 13px; margin-top: 4px; }
+
+/* 結果分析: ヘッダー(ボタン)と年度/月の選択を固定。タイトルは中央揃え */
+#app.sticky-analysis .header {
+  position: sticky; top: 0; z-index: 40; background: #000;
+}
+#app.sticky-analysis .header h1 {
+  position: absolute; left: 0; right: 0; text-align: center; pointer-events: none;
+}
+#app.sticky-analysis .kekka-sticky {
+  position: sticky; top: var(--hdr-h, 62px); z-index: 30; background: #000; padding-bottom: 4px;
+}
+#app.sticky-analysis .kekka-sticky .filter-bar { margin-bottom: 8px; }
+@media (max-width: 700px) {
+  #app.sticky-analysis .header h1 { position: static; text-align: left; pointer-events: auto; }
+}
+#app.sticky-analysis #headerAction2Btn { margin-left: auto; }
+#app.sticky-analysis #headerActionBtn { margin-left: 8px; }

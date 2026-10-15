@@ -172,7 +172,9 @@ var App = {
   goHome: function () { App.showHome(); },
 
   setWide: function (wide) {
-    document.getElementById('app').style.maxWidth = wide ? '1200px' : '';
+    var appEl = document.getElementById('app');
+    appEl.style.maxWidth = wide ? '1200px' : '';
+    appEl.classList.toggle('sticky-analysis', !!wide);
   },
 
   showHome: function () {
@@ -213,6 +215,15 @@ var App = {
     KekkaBunseki.showTabs();
   }
 };
+
+(function () {
+  var header = document.querySelector('.header');
+  var appEl = document.getElementById('app');
+  var sync = function () { appEl.style.setProperty('--hdr-h', header.offsetHeight + 'px'); };
+  sync();
+  if (window.ResizeObserver) new ResizeObserver(sync).observe(header);
+  window.addEventListener('resize', sync);
+})();
 
 document.getElementById('backBtn').onclick = function () {
   (App.currentBack || App.goHome)();
@@ -811,8 +822,8 @@ var KekkaBunseki = {
       document.getElementById('view').innerHTML =
         '<div class="kekka-split">' +
         '<div class="kekka-col">' +
-        '<div class="kekka-col-title">工事選択</div>' +
-        '<div id="kekkaYearFilterBar" class="filter-bar"></div>' +
+        '<div class="kekka-sticky"><div class="kekka-col-title">工事選択</div>' +
+        '<div id="kekkaYearFilterBar" class="filter-bar"></div></div>' +
         '<div id="kekkaYearBody"></div>' +
         '</div>' +
         '<div class="kekka-col">' +
@@ -827,13 +838,13 @@ var KekkaBunseki = {
     document.getElementById('view').innerHTML =
       '<div class="kekka-split">' +
       '<div class="kekka-col">' +
-      '<div class="kekka-col-title">年度指定</div>' +
-      '<div id="kekkaYearFilterBar" class="filter-bar"></div>' +
+      '<div class="kekka-sticky"><div class="kekka-col-title">年度指定</div>' +
+      '<div id="kekkaYearFilterBar" class="filter-bar"></div></div>' +
       '<div id="kekkaYearBody"></div>' +
       '</div>' +
       '<div class="kekka-col">' +
-      '<div class="kekka-col-title">月指定</div>' +
-      '<div id="kekkaMonthFilterBar" class="filter-bar"></div>' +
+      '<div class="kekka-sticky"><div class="kekka-col-title">月指定</div>' +
+      '<div id="kekkaMonthFilterBar" class="filter-bar"></div></div>' +
       '<div id="kekkaMonthBody"></div>' +
       '</div>' +
       '</div>';
@@ -1025,7 +1036,7 @@ var KekkaBunseki = {
 
   contentTableHtml: function (contentCounts, side) {
     return '<div class="card"><div class="kekka-subtitle">不具合内容（件数）</div>' +
-      '<div class="table-scroll" style="max-height:240px;"><table class="record-table"><thead><tr><th>不具合内容</th><th>件数</th></tr></thead><tbody>' +
+      '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr><th>不具合内容</th><th>件数</th></tr></thead><tbody>' +
       contentCounts.map(function (c) {
         var rowClass = (c.group === '柱') ? 'row-pillar' : (c.group === '梁') ? 'row-beam' : '';
         return '<tr class="' + rowClass + '" onclick="KekkaBunseki.showContentDetail(\'' + side + '\',\'' + escapeHtml(c.name) + '\')">' +
