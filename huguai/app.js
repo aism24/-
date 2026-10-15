@@ -1234,11 +1234,11 @@ var KekkaBunseki = {
 
   contentTableHtml: function (contentCounts, side) {
     return '<div class="card"><div class="kekka-subtitle">不具合内容（件数）</div>' +
-      '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr><th>不具合内容</th><th>件数</th></tr></thead><tbody>' +
+      '<div class="table-scroll" style="max-height:none;overflow-y:visible;overflow-x:auto;"><table class="record-table"><thead><tr><th>不具合内容</th><th style="text-align:center;">件数</th></tr></thead><tbody>' +
       contentCounts.map(function (c) {
         var rowClass = (c.group === '柱') ? 'row-pillar' : (c.group === '梁') ? 'row-beam' : '';
         return '<tr class="' + rowClass + '" data-side="' + side + '" data-v="' + escapeHtml(c.name) + '" onclick="KekkaBunseki.showContentDetailEl(this)">' +
-          '<td>' + escapeHtml(stripLeadingNumber(c.name)) + '</td><td>' + c.count + '</td></tr>';
+          '<td>' + escapeHtml(stripLeadingNumber(c.name)) + '</td><td style="text-align:center;">' + c.count + '</td></tr>';
       }).join('') +
       '</tbody></table></div></div>';
   },
