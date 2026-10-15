@@ -913,7 +913,7 @@ var KekkaBunseki = {
     document.getElementById('kekkaYearBody').innerHTML =
       '<div id="kekkaYearCharts" class="kekka-pretable">' +
       '<div class="card"><div id="yearComboChart" style="width:100%;height:280px;"></div></div>' +
-      '<div class="card"><div id="yearPieChart" style="width:100%;height:230px;"></div></div>' +
+      KekkaBunseki.ratioCardHtml(KekkaBunseki.projectSel + ' 全期間', data.pillarTotal, data.beamTotal) +
       '</div>' +
       KekkaBunseki.contentTableHtml(data.contentCounts, 'projectAll');
 
@@ -938,21 +938,6 @@ var KekkaBunseki = {
     KekkaBunseki.yearChart = new google.visualization.ColumnChart(document.getElementById('yearComboChart'));
     KekkaBunseki.yearChart.draw(table, options);
 
-    var pTotal = data.total || 0;
-    var pPillarPct = pTotal ? (data.pillarTotal / pTotal * 100).toFixed(1) : '0.0';
-    var pBeamPct = pTotal ? (data.beamTotal / pTotal * 100).toFixed(1) : '0.0';
-    var pieData = google.visualization.arrayToDataTable([
-      ['区分', '件数'],
-      ['柱 (' + pPillarPct + '%)', data.pillarTotal],
-      ['梁 (' + pBeamPct + '%)', data.beamTotal]
-    ]);
-    KekkaBunseki.yearPieChart = new google.visualization.PieChart(document.getElementById('yearPieChart'));
-    KekkaBunseki.yearPieChart.draw(pieData, {
-      title: KekkaBunseki.projectSel + ' 全期間 柱/梁比率（合計' + data.total + '件）',
-      colors: ['#f9ab00', '#34a853'],
-      chartArea: { width: '90%', height: '68%' },
-      pieSliceText: 'value'
-    });
     requestAnimationFrame(KekkaBunseki.alignChartHeights);
   },
 
@@ -1007,7 +992,7 @@ var KekkaBunseki = {
       '<div class="kekka-card"><div class="kekka-num">' + pillar + '</div><div class="kekka-label">柱</div></div>' +
       '<div class="kekka-card"><div class="kekka-num">' + beam + '</div><div class="kekka-label">梁</div></div>' +
       '</div>' +
-      (total ? '<div class="card"><div id="monthPieChart" style="width:100%;height:240px;"></div></div>' : '') +
+      KekkaBunseki.ratioCardHtml('選択期間', pillar, beam) +
       '</div>' +
       KekkaBunseki.contentTableHtml(contentCounts, 'projectSelected');
 
@@ -1017,21 +1002,32 @@ var KekkaBunseki = {
       return;
     }
 
-    var mPillarPct = (pillar / total * 100).toFixed(1);
-    var mBeamPct = (beam / total * 100).toFixed(1);
-    var pieData = google.visualization.arrayToDataTable([
-      ['区分', '件数'],
-      ['柱 (' + mPillarPct + '%)', pillar],
-      ['梁 (' + mBeamPct + '%)', beam]
-    ]);
-    KekkaBunseki.monthPieChart = new google.visualization.PieChart(document.getElementById('monthPieChart'));
-    KekkaBunseki.monthPieChart.draw(pieData, {
-      title: '選択期間 柱/梁比率',
-      colors: ['#f9ab00', '#34a853'],
-      chartArea: { width: '90%', height: '68%' },
-      pieSliceText: 'value'
-    });
     requestAnimationFrame(KekkaBunseki.alignChartHeights);
+  },
+
+  /** 柱/梁の比率: 1本の横バー + 件数・%のテキスト（画面・PDF共通。インラインスタイルでhtml2canvasにも対応） */
+  ratioBlockHtml_: function (title, pillar, beam) {
+    var total = (pillar || 0) + (beam || 0);
+    var pP = total ? pillar / total * 100 : 0;
+    var bP = total ? beam / total * 100 : 0;
+    var seg = function (w, bg, fg, n) {
+      if (!(w > 0)) return '';
+      return '<div style="width:' + w + '%;background:' + bg + ';color:' + fg + ';display:flex;align-items:center;justify-content:center;' +
+        'font-weight:bold;font-size:15px;overflow:hidden;white-space:nowrap;">' + n + '</div>';
+    };
+    var bar = total
+      ? seg(pP, '#f9ab00', '#000', pillar) + seg(bP, '#34a853', '#fff', beam)
+      : '<div style="width:100%;background:#ddd;color:#666;display:flex;align-items:center;justify-content:center;font-size:13px;">データなし</div>';
+    return '<div style="font-size:13px;font-weight:bold;margin-bottom:6px;">' + escapeHtml(title) + ' 柱/梁比率</div>' +
+      '<div style="font-size:14px;margin-bottom:8px;">' +
+      '<span style="color:#b57a00;font-weight:bold;">柱 ' + pillar + '件（' + pP.toFixed(1) + '%）</span>　' +
+      '<span style="color:#2a8a44;font-weight:bold;">梁 ' + beam + '件（' + bP.toFixed(1) + '%）</span>　' +
+      '<span>合計 ' + total + '件</span></div>' +
+      '<div style="display:flex;height:34px;border-radius:6px;overflow:hidden;">' + bar + '</div>';
+  },
+
+  ratioCardHtml: function (title, pillar, beam) {
+    return '<div class="card">' + KekkaBunseki.ratioBlockHtml_(title, pillar, beam) + '</div>';
   },
 
   contentTableHtml: function (contentCounts, side) {
@@ -1195,7 +1191,7 @@ var KekkaBunseki = {
     document.getElementById('kekkaYearBody').innerHTML =
       '<div id="kekkaYearCharts" class="kekka-pretable">' +
       '<div class="card"><div id="yearComboChart" style="width:100%;height:280px;"></div></div>' +
-      '<div class="card"><div id="yearPieChart" style="width:100%;height:230px;"></div></div>' +
+      KekkaBunseki.ratioCardHtml(data.year + '年度', data.pillarTotal, data.beamTotal) +
       '</div>' +
       KekkaBunseki.contentTableHtml(data.contentCounts, 'year');
 
@@ -1223,21 +1219,6 @@ var KekkaBunseki = {
     KekkaBunseki.yearChart = new google.visualization.ComboChart(document.getElementById('yearComboChart'));
     KekkaBunseki.yearChart.draw(table, options);
 
-    var yTotal = data.total || 0;
-    var yPillarPct = yTotal ? (data.pillarTotal / yTotal * 100).toFixed(1) : '0.0';
-    var yBeamPct = yTotal ? (data.beamTotal / yTotal * 100).toFixed(1) : '0.0';
-    var pieData = google.visualization.arrayToDataTable([
-      ['区分', '件数'],
-      ['柱 (' + yPillarPct + '%)', data.pillarTotal],
-      ['梁 (' + yBeamPct + '%)', data.beamTotal]
-    ]);
-    KekkaBunseki.yearPieChart = new google.visualization.PieChart(document.getElementById('yearPieChart'));
-    KekkaBunseki.yearPieChart.draw(pieData, {
-      title: data.year + '年度 柱/梁比率（合計' + data.total + '件）',
-      colors: ['#f9ab00', '#34a853'],
-      chartArea: { width: '90%', height: '68%' },
-      pieSliceText: 'value'
-    });
     requestAnimationFrame(KekkaBunseki.alignChartHeights);
   },
 
@@ -1251,25 +1232,10 @@ var KekkaBunseki = {
       '<div class="kekka-card"><div class="kekka-num">' + data['梁'] + '</div><div class="kekka-label">梁</div></div>' +
       '<div class="kekka-card"><div class="kekka-num">' + (data['生産重量'] == null ? '…' : data['生産重量']) + '</div><div class="kekka-label">生産重量(t)</div></div>' +
       '</div>' +
-      '<div class="card"><div id="monthPieChart" style="width:100%;height:230px;"></div></div>' +
+      KekkaBunseki.ratioCardHtml(data.label, data['柱'], data['梁']) +
       '</div>' +
       KekkaBunseki.contentTableHtml(data.contentCounts, 'month');
 
-    var mTotal = data['合計'] || 0;
-    var mPillarPct = mTotal ? (data['柱'] / mTotal * 100).toFixed(1) : '0.0';
-    var mBeamPct = mTotal ? (data['梁'] / mTotal * 100).toFixed(1) : '0.0';
-    var pieData = google.visualization.arrayToDataTable([
-      ['区分', '件数'],
-      ['柱 (' + mPillarPct + '%)', data['柱']],
-      ['梁 (' + mBeamPct + '%)', data['梁']]
-    ]);
-    KekkaBunseki.monthPieChart = new google.visualization.PieChart(document.getElementById('monthPieChart'));
-    KekkaBunseki.monthPieChart.draw(pieData, {
-      title: data.label + ' 柱/梁比率',
-      colors: ['#f9ab00', '#34a853'],
-      chartArea: { width: '90%', height: '68%' },
-      pieSliceText: 'value'
-    });
     requestAnimationFrame(KekkaBunseki.alignChartHeights);
   },
 
@@ -1423,6 +1389,9 @@ var KekkaBunseki = {
       { key: 'monthLabel', html: monthLabelHtml, w: 500 },
       { key: 'monthTable', html: monthTableHtml, w: 0 }
     ];
+    var barWrap = function (inner) { return '<div style="font-family:' + fontFamily + ';color:#000;background:#fff;padding:4px 2px;">' + inner + '</div>'; };
+    captureJobs.push({ key: 'yearBar', w: 500, html: barWrap(KekkaBunseki.ratioBlockHtml_(isProject ? (KekkaBunseki.projectSel || '') + ' 全期間' : ((yd ? yd.year : '') + '年度'), yd ? yd.pillarTotal : 0, yd ? yd.beamTotal : 0)) });
+    captureJobs.push({ key: 'monthBar', w: 500, html: barWrap(KekkaBunseki.ratioBlockHtml_(isProject ? '選択期間' : (md ? md.label : ''), md ? md['柱'] : 0, md ? md['梁'] : 0)) });
     if (leftDetail) captureJobs.push({ key: 'leftDetail', html: KekkaBunseki.detailTableHtmlForPdf(leftDetail, 9), w: 500 });
     if (rightDetail) captureJobs.push({ key: 'rightDetail', html: KekkaBunseki.detailTableHtmlForPdf(rightDetail, 9), w: 500 });
 
@@ -1451,9 +1420,7 @@ var KekkaBunseki = {
       if (KekkaBunseki.yearChart) {
         yL += KekkaBunseki.placeChartImageScaledToFit(doc, KekkaBunseki.yearChart.getImageURI(), margin, yL, chartW, comboH) + 3;
       }
-      if (KekkaBunseki.yearPieChart) {
-        yL += KekkaBunseki.placeChartImageScaledToFit(doc, KekkaBunseki.yearPieChart.getImageURI(), margin, yL, chartW, pieH) + 3;
-      }
+      yL += KekkaBunseki.placeScaledToFit(doc, canvasByKey.yearBar, margin, yL, chartW, 26) + 3;
       var yearTableRes = KekkaBunseki.placeNaturalOrFit(doc, canvasByKey.yearTable, margin, yL, contentW, contentBottom - yL);
       if (leftDetail) {
         var leftDetailX = margin + yearTableRes.w + subGap;
@@ -1466,9 +1433,7 @@ var KekkaBunseki = {
       var yR = margin;
       yR += KekkaBunseki.placeScaledToFit(doc, canvasByKey.monthLabel, margin, yR, contentW, 16);
       yR += 2;
-      if (KekkaBunseki.monthPieChart) {
-        yR += KekkaBunseki.placeChartImageScaledToFit(doc, KekkaBunseki.monthPieChart.getImageURI(), margin, yR, chartW, pieH) + 3;
-      }
+      yR += KekkaBunseki.placeScaledToFit(doc, canvasByKey.monthBar, margin, yR, chartW, 26) + 3;
       var monthTableRes = KekkaBunseki.placeNaturalOrFit(doc, canvasByKey.monthTable, margin, yR, contentW, contentBottom - yR);
       yR += monthTableRes.h + 3;
       if (rightDetail) {
