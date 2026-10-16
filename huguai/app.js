@@ -1496,6 +1496,12 @@ var KekkaBunseki = {
     KekkaBunseki.monthYearSel = String(t.fy);
     KekkaBunseki.monthSel = t.cm;
     KekkaBunseki.renderMonthFilterBar();
+    // 年度をまたいだときは、年度指定(左)も同じ年度にそろえる
+    if (String(KekkaBunseki.yearSel) !== String(t.fy)) {
+      KekkaBunseki.yearSel = String(t.fy);
+      KekkaBunseki.renderYearFilterBar();
+      KekkaBunseki.loadYear();
+    }
     KekkaBunseki.loadMonth();
   },
 
@@ -1521,17 +1527,31 @@ var KekkaBunseki = {
     });
   },
 
+  /** 年度指定(左)と月指定(右)の年度は連動する。片方を変えたら、もう一方も同じ年度にして表示を更新する */
   onYearSelChange: function (year) {
     KekkaBunseki.touched = true;
+    var changedMonthSide = String(KekkaBunseki.monthYearSel) !== String(year);
     KekkaBunseki.yearSel = year;
+    if (changedMonthSide) {
+      KekkaBunseki.monthYearSel = year;
+      KekkaBunseki.monthSel = 1;
+      KekkaBunseki.renderMonthFilterBar();
+    }
     KekkaBunseki.loadYear();
+    if (changedMonthSide) KekkaBunseki.loadMonth();
   },
 
   onMonthYearSelChange: function (year) {
     KekkaBunseki.touched = true;
+    var changedYearSide = String(KekkaBunseki.yearSel) !== String(year);
     KekkaBunseki.monthYearSel = year;
     KekkaBunseki.monthSel = 1;
     KekkaBunseki.renderMonthFilterBar();
+    if (changedYearSide) {
+      KekkaBunseki.yearSel = year;
+      KekkaBunseki.renderYearFilterBar();
+      KekkaBunseki.loadYear();
+    }
     KekkaBunseki.loadMonth();
   },
 
