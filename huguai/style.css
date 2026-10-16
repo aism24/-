@@ -22,9 +22,10 @@
   .header h1 { font-size: 18px; margin: 0; flex: 1; color: #fff; }
   .back-btn {
     border: none; background: #e0e0e0; border-radius: 6px;
-    padding: 8px 12px; font-size: 14px; cursor: pointer;
+    padding: 8px 12px; font-size: 14px; cursor: pointer; white-space: nowrap;
   }
   .home-btn { background: #f8bbd0; color: #000; }
+  .today-btn { background: #b3e5fc; color: #000; }
   .header-action-btn { background: #1a73e8; color: #fff; margin-left: auto; }
   .header-action-btn-yellow { background: #f9ab00; color: #000; }
 
@@ -191,6 +192,11 @@
   position: sticky; top: var(--hdr-h, 62px); z-index: 30; background: #000; padding-bottom: 4px;
 }
 #app.sticky-analysis .kekka-sticky .filter-bar { margin-bottom: 8px; }
+/* 狭い画面: ボタンが増えても縮めずに折り返す */
+@media (max-width: 760px) {
+  .header { flex-wrap: wrap; }
+  .header h1 { white-space: nowrap; }
+}
 @media (max-width: 700px) {
   #app.sticky-analysis .header h1 { position: static; text-align: left; pointer-events: auto; }
 }
