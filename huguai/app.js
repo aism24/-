@@ -993,6 +993,8 @@ var KekkaBunseki = {
   yearData: null,
   monthData: null,
   yearChart: null,
+  PDF_WIDTH: 1280, // PDFを作るときの固定幅(px)。PCの横画面相当
+  yearChartSpec: null, // PDF用にグラフを描き直すための表とオプション
   touched: false,
   ym: null,
 
@@ -1186,6 +1188,7 @@ var KekkaBunseki = {
     if (!data.periods.length) {
       document.getElementById('kekkaYearBody').innerHTML = '<div class="card">この工事の不具合記録はありません</div>';
       KekkaBunseki.yearChart = null;
+      KekkaBunseki.yearChartSpec = null;
       return;
     }
     document.getElementById('kekkaYearBody').innerHTML =
@@ -1208,6 +1211,7 @@ var KekkaBunseki = {
       annotations: { alwaysOutside: false, textStyle: { fontSize: 10, color: '#000' } }
     };
     KekkaBunseki.yearChart = new google.visualization.ColumnChart(document.getElementById('yearComboChart'));
+    KekkaBunseki.yearChartSpec = { type: 'ColumnChart', table: table, options: options };
     KekkaBunseki.yearChart.draw(table, options);
 
     requestAnimationFrame(KekkaBunseki.alignChartHeights);
@@ -1593,6 +1597,7 @@ var KekkaBunseki = {
       annotations: { alwaysOutside: false, textStyle: { fontSize: 10, color: '#000' } }
     };
     KekkaBunseki.yearChart = new google.visualization.ComboChart(document.getElementById('yearComboChart'));
+    KekkaBunseki.yearChartSpec = { type: 'ComboChart', table: table, options: options };
     KekkaBunseki.yearChart.draw(table, options);
 
     requestAnimationFrame(KekkaBunseki.alignChartHeights);
@@ -1664,9 +1669,8 @@ var KekkaBunseki = {
     var target = document.querySelector('#view .kekka-split');
     if (!target) return null;
     KekkaBunseki.removePdfRoot_();
-    // 画面が2列で表示される幅ならその幅のまま、狭い画面(携帯)は2列になる幅に広げる
-    var live = target.offsetWidth;
-    var capW = live >= 860 ? live : 960;
+    // PDFは端末・画面幅によらず、PCの横画面と同じ固定幅で作る(画面の表示は変えない)
+    var capW = KekkaBunseki.PDF_WIDTH;
 
     var root = document.createElement('div');
     root.id = 'pdfRoot';
@@ -1680,10 +1684,9 @@ var KekkaBunseki = {
       if (!texts.length) return;
       bar.innerHTML = '<div style="font-size:14px;font-weight:bold;color:#000;">' + escapeHtml(texts.join('　')) + '</div>';
     });
-    // グラフは画像としてPDFに貼る。置き場所の箱を、画面のグラフと同じ縦横比で用意する
-    var liveChart = document.getElementById('yearComboChart');
+    // グラフは画像としてPDFに貼る。置き場所の箱(画面と同じ高さ)に、固定幅でグラフを描き直す(drawPdfChart_)
     var chartBox = clone.querySelector('.kekka-pretable .card > div');
-    if (liveChart && chartBox && chartBox.style.height) {
+    if (KekkaBunseki.yearChartSpec && chartBox && chartBox.style.height) {
       chartBox.id = 'pdfChartBox';
       chartBox.innerHTML = '';
     }
@@ -1699,7 +1702,8 @@ var KekkaBunseki = {
 
     var st = document.createElement('style');
     st.id = 'pdfStyle';
-    st.textContent = '#pdfRoot{position:fixed;left:-99999px;top:0;width:' + capW + 'px;background:#fff;color:#222;font-family:HgPdfJP,sans-serif;}' +
+    // text-size-adjust: 携帯・iPadの縦向きで文字が自動拡大され、測った位置とPDFの文字サイズがずれるのを防ぐ
+    st.textContent = '#pdfRoot{position:fixed;left:-99999px;top:0;width:' + capW + 'px;background:#fff;color:#222;font-family:HgPdfJP,sans-serif;-webkit-text-size-adjust:100%;text-size-adjust:100%;}' +
       '#pdfRoot .kekka-split{display:flex;flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:20px;width:' + capW + 'px;}' +
       '#pdfRoot .kekka-col{flex:1;min-width:0;}' +
       '#pdfRoot .kekka-sticky{position:static;background:transparent;}' +
@@ -1714,12 +1718,58 @@ var KekkaBunseki = {
       '#pdfRoot table.record-table th{position:static;}';
     document.head.appendChild(st);
     document.body.appendChild(root);
-    if (chartBox && chartBox.id === 'pdfChartBox') {
-      var box = document.getElementById('pdfChartBox');
-      var lw = liveChart.offsetWidth || 1, lh = liveChart.offsetHeight || 280;
-      box.style.height = Math.round(box.offsetWidth * lh / lw) + 'px';
-    }
+    KekkaBunseki.alignPdfBlocks_(root);
     return { root: root, width: capW };
+  },
+
+  /**
+   * PDF用の表示の中で、左右のグラフ・比率ブロックの下端を揃える(alignPreChartBlocks_ / alignChartHeights の PDF版)。
+   * 複製には、画面(縦に積んだ狭い表示)で付いた min-height・margin-bottom がそのまま入っているので、先に外してから測り直す。
+   */
+  alignPdfBlocks_: function (root) {
+    var blocks = root.querySelectorAll('.kekka-pretable');
+    Array.prototype.forEach.call(blocks, function (b) {
+      b.style.minHeight = '';
+      var c = b.querySelector('.card');
+      if (c) c.style.marginBottom = '';
+    });
+    if (blocks.length < 2) return;
+    var l = blocks[0], r = blocks[1];
+    var lf = l.querySelector('.card'), rf = r.querySelector('.card');
+    if (lf && rf) {
+      var delta = Math.round(lf.getBoundingClientRect().bottom - rf.getBoundingClientRect().bottom);
+      if (delta > 0) rf.style.marginBottom = (12 + delta) + 'px';
+      else if (delta < 0) lf.style.marginBottom = (12 - delta) + 'px';
+    }
+    var lt = l.getBoundingClientRect().top, rt = r.getBoundingClientRect().top;
+    var bottom = Math.max(lt + l.offsetHeight, rt + r.offsetHeight);
+    l.style.minHeight = (bottom - lt) + 'px';
+    r.style.minHeight = (bottom - rt) + 'px';
+  },
+
+  /**
+   * PDF用のグラフ画像。#pdfChartBox(固定幅の表示内)にグラフを描き直して画像にし、箱は空に戻す。
+   * 画面側のグラフは触らない。失敗・時間切れは null(グラフ無しで続行)。
+   */
+  drawPdfChart_: function () {
+    var spec = KekkaBunseki.yearChartSpec;
+    var box = document.getElementById('pdfChartBox');
+    if (!spec || !box) return Promise.resolve(null);
+    return new Promise(function (resolve) {
+      var done = false;
+      var fin = function (uri) { if (done) return; done = true; box.innerHTML = ''; resolve(uri); };
+      try {
+        var chart = new google.visualization[spec.type](box);
+        google.visualization.events.addListener(chart, 'ready', function () {
+          var uri = null;
+          try { uri = chart.getImageURI(); } catch (e) { uri = null; }
+          fin(uri);
+        });
+        google.visualization.events.addListener(chart, 'error', function () { fin(null); });
+        chart.draw(spec.table, spec.options);
+      } catch (e) { fin(null); }
+      setTimeout(function () { fin(null); }, 8000);
+    });
   },
 
   removePdfRoot_: function () {
@@ -1896,8 +1946,6 @@ var KekkaBunseki = {
     var yd = KekkaBunseki.yearData;
     var isProject = (KekkaBunseki.mode === 'project');
     if (!document.querySelector('#view .kekka-split')) { showToast('結果分析の画面を表示してからPDFを作成してください'); return; }
-    var chartUri = null;
-    try { if (KekkaBunseki.yearChart) chartUri = KekkaBunseki.yearChart.getImageURI(); } catch (e) { chartUri = null; }
     var stamp = new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace(/[-:T]/g, '').slice(0, 14);
     var filenamePart = (isProject ? ('工事別_' + (KekkaBunseki.projectSel || '')) : ((yd ? yd.year + '年度' : '') + '')) + '_' + stamp;
     var pdfName = '結果分析_' + filenamePart + '.pdf';
@@ -1906,7 +1954,9 @@ var KekkaBunseki = {
     PdfLibs.load().then(function () {
       var built = KekkaBunseki.buildPdfRoot_();
       if (!built) throw new Error('画面がありません');
-      return KekkaBunseki.renderPdf_(built.root, built.width, chartUri, pdfName).then(function (bytes) {
+      return KekkaBunseki.drawPdfChart_().then(function (chartUri) {
+        return KekkaBunseki.renderPdf_(built.root, built.width, chartUri, pdfName);
+      }).then(function (bytes) {
         KekkaBunseki.removePdfRoot_();
         return bytes;
       }, function (e) { KekkaBunseki.removePdfRoot_(); throw e; });

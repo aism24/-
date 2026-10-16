@@ -346,3 +346,10 @@
 - 効果: アプリを開いた直後から表示し、取得完了でバーを100%にして0.5秒後に閉じる。同時に、8dea570で消えていた `busy()` の定義(未定義でマスタ取得が止まる状態)を復活
 - 注意点: 関数を整理するときは、呼び出しが残っていないか `grep` で確認する(消した後に呼び出しだけ残ると、画面が黙って動かなくなる)
 - 使ったアプリ: shipping-list-link
+
+### PDFを端末によらず固定幅(1280px)で作る(携帯・iPad縦で間延びする不具合、huguai 10/16)
+- 効果: 結果分析のPDFを、PC・iPad縦(820)・携帯(390)で作って文字位置の差が0.00pt。修正前は携帯だけ左列に大きな空白(高さ2571px→4085px)。画面の表示HTMLは修正前後で完全一致
+- 原因: 画面の複製に、縦積みの狭い表示で付いた min-height / margin-bottom(`alignChartHeights` 等)が入っていた。幅を広げても残る。グラフ画像も画面の幅で撮っていた
+- やり方: PDF幅を `PDF_WIDTH=1280` に固定、複製の min-height/margin を外して PDF内で測り直し(`alignPdfBlocks_`)、グラフは `#pdfChartBox` に表・オプションを保存した `yearChartSpec` で描き直して画像化。`text-size-adjust:100%` も付けた
+- 注意点: 画面側のコードは触らない。CDN(gstatic等)に届かない環境では、pdf-lib・フォントはnpmから、Google Chartsは偽物に差し替えてPlaywrightで比較(pdfplumberで文字位置)。iPad実機の確認はユーザー
+- 使ったアプリ: huguai
