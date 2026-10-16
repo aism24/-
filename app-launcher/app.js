@@ -56,10 +56,9 @@ const supportsHover = window.matchMedia('(hover: hover)').matches;
 
 /* ---------------------------------------------------------------------
  * お気に入り(お気に入り)。ブラウザ(localStorage)ごとに保存する。
- * 表示モード: 'mine'=お気に入りだけ / 'all'=すべて。
+ * お気に入りは一覧の上側、それ以外は余白を空けて下側に並べる。
  * --------------------------------------------------------------------- */
 const FAV_KEY = 'appLauncherFavorites_v1';
-const VIEW_KEY = 'appLauncherView_v1';
 
 function favKey(app) { return String(app.id || app.name); }
 
@@ -83,29 +82,6 @@ function toggleFav(app) {
   if (i === -1) list.push(k); else list.splice(i, 1);
   saveFavs(list);
   return i === -1;
-}
-
-// 保存済みの表示モード。未保存なら、お気に入りがあれば'mine'、無ければ'all'。
-let viewMode = (function () {
-  try {
-    const v = localStorage.getItem(VIEW_KEY);
-    if (v === 'mine' || v === 'all') return v;
-  } catch (e) {}
-  return loadFavs().length ? 'mine' : 'all';
-})();
-
-function setViewMode(mode) {
-  viewMode = mode;
-  try { localStorage.setItem(VIEW_KEY, mode); } catch (e) {}
-  updateTabs();
-  applySearch();
-}
-
-function updateTabs() {
-  document.querySelectorAll('.view-tab').forEach(function (b) {
-    b.classList.toggle('on', b.dataset.view === viewMode);
-    b.setAttribute('aria-selected', b.dataset.view === viewMode ? 'true' : 'false');
-  });
 }
 
 // タッチ環境向け: カードDOM要素 -> アプリ情報。タップ時の起動・ログ送信に使う。
@@ -200,7 +176,37 @@ function renderGroups(groups) {
     return;
   }
 
-  groups.forEach(function (group) {
+  const favSet = loadFavs();
+  const split = function (wantFav) {
+    return groups.map(function (g) {
+      return { category: g.category, apps: g.apps.filter(function (app) {
+        return (favSet.indexOf(favKey(app)) !== -1) === wantFav;
+      }) };
+    }).filter(function (g) { return g.apps.length > 0; });
+  };
+  const favGroups = split(true);
+  const restGroups = split(false);
+
+  const addSection = function (cls, title, list) {
+    if (!list.length) return;
+    const sec = document.createElement('div');
+    sec.className = 'section ' + cls;
+    if (title) {
+      const t = document.createElement('div');
+      t.className = 'section-title';
+      t.textContent = title;
+      sec.appendChild(t);
+    }
+    list.forEach(function (group) { sec.appendChild(buildRow(group)); });
+    root.appendChild(sec);
+  };
+  addSection('fav-section', 'お気に入り', favGroups);
+  addSection('rest-section', favGroups.length ? 'すべてのアプリ' : '', restGroups);
+  applySearch();
+}
+
+function buildRow(group) {
+  {
     const row = document.createElement('div');
     row.className = 'category-row';
 
@@ -232,8 +238,8 @@ function renderGroups(groups) {
       fav.addEventListener('click', function (e) {
         e.stopPropagation();
         e.preventDefault();
-        fav.classList.toggle('on', toggleFav(app));
-        applySearch();
+        toggleFav(app);
+        renderGroups(lastGroups);
       });
       card.appendChild(fav);
       cardApps.set(card, app);
@@ -248,9 +254,8 @@ function renderGroups(groups) {
     });
 
     row.appendChild(grid);
-    root.appendChild(row);
-  });
-  applySearch();
+    return row;
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -359,8 +364,7 @@ function applySearch() {
     row.querySelectorAll('.card').forEach(function (card) {
       const app = cardApps.get(card);
       const hay = normalizeText([app.name, app.description, app.initial, category].join(' '));
-      const hit = terms.every(function (t) { return hay.indexOf(t) !== -1; }) &&
-        (viewMode === 'all' || isFav(app));
+      const hit = terms.every(function (t) { return hay.indexOf(t) !== -1; });
       card.classList.toggle('search-hide', !hit);
       if (hit) rowShown++;
     });
@@ -368,13 +372,15 @@ function applySearch() {
     shown += rowShown;
   });
 
-  if ((terms.length || viewMode === 'mine') && shown === 0 && lastGroups.length) {
+  root.querySelectorAll('.section').forEach(function (sec) {
+    sec.classList.toggle('search-hide', !sec.querySelector('.category-row:not(.search-hide)'));
+  });
+
+  if (terms.length && shown === 0 && lastGroups.length) {
     const div = document.createElement('div');
     div.id = 'search-empty';
     div.className = 'empty';
-    div.textContent = (viewMode === 'mine' && !terms.length)
-      ? 'お気に入りはまだありません。「すべて」を開き、各アプリ右上のロゴを押すと、ここに表示されます。'
-      : '該当するアプリがありません。';
+    div.textContent = '該当するアプリがありません。';
     root.appendChild(div);
   }
 }
@@ -449,10 +455,5 @@ function loadGroups() {
       }
     });
 }
-
-document.querySelectorAll('.view-tab').forEach(function (b) {
-  b.addEventListener('click', function () { setViewMode(b.dataset.view); });
-});
-updateTabs();
 
 loadGroups();
