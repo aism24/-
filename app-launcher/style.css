@@ -296,3 +296,49 @@ h2.category {
 .category-row.search-hide {
   display: none;
 }
+
+/* お気に入り(マイアプリ): 会社ロゴのマークを、ON=赤の塗りつぶし / OFF=赤の外枠のみ で切り替える */
+.card .fav {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  z-index: 3;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: #000;
+  cursor: pointer;
+}
+.card .fav svg {
+  width: 22px;
+  height: 25px;
+  overflow: visible;
+  fill: none;
+  stroke: #E74155;
+  stroke-width: 12px;
+  stroke-linejoin: round;
+  transition: transform 0.15s;
+}
+.card .fav:hover svg { transform: scale(1.25); }
+.card .fav.on svg { fill: #E74155; }
+.view-tabs { display: flex; gap: 8px; margin-top: 12px; justify-content: center; }
+.view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border: 1px solid #E74155;
+  border-radius: 999px;
+  background: transparent;
+  color: #E74155;
+  font-size: 15px;
+  cursor: pointer;
+}
+.view-tab.on { background: #E74155; color: #fff; }
+.view-tab .tab-mark { width: 16px; height: 18px; fill: none; stroke: currentColor; stroke-width: 14px; stroke-linejoin: round; overflow: visible; }
+.view-tab.on .tab-mark { fill: currentColor; }
