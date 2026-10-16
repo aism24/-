@@ -1698,6 +1698,11 @@ var KekkaBunseki = {
     requestAnimationFrame(KekkaBunseki.alignChartHeights);
   },
 
+  /** 締め月の暦の年。会計年度の12月締め(前年11/21〜12/20)だけ、年度の前年(例: 2025年度12月 → 2024年) */
+  calendarYear_: function (fiscalYear, month) {
+    return Number(month) === 12 ? Number(fiscalYear) - 1 : Number(fiscalYear);
+  },
+
   renderMonth: function (data) {
     KekkaBunseki.monthData = data;
     document.getElementById('kekkaMonthBody').innerHTML =
@@ -1710,7 +1715,7 @@ var KekkaBunseki = {
       '</div>' +
       KekkaBunseki.ratioCardHtml(data.label, data['柱'], data['梁']) +
       '</div>' +
-      KekkaBunseki.projectTableHtml(data.projectCounts, '年度比率', data.year + '年度' + data.month + '月分　工事別 不具合件数') +
+      KekkaBunseki.projectTableHtml(data.projectCounts, '年度比率', KekkaBunseki.calendarYear_(data.year, data.month) + '年' + data.month + '月分　工事別 不具合件数') +
       KekkaBunseki.contentTableHtml(data.contentCounts, 'month') +
       KekkaBunseki.detailTableHtml(data.details);
 
