@@ -266,6 +266,19 @@ var App = {
     header.classList.toggle('header-home', isHome);
     App.setHeaderAction(null);
     App.setHeaderAction2(null);
+    App.setTodayAction(null);
+  },
+
+  /** ホームボタンの右の「今月に戻す」。年度・月を選ぶ画面だけで表示する */
+  setTodayAction: function (fn) {
+    var btn = document.getElementById('todayBtn');
+    if (fn) {
+      btn.classList.remove('hidden');
+      btn.onclick = fn;
+    } else {
+      btn.classList.add('hidden');
+      btn.onclick = null;
+    }
   },
 
   setHeaderAction: function (label, fn) {
@@ -750,6 +763,7 @@ var Records = {
   show: function () {
     App.currentBack = App.goHome;
     Records.touched = false;
+    App.setTodayAction(Records.goToday);
     var nav = App.navId;
     document.getElementById('view').innerHTML = '<div id="recordsNotice"></div><div id="recordsFilterBar" class="filter-bar"></div><div id="recordsTableArea"></div>';
     var cached = Store.get('rb');
@@ -775,12 +789,33 @@ var Records = {
     if (!document.getElementById('recordsTableArea')) return;
     Records.summary = boot.summary;
     var years = Object.keys(boot.summary.yearCounts).sort(function (a, b) { return b - a; });
-    Records.year = (boot.year !== null) ? String(boot.year) : null;
-    Records.month = '';
+    // 開いたときは今月(今の締め月)の状態。今の会計年度のデータが無いときは、従来どおり最新の年度の全月
+    var now = KekkaBunseki.nowClosing_();
+    var thisYear = (years.indexOf(String(now.fy)) !== -1) ? String(now.fy) : null;
+    var bootYear = (boot.year !== null) ? String(boot.year) : null;
+    Records.year = thisYear || bootYear;
+    Records.month = thisYear ? String(now.cm) : '';
     Records.renderFilterBar(years);
     document.getElementById('recordsNotice').innerHTML = boot.undated
       ? '<div class="count-badge" style="color:#ffb300;margin-bottom:8px;">⚠ 発生日が未入力の記録が ' + boot.undated + ' 件あります（年度・月の一覧と結果分析の対象外）</div>' : '';
-    renderRecordTable(boot.rows, document.getElementById('recordsTableArea'), boot.total, Records.refresh);
+    if (Records.month === '' && Records.year === bootYear) {
+      renderRecordTable(boot.rows, document.getElementById('recordsTableArea'), boot.total, Records.refresh);
+    } else {
+      Records.load(true);
+    }
+  },
+
+  /** 「今月に戻す」: 今の会計年度・締め月に絞り込む(データが無い年度のときは最新の年度) */
+  goToday: function () {
+    if (!Records.summary) return;
+    var years = Object.keys(Records.summary.yearCounts).sort(function (a, b) { return b - a; });
+    if (!years.length) return;
+    var now = KekkaBunseki.nowClosing_();
+    Records.touched = true;
+    Records.year = (years.indexOf(String(now.fy)) !== -1) ? String(now.fy) : years[0];
+    Records.month = String(now.cm);
+    Records.renderFilterBar(years);
+    Records.load(true);
   },
 
   CLOSING_PERIODS: {
@@ -828,9 +863,20 @@ var Records = {
     Records.load();
   },
 
-  load: function () {
+  loadSeq: 0,
+
+  /** withLoading=true: 読み込み中の表示を出す。連続で呼んだときは、最後の呼び出しの結果だけ表示する */
+  load: function (withLoading) {
+    var seq = ++Records.loadSeq;
+    if (withLoading === true) showLoading('読み込み中...');
     return callServer('getRecords', Records.year, Records.month).then(function (res) {
-      renderRecordTable(res.rows, document.getElementById('recordsTableArea'), res.total, Records.refresh);
+      if (withLoading === true) hideLoading();
+      var area = document.getElementById('recordsTableArea');
+      if (seq !== Records.loadSeq || !area) return;
+      renderRecordTable(res.rows, area, res.total, Records.refresh);
+    }).catch(function (err) {
+      if (withLoading === true) hideLoading();
+      showToast('取得失敗: ' + (err.message || err));
     });
   },
 
@@ -1011,6 +1057,7 @@ var KekkaBunseki = {
     KekkaBunseki.touched = false;
     App.setHeaderAction('PDFダウンロード', KekkaBunseki.downloadPdf);
     App.setHeaderAction2('工事別分析', KekkaBunseki.toggleMode, 'header-action-btn-yellow');
+    App.setTodayAction(KekkaBunseki.goToday);
     var nav = App.navId;
     var cached = Store.get('kb');
     var fresh = App.fetchBoot('kb', 'getKekkaBunsekiBootstrap');
@@ -1052,6 +1099,21 @@ var KekkaBunseki = {
     KekkaBunseki.prefetchNeighbors_();
   },
 
+  /** 「今月に戻す」: 年度(左)・月(右)とも、今の会計年度・締め月にする(データが無い年度のときは最新の年度) */
+  goToday: function () {
+    var years = KekkaBunseki.years || [];
+    if (!years.length) return;
+    var now = KekkaBunseki.nowClosing_();
+    var fy = (years.map(String).indexOf(String(now.fy)) !== -1) ? String(now.fy) : String(years[0]);
+    KekkaBunseki.touched = true;
+    KekkaBunseki.yearSel = fy;
+    KekkaBunseki.monthYearSel = fy;
+    KekkaBunseki.monthSel = now.cm;
+    KekkaBunseki.renderYearFilterBar();
+    KekkaBunseki.renderMonthFilterBar();
+    KekkaBunseki.loadYearAndMonth_();
+  },
+
   /** PDFを押す前に、ライブラリとフォントを裏で読み込んでおく(2回目以降はブラウザのキャッシュから) */
   preloadPdfLibs_: function () {
     setTimeout(function () { PdfLibs.load().catch(function () {}); }, 3000);
@@ -1064,6 +1126,7 @@ var KekkaBunseki = {
         KekkaBunseki.mode = 'project';
         KekkaBunseki.ym = { yearData: KekkaBunseki.yearData, monthData: KekkaBunseki.monthData };
         App.setHeaderAction2('年度/月別に戻る', KekkaBunseki.toggleMode);
+        App.setTodayAction(null);
         KekkaBunseki.renderShell();
         if (!KekkaBunseki.projectSel && App.master.properties.length) {
           KekkaBunseki.projectSel = App.master.properties[0];
@@ -1081,6 +1144,7 @@ var KekkaBunseki = {
         KekkaBunseki.monthData = KekkaBunseki.ym.monthData;
       }
       App.setHeaderAction2('工事別分析', KekkaBunseki.toggleMode, 'header-action-btn-yellow');
+      App.setTodayAction(KekkaBunseki.goToday);
       KekkaBunseki.renderShell();
       KekkaBunseki.renderYear(KekkaBunseki.yearData);
       KekkaBunseki.renderMonth(KekkaBunseki.monthData);
