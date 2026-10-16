@@ -297,7 +297,7 @@ h2.category {
   display: none;
 }
 
-/* お気に入り(マイアプリ): 会社ロゴのマークを、ON=赤の塗りつぶし / OFF=赤の外枠のみ で切り替える */
+/* お気に入り(マイアプリ): 会社ロゴのマークを、ON=赤の塗りつぶし / OFF=白の外枠のみ で切り替える */
 .card .fav {
   position: absolute;
   top: -12px;
@@ -319,13 +319,13 @@ h2.category {
   height: 27px;
   overflow: visible;
   fill: none;
-  stroke: #E74155;
+  stroke: #fff;
   stroke-width: 8px;
   stroke-linejoin: round;
   transition: transform 0.15s;
 }
 .card .fav:hover svg { transform: scale(1.25); }
-.card .fav.on svg { fill: #E74155; }
+.card .fav.on svg { fill: #E74155; stroke: #E74155; }
 /* お気に入りの区画と、それ以外の区画。間は十分な余白と区切り線で分ける */
 .section { width: 100%; }
 .section-title { color: #E74155; font-size: 15px; font-weight: bold; margin: 0 0 8px; }
