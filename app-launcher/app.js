@@ -55,7 +55,7 @@ function categoryLabelHtml(text) {
 const supportsHover = window.matchMedia('(hover: hover)').matches;
 
 /* ---------------------------------------------------------------------
- * お気に入り(マイアプリ)。ブラウザ(localStorage)ごとに保存する。
+ * お気に入り(お気に入り)。ブラウザ(localStorage)ごとに保存する。
  * 表示モード: 'mine'=お気に入りだけ / 'all'=すべて。
  * --------------------------------------------------------------------- */
 const FAV_KEY = 'appLauncherFavorites_v1';
@@ -227,7 +227,7 @@ function renderGroups(groups) {
       const fav = document.createElement('button');
       fav.type = 'button';
       fav.className = 'fav' + (isFav(app) ? ' on' : '');
-      fav.setAttribute('aria-label', 'マイアプリに追加/解除');
+      fav.setAttribute('aria-label', 'お気に入りに追加/解除');
       fav.innerHTML = '<svg viewBox="36 40 392 452" aria-hidden="true"><use href="#fav-mark"/></svg>';
       fav.addEventListener('click', function (e) {
         e.stopPropagation();
@@ -373,7 +373,7 @@ function applySearch() {
     div.id = 'search-empty';
     div.className = 'empty';
     div.textContent = (viewMode === 'mine' && !terms.length)
-      ? 'マイアプリはまだありません。「すべて」を開き、各アプリ右上のロゴを押すと、ここに表示されます。'
+      ? 'お気に入りはまだありません。「すべて」を開き、各アプリ右上のロゴを押すと、ここに表示されます。'
       : '該当するアプリがありません。';
     root.appendChild(div);
   }
