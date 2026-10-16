@@ -372,3 +372,15 @@
 - 原因: Project Settingsに `git diff HEAD^ HEAD --quiet -- ./<フォルダ>` が入っていた(Root Directory内で実行されるため常にスキップ)。app-launcherと同じ罠
 - 注意点: 新しいプロジェクトの初回デプロイ前に、Ignored Build Stepが「Automatic」か聞く。プロジェクト設定はClaudeは変えず、ユーザーに画面の場所を示して変更してもらう
 - 使ったアプリ: jissun-open
+
+### 一覧アプリに「お気に入り(自分がよく使うものだけ)」を付ける(app-launcher 10/16)
+- 効果: 端末ごとのお気に入りを、サーバー・GAS変更なし(無料)で追加。上=お気に入り・下=すべて(余白+区切り線)の2区画。ロゴを押すと区画間を移動、リロード後も保持(Playwrightで確認)
+- やり方: 会社ロゴの赤い部分を `<symbol>` にして `<use>` で再利用、ON=赤塗・OFF=白の外枠(CSSのfill/strokeのみ)。localStorage(`appLauncherFavorites_v1`)にアプリIDを保存し、`renderGroups()` で2区画に分けて再描画
+- 注意点: 外枠だけのロゴは小さいと潰れる(30px・線8px程度)。`vector-effect:non-scaling-stroke` は `<use>` で線が消える。ホバーの詳細パネルは `pointer-events:none` なので、ボタンはパネルの外・z-indexを上に。背景を黒にするとボタン文字が隠れる→透明。タッチの2段階タップ処理は `.fav` を先頭で除外
+- 使ったアプリ: app-launcher
+
+### 見た目の指示は、確認用URLを毎回出して1つずつ調整する(app-launcher 10/16)
+- 効果: ロゴの大きさ(38→23→30px)、色(外枠 赤→白)、文言、切替タブ廃止まで、スクリーンショットの確認で5回の往復で確定。60%は小さすぎ、80%が採用
+- やり方: 1指示=1PR(マージ)。画面をPlaywrightで撮って自分でも確認してから、コミット指定の確認用URL(raw.githack)を添える
+- 注意点: 「切替タブ」のような前の指示に依存する部品は、次の指示(上下に並べる)で不要になる。残すか廃止かを報告に書き、ユーザーが選べるようにする
+- 使ったアプリ: app-launcher

@@ -3,6 +3,20 @@
 「アプリ一覧」Webアプリ（GASコンテナーバウンド、スプレッドシート「アプリ一覧Launcher」に紐づく）を、
 **フロントエンド（GitHub Pages）** と **バックエンド（GAS API）** に分離した構成です。
 
+## 現在の機能(2026-10-16時点)
+
+本体はVercel版(`index.html`・`app.js`・`style.css`)。本番: https://app-launcher-ashy.vercel.app/
+(下の「GitHub Pages」の説明は初期構成の記録で、現在の配信先はVercel。GAS側は変更不要。)
+
+- **一覧**: 分類ごとのカード一覧。ホバー(PC)/2段階タップ(タッチ)で名前・説明を展開。クリックで起動し、「記録」シートへログ追記。
+- **検索**: 名前・説明・アイコン文字・分類名で絞り込み(全角半角・大小文字を区別しない、スペース区切りはAND)。検索履歴(最大10件)はlocalStorage(`appLauncherSearchHistory_v1`)。
+- **お気に入り**: 各ボタン右上の会社ロゴをオン(赤塗)/オフ(白の外枠)。上の区画に「お気に入り」、余白と区切り線の下に「すべてのアプリ」を表示。
+  保存はlocalStorage(`appLauncherFavorites_v1`、アプリID=情報シートA列の配列)。ブラウザ・端末ごとに別々で、サーバーには保存しない。
+  お気に入りが0件でも、見出しと「(右上の会社ロゴをオンオフすると追加できます)」の説明を常に表示。
+- **一覧のキャッシュ**: localStorage(`appLauncherGroupsCache_v1`)に前回の一覧を保存し、先に表示してから裏で更新。
+- `index.html` の `?v=`(style.css・app.js)は、変更のたびに上げる。
+- `vercel.json` の `git.deploymentEnabled=false` でpush・マージでは自動デプロイしない。本番反映は「デプロイして」の指示時のみ。
+
 ## 既存アプリとの関係(最重要)
 
 **既存のGAS Webアプリ（`doGet`、`Index.html`のテンプレートレンダリング方式）には一切変更を
