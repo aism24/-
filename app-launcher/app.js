@@ -54,6 +54,60 @@ function categoryLabelHtml(text) {
 // 確認する間がない、また別カードへの切り替えもしにくい問題への対応)。
 const supportsHover = window.matchMedia('(hover: hover)').matches;
 
+/* ---------------------------------------------------------------------
+ * お気に入り(マイアプリ)。ブラウザ(localStorage)ごとに保存する。
+ * 表示モード: 'mine'=お気に入りだけ / 'all'=すべて。
+ * --------------------------------------------------------------------- */
+const FAV_KEY = 'appLauncherFavorites_v1';
+const VIEW_KEY = 'appLauncherView_v1';
+
+function favKey(app) { return String(app.id || app.name); }
+
+function loadFavs() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function saveFavs(list) {
+  try { localStorage.setItem(FAV_KEY, JSON.stringify(list)); } catch (e) {}
+}
+
+function isFav(app) { return loadFavs().indexOf(favKey(app)) !== -1; }
+
+function toggleFav(app) {
+  const list = loadFavs();
+  const k = favKey(app);
+  const i = list.indexOf(k);
+  if (i === -1) list.push(k); else list.splice(i, 1);
+  saveFavs(list);
+  return i === -1;
+}
+
+// 保存済みの表示モード。未保存なら、お気に入りがあれば'mine'、無ければ'all'。
+let viewMode = (function () {
+  try {
+    const v = localStorage.getItem(VIEW_KEY);
+    if (v === 'mine' || v === 'all') return v;
+  } catch (e) {}
+  return loadFavs().length ? 'mine' : 'all';
+})();
+
+function setViewMode(mode) {
+  viewMode = mode;
+  try { localStorage.setItem(VIEW_KEY, mode); } catch (e) {}
+  updateTabs();
+  applySearch();
+}
+
+function updateTabs() {
+  document.querySelectorAll('.view-tab').forEach(function (b) {
+    b.classList.toggle('on', b.dataset.view === viewMode);
+    b.setAttribute('aria-selected', b.dataset.view === viewMode ? 'true' : 'false');
+  });
+}
+
 // タッチ環境向け: カードDOM要素 -> アプリ情報。タップ時の起動・ログ送信に使う。
 const cardApps = new WeakMap();
 
@@ -93,6 +147,7 @@ if (!supportsHover) {
   // キャプチャフェーズで先取りし、通常のクリック伝播(カード自身のリスナーや
   // 外側クリックでの解除)より先に判定・処理する。
   document.addEventListener('click', function (e) {
+    if (e.target.closest('.fav')) return; // お気に入りボタンは専用の処理に任せる
     const icons = document.querySelectorAll('.card > .icon');
     let hitCard = null;
     for (let i = 0; i < icons.length; i++) {
@@ -169,6 +224,18 @@ function renderGroups(groups) {
           '<div class="name">' + escapeHtml(app.name) + '</div>' +
           (app.description ? '<div class="desc">' + escapeHtml(app.description) + '</div>' : '') +
         '</div>';
+      const fav = document.createElement('button');
+      fav.type = 'button';
+      fav.className = 'fav' + (isFav(app) ? ' on' : '');
+      fav.setAttribute('aria-label', 'マイアプリに追加/解除');
+      fav.innerHTML = '<svg viewBox="36 40 392 452" aria-hidden="true"><use href="#fav-mark"/></svg>';
+      fav.addEventListener('click', function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        fav.classList.toggle('on', toggleFav(app));
+        applySearch();
+      });
+      card.appendChild(fav);
       cardApps.set(card, app);
       if (supportsHover) {
         // マウス環境: ホバーで詳細が見えるので、クリックはそのまま即起動でよい
@@ -292,7 +359,8 @@ function applySearch() {
     row.querySelectorAll('.card').forEach(function (card) {
       const app = cardApps.get(card);
       const hay = normalizeText([app.name, app.description, app.initial, category].join(' '));
-      const hit = terms.every(function (t) { return hay.indexOf(t) !== -1; });
+      const hit = terms.every(function (t) { return hay.indexOf(t) !== -1; }) &&
+        (viewMode === 'all' || isFav(app));
       card.classList.toggle('search-hide', !hit);
       if (hit) rowShown++;
     });
@@ -300,11 +368,13 @@ function applySearch() {
     shown += rowShown;
   });
 
-  if (terms.length && shown === 0 && lastGroups.length) {
+  if ((terms.length || viewMode === 'mine') && shown === 0 && lastGroups.length) {
     const div = document.createElement('div');
     div.id = 'search-empty';
     div.className = 'empty';
-    div.textContent = '該当するアプリがありません。';
+    div.textContent = (viewMode === 'mine' && !terms.length)
+      ? 'マイアプリはまだありません。「すべて」を開き、各アプリ右上のロゴを押すと、ここに表示されます。'
+      : '該当するアプリがありません。';
     root.appendChild(div);
   }
 }
@@ -379,5 +449,10 @@ function loadGroups() {
       }
     });
 }
+
+document.querySelectorAll('.view-tab').forEach(function (b) {
+  b.addEventListener('click', function () { setViewMode(b.dataset.view); });
+});
+updateTabs();
 
 loadGroups();
