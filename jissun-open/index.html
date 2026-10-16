@@ -40,5 +40,18 @@
       社内ネットワークに接続され、jissun:// が実寸法師に関連付けられた端末でのみ起動します。
     </p>
   </div>
+  <!-- 利用記録: ページが開かれたら日時をGAS(スプレッドシート)へ送る。jissun://への遷移は
+       OSのハンドラーへ引き渡されるだけでこのページは残るため、送信は途中で切れない。
+       GAS_URLが空、または送信に失敗しても、実寸法師の起動には影響しない。 -->
+  <script>
+    (function () {
+      var GAS_URL = '';
+      if (!GAS_URL) return;
+      try {
+        fetch(GAS_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          keepalive: true, body: '{"action":"logOpen"}' }).catch(function () {});
+      } catch (e) { /* 記録の失敗は無視 */ }
+    })();
+  </script>
 </body>
 </html>
