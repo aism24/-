@@ -200,7 +200,7 @@ function renderGroups(groups) {
     list.forEach(function (group) { sec.appendChild(buildRow(group)); });
     root.appendChild(sec);
   };
-  addSection('fav-section', 'お気に入り', favGroups);
+  addSection('fav-section', 'お気に入り（右上の会社ロゴをオンオフすると追加できます）', favGroups);
   addSection('rest-section', favGroups.length ? 'すべてのアプリ' : '', restGroups);
   applySearch();
 }

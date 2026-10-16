@@ -328,7 +328,7 @@ h2.category {
 .card .fav.on svg { fill: #E74155; stroke: #E74155; }
 /* お気に入りの区画と、それ以外の区画。間は十分な余白と区切り線で分ける */
 .section { width: 100%; }
-.section-title { color: #E74155; font-size: 15px; font-weight: bold; margin: 0 0 8px; }
+.section-title { color: #fff; font-size: 15px; font-weight: bold; margin: 0 0 8px; }
 .rest-section { margin-top: 72px; padding-top: 28px; border-top: 2px solid #E74155; }
 .rest-section .section-title { color: #aaa; }
 .section.search-hide { display: none; }
