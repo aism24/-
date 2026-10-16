@@ -300,11 +300,11 @@ h2.category {
 /* お気に入り(マイアプリ): 会社ロゴのマークを、ON=赤の塗りつぶし / OFF=赤の外枠のみ で切り替える */
 .card .fav {
   position: absolute;
-  top: -10px;
-  right: -10px;
+  top: -12px;
+  right: -12px;
   z-index: 3;
-  width: 23px;
-  height: 23px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   display: flex;
   align-items: center;
@@ -315,12 +315,12 @@ h2.category {
   cursor: pointer;
 }
 .card .fav svg {
-  width: 18px;
-  height: 20px;
+  width: 24px;
+  height: 27px;
   overflow: visible;
   fill: none;
   stroke: #E74155;
-  stroke-width: 10px;
+  stroke-width: 8px;
   stroke-linejoin: round;
   transition: transform 0.15s;
 }
