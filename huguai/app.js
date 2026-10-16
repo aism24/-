@@ -789,13 +789,15 @@ var Records = {
     9: '8/21〜9/20', 10: '9/21〜10/20', 11: '10/21〜11/20（決算）', 12: '11/21〜12/20'
   },
 
-  /** 「m月20日締め（期間）(件数)」の選択肢(1〜12月) */
+  /** 会計年度の並び順(12月締め=前年の11/21〜12/20が最初、11月締め=決算が最後) */
+  MONTH_ORDER: [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+
+  /** 「m月20日締め（期間）(件数)」の選択肢(会計年度の順: 12月→1月→…→11月) */
   monthOptionsHtml_: function (summary, year, selected) {
-    var items = [];
-    for (var m = 1; m <= 12; m++) {
+    var items = Records.MONTH_ORDER.map(function (m) {
       var cnt = summary.yearMonthCounts[year + '-' + m] || 0;
-      items.push({ value: m, label: m + '月20日締め（' + Records.CLOSING_PERIODS[m] + '）(' + cnt + '件)' });
-    }
+      return { value: m, label: m + '月20日締め（' + Records.CLOSING_PERIODS[m] + '）(' + cnt + '件)' };
+    });
     return optionsHtml(items, selected);
   },
 
@@ -1455,7 +1457,7 @@ var KekkaBunseki = {
     return { fy: cm === 12 ? cy + 1 : cy, cm: cm };
   },
 
-  MONTH_ORDER_: [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  MONTH_ORDER_: Records.MONTH_ORDER,
 
   /** 年度+締め月を、時系列の通し番号にする(会計年度は12月締めから始まる) */
   monthIndex_: function (fy, cm) { return fy * 12 + KekkaBunseki.MONTH_ORDER_.indexOf(cm); },
