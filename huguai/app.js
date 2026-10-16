@@ -1500,9 +1500,10 @@ var KekkaBunseki = {
     if (String(KekkaBunseki.yearSel) !== String(t.fy)) {
       KekkaBunseki.yearSel = String(t.fy);
       KekkaBunseki.renderYearFilterBar();
-      KekkaBunseki.loadYear();
+      KekkaBunseki.loadYearAndMonth_();
+    } else {
+      KekkaBunseki.loadMonth();
     }
-    KekkaBunseki.loadMonth();
   },
 
   /** 月の集計を取得する。取得済み・取得中(2分以内)のものは使い回す */
@@ -1537,8 +1538,8 @@ var KekkaBunseki = {
       KekkaBunseki.monthSel = 1;
       KekkaBunseki.renderMonthFilterBar();
     }
-    KekkaBunseki.loadYear();
-    if (changedMonthSide) KekkaBunseki.loadMonth();
+    if (changedMonthSide) KekkaBunseki.loadYearAndMonth_();
+    else KekkaBunseki.loadYear();
   },
 
   onMonthYearSelChange: function (year) {
@@ -1550,9 +1551,10 @@ var KekkaBunseki = {
     if (changedYearSide) {
       KekkaBunseki.yearSel = year;
       KekkaBunseki.renderYearFilterBar();
-      KekkaBunseki.loadYear();
+      KekkaBunseki.loadYearAndMonth_();
+    } else {
+      KekkaBunseki.loadMonth();
     }
-    KekkaBunseki.loadMonth();
   },
 
   onMonthSelChange: function (month) {
@@ -1561,27 +1563,34 @@ var KekkaBunseki = {
     KekkaBunseki.loadMonth();
   },
 
-  loadYear: function () {
-    showLoading('集計中...');
+  /** quiet=true: 読み込み中の表示は呼び出し側が出し入れする(年度連動で左右を同時に読むとき) */
+  loadYear: function (quiet) {
+    if (!quiet) showLoading('集計中...');
     return callServer('getKekkaBunsekiYear', KekkaBunseki.yearSel).then(function (data) {
       return GoogleChartsReady.then(function () {
-        hideLoading();
+        if (!quiet) hideLoading();
         KekkaBunseki.renderYear(data);
         KekkaBunseki.syncWeights_(data, data.weightReady, data.weightStale);
       });
     }).catch(function (err) {
-      hideLoading();
+      if (!quiet) hideLoading();
       showToast('取得失敗: ' + (err.message || err));
     });
   },
 
-  loadMonth: function () {
+  /** 年度連動で左右を同時に読み込む。両方が終わるまで読み込み中の表示を出し続ける */
+  loadYearAndMonth_: function () {
+    showLoading('集計中...');
+    return Promise.all([KekkaBunseki.loadYear(true), KekkaBunseki.loadMonth(true)]).then(hideLoading, hideLoading);
+  },
+
+  loadMonth: function (quiet) {
     var year = KekkaBunseki.monthYearSel, month = KekkaBunseki.monthSel;
     var e = KekkaBunseki.monthFetch_(year, month);
-    if (!e.done) showLoading('集計中...');
+    if (!quiet && !e.done) showLoading('集計中...');
     return e.p.then(function (data) {
       return GoogleChartsReady.then(function () {
-        hideLoading();
+        if (!quiet) hideLoading();
         // 取得中に別の月へ移動していたら、この結果は表示しない
         if (String(year) !== String(KekkaBunseki.monthYearSel) || Number(month) !== Number(KekkaBunseki.monthSel)) return;
         KekkaBunseki.renderMonth(data);
@@ -1589,7 +1598,7 @@ var KekkaBunseki = {
         KekkaBunseki.prefetchNeighbors_();
       });
     }).catch(function (err) {
-      hideLoading();
+      if (!quiet) hideLoading();
       showToast('取得失敗: ' + (err.message || err));
     });
   },
