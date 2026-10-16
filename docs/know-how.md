@@ -353,3 +353,10 @@
 - やり方: PDF幅を `PDF_WIDTH=1280` に固定、複製の min-height/margin を外して PDF内で測り直し(`alignPdfBlocks_`)、グラフは `#pdfChartBox` に表・オプションを保存した `yearChartSpec` で描き直して画像化。`text-size-adjust:100%` も付けた
 - 注意点: 画面側のコードは触らない。CDN(gstatic等)に届かない環境では、pdf-lib・フォントはnpmから、Google Chartsは偽物に差し替えてPlaywrightで比較(pdfplumberで文字位置)。iPad実機の確認はユーザー
 - 使ったアプリ: huguai
+
+### 2つの取得を同時に走らせるときは、読み込み中の表示を両方が終わるまで保つ(年度連動、huguai 10/16)
+- 効果: 年度(左)の取得0.05秒・月(右)の取得2.5秒の疑似環境で、修正前は0.8秒後に表示が消え右カードが古い 2026/10 のまま→修正後は完了まで表示が残り 2024/1 に更新
+- 原因: 左右が別々に showLoading/hideLoading を呼ぶため、先に終わった側が表示を消す。本番(GASの月は数秒)で「カードが古いまま」に見えた
+- やり方: 同時に読むときは `quiet` 付きで個別の表示を止め、`Promise.all` の完了で1回だけ hideLoading(`loadYearAndMonth_`)
+- 注意点: 疑似環境の再現では、取得の長さの差(速い側・遅い側)を必ず付ける。差が無いと再現しない(最初の再現テストでは直って見えた)
+- 使ったアプリ: huguai
