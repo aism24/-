@@ -332,3 +332,5 @@ h2.category {
 .rest-section { margin-top: 72px; padding-top: 28px; border-top: 2px solid #E74155; }
 .rest-section .section-title { color: #aaa; }
 .section.search-hide { display: none; }
+.card .fav.pinned { cursor: default; }
+.card .fav.pinned:hover svg { transform: none; }

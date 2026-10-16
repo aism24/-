@@ -12,6 +12,7 @@
 - **検索**: 名前・説明・アイコン文字・分類名で絞り込み(全角半角・大小文字を区別しない、スペース区切りはAND)。検索履歴(最大10件)はlocalStorage(`appLauncherSearchHistory_v1`)。
 - **お気に入り**: 各ボタン右上の会社ロゴをオン(赤塗)/オフ(白の外枠)。上の区画に「お気に入り」、余白と区切り線の下に「すべてのアプリ」を表示。
   保存はlocalStorage(`appLauncherFavorites_v1`、アプリID=情報シートA列の配列)。ブラウザ・端末ごとに別々で、サーバーには保存しない。
+  **固定のお気に入り**: `app.js` の `PINNED_HOSTS`(URLのホスト名)に入れたアプリは、常にお気に入り(オンオフ不可。localStorageには保存しない)。現在は `masamiz-production-management.vercel.app`。
   お気に入りが0件でも、見出しと「(右上の会社ロゴをオンオフすると追加できます)」の説明を常に表示。
 - **一覧のキャッシュ**: localStorage(`appLauncherGroupsCache_v1`)に前回の一覧を保存し、先に表示してから裏で更新。
 - `index.html` の `?v=`(style.css・app.js)は、変更のたびに上げる。

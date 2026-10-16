@@ -73,7 +73,16 @@ function saveFavs(list) {
   try { localStorage.setItem(FAV_KEY, JSON.stringify(list)); } catch (e) {}
 }
 
-function isFav(app) { return loadFavs().indexOf(favKey(app)) !== -1; }
+// 常にお気に入りに固定するアプリ(URLのホスト名で判定)。オンオフはできない。
+const PINNED_HOSTS = ['masamiz-production-management.vercel.app'];
+
+function isPinned(app) {
+  try {
+    return PINNED_HOSTS.indexOf(new URL(app.url).hostname.toLowerCase()) !== -1;
+  } catch (e) { return false; }
+}
+
+function isFav(app) { return isPinned(app) || loadFavs().indexOf(favKey(app)) !== -1; }
 
 function toggleFav(app) {
   const list = loadFavs();
@@ -180,7 +189,7 @@ function renderGroups(groups) {
   const split = function (wantFav) {
     return groups.map(function (g) {
       return { category: g.category, apps: g.apps.filter(function (app) {
-        return (favSet.indexOf(favKey(app)) !== -1) === wantFav;
+        return (isPinned(app) || favSet.indexOf(favKey(app)) !== -1) === wantFav;
       }) };
     }).filter(function (g) { return g.apps.length > 0; });
   };
@@ -231,12 +240,15 @@ function buildRow(group) {
         '</div>';
       const fav = document.createElement('button');
       fav.type = 'button';
-      fav.className = 'fav' + (isFav(app) ? ' on' : '');
-      fav.setAttribute('aria-label', 'お気に入りに追加/解除');
+      const pinned = isPinned(app);
+      fav.className = 'fav' + (isFav(app) ? ' on' : '') + (pinned ? ' pinned' : '');
+      fav.setAttribute('aria-label', pinned ? '常にお気に入り(固定。解除できません)' : 'お気に入りに追加/解除');
+      if (pinned) fav.title = '常にお気に入り(固定)';
       fav.innerHTML = '<svg viewBox="36 40 392 452" aria-hidden="true"><use href="#fav-mark"/></svg>';
       fav.addEventListener('click', function (e) {
         e.stopPropagation();
         e.preventDefault();
+        if (pinned) return; // 固定のアプリはオンオフ不可
         toggleFav(app);
         renderGroups(lastGroups);
       });
