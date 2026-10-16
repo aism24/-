@@ -360,3 +360,15 @@
 - やり方: 同時に読むときは `quiet` 付きで個別の表示を止め、`Promise.all` の完了で1回だけ hideLoading(`loadYearAndMonth_`)
 - 注意点: 疑似環境の再現では、取得の長さの差(速い側・遅い側)を必ず付ける。差が無いと再現しない(最初の再現テストでは直って見えた)
 - 使ったアプリ: huguai
+
+### 静的ページが「開かれた日時」を記録する(GAS+no-cors POST、jissun-open 10/16)
+- 効果: 開くたびにスプレッドシートのA2へ日時を追記(常にA2が最新)。モックのシートで3回記録→新しい順・見出し保持を確認。本番で記録されることをユーザーが確認
+- やり方: GAS側は `insertRowBefore(2)` してA2に日時。ページ側は `fetch(GAS_URL,{method:'POST',mode:'no-cors',keepalive:true})`。`jissun://` への遷移はページを残すので、遅延を入れず並行して送れる
+- 注意点: GAS_URLが空なら何も送らない作りにして、URL確定前にマージできるようにする
+- 使ったアプリ: jissun-open
+
+### 新規Vercelプロジェクトの手動デプロイがCANCELED(Ignored Build Step、jissun-open 10/16)
+- 効果: Behaviorを「Automatic」にして再デプロイ(forceNew=1)でREADY。1回目はCANCELED(errorLink: ignored-build-step)
+- 原因: Project Settingsに `git diff HEAD^ HEAD --quiet -- ./<フォルダ>` が入っていた(Root Directory内で実行されるため常にスキップ)。app-launcherと同じ罠
+- 注意点: 新しいプロジェクトの初回デプロイ前に、Ignored Build Stepが「Automatic」か聞く。プロジェクト設定はClaudeは変えず、ユーザーに画面の場所を示して変更してもらう
+- 使ったアプリ: jissun-open
