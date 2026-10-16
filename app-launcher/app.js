@@ -188,7 +188,6 @@ function renderGroups(groups) {
   const restGroups = split(false);
 
   const addSection = function (cls, title, list) {
-    if (!list.length) return;
     const sec = document.createElement('div');
     sec.className = 'section ' + cls;
     if (title) {
@@ -201,7 +200,7 @@ function renderGroups(groups) {
     root.appendChild(sec);
   };
   addSection('fav-section', 'お気に入り（右上の会社ロゴをオンオフすると追加できます）', favGroups);
-  addSection('rest-section', favGroups.length ? 'すべてのアプリ' : '', restGroups);
+  addSection('rest-section', 'すべてのアプリ', restGroups);
   applySearch();
 }
 
@@ -373,7 +372,10 @@ function applySearch() {
   });
 
   root.querySelectorAll('.section').forEach(function (sec) {
-    sec.classList.toggle('search-hide', !sec.querySelector('.category-row:not(.search-hide)'));
+    // 行がある区画は、表示中の行が無ければ隠す。行が無い区画(お気に入り0件の見出し)は、検索中だけ隠す。
+    const hasRows = !!sec.querySelector('.category-row');
+    const anyShown = !!sec.querySelector('.category-row:not(.search-hide)');
+    sec.classList.toggle('search-hide', hasRows ? !anyShown : terms.length > 0);
   });
 
   if (terms.length && shown === 0 && lastGroups.length) {
