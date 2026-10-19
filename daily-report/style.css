@@ -167,6 +167,12 @@ tr.r4DeptHead .r4NameCol{ background:#f5f7fa; }
 tr.r4SubtotalOffice .r4NameCol{ background:#bfe6c9; }
 tr.r4SubtotalFactory .r4NameCol{ background:#bfe0f7; }
 tr.r4LocTotal .r4NameCol{ background:#f7f9fc; }
+
+/* 拠点見出し行の色(固定。休日のセルも同じ色): 本社=青・夢前=オレンジ・鳥取=緑・総務建築=紫 */
+tr.r4LocHonsha td, tr.r4LocHonsha td.r4HolidayCol, tr.r4LocHonsha .r4NameCol{ background:#2a6fd6; color:#fff; }
+tr.r4LocYumesaki td, tr.r4LocYumesaki td.r4HolidayCol, tr.r4LocYumesaki .r4NameCol{ background:#f08c00; color:#fff; }
+tr.r4LocTottori td, tr.r4LocTottori td.r4HolidayCol, tr.r4LocTottori .r4NameCol{ background:#2f9e44; color:#fff; }
+tr.r4LocKenchiku td, tr.r4LocKenchiku td.r4HolidayCol, tr.r4LocKenchiku .r4NameCol{ background:#7048e8; color:#fff; }
 tr.r4GrandTotal .r4NameCol{ background:#eee; }
 
 /* セルクリックで選んだ行を二重線で囲う(常に1行だけ)。
