@@ -22,6 +22,12 @@
 - 注意点: 関数は本番デプロイしないと動かない。raw.githackの確認URLでは関数が無くGAS直接になる。詳細は `CLAUDE.md` 該当節。
 - 使ったアプリ: tori-robo
 
+### 各アプリに「← アプリ一覧へ」ボタンを共通部品で付ける
+- 効果: アプリごとの手書き修正 → 1ファイル+HTML1行(17アプリ。縁が光り、背景色・文字色が別リズムで変化。コントラスト比6.7以上を全コマで実測)
+- やり方: 正本 `docs/to-launcher/to-launcher.js` を各アプリのフォルダにコピーし、`<script src="to-launcher.js?v=.." data-target="セレクタ" data-mode="in|before|beforePrev">` を `</body>` 前に1行。背景の明暗と他ボタンの色相(40°以上離す)を自動判定。
+- 注意点: Vercelはフォルダ単位の配信なので、共通ファイルは各フォルダへコピー(正本を直したら全フォルダへ再コピー)。CRLFのHTMLはバイナリで編集する(Pythonのテキストモードだと全行が差分になる)。
+- 使ったアプリ: jissun-open ほか16アプリ
+
 ### 自動デプロイを止めたまま公開する
 - 効果: push・マージのたびのデプロイ消費を0に(daily-reportで確認)
 - やり方: アプリのフォルダに `vercel.json` `{ "git": { "deploymentEnabled": false } }`。公開時だけ `create_deployment`(「デプロイして」の指示があったときのみ)。
