@@ -1585,6 +1585,9 @@ function r4HeadRowHtml(label, dateHeaders, rowClass){
   return `<tr class="${rowClass}"><td class="r4NameCol">${label}</td>${dateTds}<td class="r4TotalCol"></td></tr>`;
 }
 
+/* 拠点見出し行の色(固定): 本社=青・夢前=オレンジ・鳥取=緑・総務建築=紫 */
+const R4_LOC_CLASS = { '本社': 'r4LocHonsha', '夢前': 'r4LocYumesaki', '鳥取': 'r4LocTottori', '総務建築': 'r4LocKenchiku' };
+
 /* compact(NGだけ表示): 部署見出し・小計・拠点合計・総合計を出さず、拠点見出し+社員行だけにする */
 function r4BuildTableHtml(dateHeaders, groups, compact){
   const headHtml = '<tr><th class="r4NameCol">氏名</th>' + dateHeaders.map(dh =>
@@ -1593,7 +1596,7 @@ function r4BuildTableHtml(dateHeaders, groups, compact){
 
   let bodyHtml = '';
   groups.locGroups.forEach(loc => {
-    bodyHtml += r4HeadRowHtml(loc.location, dateHeaders, 'r4LocHead');
+    bodyHtml += r4HeadRowHtml(loc.location, dateHeaders, 'r4LocHead ' + (R4_LOC_CLASS[loc.location] || ''));
     loc.deptGroups.forEach(dg => {
       /* 総務建築(deptLabelなし)は部署見出し・部署小計を出さない(拠点合計のみ)。 */
       if(dg.deptLabel && !compact){
