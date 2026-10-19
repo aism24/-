@@ -69,7 +69,10 @@ h1 { font-size: 1.3rem; margin: 0; }
   line-height: 1.6;
 }
 
-/* アプリ一覧(ランチャー)へ戻るボタン。アプリ名・ロゴの左に置く */
+/* アプリ一覧(ランチャー)へ戻るボタン。アプリ名・ロゴの左に置く。
+   背景色(7秒周期)と文字色(3秒周期)を別のリズムで変える。
+   背景は常に濃い色、文字は常に明るい色にして、どの組み合わせでもコントラスト比6.5以上(計算で確認済み。基準の4.5を超える)を保つ。
+   (背景=#8f0c2b #163a8a #085233 #4d1d85 #7a3800 / 文字=#ffffff #fff59d #b9f6ff #ffd6e8) */
 .to-launcher {
   flex: none;
   display: inline-flex;
@@ -80,10 +83,27 @@ h1 { font-size: 1.3rem; margin: 0; }
   font-weight: 700;
   line-height: 1;
   color: #fff;
-  background: #d6224a;
+  background: #8f0c2b;
   border-radius: 999px;
   text-decoration: none;
   white-space: nowrap;
   box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+  animation: to-launcher-bg 7s linear infinite, to-launcher-fg 3s linear infinite;
 }
-.to-launcher:hover { filter: brightness(1.1); }
+.to-launcher:hover { box-shadow: 0 0 0 2px rgba(255, 255, 255, .6), 0 1px 4px rgba(0, 0, 0, .35); }
+@keyframes to-launcher-bg {
+  0%, 100% { background-color: #8f0c2b; }
+  20% { background-color: #163a8a; }
+  40% { background-color: #085233; }
+  60% { background-color: #4d1d85; }
+  80% { background-color: #7a3800; }
+}
+@keyframes to-launcher-fg {
+  0%, 100% { color: #ffffff; }
+  25% { color: #fff59d; }
+  50% { color: #b9f6ff; }
+  75% { color: #ffd6e8; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .to-launcher { animation: none; }
+}
