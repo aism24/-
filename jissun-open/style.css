@@ -68,3 +68,22 @@ h1 { font-size: 1.3rem; margin: 0; }
   margin: 28px 0 0;
   line-height: 1.6;
 }
+
+/* アプリ一覧(ランチャー)へ戻るボタン。アプリ名・ロゴの左に置く */
+.to-launcher {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  background: #d6224a;
+  border-radius: 999px;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+}
+.to-launcher:hover { filter: brightness(1.1); }
