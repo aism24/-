@@ -28,6 +28,24 @@
 - 注意点: Vercelはフォルダ単位の配信なので、共通ファイルは各フォルダへコピー(正本を直したら全フォルダへ再コピー)。CRLFのHTMLはバイナリで編集する(Pythonのテキストモードだと全行が差分になる)。
 - 使ったアプリ: jissun-open ほか16アプリ
 
+### Driveの名前変更(update_file)で、個人のマイドライブ直下に混入する
+- 効果: 直下に混入していた引き継ぎ書14冊 → 0冊(2026-10-19、元の会社フォルダへ戻して直下0件を確認)
+- やり方: 名前を変えたら、そのファイルに `parentId`=元の会社フォルダ を指定した `update_file` を続ける。`search_files` で `parentId = 'root'` かつドキュメントを検索し、0件を確認する。
+- 注意点: `create_file`+`parentId` で新規作成した分は混入しなかった。混入しても元の会社フォルダには残る(移動ではなく親の追加)。
+- 使ったアプリ: 引き継ぎ書の全アプリ
+
+### 引き継ぎ書を多数まとめて更新する(forkで3並列)
+- 効果: 9冊を3つに分けて並行 → 約3.5〜7.3分で完了(逐次の所要は未計測)
+- やり方: 共通の追記内容と、アプリごとのフォルダID・最新版のID・タイトルを渡し、各担当が「旧版を全文読む→新版を `create_file`(HTML、`parentId`必須)→保存先一致を確認→読み戻し」を行う。
+- 注意点: 旧版は残す(タイトルの「最新版」を外すのは別の指示で)。表の列幅が少し変わることがある。誤記は削除でなく改名で残してから、ユーザーに削除可否を聞く。
+- 使ったアプリ: cost-insight, tori-robo, shipping-list-link, daily-report, company-ai, tdf-dim-count, huguai, jissun-open, app-launcher
+
+### Vercelの本番デプロイが CANCELED になる
+- 効果: 4プロジェクトが作成直後に CANCELED → Ignored Build Step を「Automatic」に直して `forceNew`=1 で再デプロイ → 全件 READY(2026-10-19)
+- やり方: CANCELED になったら、Settings → Build and Deployment → Ignored Build Step を確認する(コマンドが入っていると、Root Directory内で実行されるため常にスキップになりうる)。
+- 注意点: Claudeからは設定の中身が読めない。直すのはユーザー。再デプロイは同じSHAでも `forceNew`=1(数値)で新しく作る。
+- 使ったアプリ: jissun-master-jidokinyu, unso-check, tdf-master-web, production-management(jissun-open は 10/16 に同じ症状)
+
 ### 自動デプロイを止めたまま公開する
 - 効果: push・マージのたびのデプロイ消費を0に(daily-reportで確認)
 - やり方: アプリのフォルダに `vercel.json` `{ "git": { "deploymentEnabled": false } }`。公開時だけ `create_deployment`(「デプロイして」の指示があったときのみ)。

@@ -129,6 +129,7 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 | 2026-09-28 16:30頃 | (Functions Storageの項目が表示されない) | 同日8時には「Functions Storage 5.8GB」「Deployment Storage 277.41MB」が別々に表示されていたが、16:30頃はFunctions Storageの行が消え、Deployment Storageは1.39MBに(All Projects)。この時点でpdf-diff-pythonappの9/24分のデプロイ17件は残っており、容量が空いた根拠は無い。原因不明(Vercel側の表示・集計の変化の可能性)のため、再び表示されるまで約5.8GBとみなして管理する |
 | 2026-09-29 | 9/28: 2.2GB、9/29: ほぼ0(集計途中の可能性) | Usage → Functions Storage(All Projects・Last 30 Days)のグラフで確認。9/27まで約5.8GBで横ばい→9/28に2.2GB→9/29にほぼ0。9/28朝の古いデプロイ(9/23以前)削除が遅れて反映されたとみられる(削除から反映まで約1日)。pdf-diff-pythonappの9/24分17件は残っているので、9/29の確定値は翌日以降に再確認 |
 | 2026-10-01 10:30 | 0 B(確定) | 9/30 8:30頃にpdf-diff-pythonappのデプロイを現在の本番(#306)1件だけに削除(2.2GB分)。9/30 14時・10/1 8時・10/1 10:30(UTCの日付が変わった後)とも0 B。**残した本番1件はFunctions Storageの数値に含まれない(0 B)**。Deployment Storageは同期間に3.53MB→9.49MB→96.87MB→5.28MBと変動したが、上限10GBに対し誤差程度 |
+| 2026-10-19 | (未確認。反映後にUsage画面で確認して追記する) | 「← アプリ一覧へ」ボタン追加(PR #760)の反映で pdf-diff-pythonapp を `create_deployment` で本番デプロイ1回(dpl_HpRX9Ur2Q1sQaqbigZww8TcPYJFa)。本番デプロイは9/24分(dpl_Fg1vwxBsjHgHo52sCcH1GwstE1fR)と今回分の2件。9/24分は未削除(削除の判断はユーザー)。増分の見込みは約60MB |
 
 【古いデプロイの削除とFunctions Storageの反映】(2026-09-29確認、2026-10-01更新)
 - 古いデプロイを削除すれば、30日の保持期間を待たずにFunctions Storageは減る。Usageは**UTC基準の日単位で集計**されるとみられ、
@@ -158,6 +159,7 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 | jissun-open (https://jissun-open.vercel.app/) | jissun-open | 連携なし(`list_projects` 0件を確認、2026-10-16) | アプリ名「実寸法師を開く」(アプリランチャーapp009)。静的サイト(関数なし)。開くと `jissun://` で社内共有フォルダのHTMLを開かせる入口。開かれた日時をGAS(`jissun-open/gas/Code.gs`、スプレッドシート「実寸法師を開く_Vercel記録」にバインド)でシート「記録」のA2に追記(常にA2が最新)。`vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(project=jissun-open、teamIdは渡さない)。**2026-10-16、Ignored Build Stepに `-- ./jissun-open` のコマンドが入っていて1回目がCANCELED→ユーザーが「Automatic」に変更→forceNew=1で2回目がREADY(10/16は計2回)**。引き継ぎ書はDriveの保存先フォルダ(上の表) |
 | huguai (Vercelプロジェクト名「tori-huguai」。https://tori-huguai.vercel.app/) | huguai | 解除(2026-10-15、ユーザーがVercelでプロジェクトを作成し、本番デプロイ1回(dpl_CPJjCRe、コミット1d00b81=PR #726)→直後にユーザーが連携を解除。`list_projects`(repoUrl=aism24/-)0件を確認。ユーザーの手動デプロイでClaudeの `create_deployment` ではない。2026-10-16、「デプロイして」の指示で `create_deployment` により、2回目(dpl_6BNecPu、コミット17bf6db=PR #730、PDF固定幅1280px)、3回目(dpl_HuWZsmy、コミット1d9b8cb=PR #733月リストの並び・#734年度連動)、4回目(dpl_BjEauQ4、コミット19063ad=PR #735取得中の表示・#736今月に戻す・#737見出しの年表記)を、連携なしで本番デプロイ、いずれもREADY。10/16のデプロイは計3回) | アプリ名「社内不具合アプリNew」(社内不具合記録アプリ(鳥取)のVercel版)。静的サイト(関数なし)。`huguai/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。GAS(`huguai/gas/Code.gs`、スプレッドシート「社内不具合アプリVercel版」にバインド)がデータ処理。本番反映は「デプロイして」の指示時のみ `create_deployment`(teamIdは渡さない=403。project=tori-huguai)。2026-10-15時点でClaudeのVercelツールは `get_project` 等がteam指定で403、`web_fetch_vercel_url` も403(本番ページの中身は未確認)。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
 
+2026-10-19、15プロジェクト(pdf-diff-pythonapp・daily-report・jissun-open・tori-huguai・shipping-list-link・tdf-dim-count・excel-drawing-link-tool・dxf-launcher・company-ai・cost-insight・-tori-robo・jissun-master-jidokinyu・unso-check・-tdf-master-web・production-management)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(ボタン追加の反映。コミット96e4414)。連携は0件のまま(`list_projects` で確認)。直近24時間のデプロイ回数は計20回(上限100)。**`vercel.json` の `git.deploymentEnabled=false` が無いフォルダ: pdf-diff-app(functionsの設定だけ)・unso-check・production-management・tdf-master-web・jissun-master-jidokinyu・kozai-toriai・weld-heat-management。連携は0件なので今は自動デプロイされないが、これらのVercelプロジェクトを `aism24/-` に連携し直す前に、必ずそのフォルダへ置くこと(特に pdf-diff-app は1デプロイごとにFunctions Storageを消費する)。**
 2026-10-14、tdf-dim-count(新規)も作成直後に連携を解除し、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。
 2026-10-08、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。cost-insightは連携なしのまま `create_deployment` で本番デプロイできた(dpl_EthcYT7、コミット5c49df9)。
 **運用の原則**: 全アプリのGit連携を解除したままにする。連携が無ければpush・マージでデプロイは起きず、ユーザーが「デプロイして」と指示したアプリだけを `create_deployment` で1つずつデプロイする(連携は不要。Vercelプロジェクトの新規作成と連携の付け外しだけがユーザー操作)。連携が1件でも残っていたら、これまで通りpush・マージ前にユーザーへ解除を依頼する。
@@ -214,7 +216,15 @@ Previewデプロイが発生する)
 | 実寸データより長さと本数集計(tdf-dim-count。TDFのレイヤ別に寸法の長さ・本数を集計。管理用スプレッドシート「tdf-dim-count」(シート「記録」=Excelダウンロード時の利用履歴。GAS経由)も同じフォルダ内。2026-10-14登録。引き継ぎ書のGoogleドキュメントのタイトルは「実寸データより長さと本数集計 引き継ぎ書 (vN) 最新版」(2026-10-14に v1〜v3 を作成。最新は v3)。リポジトリ内のREADME・tests・know-howも記録) | https://drive.google.com/drive/folders/1SHZZBXgv6Z21E-vDi4VldUUuuPsZVn4R | `1SHZZBXgv6Z21E-vDi4VldUUuuPsZVn4R` |
 | 社内不具合アプリ（huguai。不具合記録アプリ(鳥取)のVercel版。`huguai/`。管理用スプレッドシート「社内不具合アプリVercel版」「社内不具合アプリHTML」「不具合アプリ結果表示」も同じフォルダ内。2026-10-15登録。引き継ぎ書のGoogleドキュメントのタイトルは「社内不具合アプリ（huguai） 引き継ぎ書 (vN) 最新版」(2026-10-15に v1〜v4、2026-10-16に v5・v6 を作成。最新は v6)) | https://drive.google.com/drive/folders/109FIFxFVC3sQU9S2tx596jMLJzrAkmgD | `109FIFxFVC3sQU9S2tx596jMLJzrAkmgD` |
 | 実寸法師を開く(jissun-open。`jissun://` で社内共有フォルダのHTMLを開く入口。管理用スプレッドシートは「00_マスタから実寸法師を開く」(旧open_jissun用データ元)と「実寸法師を開く_Vercel記録」(開かれた日時の記録。シート「記録」)が同じフォルダ内。2026-10-16、ユーザーがフォルダを指定して登録。引き継ぎ書のGoogleドキュメントのタイトルは「実寸法師を開く_引き継ぎ書 (第N版) 最新版」(第3版=2026-10-16が最新。第1・2版は同じフォルダの「実寸法師を開く_引き継ぎ書」)) | https://drive.google.com/drive/folders/1OUOznQizC__sdPOHTe3lbjvfZxSj72IC | `1OUOznQizC__sdPOHTe3lbjvfZxSj72IC` |
-| 上記以外のアプリ | 未登録(ユーザーがアプリごとに指示する。指示されたらこの表に追記する) | - |
+| 鳥取運送アプリ(unso-check。運送業者の配車Excelを取り込み、21日始まり・20日締めの締め月ごとに請求チェック・年度集計。管理用スプレッドシート「鳥取運送アプリ」と、サブフォルダ「保存用バックアップ」が同じフォルダ内。2026-10-19、ユーザーが引き継ぎ書を共有して登録。引き継ぎ書のタイトルは「鳥取運送アプリ_引き継ぎ書(更新版N・日付)最新版」(2026-10-19に更新版11を作成。更新版10までは「鳥取運送アプリ_引き継ぎ書」)) | https://drive.google.com/drive/folders/1-Bklp4MLRbf-WL1H1rvdo26wOczl0puB | `1-Bklp4MLRbf-WL1H1rvdo26wOczl0puB` |
+| 生産管理ダッシュボード(production-management。3拠点の生産実績を案件マスターExcelから集計。索引スプレッドシート「Excelマスタ一覧」(GASのコンテナバインド元)・キャッシュJSONが同じフォルダ内。2026-10-19、ユーザーが引き継ぎ書を共有して登録。引き継ぎ書のタイトルは「生産管理ダッシュボード_引き継ぎ書(YYYY年M月D日版)」(2026-10-19に作成。旧版も残置)) | https://drive.google.com/drive/folders/1mj4vsEHTkaSjuMrqRC7NMGCYc2JC9EIo | `1mj4vsEHTkaSjuMrqRC7NMGCYc2JC9EIo` |
+| PDF比較解析アプリ(pdf-diff-app。新旧PDFの表・文章・図面の差分表示。記録用スプレッドシート「PDF差分解析（表、文章、図面）」と、サブフォルダ「ローカル実行済み正解データ」が同じフォルダ内。2026-10-19、ユーザーが引き継ぎ書を共有して登録。引き継ぎ書のタイトルは「PDF比較解析アプリ 引き継ぎ書(YYYY-MM-DD更新版)」(2026-10-19に更新版を作成。旧版も残置)) | https://drive.google.com/drive/folders/1aTNiacBOpV8Tq_PlR4VTX8yPGscGIbQ1 | `1aTNiacBOpV8Tq_PlR4VTX8yPGscGIbQ1` |
+| 上記以外のアプリ(dxf-launcher・excel-drawing-link-tool・jissun-master-jidokinyu・tdf-master-web など) | 未登録(ユーザーがアプリごとに指示する。指示されたらこの表に追記する)。2026-10-19、この4アプリの引き継ぎ書は、ユーザーがローカルで管理・差し替えている(ドライブには保存していない。Claudeはテキスト/マークダウンで渡した) | - |
+
+- **【厳守】Driveのファイル名変更・移動(`update_file`)をしたら、個人のマイドライブ直下に混入していないか必ず確認する(2026-10-19、実際に発生)。**
+  `update_file` でタイトルだけを変えた複数のファイルで、親フォルダに「個人のマイドライブ直下」が追加される副作用があった(元の会社フォルダにも残るが、個人ドライブに存在する状態になる。引き継ぎ書を個人ドライブへ保存することは禁止)。
+  名前を変えたら、そのファイルに `parentId`=元の会社フォルダ を指定した `update_file` を続けて実行して直下から外し、`search_files`(`parentId = 'root'` かつ `mimeType` がドキュメント)で0件になったことを確認してから報告する。
+  2026-10-19には、過去の作業で混入していた旧版9冊+日報2冊も同じ方法で元のフォルダへ戻し、直下0件を確認した。新規作成(`create_file`+`parentId`指定)では、この混入は起きなかった。
 
 - **保存先フォルダはユーザーがアプリごとに指示する。** 指示が無いアプリは、推測で決めずにユーザーに聞く。
 - **保存前に、そのフォルダが本当に対象アプリのものか確認する。** ほとんどのアプリは、管理用スプレッドシートが同じフォルダ内にある。
@@ -277,6 +287,19 @@ Previewデプロイが発生する)
 - ユーザーの指示から恒久ルールにすべきものは、提案してから `CLAUDE.md` に追記する(勝手に増やさない)。
 - **ローカルセッションとも共有する**(2026-10-16〜)。ローカルのPC側のセッション(Excel・Pythonなど)で見つけた、他でも使えるやり方も、同じ `docs/know-how.md` に書く(正はここ。ローカル側は参照だけにして二重に書かない)。長い詳細は `docs/know-how/<題名>.md` に置き、索引の項目からリンクする。
 - **リポジトリは公開(public)**。ローカルから書き出すときは、サーバーのパス・IPアドレス・スプレッドシートのID・個人名・個人情報を含めない。一般化したやり方だけを書く。
+
+## 共通部品 to-launcher.js(「← アプリ一覧へ」ボタン)(2026-10-19〜)
+
+各アプリのアプリ名の左に、アプリランチャー(https://app-launcher-ashy.vercel.app/)へ戻るボタンを付ける共通部品。2026-10-19、PR #760(コミット 96e4414)で17アプリに追加し、Vercelプロジェクトのある15アプリを本番デプロイした。
+
+- **正本**: `docs/to-launcher/to-launcher.js`。**Vercelはフォルダ単位で配信する(Root Directory)ため、各アプリのフォルダに同じファイルをコピーして使う**(`<アプリ>/to-launcher.js`)。正本を直したら全フォルダへ再コピーし、`index.html` の `?v=` も上げて、対象アプリを(「デプロイして」の指示で)再デプロイする。
+- **組み込み**: 各 `index.html` の `</body>` 直前に1行: `<script src="to-launcher.js?v=20261019" data-target="CSSセレクタ" data-mode="in|before|beforePrev"></script>`。`in`=その要素の先頭、`before`=その要素の直前、`beforePrev`=直前の兄弟がロゴ(img/svg/小さいdiv)ならその前。ボタンはJSが後から差し込む(ホームに戻るたびに入れ直す)。
+- **見た目**: 背景色(7秒周期)と文字色(3秒周期)が別のリズムで変化し、縁が脈動して光る。背景の明暗をスクリプトが自動判定し、暗い=明るいボタン+濃い文字+金色の光、明るい=暗いボタン+明るい文字+濃い赤・ピンクの光。画面内の他のボタンの色相から40°以上離れた色だけを使う。コントラスト比は全コマで6.7以上(実測)。「視覚効果を減らす」設定では動きを止める。印刷では非表示。
+- **ランチャーのURLを変えるとき**: 正本の `LAUNCHER_URL` を直し、全フォルダへ再コピーして**全アプリを再デプロイ**する(ランチャー側のURLを変えるだけでは反映されない)。
+- **対象アプリと設定**(フォルダ: data-target / data-mode): company-ai: h1 / in、cost-insight: header h1 / in、daily-report: .appTitle / in、dxf-launcher: .header-block img / before、excel-drawing-link-tool: .masthead-brand h1 / in、huguai: .home-title / in(ホーム画面のみ)、jissun-master-jidokinyu: h1 / beforePrev、jissun-open: h1 / beforePrev、pdf-diff-app: #app-name / in、production-management: .app-header h1 / beforePrev、shipping-list-link: .hdr h1 / in、tdf-dim-count: header h1 / in、tdf-master-web: header h1 / beforePrev、tori-robo: .hdr-center h1 / in、unso-check: .header-title / in。kozai-toriai(.app-header h1 / beforePrev)・weld-heat-management(#mode-select-screen .home-title / in)にもコードは入れたが、Vercelプロジェクトが無く、ユーザーが「必要ない」と指示したため本番デプロイしていない。
+- **新しいアプリに付けるとき**: そのフォルダに to-launcher.js をコピー → 上の1行を入れる → ローカルのブラウザで、幅1280と390でボタンが1個・位置・コントラストを実測 → 他の設定と同様、main反映まで進め、本番は「デプロイして」の指示で。HTMLがCRLFのときは、Pythonのテキストモードで編集しない(全行が差分になる。バイナリで編集する)。
+- **既知の点(未調整)**: 本番の画面での見た目は未確認(HTMLにscriptの読み込みがあり、to-launcher.jsが200で返ることまで確認)。tori-robo はスマホ幅(390px)でタイトルの右端が切れて見える。daily-report は390pxでボタンが左端に付きタイトルが2行になる。dxf-launcher はタイトル枠が狭くタイトルが2行になる。huguai・unso-check・weld-heat-management・daily-report は、最初の画面のタイトルだけにボタンが付く(他の画面にも付けるかは未決定)。
+- **関連**: 2026-10-19の本番デプロイで、jissun-master-jidokinyu・unso-check・tdf-master-web(Vercelプロジェクト名「-tdf-master-web」)・production-management の4プロジェクトは、1回目が作成直後に CANCELED になった。原因は Settings → Build and Deployment → Ignored Build Step が常にスキップになる設定だったこと(ユーザーが「Automatic」に直し、`forceNew`=1 で再デプロイして READY)。デプロイが CANCELED になったら、まずここを確認する。
 
 ## 自動デプロイ停止方式(vercel.json)(2026-09-24〜、daily-reportで検証済み)
 
