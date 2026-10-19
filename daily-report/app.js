@@ -1526,9 +1526,32 @@ function buildR4Groups(dateHeaders, filteredRows){
 
 let r4NgOnly = false;
 
+/* NGだけ表示をオンにする前の拠点・部署のチェック状態(オフで元に戻す用) */
+let r4NgSaved = null;
+
+function setR4Checks_(groupId, values, only){
+  document.querySelectorAll(`#${groupId} input[type=checkbox]`).forEach(cb => {
+    if(only && only.indexOf(cb.value) === -1) return;
+    cb.checked = values.indexOf(cb.value) !== -1;
+    cb.closest('.checkBtn').classList.toggle('checked', cb.checked);
+  });
+}
+
+/* オン: 拠点を本社・夢前・鳥取、部署を工場・事務に自動指定する。総務建築はユーザーの選択のまま。
+   オフ: 総務建築以外のチェックをオン前の状態に戻す。 */
 function toggleR4NgOnly(){
   r4NgOnly = !r4NgOnly;
   document.getElementById('r4-ngonly-btn').classList.toggle('active', r4NgOnly);
+  const mainLocs = ['本社', '夢前', '鳥取'];
+  if(r4NgOnly){
+    r4NgSaved = { locs: checkedValues('r4-locations'), depts: checkedValues('r4-depts') };
+    setR4Checks_('r4-locations', mainLocs, mainLocs);
+    setR4Checks_('r4-depts', ['工場', '設計管理']);
+  } else if(r4NgSaved){
+    setR4Checks_('r4-locations', r4NgSaved.locs, mainLocs);
+    setR4Checks_('r4-depts', r4NgSaved.depts);
+    r4NgSaved = null;
+  }
   withRecalcPopup(renderR4Preview);
 }
 
@@ -1562,7 +1585,8 @@ function r4HeadRowHtml(label, dateHeaders, rowClass){
   return `<tr class="${rowClass}"><td class="r4NameCol">${label}</td>${dateTds}<td class="r4TotalCol"></td></tr>`;
 }
 
-function r4BuildTableHtml(dateHeaders, groups){
+/* compact(NGだけ表示): 部署見出し・小計・拠点合計・総合計を出さず、拠点見出し+社員行だけにする */
+function r4BuildTableHtml(dateHeaders, groups, compact){
   const headHtml = '<tr><th class="r4NameCol">氏名</th>' + dateHeaders.map(dh =>
     `<th class="r4DateCell ${dh.holiday ? 'r4HolidayCol' : ''}">${dh.shortDate}<br>${dh.weekday}</th>`
   ).join('') + '<th class="r4TotalCol">合計</th></tr>';
@@ -1572,18 +1596,18 @@ function r4BuildTableHtml(dateHeaders, groups){
     bodyHtml += r4HeadRowHtml(loc.location, dateHeaders, 'r4LocHead');
     loc.deptGroups.forEach(dg => {
       /* 総務建築(deptLabelなし)は部署見出し・部署小計を出さない(拠点合計のみ)。 */
-      if(dg.deptLabel){
+      if(dg.deptLabel && !compact){
         bodyHtml += r4HeadRowHtml(dg.deptLabel, dateHeaders, 'r4DeptHead');
       }
       dg.rows.forEach(r => { bodyHtml += r4EmployeeRowHtml(r, dateHeaders); });
-      if(dg.deptLabel){
+      if(dg.deptLabel && !compact){
         const subRowClass = dg.deptKey === '設計管理' ? 'r4SubtotalOffice' : 'r4SubtotalFactory';
         bodyHtml += r4AggregateRowHtml(dg.deptLabel + ' 小計', dg.subtotalCells, dg.subtotalTotal, subRowClass, dateHeaders);
       }
     });
-    bodyHtml += r4AggregateRowHtml(loc.location + ' 合計', loc.totalCells, loc.total, 'r4LocTotal', dateHeaders);
+    if(!compact) bodyHtml += r4AggregateRowHtml(loc.location + ' 合計', loc.totalCells, loc.total, 'r4LocTotal', dateHeaders);
   });
-  bodyHtml += r4AggregateRowHtml('総合計', groups.grandCells, groups.grandTotal, 'r4GrandTotal', dateHeaders);
+  if(!compact) bodyHtml += r4AggregateRowHtml('総合計', groups.grandCells, groups.grandTotal, 'r4GrandTotal', dateHeaders);
 
   return `<table class="dataTable r4Table">${headHtml}${bodyHtml}</table>`;
 }
@@ -1620,7 +1644,7 @@ function renderR4Preview(){
   }
 
   // previewEl には表だけを入れる
-  previewEl.innerHTML = r4BuildTableHtml(grid.dateHeaders, groups);
+  previewEl.innerHTML = r4BuildTableHtml(grid.dateHeaders, groups, r4NgOnly);
   applyCellTooltips(previewEl.querySelector('.dataTable'));
   adjustR4StickyOffset_();
 }
@@ -2073,6 +2097,7 @@ function resetScreen(prefix){
       cb.closest('.checkBtn').classList.add('checked');
     });
     r4NgOnly = false;
+    r4NgSaved = null;
     document.getElementById('r4-ngonly-btn').classList.remove('active');
     buildMonthPicker('r4-month', 'r4'); // 締め月を最新(先頭)に戻す
     withRecalcPopup(renderR4Preview);
