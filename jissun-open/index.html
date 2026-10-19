@@ -12,7 +12,7 @@
      ブラウザ標準のリンク遷移に任せた方が確実に動く。姉妹アプリ
      jissun-master-jidokinyu・open_jissunでの知見と同じ)。 -->
 <meta http-equiv="refresh" content="0; url=jissun://192.168.3.2/share_01/%E2%91%B0%E3%81%9D%E3%81%AE%E4%BB%96/Claude%28sumi%29/%E3%83%9E%E3%82%B9%E3%82%BF%E5%85%A8%E8%87%AA%E5%8B%95/%E8%A3%BD%E5%93%81%E5%90%8D%E3%82%88%E3%82%8A%E5%AE%9F%E5%AF%B8%E3%82%92%E9%96%8B%E3%81%8F/%E3%81%93%E3%81%AE%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB%E3%82%92%E8%87%AA%E5%88%86%E3%81%AEPC%E3%81%AB%E3%82%B3%E3%83%94%E3%83%9A%E3%81%97%E3%81%A6%E4%BD%BF%E3%81%86.html">
-<link rel="stylesheet" href="style.css?v=20261019b">
+<link rel="stylesheet" href="style.css?v=20261019c">
 </head>
 <body>
   <div class="page">
@@ -54,5 +54,21 @@
       } catch (e) { /* 記録の失敗は無視 */ }
     })();
   </script>
+<script>
+// 「アプリ一覧へ」ボタンの縁の光: 背景が明るければ濃い赤・ピンク、暗ければ金色(CSS側の既定)。
+(function () {
+  function bgRgb(el) {
+    for (; el; el = el.parentElement) {
+      var m = getComputedStyle(el).backgroundColor.match(/[\d.]+/g);
+      if (m && (m.length < 4 || +m[3] > 0.5)) return m.slice(0, 3).map(Number);
+    }
+    return [255, 255, 255];
+  }
+  var b = document.querySelector('.to-launcher');
+  if (!b) return;
+  var c = bgRgb(b.parentElement).map(function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+  if (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] > 0.4) b.classList.add('on-light');
+})();
+</script>
 </body>
 </html>
