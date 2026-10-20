@@ -71,16 +71,8 @@
     S.vehicles = d.vehicles || []; S.drivers = d.drivers || []; S.projects = d.projects || []; S.senders = d.senders || [];
     S.importKeyList = (d.importKeys || []).map(function (r) { return L.importKey({ 積日: r.積日, 車番: r.車番 }); });
     S.destMap = L.buildDestMap(d.pastDest || []);
-    S.model = d.model || ''; S.keyOk = !!d.keyOk; S.version = d.version || '(古い版)';
     S.imports = null;
-    renderStatus(); renderTabs();
-  }
-
-  function renderStatus() {
-    var el = $('status');
-    var ok = S.model && S.keyOk;
-    el.textContent = 'モデル: ' + (S.model || '(未設定)') + ' ・ APIキー: ' + (S.keyOk ? '設定済み' : '未設定') + ' ・ GAS版: ' + S.version;
-    el.className = 'status' + (ok ? '' : ' bad');
+    renderTabs();
   }
 
   // ---------- タブ ----------
