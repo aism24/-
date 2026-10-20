@@ -13,7 +13,7 @@
   var IMPORTS_SHOW = 100;
   var VIEW_HEADERS = IMPORT_HEADERS.filter(function (k) { return k !== 'タイムスタンプ'; }); // 画面・Excelに出す列
   var INACTIVE = ['中止', '変更前'];
-  var TABLE_HEADERS = VIEW_HEADERS.filter(function (k) { return k !== '現場名'; }); // 取込一覧の表に出す列(現場名は出さない。Excelには入る)
+  var TABLE_HEADERS = VIEW_HEADERS.filter(function (k) { return k !== '工事番号'; }); // 取込一覧の表に出す列(工事番号は出さず、現場名=工事名を出す。Excelには両方入る)
   var CENTER_COLS = ['手配業者', '積日', '卸日', '着時間', '車種', '追加変更']; // 中央揃え(幅は中身に合わせて詰める)
   var DRIVER_COLORS = ['#dff3e0', '#fff7cc', '#dbeafe', '#fde2e4', '#ede0f7', '#ffe8cc', '#d6f2f2', '#eceff1']; // 運転手の行を運送業者ごとに分ける薄い色
   var OTHER = 'その他'; // 工事に該当しないもの。工事番号・現場名の両方に「その他」と記録する
@@ -723,7 +723,7 @@
     // 上に、この原本から記録した行の表(同じファイルURLの行。押した行は水色)。下に原本
     var same = (S.imports || []).filter(function (x) { return x.ファイルURL && x.ファイルURL === r.ファイルURL; }).slice().reverse();
     if (!same.some(function (x) { return x._row === r._row; })) same = [r];
-    var cols = ['工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '追加変更', '備考'];
+    var cols = ['現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '追加変更', '備考'];
     var thead = h('tr'); thead.appendChild(h('th', { text: '#' })); cols.forEach(function (k) { thead.appendChild(h('th', { text: k })); });
     var tbody = h('tbody');
     same.forEach(function (x, i) {
@@ -764,15 +764,15 @@
     TABLE_HEADERS.forEach(function (k) {
       var td = h('td', { class: 'nowrap' + (CENTER_COLS.indexOf(k) >= 0 ? ' c' : '') });
       if (k === 'ファイル名') { var fnode = fileNameNode(r); td.appendChild(typeof fnode === 'string' ? document.createTextNode(fnode) : fnode); }
-      else if (k === '工事番号') {
-        var ps = h('select', { 'aria-label': k });
+      else if (k === '現場名') { // 現場名(工事名)の欄で、工事を選び直せる。選ぶと、工事番号も合わせて保存する
+        var ps = h('select', { 'aria-label': '現場名(工事名)' });
         ps.appendChild(h('option', { value: '', text: '(なし)' }));
         ps.appendChild(h('option', { value: OTHER, text: OTHER }));
         var found = d.工事番号 === '' || d.工事番号 === OTHER;
-        S.projects.forEach(function (p) { if (p.工事番号 === d.工事番号) found = true; ps.appendChild(h('option', { value: p.工事番号, text: p.工事番号 + '  ' + p.工事名 })); });
-        if (!found) ps.appendChild(h('option', { value: d.工事番号, text: d.工事番号 }));
+        S.projects.forEach(function (p) { if (p.工事番号 === d.工事番号) found = true; ps.appendChild(h('option', { value: p.工事番号, text: p.工事名 })); });
+        if (!found) ps.appendChild(h('option', { value: d.工事番号, text: d.現場名 || d.工事番号 }));
         ps.value = d.工事番号;
-        ps.addEventListener('change', function () { d.工事番号 = ps.value; d.現場名 = !ps.value ? '' : ps.value === OTHER ? OTHER : (L.projectName(S.projects, ps.value) || d.現場名); }); // 現場名は表に出さないが、工事番号に合わせて保存する
+        ps.addEventListener('change', function () { d.工事番号 = ps.value; d.現場名 = !ps.value ? '' : ps.value === OTHER ? OTHER : (L.projectName(S.projects, ps.value) || d.現場名); });
         td.appendChild(ps);
       } else if (k === '追加変更') {
         var ls = h('select', { 'aria-label': k });
