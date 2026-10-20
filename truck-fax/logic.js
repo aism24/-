@@ -153,7 +153,7 @@
 
     if (!plate) add('missing-plate', 'error', '車番が空です', '車番を入力してください。');
     if (!row.積日 || !row.卸日) add('bad-date', 'error', '積日・卸日が読み取れていません', 'yyyy/mm/dd の形で入力してください。');
-    if (!row.工事番号) add('missing-project', 'warn', '工事番号が未選択です', '行先「' + row.行先 + '」に対応する工事を選んでください。', [{ value: 'ok', label: '工事番号なしで記録する' }]);
+    if (!row.工事番号) add('missing-project', 'warn', '工事番号が未選択です', '表の「工事番号」で、行先「' + row.行先 + '」に対応する工事を選んでください。選んだ工事は、記録後、次回から同じ行先の初期値になります。', [{ value: 'ok', label: '工事番号なしで記録する' }]);
     if (!row.運送業者) add('missing-carrier', 'warn', '運送業者が空です', '', [OPT.ok]);
     if (!name) add('missing-name', 'warn', '氏名が空です', '', [OPT.ok]);
     if (!phone) add('missing-phone', 'warn', '携帯番号が空です', '', [OPT.ok]);

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>車番連絡 取込</title>
-<link rel="stylesheet" href="style.css?v=20261020d">
+<link rel="stylesheet" href="style.css?v=20261020e">
 </head>
 <body>
 <header class="top">
@@ -21,6 +21,15 @@
 <div id="banner" class="banner" hidden></div>
 <main>
   <section id="tab-import">
+    <details class="howto" open>
+      <summary>使い方(4ステップ)</summary>
+      <ol>
+        <li><strong>FAXのPDFを入れる</strong> … 下の枠にドロップ(複数可)。自動で内容を読み取ります。</li>
+        <li><strong>読み取り結果を確認</strong> … 表の内容が正しいか確認します。間違いは、表の中で直せます(「原本を見る」で元のFAXと見比べられます)。</li>
+        <li><strong>工事番号を選ぶ</strong> … 表の「工事番号」で選ぶと、現場名が入ります。選んだ工事は、記録後、次回から同じ行先の初期値になります。</li>
+        <li><strong>確認事項に対応して「記録する」</strong> … 下の「照合・確認事項」の表で、<span class="badge error">要修正</span>は表を直す、<span class="badge warn">要確認</span>は対応を選ぶ、<span class="badge info">自動</span>は何もしなくてよい項目です(初めての車番・運転手は、記録と同時にマスタへ自動で登録されます)。</li>
+      </ol>
+    </details>
     <label id="drop" class="drop" tabindex="0">
       <input id="file" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" hidden>
       <strong>FAXのPDFをここへドロップ、またはクリックして選択</strong>
@@ -36,7 +45,7 @@
     <p>GASのURLが未設定です。<code>README.md</code>の手順で、GAS(<code>gas/Code.gs</code>)をデプロイし、そのURLを <code>app.js</code> の <code>GAS_API_URL</code> に設定してください。</p>
   </section>
 </main>
-<script src="logic.js?v=20261020d"></script>
-<script src="app.js?v=20261020d"></script>
+<script src="logic.js?v=20261020e"></script>
+<script src="app.js?v=20261020e"></script>
 </body>
 </html>

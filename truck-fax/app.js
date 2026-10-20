@@ -180,6 +180,10 @@
     sel.addEventListener('change', function () {
       row.工事番号 = sel.value; row._suggest = false;
       row.現場名 = L.projectName(S.projects, row.工事番号);
+      if (row.工事番号) card.rows.forEach(function (o) {
+        if (o !== row && !o.工事番号 && L.nameKey(o.行先) === L.nameKey(row.行先)) { o.工事番号 = row.工事番号; o.現場名 = row.現場名; o._suggest = false; }
+      });
+      evalCard(card);
       renderCard(card, true);
     });
     return sel;
@@ -206,7 +210,7 @@
           if (f[0] === '積日' || f[0] === '卸日') v = L.normDate(v, new Date().getFullYear()) || v;
           if (f[0] === '着時間') v = L.normTime(v);
           inp.value = v; row[f[0]] = v;
-          if (f[0] === '行先') { applyProjectDefault(row); renderCard(card, true); return; }
+          if (f[0] === '行先') { applyProjectDefault(row); evalCard(card); renderCard(card, true); return; }
           scheduleEval(card, true);
         });
         tr.appendChild(h('td', null, inp));
@@ -288,8 +292,15 @@
     rs.forEach(function (r) { blockers += r.blockers.length; if (!r.skip) keep++; });
     var host = card.footHost; host.textContent = '';
     var btn = h('button', { class: 'btn primary', type: 'button', text: keep + '件を記録する', disabled: blockers > 0 || keep === 0 || card.busy, onclick: function () { commitCard(card); } });
-    var msg = blockers > 0 ? '未対応の確認が ' + blockers + ' 件あります。対応を選ぶか、表を直してください。' : (keep === 0 ? '記録する行がありません。' : 'すべて確認済みです。');
-    host.appendChild(h('div', { class: 'foot' }, btn, h('span', { class: 'msg' + (blockers > 0 ? ' bad' : ''), text: msg }),
+    var todo = [];
+    rs.forEach(function (r, i) {
+      r.blockers.forEach(function (id) {
+        var f = (card.findings[i] || []).filter(function (x) { return x.id === id; })[0];
+        todo.push((card.rows.length > 1 ? (i + 1) + '行目: ' : '') + (f ? f.title : id));
+      });
+    });
+    var msg = blockers > 0 ? '記録するには、あと ' + blockers + ' 件の対応が必要です → ' + todo.slice(0, 3).join(' / ') + (todo.length > 3 ? ' ほか' : '') : (keep === 0 ? '記録する行がありません。' : '準備OKです。内容を確認して「記録する」を押してください。');
+    host.appendChild(h('div', { class: 'foot' }, btn, h('span', { class: 'msg' + (blockers > 0 ? ' bad' : ' okmsg'), text: msg }),
       h('span', { class: 'spacer' }),
       h('button', { class: 'btn', type: 'button', text: '記録せず破棄', onclick: function () { S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); } })));
   }
