@@ -440,7 +440,28 @@
     return { kind: kind, items: items };
   }
 
+  // 締め月: 21日始まり・20日締め。会計年度は11/21〜翌11/20(年度は終わりの年。2025年度=2024/11/21〜2025/11/20)
+  var CLOSING_MONTH_ORDER = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  function closingOf(y, m, d) {
+    var cy = y, cm = m;
+    if (d >= 21) { cm = m + 1; if (cm > 12) { cm = 1; cy = y + 1; } }
+    return { fy: cm === 12 ? cy + 1 : cy, cm: cm };
+  }
+  /** 'yyyy/MM/dd' 'yyyy-MM-dd'(時刻つき可)→{fy, cm}。読めなければ null */
+  function closingOfText(t) {
+    var m = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/.exec(String(t == null ? '' : t).trim());
+    if (!m) return null;
+    var y = +m[1], mo = +m[2], d = +m[3];
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    return closingOf(y, mo, d);
+  }
+  /** 取込一覧の行がどの締め月か(積日→卸日→タイムスタンプの順で、読めた日付を使う) */
+  function rowClosing(r) { return closingOfText(r.積日) || closingOfText(r.卸日) || closingOfText(r.タイムスタンプ); }
+  /** 締め月の期間の表示(例: 12月→「11/21〜12/20」、4月→「3/21〜4/20」) */
+  function closingPeriod(cm) { var pm = cm === 1 ? 12 : cm - 1; return pm + '/21〜' + cm + '/20'; }
+
   return {
+    closingOf: closingOf, closingOfText: closingOfText, rowClosing: rowClosing, closingPeriod: closingPeriod, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
     fmtType: fmtType, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate, companyKey: companyKey,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,
     buildDestMap: buildDestMap, suggestProject: suggestProject, projectName: projectName, sanitizeOcr: sanitizeOcr, evaluateBatch: evaluateBatch, resolveRow: resolveRow, mergeOps: mergeOps, findMasterDups: findMasterDups

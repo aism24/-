@@ -9,10 +9,11 @@
 
   var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '追加変更', '備考'];
   var MASTER_COLS = { vehicle: ['手配業者', '運送業者', '車種', '車番'], driver: ['運送業者', '氏名', '携帯番号'] };
+  var IMPORTS_LIMIT = 3000;
   var MAX_BYTES = 10 * 1024 * 1024;
 
   var S = { senders: [], vehicles: [], drivers: [], projects: [], importKeyList: [], destMap: {}, model: '', keyOk: false, cards: [], tab: 'import',
-    imports: null, importsQ: '', q: { vehicle: '', driver: '' }, editing: null };
+    imports: null, importsQ: '', importsFy: null, importsCm: null, editing: null };
   var seq = 0;
 
   // ---------- 小物 ----------
@@ -568,15 +569,36 @@
     if (S.imports == null) {
       host.textContent = '';
       host.appendChild(h('div', { class: 'empty', text: '読み込み中…' }));
-      try { S.imports = await apiGet('listImports', { limit: 300 }); }
+      try { S.imports = await apiGet('listImports', { limit: IMPORTS_LIMIT }); }
       catch (e) { host.textContent = ''; host.appendChild(h('div', { class: 'empty', text: '取得に失敗しました: ' + e.message })); return; }
     }
     host.textContent = '';
+    if (S.importsFy == null) { // 初期値は、本日の年度・締め月
+      var n = new Date(), now = L.closingOf(n.getFullYear(), n.getMonth() + 1, n.getDate());
+      S.importsFy = String(now.fy); S.importsCm = String(now.cm);
+    }
     var q = L.nameKey(S.importsQ).toLowerCase();
-    var rows = S.imports.filter(function (r) { return !q || IMPORT_HEADERS.some(function (k) { return L.nameKey(r[k]).toLowerCase().indexOf(q) >= 0; }); });
+    var cl = S.imports.map(function (r) { return L.rowClosing(r); });
+    var undated = cl.filter(function (c) { return !c; }).length;
+    var fys = {}; cl.forEach(function (c) { if (c) fys[c.fy] = 1; }); if (S.importsFy !== 'all') fys[S.importsFy] = 1;
+    var fyList = Object.keys(fys).sort(function (a, b) { return b - a; });
+    var rows = S.imports.filter(function (r, i) {
+      var c = cl[i];
+      if (S.importsFy !== 'all' && !(c && String(c.fy) === S.importsFy)) return false;
+      if (S.importsCm !== 'all' && !(c && String(c.cm) === S.importsCm)) return false;
+      return !q || IMPORT_HEADERS.some(function (k) { return L.nameKey(r[k]).toLowerCase().indexOf(q) >= 0; });
+    });
     var search = h('input', { type: 'search', placeholder: '検索(車番・氏名・現場名など)', value: S.importsQ, 'aria-label': '検索' });
     search.addEventListener('input', function () { S.importsQ = search.value; var pos = search.selectionStart; renderImports().then(function () { var s = $('tab-imports').querySelector('input'); if (s) { s.focus(); s.setSelectionRange(pos, pos); } }); });
-    host.appendChild(h('div', { class: 'tool' }, search, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; renderImports(); } }), h('span', { class: 'sub', text: '新しい順・最大300件(' + rows.length + '件表示)' })));
+    function sel(label, value, opts, onchange) {
+      var s = h('select', { 'aria-label': label }, opts.map(function (o) { return h('option', { value: o[0], text: o[1] }); }));
+      s.value = value; s.addEventListener('change', function () { onchange(s.value); renderImports(); });
+      return s;
+    }
+    var fySel = sel('年度', S.importsFy, [['all', 'すべての年度']].concat(fyList.map(function (y) { return [String(y), y + '年度']; })), function (v) { S.importsFy = v; });
+    var cmSel = sel('締め月', S.importsCm, [['all', 'すべての締め月']].concat(L.CLOSING_MONTH_ORDER.map(function (m) { return [String(m), m + '月20日締め(' + L.closingPeriod(m) + ')']; })), function (v) { S.importsCm = v; });
+    var cnt = '新しい順・' + rows.length + '件表示(最大' + IMPORTS_LIMIT + '件を読み込み)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
+    host.appendChild(h('div', { class: 'tool' }, fySel, cmSel, search, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; renderImports(); } }), h('span', { class: 'sub', text: cnt })));
     var head = h('tr'); IMPORT_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); });
     var body = h('tbody');
     rows.forEach(function (r) { var tr = h('tr'); IMPORT_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: r[k] || '' })); }); body.appendChild(tr); });
@@ -610,6 +632,21 @@
     } catch (e) { showBanner('保存に失敗しました: ' + e.message); }
   }
 
+  /** 画面中央のポップアップで確認する(ブラウザ標準の確認ダイアログは使わない)。OKならtrue */
+  function confirmDialog(title, detail, okText) {
+    return new Promise(function (resolve) {
+      var dlg = h('dialog', { class: 'dlg' },
+        h('p', { class: 'dlg-title', text: title }),
+        h('p', { class: 'dlg-detail', text: detail }),
+        h('div', { class: 'dlg-btns' },
+          h('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { dlg.close('no'); } }),
+          h('button', { class: 'btn del', type: 'button', text: okText || 'OK', onclick: function () { dlg.close('yes'); } })));
+      dlg.addEventListener('close', function () { var yes = dlg.returnValue === 'yes'; dlg.remove(); resolve(yes); });
+      document.body.appendChild(dlg);
+      dlg.showModal();
+    });
+  }
+
   function renderMaster(kind) {
     var host = $(kind === 'vehicle' ? 'tab-vehicles' : 'tab-drivers');
     host.textContent = '';
@@ -620,29 +657,12 @@
       if (k === '氏名' || k === '運送業者') return !!dups.driverName[L.companyKey(r.運送業者) + '|' + L.nameKey(r.氏名)];
       return k === '携帯番号' && !!dups.driverPhone[L.phoneDigits(r.携帯番号)];
     }
-    var q = L.nameKey(S.q[kind]).toLowerCase();
-    var rows = masterRows(kind).filter(function (r) { return !q || cols.some(function (k) { return L.nameKey(r[k]).toLowerCase().indexOf(q) >= 0; }); });
-    var search = h('input', { type: 'search', placeholder: '検索', value: S.q[kind], 'aria-label': '検索' });
-    search.addEventListener('input', function () { S.q[kind] = search.value; var pos = search.selectionStart; renderMaster(kind); var s = host.querySelector('input[type=search]'); s.focus(); s.setSelectionRange(pos, pos); });
+    var rows = masterRows(kind);
     var nd = kind === 'vehicle' ? Object.keys(dups.vehiclePlate).length : Object.keys(dups.driverName).length + Object.keys(dups.driverPhone).length;
-    host.appendChild(h('div', { class: 'tool' }, search, h('span', { class: 'sub', text: masterRows(kind).length + '件' + (nd ? ' ・ 重複 ' + nd + ' 組(赤)。確認して、不要な行を削除するか修正してください。' : '') })));
+    host.appendChild(h('div', { class: 'tool' }, h('span', { class: 'sub', text: rows.length + '件' + (nd ? ' ・ 重複 ' + nd + ' 組(赤)。確認して、不要な行を削除するか修正してください。' : '') })));
 
     var head = h('tr'); cols.forEach(function (k) { head.appendChild(h('th', { text: k })); }); head.appendChild(h('th', { text: '操作' }));
     var body = h('tbody');
-
-    // 追加行
-    var addInputs = {};
-    var addTr = h('tr', { class: 'addrow' });
-    cols.forEach(function (k) { addInputs[k] = h('input', { placeholder: k, 'aria-label': k + '(追加)' }); addTr.appendChild(h('td', null, addInputs[k])); });
-    addTr.appendChild(h('td', null, h('button', { class: 'btn sm primary', type: 'button', text: '追加', onclick: function () {
-      var d = normMaster(kind, Object.fromEntries(cols.map(function (k) { return [k, addInputs[k].value]; })));
-      var need = kind === 'vehicle' ? d.車番 : (d.氏名 && d.運送業者);
-      if (!need) { showBanner(kind === 'vehicle' ? '車番を入力してください。' : '運送業者と氏名を入力してください。'); return; }
-      var dm = dupMessage(kind, d, -1);
-      if (dm && !window.confirm(dm + '\nそれでも追加しますか?')) return;
-      saveMaster(kind, 'add', null, null, d);
-    } })));
-    body.appendChild(addTr);
 
     rows.forEach(function (r) {
       var editing = S.editing && S.editing.kind === kind && S.editing.row === r._row;
@@ -664,11 +684,13 @@
       } else {
         cols.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (isDup(r, k) ? ' dup' : ''), text: r[k] || '' })); });
         tr.appendChild(h('td', { class: 'nowrap' },
-          h('button', { class: 'btn sm', type: 'button', text: '編集', onclick: function () { S.editing = { kind: kind, row: r._row }; renderMaster(kind); } }), ' ',
-          h('button', { class: 'btn sm', type: 'button', text: '削除', onclick: function () {
-            if (!window.confirm('この行を削除しますか?\n' + cols.map(function (k) { return r[k]; }).join(' / '))) return;
-            var before = {}; cols.forEach(function (k) { before[k] = r[k] || ''; });
-            saveMaster(kind, 'delete', r._row, before, null);
+          h('button', { class: 'btn sm edit', type: 'button', text: '編集', onclick: function () { S.editing = { kind: kind, row: r._row }; renderMaster(kind); } }), ' ',
+          h('button', { class: 'btn sm del', type: 'button', text: '削除', onclick: function () {
+            confirmDialog('この行を削除しますか?', cols.map(function (k) { return r[k]; }).join(' / '), '削除する').then(function (yes) {
+              if (!yes) return;
+              var before = {}; cols.forEach(function (k) { before[k] = r[k] || ''; });
+              saveMaster(kind, 'delete', r._row, before, null);
+            });
           } })));
       }
       body.appendChild(tr);
