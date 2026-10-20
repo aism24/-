@@ -14,19 +14,22 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261020f';
+var CODE_VERSION = '20261020g';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
 var SHEET_DRIVER = '運転手携帯番号';
 var SHEET_INFO = '情報';
 var SHEET_HISTORY = 'マスタ変更履歴';
+var SHEET_CHANGE = '変更履歴';
 
 // 取込一覧の必須の見出し。FAXの送り主は「手配業者」に記録する(見出し「業者」の列が残っていれば、同じ値を入れる)。
 var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号'];
 var VEHICLE_HEADERS = ['手配業者', '運送業者', '車種', '車番'];
 var DRIVER_HEADERS = ['運送業者', '氏名', '携帯番号'];
 var HISTORY_HEADERS = ['日時', '種別', '操作', '変更前', '変更後', '契機'];
+var CHANGE_HEADERS = ['日時', '区分', 'ファイル名', '元の行', '変更前', '変更後'];
+var CHECK_FIELDS = ['手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '工事番号', '現場名'];
 
 var TEXT_COLS = ['着時間', '車種', '車番', '携帯番号', '工事番号'];
 var DATE_COLS = ['積日', '卸日'];
@@ -210,6 +213,7 @@ function doPost(e) {
     var body = JSON.parse(e.postData.contents);
     if (body.action === 'ocr') return ok_(ocr_(body));
     if (body.action === 'commit') return ok_(withLock_(function () { return commit_(body); }));
+    if (body.action === 'applyChanges') return ok_(withLock_(function () { return applyChanges_(body); }));
     if (body.action === 'masterSave') return ok_(withLock_(function () { return masterSave_(body); }));
     return err_('不明なaction: ' + body.action);
   } catch (ex) { return err_(ex.message); }
@@ -247,13 +251,17 @@ function listImports_(limit) {
 
 var OCR_PROMPT_ = [
   'これは運送トラックの車番連絡FAX(配車連絡表)をスキャンしたものです。内容を次のJSONだけで返してください(前置き・説明は不要)。',
-  '{"業者":"","FAX日付":"","明細":[{"積日":"","卸日":"","行先":"","着時間":"","運送業者":"","車種":"","車番":"","氏名":"","携帯番号":""}]}',
+  '{"業者":"","FAX日付":"","区分":"","メモ":"","明細":[{"積日":"","卸日":"","行先":"","着時間":"","運送業者":"","車種":"","車番":"","氏名":"","携帯番号":"","取消線":false}]}',
   'ルール:',
   '- 業者: このFAXを送ってきた会社(発信元。会社名・事業所名まで)。「御中」「様」が付いている側は宛先なので業者ではありません。',
   '- 会社名の「㈱」「(株)」「㈲」「(有)」などの記号は、印字のとおり書き写す(「株」「有」だけに省略しない)。',
   '- FAX日付: FAXの日付(本文の日付、または余白の受信印の日付)をyyyy-mm-ddで。読めなければ空文字。',
-  '- 明細: 車両1台=1要素。記入のない空欄の行は含めない。',
+  '- 区分: 「新規」「変更」「追加」「取消」のどれか。「再」「訂正」「変更」の印や文言があれば「変更」、「追加」「増車」なら「追加」、「取消」「キャンセル」なら「取消」。何も無ければ「新規」。',
+  '- メモ: FAXに書かれた連絡の文言(例: 「変更すみません。宜しくお願い致します。」)。無ければ空文字。',
+  '- 明細: 車両1台=1要素。記入のない空欄の行や、連絡の文言だけの行は含めない。',
+  '- 取消線: 文字や行に横線(取消線)が引かれていればtrue、なければfalse。変更後の内容は、通常、取消線の下の行(矢印↓の下)に書かれる。取消線で消された文字は読みにくいが、読める範囲で読む。',
   '- 積日・卸日: yyyy-mm-dd。年が書かれていなければFAX日付の年(今日は{{today}})。「10/ 20 (火)」のように分かれていても1つの日付として読む。',
+  '- 変更後の行で、積日・卸日・行先・車種が空欄のときは、他の行から補わず空文字にする。',
   '- 行先: 卸地(降地)。積地ではない。',
   '- 着時間: 卸しの着時間(「8:00着」なら8:00)。書かれていなければ空文字。',
   '- 運送業者: 実際に走る運送会社(「運送会社」「会社名」の欄)。業者(FAXの送り主)とは別の場合があります。',
@@ -329,17 +337,84 @@ function commit_(body) {
   var opCount = 0;
   ops.forEach(function (op) { applyOp_(op, source); opCount++; });
   var now = new Date();
-  rows.forEach(function (r) {
-    var o = {
-      'タイムスタンプ': now, 'ファイル名': source,
-      '工事番号': r.工事番号 || '', '現場名': r.現場名 || '',
-      '手配業者': r.業者 || '', '業者': r.業者 || '',
-      '積日': r.積日 || '', '卸日': r.卸日 || '', '行先': r.行先 || '', '着時間': r.着時間 || '',
-      '運送業者': r.運送業者 || '', '車種': r.車種 || '', '車番': r.車番 || '', '氏名': r.氏名 || '', '携帯番号': r.携帯番号 || ''
-    };
-    writeRow_(imp, IMPORT_HEADERS, null, o);
-  });
+  rows.forEach(function (r) { writeRow_(imp, IMPORT_HEADERS, null, importObj_(r, now, source)); });
   return { added: rows.length, ops: opCount };
+}
+
+/** 画面の行({業者, 積日, ...})を、取込一覧の見出し名つきの値にする。 */
+function importObj_(r, now, source) {
+  return {
+    'タイムスタンプ': now, 'ファイル名': source,
+    '工事番号': r.工事番号 || '', '現場名': r.現場名 || '',
+    '手配業者': r.業者 || '', '業者': r.業者 || '',
+    '積日': r.積日 || '', '卸日': r.卸日 || '', '行先': r.行先 || '', '着時間': r.着時間 || '',
+    '運送業者': r.運送業者 || '', '車種': r.車種 || '', '車番': r.車番 || '', '氏名': r.氏名 || '', '携帯番号': r.携帯番号 || ''
+  };
+}
+
+// ---------- 変更・追加・取消(一度受領した連絡の続報) ----------
+
+function sameRecord_(cur, before) {
+  for (var i = 0; i < CHECK_FIELDS.length; i++) {
+    var h = CHECK_FIELDS[i];
+    if (String(cur[h]) !== String(before && before[h] != null ? before[h] : '')) return h;
+  }
+  return '';
+}
+
+function recText_(o, fields) { return fields.map(function (k) { return o[k]; }).filter(function (v) { return v; }).join(' '); }
+
+/** items: [{mode:'update'|'add'|'delete', row, before, data}]。取込一覧を差し替え・追加・削除し、変更履歴に残す。
+ *  先に全件の「変更前の値」を検証してから書き込む(他の操作で変わっていたら、何も変えずに止める)。 */
+function applyChanges_(body) {
+  var items = body.items || [];
+  if (!items.length) throw new Error('反映する内容がありません。');
+  if (items.length > MAX_ROWS_PER_COMMIT) throw new Error('一度に反映できるのは' + MAX_ROWS_PER_COMMIT + '件までです。');
+  var imp = sheet_(SHEET_IMPORT);
+  var source = body.filename || '';
+  var current = {};
+  items.forEach(function (it) {
+    if (it.mode !== 'update' && it.mode !== 'delete') return;
+    var cur = readRows_(imp, IMPORT_HEADERS, it.row, it.row)[0];
+    if (!cur) throw new Error('取込一覧の行(' + it.row + ')が見つかりません。画面を再読み込みしてください。');
+    var bad = sameRecord_(cur, it.before);
+    if (bad) throw new Error('取込一覧の行(' + it.row + ')が他の操作で変更されています(' + bad + ')。画面を再読み込みしてください。');
+    current[it.row] = cur;
+  });
+  var opCount = 0;
+  (body.ops || []).forEach(function (op) { applyOp_(op, source); opCount++; });
+  var chg = ensureSheet_(SpreadsheetApp.getActiveSpreadsheet(), SHEET_CHANGE, CHANGE_HEADERS);
+  var now = new Date();
+  function log(kind, rowNo, before, after) {
+    chg.appendRow([now, kind, source, rowNo || '', before, after]);
+    chg.getRange(chg.getLastRow(), 1).setNumberFormat('yyyy/MM/dd HH:mm:ss');
+  }
+  var n = { update: 0, add: 0, remove: 0 };
+  // 差し替え(行番号は変わらない)
+  items.filter(function (it) { return it.mode === 'update'; }).forEach(function (it) {
+    var cur = current[it.row], obj = importObj_(it.data, now, source), diffs = [];
+    CHECK_FIELDS.forEach(function (h) {
+      var nv = h === '手配業者' ? (it.data.業者 || '') : (it.data[h] || '');
+      if (String(cur[h]) !== String(nv)) diffs.push(h + '=' + cur[h] + '→' + nv);
+    });
+    writeRow_(imp, IMPORT_HEADERS, it.row, obj);
+    log('変更', it.row, recText_(cur, ['積日', '行先', '運送業者', '車番', '氏名', '携帯番号']), diffs.join(' / '));
+    n.update++;
+  });
+  // 追加
+  items.filter(function (it) { return it.mode === 'add'; }).forEach(function (it) {
+    var r = writeRow_(imp, IMPORT_HEADERS, null, importObj_(it.data, now, source));
+    log('追加', r, '', recText_({ 積日: it.data.積日, 行先: it.data.行先, 運送業者: it.data.運送業者, 車番: it.data.車番, 氏名: it.data.氏名, 携帯番号: it.data.携帯番号 }, ['積日', '行先', '運送業者', '車番', '氏名', '携帯番号']));
+    n.add++;
+  });
+  // 削除(下の行から。行番号がずれないように)
+  items.filter(function (it) { return it.mode === 'delete'; }).sort(function (a, b) { return b.row - a.row; }).forEach(function (it) {
+    var cur = current[it.row];
+    imp.deleteRow(it.row);
+    log('取消', it.row, recText_(cur, ['積日', '行先', '運送業者', '車番', '氏名', '携帯番号']), '(取込一覧から削除)');
+    n.remove++;
+  });
+  return { updated: n.update, added: n.add, removed: n.remove, ops: opCount };
 }
 
 function masterInfo_(kind) {
