@@ -4,9 +4,9 @@
 <text x="550" y="92" text-anchor="middle" font-size="46" font-weight="700" letter-spacing="10" fill="#222">配車連絡表</text>
 <text x="70" y="160" text-anchor="start" font-size="26" font-weight="700" fill="#222">株式会社 正光　御中</text>
 <rect x="70" y="172" width="300" height="4" fill="#222"/>
-<text x="90" y="214" text-anchor="start" font-size="16" fill="#333">いつもお世話になっております。</text>
-<text x="90" y="242" text-anchor="start" font-size="16" fill="#333">下記の通りご連絡致します。</text>
-<text x="90" y="270" text-anchor="start" font-size="16" fill="#333">ご確認を宜しくお願い致します。</text>
+
+
+
 <rect x="780" y="104" width="260" height="22" rx="5" fill="#333" opacity="0.8" filter="url(#b2)"/>
 <rect x="760" y="138" width="300" height="16" rx="5" fill="#333" opacity="0.8" filter="url(#b2)"/>
 <rect x="790" y="164" width="250" height="16" rx="5" fill="#333" opacity="0.8" filter="url(#b2)"/>

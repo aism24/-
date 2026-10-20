@@ -167,5 +167,5 @@ table.t.zebra tbody tr.sel input, table.t.zebra tbody tr.sel select { min-width:
 @keyframes drop-fade-b { 0%, 38% { opacity: 0; } 50%, 88% { opacity: .9; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .drop::before, .drop::after { animation: none; } .drop::after { opacity: 0; } }
 .drop > * { position: relative; z-index: 1; }
-.drop-main { font-size: 28px; padding: 18px 40px; border-radius: 14px; background: rgba(255,255,255,.82); }
-.drop span { padding: 4px 14px; border-radius: 8px; background: rgba(255,255,255,.7); color: var(--ink); }
+.drop-main { font-size: 44px; line-height: 1.3; padding: 20px 48px; border-radius: 14px; background: #fff7a8; color: #1558b0; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+.drop span { font-size: 16px; font-weight: 600; padding: 6px 18px; border-radius: 8px; background: #fff7a8; color: #1558b0; }
