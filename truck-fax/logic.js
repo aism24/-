@@ -458,6 +458,12 @@
     if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
     return closingOf(y, mo, d);
   }
+  /** 'yyyy/MM/dd' 'yyyy-MM-dd'(時刻つき可)→ 'yyyy-mm-dd'(0埋め)。読めなければ '' */
+  function dateKey(t) {
+    var m = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/.exec(String(t == null ? '' : t).trim());
+    if (!m) return '';
+    return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
+  }
   /** 取込一覧の行がどの締め月か(積日→卸日→タイムスタンプの順で、読めた日付を使う) */
   function rowClosing(r) { return closingOfText(r.積日) || closingOfText(r.卸日) || closingOfText(r.タイムスタンプ); }
   /** 締め月の期間の表示(例: 12月→「11/21〜12/20」、4月→「3/21〜4/20」) */
@@ -480,7 +486,7 @@
   }
 
   return {
-    sortVehicles: sortVehicles, typeRank: typeRank, senderRank: senderRank,
+    dateKey: dateKey, sortVehicles: sortVehicles, typeRank: typeRank, senderRank: senderRank,
     closingOf: closingOf, closingOfText: closingOfText, rowClosing: rowClosing, closingPeriod: closingPeriod, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
     fmtType: fmtType, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate, companyKey: companyKey,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,

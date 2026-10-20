@@ -1,14 +1,7 @@
 :root {
-  --bg: #f5f6f8; --card: #fff; --ink: #1f2933; --sub: #616e7c; --line: #d9dee4;
+  --bg: #4a4f57; --th: #f5f6f8; --on-bg: #eef1f4; color-scheme: light; --card: #fff; --ink: #1f2933; --sub: #616e7c; --line: #d9dee4;
   --accent: #1d6fb8; --accent-ink: #fff;
   --err-bg: #fde8e8; --err: #b42318; --warn-bg: #fff4d6; --warn: #8a5a00; --info-bg: #e5f1fb; --info: #1d5f99; --ok: #1a7f37;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14181d; --card: #1d232a; --ink: #e6eaee; --sub: #9aa6b2; --line: #343d47;
-    --accent: #4aa3e8; --accent-ink: #08121c;
-    --err-bg: #4a1f1f; --err: #ff9b92; --warn-bg: #4a3a12; --warn: #f2c35a; --info-bg: #17344d; --info: #8cc7f2; --ok: #5fd07f;
-  }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif; }
@@ -21,7 +14,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 syste
 .company { font-weight: 600; white-space: nowrap; }
 .tabs { display: flex; justify-content: center; gap: 4px; padding: 8px 16px 0; background: var(--card); border-bottom: 1px solid var(--line); overflow-x: auto; }
 .tabs button { border: 1px solid transparent; border-bottom: none; background: none; padding: 8px 14px; font: inherit; color: var(--sub); cursor: pointer; border-radius: 6px 6px 0 0; white-space: nowrap; }
-.tabs button.on { background: var(--bg); border-color: var(--line); color: var(--ink); font-weight: 600; margin-bottom: -1px; }
+.tabs button.on { background: var(--bg); border-color: var(--bg); color: var(--on-bg); font-weight: 600; margin-bottom: -1px; }
 .banner { max-width: 1468px; margin: 12px auto 0; padding: 10px 12px; border-radius: 6px; background: var(--err-bg); color: var(--err); }
 main { padding: 16px; max-width: 1500px; margin: 0 auto; }
 .drop { display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; padding: 22px 12px; border: 2px dashed var(--line); border-radius: 10px; background: var(--card); cursor: pointer; }
@@ -34,11 +27,11 @@ main { padding: 16px; max-width: 1500px; margin: 0 auto; }
 .chip.ok { background: var(--info-bg); color: var(--ok); }
 .chip.bad { background: var(--err-bg); color: var(--err); }
 .spacer { flex: 1; }
-.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; }
-table.t { border-collapse: collapse; width: 100%; font-size: 13px; }
+.scroll { background: #fff; overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; }
+table.t { border-collapse: collapse; width: 100%; font-size: 13px; background: #fff; }
 table.t th, table.t td { border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); padding: 3px 5px; text-align: left; vertical-align: middle; }
 table.t th:last-child, table.t td:last-child { border-right: none; }
-table.t thead th { background: var(--bg); color: var(--sub); font-weight: 600; position: sticky; top: 0; white-space: nowrap; }
+table.t thead th { background: var(--th); color: var(--sub); font-weight: 600; position: sticky; top: 0; white-space: nowrap; }
 table.t tbody tr:last-child td { border-bottom: none; }
 table.t input, table.t select { width: 100%; font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 3px 5px; }
 table.t input.need, table.t select.need { background: #fff2a8; border-color: #d4a50f; color: #3a2e00; }
@@ -74,10 +67,11 @@ button.sm { padding: 2px 8px; font-size: 12px; }
 .tool { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .tool select { font: inherit; padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
 .tool input[type=search] { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); min-width: 220px; }
-.tool .sub { color: var(--sub); font-size: 12px; }
-.empty { padding: 16px; text-align: center; color: var(--sub); }
+.tool .sub { color: var(--on-bg); font-size: 12px; }
+.empty { padding: 16px; text-align: center; color: var(--on-bg); }
+.card .empty { color: var(--sub); }
 #setup { max-width: 640px; }
-code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+code { background: var(--th); padding: 1px 5px; border-radius: 4px; }
 @media (max-width: 760px) {
   .top { grid-template-columns: 1fr; justify-items: center; gap: 6px; }
   .top h1, .brand { grid-column: 1; grid-row: auto; justify-self: center; text-align: center; }
@@ -90,7 +84,7 @@ code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 
 .kindbox { font-size: 12px; color: var(--sub); display: inline-flex; align-items: center; gap: 4px; }
 .kindbox select { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
-table.t.change td.cur { background: var(--bg); color: var(--sub); }
+table.t.change td.cur { background: var(--th); color: var(--sub); }
 table.t.change td.chg { background: var(--warn-bg); }
 table.t.change tr.grp td { border-top: 2px solid var(--line); }
 table.t td.num.new { color: var(--accent); font-weight: 600; } table.t td.num.cur { white-space: nowrap; }
@@ -129,3 +123,10 @@ body.dragging::after { content: 'ここにドロップして取り込み'; posit
 .mastertbl { max-width: 100%; margin-left: auto; margin-right: auto; }
 table.t.master { table-layout: fixed; }
 table.t.master th, table.t.master td { text-align: center; overflow: hidden; text-overflow: ellipsis; }
+button.btn.orange { background: #f28c1a; border-color: #c96f0a; color: #fff; font-weight: 700; }
+table.t.zebra tbody tr:nth-child(odd) td { background: #fff; }
+table.t.zebra tbody tr:nth-child(even) td { background: #fff7cc; }
+dialog.dlg.wide { max-width: min(96vw, 1300px); width: min(96vw, 1300px); }
+.dlg-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.dlg-row input { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; }
+.dlg-scroll { max-height: 50vh; overflow: auto; margin-bottom: 14px; }
