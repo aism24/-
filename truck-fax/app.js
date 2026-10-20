@@ -13,6 +13,7 @@
   var IMPORTS_SHOW = 100;
   var VIEW_HEADERS = IMPORT_HEADERS.filter(function (k) { return k !== 'タイムスタンプ'; }); // 画面・Excelに出す列
   var INACTIVE = ['中止', '変更前'];
+  var OTHER = 'その他'; // 工事に該当しないもの。工事番号・現場名の両方に「その他」と記録する
   var MASTER_COL_W = 170;
   var MAX_BYTES = 10 * 1024 * 1024;
 
@@ -155,7 +156,7 @@
   function applyProjectDefault(row) {
     if (row.工事番号 && !row._suggest) return;
     var s = L.suggestProject(S.destMap, row.行先);
-    if (s) { row.工事番号 = s.工事番号; row.現場名 = L.projectName(S.projects, s.工事番号) || s.現場名; row._suggest = true; }
+    if (s) { row.工事番号 = s.工事番号; row.現場名 = s.工事番号 === OTHER ? OTHER : (L.projectName(S.projects, s.工事番号) || s.現場名); row._suggest = true; }
     else { row.工事番号 = ''; row.現場名 = ''; row._suggest = false; }
   }
 
@@ -174,7 +175,8 @@
   function projectSelect(card, row) {
     var sel = h('select', { class: 'w-no', 'aria-label': '工事番号' });
     sel.appendChild(h('option', { value: '', text: '(選択してください)' }));
-    var found = false;
+    sel.appendChild(h('option', { value: OTHER, text: OTHER })); // リストの一番上
+    var found = row.工事番号 === OTHER;
     S.projects.forEach(function (p) {
       if (p.工事番号 === row.工事番号) found = true;
       sel.appendChild(h('option', { value: p.工事番号, text: p.工事番号 + '  ' + p.工事名 }));
@@ -183,7 +185,7 @@
     sel.value = row.工事番号 || '';
     sel.addEventListener('change', function () {
       row.工事番号 = sel.value; row._suggest = false;
-      row.現場名 = L.projectName(S.projects, row.工事番号);
+      row.現場名 = row.工事番号 === OTHER ? OTHER : L.projectName(S.projects, row.工事番号);
       if (row.工事番号) card.rows.forEach(function (o) {
         if (o !== row && !o.工事番号 && L.nameKey(o.行先) === L.nameKey(row.行先)) { o.工事番号 = row.工事番号; o.現場名 = row.現場名; o._suggest = false; }
       });
@@ -646,7 +648,7 @@
       if (S.importsCm !== 'all' && !(c && String(c.cm) === S.importsCm)) return false;
       return S.importsSite === 'all' || r.現場名 === S.importsSite;
     });
-    var sites = {}; // 現場名リスト: 情報シートの工事名と、取込一覧にある現場名
+    var sites = {}; sites[OTHER] = 1; // 現場名リスト: 「その他」、情報シートの工事名、取込一覧にある現場名
     S.projects.forEach(function (p) { if (p.工事名) sites[p.工事名] = 1; });
     S.imports.forEach(function (r) { if (r.現場名) sites[r.現場名] = 1; });
     var siteList = Object.keys(sites).sort(function (a, b) { return a.localeCompare(b, 'ja'); });
