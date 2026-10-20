@@ -509,8 +509,8 @@
     });
   }
 
-  /** 取込一覧の行がどの締め月か(積日→卸日→タイムスタンプの順で、読めた日付を使う) */
-  function rowClosing(r) { return closingOfText(r.積日) || closingOfText(r.卸日) || closingOfText(r.タイムスタンプ); }
+  /** 取込一覧の行がどの締め月か。卸日で区切る(10/20卸=10月20日締め、10/21卸=11月20日締め)。卸日が読めなければ積日→タイムスタンプ */
+  function rowClosing(r) { return closingOfText(r.卸日) || closingOfText(r.積日) || closingOfText(r.タイムスタンプ); }
   /** 締め月の期間の表示(例: 12月→「11/21〜12/20」、4月→「3/21〜4/20」) */
   function closingPeriod(cm) { var pm = cm === 1 ? 12 : cm - 1; return pm + '/21〜' + cm + '/20'; }
 
