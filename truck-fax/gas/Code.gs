@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261021e';
+var CODE_VERSION = '20261021f';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
@@ -46,7 +46,7 @@ function setupSheets() {
   ensureOptionalCols_(ss.getSheetByName(SHEET_IMPORT), ['ファイルURL']);
   faxFolder_(true); // 原本の保存先フォルダ(初めて実行するとき、Driveの権限の確認が出る)
   var info = ss.getSheetByName(SHEET_INFO) || ss.insertSheet(SHEET_INFO);
-  var defaults = [['Geminiモデル名', 'gemini-3.5-flash-lite'], ['タイムゾーン', 'Asia/Tokyo'], ['APIKEY', '']];
+  var defaults = [['Geminiモデル名', 'gemini-3.5-flash-lite'], ['タイムゾーン', 'Asia/Tokyo'], ['APIKEY', ''], ['PDF保存先ID', '']];
   var names = info.getRange(1, 1, Math.max(info.getLastRow(), 1), 1).getValues().map(function (r) { return String(r[0]).trim(); });
   defaults.forEach(function (d) {
     if (names.indexOf(d[0]) >= 0) return;
@@ -68,7 +68,7 @@ function ensureSheet_(ss, name, headers) {
 
 /** 任意の列(見出し)が無ければ、見出し行の右端に足す。既存の列・値は変えない。 */
 // ---------- 取り込んだ原本(PDF・画像)のDrive保存 ----------
-// 保存先: スプレッドシートと同じフォルダの中の「FAX原本」(無ければ作る)。画面からの表示は、このフォルダとスプレッドシートのフォルダの中のファイルだけ。
+// 保存先: 情報シートの項目「PDF保存先ID」(DriveのフォルダID)のフォルダ。空のときだけ、スプレッドシートと同じフォルダの中の「FAX原本」(無ければ作る)。画面からの表示は、保存先のフォルダとスプレッドシートのフォルダの中のファイルだけ。
 var FAX_FOLDER_NAME = 'FAX原本';
 var MAX_FAX_BYTES = 12 * 1024 * 1024;
 function sheetFolder_() {
@@ -76,6 +76,11 @@ function sheetFolder_() {
   return parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
 }
 function faxFolder_(create) {
+  var id = getInfo_('PDF保存先ID');
+  if (id) {
+    try { return DriveApp.getFolderById(id); }
+    catch (ex) { throw new Error('情報シートの「PDF保存先ID」のフォルダを開けません(IDの間違い、または、このスプレッドシートの所有者に権限がありません)。'); }
+  }
   var parent = sheetFolder_();
   var it = parent.getFoldersByName(FAX_FOLDER_NAME);
   if (it.hasNext()) return it.next();
