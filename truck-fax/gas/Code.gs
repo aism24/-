@@ -13,6 +13,9 @@
  * APIキーはこのGAS内でだけ使い、画面には返さない。
  */
 
+// 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
+var CODE_VERSION = '20261020c';
+
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
 var SHEET_DRIVER = '運転手携帯番号';
@@ -197,7 +200,7 @@ function doGet(e) {
     var a = e.parameter.action;
     if (a === 'init') return ok_(getInit_());
     if (a === 'listImports') return ok_(listImports_(Number(e.parameter.limit) || 300));
-    if (a === 'ping') return ok_('pong');
+    if (a === 'ping') return ok_({ pong: true, version: CODE_VERSION });
     return err_('不明なaction: ' + a);
   } catch (ex) { return err_(ex.message); }
 }
@@ -227,6 +230,7 @@ function getInit_() {
     projects: readProjects_(),
     importKeys: impRows.map(function (r) { return { 積日: r.積日, 車番: r.車番 }; }),
     pastDest: impRows.slice(-PAST_DEST_ROWS).map(function (r) { return { 行先: r.行先, 工事番号: r.工事番号, 現場名: r.現場名 }; }),
+    version: CODE_VERSION,
     model: getInfo_('Geminiモデル名'),
     keyOk: getInfo_('APIKEY') !== ''
   };
