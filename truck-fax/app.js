@@ -19,7 +19,7 @@
   var MAX_BYTES = 10 * 1024 * 1024;
 
   var S = { senders: [], vehicles: [], drivers: [], projects: [], importKeyList: [], destMap: {}, model: '', keyOk: false, cards: [], tab: 'import',
-    imports: null, importsFy: null, importsCm: null, importsSite: 'all', editing: null };
+    imports: null, importsFy: null, importsCm: null, importsSite: 'all', importsSel: null, editing: null };
   var seq = 0;
 
   // ---------- 小物 ----------
@@ -111,6 +111,7 @@
   }
   function showTab(t) {
     S.tab = t;
+    document.querySelector('main').classList.toggle('wide', t === 'imports'); // 取込一覧は画面いっぱいに広げる
     ['import', 'imports', 'vehicles', 'drivers'].forEach(function (x) { $('tab-' + x).hidden = x !== t; });
     renderTabs();
     if (t === 'imports') renderImports();
@@ -355,7 +356,11 @@
     S.cards = S.cards.filter(function (c) { return c !== card; });
     card.el.remove(); if (card.url) URL.revokeObjectURL(card.url);
     syncDrop();
-    var t = h('div', { class: 'toast', text: card.msg, onclick: function () { t.remove(); } });
+    toast(card.msg);
+  }
+  /** 画面下に、結果を少しの間だけ知らせる(クリックで消える) */
+  function toast(msg) {
+    var t = h('div', { class: 'toast', text: msg, onclick: function () { t.remove(); } });
     document.body.appendChild(t);
     setTimeout(function () { t.remove(); }, 8000);
   }
@@ -676,10 +681,83 @@
     var cnt = '新しい順・該当' + rows.length + '件のうち最新' + shown.length + '件を表示(最大' + IMPORTS_SHOW + '件)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
     host.appendChild(h('div', { class: 'tool' }, fySel, cmSel, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; S.importsP = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn excel', type: 'button', text: '降し日指定でダウンロード', onclick: openDateDownload })));
-    var head = h('tr'); VIEW_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); });
+    var head = h('tr'); VIEW_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); }); head.appendChild(h('th', { text: '操作' }));
     var body = h('tbody');
-    shown.forEach(function (r) { var tr = h('tr'); VIEW_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: r[k] || '' })); }); body.appendChild(tr); });
+    shown.forEach(function (r) { body.appendChild(importRow(r)); });
     host.appendChild(shown.length ? h('div', { class: 'scroll' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' }));
+  }
+
+  // ---------- 取込一覧の行の編集(行をクリック→その行が編集できる) ----------
+  var IMPORT_LABELS = ['', '変更前', '変更後', '中止'];
+  function importDraftOf(r) { var d = {}; VIEW_HEADERS.forEach(function (k) { if (k !== 'ファイル名') d[k] = r[k] || ''; }); return d; }
+
+  function importRow(r) {
+    var sel = S.importsSel && S.importsSel.row === r._row ? S.importsSel : null;
+    var tr = h('tr', { class: sel ? 'sel' : 'pick' });
+    if (!sel) {
+      VIEW_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: r[k] || '' })); });
+      tr.appendChild(h('td', { class: 'nowrap' }));
+      tr.addEventListener('click', function () { selectImportRow(r); });
+      return tr;
+    }
+    var d = sel.draft, siteCell = null;
+    VIEW_HEADERS.forEach(function (k) {
+      var td = h('td', { class: 'nowrap' });
+      if (k === 'ファイル名') td.textContent = r[k] || '';
+      else if (k === '現場名') { siteCell = td; td.textContent = d.現場名; }
+      else if (k === '工事番号') {
+        var ps = h('select', { 'aria-label': k });
+        ps.appendChild(h('option', { value: '', text: '(なし)' }));
+        ps.appendChild(h('option', { value: OTHER, text: OTHER }));
+        var found = d.工事番号 === '' || d.工事番号 === OTHER;
+        S.projects.forEach(function (p) { if (p.工事番号 === d.工事番号) found = true; ps.appendChild(h('option', { value: p.工事番号, text: p.工事番号 + '  ' + p.工事名 })); });
+        if (!found) ps.appendChild(h('option', { value: d.工事番号, text: d.工事番号 }));
+        ps.value = d.工事番号;
+        ps.addEventListener('change', function () { d.工事番号 = ps.value; d.現場名 = !ps.value ? '' : ps.value === OTHER ? OTHER : (L.projectName(S.projects, ps.value) || d.現場名); siteCell.textContent = d.現場名; });
+        td.appendChild(ps);
+      } else if (k === '追加変更') {
+        var ls = h('select', { 'aria-label': k });
+        (IMPORT_LABELS.indexOf(d.追加変更) < 0 ? IMPORT_LABELS.concat([d.追加変更]) : IMPORT_LABELS).forEach(function (v) { ls.appendChild(h('option', { value: v, text: v || '(なし)' })); });
+        ls.value = d.追加変更;
+        ls.addEventListener('change', function () { d.追加変更 = ls.value; });
+        td.appendChild(ls);
+      } else {
+        var inp = h('input', { value: d[k], 'aria-label': k });
+        inp.addEventListener('change', function () { var v = normField(k, inp.value); inp.value = v; d[k] = v; });
+        td.appendChild(inp);
+      }
+      tr.appendChild(td);
+    });
+    var save = h('button', { class: 'btn sm primary', type: 'button', text: '保存', onclick: function () { saveImportRow(r, sel); } });
+    var cancel = h('button', { class: 'btn sm', type: 'button', text: '取消', onclick: function () { S.importsSel = null; renderImports(); } });
+    tr.appendChild(h('td', { class: 'nowrap' }, save, ' ', cancel));
+    return tr;
+  }
+
+  async function selectImportRow(r) {
+    var cur = S.importsSel;
+    if (cur && JSON.stringify(cur.draft) !== cur.orig) { // 編集中の変更があるときは、確認してから別の行へ
+      if (!(await confirmDialog('編集中の内容を破棄しますか?', '保存していない変更があります。別の行を選ぶと、変更は消えます。', '破棄して選ぶ'))) return;
+    }
+    var d = importDraftOf(r);
+    S.importsSel = { row: r._row, draft: d, orig: JSON.stringify(d) };
+    renderImports();
+  }
+
+  async function saveImportRow(r, sel) {
+    var d = sel.draft;
+    if (!String(d.車番).trim()) { showBanner('車番は空にできません。'); return; }
+    if ((d.積日 && !L.dateKey(d.積日)) || (d.卸日 && !L.dateKey(d.卸日))) { showBanner('積日・卸日は 2026/10/20 の形で入力してください。'); return; }
+    var close = busyDialog('データ記録中');
+    try {
+      await apiPost('updateImport', { row: r._row, before: L.recFields(r), data: d }, 60000);
+      Object.keys(d).forEach(function (k) { r[k] = d[k]; });
+      S.importsSel = null; showBanner('');
+      close(); close = function () {};
+      renderImports(); toast('取込一覧の行を保存しました。');
+      loadInit(true).catch(function () {}); // 重複の判定などに使う最新の記録を読み直す
+    } catch (e) { showBanner('保存に失敗しました: ' + e.message); }
+    finally { close(); }
   }
 
   function todayIso() { var n = new Date(); return n.getFullYear() + '-' + ('0' + (n.getMonth() + 1)).slice(-2) + '-' + ('0' + n.getDate()).slice(-2); }
@@ -780,7 +858,7 @@
       if (k === '氏名' || k === '運送業者') return !!dups.driverName[L.companyKey(r.運送業者) + '|' + L.nameKey(r.氏名)];
       return k === '携帯番号' && !!dups.driverPhone[L.phoneDigits(r.携帯番号)];
     }
-    var rows = kind === 'vehicle' ? L.sortVehicles(masterRows(kind)) : masterRows(kind); // 車両情報は、手配業者→運送業者→車種の順に並べて表示
+    var rows = kind === 'vehicle' ? L.sortVehicles(masterRows(kind)) : L.sortDrivers(masterRows(kind), S.vehicles); // 車両情報は手配業者→運送業者→車種、運転手情報は運送業者→車種→氏名の順に並べて表示
     var nd = kind === 'vehicle' ? Object.keys(dups.vehiclePlate).length : Object.keys(dups.driverName).length + Object.keys(dups.driverPhone).length;
     if (kind === 'driver' && !S.driverTypeCol) host.appendChild(h('div', { class: 'banner', style: 'margin-bottom:10px' }, '運転手の「車種」を保存するには、GAS(Code.gs)を最新版に貼り替えて、関数 setupSheets を1回実行してください(シートに「車種」の列が追加されます)。'));
     var tblW = (cols.length + 1) * MASTER_COL_W + 'px'; // 全ての列を同じ幅(車番がおさまる幅)にそろえ、中央に置く
@@ -795,7 +873,7 @@
 
     // 行の色: 車両情報は手配業者(大上=薄い緑・ナミツー=薄い黄)、運転手は運送業者ごとに色分け
     var companies = {};
-    if (kind === 'driver') Array.from(new Set(rows.map(function (r) { return L.companyKey(r.運送業者); }))).sort().forEach(function (k, i) { companies[k] = DRIVER_COLORS[i % DRIVER_COLORS.length]; });
+    if (kind === 'driver') Array.from(new Set(rows.map(function (r) { return L.companyKey(r.運送業者); }))).forEach(function (k, i) { companies[k] = DRIVER_COLORS[i % DRIVER_COLORS.length]; }); // 上から順に、運送業者ごとに色が変わっていく
     function rowColor(r) {
       if (kind === 'driver') return companies[L.companyKey(r.運送業者)] || '';
       var rk = L.senderRank(r.手配業者);

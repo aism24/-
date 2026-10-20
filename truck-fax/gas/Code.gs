@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261021c';
+var CODE_VERSION = '20261021d';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
@@ -257,6 +257,7 @@ function doPost(e) {
     var body = JSON.parse(e.postData.contents);
     if (body.action === 'ocr') return ok_(ocr_(body));
     if (body.action === 'commit') return ok_(withLock_(function () { return commit_(body); }));
+    if (body.action === 'updateImport') return ok_(withLock_(function () { return updateImport_(body); }));
     if (body.action === 'applyChanges') return ok_(withLock_(function () { return applyChanges_(body); }));
     if (body.action === 'masterSave') return ok_(withLock_(function () { return masterSave_(body); }));
     return err_('不明なaction: ' + body.action);
@@ -408,6 +409,27 @@ function sameRecord_(cur, before) {
     if (String(cur[h]) !== String(before && before[h] != null ? before[h] : '')) return h;
   }
   return '';
+}
+
+// 取込一覧の行を、画面から直す(行の削除はできない)。編集できる項目だけを、変更前の値の照合つきで書き換える。
+var EDITABLE_IMPORT = ['工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '追加変更', '備考'];
+function updateImport_(body) {
+  var imp = sheet_(SHEET_IMPORT);
+  var row = Number(body.row);
+  var cur = readRows_(imp, IMPORT_HEADERS, row, row, IMPORT_OPTIONAL)[0];
+  if (!cur) throw new Error('取込一覧の行(' + body.row + ')が見つかりません。画面を再読み込みしてください。');
+  var bad = sameRecord_(cur, body.before);
+  if (bad) throw new Error('取込一覧の行(' + row + ')が他の操作で変更されています(' + bad + ')。画面を再読み込みしてください。');
+  var data = body.data || {}, obj = {};
+  Object.keys(data).forEach(function (k) {
+    if (EDITABLE_IMPORT.indexOf(k) < 0) throw new Error('この項目は直せません: ' + k);
+    obj[k] = String(data[k] == null ? '' : data[k]).trim();
+  });
+  if ('車番' in obj && !obj.車番) throw new Error('車番は空にできません。');
+  if ('追加変更' in obj && ['', '変更前', '変更後', '中止'].indexOf(obj.追加変更) < 0) throw new Error('「追加変更」の値が不正です: ' + obj.追加変更);
+  ['積日', '卸日'].forEach(function (k) { if (obj[k] && !/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(obj[k])) throw new Error(k + 'は 2026/10/20 の形で入力してください。'); });
+  writeRow_(imp, IMPORT_HEADERS, row, obj);
+  return { ok: true, row: row };
 }
 
 /** items: [{mode:'mark', row, label:'変更前'|'中止', before, note}, {mode:'add', data, label}]。
