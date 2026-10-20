@@ -523,6 +523,16 @@
     return /TR/i.test(s) ? 1000 : 2000;
   }
   function cmpJa(a, b) { a = String(a == null ? '' : a); b = String(b == null ? '' : b); return a < b ? -1 : (a > b ? 1 : 0); }
+  // 運転手情報の並び順: 運送業者でまとめる(大上・ナミツーの車に乗る会社の順)→車種(4t→10t→15t→TR→その他。複数なら一番小さい車種)→氏名
+  function sortDrivers(list, vehicles) {
+    var rankOf = {};
+    (vehicles || []).forEach(function (v) { var k = companyKey(v.運送業者), r = senderRank(v.手配業者); if (rankOf[k] == null || r < rankOf[k]) rankOf[k] = r; });
+    function typeMin(d) { var l = typeList(d.車種); return l.length ? Math.min.apply(null, l.map(typeRank)) : 3000; }
+    return list.slice().sort(function (a, b) {
+      var ka = companyKey(a.運送業者), kb = companyKey(b.運送業者);
+      return (rankOf[ka] == null ? 2 : rankOf[ka]) - (rankOf[kb] == null ? 2 : rankOf[kb]) || cmpJa(ka, kb) || typeMin(a) - typeMin(b) || cmpJa(a.氏名, b.氏名);
+    });
+  }
   function sortVehicles(list) {
     return list.slice().sort(function (a, b) {
       return senderRank(a.手配業者) - senderRank(b.手配業者) || cmpJa(companyKey(a.運送業者), companyKey(b.運送業者)) ||
@@ -531,7 +541,7 @@
   }
 
   return {
-    alreadyImported: alreadyImported, fmtTypes: fmtTypes, mergeTypes: mergeTypes, typeList: typeList, dateKey: dateKey, sortVehicles: sortVehicles, typeRank: typeRank, senderRank: senderRank,
+    alreadyImported: alreadyImported, fmtTypes: fmtTypes, mergeTypes: mergeTypes, typeList: typeList, dateKey: dateKey, sortDrivers: sortDrivers, sortVehicles: sortVehicles, typeRank: typeRank, senderRank: senderRank,
     closingOf: closingOf, closingOfText: closingOfText, rowClosing: rowClosing, closingPeriod: closingPeriod, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
     fmtType: fmtType, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate, companyKey: companyKey,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,
