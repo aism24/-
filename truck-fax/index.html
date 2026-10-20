@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>車番連絡 取込</title>
-<link rel="stylesheet" href="style.css?v=20261021o">
+<link rel="stylesheet" href="style.css?v=20261021s">
 </head>
 <body>
 <header class="top">
@@ -22,8 +22,8 @@
   <section id="tab-import">
     <label id="drop" class="drop" tabindex="0">
       <input id="file" type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" hidden>
-      <strong>FAXのPDFを画面のどこへでもドロップ、またはここをクリックして選択</strong>
-      <span>1回に取り込めるのは1ファイルです(PDF・PNG・JPEG、10MBまで)。取り込むと内容を自動で読み取り、確認用の表が出ます。</span>
+      <strong class="drop-main">ここにドラッグかフォルダより選択</strong>
+      <span>画面のどこへドロップしてもOK。1回に取り込めるのは1ファイル(PDF・PNG・JPEG、10MBまで)</span>
     </label>
     <div id="cards"></div>
   </section>
@@ -35,9 +35,9 @@
     <p>GASのURLが未設定です。<code>README.md</code>の手順で、GAS(<code>gas/Code.gs</code>)をデプロイし、そのURLを <code>app.js</code> の <code>GAS_API_URL</code> に設定してください。</p>
   </section>
 </main>
-<script src="xlsx.js?v=20261021o"></script>
-<script src="viewer.js?v=20261021o"></script>
-<script src="logic.js?v=20261021o"></script>
-<script src="app.js?v=20261021o"></script>
+<script src="xlsx.js?v=20261021s"></script>
+<script src="viewer.js?v=20261021s"></script>
+<script src="logic.js?v=20261021s"></script>
+<script src="app.js?v=20261021s"></script>
 </body>
 </html>
