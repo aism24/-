@@ -14,7 +14,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261020c';
+var CODE_VERSION = '20261020f';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
@@ -22,7 +22,8 @@ var SHEET_DRIVER = '運転手携帯番号';
 var SHEET_INFO = '情報';
 var SHEET_HISTORY = 'マスタ変更履歴';
 
-var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '業者', '積日', '卸日', '行先', '着時間', '手配業者', '運送業者', '車種', '車番', '氏名', '携帯番号'];
+// 取込一覧の必須の見出し。FAXの送り主は「手配業者」に記録する(見出し「業者」の列が残っていれば、同じ値を入れる)。
+var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号'];
 var VEHICLE_HEADERS = ['手配業者', '運送業者', '車種', '車番'];
 var DRIVER_HEADERS = ['運送業者', '氏名', '携帯番号'];
 var HISTORY_HEADERS = ['日時', '種別', '操作', '変更前', '変更後', '契機'];
@@ -164,10 +165,9 @@ function parseDate_(s) {
 /** 1行を書く。row が null なら末尾に追加。obj は {見出し: 値}。 */
 function writeRow_(sh, headers, rowNo, obj) {
   var map = headerMap_(sh, headers);
-  var width = sh.getLastColumn();
   var r = rowNo || (sh.getLastRow() + 1);
-  headers.forEach(function (h) {
-    if (!(h in obj)) return;
+  Object.keys(obj).forEach(function (h) {
+    if (!map[h]) return;
     var cell = sh.getRange(r, map[h]);
     if (TEXT_COLS.indexOf(h) >= 0) cell.setNumberFormat('@');
     else if (DATE_COLS.indexOf(h) >= 0) cell.setNumberFormat('yyyy/MM/dd');
@@ -333,7 +333,7 @@ function commit_(body) {
     var o = {
       'タイムスタンプ': now, 'ファイル名': source,
       '工事番号': r.工事番号 || '', '現場名': r.現場名 || '',
-      '業者': r.業者 || '', '手配業者': r.業者 || '',
+      '手配業者': r.業者 || '', '業者': r.業者 || '',
       '積日': r.積日 || '', '卸日': r.卸日 || '', '行先': r.行先 || '', '着時間': r.着時間 || '',
       '運送業者': r.運送業者 || '', '車種': r.車種 || '', '車番': r.車番 || '', '氏名': r.氏名 || '', '携帯番号': r.携帯番号 || ''
     };
