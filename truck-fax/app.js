@@ -7,7 +7,7 @@
   var GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyfyFEJn4alzJGmbWIhKwKeRvJ2OlkgyM4wZFk7ldUVCs5Yx-khi5FOWLen6cvvIYQ/exec';
   function gasUrl() { return window.__GAS_URL__ || GAS_API_URL; }
 
-  var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '業者', '積日', '卸日', '行先', '着時間', '手配業者', '運送業者', '車種', '車番', '氏名', '携帯番号'];
+  var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号'];
   var MASTER_COLS = { vehicle: ['手配業者', '運送業者', '車種', '車番'], driver: ['運送業者', '氏名', '携帯番号'] };
   var MAX_BYTES = 10 * 1024 * 1024;
 
@@ -163,7 +163,7 @@
   }
 
   var FIELDS = [
-    ['業者', '業者(手配業者)', 'w-co'], ['積日', '積日', 'w-date'], ['卸日', '卸日', 'w-date'], ['行先', '行先', 'w-dest'], ['着時間', '着時間', 'w-time'],
+    ['業者', '手配業者', 'w-co'], ['積日', '積日', 'w-date'], ['卸日', '卸日', 'w-date'], ['行先', '行先', 'w-dest'], ['着時間', '着時間', 'w-time'],
     ['運送業者', '運送業者', 'w-co'], ['車種', '車種', 'w-type'], ['車番', '車番', 'w-plate'], ['氏名', '氏名', 'w-name'], ['携帯番号', '携帯番号', 'w-tel']
   ];
 
