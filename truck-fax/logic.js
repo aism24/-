@@ -14,6 +14,8 @@
   function compact(s) { return nfkc(s).replace(/[\s　]+/g, ''); }
   function clean(s) { return nfkc(s).replace(/[\s　]+/g, ' ').trim(); }
   /** 記録用: 空白の整理だけ(㈱などFAXの表記は変えない。照合は別に正規化する)。 */
+  /** 車種: 空白を除き、大文字の「T」は小文字の「t」にそろえて記録する(例: 10T平→10t平、4 T平→4t平)。 */
+  function fmtType(s) { return nfkc(s).replace(/[\s\u3000]+/g, '').replace(/T/g, 't'); } // 全角の「Ｔ」「４」なども半角にそろう
   function tidy(s) { return String(s == null ? '' : s).replace(/[\s\u3000]+/g, ' ').trim(); }
 
   function plateKey(s) { return compact(s).replace(/[-‐-―−ー・.]/g, '').toLowerCase(); }
@@ -135,11 +137,11 @@
         行先: tidy(r['行先']),
         着時間: normTime(r['着時間']),
         運送業者: tidy(r['運送業者']),
-        車種: tidy(r['車種']).replace(/\s+/g, ''),
+        車種: fmtType(r['車種']),
         車番: fmtPlate(r['車番']),
         氏名: nameKey(r['氏名']),
         携帯番号: fmtPhone(r['携帯番号']),
-        備考: '',
+        備考: [tidy(r['備考']), memo].filter(Boolean).join(' / '), // FAXの備考欄・特記などの文字と、FAXの連絡文(メモ)
         struck: isTrue(r['取消線'])
       };
       if (!o.車番 && !o.氏名 && !o.携帯番号 && !o.運送業者) return; // 空欄行
@@ -272,7 +274,7 @@
   /** 確認結果(decisions: {指摘id: 選択値})を行に反映する。 */
   function resolveRow(row, findings, decisions) {
     var out = Object.assign({}, row);
-    out.車番 = fmtPlate(out.車番); out.氏名 = nameKey(out.氏名); out.携帯番号 = fmtPhone(out.携帯番号);
+    out.車番 = fmtPlate(out.車番); out.氏名 = nameKey(out.氏名); out.携帯番号 = fmtPhone(out.携帯番号); out.車種 = fmtType(out.車種);
     var ops = [], skip = false, blockers = [];
     findings.forEach(function (f) {
       var d = decisions && decisions[f.id] != null ? decisions[f.id] : f.defaultValue;
@@ -282,7 +284,7 @@
       switch (f.id) {
         case 'vehicle-new': if (d === 'register') ops.push({ kind: 'vehicle', mode: 'add', data: vehicleData(out) }); break;
         case 'vehicle-diff':
-          if (d === 'update') ops.push({ kind: 'vehicle', mode: 'update', row: f.masterRow, before: pick(md, ['手配業者', '運送業者', '車種', '車番']), data: { 手配業者: out.業者 || md.手配業者, 運送業者: out.運送業者 || md.運送業者, 車種: out.車種 || md.車種, 車番: out.車番 } });
+          if (d === 'update') ops.push({ kind: 'vehicle', mode: 'update', row: f.masterRow, before: pick(md, ['手配業者', '運送業者', '車種', '車番']), data: { 手配業者: out.業者 || md.手配業者, 運送業者: out.運送業者 || md.運送業者, 車種: fmtType(out.車種 || md.車種), 車番: out.車番 } });
           else if (d === 'adopt') { out.業者 = md.手配業者; out.運送業者 = md.運送業者; out.車種 = md.車種; }
           break;
         case 'phone-diff':
@@ -300,6 +302,7 @@
         default: break;
       }
     });
+    out.車種 = fmtType(out.車種); // マスタの値に合わせた場合も、tにそろえて記録する
     return { row: out, skip: skip, ops: ops, blockers: blockers };
   }
   function pick(o, keys) { var r = {}; keys.forEach(function (k) { r[k] = o[k] == null ? '' : o[k]; }); return r; }
@@ -412,7 +415,7 @@
       items.push(it); return it;
     }
     if (kind === '取消') {
-      res.rows.forEach(function (r) { var it = mk('cancel', null, r, candidatesFor(r, null, records)); it.faxRow = copyRow(r); it.label = '中止'; setPick(it, defaultPick(it.candidates)); });
+      res.rows.forEach(function (r) { var it = mk('cancel', null, r, candidatesFor(r, null, records)); it.faxRow = copyRow(r); it.note = it.faxRow.備考 || ''; it.label = '中止'; setPick(it, defaultPick(it.candidates)); });
     } else if (kind === '追加') {
       live.forEach(function (r) {
         var nr = copyRow(r), c = candidatesFor(nr, null, records);
@@ -432,14 +435,14 @@
         var it = mk('update', nr, s, c); it.label = '変更後'; setPick(it, defaultPick(c));
       });
       struck.slice(live.length).forEach(function (s) { // 置き換え先のない取消線の行=取消
-        var it = mk('cancel', null, s, candidatesFor(s, null, records)); it.faxRow = copyRow(s); it.label = '中止'; setPick(it, defaultPick(it.candidates));
+        var it = mk('cancel', null, s, candidatesFor(s, null, records)); it.faxRow = copyRow(s); it.note = it.faxRow.備考 || ''; it.label = '中止'; setPick(it, defaultPick(it.candidates));
       });
     }
     return { kind: kind, items: items };
   }
 
   return {
-    isActiveRec: isActiveRec, INACTIVE: INACTIVE, unwrapRaw: unwrapRaw, sameCo: sameCo, canonSender: canonSender, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, candidatesFor: candidatesFor,
+    isActiveRec: isActiveRec, INACTIVE: INACTIVE, fmtType: fmtType, unwrapRaw: unwrapRaw, sameCo: sameCo, canonSender: canonSender, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, candidatesFor: candidatesFor,
     fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, CHECK_FIELDS: CHECK_FIELDS, normKind: normKind,
     ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate, companyKey: companyKey,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, isMobile: isMobile, importKey: importKey,

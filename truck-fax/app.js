@@ -190,6 +190,7 @@
 
   function normField(name, v) {
     if (name === '車番') return L.fmtPlate(v);
+    if (name === '車種') return L.fmtType(v);
     if (name === '氏名') return L.nameKey(v);
     if (name === '携帯番号') return L.fmtPhone(v);
     if (name === '積日' || name === '卸日') return L.normDate(v, new Date().getFullYear()) || v;
@@ -588,7 +589,7 @@
   function normMaster(kind, d) {
     var o = {};
     MASTER_COLS[kind].forEach(function (k) { o[k] = String(d[k] == null ? '' : d[k]).trim(); });
-    if (kind === 'vehicle') o.車番 = L.fmtPlate(o.車番);
+    if (kind === 'vehicle') { o.車番 = L.fmtPlate(o.車番); o.車種 = L.fmtType(o.車種); }
     else { o.氏名 = L.nameKey(o.氏名); o.携帯番号 = L.fmtPhone(o.携帯番号); }
     return o;
   }
