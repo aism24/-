@@ -203,6 +203,7 @@
     else if (!isMobile(phone)) add('phone-format', 'warn', '携帯番号の形式が違います', '「' + row.携帯番号 + '」は携帯の番号(070/080/090 + 8桁)ではありません。読み間違いの可能性があります。', [OPT.ok]);
 
     // 車両
+    var plateKnown = !!(plate && (idx.vByPlate[plate] || []).length); // この行の照合より前から、車番がマスタにあったか
     if (plate) {
       var vs = idx.vByPlate[plate] || [];
       if (!vs.length) {
@@ -245,7 +246,9 @@
           if (sameName.length) {
             add('name-other-carrier', 'warn', '同じ氏名が別の運送業者で登録されています', 'マスタ: ' + who(sameName[0]) + '\n今回: 「' + row.運送業者 + ' ' + row.氏名 + '」', [OPT.newPerson, OPT.keep]);
           } else if (phone) {
-            add('driver-new', 'info', 'この運転手は運転手マスタに未登録です', row.運送業者 + ' ' + row.氏名 + '(' + row.携帯番号 + ')', [OPT.register, OPT.skipReg], 'register');
+            // 車はマスタにあるのに運転手が未登録のときは、氏名・携帯番号の読み間違いかもしれないので、人が選ぶまで記録させない
+            if (plateKnown) add('driver-new', 'warn', 'この車は登録済みですが、運転手は未登録です', row.運送業者 + ' ' + row.氏名 + '(' + row.携帯番号 + ')' + '\n' + '氏名・携帯番号の読み間違いがないか確認してください。', [OPT.register, OPT.skipReg]);
+            else add('driver-new', 'info', 'この運転手は運転手マスタに未登録です', row.運送業者 + ' ' + row.氏名 + '(' + row.携帯番号 + ')', [OPT.register, OPT.skipReg], 'register');
             addDriverIdx(idx, driverData(row));
           }
         }
