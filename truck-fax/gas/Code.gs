@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261021f';
+var CODE_VERSION = '20261022a';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
@@ -133,13 +133,17 @@ function firstEmptyRowInA_(sh) {
 // ---------- 情報シートの設定 ----------
 
 // 情報シートのA・B列は、1回の実行(リクエスト)の中で1回だけ読む。日付セルを文字にするたびに読み直すと、行数に比例して遅くなる(2026-10-21に実測)。
-var INFO_CACHE_ = null;
-function infoVals_() {
-  if (INFO_CACHE_ === null) {
-    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INFO);
-    INFO_CACHE_ = !sh || sh.getLastRow() < 1 ? [] : sh.getRange(1, 1, sh.getLastRow(), 2).getValues();
+// 工事一覧・手配業者の候補も同じ表から読むので、シートの読み込みは全体で1回(以前は3回)。
+var INFO_GRID_ = null;
+function infoGrid_() {
+  if (INFO_GRID_ === null) {
+    var sh = ss_().getSheetByName(SHEET_INFO);
+    INFO_GRID_ = !sh || sh.getLastRow() < 1 ? [] : sh.getDataRange().getValues();
   }
-  return INFO_CACHE_;
+  return INFO_GRID_;
+}
+function infoVals_() {
+  return infoGrid_().map(function (r) { return [r.length > 0 ? r[0] : '', r.length > 1 ? r[1] : '']; });
 }
 
 function getInfo_(key) {
@@ -156,9 +160,9 @@ function tz_() {
 
 /** 工事番号と工事名のリスト。「情報」シートの見出し「工事番号」「工事名」を探し、その下を空行まで読む。 */
 function readProjects_() {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INFO);
-  if (!sh || sh.getLastRow() < 1 || sh.getLastColumn() < 2) return [];
-  var top = sh.getRange(1, 1, Math.min(sh.getLastRow(), 6), sh.getLastColumn()).getValues();
+  var grid = infoGrid_();
+  if (!grid.length || grid[0].length < 2) return [];
+  var top = grid.slice(0, 6);
   var hr = -1, hc = -1;
   for (var r = 0; r < top.length && hr < 0; r++) {
     for (var c = 0; c < top[r].length - 1; c++) {
@@ -166,9 +170,8 @@ function readProjects_() {
     }
   }
   if (hr < 0) return [];
-  var n = sh.getLastRow() - (hr + 1);
-  if (n < 1) return [];
-  var vals = sh.getRange(hr + 2, hc + 1, n, 2).getValues();
+  var vals = grid.slice(hr + 1).map(function (r) { return [r[hc], r[hc + 1]]; });
+  if (!vals.length) return [];
   var out = [];
   for (var i = 0; i < vals.length; i++) {
     var no = String(vals[i][0]).trim();
@@ -180,17 +183,14 @@ function readProjects_() {
 
 /** 手配業者の候補。「情報」シートの見出し「手配業者」の下に、1行1社で書く(例: ナミツー / 大上)。無ければ既定。 */
 function readSenders_() {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INFO);
-  if (!sh || sh.getLastRow() < 1) return DEFAULT_SENDERS.slice();
-  var top = sh.getRange(1, 1, Math.min(sh.getLastRow(), 6), Math.max(sh.getLastColumn(), 1)).getValues();
+  var grid = infoGrid_();
+  if (!grid.length) return DEFAULT_SENDERS.slice();
+  var top = grid.slice(0, 6);
   for (var r = 0; r < top.length; r++) {
     for (var c = 0; c < top[r].length; c++) {
       if (String(top[r][c]).trim() !== '手配業者') continue;
-      var n = sh.getLastRow() - (r + 1), out = [];
-      if (n > 0) {
-        var vals = sh.getRange(r + 2, c + 1, n, 1).getValues();
-        for (var i = 0; i < vals.length; i++) { var v = String(vals[i][0]).trim(); if (!v) break; out.push(v); }
-      }
+      var out = [];
+      for (var i = r + 1; i < grid.length; i++) { var v = String(grid[i][c]).trim(); if (!v) break; out.push(v); }
       return out.length ? out : DEFAULT_SENDERS.slice();
     }
   }
@@ -199,23 +199,30 @@ function readSenders_() {
 
 // ---------- シート読み書き(見出し名ベース) ----------
 
+// スプレッドシートは、1回の実行の中で1回だけ取得する(起動時の読み込みを速くするため。2026-10-22)。
+var SS_ = null;
+function ss_() { if (SS_ === null) SS_ = SpreadsheetApp.getActiveSpreadsheet(); return SS_; }
+
 function sheet_(name) {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  var sh = ss_().getSheetByName(name);
   if (!sh) throw new Error('シート「' + name + '」がありません。setupSheetsを実行してください。');
   return sh;
 }
 
 function headerMap_(sh, required) {
   var lastCol = sh.getLastColumn();
+  return headerMapOf_(lastCol > 0 ? sh.getRange(1, 1, 1, lastCol).getValues()[0] : [], required, sh.getName());
+}
+
+/** 1行目の値の並びから {見出し: 列番号(1始まり)} を作る。必須の見出しが無ければエラー。 */
+function headerMapOf_(headRow, required, sheetName) {
   var map = {};
-  if (lastCol > 0) {
-    sh.getRange(1, 1, 1, lastCol).getValues()[0].forEach(function (h, i) {
-      var n = String(h).trim();
-      if (n && !map[n]) map[n] = i + 1;
-    });
-  }
+  headRow.forEach(function (h, i) {
+    var n = String(h).trim();
+    if (n && !map[n]) map[n] = i + 1;
+  });
   (required || []).forEach(function (h) {
-    if (!map[h]) throw new Error('シート「' + sh.getName() + '」の1行目に見出し「' + h + '」がありません。');
+    if (!map[h]) throw new Error('シート「' + sheetName + '」の1行目に見出し「' + h + '」がありません。');
   });
   return map;
 }
@@ -246,6 +253,11 @@ function readRows_(sh, headers, firstRow, lastRow, optional) {
   if (to < from) return [];
   var width = sh.getLastColumn();
   var vals = sh.getRange(from, 1, to - from + 1, width).getValues();
+  return rowsFromVals_(vals, map, headers, from, optional);
+}
+
+/** 値の並び(vals。先頭=シートのfirst行目)を {見出し: 値(文字列)} の配列にする。見出しの列がすべて空の行は除く。 */
+function rowsFromVals_(vals, map, headers, from, optional) {
   var out = [];
   for (var i = 0; i < vals.length; i++) {
     var o = { _row: from + i };
@@ -320,14 +332,22 @@ function withLock_(fn) {
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
+/** シート全体を1回の読み込みで、{見出し: 値} の配列にする(起動時用。読み込みの回数を減らして速くする)。map=見出し→列番号 */
+function readAll_(name, headers, optional) {
+  var all = sheet_(name).getDataRange().getValues();
+  var map = headerMapOf_(all.length ? all[0] : [], headers, name);
+  return { map: map, rows: rowsFromVals_(all.slice(1), map, headers, 2, optional) };
+}
+
 function getInit_() {
-  var imp = sheet_(SHEET_IMPORT);
-  var impRows = readRows_(imp, ['積日', '行先', '工事番号', '現場名', '車番'], 2, null, ['追加変更']);
+  var imp = readAll_(SHEET_IMPORT, ['積日', '行先', '工事番号', '現場名', '車番'], ['追加変更']);
+  var impRows = imp.rows;
   var activeRows = impRows.filter(function (r) { return INACTIVE_LABELS.indexOf(r.追加変更) < 0; });
+  var drv = readAll_(SHEET_DRIVER, DRIVER_HEADERS, DRIVER_OPTIONAL);
   return {
-    vehicles: readRows_(sheet_(SHEET_VEHICLE), VEHICLE_HEADERS),
-    drivers: readRows_(sheet_(SHEET_DRIVER), DRIVER_HEADERS, null, null, DRIVER_OPTIONAL),
-    driverTypeCol: !!headerMap_(sheet_(SHEET_DRIVER), [])['車種'],
+    vehicles: readAll_(SHEET_VEHICLE, VEHICLE_HEADERS).rows,
+    drivers: drv.rows,
+    driverTypeCol: !!drv.map['車種'],
     projects: readProjects_(),
     importKeys: activeRows.map(function (r) { return { 積日: r.積日, 車番: r.車番 }; }), // 中止・変更前の行は、重複の判定に使わない
     pastDest: impRows.slice(-PAST_DEST_ROWS).map(function (r) { return { 行先: r.行先, 工事番号: r.工事番号, 現場名: r.現場名 }; }),

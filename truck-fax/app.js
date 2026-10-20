@@ -1071,9 +1071,12 @@
       ['import', 'imports', 'vehicles', 'drivers'].forEach(function (x) { $('tab-' + x).hidden = true; });
       $('tabs').hidden = true; $('setup').hidden = false; return;
     }
-    var preload = loadImports(); preload.catch(function () {}); // 取込一覧は、初期データと同時に先読みする
-    try { await loadInit(true); }
+    // 起動時は、スプレッドシートのデータを読み終わるまで、ポップアップとデータバーを出して他の操作を止める。取込一覧は、初期データと同時に先読みする
+    var close = busyDialog('データ読み込み中');
+    var preload = loadImports(); preload.catch(function () {});
+    try { await Promise.all([loadInit(true), preload.catch(function () { return null; })]); } // 取込一覧だけ失敗したときは、タブを開いたときに改めて読み込む
     catch (e) { showBanner('スプレッドシートの読み込みに失敗しました: ' + e.message + '(GASのURL・公開設定を確認してください)'); }
+    finally { close(); }
   }
   start();
 })();
