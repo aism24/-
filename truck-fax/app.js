@@ -8,7 +8,7 @@
   function gasUrl() { return window.__GAS_URL__ || GAS_API_URL; }
 
   var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '追加変更', '備考'];
-  var MASTER_COLS = { vehicle: ['手配業者', '運送業者', '車種', '車番'], driver: ['運送業者', '氏名', '携帯番号'] };
+  var MASTER_COLS = { vehicle: ['手配業者', '運送業者', '車種', '車番'], driver: ['運送業者', '氏名', '携帯番号', '車種'] };
   var IMPORTS_LIMIT = 3000; // 絞り込みのために読み込む件数(表に出すのは最新100件まで)
   var IMPORTS_SHOW = 100;
   var VIEW_HEADERS = IMPORT_HEADERS.filter(function (k) { return k !== 'タイムスタンプ'; }); // 画面・Excelに出す列
@@ -84,6 +84,7 @@
 
   async function loadInit(keepImports) {
     var d = await apiGet('init');
+    S.driverTypeCol = d.driverTypeCol === true; // 運転手シートに「車種」の列があるか(古いGASは返さない)
     S.vehicles = d.vehicles || []; S.drivers = d.drivers || []; S.projects = d.projects || []; S.senders = d.senders || [];
     S.importKeyList = (d.importKeys || []).map(function (r) { return L.importKey({ 積日: r.積日, 車番: r.車番 }); });
     S.destMap = L.buildDestMap(d.pastDest || []);
@@ -725,7 +726,7 @@
     var o = {};
     MASTER_COLS[kind].forEach(function (k) { o[k] = String(d[k] == null ? '' : d[k]).trim(); });
     if (kind === 'vehicle') { o.車番 = L.fmtPlate(o.車番); o.車種 = L.fmtType(o.車種); }
-    else { o.氏名 = L.nameKey(o.氏名); o.携帯番号 = L.fmtPhone(o.携帯番号); }
+    else { o.氏名 = L.nameKey(o.氏名); o.携帯番号 = L.fmtPhone(o.携帯番号); o.車種 = L.fmtTypes(o.車種); } // 運転手の車種は「4t/10t/15t」の形にそろえる
     return o;
   }
   function dupMessage(kind, d, selfRow) {
@@ -781,6 +782,7 @@
     }
     var rows = kind === 'vehicle' ? L.sortVehicles(masterRows(kind)) : masterRows(kind); // 車両情報は、手配業者→運送業者→車種の順に並べて表示
     var nd = kind === 'vehicle' ? Object.keys(dups.vehiclePlate).length : Object.keys(dups.driverName).length + Object.keys(dups.driverPhone).length;
+    if (kind === 'driver' && !S.driverTypeCol) host.appendChild(h('div', { class: 'banner', style: 'margin-bottom:10px' }, '運転手の「車種」を保存するには、GAS(Code.gs)を最新版に貼り替えて、関数 setupSheets を1回実行してください(シートに「車種」の列が追加されます)。'));
     var tblW = (cols.length + 1) * MASTER_COL_W + 'px'; // 全ての列を同じ幅(車番がおさまる幅)にそろえ、中央に置く
     host.appendChild(h('div', { class: 'tool mastertbl', style: 'width:' + tblW }, h('span', { class: 'sub', text: rows.length + '件' + (nd ? ' ・ 重複 ' + nd + ' 組(赤)。確認して、不要な行を削除するか修正してください。' : '') }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn sm excel', type: 'button', text: 'Excelでダウンロード', onclick: function () {

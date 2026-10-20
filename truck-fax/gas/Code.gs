@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261021a';
+var CODE_VERSION = '20261021b';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
@@ -24,6 +24,7 @@ var SHEET_INFO = '情報';
 var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号'];
 var VEHICLE_HEADERS = ['手配業者', '運送業者', '車種', '車番'];
 var DRIVER_HEADERS = ['運送業者', '氏名', '携帯番号'];
+var DRIVER_OPTIONAL = ['車種']; // 運転手の車種(複数は「4t/10t/15t」)。列があれば読み書きする。setupSheets が無ければ列を足す
 var CHECK_FIELDS = ['手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '工事番号', '現場名', '追加変更'];
 // 取込一覧の任意の列(あれば読み書きする。無くても動く)。「追加変更」=中止/変更前/変更後、「備考」=アプリで入力したテキスト。
 var IMPORT_OPTIONAL = ['追加変更', '備考'];
@@ -41,7 +42,7 @@ function setupSheets() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   ensureSheet_(ss, SHEET_IMPORT, IMPORT_HEADERS);
   ensureSheet_(ss, SHEET_VEHICLE, VEHICLE_HEADERS);
-  ensureSheet_(ss, SHEET_DRIVER, DRIVER_HEADERS);
+  ensureOptionalCols_(ensureSheet_(ss, SHEET_DRIVER, DRIVER_HEADERS), DRIVER_OPTIONAL);
   var info = ss.getSheetByName(SHEET_INFO) || ss.insertSheet(SHEET_INFO);
   var defaults = [['Geminiモデル名', 'gemini-3.5-flash-lite'], ['タイムゾーン', 'Asia/Tokyo'], ['APIKEY', '']];
   var names = info.getRange(1, 1, Math.max(info.getLastRow(), 1), 1).getValues().map(function (r) { return String(r[0]).trim(); });
@@ -61,6 +62,17 @@ function ensureSheet_(ss, name, headers) {
     sh.setFrozenRows(1);
   }
   return sh;
+}
+
+/** 任意の列(見出し)が無ければ、見出し行の右端に足す。既存の列・値は変えない。 */
+function ensureOptionalCols_(sh, cols) {
+  var map = headerMap_(sh, []);
+  cols.forEach(function (c) {
+    if (map[c]) return;
+    var col = sh.getLastColumn() + 1;
+    sh.getRange(1, col).setValue(c).setFontWeight('bold');
+    map[c] = col;
+  });
 }
 
 function firstEmptyRowInA_(sh) {
@@ -263,7 +275,8 @@ function getInit_() {
   var activeRows = impRows.filter(function (r) { return INACTIVE_LABELS.indexOf(r.追加変更) < 0; });
   return {
     vehicles: readRows_(sheet_(SHEET_VEHICLE), VEHICLE_HEADERS),
-    drivers: readRows_(sheet_(SHEET_DRIVER), DRIVER_HEADERS),
+    drivers: readRows_(sheet_(SHEET_DRIVER), DRIVER_HEADERS, null, null, DRIVER_OPTIONAL),
+    driverTypeCol: !!headerMap_(sheet_(SHEET_DRIVER), [])['車種'],
     projects: readProjects_(),
     importKeys: activeRows.map(function (r) { return { 積日: r.積日, 車番: r.車番 }; }), // 中止・変更前の行は、重複の判定に使わない
     pastDest: impRows.slice(-PAST_DEST_ROWS).map(function (r) { return { 行先: r.行先, 工事番号: r.工事番号, 現場名: r.現場名 }; }),
@@ -438,8 +451,8 @@ function applyChanges_(body) {
 }
 
 function masterInfo_(kind) {
-  if (kind === 'vehicle') return { sheet: sheet_(SHEET_VEHICLE), headers: VEHICLE_HEADERS };
-  if (kind === 'driver') return { sheet: sheet_(SHEET_DRIVER), headers: DRIVER_HEADERS };
+  if (kind === 'vehicle') return { sheet: sheet_(SHEET_VEHICLE), headers: VEHICLE_HEADERS, optional: [] };
+  if (kind === 'driver') return { sheet: sheet_(SHEET_DRIVER), headers: DRIVER_HEADERS, optional: DRIVER_OPTIONAL };
   throw new Error('不明なマスタ種別: ' + kind);
 }
 
@@ -451,9 +464,10 @@ function applyOp_(op) {
     writeRow_(sh, headers, null, op.data);
     return;
   }
-  var now = readRows_(sh, headers, op.row, op.row)[0];
+  var now = readRows_(sh, headers, op.row, op.row, mi.optional)[0];
   if (!now) throw new Error('マスタの行(' + op.row + ')が見つかりません。画面を再読み込みしてください。');
-  headers.forEach(function (h) {
+  headers.concat(mi.optional).forEach(function (h) {
+    if (mi.optional.indexOf(h) >= 0 && !Object.prototype.hasOwnProperty.call(op.before || {}, h)) return; // 任意の列は、変更前の値が渡されたときだけ照合する
     if (String(now[h]) !== String((op.before || {})[h] == null ? '' : op.before[h])) {
       throw new Error('マスタが他の操作で変更されています(' + h + ')。画面を再読み込みしてください。');
     }
