@@ -160,12 +160,13 @@ table.t.zebra tbody tr.sel td:last-child { border-right: 3px double #1d6fb8; }
 table.t.zebra tbody tr.sel input, table.t.zebra tbody tr.sel select { min-width: 5.5em; background: #fff; }
 /* 取込の初期画面: 見本の配車連絡表(drop-sample-1.svg=ナミツー形式、drop-sample-2.svg=大上形式。氏名・携帯番号・業者名などの内容は伏せたダミー)を、ゆっくり入れ替えながら背景に出し、案内の文字を画面の中心に置く */
 .drop { position: relative; overflow: hidden; justify-content: center; min-height: calc(100vh - 150px); }
-.drop::before, .drop::after { content: ''; position: absolute; inset: 0; z-index: 0; background: center top / cover no-repeat; opacity: .9; }
+.drop::before, .drop::after { content: ''; position: absolute; z-index: 0; left: 20%; width: 60%; aspect-ratio: 1100 / 880; top: 50%; transform: translateY(-33%); background: center / 100% 100% no-repeat; opacity: .9; box-shadow: 0 0 0 1px #d9dee4, 0 6px 20px rgba(0,0,0,.18); } /* 見本は、取込枠の幅の60%。案内の文字が、見本の余白(挨拶・送り主の下)に重なる位置 */
 .drop::before { background-image: url("drop-sample-1.svg"); animation: drop-fade-a 18s ease-in-out infinite; }
 .drop::after { background-image: url("drop-sample-2.svg"); animation: drop-fade-b 18s ease-in-out infinite; }
 @keyframes drop-fade-a { 0%, 38% { opacity: .9; } 50%, 88% { opacity: 0; } 100% { opacity: .9; } }
 @keyframes drop-fade-b { 0%, 38% { opacity: 0; } 50%, 88% { opacity: .9; } 100% { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .drop::before, .drop::after { animation: none; } .drop::after { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .drop::before, .drop::after, .drop-main, .drop span { animation: none; } .drop::after { opacity: 0; } }
+@keyframes drop-card-blink { 0%, 100% { background: #fff7a8; } 50% { background: #fffde6; } }
 .drop > * { position: relative; z-index: 1; }
-.drop-main { font-size: 44px; line-height: 1.3; padding: 20px 48px; border-radius: 14px; background: #fff7a8; color: #1558b0; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
-.drop span { font-size: 16px; font-weight: 600; padding: 6px 18px; border-radius: 8px; background: #fff7a8; color: #1558b0; }
+.drop-main { font-size: 44px; line-height: 1.3; padding: 20px 48px; border-radius: 14px; background: #fff7a8; color: #1558b0; box-shadow: 0 2px 10px rgba(0,0,0,.18); animation: drop-card-blink 3s ease-in-out infinite; }
+.drop span { font-size: 16px; font-weight: 600; padding: 6px 18px; border-radius: 8px; background: #fff7a8; color: #1558b0; animation: drop-card-blink 3s ease-in-out infinite; }

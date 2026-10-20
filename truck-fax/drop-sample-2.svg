@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 780" width="1100" height="780" font-family="'Noto Sans JP','Yu Gothic','Hiragino Sans',Meiryo,sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 880" width="1100" height="880" font-family="'Noto Sans JP','Yu Gothic','Hiragino Sans',Meiryo,sans-serif">
 <defs><filter id="b" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="5"/></filter><filter id="b2" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="3.5"/></filter></defs>
-<rect width="1100" height="780" fill="#fbfbf8"/>
+<rect width="1100" height="880" fill="#fbfbf8"/>
 <text x="550" y="92" text-anchor="middle" font-size="46" font-weight="700" letter-spacing="10" fill="#222">配車連絡表</text>
 <text x="70" y="160" text-anchor="start" font-size="26" font-weight="700" fill="#222">株式会社 正光　御中</text>
 <rect x="70" y="172" width="300" height="4" fill="#222"/>
@@ -11,7 +11,7 @@
 <rect x="760" y="138" width="300" height="16" rx="5" fill="#333" opacity="0.8" filter="url(#b2)"/>
 <rect x="790" y="164" width="250" height="16" rx="5" fill="#333" opacity="0.8" filter="url(#b2)"/>
 <rect x="820" y="188" width="190" height="16" rx="5" fill="#333" opacity="0.8" filter="url(#b2)"/>
-<rect x="15" y="300" width="1070" height="358" fill="#fff" stroke="#222" stroke-width="3"/>
+<g transform="translate(0,100)"><rect x="15" y="300" width="1070" height="358" fill="#fff" stroke="#222" stroke-width="3"/>
 <text x="50.0" y="331" text-anchor="middle" font-size="19" font-weight="700" fill="#222">積日</text>
 <text x="120.0" y="331" text-anchor="middle" font-size="19" font-weight="700" fill="#222">降日</text>
 <line x1="85" y1="300" x2="85" y2="658" stroke="#222" stroke-width="2"/>
@@ -62,4 +62,4 @@
 <rect x="770" y="530" width="60" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
 <rect x="876" y="530" width="99" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
 <text x="1085" y="702" text-anchor="end" font-size="16" fill="#555">※ 見本(内容は伏せています)</text>
-</svg>
+</g></svg>
