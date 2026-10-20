@@ -142,3 +142,4 @@ dialog.dlg.wide { max-width: min(96vw, 1300px); width: min(96vw, 1300px); }
 .sub-row { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; }
 .sub-row .sub-h { margin: 0; }
 .foot-btns { display: flex; gap: 8px; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60; max-width: min(92vw, 720px); padding: 12px 20px; border-radius: 8px; background: #1a7f37; color: #fff; font-weight: 600; box-shadow: 0 6px 24px rgba(0,0,0,.35); cursor: pointer; }
