@@ -7,11 +7,11 @@
   var GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyfyFEJn4alzJGmbWIhKwKeRvJ2OlkgyM4wZFk7ldUVCs5Yx-khi5FOWLen6cvvIYQ/exec';
   function gasUrl() { return window.__GAS_URL__ || GAS_API_URL; }
 
-  var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号'];
+  var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '追加変更', '備考'];
   var MASTER_COLS = { vehicle: ['手配業者', '運送業者', '車種', '車番'], driver: ['運送業者', '氏名', '携帯番号'] };
   var MAX_BYTES = 10 * 1024 * 1024;
 
-  var S = { vehicles: [], drivers: [], projects: [], importKeyList: [], destMap: {}, model: '', keyOk: false, cards: [], tab: 'import',
+  var S = { senders: [], vehicles: [], drivers: [], projects: [], importKeyList: [], destMap: {}, model: '', keyOk: false, cards: [], tab: 'import',
     imports: null, importsQ: '', q: { vehicle: '', driver: '' }, editing: null };
   var seq = 0;
 
@@ -67,7 +67,7 @@
 
   async function loadInit() {
     var d = await apiGet('init');
-    S.vehicles = d.vehicles || []; S.drivers = d.drivers || []; S.projects = d.projects || [];
+    S.vehicles = d.vehicles || []; S.drivers = d.drivers || []; S.projects = d.projects || []; S.senders = d.senders || [];
     S.importKeyList = (d.importKeys || []).map(function (r) { return L.importKey({ 積日: r.積日, 車番: r.車番 }); });
     S.destMap = L.buildDestMap(d.pastDest || []);
     S.model = d.model || ''; S.keyOk = !!d.keyOk; S.version = d.version || '(古い版)';
@@ -137,7 +137,7 @@
     try {
       var b64 = await fileToBase64(card.file);
       var d = await apiPost('ocr', { filename: card.name, mimeType: card.mime, base64: b64 }, 180000);
-      var res = L.sanitizeOcr(d.raw, { today: new Date() });
+      var res = L.sanitizeOcr(d.raw, { today: new Date(), senders: S.senders });
       card.res = res; card.warnings = res.warnings; card.model = d.model;
       if (L.isChange(res)) await enterKind(card, L.effectiveKind(res));
       else enterNormal(card);
@@ -163,7 +163,7 @@
 
   var FIELDS = [
     ['業者', '手配業者', 'w-co'], ['積日', '積日', 'w-date'], ['卸日', '卸日', 'w-date'], ['行先', '行先', 'w-dest'], ['着時間', '着時間', 'w-time'],
-    ['運送業者', '運送業者', 'w-co'], ['車種', '車種', 'w-type'], ['車番', '車番', 'w-plate'], ['氏名', '氏名', 'w-name'], ['携帯番号', '携帯番号', 'w-tel']
+    ['運送業者', '運送業者', 'w-co'], ['車種', '車種', 'w-type'], ['車番', '車番', 'w-plate'], ['氏名', '氏名', 'w-name'], ['携帯番号', '携帯番号', 'w-tel'], ['備考', '備考(入力)', 'w-note']
   ];
 
   function projectSelect(card, row) {
@@ -289,14 +289,27 @@
   }
   function renderFindings(card) { if (!card.findHost) return; card.findHost.textContent = ''; card.findHost.appendChild(findingsTable(card)); }
 
+  /** 下部(ボタン+メッセージ)は、最初に1回だけ作り、その後はその場で更新する。
+   *  作り直すと、入力欄から離れた瞬間の再描画でボタンが置き換わり、最初のクリックが効かなくなる。 */
+  function footParts(card, discardText, onDiscard) {
+    var host = card.footHost;
+    if (!host._f) {
+      var btn = h('button', { class: 'btn primary', type: 'button' }), msg = h('span', { class: 'msg' }), disc = h('button', { class: 'btn', type: 'button' });
+      host.textContent = '';
+      host.appendChild(h('div', { class: 'foot' }, btn, msg, h('span', { class: 'spacer' }), disc));
+      host._f = { btn: btn, msg: msg, disc: disc };
+    }
+    host._f.disc.textContent = discardText; host._f.disc.onclick = onDiscard;
+    return host._f;
+  }
+  function discardCard(card) { S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); }
+
   function renderFoot(card) {
     if (!card.footHost) return;
     if (card.mode === 'change') { renderChangeFoot(card); return; }
     var rs = results(card);
     var blockers = 0, keep = 0;
     rs.forEach(function (r) { blockers += r.blockers.length; if (!r.skip) keep++; });
-    var host = card.footHost; host.textContent = '';
-    var btn = h('button', { class: 'btn primary', type: 'button', text: keep + '件を記録する', disabled: blockers > 0 || keep === 0 || card.busy, onclick: function () { commitCard(card); } });
     var todo = [];
     rs.forEach(function (r, i) {
       r.blockers.forEach(function (id) {
@@ -305,9 +318,19 @@
       });
     });
     var msg = blockers > 0 ? '記録するには、あと ' + blockers + ' 件の対応が必要です → ' + todo.slice(0, 3).join(' / ') + (todo.length > 3 ? ' ほか' : '') : (keep === 0 ? '記録する行がありません。' : '準備OKです。内容を確認して「記録する」を押してください。');
-    host.appendChild(h('div', { class: 'foot' }, btn, h('span', { class: 'msg' + (blockers > 0 ? ' bad' : ' okmsg'), text: msg }),
-      h('span', { class: 'spacer' }),
-      h('button', { class: 'btn', type: 'button', text: '記録せず破棄', onclick: function () { S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); } })));
+    var f = footParts(card, '記録せず破棄', function () { discardCard(card); });
+    f.btn.textContent = keep + '件を記録する'; f.btn.disabled = blockers > 0 || keep === 0 || !!card.busy; f.btn.onclick = function () { commitCard(card); };
+    f.msg.textContent = msg; f.msg.className = 'msg' + (blockers > 0 ? ' bad' : ' okmsg');
+  }
+
+  /** 1件記録したあと、確認待ちの他のFAXにも、最新の記録(行先ごとの工事番号の初期値・取込済みの重複)を反映する。 */
+  function refreshReadyCards() {
+    S.cards.forEach(function (c) {
+      if (c.status !== 'ready') return;
+      var rows = c.mode === 'change' ? c.items.filter(function (it) { return it.newRow; }).map(function (it) { return it.newRow; }) : c.rows;
+      rows.forEach(function (r) { if (!r.工事番号) applyProjectDefault(r); });
+      evalCard(c); renderCard(c, true);
+    });
   }
 
   async function commitCard(card) {
@@ -322,7 +345,7 @@
       card.status = 'saved';
       card.msg = rows.length + '件を取込一覧に記録しました(マスタ: 新規' + adds + '件・更新' + ups + '件)。';
       await loadInit();
-      S.cards.forEach(function (c) { if (c.status === 'ready') { evalCard(c); renderFindings(c); renderFoot(c); } });
+      refreshReadyCards();
     } catch (e) { card.busy = false; showBanner('記録に失敗しました: ' + e.message); renderFoot(card); return; }
     card.busy = false; showBanner(''); renderCard(card);
   }
@@ -401,9 +424,9 @@
 
   var TYPE_LABEL = { update: '変更', add: '追加', cancel: '取消' };
   var ACTION_LABEL = {
-    update: { apply: 'この記録を、今回の内容に差し替える', asnew: '差し替えず、別の1台として追加する', skip: '反映しない' },
+    update: { apply: 'この記録を「変更前」にして、今回の内容を「変更後」として追加する', asnew: '変更前にはせず、別の1台として追加する', skip: '反映しない' },
     add: { apply: '1台追加して記録する', skip: '反映しない' },
-    cancel: { apply: 'この記録を取込一覧から削除する(取消)', skip: '削除しない' }
+    cancel: { apply: 'この記録を「中止」にする', record: '元の記録が無いので、このFAXの内容を「中止」として追加する', skip: '反映しない' }
   };
 
   function recLabel(c) { var r = c.rec; return (r.積日 || '') + ' ' + (r.車番 || '') + ' ' + (r.氏名 || '') + '(' + (r.運送業者 || '') + ') 行' + r._row; }
@@ -421,15 +444,24 @@
         } else cells.push(h('td', { class: 'cur', colspan: FIELDS.length + 2, text: it.candidates.length ? '(元の記録を選んでください)' : '該当する元の記録が見つかりません' }));
         trs.push(cells);
       }
+      if (it.type === 'cancel' && it.faxRow) {
+        var fx = it.faxRow, cells4 = [h('td', { class: 'num new', text: 'FAX' }), h('td', { class: 'cur', text: '' }), h('td', { class: 'cur', text: '' })];
+        FIELDS.forEach(function (f) { cells4.push(h('td', { class: 'cur nowrap', text: f[0] === '備考' ? '' : (fx[f[0]] || '') })); });
+        trs.push(cells4);
+      }
       if (it.newRow) {
         var row = it.newRow, cells2 = [h('td', { class: 'num new', text: it.type === 'add' ? '追加' : '今回' })];
         cells2.push(h('td', null, projectSelect(card, row)), h('td', { class: 'w-site', text: row.現場名 || '' }));
         FIELDS.forEach(function (f) {
           var inp = h('input', { value: row[f[0]] || '', class: f[2], 'aria-label': f[1] });
           inp.addEventListener('input', function () { row[f[0]] = inp.value; scheduleEval(card); });
-          inp.addEventListener('change', function () { var v = normField(f[0], inp.value); inp.value = v; row[f[0]] = v; evalCard(card); renderCard(card, true); });
-          var diff = recRow && L.fieldDiffers(f[0], row[f[0]], recRow[f[0]]);
-          cells2.push(h('td', { class: diff ? 'chg' : '' }, inp));
+          var td = h('td', { class: recRow && f[0] !== '備考' && L.fieldDiffers(f[0], row[f[0]], recRow[f[0]]) ? 'chg' : '' }, inp);
+          inp.addEventListener('change', function () {
+            var v = normField(f[0], inp.value); inp.value = v; row[f[0]] = v;
+            td.className = recRow && f[0] !== '備考' && L.fieldDiffers(f[0], v, recRow[f[0]]) ? 'chg' : '';
+            evalCard(card); renderFindings(card); renderFoot(card);
+          });
+          cells2.push(td);
         });
         trs.push(cells2);
       }
@@ -443,7 +475,8 @@
       var act = h('select', { 'aria-label': '対応' });
       if (it.action == null) act.appendChild(h('option', { value: '', text: '(選択してください)' }));
       Object.keys(ACTION_LABEL[it.type]).forEach(function (k) {
-        if (k === 'apply' && it.type !== 'add' && !rec) return; // 元の記録が無いと差し替え・削除はできない
+        if (k === 'apply' && it.type !== 'add' && !rec) return; // 元の記録が無いと、変更前・中止の印は付けられない
+        if (k === 'record' && rec) return;
         if (k === 'asnew' && !it.newRow) return;
         act.appendChild(h('option', { value: k, text: ACTION_LABEL[it.type][k] }));
       });
@@ -453,7 +486,8 @@
       trs[0].unshift(h('td', { class: 'num', rowspan: span }, String(idx + 1), h('div', null, h('span', { class: 'badge ' + (it.type === 'cancel' ? 'error' : it.type === 'add' ? 'info' : 'warn'), text: TYPE_LABEL[it.type] }))));
       trs.forEach(function (cells3, k) { tbody.appendChild(h('tr', { class: k === 0 ? 'grp' : '' }, cells3)); });
       tbody.appendChild(h('tr', { class: 'ctl' }, h('td', { colspan: FIELDS.length + 3 },
-        h('label', { class: 'ctlitem' }, it.type === 'add' ? '元の記録: ' : '元の記録(取込一覧): ', pick), h('label', { class: 'ctlitem' }, '対応: ', act))));
+        h('label', { class: 'ctlitem' }, it.type === 'add' ? '元の記録: ' : '元の記録(取込一覧): ', pick), h('label', { class: 'ctlitem' }, '対応: ', act),
+        it.type === 'cancel' ? h('label', { class: 'ctlitem' }, '備考: ', (function () { var n = h('input', { value: it.note || '', placeholder: '中止の理由など(任意)', 'aria-label': '備考' }); n.addEventListener('input', function () { it.note = n.value; }); return n; })()) : null)));
     });
     return h('div', { class: 'scroll' }, h('table', { class: 't change' }, h('thead', null, h('tr', null, heads.map(function (t) { return h('th', { text: t }); }))), tbody));
   }
@@ -473,32 +507,56 @@
   function renderChangeFoot(card) {
     var rs = changeResults(card), blockers = 0, active = 0, todo = [];
     rs.forEach(function (r) { blockers += r.blockers.length; if (r.active) active++; r.blockers.forEach(function (b) { todo.push(r.no + '件目: ' + b); }); });
-    var host = card.footHost; host.textContent = '';
-    var btn = h('button', { class: 'btn primary', type: 'button', text: active + '件を反映する', disabled: blockers > 0 || active === 0 || card.busy, onclick: function () { commitChange(card); } });
     var msg = blockers > 0 ? '反映するには、あと ' + blockers + ' 件の対応が必要です → ' + todo.slice(0, 3).join(' / ') + (todo.length > 3 ? ' ほか' : '') : (active === 0 ? '反映する内容がありません。' : '準備OKです。内容を確認して「反映する」を押してください。');
-    host.appendChild(h('div', { class: 'foot' }, btn, h('span', { class: 'msg' + (blockers > 0 ? ' bad' : ' okmsg'), text: msg }), h('span', { class: 'spacer' }),
-      h('button', { class: 'btn', type: 'button', text: '反映せず破棄', onclick: function () { S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); } })));
+    var f = footParts(card, '反映せず破棄', function () { discardCard(card); });
+    f.btn.textContent = active + '件を反映する'; f.btn.disabled = blockers > 0 || active === 0 || !!card.busy; f.btn.onclick = function () { commitChange(card); };
+    f.msg.textContent = msg; f.msg.className = 'msg' + (blockers > 0 ? ' bad' : ' okmsg');
   }
 
   async function commitChange(card) {
+    // 他のFAXを先に記録した場合など、取込一覧が変わっていたら、最新で照合し直してやり直す(古い照合のまま反映しない)
+    card.busy = true; renderFoot(card);
+    try {
+      var fresh = await apiGet('listImports', { limit: 500 });
+      var sig = function (a) { return JSON.stringify(a.map(function (r) { return [r._row, r.積日, r.車番, r.氏名, r.携帯番号, r.手配業者, r.追加変更]; })); };
+      if (sig(fresh) !== sig(card.records || [])) {
+        card.records = fresh;
+        var plan = L.buildChangePlan(card.res, fresh, card.kind);
+        card.items = plan.items;
+        card.items.forEach(function (it) { if (it.newRow && !it.newRow.工事番号) applyProjectDefault(it.newRow); });
+        evalCard(card); card.busy = false;
+        showBanner('取込一覧が更新されていたため、最新の内容で照合し直しました。表の内容を確認して、もう一度「反映する」を押してください。');
+        renderCard(card); return;
+      }
+    } catch (e) { card.busy = false; showBanner('取込一覧を確認できませんでした: ' + e.message); renderFoot(card); return; }
+    card.busy = false;
     var rs = changeResults(card), items = [], opsList = [];
     rs.forEach(function (r) {
       if (!r.active) return;
       var it = r.item, rec = pickedRec(it);
-      if (it.type === 'cancel') { items.push({ mode: 'delete', row: rec._row, before: L.recFields(rec) }); return; }
+      if (it.type === 'cancel') {
+        if (it.action === 'record') { // 元の記録が無いので、FAXの内容を「中止」の行として残す
+          var cr = Object.assign({}, it.faxRow); if (!cr.工事番号) applyProjectDefault(cr); cr.備考 = it.note || '';
+          var cd = {}; L.ROW_FIELDS.forEach(function (k) { cd[k] = cr[k] || ''; });
+          items.push({ mode: 'add', label: '中止', data: cd });
+        } else items.push({ mode: 'mark', label: '中止', row: rec._row, before: L.recFields(rec), note: it.note || '' });
+        return;
+      }
       var data = {}; L.ROW_FIELDS.forEach(function (k) { data[k] = r.res.row[k] || ''; });
       opsList.push(r.res.ops);
-      if (it.type === 'update' && it.action === 'apply') items.push({ mode: 'update', row: rec._row, before: L.recFields(rec), data: data });
-      else items.push({ mode: 'add', data: data });
+      if (it.type === 'update' && it.action === 'apply') { // 元の記録は「変更前」として残し、今回の内容を「変更後」の行として追加する
+        items.push({ mode: 'mark', label: '変更前', row: rec._row, before: L.recFields(rec) });
+        items.push({ mode: 'add', label: it.label || '変更後', data: data });
+      } else items.push({ mode: 'add', label: it.type === 'update' ? '' : (it.label || ''), data: data });
     });
     var ops = L.mergeOps(opsList);
     card.busy = true; renderFoot(card);
     try {
       var out = await apiPost('applyChanges', { filename: card.name, items: items, ops: ops }, 120000);
       card.status = 'saved';
-      card.msg = '取込一覧に反映しました(差し替え' + out.updated + '件・追加' + out.added + '件・削除' + out.removed + '件)。変更前の内容は、シート「変更履歴」に残っています。';
+      card.msg = '取込一覧に反映しました(行を追加' + out.added + '件・「変更前」「中止」の印' + out.marked + '件)。取り込んだ行は、取込一覧に残っています。';
       await loadInit();
-      S.cards.forEach(function (c) { if (c.status === 'ready') { evalCard(c); renderFindings(c); renderFoot(c); } });
+      refreshReadyCards();
     } catch (e) { card.busy = false; showBanner('反映に失敗しました: ' + e.message); renderFoot(card); return; }
     card.busy = false; showBanner(''); renderCard(card);
   }

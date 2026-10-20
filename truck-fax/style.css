@@ -103,3 +103,5 @@ table.t.change .w-type { min-width: 56px; } table.t.change .w-plate { min-width:
 table.t.change tr.ctl td { background: var(--info-bg); border-bottom: 2px solid var(--line); }
 table.t.change .ctlitem { display: inline-flex; align-items: center; gap: 6px; margin-right: 24px; font-weight: 600; }
 table.t.change .ctlitem select { width: auto; min-width: 260px; max-width: 520px; }
+
+table.t .w-note { min-width: 120px; } table.t.change .w-note { min-width: 100px; }
