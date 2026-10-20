@@ -617,7 +617,7 @@
     var shown = rows.slice(0, IMPORTS_SHOW);
     var cnt = '新しい順・該当' + rows.length + '件のうち最新' + shown.length + '件を表示(最大' + IMPORTS_SHOW + '件)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
     host.appendChild(h('div', { class: 'tool' }, fySel, cmSel, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
-      h('button', { class: 'btn orange', type: 'button', text: '降し日指定でダウンロード', onclick: openDateDownload })));
+      h('button', { class: 'btn excel', type: 'button', text: '降し日指定でダウンロード', onclick: openDateDownload })));
     var head = h('tr'); VIEW_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); });
     var body = h('tbody');
     shown.forEach(function (r) { var tr = h('tr'); VIEW_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: r[k] || '' })); }); body.appendChild(tr); });
@@ -631,7 +631,7 @@
     var input = h('input', { type: 'date', value: todayIso(), 'aria-label': '降し日' });
     var info = h('p', { class: 'dlg-detail' }), tableHost = h('div', { class: 'dlg-table' });
     var cancel = h('button', { class: 'btn', type: 'button', text: 'キャンセル' });
-    var ok = h('button', { class: 'btn orange', type: 'button', text: 'この内容でExcelをダウンロード' });
+    var ok = h('button', { class: 'btn excel', type: 'button', text: 'この内容でExcelをダウンロード' });
     var dlg = h('dialog', { class: 'dlg wide' }, h('p', { class: 'dlg-title', text: '降し日指定でダウンロード' }),
       h('div', { class: 'dlg-row' }, h('label', { text: '降し日を選択:' }), input), info, tableHost, h('div', { class: 'dlg-btns' }, cancel, ok));
     var cur = [];
@@ -717,7 +717,7 @@
     var nd = kind === 'vehicle' ? Object.keys(dups.vehiclePlate).length : Object.keys(dups.driverName).length + Object.keys(dups.driverPhone).length;
     var tblW = (cols.length + 1) * MASTER_COL_W + 'px'; // 全ての列を同じ幅(車番がおさまる幅)にそろえ、中央に置く
     host.appendChild(h('div', { class: 'tool mastertbl', style: 'width:' + tblW }, h('span', { class: 'sub', text: rows.length + '件' + (nd ? ' ・ 重複 ' + nd + ' 組(赤)。確認して、不要な行を削除するか修正してください。' : '') }), h('span', { class: 'spacer' }),
-      h('button', { class: 'btn sm', type: 'button', text: 'Excelでダウンロード', onclick: function () {
+      h('button', { class: 'btn sm excel', type: 'button', text: 'Excelでダウンロード', onclick: function () {
         var t = todayIso().replace(/-/g, '');
         TruckXlsx.download((kind === 'vehicle' ? '車両情報_' : '運転手_') + t + '.xlsx', kind === 'vehicle' ? '車両情報' : '運転手', cols, rows.map(function (r) { return cols.map(function (k) { return r[k] || ''; }); }));
       } })));

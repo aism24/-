@@ -123,7 +123,7 @@ body.dragging::after { content: 'ここにドロップして取り込み'; posit
 .mastertbl { max-width: 100%; margin-left: auto; margin-right: auto; }
 table.t.master { table-layout: fixed; }
 table.t.master th, table.t.master td { text-align: center; overflow: hidden; text-overflow: ellipsis; }
-button.btn.orange { background: #f28c1a; border-color: #c96f0a; color: #fff; font-weight: 700; }
+button.btn.excel { background: #217346; border-color: #185a36; color: #fff; font-weight: 700; }
 table.t.zebra tbody tr:nth-child(odd) td { background: #fff; }
 table.t.zebra tbody tr:nth-child(even) td { background: #fff7cc; }
 dialog.dlg.wide { max-width: min(96vw, 1300px); width: min(96vw, 1300px); }
