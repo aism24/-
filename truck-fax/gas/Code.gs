@@ -1,0 +1,376 @@
+/**
+ * 車番連絡FAX取込 - GAS(スプレッドシート「車番連絡自動化」にコンテナバインド)
+ *
+ * シート:
+ *   取込一覧 … FAX1台=1行の記録(列は見出し名で読み書きする。列の追加・並べ替えに強い)
+ *   車両情報 … 手配業者 / 運送業者 / 車種 / 車番
+ *   運転手携帯番号 … 運送業者 / 氏名 / 携帯番号
+ *   情報 … A列=項目名、B列=値。「Geminiモデル名」「タイムゾーン」「APIKEY」。
+ *          工事番号と工事名のリスト(見出し「工事番号」「工事名」の列)も、この見出しを探して読む。
+ *   マスタ変更履歴 … マスタの追加・更新・削除の記録(setupSheetsで自動作成)
+ *
+ * Geminiのモデル名とAPIキーは「情報」シートのセルから読む(コード修正・再デプロイ不要)。
+ * APIキーはこのGAS内でだけ使い、画面には返さない。
+ */
+
+var SHEET_IMPORT = '取込一覧';
+var SHEET_VEHICLE = '車両情報';
+var SHEET_DRIVER = '運転手携帯番号';
+var SHEET_INFO = '情報';
+var SHEET_HISTORY = 'マスタ変更履歴';
+
+var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '業者', '積日', '卸日', '行先', '着時間', '手配業者', '運送業者', '車種', '車番', '氏名', '携帯番号'];
+var VEHICLE_HEADERS = ['手配業者', '運送業者', '車種', '車番'];
+var DRIVER_HEADERS = ['運送業者', '氏名', '携帯番号'];
+var HISTORY_HEADERS = ['日時', '種別', '操作', '変更前', '変更後', '契機'];
+
+var TEXT_COLS = ['着時間', '車種', '車番', '携帯番号', '工事番号'];
+var DATE_COLS = ['積日', '卸日'];
+var MAX_ROWS_PER_COMMIT = 60;
+var PAST_DEST_ROWS = 800;
+
+// ---------- 初期設定(1回だけ実行) ----------
+
+function setupSheets() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  ensureSheet_(ss, SHEET_IMPORT, IMPORT_HEADERS);
+  ensureSheet_(ss, SHEET_VEHICLE, VEHICLE_HEADERS);
+  ensureSheet_(ss, SHEET_DRIVER, DRIVER_HEADERS);
+  ensureSheet_(ss, SHEET_HISTORY, HISTORY_HEADERS);
+  var info = ss.getSheetByName(SHEET_INFO) || ss.insertSheet(SHEET_INFO);
+  var defaults = [['Geminiモデル名', 'gemini-3.5-flash-lite'], ['タイムゾーン', 'Asia/Tokyo'], ['APIKEY', '']];
+  var names = info.getRange(1, 1, Math.max(info.getLastRow(), 1), 1).getValues().map(function (r) { return String(r[0]).trim(); });
+  defaults.forEach(function (d) {
+    if (names.indexOf(d[0]) >= 0) return;
+    var r = firstEmptyRowInA_(info);
+    info.getRange(r, 1, 1, 2).setValues([d]);
+    names[r - 1] = d[0];
+  });
+  return 'OK';
+}
+
+function ensureSheet_(ss, name, headers) {
+  var sh = ss.getSheetByName(name) || ss.insertSheet(name);
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function firstEmptyRowInA_(sh) {
+  var vals = sh.getRange(1, 1, Math.max(sh.getLastRow(), 1) + 1, 1).getValues();
+  for (var i = 0; i < vals.length; i++) if (String(vals[i][0]).trim() === '') return i + 1;
+  return vals.length + 1;
+}
+
+// ---------- 情報シートの設定 ----------
+
+function getInfo_(key) {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INFO);
+  if (!sh || sh.getLastRow() < 1) return '';
+  var vals = sh.getRange(1, 1, sh.getLastRow(), 2).getValues();
+  for (var i = 0; i < vals.length; i++) if (String(vals[i][0]).trim() === key) return String(vals[i][1]).trim();
+  return '';
+}
+
+function tz_() { return getInfo_('タイムゾーン') || 'Asia/Tokyo'; }
+
+/** 工事番号と工事名のリスト。「情報」シートの見出し「工事番号」「工事名」を探し、その下を空行まで読む。 */
+function readProjects_() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INFO);
+  if (!sh || sh.getLastRow() < 1 || sh.getLastColumn() < 2) return [];
+  var top = sh.getRange(1, 1, Math.min(sh.getLastRow(), 6), sh.getLastColumn()).getValues();
+  var hr = -1, hc = -1;
+  for (var r = 0; r < top.length && hr < 0; r++) {
+    for (var c = 0; c < top[r].length - 1; c++) {
+      if (String(top[r][c]).trim() === '工事番号' && String(top[r][c + 1]).trim() === '工事名') { hr = r; hc = c; break; }
+    }
+  }
+  if (hr < 0) return [];
+  var n = sh.getLastRow() - (hr + 1);
+  if (n < 1) return [];
+  var vals = sh.getRange(hr + 2, hc + 1, n, 2).getValues();
+  var out = [];
+  for (var i = 0; i < vals.length; i++) {
+    var no = String(vals[i][0]).trim();
+    if (!no) break;
+    out.push({ 工事番号: no, 工事名: String(vals[i][1]).trim() });
+  }
+  return out;
+}
+
+// ---------- シート読み書き(見出し名ベース) ----------
+
+function sheet_(name) {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
+  if (!sh) throw new Error('シート「' + name + '」がありません。setupSheetsを実行してください。');
+  return sh;
+}
+
+function headerMap_(sh, required) {
+  var lastCol = sh.getLastColumn();
+  var map = {};
+  if (lastCol > 0) {
+    sh.getRange(1, 1, 1, lastCol).getValues()[0].forEach(function (h, i) {
+      var n = String(h).trim();
+      if (n && !map[n]) map[n] = i + 1;
+    });
+  }
+  (required || []).forEach(function (h) {
+    if (!map[h]) throw new Error('シート「' + sh.getName() + '」の1行目に見出し「' + h + '」がありません。');
+  });
+  return map;
+}
+
+function cellStr_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    var withTime = v.getHours() || v.getMinutes() || v.getSeconds();
+    return Utilities.formatDate(v, tz_(), withTime ? 'yyyy/MM/dd HH:mm:ss' : 'yyyy/MM/dd');
+  }
+  return String(v == null ? '' : v);
+}
+
+/** シートを {見出し: 値(文字列)} の配列にする。_row=シートの行番号。 */
+function readRows_(sh, headers, firstRow, lastRow) {
+  var map = headerMap_(sh, headers);
+  var total = sh.getLastRow();
+  var from = Math.max(firstRow || 2, 2), to = Math.min(lastRow || total, total);
+  if (to < from) return [];
+  var width = sh.getLastColumn();
+  var vals = sh.getRange(from, 1, to - from + 1, width).getValues();
+  var out = [];
+  for (var i = 0; i < vals.length; i++) {
+    var o = { _row: from + i };
+    var any = false;
+    headers.forEach(function (h) {
+      var s = cellStr_(vals[i][map[h] - 1]);
+      o[h] = s;
+      if (s !== '') any = true;
+    });
+    if (any) out.push(o);
+  }
+  return out;
+}
+
+function parseDate_(s) {
+  var m = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(String(s || '').trim());
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : String(s || '');
+}
+
+/** 1行を書く。row が null なら末尾に追加。obj は {見出し: 値}。 */
+function writeRow_(sh, headers, rowNo, obj) {
+  var map = headerMap_(sh, headers);
+  var width = sh.getLastColumn();
+  var r = rowNo || (sh.getLastRow() + 1);
+  headers.forEach(function (h) {
+    if (!(h in obj)) return;
+    var cell = sh.getRange(r, map[h]);
+    if (TEXT_COLS.indexOf(h) >= 0) cell.setNumberFormat('@');
+    else if (DATE_COLS.indexOf(h) >= 0) cell.setNumberFormat('yyyy/MM/dd');
+    else if (h === 'タイムスタンプ') cell.setNumberFormat('yyyy/MM/dd HH:mm:ss');
+    var v = obj[h];
+    if (DATE_COLS.indexOf(h) >= 0) v = parseDate_(v);
+    cell.setValue(v);
+  });
+  return r;
+}
+
+function logHistory_(kind, op, before, after, source) {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_HISTORY);
+  if (!sh) return;
+  function s(o) { return o ? Object.keys(o).filter(function (k) { return k !== '_row'; }).map(function (k) { return k + '=' + o[k]; }).join(' / ') : ''; }
+  sh.appendRow([new Date(), kind === 'vehicle' ? '車両' : '運転手', op, s(before), s(after), source || '手動']);
+  sh.getRange(sh.getLastRow(), 1).setNumberFormat('yyyy/MM/dd HH:mm:ss');
+}
+
+// ---------- API ----------
+
+function jsonOut_(payload) {
+  return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
+}
+function ok_(data) { return jsonOut_({ status: 'success', data: data }); }
+function err_(message) { return jsonOut_({ status: 'error', message: String(message) }); }
+
+function doGet(e) {
+  try {
+    var a = e.parameter.action;
+    if (a === 'init') return ok_(getInit_());
+    if (a === 'listImports') return ok_(listImports_(Number(e.parameter.limit) || 300));
+    if (a === 'ping') return ok_('pong');
+    return err_('不明なaction: ' + a);
+  } catch (ex) { return err_(ex.message); }
+}
+
+function doPost(e) {
+  try {
+    var body = JSON.parse(e.postData.contents);
+    if (body.action === 'ocr') return ok_(ocr_(body));
+    if (body.action === 'commit') return ok_(withLock_(function () { return commit_(body); }));
+    if (body.action === 'masterSave') return ok_(withLock_(function () { return masterSave_(body); }));
+    return err_('不明なaction: ' + body.action);
+  } catch (ex) { return err_(ex.message); }
+}
+
+function withLock_(fn) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
+function getInit_() {
+  var imp = sheet_(SHEET_IMPORT);
+  var impRows = readRows_(imp, ['積日', '行先', '工事番号', '現場名', '車番']);
+  return {
+    vehicles: readRows_(sheet_(SHEET_VEHICLE), VEHICLE_HEADERS),
+    drivers: readRows_(sheet_(SHEET_DRIVER), DRIVER_HEADERS),
+    projects: readProjects_(),
+    importKeys: impRows.map(function (r) { return { 積日: r.積日, 車番: r.車番 }; }),
+    pastDest: impRows.slice(-PAST_DEST_ROWS).map(function (r) { return { 行先: r.行先, 工事番号: r.工事番号, 現場名: r.現場名 }; }),
+    model: getInfo_('Geminiモデル名'),
+    keyOk: getInfo_('APIKEY') !== ''
+  };
+}
+
+function listImports_(limit) {
+  var sh = sheet_(SHEET_IMPORT);
+  var last = sh.getLastRow();
+  var rows = readRows_(sh, IMPORT_HEADERS, Math.max(2, last - limit + 1), last);
+  return rows.reverse();
+}
+
+// ---------- Gemini(FAXのPDF・画像を読み取る) ----------
+
+var OCR_PROMPT_ = [
+  'これは運送トラックの車番連絡FAX(配車連絡表)をスキャンしたものです。内容を次のJSONだけで返してください(前置き・説明は不要)。',
+  '{"業者":"","FAX日付":"","明細":[{"積日":"","卸日":"","行先":"","着時間":"","運送業者":"","車種":"","車番":"","氏名":"","携帯番号":""}]}',
+  'ルール:',
+  '- 業者: このFAXを送ってきた会社(発信元。会社名・事業所名まで)。「御中」「様」が付いている側は宛先なので業者ではありません。',
+  '- FAX日付: FAXの日付(本文の日付、または余白の受信印の日付)をyyyy-mm-ddで。読めなければ空文字。',
+  '- 明細: 車両1台=1要素。記入のない空欄の行は含めない。',
+  '- 積日・卸日: yyyy-mm-dd。年が書かれていなければFAX日付の年(今日は{{today}})。「10/ 20 (火)」のように分かれていても1つの日付として読む。',
+  '- 行先: 卸地(降地)。積地ではない。',
+  '- 着時間: 卸しの着時間(「8:00着」なら8:00)。書かれていなければ空文字。',
+  '- 運送業者: 実際に走る運送会社(「運送会社」「会社名」の欄)。業者(FAXの送り主)とは別の場合があります。',
+  '- 車種: 10t、4T平 など書かれたまま。',
+  '- 車番: ナンバー(地名・分類番号・かな・番号)をスペースなしでそのまま。',
+  '- 氏名: 運転手の氏名(スペースなし)。',
+  '- 携帯番号: 数字とハイフンのみ。',
+  '- 読み取れない文字は推測せず、その項目を空文字にする。書かれていない情報を作らない。'
+].join('\n');
+
+function ocr_(body) {
+  if (!body.base64) throw new Error('ファイルの内容がありません。');
+  var mime = body.mimeType || 'application/pdf';
+  if (['application/pdf', 'image/png', 'image/jpeg'].indexOf(mime) < 0) throw new Error('対応していない形式です(PDF・PNG・JPEGのみ): ' + mime);
+  var today = Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd');
+  var text = callGemini_([
+    { text: OCR_PROMPT_.replace('{{today}}', today) },
+    { inline_data: { mime_type: mime, data: body.base64 } }
+  ]);
+  return { raw: parseJsonText_(text), model: getInfo_('Geminiモデル名') };
+}
+
+function parseJsonText_(text) {
+  var t = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+  try { return JSON.parse(t); } catch (e) { throw new Error('読み取り結果をJSONとして解釈できませんでした。もう一度お試しください。'); }
+}
+
+function callGemini_(parts) {
+  var model = getInfo_('Geminiモデル名');
+  if (!model) throw new Error('情報シートの「Geminiモデル名」が空です。');
+  var key = getInfo_('APIKEY');
+  if (!key) throw new Error('情報シートの「APIKEY」が空です。');
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+  var payload = {
+    contents: [{ role: 'user', parts: parts }],
+    generationConfig: { temperature: 0, responseMimeType: 'application/json' }
+  };
+  var last = '';
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    var res = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'x-goog-api-key': key },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    var raw = res.getContentText();
+    var json = null;
+    try { json = JSON.parse(raw); } catch (e) { json = null; }
+    if (code === 200 && json) {
+      var cand = json.candidates && json.candidates[0];
+      var txt = cand && cand.content && cand.content.parts && cand.content.parts.map(function (p) { return p.text || ''; }).join('');
+      if (txt) return txt;
+      throw new Error('Geminiから読み取り結果が返りませんでした' + (cand && cand.finishReason ? '(' + cand.finishReason + ')' : '') + '。');
+    }
+    last = 'Gemini APIエラー(HTTP ' + code + '): ' + (json && json.error ? json.error.message : raw.slice(0, 200));
+    if (code !== 429 && code < 500) break;
+    Utilities.sleep(2000 * attempt);
+  }
+  throw new Error(last.replace(key, '***'));
+}
+
+// ---------- 記録(取込一覧への追記+マスタ更新) ----------
+
+function commit_(body) {
+  var rows = body.rows || [];
+  if (!rows.length) throw new Error('記録する行がありません。');
+  if (rows.length > MAX_ROWS_PER_COMMIT) throw new Error('一度に記録できるのは' + MAX_ROWS_PER_COMMIT + '行までです。');
+  var imp = sheet_(SHEET_IMPORT);
+  var source = body.filename || '';
+  var ops = body.ops || [];
+  var opCount = 0;
+  ops.forEach(function (op) { applyOp_(op, source); opCount++; });
+  var now = new Date();
+  rows.forEach(function (r) {
+    var o = {
+      'タイムスタンプ': now, 'ファイル名': source,
+      '工事番号': r.工事番号 || '', '現場名': r.現場名 || '',
+      '業者': r.業者 || '', '手配業者': r.業者 || '',
+      '積日': r.積日 || '', '卸日': r.卸日 || '', '行先': r.行先 || '', '着時間': r.着時間 || '',
+      '運送業者': r.運送業者 || '', '車種': r.車種 || '', '車番': r.車番 || '', '氏名': r.氏名 || '', '携帯番号': r.携帯番号 || ''
+    };
+    writeRow_(imp, IMPORT_HEADERS, null, o);
+  });
+  return { added: rows.length, ops: opCount };
+}
+
+function masterInfo_(kind) {
+  if (kind === 'vehicle') return { sheet: sheet_(SHEET_VEHICLE), headers: VEHICLE_HEADERS };
+  if (kind === 'driver') return { sheet: sheet_(SHEET_DRIVER), headers: DRIVER_HEADERS };
+  throw new Error('不明なマスタ種別: ' + kind);
+}
+
+/** op: {kind, mode:'add'|'update'|'delete', row, before, data} */
+function applyOp_(op, source) {
+  var mi = masterInfo_(op.kind);
+  var sh = mi.sheet, headers = mi.headers;
+  if (op.mode === 'add') {
+    writeRow_(sh, headers, null, op.data);
+    logHistory_(op.kind, '追加', null, op.data, source);
+    return;
+  }
+  var now = readRows_(sh, headers, op.row, op.row)[0];
+  if (!now) throw new Error('マスタの行(' + op.row + ')が見つかりません。画面を再読み込みしてください。');
+  headers.forEach(function (h) {
+    if (String(now[h]) !== String((op.before || {})[h] == null ? '' : op.before[h])) {
+      throw new Error('マスタが他の操作で変更されています(' + h + ')。画面を再読み込みしてください。');
+    }
+  });
+  if (op.mode === 'update') {
+    writeRow_(sh, headers, op.row, op.data);
+    logHistory_(op.kind, '更新', op.before, op.data, source);
+  } else if (op.mode === 'delete') {
+    sh.deleteRow(op.row);
+    logHistory_(op.kind, '削除', op.before, null, source);
+  } else {
+    throw new Error('不明な操作: ' + op.mode);
+  }
+}
+
+function masterSave_(body) {
+  applyOp_({ kind: body.kind, mode: body.mode, row: body.row, before: body.before, data: body.data }, '手動(画面)');
+  return { ok: true };
+}

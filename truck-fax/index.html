@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>車番連絡 取込</title>
+<link rel="stylesheet" href="style.css?v=20261020a">
+</head>
+<body>
+<header class="top">
+  <h1 id="app-name">車番連絡 取込</h1>
+  <span id="status" class="status"></span>
+</header>
+<nav class="tabs" id="tabs">
+  <button data-tab="import" class="on">① 取込</button>
+  <button data-tab="imports">取込一覧</button>
+  <button data-tab="vehicles">車両情報</button>
+  <button data-tab="drivers">運転手</button>
+</nav>
+<div id="banner" class="banner" hidden></div>
+<main>
+  <section id="tab-import">
+    <label id="drop" class="drop" tabindex="0">
+      <input id="file" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" hidden>
+      <strong>FAXのPDFをここへドロップ、またはクリックして選択</strong>
+      <span>複数まとめて取り込めます(PDF・PNG・JPEG、10MBまで)。取り込むと内容を自動で読み取り、確認用の表が出ます。</span>
+    </label>
+    <div id="cards"></div>
+  </section>
+  <section id="tab-imports" hidden></section>
+  <section id="tab-vehicles" hidden></section>
+  <section id="tab-drivers" hidden></section>
+  <section id="setup" hidden>
+    <h2>初期設定が必要です</h2>
+    <p>GASのURLが未設定です。<code>README.md</code>の手順で、GAS(<code>gas/Code.gs</code>)をデプロイし、そのURLを <code>app.js</code> の <code>GAS_API_URL</code> に設定してください。</p>
+  </section>
+</main>
+<script src="logic.js?v=20261020a"></script>
+<script src="app.js?v=20261020a"></script>
+</body>
+</html>
