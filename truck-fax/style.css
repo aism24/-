@@ -158,3 +158,9 @@ table.t.zebra tbody tr.sel td { background: #d6ecff; border-top: 3px double #1d6
 table.t.zebra tbody tr.sel td:first-child { border-left: 3px double #1d6fb8; }
 table.t.zebra tbody tr.sel td:last-child { border-right: 3px double #1d6fb8; }
 table.t.zebra tbody tr.sel input, table.t.zebra tbody tr.sel select { min-width: 5.5em; background: #fff; }
+/* 取込の初期画面: 見本のFAX(ぼかし)を背景に、案内の文字を画面の中心に置く。見本の画像は --drop-sample で指定する */
+.drop { position: relative; overflow: hidden; justify-content: center; min-height: calc(100vh - 150px); }
+.drop::before { content: ''; position: absolute; inset: -14px; background: var(--drop-sample, none) center / cover no-repeat; filter: blur(7px); opacity: .7; }
+.drop > * { position: relative; }
+.drop-main { font-size: 28px; padding: 18px 40px; border-radius: 14px; background: rgba(255,255,255,.82); }
+.drop span { padding: 4px 14px; border-radius: 8px; background: rgba(255,255,255,.7); color: var(--ink); }
