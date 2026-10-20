@@ -99,7 +99,7 @@
     return Object.keys(d.driverName).length + Object.keys(d.driverPhone).length;
   }
   function renderTabs() {
-    var labels = { import: 'PDF取込', imports: '取込一覧', vehicles: '車両情報', drivers: '運転手' };
+    var labels = { import: 'PDF取込', imports: '取込一覧', vehicles: '車両情報', drivers: '運転手情報' };
     var vd = dupCount('vehicle'), dd = dupCount('driver');
     document.querySelectorAll('#tabs button').forEach(function (b) {
       var t = b.dataset.tab, extra = '';
@@ -413,9 +413,9 @@
     card.busy = true; renderFoot(card);
     try {
       await apiPost('commit', { filename: card.name, rows: rows, ops: ops }, 120000);
-      var adds = ops.filter(function (o) { return o.mode === 'add'; }).length, ups = ops.length - adds;
+      var cnt = function (kind, mode) { return ops.filter(function (o) { return o.kind === kind && (mode === 'add' ? o.mode === 'add' : o.mode !== 'add'); }).length; };
       card.status = 'saved';
-      card.msg = rows.length + '件を取込一覧に記録しました(マスタ: 新規' + adds + '件・更新' + ups + '件)。';
+      card.msg = rows.length + '件を取込一覧に記録しました(車両情報: 新規' + cnt('vehicle', 'add') + '件・更新' + cnt('vehicle', 'upd') + '件 / 運転手情報: 新規' + cnt('driver', 'add') + '件・更新' + cnt('driver', 'upd') + '件)。';
       await loadInit();
       refreshReadyCards();
     } catch (e) { card.busy = false; showBanner('記録に失敗しました: ' + e.message); renderFoot(card); return; }
@@ -719,7 +719,7 @@
     dlg.showModal();
   }
 
-  // ---------- マスタ(車両情報・運転手)の表と編集 ----------
+  // ---------- 車両情報・運転手情報の表と編集 ----------
   function masterRows(kind) { return kind === 'vehicle' ? S.vehicles : S.drivers; }
 
   function normMaster(kind, d) {
@@ -787,7 +787,7 @@
     host.appendChild(h('div', { class: 'tool mastertbl', style: 'width:' + tblW }, h('span', { class: 'sub', text: rows.length + '件' + (nd ? ' ・ 重複 ' + nd + ' 組(赤)。確認して、不要な行を削除するか修正してください。' : '') }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn sm excel', type: 'button', text: 'Excelでダウンロード', onclick: function () {
         var t = todayIso().replace(/-/g, '');
-        TruckXlsx.download((kind === 'vehicle' ? '車両情報_' : '運転手_') + t + '.xlsx', kind === 'vehicle' ? '車両情報' : '運転手', cols, rows.map(function (r) { return cols.map(function (k) { return r[k] || ''; }); }));
+        TruckXlsx.download((kind === 'vehicle' ? '車両情報_' : '運転手情報_') + t + '.xlsx', kind === 'vehicle' ? '車両情報' : '運転手情報', cols, rows.map(function (r) { return cols.map(function (k) { return r[k] || ''; }); }));
       } })));
 
     var head = h('tr'); cols.forEach(function (k) { head.appendChild(h('th', { text: k })); }); head.appendChild(h('th', { text: '操作' }));
