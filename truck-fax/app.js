@@ -13,6 +13,8 @@
   var IMPORTS_SHOW = 100;
   var VIEW_HEADERS = IMPORT_HEADERS.filter(function (k) { return k !== 'タイムスタンプ'; }); // 画面・Excelに出す列
   var INACTIVE = ['中止', '変更前'];
+  var TABLE_HEADERS = VIEW_HEADERS.filter(function (k) { return k !== '現場名'; }); // 取込一覧の表に出す列(現場名は出さない。Excelには入る)
+  var CENTER_COLS = ['手配業者', '積日', '卸日', '着時間', '車種', '追加変更']; // 中央揃え(幅は中身に合わせて詰める)
   var DRIVER_COLORS = ['#dff3e0', '#fff7cc', '#dbeafe', '#fde2e4', '#ede0f7', '#ffe8cc', '#d6f2f2', '#eceff1']; // 運転手の行を運送業者ごとに分ける薄い色
   var OTHER = 'その他'; // 工事に該当しないもの。工事番号・現場名の両方に「その他」と記録する
   var MASTER_COL_W = 170;
@@ -147,7 +149,7 @@
     card.status = 'reading'; renderCard(card);
     try {
       var recsP = loadImports(true).catch(function () { return null; }); // OCRと同時に取込一覧を読み込む(待ち時間を重ねる)
-      var b64 = await fileToBase64(card.file);
+      var b64 = await fileToBase64(card.file); card.b64 = b64;
       var d = await apiPost('ocr', { filename: card.name, mimeType: card.mime, base64: b64 }, 180000);
       var res = L.sanitizeOcr(d.raw, { today: new Date(), senders: S.senders });
       card.res = res; card.warnings = res.warnings;
@@ -422,10 +424,12 @@
     var rows = keep.map(function (r) { var o = {}; L.ROW_FIELDS.forEach(function (k) { o[k] = r.row[k] || ''; }); return o; });
     card.busy = true; renderFoot(card);
     try {
-      await apiPost('commit', { filename: card.name, rows: rows, ops: ops }, 120000);
+      var body = { filename: card.name, rows: rows, ops: ops };
+      if (card.b64) { body.fileBase64 = card.b64; body.fileMime = card.mime; } // 原本をDriveに保存し、取込一覧のファイルURLに入れる
+      var out = await apiPost('commit', body, 180000);
       var cnt = function (kind, mode) { return ops.filter(function (o) { return o.kind === kind && (mode === 'add' ? o.mode === 'add' : o.mode !== 'add'); }).length; };
       card.status = 'saved';
-      card.msg = rows.length + '件を取込一覧に記録しました(車両情報: 新規' + cnt('vehicle', 'add') + '件・更新' + cnt('vehicle', 'upd') + '件 / 運転手情報: 新規' + cnt('driver', 'add') + '件・更新' + cnt('driver', 'upd') + '件)。';
+      card.msg = rows.length + '件を取込一覧に記録しました(車両情報: 新規' + cnt('vehicle', 'add') + '件・更新' + cnt('vehicle', 'upd') + '件 / 運転手情報: 新規' + cnt('driver', 'add') + '件・更新' + cnt('driver', 'upd') + '件)。' + (out && out.fileWarn ? ' ※原本はDriveに保存できませんでした: ' + out.fileWarn : '');
       await loadInit();
       refreshReadyCards();
     } catch (e) { card.busy = false; showBanner('記録に失敗しました: ' + e.message); renderFoot(card); return; }
@@ -637,9 +641,11 @@
     var ops = L.mergeOps(opsList);
     card.busy = true; renderFoot(card);
     try {
-      var out = await apiPost('applyChanges', { filename: card.name, items: items, ops: ops }, 120000);
+      var cbody = { filename: card.name, items: items, ops: ops };
+      if (card.b64) { cbody.fileBase64 = card.b64; cbody.fileMime = card.mime; }
+      var out = await apiPost('applyChanges', cbody, 180000);
       card.status = 'saved';
-      card.msg = '取込一覧に反映しました(行を追加' + out.added + '件・「変更前」「中止」の印' + out.marked + '件)。取り込んだ行は、取込一覧に残っています。';
+      card.msg = '取込一覧に反映しました(行を追加' + out.added + '件・「変更前」「中止」の印' + out.marked + '件)。取り込んだ行は、取込一覧に残っています。' + (out.fileWarn ? ' ※原本はDriveに保存できませんでした: ' + out.fileWarn : '');
       await loadInit();
       refreshReadyCards();
     } catch (e) { card.busy = false; showBanner('反映に失敗しました: ' + e.message); renderFoot(card); return; }
@@ -686,7 +692,7 @@
     var cnt = '新しい順・該当' + rows.length + '件のうち最新' + shown.length + '件を表示(最大' + IMPORTS_SHOW + '件)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
     host.appendChild(h('div', { class: 'tool' }, fySel, cmSel, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; S.importsP = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn excel', type: 'button', text: '降し日指定でダウンロード', onclick: openDateDownload })));
-    var head = h('tr'); VIEW_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); }); head.appendChild(h('th', { text: '操作' }));
+    var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: CENTER_COLS.indexOf(k) >= 0 ? 'c fit' : null, text: k })); }); head.appendChild(h('th', { text: '操作' }));
     var body = h('tbody');
     shown.forEach(function (r) { body.appendChild(importRow(r)); });
     host.appendChild(shown.length ? h('div', { class: 'scroll' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' }));
@@ -696,20 +702,53 @@
   var IMPORT_LABELS = ['', '変更前', '変更後', '中止'];
   function importDraftOf(r) { var d = {}; VIEW_HEADERS.forEach(function (k) { if (k !== 'ファイル名') d[k] = r[k] || ''; }); return d; }
 
+  /** 取込一覧の表の表示用の文字: ファイル名は拡張子を除く、積日・卸日は m/d */
+  function importCellText(r, k) {
+    var v = r[k] || '';
+    if (k === 'ファイル名') return v.replace(/\.(pdf|png|jpe?g)$/i, '');
+    if (k === '積日' || k === '卸日') { var d = L.dateKey(v); return d ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : v; }
+    return v;
+  }
+  /** ファイル名のセルの中身。ファイルURLがあれば、押すと原本が開くリンクにする */
+  function fileNameNode(r) {
+    var t = importCellText(r, 'ファイル名');
+    if (!r.ファイルURL) return t;
+    return h('a', { href: '#', class: 'filelink', title: '原本を開く', text: t, onclick: function (e) { e.preventDefault(); e.stopPropagation(); openFaxViewer(r); } });
+  }
+
+  /** 取込一覧のファイル名を押したときに、原本(PDF・画像)を大きく開く。取込のときと同じく、ホイールでズーム・ドラッグで移動 */
+  async function openFaxViewer(r) {
+    var holder = h('div', { class: 'faxview' }, h('div', { class: 'reading-note', text: '原本を読み込んでいます…' }));
+    var dlg = h('dialog', { class: 'dlg faxdlg' }, h('div', { class: 'faxdlg-head' }, h('strong', { text: importCellText(r, 'ファイル名') }), h('span', { class: 'spacer' }),
+      h('button', { class: 'btn sm', type: 'button', text: '閉じる', onclick: function () { dlg.close(); } })), holder);
+    var url = '';
+    dlg.addEventListener('close', function () { if (url) URL.revokeObjectURL(url); dlg.remove(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+    try {
+      var d = await apiGet('getFile', { url: r.ファイルURL });
+      var bin = atob(d.base64), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      var blob = new Blob([bytes], { type: d.mime });
+      url = URL.createObjectURL(blob);
+      holder.textContent = '';
+      holder.appendChild(TruckViewer.create(blob, d.mime, url));
+    } catch (e) { holder.textContent = ''; holder.appendChild(h('div', { class: 'empty', text: '原本を開けませんでした: ' + e.message })); }
+  }
+
   function importRow(r) {
     var sel = S.importsSel && S.importsSel.row === r._row ? S.importsSel : null;
     var tr = h('tr', { class: sel ? 'sel' : 'pick' });
     if (!sel) {
-      VIEW_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: r[k] || '' })); });
+      TABLE_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (CENTER_COLS.indexOf(k) >= 0 ? ' c fit' : '') }, k === 'ファイル名' ? fileNameNode(r) : importCellText(r, k))); });
       tr.appendChild(h('td', { class: 'nowrap' }));
       tr.addEventListener('click', function () { selectImportRow(r); });
       return tr;
     }
-    var d = sel.draft, siteCell = null;
-    VIEW_HEADERS.forEach(function (k) {
-      var td = h('td', { class: 'nowrap' });
-      if (k === 'ファイル名') td.textContent = r[k] || '';
-      else if (k === '現場名') { siteCell = td; td.textContent = d.現場名; }
+    var d = sel.draft;
+    TABLE_HEADERS.forEach(function (k) {
+      var td = h('td', { class: 'nowrap' + (CENTER_COLS.indexOf(k) >= 0 ? ' c' : '') });
+      if (k === 'ファイル名') { var fnode = fileNameNode(r); td.appendChild(typeof fnode === 'string' ? document.createTextNode(fnode) : fnode); }
       else if (k === '工事番号') {
         var ps = h('select', { 'aria-label': k });
         ps.appendChild(h('option', { value: '', text: '(なし)' }));
@@ -718,7 +757,7 @@
         S.projects.forEach(function (p) { if (p.工事番号 === d.工事番号) found = true; ps.appendChild(h('option', { value: p.工事番号, text: p.工事番号 + '  ' + p.工事名 })); });
         if (!found) ps.appendChild(h('option', { value: d.工事番号, text: d.工事番号 }));
         ps.value = d.工事番号;
-        ps.addEventListener('change', function () { d.工事番号 = ps.value; d.現場名 = !ps.value ? '' : ps.value === OTHER ? OTHER : (L.projectName(S.projects, ps.value) || d.現場名); siteCell.textContent = d.現場名; });
+        ps.addEventListener('change', function () { d.工事番号 = ps.value; d.現場名 = !ps.value ? '' : ps.value === OTHER ? OTHER : (L.projectName(S.projects, ps.value) || d.現場名); }); // 現場名は表に出さないが、工事番号に合わせて保存する
         td.appendChild(ps);
       } else if (k === '追加変更') {
         var ls = h('select', { 'aria-label': k });
