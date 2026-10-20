@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261020m';
+var CODE_VERSION = '20261021a';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
@@ -71,15 +71,27 @@ function firstEmptyRowInA_(sh) {
 
 // ---------- 情報シートの設定 ----------
 
+// 情報シートのA・B列は、1回の実行(リクエスト)の中で1回だけ読む。日付セルを文字にするたびに読み直すと、行数に比例して遅くなる(2026-10-21に実測)。
+var INFO_CACHE_ = null;
+function infoVals_() {
+  if (INFO_CACHE_ === null) {
+    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INFO);
+    INFO_CACHE_ = !sh || sh.getLastRow() < 1 ? [] : sh.getRange(1, 1, sh.getLastRow(), 2).getValues();
+  }
+  return INFO_CACHE_;
+}
+
 function getInfo_(key) {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INFO);
-  if (!sh || sh.getLastRow() < 1) return '';
-  var vals = sh.getRange(1, 1, sh.getLastRow(), 2).getValues();
+  var vals = infoVals_();
   for (var i = 0; i < vals.length; i++) if (String(vals[i][0]).trim() === key) return String(vals[i][1]).trim();
   return '';
 }
 
-function tz_() { return getInfo_('タイムゾーン') || 'Asia/Tokyo'; }
+var TZ_CACHE_ = null;
+function tz_() {
+  if (TZ_CACHE_ === null) TZ_CACHE_ = getInfo_('タイムゾーン') || 'Asia/Tokyo';
+  return TZ_CACHE_;
+}
 
 /** 工事番号と工事名のリスト。「情報」シートの見出し「工事番号」「工事名」を探し、その下を空行まで読む。 */
 function readProjects_() {
@@ -147,10 +159,20 @@ function headerMap_(sh, required) {
   return map;
 }
 
+/** 日付を文字にする。Asia/Tokyo(夏時間なし・UTC+9固定)は、GASのサービスを呼ばずに計算する(Utilities.formatDateと同じ結果。Nodeで照合済み)。 */
+function fmtDate_(d, withTime) {
+  var tz = tz_();
+  if (tz !== 'Asia/Tokyo') return Utilities.formatDate(d, tz, withTime ? 'yyyy/MM/dd HH:mm:ss' : 'yyyy/MM/dd');
+  var t = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  function p2(n) { return (n < 10 ? '0' : '') + n; }
+  var ymd = t.getUTCFullYear() + '/' + p2(t.getUTCMonth() + 1) + '/' + p2(t.getUTCDate());
+  return withTime ? ymd + ' ' + p2(t.getUTCHours()) + ':' + p2(t.getUTCMinutes()) + ':' + p2(t.getUTCSeconds()) : ymd;
+}
+
 function cellStr_(v) {
   if (Object.prototype.toString.call(v) === '[object Date]') {
     var withTime = v.getHours() || v.getMinutes() || v.getSeconds();
-    return Utilities.formatDate(v, tz_(), withTime ? 'yyyy/MM/dd HH:mm:ss' : 'yyyy/MM/dd');
+    return fmtDate_(v, withTime);
   }
   return String(v == null ? '' : v);
 }

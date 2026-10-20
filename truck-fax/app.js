@@ -71,12 +71,22 @@
     } finally { clearTimeout(timer); }
   }
 
-  async function loadInit() {
+  /** 取込一覧(新しい順)を読み込む。同じ読み込みを、取込一覧タブ・再取込の判定・先読みで使い回す。force=true で必ず読み直す。 */
+  function loadImports(force) {
+    if (force || !S.importsP) {
+      var p = apiGet('listImports', { limit: IMPORTS_LIMIT }).then(function (d) { if (S.importsP === p) S.imports = d; return d; });
+      p.catch(function () { if (S.importsP === p) S.importsP = null; });
+      S.importsP = p;
+    }
+    return S.importsP;
+  }
+
+  async function loadInit(keepImports) {
     var d = await apiGet('init');
     S.vehicles = d.vehicles || []; S.drivers = d.drivers || []; S.projects = d.projects || []; S.senders = d.senders || [];
     S.importKeyList = (d.importKeys || []).map(function (r) { return L.importKey({ 積日: r.積日, 車番: r.車番 }); });
     S.destMap = L.buildDestMap(d.pastDest || []);
-    S.imports = null;
+    if (!keepImports) { S.imports = null; S.importsP = null; }
     renderTabs();
   }
 
@@ -133,18 +143,18 @@
   async function extract(card) {
     card.status = 'reading'; renderCard(card);
     try {
+      var recsP = loadImports(true).catch(function () { return null; }); // OCRと同時に取込一覧を読み込む(待ち時間を重ねる)
       var b64 = await fileToBase64(card.file);
       var d = await apiPost('ocr', { filename: card.name, mimeType: card.mime, base64: b64 }, 180000);
       var res = L.sanitizeOcr(d.raw, { today: new Date(), senders: S.senders });
       card.res = res; card.warnings = res.warnings;
-      var recs = null;
-      try { recs = await apiGet('listImports', { limit: 500 }); } catch (e) { recs = null; } // 取れなかったときは、再取込のチェックを省く
+      var recs = await recsP; // 取れなかったときは null: 再取込のチェックを省く
       if (recs && L.alreadyImported(res, recs)) { // 既に取り込んだ内容と全く同じ: 取込をやめる
         S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); if (card.url) URL.revokeObjectURL(card.url); syncDrop();
         noticeDialog('同じ内容のものです。取込をキャンセルしました');
         return;
       }
-      if (recs) card.records = recs;
+      if (recs) card.records = recs.slice(0, 500);
       if (L.isChange(res)) await enterKind(card, L.effectiveKind(res));
       else enterNormal(card);
       card.status = 'ready';
@@ -437,7 +447,7 @@
 
   async function enterKind(card, kind) {
     if (kind === '新規') { enterNormal(card); return; }
-    if (!card.records) card.records = await apiGet('listImports', { limit: 500 });
+    if (!card.records) card.records = (await loadImports(true)).slice(0, 500);
     var plan = L.buildChangePlan(card.res, card.records, kind);
     card.mode = 'change'; card.kind = kind; card.items = plan.items;
     card.items.forEach(function (it) { if (it.newRow && !it.newRow.工事番号) applyProjectDefault(it.newRow); });
@@ -580,7 +590,7 @@
     // 他のFAXを先に記録した場合など、取込一覧が変わっていたら、最新で照合し直してやり直す(古い照合のまま反映しない)
     card.busy = true; renderFoot(card);
     try {
-      var fresh = await apiGet('listImports', { limit: 500 });
+      var fresh = (await loadImports(true)).slice(0, 500);
       var sig = function (a) { return JSON.stringify(a.map(function (r) { return [r._row, r.積日, r.車番, r.氏名, r.携帯番号, r.手配業者, r.追加変更]; })); };
       if (sig(fresh) !== sig(card.records || [])) {
         card.records = fresh;
@@ -630,7 +640,7 @@
     if (S.imports == null) {
       host.textContent = '';
       host.appendChild(h('div', { class: 'empty', text: '読み込み中…' }));
-      try { S.imports = await apiGet('listImports', { limit: IMPORTS_LIMIT }); }
+      try { S.imports = await loadImports(); }
       catch (e) { host.textContent = ''; host.appendChild(h('div', { class: 'empty', text: '取得に失敗しました: ' + e.message })); return; }
     }
     host.textContent = '';
@@ -662,7 +672,7 @@
     var siteSel = sel('現場名', S.importsSite, [['all', '全て(現場名)']].concat(siteList.map(function (n) { return [n, n]; })), function (v) { S.importsSite = v; });
     var shown = rows.slice(0, IMPORTS_SHOW);
     var cnt = '新しい順・該当' + rows.length + '件のうち最新' + shown.length + '件を表示(最大' + IMPORTS_SHOW + '件)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
-    host.appendChild(h('div', { class: 'tool' }, fySel, cmSel, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
+    host.appendChild(h('div', { class: 'tool' }, fySel, cmSel, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; S.importsP = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn excel', type: 'button', text: '降し日指定でダウンロード', onclick: openDateDownload })));
     var head = h('tr'); VIEW_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); });
     var body = h('tbody');
@@ -839,7 +849,8 @@
       ['import', 'imports', 'vehicles', 'drivers'].forEach(function (x) { $('tab-' + x).hidden = true; });
       $('tabs').hidden = true; $('setup').hidden = false; return;
     }
-    try { await loadInit(); }
+    var preload = loadImports(); preload.catch(function () {}); // 取込一覧は、初期データと同時に先読みする
+    try { await loadInit(true); }
     catch (e) { showBanner('スプレッドシートの読み込みに失敗しました: ' + e.message + '(GASのURL・公開設定を確認してください)'); }
   }
   start();
