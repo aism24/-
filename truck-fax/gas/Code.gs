@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261020j';
+var CODE_VERSION = '20261020k';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
@@ -483,18 +483,3 @@ function normalizeSenders() {
   return '手配業者を ' + changed + ' か所そろえました(候補: ' + list.join('・') + ')';
 }
 
-
-// ---------- 使わなくなったシートの削除(Apps Scriptのエディタで、関数 removeUnusedSheets を1回だけ実行) ----------
-
-/** 以前のバージョンが作った、使わないシート「変更履歴」「マスタ変更履歴」を削除する(この2つだけ。他のシートには触らない)。
- *  取込一覧の「追加変更」(変更前・変更後・中止)で経緯が分かるため、履歴のシートは不要になった。 */
-function removeUnusedSheets() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), removed = [];
-  ['変更履歴', 'マスタ変更履歴'].forEach(function (name) {
-    var sh = ss.getSheetByName(name);
-    if (sh) { ss.deleteSheet(sh); removed.push(name); }
-  });
-  var msg = removed.length ? '削除しました: ' + removed.join('・') : '削除するシートはありません';
-  Logger.log(msg);
-  return msg;
-}
