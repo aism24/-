@@ -90,7 +90,7 @@
     return Object.keys(d.driverName).length + Object.keys(d.driverPhone).length;
   }
   function renderTabs() {
-    var labels = { import: '① 取込', imports: '取込一覧', vehicles: '車両情報', drivers: '運転手' };
+    var labels = { import: 'PDF取込', imports: '取込一覧', vehicles: '車両情報', drivers: '運転手' };
     var vd = dupCount('vehicle'), dd = dupCount('driver');
     document.querySelectorAll('#tabs button').forEach(function (b) {
       var t = b.dataset.tab, extra = '';
