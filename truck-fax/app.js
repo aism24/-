@@ -13,7 +13,7 @@
   var MAX_BYTES = 10 * 1024 * 1024;
 
   var S = { senders: [], vehicles: [], drivers: [], projects: [], importKeyList: [], destMap: {}, model: '', keyOk: false, cards: [], tab: 'import',
-    imports: null, importsQ: '', importsFy: null, importsCm: null, editing: null };
+    imports: null, importsFy: null, importsCm: null, importsSite: 'all', editing: null };
   var seq = 0;
 
   // ---------- 小物 ----------
@@ -588,7 +588,6 @@
       var n = new Date(), now = L.closingOf(n.getFullYear(), n.getMonth() + 1, n.getDate());
       S.importsFy = String(now.fy); S.importsCm = String(now.cm);
     }
-    var q = L.nameKey(S.importsQ).toLowerCase();
     var cl = S.imports.map(function (r) { return L.rowClosing(r); });
     var undated = cl.filter(function (c) { return !c; }).length;
     var fys = {}; cl.forEach(function (c) { if (c) fys[c.fy] = 1; }); if (S.importsFy !== 'all') fys[S.importsFy] = 1;
@@ -597,10 +596,12 @@
       var c = cl[i];
       if (S.importsFy !== 'all' && !(c && String(c.fy) === S.importsFy)) return false;
       if (S.importsCm !== 'all' && !(c && String(c.cm) === S.importsCm)) return false;
-      return !q || IMPORT_HEADERS.some(function (k) { return L.nameKey(r[k]).toLowerCase().indexOf(q) >= 0; });
+      return S.importsSite === 'all' || r.現場名 === S.importsSite;
     });
-    var search = h('input', { type: 'search', placeholder: '検索(車番・氏名・現場名など)', value: S.importsQ, 'aria-label': '検索' });
-    search.addEventListener('input', function () { S.importsQ = search.value; var pos = search.selectionStart; renderImports().then(function () { var s = $('tab-imports').querySelector('input'); if (s) { s.focus(); s.setSelectionRange(pos, pos); } }); });
+    var sites = {}; // 現場名リスト: 情報シートの工事名と、取込一覧にある現場名
+    S.projects.forEach(function (p) { if (p.工事名) sites[p.工事名] = 1; });
+    S.imports.forEach(function (r) { if (r.現場名) sites[r.現場名] = 1; });
+    var siteList = Object.keys(sites).sort(function (a, b) { return a.localeCompare(b, 'ja'); });
     function sel(label, value, opts, onchange) {
       var s = h('select', { 'aria-label': label }, opts.map(function (o) { return h('option', { value: o[0], text: o[1] }); }));
       s.value = value; s.addEventListener('change', function () { onchange(s.value); renderImports(); });
@@ -608,8 +609,9 @@
     }
     var fySel = sel('年度', S.importsFy, [['all', 'すべての年度']].concat(fyList.map(function (y) { return [String(y), y + '年度']; })), function (v) { S.importsFy = v; });
     var cmSel = sel('締め月', S.importsCm, [['all', 'すべての締め月']].concat(L.CLOSING_MONTH_ORDER.map(function (m) { return [String(m), m + '月20日締め(' + L.closingPeriod(m) + ')']; })), function (v) { S.importsCm = v; });
+    var siteSel = sel('現場名', S.importsSite, [['all', '全て(現場名)']].concat(siteList.map(function (n) { return [n, n]; })), function (v) { S.importsSite = v; });
     var cnt = '新しい順・' + rows.length + '件表示(最大' + IMPORTS_LIMIT + '件を読み込み)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
-    host.appendChild(h('div', { class: 'tool' }, fySel, cmSel, search, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; renderImports(); } }), h('span', { class: 'sub', text: cnt })));
+    host.appendChild(h('div', { class: 'tool' }, fySel, cmSel, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; renderImports(); } }), h('span', { class: 'sub', text: cnt })));
     var head = h('tr'); IMPORT_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); });
     var body = h('tbody');
     rows.forEach(function (r) { var tr = h('tr'); IMPORT_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: r[k] || '' })); }); body.appendChild(tr); });
