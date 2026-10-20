@@ -139,3 +139,6 @@ dialog.dlg.wide { max-width: min(96vw, 1300px); width: min(96vw, 1300px); }
 .viewer-msg { position: absolute; left: 0; right: 0; top: 40%; text-align: center; color: #eef1f4; pointer-events: none; }
 .viewer.plain .viewer-msg { position: static; padding: 6px; }
 .viewer-frame { width: 100%; height: calc(100% - 30px); border: 0; background: #fff; }
+.sub-row { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; }
+.sub-row .sub-h { margin: 0; }
+.foot-btns { display: flex; gap: 8px; }

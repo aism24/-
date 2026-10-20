@@ -291,10 +291,10 @@
     if (card.status === 'saved') { el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'msg', text: card.msg }))); return; }
     card.warnings.forEach(function (w) { el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'badge warn', text: '注意' }), h('span', { class: 'msg', text: w }))); });
     if (card.mode === 'change') { renderChangeBody(card); return; }
-    el.appendChild(h('div', { class: 'sub-h', text: '読み取り結果(間違いがあれば表の中で直せます)' }));
+    card.footHost = h('div'); // 「記録する」「破棄する」は、見出しの行の右端に置く
+    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h', text: '読み取り結果(間違いがあれば表の中で直せます)' }), h('span', { class: 'spacer' }), card.footHost));
     card.rowsHost = h('div'); card.rowsHost.appendChild(rowsTable(card)); el.appendChild(card.rowsHost);
     card.findHost = h('div'); el.appendChild(card.findHost);
-    card.footHost = h('div'); el.appendChild(card.footHost);
     renderFindings(card); renderFoot(card);
   }
   /** 記入か選択が必要な欄を、黄色にする(読み取り結果の表)。入力のたびに付け外しする。 */
@@ -329,10 +329,11 @@
     if (!host._f) {
       var btn = h('button', { class: 'btn primary', type: 'button' }), msg = h('span', { class: 'msg' }), disc = h('button', { class: 'btn', type: 'button' });
       host.textContent = '';
-      host.appendChild(h('div', { class: 'foot' }, btn, msg, h('span', { class: 'spacer' }), disc));
+      host.appendChild(h('div', { class: 'foot-btns' }, btn, disc)); // msg は画面に出さない(ボタンのヒントに入れる)
       host._f = { btn: btn, msg: msg, disc: disc };
     }
     host._f.disc.textContent = discardText; host._f.disc.onclick = onDiscard;
+    host._f.hint = function () { host._f.btn.title = host._f.msg.textContent; };
     return host._f;
   }
   function discardCard(card) { S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); syncDrop(); }
@@ -351,9 +352,9 @@
       });
     });
     var msg = blockers > 0 ? '記録するには、あと ' + blockers + ' 件の対応が必要です → ' + todo.slice(0, 3).join(' / ') + (todo.length > 3 ? ' ほか' : '') : (keep === 0 ? '記録する行がありません。' : '準備OKです。内容を確認して「記録する」を押してください。');
-    var f = footParts(card, '記録せず破棄', function () { discardCard(card); });
-    f.btn.textContent = keep + '件を記録する'; f.btn.disabled = blockers > 0 || keep === 0 || !!card.busy; f.btn.onclick = function () { commitCard(card); };
-    f.msg.textContent = msg; f.msg.className = 'msg' + (blockers > 0 ? ' bad' : ' okmsg');
+    var f = footParts(card, '破棄する', function () { discardCard(card); });
+    f.btn.textContent = '記録する'; f.btn.disabled = blockers > 0 || keep === 0 || !!card.busy; f.btn.onclick = function () { commitCard(card); };
+    f.msg.textContent = msg; f.hint();
   }
 
   /** 1件記録したあと、確認待ちの他のFAXにも、最新の記録(行先ごとの工事番号の初期値・取込済みの重複)を反映する。 */
@@ -528,11 +529,11 @@
   function renderChangeBody(card) {
     var el = card.el;
     if (card.res.memo) el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'badge info', text: 'FAXの連絡' }), h('span', { class: 'msg', text: card.res.memo })));
-    el.appendChild(h('div', { class: 'sub-h', text: '変更内容(現在の記録と、今回のFAXを並べています。違う項目は色が付きます)' }));
+    card.footHost = h('div');
+    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h', text: '変更内容(現在の記録と、今回のFAXを並べています。違う項目は色が付きます)' }), h('span', { class: 'spacer' }), card.footHost));
     if (!card.items.length) el.appendChild(h('div', { class: 'empty', text: '変更・追加・取消の対象が見つかりませんでした。FAXの区分を選び直してください。' }));
     else el.appendChild(changeTable(card));
     card.findHost = h('div'); el.appendChild(card.findHost);
-    card.footHost = h('div'); el.appendChild(card.footHost);
     renderFindings(card); renderFoot(card);
   }
 
@@ -540,9 +541,9 @@
     var rs = changeResults(card), blockers = 0, active = 0, todo = [];
     rs.forEach(function (r) { blockers += r.blockers.length; if (r.active) active++; r.blockers.forEach(function (b) { todo.push(r.no + '件目: ' + b); }); });
     var msg = blockers > 0 ? '反映するには、あと ' + blockers + ' 件の対応が必要です → ' + todo.slice(0, 3).join(' / ') + (todo.length > 3 ? ' ほか' : '') : (active === 0 ? '反映する内容がありません。' : '準備OKです。内容を確認して「反映する」を押してください。');
-    var f = footParts(card, '反映せず破棄', function () { discardCard(card); });
-    f.btn.textContent = active + '件を反映する'; f.btn.disabled = blockers > 0 || active === 0 || !!card.busy; f.btn.onclick = function () { commitChange(card); };
-    f.msg.textContent = msg; f.msg.className = 'msg' + (blockers > 0 ? ' bad' : ' okmsg');
+    var f = footParts(card, '破棄する', function () { discardCard(card); });
+    f.btn.textContent = '反映する'; f.btn.disabled = blockers > 0 || active === 0 || !!card.busy; f.btn.onclick = function () { commitChange(card); };
+    f.msg.textContent = msg; f.hint();
   }
 
   async function commitChange(card) {
