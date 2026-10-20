@@ -336,6 +336,16 @@
     host._f.hint = function () { host._f.btn.title = host._f.msg.textContent; };
     return host._f;
   }
+  /** 記録・反映が終わったカードは消して、取込枠を元の状態に戻す。結果は、画面下に少しの間だけ知らせる。 */
+  function finishCard(card) {
+    S.cards = S.cards.filter(function (c) { return c !== card; });
+    card.el.remove(); if (card.url) URL.revokeObjectURL(card.url);
+    syncDrop();
+    var t = h('div', { class: 'toast', text: card.msg, onclick: function () { t.remove(); } });
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, 8000);
+  }
+
   function discardCard(card) { S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); syncDrop(); }
 
   function renderFoot(card) {
@@ -381,7 +391,7 @@
       await loadInit();
       refreshReadyCards();
     } catch (e) { card.busy = false; showBanner('記録に失敗しました: ' + e.message); renderFoot(card); return; }
-    card.busy = false; showBanner(''); renderCard(card);
+    card.busy = false; showBanner(''); finishCard(card);
   }
 
   // ---------- 変更・追加・取消(一度受領した連絡の続報) ----------
@@ -591,7 +601,7 @@
       await loadInit();
       refreshReadyCards();
     } catch (e) { card.busy = false; showBanner('反映に失敗しました: ' + e.message); renderFoot(card); return; }
-    card.busy = false; showBanner(''); renderCard(card);
+    card.busy = false; showBanner(''); finishCard(card);
   }
 
   // ---------- 取込一覧(読み取り専用の表) ----------
