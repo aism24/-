@@ -464,6 +464,24 @@
     if (!m) return '';
     return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
   }
+  /** 読み取ったFAXが、取込一覧に既にある内容と全く同じか(再取込の判定)。
+   *  読み取った行すべてが、記録済みの行のどれかと、書かれている項目すべて一致したときだけ true。空欄の項目は比べない。
+   *  取消線の行(変更前・取消)は、中止・変更前の行とも比べる。 */
+  function alreadyImported(res, records) {
+    var rows = (res && res.rows) || [];
+    if (!rows.length || !records || !records.length) return false;
+    function same(r, rec) {
+      var pairs = [
+        [r.業者, rec.手配業者, companyKey], [r.積日, rec.積日, dateKey], [r.卸日, rec.卸日, dateKey], [r.行先, rec.行先, nameKey], [r.着時間, rec.着時間, normTime],
+        [r.運送業者, rec.運送業者, companyKey], [r.車種, rec.車種, typeKey], [r.車番, rec.車番, plateKey], [r.氏名, rec.氏名, nameKey], [r.携帯番号, rec.携帯番号, phoneDigits]
+      ];
+      return pairs.every(function (p) { return !String(p[0] == null ? '' : p[0]).trim() || p[2](p[0]) === p[2](p[1]); });
+    }
+    return rows.every(function (r) {
+      return records.some(function (rec) { return (r.struck || res.kind === '取消' || isActiveRec(rec)) && same(r, rec); });
+    });
+  }
+
   /** 取込一覧の行がどの締め月か(積日→卸日→タイムスタンプの順で、読めた日付を使う) */
   function rowClosing(r) { return closingOfText(r.積日) || closingOfText(r.卸日) || closingOfText(r.タイムスタンプ); }
   /** 締め月の期間の表示(例: 12月→「11/21〜12/20」、4月→「3/21〜4/20」) */
@@ -486,7 +504,7 @@
   }
 
   return {
-    dateKey: dateKey, sortVehicles: sortVehicles, typeRank: typeRank, senderRank: senderRank,
+    alreadyImported: alreadyImported, dateKey: dateKey, sortVehicles: sortVehicles, typeRank: typeRank, senderRank: senderRank,
     closingOf: closingOf, closingOfText: closingOfText, rowClosing: rowClosing, closingPeriod: closingPeriod, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
     fmtType: fmtType, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate, companyKey: companyKey,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,

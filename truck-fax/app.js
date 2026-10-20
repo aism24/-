@@ -136,6 +136,14 @@
       var d = await apiPost('ocr', { filename: card.name, mimeType: card.mime, base64: b64 }, 180000);
       var res = L.sanitizeOcr(d.raw, { today: new Date(), senders: S.senders });
       card.res = res; card.warnings = res.warnings;
+      var recs = null;
+      try { recs = await apiGet('listImports', { limit: 500 }); } catch (e) { recs = null; } // 取れなかったときは、再取込のチェックを省く
+      if (recs && L.alreadyImported(res, recs)) { // 既に取り込んだ内容と全く同じ: 取込をやめる
+        S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); if (card.url) URL.revokeObjectURL(card.url);
+        noticeDialog('同じ内容のものです。取込をキャンセルしました');
+        return;
+      }
+      if (recs) card.records = recs;
       if (L.isChange(res)) await enterKind(card, L.effectiveKind(res));
       else enterNormal(card);
       card.status = 'ready';
@@ -686,6 +694,15 @@
       await apiPost('masterSave', { kind: kind, mode: mode, row: row, before: before, data: data });
       S.editing = null; await loadInit(); renderMaster(kind); showBanner('');
     } catch (e) { showBanner('保存に失敗しました: ' + e.message); }
+  }
+
+  /** 画面中央のポップアップでお知らせする(OKボタンで閉じる) */
+  function noticeDialog(message) {
+    var dlg = h('dialog', { class: 'dlg' }, h('p', { class: 'dlg-title', text: message }),
+      h('div', { class: 'dlg-btns' }, h('button', { class: 'btn primary', type: 'button', text: 'OK', onclick: function () { dlg.close(); } })));
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    dlg.showModal();
   }
 
   /** 画面中央のポップアップで確認する(ブラウザ標準の確認ダイアログは使わない)。OKならtrue */
