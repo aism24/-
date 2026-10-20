@@ -815,7 +815,7 @@
       var rows = all.slice().reverse().map(function (r) { return heads.map(function (k) { return r[k] || ''; }); });
       close(); close = function () {};
       if (!rows.length) { toast('取込一覧に記録がありません。'); return; }
-      TruckXlsx.download('車番連絡_全件_' + todayIso().replace(/-/g, '') + '.xlsx', '取込一覧', heads, rows);
+      TruckXlsx.download('過去全件一覧.xlsx', '取込一覧', heads, rows);
       toast('全件(' + rows.length + '件)をダウンロードしました。');
     } catch (e) { showBanner('全件の読み込みに失敗しました: ' + e.message); }
     finally { close(); }
@@ -823,7 +823,7 @@
 
   function todayIso() { var n = new Date(); return n.getFullYear() + '-' + ('0' + (n.getMonth() + 1)).slice(-2) + '-' + ('0' + n.getDate()).slice(-2); }
 
-  /** 年度・締め月を指定して、取込一覧の該当行をExcelでダウンロードする(中止・変更前の行は含めない)。シートの全行を読み直して、締め月で選ぶ */
+  /** 年度・締め月を指定して、取込一覧の該当行をExcelでダウンロードする(中止・変更前の行も含める。中止でも請求があるため、数に入れる)。シートの全行を読み直して、締め月で選ぶ */
   async function openClosingDownload() {
     var now = new Date(), cur = L.closingOf(now.getFullYear(), now.getMonth() + 1, now.getDate());
     var fy0 = S.importsFy !== 'all' && S.importsFy != null ? S.importsFy : String(cur.fy), cm0 = S.importsCm !== 'all' && S.importsCm != null ? S.importsCm : String(cur.cm);
@@ -838,8 +838,8 @@
     var all = [], shown = [], open = true;
     function refresh() {
       var fy = fySel.value, cm = cmSel.value;
-      shown = all.filter(function (r) { var c = L.rowClosing(r); return c && String(c.fy) === fy && String(c.cm) === cm && INACTIVE.indexOf(r.追加変更) < 0; });
-      info.textContent = fy + '年度 ' + cm + '月20日締め(' + L.closingPeriod(+cm) + ')の記録: ' + shown.length + '件(中止・変更前の行は含みません)。この内容でよければダウンロードしてください。';
+      shown = all.filter(function (r) { var c = L.rowClosing(r); return c && String(c.fy) === fy && String(c.cm) === cm; });
+      info.textContent = fy + '年度 ' + cm + '月20日締め(' + L.closingPeriod(+cm) + ')の記録: ' + shown.length + '件(中止・変更前の行も含みます)。この内容でよければダウンロードしてください。';
       tableHost.textContent = '';
       if (shown.length) {
         var head = h('tr'); VIEW_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); });
@@ -853,7 +853,7 @@
     cancel.addEventListener('click', function () { dlg.close(); });
     ok.addEventListener('click', function () {
       if (!shown.length) return;
-      TruckXlsx.download('車番連絡_' + fySel.value + '年度' + cmSel.value + '月締め.xlsx', '取込一覧', VIEW_HEADERS, shown.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }));
+      TruckXlsx.download(cmSel.value + '月20日〆車番一覧.xlsx', '取込一覧', VIEW_HEADERS, shown.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }));
       dlg.close();
     });
     dlg.addEventListener('close', function () { open = false; dlg.remove(); });
@@ -878,11 +878,12 @@
     var ok = h('button', { class: 'btn excel', type: 'button', text: 'この内容でExcelをダウンロード' });
     var dlg = h('dialog', { class: 'dlg wide' }, h('p', { class: 'dlg-title', text: '卸日指定でダウンロード' }),
       h('div', { class: 'dlg-row' }, h('label', { text: '卸日を選択:' }), input), info, tableHost, h('div', { class: 'dlg-btns' }, cancel, ok));
-    var cur = [];
+    var cur = [], all = [], loaded = false;
     function refresh() {
       var key = input.value;
-      cur = key ? S.imports.filter(function (r) { return INACTIVE.indexOf(r.追加変更) < 0 && L.dateKey(r.卸日) === key; }).reverse() : [];
-      info.textContent = key ? '卸日 ' + key.replace(/-/g, '/') + ' の記録: ' + cur.length + '件(中止・変更前の行は含みません)。この内容でよければダウンロードしてください。' : '卸日を選んでください。';
+      if (!loaded) { info.textContent = '記録を読み込んでいます…'; ok.disabled = true; return; }
+      cur = key ? all.filter(function (r) { return L.dateKey(r.卸日) === key; }) : [];
+      info.textContent = key ? '卸日 ' + key.replace(/-/g, '/') + ' の記録: ' + cur.length + '件(中止・変更前の行も含みます)。この内容でよければダウンロードしてください。' : '卸日を選んでください。';
       tableHost.textContent = '';
       if (cur.length) {
         var head = h('tr'); VIEW_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); });
@@ -896,13 +897,15 @@
     cancel.addEventListener('click', function () { dlg.close(); });
     ok.addEventListener('click', function () {
       if (!cur.length) return;
-      TruckXlsx.download('車番連絡_卸日' + input.value.replace(/-/g, '') + '.xlsx', '取込一覧', VIEW_HEADERS, cur.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }));
+      TruckXlsx.download((+input.value.slice(5, 7)) + '月' + (+input.value.slice(8, 10)) + '日着車番一覧.xlsx', '取込一覧', VIEW_HEADERS, cur.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }));
       dlg.close();
     });
     dlg.addEventListener('close', function () { dlg.remove(); });
     document.body.appendChild(dlg);
     refresh();
     dlg.showModal();
+    apiGet('listImports', { limit: 1000000 }).then(function (d) { all = d.slice().reverse(); loaded = true; if (dlg.isConnected) refresh(); }) // シートの全行から選ぶ(古い卸日も出る)
+      .catch(function (e) { if (dlg.isConnected) info.textContent = '読み込めませんでした: ' + e.message; });
   }
 
   // ---------- 車両情報・運転手情報の表と編集 ----------
