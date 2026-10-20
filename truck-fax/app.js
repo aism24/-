@@ -4,7 +4,7 @@
   var L = window.TruckLogic;
 
   // デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。デプロイ後にここへ設定する。
-  var GAS_API_URL = '';
+  var GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyfyFEJn4alzJGmbWIhKwKeRvJ2OlkgyM4wZFk7ldUVCs5Yx-khi5FOWLen6cvvIYQ/exec';
   function gasUrl() { return window.__GAS_URL__ || GAS_API_URL; }
 
   var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '業者', '積日', '卸日', '行先', '着時間', '手配業者', '運送業者', '車種', '車番', '氏名', '携帯番号'];
