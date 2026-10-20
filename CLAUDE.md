@@ -158,6 +158,7 @@ Vercelへのデプロイは毎回ではなく、公開するときだけ行う�
 | tdf-dim-count (https://tdf-dim-count.vercel.app/) | tdf-dim-count | 解除(2026-10-14、ユーザーがVercelでプロジェクトを新規作成=Root Directory `tdf-dim-count`。作成時に自動で本番デプロイ1回(dpl_G84HA3B、コミットb9d10fd=PR #711)→直後にユーザーが連携を解除。`list_projects` 0件を確認。同日、連携なしのまま `create_deployment` で2回目(dpl_quJeD8U、コミットe748bcb=PR #713。連携なしでもデプロイできることを確認)と3回目(dpl_6cPiPf3、コミットcddd081=PR #716。利用記録のGAS URL設定)を本番デプロイ。4回目(dpl_5dvBaEK、コミットd2a41e5=PR #719。手順書ビューア・説明文ヘッダー)を「デプロイして」の指示で本番デプロイ=連携なし。10/14のデプロイは計4回) | アプリ名「実寸データより長さと本数集計」。静的サイト(関数なし)。Excelダウンロード時に、GAS(`tdf-dim-count/gas/Code.gs`、スプレッドシート「tdf-dim-count」にコンテナバインド)へファイル名・レイヤ・総本数を送り、シート「記録」の2行目に追記(2026-10-14、`app.js` の `GAS_URL` に設定)。`tdf-dim-count/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(連携は不要)。TDF(OLE原本14MB含む)のレイヤ選択で、斜め寸法の手配長さ・本数を集計しExcel出力。解析のやり方は `docs/know-how.md`。ヘッダー右の「操作・準備説明書」ボタンで手順書(全8ページ)を表示(画像 `tdf-dim-count/manual/p-1〜8.jpg`、元PDFは `docs/manual-draft/`。ページ数を変えたら `index.html` のスクリプトの `N` も直す) |
 | jissun-open (https://jissun-open.vercel.app/) | jissun-open | 連携なし(`list_projects` 0件を確認、2026-10-16) | アプリ名「実寸法師を開く」(アプリランチャーapp009)。静的サイト(関数なし)。開くと `jissun://` で社内共有フォルダのHTMLを開かせる入口。開かれた日時をGAS(`jissun-open/gas/Code.gs`、スプレッドシート「実寸法師を開く_Vercel記録」にバインド)でシート「記録」のA2に追記(常にA2が最新)。`vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。本番反映は「デプロイして」の指示時のみ `create_deployment`(project=jissun-open、teamIdは渡さない)。**2026-10-16、Ignored Build Stepに `-- ./jissun-open` のコマンドが入っていて1回目がCANCELED→ユーザーが「Automatic」に変更→forceNew=1で2回目がREADY(10/16は計2回)**。引き継ぎ書はDriveの保存先フォルダ(上の表) |
 | huguai (Vercelプロジェクト名「tori-huguai」。https://tori-huguai.vercel.app/) | huguai | 解除(2026-10-15、ユーザーがVercelでプロジェクトを作成し、本番デプロイ1回(dpl_CPJjCRe、コミット1d00b81=PR #726)→直後にユーザーが連携を解除。`list_projects`(repoUrl=aism24/-)0件を確認。ユーザーの手動デプロイでClaudeの `create_deployment` ではない。2026-10-16、「デプロイして」の指示で `create_deployment` により、2回目(dpl_6BNecPu、コミット17bf6db=PR #730、PDF固定幅1280px)、3回目(dpl_HuWZsmy、コミット1d9b8cb=PR #733月リストの並び・#734年度連動)、4回目(dpl_BjEauQ4、コミット19063ad=PR #735取得中の表示・#736今月に戻す・#737見出しの年表記)を、連携なしで本番デプロイ、いずれもREADY。10/16のデプロイは計3回) | アプリ名「社内不具合アプリNew」(社内不具合記録アプリ(鳥取)のVercel版)。静的サイト(関数なし)。`huguai/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。GAS(`huguai/gas/Code.gs`、スプレッドシート「社内不具合アプリVercel版」にバインド)がデータ処理。本番反映は「デプロイして」の指示時のみ `create_deployment`(teamIdは渡さない=403。project=tori-huguai)。2026-10-15時点でClaudeのVercelツールは `get_project` 等がteam指定で403、`web_fetch_vercel_url` も403(本番ページの中身は未確認)。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
+| truck-fax(Vercelプロジェクトは未作成) | truck-fax | 未連携(プロジェクト自体が無い。2026-10-20) | アプリ名「車番連絡 取込」(スプレッドシート「車番連絡自動化」)。画面の確認はraw.githack(コミット固定のURL)。`truck-fax/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止済み。公開するときは、ユーザーがVercelでプロジェクトを作成(Root Directory=truck-fax)→「デプロイして」の指示で `create_deployment`(teamIdは渡さない)。GAS(`truck-fax/gas/Code.gs`。コンテナバインド。Webアプリは「全員」)は、貼り替え→「新バージョン」で反映する(`CODE_VERSION` で確認)。引き継ぎ書はDriveの保存先フォルダ(上の表) |
 
 2026-10-19、15プロジェクト(pdf-diff-pythonapp・daily-report・jissun-open・tori-huguai・shipping-list-link・tdf-dim-count・excel-drawing-link-tool・dxf-launcher・company-ai・cost-insight・-tori-robo・jissun-master-jidokinyu・unso-check・-tdf-master-web・production-management)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(ボタン追加の反映。コミット96e4414)。連携は0件のまま(`list_projects` で確認)。直近24時間のデプロイ回数は計20回(上限100)。**`vercel.json` の `git.deploymentEnabled=false` が無いフォルダ: pdf-diff-app(functionsの設定だけ)・unso-check・production-management・tdf-master-web・jissun-master-jidokinyu・kozai-toriai・weld-heat-management。連携は0件なので今は自動デプロイされないが、これらのVercelプロジェクトを `aism24/-` に連携し直す前に、必ずそのフォルダへ置くこと(特に pdf-diff-app は1デプロイごとにFunctions Storageを消費する)。**
 2026-10-14、tdf-dim-count(新規)も作成直後に連携を解除し、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。
@@ -219,6 +220,7 @@ Previewデプロイが発生する)
 | 鳥取運送アプリ(unso-check。運送業者の配車Excelを取り込み、21日始まり・20日締めの締め月ごとに請求チェック・年度集計。管理用スプレッドシート「鳥取運送アプリ」と、サブフォルダ「保存用バックアップ」が同じフォルダ内。2026-10-19、ユーザーが引き継ぎ書を共有して登録。引き継ぎ書のタイトルは「鳥取運送アプリ_引き継ぎ書(更新版N・日付)最新版」(2026-10-19に更新版11を作成。更新版10までは「鳥取運送アプリ_引き継ぎ書」)) | https://drive.google.com/drive/folders/1-Bklp4MLRbf-WL1H1rvdo26wOczl0puB | `1-Bklp4MLRbf-WL1H1rvdo26wOczl0puB` |
 | 生産管理ダッシュボード(production-management。3拠点の生産実績を案件マスターExcelから集計。索引スプレッドシート「Excelマスタ一覧」(GASのコンテナバインド元)・キャッシュJSONが同じフォルダ内。2026-10-19、ユーザーが引き継ぎ書を共有して登録。引き継ぎ書のタイトルは「生産管理ダッシュボード_引き継ぎ書(YYYY年M月D日版)」(2026-10-19に作成。旧版も残置)) | https://drive.google.com/drive/folders/1mj4vsEHTkaSjuMrqRC7NMGCYc2JC9EIo | `1mj4vsEHTkaSjuMrqRC7NMGCYc2JC9EIo` |
 | PDF比較解析アプリ(pdf-diff-app。新旧PDFの表・文章・図面の差分表示。記録用スプレッドシート「PDF差分解析（表、文章、図面）」と、サブフォルダ「ローカル実行済み正解データ」が同じフォルダ内。2026-10-19、ユーザーが引き継ぎ書を共有して登録。引き継ぎ書のタイトルは「PDF比較解析アプリ 引き継ぎ書(YYYY-MM-DD更新版)」(2026-10-19に更新版を作成。旧版も残置)) | https://drive.google.com/drive/folders/1aTNiacBOpV8Tq_PlR4VTX8yPGscGIbQ1 | `1aTNiacBOpV8Tq_PlR4VTX8yPGscGIbQ1` |
+| 車番連絡自動化(truck-fax。運送の車番連絡FAX(PDF)をGeminiで読み取り、取込一覧・車両情報・運転手携帯番号に記録。管理用スプレッドシート「車番連絡自動化」が同じフォルダ内。フォルダ名「10　夢前車番連絡FAX」。2026-10-20、ユーザーが「シートがあるフォルダでよい」と指示して登録。引き継ぎ書のGoogleドキュメントのタイトルは「車番連絡自動化 引き継ぎ書 (vN) 最新版」(2026-10-20に v1 を作成)) | https://drive.google.com/drive/folders/1uHVLxK9NEcLrSGr9zvf9QOn6D3iWIfJr | `1uHVLxK9NEcLrSGr9zvf9QOn6D3iWIfJr` |
 | 上記以外のアプリ(dxf-launcher・excel-drawing-link-tool・jissun-master-jidokinyu・tdf-master-web など) | 未登録(ユーザーがアプリごとに指示する。指示されたらこの表に追記する)。2026-10-19、この4アプリの引き継ぎ書は、ユーザーがローカルで管理・差し替えている(ドライブには保存していない。Claudeはテキスト/マークダウンで渡した) | - |
 
 - **【厳守】Driveのファイル名変更・移動(`update_file`)をしたら、個人のマイドライブ直下に混入していないか必ず確認する(2026-10-19、実際に発生)。**
@@ -252,6 +254,9 @@ Previewデプロイが発生する)
   確認方法の例: `git ls-remote origin <branch>` が手元のHEADと一致 + raw.githubusercontent.com の
   該当ファイルに今回の変更箇所(目印の文字列)が含まれること。ラグがある場合は反映を待ってから案内する。
 - 確認した旨(最新コミットのハッシュなど)を案内文に添える。ユーザーに何度も言わせないこと。
+- **案内するURLは、コミット固定の blob URL(`https://github.com/<owner>/<repo>/blob/<コミットSHA>/<path>`)にする**(2026-10-20、ユーザー指示「Code.gsがしっかり更新されたことを確認してから送る事。何度やっても古いものしかない」)。
+  原因: 通常のファイル表示ページ(blob/main)は最新でも、「Copy raw contents」が取りに行く `raw.githubusercontent.com/.../main/...` は数分間古いままだった(コミット固定なら即時に最新)。
+  Code.gs を直したら `CODE_VERSION` を更新し、デプロイ後に公開中のGASの `ping`(版の番号を読むだけ)で版を確認してから「反映できた」と報告する。画面の上部の「GAS版:」でもユーザーが確認できる(truck-fax)。
 - アプリの確認用URL(raw.githack.com 等)は、報告のたびに毎回添付する(ユーザー指示 2026-10-02)。
 - **【厳守】確認用URL(raw.githack.com)にもラグがある(2026-10-02、ユーザー指示。何度も言わせないこと)。**
   URLを添付する前に、**今回のpushが実際にそのURLへ反映されたことを確認してから**添付する。
@@ -392,3 +397,13 @@ Vercelの「Import Git Repository」で候補が`-`だけになり分かりや�
   - ヘッダーのボタンが増えたので、狭い画面(760px以下)では折り返す。
 - PDFの出力内容は画面表示と揃える。画面の表示仕様を変えたら、PDFも同じ見た目になっているか確認する(別レイアウトを作り直さない)。
 - 引き継ぎ書は上の表の保存先フォルダに保存する(個人のマイドライブには保存しない)。
+
+## truck-fax(車番連絡FAX取込)のルール(2026-10-20〜、ユーザー指示)
+
+- **PDFで取り込んだ行は、取込一覧に必ず残す。行の削除・内容の上書きはしない。** 変更=元の記録の「追加変更」を「変更前」にし、今回の内容を「変更後」の行として追加。取消=元の記録の「追加変更」を「中止」にする。台数追加は、新しい行を追加し「追加変更」は空欄。車両台数は、「追加変更」が「中止」「変更前」**以外**の行を数える。
+- **車種の大文字「T」は小文字「t」にそろえて記録する**(全角も。取込一覧・車両情報)。現場名(工事名)は対象外(英字を含む名前を変えないため)。
+- **手配業者は、FAXの発信元から、候補(情報シートの見出し「手配業者」の列。既定: ナミツー・大上)の名前で記録する。** 運送業者・手配業者の書き方の違いは同じ会社とみなして照合する。既にマスタにある車・運転手は追記しない(2度目の運行)。
+- **備考はアプリで入力する。** FAXの備考欄・特記・荷種などの文字と連絡文は、備考の初期値に入れる(記録前に直せる)。積地は記録しない。
+- Geminiのモデル名・APIキーは情報シートのセルから読む(上の「共通指示」の例外)。履歴用のシートは作らない。
+- 実際のFAXの画像・氏名・電話番号は、リポジトリに入れない(公開リポジトリ)。テストは作業後に削除する。
+- 仕様の詳細は `truck-fax/README.md` と、Driveの引き継ぎ書(上の表)。
