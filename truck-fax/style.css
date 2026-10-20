@@ -80,3 +80,9 @@ code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 }
 @media (max-width: 600px) { main { padding: 10px; } }
 @media print { .tabs, .drop, .foot { display: none; } }
+
+.howto { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; margin-bottom: 12px; }
+.howto summary { cursor: pointer; font-weight: 600; }
+.howto ol { margin: 8px 0 4px; padding-left: 22px; }
+.howto li { margin: 4px 0; }
+.foot .msg.okmsg { color: var(--ok); font-weight: 600; }
