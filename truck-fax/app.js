@@ -671,7 +671,7 @@
       if (k === '氏名' || k === '運送業者') return !!dups.driverName[L.companyKey(r.運送業者) + '|' + L.nameKey(r.氏名)];
       return k === '携帯番号' && !!dups.driverPhone[L.phoneDigits(r.携帯番号)];
     }
-    var rows = masterRows(kind);
+    var rows = kind === 'vehicle' ? L.sortVehicles(masterRows(kind)) : masterRows(kind); // 車両情報は、手配業者→運送業者→車種の順に並べて表示
     var nd = kind === 'vehicle' ? Object.keys(dups.vehiclePlate).length : Object.keys(dups.driverName).length + Object.keys(dups.driverPhone).length;
     var tblW = (cols.length + 1) * MASTER_COL_W + 'px'; // 全ての列を同じ幅(車番がおさまる幅)にそろえ、中央に置く
     host.appendChild(h('div', { class: 'tool mastertbl', style: 'width:' + tblW }, h('span', { class: 'sub', text: rows.length + '件' + (nd ? ' ・ 重複 ' + nd + ' 組(赤)。確認して、不要な行を削除するか修正してください。' : '') })));
