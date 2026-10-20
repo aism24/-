@@ -95,11 +95,25 @@
   // ---------- Gemini読み取り結果の整形 ----------
   var ROW_FIELDS = ['工事番号', '現場名', '業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '備考'];
 
+  /** Geminiの返し方の揺れを吸収する: オブジェクト1つのほか、リストで包んで返す・ページごとに複数のオブジェクトで返す場合は、
+   *  1つにまとめる(送り主・日付・区分・メモは最初に書かれたもの、明細は全部つなぐ)。 */
+  function unwrapRaw(raw) {
+    if (!Array.isArray(raw)) return raw || {};
+    var out = { 明細: [] };
+    raw.forEach(function (o) {
+      if (!o || typeof o !== 'object') return;
+      ['業者', 'FAX日付', '区分', 'メモ'].forEach(function (k) { if (!out[k] && o[k]) out[k] = o[k]; });
+      if (Array.isArray(o['明細'])) out['明細'] = out['明細'].concat(o['明細']);
+      else if (o['車番'] || o['氏名'] || o['携帯番号']) out['明細'].push(o); // 行だけが並んで返った場合
+    });
+    return out;
+  }
+
   /** raw: Geminiが返したJSON(オブジェクト)。{業者, FAX日付, 明細:[{積日,卸日,行先,着時間,運送業者,車種,車番,氏名,携帯番号}]} */
   function sanitizeOcr(raw, opts) {
     var today = (opts && opts.today) || new Date();
     var warnings = [];
-    raw = raw || {};
+    raw = unwrapRaw(raw);
     var senders = (opts && opts.senders) || [];
     var sender = canonSender(raw['業者'], senders);
     var kind = normKind(raw['区分']);
@@ -426,7 +440,7 @@
   }
 
   return {
-    isActiveRec: isActiveRec, INACTIVE: INACTIVE, sameCo: sameCo, canonSender: canonSender, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, candidatesFor: candidatesFor,
+    isActiveRec: isActiveRec, INACTIVE: INACTIVE, unwrapRaw: unwrapRaw, sameCo: sameCo, canonSender: canonSender, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, candidatesFor: candidatesFor,
     fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, CHECK_FIELDS: CHECK_FIELDS, normKind: normKind,
     ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate, companyKey: companyKey,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, isMobile: isMobile, importKey: importKey,
