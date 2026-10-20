@@ -119,8 +119,8 @@
     });
   }
 
-  function addFiles(files) {
-    Array.prototype.forEach.call(files, function (file) {
+  function addFiles(files) { // 1回に取り込めるのは1ファイル(複数入れたときは最初の1つ)
+    Array.prototype.slice.call(files, 0, 1).forEach(function (file) {
       var card = { id: ++seq, mode: 'normal', kind: '新規', res: null, records: null, items: [], file: file, name: file.name, mime: file.type || 'application/pdf', status: 'reading', rows: [], decisions: [], findings: [], warnings: [], msg: '', url: '', showPreview: false, busy: false };
       S.cards.unshift(card);
       card.el = h('div', { class: 'card' });
@@ -202,7 +202,6 @@
   function rowsTable(card) {
     var head = h('tr', null, h('th', { text: '#' }), h('th', { text: '工事番号' }), h('th', { text: '現場名' }));
     FIELDS.forEach(function (f) { head.appendChild(h('th', { text: f[1] })); });
-    head.appendChild(h('th', { text: '' }));
     var body = h('tbody');
     card.rows.forEach(function (row, i) {
       var tr = h('tr');
@@ -220,12 +219,9 @@
         });
         tr.appendChild(h('td', null, inp));
       });
-      tr.appendChild(h('td', null, h('button', { class: 'btn sm', type: 'button', text: '行を削除', onclick: function () {
-        card.rows.splice(i, 1); card.decisions.splice(i, 1); evalCard(card); renderCard(card);
-      } })));
       body.appendChild(tr);
     });
-    return h('div', { class: 'scroll' }, h('table', { class: 't' }, h('thead', null, head), body));
+    return h('div', { class: 'scroll' }, h('table', { class: 't fit' }, h('thead', null, head), body));
   }
 
   var LEVEL = { error: '要修正', warn: '要確認', info: '自動' };
@@ -233,6 +229,7 @@
     var body = h('tbody'), n = 0;
     card.findings.forEach(function (fs, i) {
       fs.forEach(function (f) {
+        if (f.level !== 'warn' || f.id === 'missing-project') return; // 画面に出すのは、人が選ぶ必要がある確認だけ(自動・表の修正・工事番号未選択は、下のメッセージで足りる)
         n++;
         var cur = card.decisions[i] && card.decisions[i][f.id] != null ? card.decisions[i][f.id] : f.defaultValue;
         var act;
@@ -242,7 +239,8 @@
           if (cur == null) act.appendChild(h('option', { value: '', text: '(選択してください)' }));
           f.options.forEach(function (o) { act.appendChild(h('option', { value: o.value, text: o.label })); });
           act.value = cur == null ? '' : cur;
-          act.addEventListener('change', function () { card.decisions[i][f.id] = act.value || null; renderFoot(card); });
+          if (cur == null) act.classList.add('need');
+          act.addEventListener('change', function () { card.decisions[i][f.id] = act.value || null; act.classList.toggle('need', !act.value); renderFoot(card); });
         }
         body.appendChild(h('tr', null,
           h('td', { class: 'num', text: String(card.rowLabels ? card.rowLabels[i] : i + 1) }),
@@ -251,7 +249,7 @@
           h('td', null, act)));
       });
     });
-    if (!n) return h('div', { class: 'empty', text: '指摘はありません。内容を確認して記録できます。' });
+    if (!n) return null;
     return h('div', { class: 'scroll' }, h('table', { class: 't' },
       h('thead', null, h('tr', null, h('th', { text: '行' }), h('th', { text: '区分' }), h('th', { text: '内容' }), h('th', { text: '対応' }))), body));
   }
@@ -271,7 +269,7 @@
     head.appendChild(h('button', { class: 'btn sm', type: 'button', text: '閉じる', onclick: function () { S.cards = S.cards.filter(function (c) { return c !== card; }); el.remove(); } }));
     el.appendChild(head);
     if (card.showPreview && card.url) {
-      el.appendChild(h('div', { class: 'preview' }, card.mime === 'application/pdf' ? h('iframe', { src: card.url, title: '原本' }) : h('img', { src: card.url, alt: '原本' })));
+      el.appendChild(h('div', { class: 'preview' }, card.mime === 'application/pdf' ? h('iframe', { src: card.url + '#navpanes=0&view=FitH', title: '原本' }) : h('img', { src: card.url, alt: '原本' })));
     }
     if (card.status === 'reading') { el.appendChild(h('div', { class: 'empty', text: 'FAXの内容を読み取っています(10〜30秒ほどかかります)…' })); return; }
     if (card.status === 'error') {
@@ -284,12 +282,34 @@
     if (card.mode === 'change') { renderChangeBody(card); return; }
     el.appendChild(h('div', { class: 'sub-h', text: '読み取り結果(間違いがあれば表の中で直せます)' }));
     card.rowsHost = h('div'); card.rowsHost.appendChild(rowsTable(card)); el.appendChild(card.rowsHost);
-    el.appendChild(h('div', { class: 'sub-h', text: 'マスタとの照合・確認事項' }));
     card.findHost = h('div'); el.appendChild(card.findHost);
     card.footHost = h('div'); el.appendChild(card.footHost);
     renderFindings(card); renderFoot(card);
   }
-  function renderFindings(card) { if (!card.findHost) return; card.findHost.textContent = ''; card.findHost.appendChild(findingsTable(card)); }
+  /** 記入か選択が必要な欄を、黄色にする(読み取り結果の表)。入力のたびに付け外しする。 */
+  var NEED_BY = { 'missing-project': '工事番号', 'missing-plate': '車番', 'bad-date': '積日|卸日', 'missing-carrier': '運送業者', 'missing-name': '氏名', 'missing-phone': '携帯番号', 'phone-format': '携帯番号' };
+  function markNeeds(card) {
+    if (!card.rowsHost) return;
+    var trs = card.rowsHost.querySelectorAll('tbody tr');
+    card.rows.forEach(function (row, i) {
+      var need = {};
+      (card.findings[i] || []).forEach(function (f) { if (NEED_BY[f.id]) NEED_BY[f.id].split('|').forEach(function (k) { need[k] = true; }); });
+      if (need.積日 && row.積日 && row.卸日) { delete need.積日; delete need.卸日; }
+      else { if (need.積日 && row.積日) delete need.積日; if (need.卸日 && row.卸日) delete need.卸日; }
+      if (!trs[i]) return;
+      trs[i].querySelectorAll('input, select').forEach(function (el) { el.classList.toggle('need', !!need[el.getAttribute('aria-label')]); });
+    });
+  }
+
+  function renderFindings(card) {
+    markNeeds(card);
+    if (!card.findHost) return;
+    card.findHost.textContent = '';
+    var t = findingsTable(card);
+    if (!t) return;
+    card.findHost.appendChild(h('div', { class: 'sub-h', text: '確認が必要な項目' }));
+    card.findHost.appendChild(t);
+  }
 
   /** 下部(ボタン+メッセージ)は、最初に1回だけ作り、その後はその場で更新する。
    *  作り直すと、入力欄から離れた瞬間の再描画でボタンが置き換わり、最初のクリックが効かなくなる。 */
@@ -500,7 +520,6 @@
     el.appendChild(h('div', { class: 'sub-h', text: '変更内容(現在の記録と、今回のFAXを並べています。違う項目は色が付きます)' }));
     if (!card.items.length) el.appendChild(h('div', { class: 'empty', text: '変更・追加・取消の対象が見つかりませんでした。FAXの区分を選び直してください。' }));
     else el.appendChild(changeTable(card));
-    el.appendChild(h('div', { class: 'sub-h', text: 'マスタとの照合・確認事項(車・運転手の新規登録や食い違い)' }));
     card.findHost = h('div'); el.appendChild(card.findHost);
     card.footHost = h('div'); el.appendChild(card.footHost);
     renderFindings(card); renderFoot(card);
@@ -701,12 +720,19 @@
 
   // ---------- 起動 ----------
   function wireDrop() {
-    var drop = $('drop'), input = $('file');
-    drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('over'); });
-    drop.addEventListener('dragleave', function () { drop.classList.remove('over'); });
-    drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+    var input = $('file'), depth = 0;
+    function hasFiles(e) { return !!(e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0); }
+    // 画面内のどこにドロップしてもよい(ブラウザがファイルを開いてしまわないよう、画面全体で受ける)
+    document.addEventListener('dragenter', function (e) { if (hasFiles(e)) { depth++; document.body.classList.add('dragging'); } });
+    document.addEventListener('dragleave', function (e) { if (hasFiles(e) && --depth <= 0) { depth = 0; document.body.classList.remove('dragging'); } });
+    document.addEventListener('dragover', function (e) { if (hasFiles(e)) e.preventDefault(); });
+    document.addEventListener('drop', function (e) {
+      if (!hasFiles(e)) return;
+      e.preventDefault(); depth = 0; document.body.classList.remove('dragging');
+      if (e.dataTransfer.files.length) { showTab('import'); addFiles(e.dataTransfer.files); }
+    });
     input.addEventListener('change', function () { if (input.files.length) addFiles(input.files); input.value = ''; });
-    drop.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+    $('drop').addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
   }
 
   async function start() {

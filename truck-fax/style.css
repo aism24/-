@@ -44,6 +44,7 @@ table.t th:last-child, table.t td:last-child { border-right: none; }
 table.t thead th { background: var(--bg); color: var(--sub); font-weight: 600; position: sticky; top: 0; white-space: nowrap; }
 table.t tbody tr:last-child td { border-bottom: none; }
 table.t input, table.t select { width: 100%; font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 3px 5px; }
+table.t input.need, table.t select.need { background: #fff2a8; border-color: #d4a50f; color: #3a2e00; }
 table.t input:focus, table.t select:focus { outline: 2px solid var(--accent); border-color: transparent; }
 table.t .w-no { min-width: 210px; } table.t .w-site { min-width: 170px; } table.t .w-co { min-width: 150px; } table.t .w-date { min-width: 104px; } table.t .w-dest { min-width: 110px; }
 table.t .w-time { min-width: 66px; } table.t .w-type { min-width: 72px; } table.t .w-plate { min-width: 138px; } table.t .w-name { min-width: 90px; } table.t .w-tel { min-width: 128px; }
@@ -72,7 +73,7 @@ dialog.dlg::backdrop { background: rgba(0,0,0,.4); }
 button.btn:disabled { opacity: .45; cursor: not-allowed; }
 button.sm { padding: 2px 8px; font-size: 12px; }
 .preview { margin-top: 8px; }
-.preview iframe, .preview img { width: 100%; height: 420px; border: 1px solid var(--line); border-radius: 6px; object-fit: contain; background: #fff; }
+.preview iframe, .preview img { width: 100%; height: 560px; border: 1px solid var(--line); border-radius: 6px; object-fit: contain; background: #fff; }
 .tool { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .tool select { font: inherit; padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
 .tool input[type=search] { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); min-width: 220px; }
@@ -98,7 +99,26 @@ table.t.change tr.grp td { border-top: 2px solid var(--line); }
 table.t td.num.new { color: var(--accent); font-weight: 600; } table.t td.num.cur { white-space: nowrap; }
 
 table.t.change { font-size: 12px; }
-table.t.change input, table.t.change select { font-size: 12px; padding: 2px 3px; }
+table.t.change input, table.t.change select, table.t.fit input, table.t.fit select { font-size: 12px; padding: 2px 3px; }
+table.t.fit { font-size: 12px; }
+table.t.fit { table-layout: fixed; min-width: 1000px; }
+table.t.fit input, table.t.fit select { min-width: 0; text-overflow: ellipsis; }
+table.t.fit th, table.t.fit td { overflow: hidden; }
+table.t.fit td.w-site { word-break: break-all; }
+table.t.fit th:nth-child(1) { width: 2%; }
+table.t.fit th:nth-child(2) { width: 13%; }
+table.t.fit th:nth-child(3) { width: 8%; }
+table.t.fit th:nth-child(4) { width: 6%; }
+table.t.fit th:nth-child(5) { width: 7%; }
+table.t.fit th:nth-child(6) { width: 7%; }
+table.t.fit th:nth-child(7) { width: 6%; }
+table.t.fit th:nth-child(8) { width: 4.5%; }
+table.t.fit th:nth-child(9) { width: 9%; }
+table.t.fit th:nth-child(10) { width: 4%; }
+table.t.fit th:nth-child(11) { width: 9%; }
+table.t.fit th:nth-child(12) { width: 6%; }
+table.t.fit th:nth-child(13) { width: 9.5%; }
+table.t.fit th:nth-child(14) { width: 9%; }
 table.t.change .w-no { min-width: 150px; } table.t.change .w-site { min-width: 110px; } table.t.change .w-co { min-width: 120px; }
 table.t.change .w-date { min-width: 88px; } table.t.change .w-dest { min-width: 90px; } table.t.change .w-time { min-width: 50px; }
 table.t.change .w-type { min-width: 56px; } table.t.change .w-plate { min-width: 118px; } table.t.change .w-name { min-width: 76px; } table.t.change .w-tel { min-width: 112px; }
@@ -107,3 +127,5 @@ table.t.change .ctlitem { display: inline-flex; align-items: center; gap: 6px; m
 table.t.change .ctlitem select { width: auto; min-width: 260px; max-width: 520px; }
 
 table.t .w-note { min-width: 120px; } table.t.change .w-note { min-width: 100px; }
+
+body.dragging::after { content: 'ここにドロップして取り込み'; position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; color: #fff; background: rgba(20,40,70,.6); border: 4px dashed #fff; pointer-events: none; }
