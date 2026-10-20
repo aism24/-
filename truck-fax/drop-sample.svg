@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 780" width="1100" height="780" font-family="'Noto Sans JP','Yu Gothic','Hiragino Sans',Meiryo,sans-serif">
+<defs><filter id="b" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="5"/></filter><filter id="b2" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="3.5"/></filter></defs>
+<rect width="1100" height="780" fill="#fbfbf8"/>
+<text x="550" y="92" text-anchor="middle" font-size="46" font-weight="700" fill="#222" letter-spacing="10">配車連絡表</text>
+<text x="70" y="160" font-size="26" font-weight="700" fill="#222">株式会社 正光　御中</text><rect x="70" y="172" width="300" height="4" fill="#222"/>
+<rect x="730" y="104" width="300" height="22" rx="4" fill="#444" opacity="0.8" filter="url(#b2)"/>
+<rect x="690" y="134" width="360" height="16" rx="4" fill="#444" opacity="0.8" filter="url(#b2)"/>
+<rect x="740" y="158" width="300" height="16" rx="4" fill="#444" opacity="0.8" filter="url(#b2)"/>
+<rect x="780" y="180" width="220" height="16" rx="4" fill="#444" opacity="0.8" filter="url(#b2)"/>
+<rect x="15" y="300" width="1070" height="358" fill="#fff" stroke="#222" stroke-width="3"/>
+<text x="50.0" y="331" text-anchor="middle" font-size="19" font-weight="700" fill="#222">積日</text>
+<text x="120.0" y="331" text-anchor="middle" font-size="19" font-weight="700" fill="#222">降日</text>
+<line x1="85" y1="300" x2="85" y2="658" stroke="#222" stroke-width="2"/>
+<text x="210.0" y="331" text-anchor="middle" font-size="19" font-weight="700" fill="#222">積地</text>
+<line x1="155" y1="300" x2="155" y2="658" stroke="#222" stroke-width="2"/>
+<text x="330.0" y="331" text-anchor="middle" font-size="19" font-weight="700" fill="#222">降地</text>
+<line x1="265" y1="300" x2="265" y2="658" stroke="#222" stroke-width="2"/>
+<text x="430.0" y="331" text-anchor="middle" font-size="19" font-weight="700" fill="#222">車種</text>
+<line x1="395" y1="300" x2="395" y2="658" stroke="#222" stroke-width="2"/>
+<text x="530.0" y="331" text-anchor="middle" font-size="19" font-weight="700" fill="#222">運送会社</text>
+<line x1="465" y1="300" x2="465" y2="658" stroke="#222" stroke-width="2"/>
+<text x="670.0" y="331" text-anchor="middle" font-size="19" font-weight="700" fill="#222">車番</text>
+<line x1="595" y1="300" x2="595" y2="658" stroke="#222" stroke-width="2"/>
+<text x="800.0" y="331" text-anchor="middle" font-size="19" font-weight="700" fill="#222">運転手</text>
+<line x1="745" y1="300" x2="745" y2="658" stroke="#222" stroke-width="2"/>
+<text x="925.0" y="331" text-anchor="middle" font-size="19" font-weight="700" fill="#222">携帯</text>
+<line x1="855" y1="300" x2="855" y2="658" stroke="#222" stroke-width="2"/>
+<text x="1040.0" y="331" text-anchor="middle" font-size="19" font-weight="700" fill="#222">備考</text>
+<line x1="995" y1="300" x2="995" y2="658" stroke="#222" stroke-width="2"/>
+<line x1="15" y1="346" x2="1085" y2="346" stroke="#222" stroke-width="3"/>
+<line x1="15" y1="424" x2="1085" y2="424" stroke="#222" stroke-width="2"/>
+<line x1="15" y1="502" x2="1085" y2="502" stroke="#222" stroke-width="2"/>
+<line x1="15" y1="580" x2="1085" y2="580" stroke="#222" stroke-width="2"/>
+<rect x="35" y="373" width="30" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="106" y="373" width="29" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="186" y="373" width="49" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="296" y="373" width="67" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="307" y="393" width="46" height="16" rx="5" fill="#333" opacity="0.6" filter="url(#b)"/>
+<rect x="417" y="373" width="26" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="490" y="373" width="79" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="502" y="393" width="55" height="16" rx="5" fill="#333" opacity="0.6" filter="url(#b)"/>
+<rect x="622" y="373" width="97" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="772" y="373" width="57" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="880" y="373" width="89" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="35" y="451" width="30" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="106" y="451" width="29" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="187" y="451" width="46" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="296" y="451" width="69" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="416" y="451" width="27" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="492" y="451" width="77" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="621" y="451" width="98" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="772" y="451" width="57" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="876" y="451" width="98" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="35" y="529" width="30" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="105" y="529" width="30" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="293" y="529" width="74" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="304" y="549" width="51" height="16" rx="5" fill="#333" opacity="0.6" filter="url(#b)"/>
+<rect x="418" y="529" width="24" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="488" y="529" width="83" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="501" y="549" width="58" height="16" rx="5" fill="#333" opacity="0.6" filter="url(#b)"/>
+<rect x="620" y="529" width="99" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="772" y="529" width="55" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<rect x="880" y="529" width="89" height="22" rx="5" fill="#333" opacity="0.78" filter="url(#b)"/>
+<text x="1085" y="702" text-anchor="end" font-size="16" fill="#555">※ 見本(内容は伏せています)</text>
+</svg>
