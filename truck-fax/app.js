@@ -117,7 +117,7 @@
 
   function addFiles(files) { // 1回に取り込めるのは1ファイル(複数入れたときは最初の1つ)
     Array.prototype.slice.call(files, 0, 1).forEach(function (file) {
-      var card = { id: ++seq, mode: 'normal', kind: '新規', res: null, records: null, items: [], file: file, name: file.name, mime: file.type || 'application/pdf', status: 'reading', rows: [], decisions: [], findings: [], warnings: [], msg: '', url: '', showPreview: false, busy: false };
+      var card = { id: ++seq, mode: 'normal', kind: '新規', res: null, records: null, items: [], file: file, name: file.name, mime: file.type || 'application/pdf', status: 'reading', rows: [], decisions: [], findings: [], warnings: [], msg: '', url: '', busy: false };
       S.cards.unshift(card);
       card.el = h('div', { class: 'card' });
       $('cards').insertBefore(card.el, $('cards').firstChild);
@@ -139,7 +139,7 @@
       var recs = null;
       try { recs = await apiGet('listImports', { limit: 500 }); } catch (e) { recs = null; } // 取れなかったときは、再取込のチェックを省く
       if (recs && L.alreadyImported(res, recs)) { // 既に取り込んだ内容と全く同じ: 取込をやめる
-        S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); if (card.url) URL.revokeObjectURL(card.url);
+        S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); if (card.url) URL.revokeObjectURL(card.url); syncDrop();
         noticeDialog('同じ内容のものです。取込をキャンセルしました');
         return;
       }
@@ -264,17 +264,24 @@
     evalTimer = setTimeout(function () { evalCard(card); renderFindings(card); renderFoot(card); }, immediate ? 0 : 300);
   }
 
+  /** カードを描く。確認の表・記録ボタンが上、取り込んだ原本(拡大・移動できる表示)が下。取込中・確認待ちの間は、取込枠を隠す。 */
   function renderCard(card) {
+    renderCardBody(card);
+    if (card.url && card.status !== 'saved') {
+      if (!card.viewer) card.viewer = TruckViewer.create(card.file, card.mime, card.url);
+      card.el.appendChild(card.viewer);
+    }
+    syncDrop();
+  }
+  function syncDrop() { $('drop').hidden = S.cards.some(function (c) { return c.status === 'reading' || c.status === 'ready'; }); }
+
+  function renderCardBody(card) {
     var el = card.el;
     el.textContent = '';
     var chip = { reading: ['読み取り中…', 'chip'], ready: ['確認待ち', 'chip'], saved: ['記録済み', 'chip ok'], error: ['エラー', 'chip bad'] }[card.status];
     var head = h('div', { class: 'card-head' }, h('span', { class: 'name', text: card.name }), h('span', { class: chip[1], text: chip[0] }), card.status === 'ready' ? kindBox(card) : null, h('span', { class: 'spacer' }));
-    if (card.url) head.appendChild(h('button', { class: 'btn sm', type: 'button', text: card.showPreview ? '原本を閉じる' : '原本を見る', onclick: function () { card.showPreview = !card.showPreview; renderCard(card); } }));
-    head.appendChild(h('button', { class: 'btn sm', type: 'button', text: '閉じる', onclick: function () { S.cards = S.cards.filter(function (c) { return c !== card; }); el.remove(); } }));
+    head.appendChild(h('button', { class: 'btn sm', type: 'button', text: '閉じる', onclick: function () { S.cards = S.cards.filter(function (c) { return c !== card; }); el.remove(); syncDrop(); } }));
     el.appendChild(head);
-    if (card.showPreview && card.url) {
-      el.appendChild(h('div', { class: 'preview' }, card.mime === 'application/pdf' ? h('iframe', { src: card.url + '#navpanes=0&view=FitH', title: '原本' }) : h('img', { src: card.url, alt: '原本' })));
-    }
     if (card.status === 'reading') { el.appendChild(h('div', { class: 'empty', text: 'FAXの内容を読み取っています(10〜30秒ほどかかります)…' })); return; }
     if (card.status === 'error') {
       el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'msg bad', text: card.msg }),
@@ -328,7 +335,7 @@
     host._f.disc.textContent = discardText; host._f.disc.onclick = onDiscard;
     return host._f;
   }
-  function discardCard(card) { S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); }
+  function discardCard(card) { S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); syncDrop(); }
 
   function renderFoot(card) {
     if (!card.footHost) return;
