@@ -460,7 +460,24 @@
   /** 締め月の期間の表示(例: 12月→「11/21〜12/20」、4月→「3/21〜4/20」) */
   function closingPeriod(cm) { var pm = cm === 1 ? 12 : cm - 1; return pm + '/21〜' + cm + '/20'; }
 
+  // 車両情報の並び順: 手配業者(大上→ナミツー→その他)→運送業者→車種(4t→10t→15t→TR→その他)→車番
+  function senderRank(t) { var k = companyKey(t); return k.indexOf(companyKey('大上')) >= 0 ? 0 : (k.indexOf(companyKey('ナミツー')) >= 0 ? 1 : 2); }
+  function typeRank(t) {
+    var s = String(t == null ? '' : t).replace(/[\s　]/g, '').replace(/[Ａ-Ｚａ-ｚ０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+    var m = /(\d+(?:\.\d+)?)t/i.exec(s);
+    if (m) return +m[1];
+    return /TR/i.test(s) ? 1000 : 2000;
+  }
+  function cmpJa(a, b) { a = String(a == null ? '' : a); b = String(b == null ? '' : b); return a < b ? -1 : (a > b ? 1 : 0); }
+  function sortVehicles(list) {
+    return list.slice().sort(function (a, b) {
+      return senderRank(a.手配業者) - senderRank(b.手配業者) || cmpJa(companyKey(a.運送業者), companyKey(b.運送業者)) ||
+        typeRank(a.車種) - typeRank(b.車種) || cmpJa(a.車番, b.車番);
+    });
+  }
+
   return {
+    sortVehicles: sortVehicles, typeRank: typeRank, senderRank: senderRank,
     closingOf: closingOf, closingOfText: closingOfText, rowClosing: rowClosing, closingPeriod: closingPeriod, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
     fmtType: fmtType, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate, companyKey: companyKey,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,
