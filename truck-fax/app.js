@@ -691,6 +691,7 @@
     var shown = rows.slice(0, IMPORTS_SHOW);
     var cnt = '新しい順・該当' + rows.length + '件のうち最新' + shown.length + '件を表示(最大' + IMPORTS_SHOW + '件)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
     host.appendChild(h('div', { class: 'tool' }, fySel, cmSel, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; S.importsP = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
+      h('button', { class: 'btn excel', type: 'button', text: '全件ダウンロード', onclick: downloadAllImports }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '降し日指定でダウンロード', onclick: openDateDownload })));
     var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: CENTER_COLS.indexOf(k) >= 0 ? 'c fit' : null, text: k })); }); head.appendChild(h('th', { text: '操作' }));
     var body = h('tbody');
@@ -801,6 +802,21 @@
       renderImports(); toast('取込一覧の行を保存しました。');
       loadInit(true).catch(function () {}); // 重複の判定などに使う最新の記録を読み直す
     } catch (e) { showBanner('保存に失敗しました: ' + e.message); }
+    finally { close(); }
+  }
+
+  /** スプレッドシートに記録されている取込一覧の全件(中止・変更前の行も、タイムスタンプ・ファイルURLの列も含む)を、記録した順にExcelでダウンロードする */
+  async function downloadAllImports() {
+    var close = busyDialog('全件を読み込み中');
+    try {
+      var all = await apiGet('listImports', { limit: 1000000 }); // 新しい順で、シートの全行
+      var heads = IMPORT_HEADERS.concat(['ファイルURL']);
+      var rows = all.slice().reverse().map(function (r) { return heads.map(function (k) { return r[k] || ''; }); });
+      close(); close = function () {};
+      if (!rows.length) { toast('取込一覧に記録がありません。'); return; }
+      TruckXlsx.download('車番連絡_全件_' + todayIso().replace(/-/g, '') + '.xlsx', '取込一覧', heads, rows);
+      toast('全件(' + rows.length + '件)をダウンロードしました。');
+    } catch (e) { showBanner('全件の読み込みに失敗しました: ' + e.message); }
     finally { close(); }
   }
 
