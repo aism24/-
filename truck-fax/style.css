@@ -53,8 +53,8 @@ td.dup { background: var(--err-bg); }
 .foot .msg.bad { color: var(--err); font-weight: 600; }
 button.btn { white-space: nowrap; font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
 button.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
-button.btn.edit { background: #f6c945; border-color: #d4a50f; color: #3a2e00; font-weight: 600; }
-button.btn.del { background: #c62828; border-color: #a31f1f; color: #fff; font-weight: 600; }
+button.btn.edit { background: #f59e0b; border-color: #a85a05; color: #2b1700; font-weight: 700; box-shadow: 0 0 0 2px #fff; }
+button.btn.del { background: #c62828; border-color: #8e1c1c; color: #fff; font-weight: 700; box-shadow: 0 0 0 2px #fff; }
 dialog.dlg { border: 1px solid var(--line); border-radius: 10px; padding: 20px 24px; background: var(--card); color: var(--ink); max-width: min(92vw, 460px); box-shadow: 0 8px 30px rgba(0,0,0,.3); }
 dialog.dlg::backdrop { background: rgba(0,0,0,.4); }
 .dlg-title { margin: 0 0 8px; font-weight: 700; font-size: 16px; }

@@ -13,6 +13,7 @@
   var IMPORTS_SHOW = 100;
   var VIEW_HEADERS = IMPORT_HEADERS.filter(function (k) { return k !== 'タイムスタンプ'; }); // 画面・Excelに出す列
   var INACTIVE = ['中止', '変更前'];
+  var DRIVER_COLORS = ['#dff3e0', '#fff7cc', '#dbeafe', '#fde2e4', '#ede0f7', '#ffe8cc', '#d6f2f2', '#eceff1']; // 運転手の行を運送業者ごとに分ける薄い色
   var OTHER = 'その他'; // 工事に該当しないもの。工事番号・現場名の両方に「その他」と記録する
   var MASTER_COL_W = 170;
   var MAX_BYTES = 10 * 1024 * 1024;
@@ -790,9 +791,17 @@
     var head = h('tr'); cols.forEach(function (k) { head.appendChild(h('th', { text: k })); }); head.appendChild(h('th', { text: '操作' }));
     var body = h('tbody');
 
+    // 行の色: 車両情報は手配業者(大上=薄い緑・ナミツー=薄い黄)、運転手は運送業者ごとに色分け
+    var companies = {};
+    if (kind === 'driver') Array.from(new Set(rows.map(function (r) { return L.companyKey(r.運送業者); }))).sort().forEach(function (k, i) { companies[k] = DRIVER_COLORS[i % DRIVER_COLORS.length]; });
+    function rowColor(r) {
+      if (kind === 'driver') return companies[L.companyKey(r.運送業者)] || '';
+      var rk = L.senderRank(r.手配業者);
+      return rk === 0 ? '#dff3e0' : (rk === 1 ? '#fff7cc' : '');
+    }
     rows.forEach(function (r) {
       var editing = S.editing && S.editing.kind === kind && S.editing.row === r._row;
-      var tr = h('tr');
+      var tr = h('tr', { style: rowColor(r) ? 'background:' + rowColor(r) : null });
       if (editing) {
         var inputs = {};
         cols.forEach(function (k) { inputs[k] = h('input', { value: r[k] || '', 'aria-label': k }); tr.appendChild(h('td', null, inputs[k])); });
