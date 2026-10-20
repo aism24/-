@@ -92,7 +92,6 @@ code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 table.t.change td.cur { background: var(--bg); color: var(--sub); }
 table.t.change td.chg { background: var(--warn-bg); }
 table.t.change tr.grp td { border-top: 2px solid var(--line); }
-table.t .w-pick { min-width: 230px; } table.t .w-act { min-width: 240px; }
 table.t td.num.new { color: var(--accent); font-weight: 600; } table.t td.num.cur { white-space: nowrap; }
 
 table.t.change { font-size: 12px; }
