@@ -161,10 +161,10 @@ table.t.zebra tbody tr.sel input, table.t.zebra tbody tr.sel select { min-width:
 /* 取込の初期画面: 見本の配車連絡表(drop-sample-1.svg=ナミツー形式、drop-sample-2.svg=大上形式。氏名・携帯番号・業者名などの内容は伏せたダミー)を、ゆっくり入れ替えながら背景に出し、案内の文字を画面の中心に置く */
 .drop { position: relative; overflow: hidden; justify-content: center; width: min(100%, 980px); min-height: 560px; margin: 24px auto 0; } /* 見本のFAXがちょうど入る大きさ。画面が広くても、取込枠は広げない */
 .drop::before, .drop::after { content: ''; position: absolute; z-index: 0; left: 5%; width: 90%; aspect-ratio: 1100 / 880; top: 50%; transform: translateY(-33%); background: center / 100% 100% no-repeat; opacity: .9; box-shadow: 0 0 0 1px #d9dee4, 0 6px 20px rgba(0,0,0,.18); } /* 見本は、取込枠(幅980px以内)の90%。案内の文字が、見本の余白(宛名・送り主の下)に重なる位置 */
-.drop::before { background-image: url("drop-sample-1.svg"); animation: drop-fade-a 18s ease-in-out infinite; }
-.drop::after { background-image: url("drop-sample-2.svg"); animation: drop-fade-b 18s ease-in-out infinite; }
-@keyframes drop-fade-a { 0%, 38% { opacity: .9; } 50%, 88% { opacity: 0; } 100% { opacity: .9; } }
-@keyframes drop-fade-b { 0%, 38% { opacity: 0; } 50%, 88% { opacity: .9; } 100% { opacity: 0; } }
+.drop::before { background-image: url("drop-sample-1.svg"); animation: drop-fade-a 4s ease-in-out infinite; }
+.drop::after { background-image: url("drop-sample-2.svg"); animation: drop-fade-b 4s ease-in-out infinite; }
+@keyframes drop-fade-a { 0%, 40% { opacity: .9; } 50%, 90% { opacity: 0; } 100% { opacity: .9; } } /* 2秒ごとに入れ替わる(周期4秒。切り替わりに約0.4秒) */
+@keyframes drop-fade-b { 0%, 40% { opacity: 0; } 50%, 90% { opacity: .9; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .drop::before, .drop::after, .drop-main, .drop span { animation: none; } .drop::after { opacity: 0; } }
 @keyframes drop-card-blink { 0%, 100% { background: #fff7a8; } 50% { background: #fffde6; } }
 .drop > * { position: relative; z-index: 1; }
