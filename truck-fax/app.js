@@ -138,7 +138,7 @@
       var b64 = await fileToBase64(card.file);
       var d = await apiPost('ocr', { filename: card.name, mimeType: card.mime, base64: b64 }, 180000);
       var res = L.sanitizeOcr(d.raw, { today: new Date(), senders: S.senders });
-      card.res = res; card.warnings = res.warnings; card.model = d.model;
+      card.res = res; card.warnings = res.warnings;
       if (L.isChange(res)) await enterKind(card, L.effectiveKind(res));
       else enterNormal(card);
       card.status = 'ready';
@@ -183,7 +183,7 @@
         if (o !== row && !o.工事番号 && L.nameKey(o.行先) === L.nameKey(row.行先)) { o.工事番号 = row.工事番号; o.現場名 = row.現場名; o._suggest = false; }
       });
       evalCard(card);
-      renderCard(card, true);
+      renderCard(card);
     });
     return sel;
   }
@@ -214,13 +214,13 @@
         inp.addEventListener('change', function () {
           var v = normField(f[0], inp.value);
           inp.value = v; row[f[0]] = v;
-          if (f[0] === '行先') { applyProjectDefault(row); evalCard(card); renderCard(card, true); return; }
+          if (f[0] === '行先') { applyProjectDefault(row); evalCard(card); renderCard(card); return; }
           scheduleEval(card, true);
         });
         tr.appendChild(h('td', null, inp));
       });
       tr.appendChild(h('td', null, h('button', { class: 'btn sm', type: 'button', text: '行を削除', onclick: function () {
-        card.rows.splice(i, 1); card.decisions.splice(i, 1); evalCard(card); renderCard(card, true);
+        card.rows.splice(i, 1); card.decisions.splice(i, 1); evalCard(card); renderCard(card);
       } })));
       body.appendChild(tr);
     });
@@ -261,7 +261,7 @@
     evalTimer = setTimeout(function () { evalCard(card); renderFindings(card); renderFoot(card); }, immediate ? 0 : 300);
   }
 
-  function renderCard(card, keepPreview) {
+  function renderCard(card) {
     var el = card.el;
     el.textContent = '';
     var chip = { reading: ['読み取り中…', 'chip'], ready: ['確認待ち', 'chip'], saved: ['記録済み', 'chip ok'], error: ['エラー', 'chip bad'] }[card.status];
@@ -330,7 +330,7 @@
       if (c.status !== 'ready') return;
       var rows = c.mode === 'change' ? c.items.filter(function (it) { return it.newRow; }).map(function (it) { return it.newRow; }) : c.rows;
       rows.forEach(function (r) { if (!r.工事番号) applyProjectDefault(r); });
-      evalCard(c); renderCard(c, true);
+      evalCard(c); renderCard(c);
     });
   }
 
@@ -471,7 +471,7 @@
       pick.appendChild(h('option', { value: '', text: it.type === 'add' ? '(新しい1台)' : '(該当する記録なし)' }));
       it.candidates.forEach(function (c, i) { pick.appendChild(h('option', { value: String(i), text: recLabel(c) })); });
       pick.value = it.pick == null ? '' : String(it.pick);
-      pick.addEventListener('change', function () { L.setPick(it, pick.value === '' ? null : +pick.value); evalCard(card); renderCard(card, true); });
+      pick.addEventListener('change', function () { L.setPick(it, pick.value === '' ? null : +pick.value); evalCard(card); renderCard(card); });
       // 対応の選択
       var act = h('select', { 'aria-label': '対応' });
       if (it.action == null) act.appendChild(h('option', { value: '', text: '(選択してください)' }));

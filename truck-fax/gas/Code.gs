@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261020l';
+var CODE_VERSION = '20261020m';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
@@ -293,12 +293,12 @@ function ocr_(body) {
     { text: OCR_PROMPT_.replace('{{today}}', today).replace('{{senders}}', readSenders_().join(' / ')) },
     { inline_data: { mime_type: mime, data: body.base64 } }
   ]);
-  return { raw: parseJsonText_(text), model: getInfo_('Geminiモデル名') };
+  return { raw: parseJsonText_(text) };
 }
 
 function parseJsonText_(text) {
   var t = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
-  try { return JSON.parse(t); } catch (e) { throw new Error('読み取り結果をJSONとして解釈できませんでした。もう一度お試しください。'); }
+  try { return JSON.parse(t); } catch { throw new Error('読み取り結果をJSONとして解釈できませんでした。もう一度お試しください。'); }
 }
 
 function callGemini_(parts) {
@@ -323,7 +323,7 @@ function callGemini_(parts) {
     var code = res.getResponseCode();
     var raw = res.getContentText();
     var json = null;
-    try { json = JSON.parse(raw); } catch (e) { json = null; }
+    try { json = JSON.parse(raw); } catch { /* 本文がJSONでない(エラーページなど) */ }
     if (code === 200 && json) {
       var cand = json.candidates && json.candidates[0];
       var txt = cand && cand.content && cand.content.parts && cand.content.parts.map(function (p) { return p.text || ''; }).join('');
@@ -347,7 +347,7 @@ function commit_(body) {
   var source = body.filename || '';
   var ops = body.ops || [];
   var opCount = 0;
-  ops.forEach(function (op) { applyOp_(op, source); opCount++; });
+  ops.forEach(function (op) { applyOp_(op); opCount++; });
   var now = new Date();
   rows.forEach(function (r) { writeRow_(imp, IMPORT_HEADERS, null, importObj_(r, now, source, '')); });
   return { added: rows.length, ops: opCount };
@@ -375,8 +375,6 @@ function sameRecord_(cur, before) {
   return '';
 }
 
-function recText_(o, fields) { return fields.map(function (k) { return o[k]; }).filter(function (v) { return v; }).join(' '); }
-
 /** items: [{mode:'mark', row, label:'変更前'|'中止', before, note}, {mode:'add', data, label}]。
  *  PDFで取り込んだ行は取込一覧に必ず残す: 行の削除・内容の上書きはしない。
  *  mark = 元の行の「追加変更」を 変更前 / 中止 にする(車両台数に数えない行にする)。add = 新しい行を追加(label=変更後 など)。
@@ -388,7 +386,6 @@ function applyChanges_(body) {
   var imp = sheet_(SHEET_IMPORT);
   var hasLabelCol = !!headerMap_(imp, [])['追加変更'];
   var source = body.filename || '';
-  var current = {};
   items.forEach(function (it) {
     if (it.mode === 'add') return;
     if (it.mode !== 'mark') throw new Error('不明な操作です(行の削除・上書きはできません): ' + it.mode);
@@ -398,22 +395,21 @@ function applyChanges_(body) {
     if (!cur) throw new Error('取込一覧の行(' + it.row + ')が見つかりません。画面を再読み込みしてください。');
     var bad = sameRecord_(cur, it.before);
     if (bad) throw new Error('取込一覧の行(' + it.row + ')が他の操作で変更されています(' + bad + ')。画面を再読み込みしてください。');
-    current[it.row] = cur;
   });
   var opCount = 0;
-  (body.ops || []).forEach(function (op) { applyOp_(op, source); opCount++; });
+  (body.ops || []).forEach(function (op) { applyOp_(op); opCount++; });
   var now = new Date();
   var n = { marked: 0, added: 0 };
   // 元の行に印を付ける(行番号は変わらない)
   items.filter(function (it) { return it.mode === 'mark'; }).forEach(function (it) {
-    var cur = current[it.row], obj = { '追加変更': it.label };
+    var obj = { '追加変更': it.label };
     if (it.note) obj['備考'] = it.note;
     writeRow_(imp, IMPORT_HEADERS, it.row, obj);
     n.marked++;
   });
   // 新しい行を追加
   items.filter(function (it) { return it.mode === 'add'; }).forEach(function (it) {
-    var r = writeRow_(imp, IMPORT_HEADERS, null, importObj_(it.data, now, source, it.label || ''));
+    writeRow_(imp, IMPORT_HEADERS, null, importObj_(it.data, now, source, it.label || ''));
     n.added++;
   });
   return { marked: n.marked, added: n.added, ops: opCount };
@@ -426,7 +422,7 @@ function masterInfo_(kind) {
 }
 
 /** op: {kind, mode:'add'|'update'|'delete', row, before, data} */
-function applyOp_(op, source) {
+function applyOp_(op) {
   var mi = masterInfo_(op.kind);
   var sh = mi.sheet, headers = mi.headers;
   if (op.mode === 'add') {
@@ -450,37 +446,7 @@ function applyOp_(op, source) {
 }
 
 function masterSave_(body) {
-  applyOp_({ kind: body.kind, mode: body.mode, row: body.row, before: body.before, data: body.data }, '手動(画面)');
+  applyOp_({ kind: body.kind, mode: body.mode, row: body.row, before: body.before, data: body.data });
   return { ok: true };
-}
-
-
-// ---------- 手配業者の表記をそろえる(Apps Scriptのエディタで、関数 normalizeSenders を1回だけ実行) ----------
-
-/** 「取込一覧」と「車両情報」の手配業者を、候補(情報シートの一覧。既定: ナミツー・大上)の名前にそろえる。
- *  候補の名前を含む表記(例: 「(有)大上運送 明石事業所」→「大上」)だけを書き換える。どれにも当たらないものは変えない。 */
-function normalizeSenders() {
-  var list = readSenders_();
-  function canon(v) {
-    var t = String(v || '').normalize('NFKC').replace(/[\s\u3000]+/g, '');
-    for (var i = 0; i < list.length; i++) {
-      var c = String(list[i]).normalize('NFKC').replace(/[\s\u3000]+/g, '');
-      if (c && t.indexOf(c) >= 0) return list[i];
-    }
-    return null;
-  }
-  var changed = 0;
-  [[SHEET_IMPORT, IMPORT_HEADERS], [SHEET_VEHICLE, VEHICLE_HEADERS]].forEach(function (p) {
-    var sh = sheet_(p[0]), map = headerMap_(sh, p[1]);
-    var n = sh.getLastRow() - 1;
-    if (n < 1) return;
-    var rng = sh.getRange(2, map['手配業者'], n, 1), vals = rng.getValues();
-    vals.forEach(function (row, i) {
-      var to = canon(row[0]);
-      if (to && String(row[0]) !== to) { row[0] = to; changed++; }
-    });
-    rng.setValues(vals);
-  });
-  return '手配業者を ' + changed + ' か所そろえました(候補: ' + list.join('・') + ')';
 }
 

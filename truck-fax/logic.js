@@ -160,13 +160,12 @@
   function push(map, k, v) { (map[k] = map[k] || []).push(v); }
 
   function indexMasters(vehicles, drivers) {
-    var idx = { vByPlate: {}, dByKey: {}, dByPhone: {}, dByName: {} };
+    var idx = { vByPlate: {}, dByPhone: {}, dByName: {} };
     vehicles.forEach(function (v) { var k = plateKey(v.車番); if (k) push(idx.vByPlate, k, v); });
     drivers.forEach(function (d) { addDriverIdx(idx, d); });
     return idx;
   }
   function addDriverIdx(idx, d) {
-    push(idx.dByKey, companyKey(d.運送業者) + '|' + nameKey(d.氏名), d);
     var p = phoneDigits(d.携帯番号); if (p) push(idx.dByPhone, p, d);
     push(idx.dByName, nameKey(d.氏名), d);
   }
@@ -193,7 +192,7 @@
     var f = [];
     function add(id, level, title, detail, options, def) { f.push({ id: id, level: level, title: title, detail: detail || '', options: options || [], defaultValue: def == null ? null : def }); }
 
-    var plate = plateKey(row.車番), name = nameKey(row.氏名), ck = companyKey(row.運送業者), phone = phoneDigits(row.携帯番号);
+    var plate = plateKey(row.車番), name = nameKey(row.氏名), phone = phoneDigits(row.携帯番号);
 
     if (!plate) add('missing-plate', 'error', '車番が空です', '車番を入力してください。');
     if (!row.積日 || !row.卸日) add('bad-date', 'error', '積日・卸日が読み取れていません', 'yyyy/mm/dd の形で入力してください。');
@@ -442,10 +441,8 @@
   }
 
   return {
-    isActiveRec: isActiveRec, INACTIVE: INACTIVE, fmtType: fmtType, unwrapRaw: unwrapRaw, sameCo: sameCo, canonSender: canonSender, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, candidatesFor: candidatesFor,
-    fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, CHECK_FIELDS: CHECK_FIELDS, normKind: normKind,
-    ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate, companyKey: companyKey,
-    nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, isMobile: isMobile, importKey: importKey,
+    fmtType: fmtType, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate, companyKey: companyKey,
+    nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,
     buildDestMap: buildDestMap, suggestProject: suggestProject, projectName: projectName, sanitizeOcr: sanitizeOcr, evaluateBatch: evaluateBatch, resolveRow: resolveRow, mergeOps: mergeOps, findMasterDups: findMasterDups
   };
 });
