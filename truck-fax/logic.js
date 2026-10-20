@@ -95,7 +95,7 @@
         行先: tidy(r['行先']),
         着時間: normTime(r['着時間']),
         運送業者: tidy(r['運送業者']),
-        車種: tidy(r['車種']),
+        車種: tidy(r['車種']).replace(/\s+/g, ''),
         車番: fmtPlate(r['車番']),
         氏名: nameKey(r['氏名']),
         携帯番号: fmtPhone(r['携帯番号'])
