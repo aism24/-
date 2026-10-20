@@ -511,6 +511,13 @@
 
   /** 取込一覧の行がどの締め月か。卸日で区切る(10/20卸=10月20日締め、10/21卸=11月20日締め)。卸日が読めなければ積日→タイムスタンプ */
   function rowClosing(r) { return closingOfText(r.卸日) || closingOfText(r.積日) || closingOfText(r.タイムスタンプ); }
+  /** 締め月を delta(-1=前月・+1=翌月)だけ動かす。年度の境目は、12月締め(年度の最初)と11月締め(年度の最後)でつなぐ。例: 2026年度12月 の前 → 2025年度11月 */
+  function closingNeighbor(fy, cm, delta) {
+    var i = CLOSING_MONTH_ORDER.indexOf(+cm) + delta, f = +fy;
+    if (i < 0) { i = CLOSING_MONTH_ORDER.length - 1; f -= 1; }
+    else if (i >= CLOSING_MONTH_ORDER.length) { i = 0; f += 1; }
+    return { fy: f, cm: CLOSING_MONTH_ORDER[i] };
+  }
   /** 締め月の期間の表示(例: 12月→「11/21〜12/20」、4月→「3/21〜4/20」) */
   function closingPeriod(cm) { var pm = cm === 1 ? 12 : cm - 1; return pm + '/21〜' + cm + '/20'; }
 
@@ -542,7 +549,7 @@
 
   return {
     alreadyImported: alreadyImported, fmtTypes: fmtTypes, mergeTypes: mergeTypes, typeList: typeList, dateKey: dateKey, sortDrivers: sortDrivers, sortVehicles: sortVehicles, typeRank: typeRank, senderRank: senderRank,
-    closingOf: closingOf, closingOfText: closingOfText, rowClosing: rowClosing, closingPeriod: closingPeriod, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
+    closingOf: closingOf, closingOfText: closingOfText, rowClosing: rowClosing, closingPeriod: closingPeriod, closingNeighbor: closingNeighbor, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
     fmtType: fmtType, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate, companyKey: companyKey,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,
     buildDestMap: buildDestMap, suggestProject: suggestProject, projectName: projectName, sanitizeOcr: sanitizeOcr, evaluateBatch: evaluateBatch, resolveRow: resolveRow, mergeOps: mergeOps, findMasterDups: findMasterDups

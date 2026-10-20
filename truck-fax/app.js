@@ -687,11 +687,21 @@
       return s;
     }
     var fySel = sel('年度', S.importsFy, [['all', 'すべての年度']].concat(fyList.map(function (y) { return [String(y), y + '年度']; })), function (v) { S.importsFy = v; });
-    var cmSel = sel('締め月', S.importsCm, [['all', 'すべての締め月']].concat(L.CLOSING_MONTH_ORDER.map(function (m) { return [String(m), m + '月20日締め(' + L.closingPeriod(m) + ')']; })), function (v) { S.importsCm = v; });
+    var cmSel = sel('締め月', S.importsCm, [['all', 'すべての締め月']].concat(L.CLOSING_MONTH_ORDER.map(function (m) { return [String(m), m + '/20〆']; })), function (v) { S.importsCm = v; });
+    // 締め月のリストの左右に ◀▶。1か月前・後へ移動する。データが無い月・「すべて」のときは押せない(グレーアウト)
+    var haveCl = {}; cl.forEach(function (c) { if (c) haveCl[c.fy + '-' + c.cm] = 1; });
+    function cmStep(delta, text, label) {
+      var to = S.importsFy !== 'all' && S.importsCm !== 'all' ? L.closingNeighbor(S.importsFy, S.importsCm, delta) : null;
+      var has = !!(to && haveCl[to.fy + '-' + to.cm]);
+      return h('button', { class: 'btn sm cm-step', type: 'button', text: text, 'aria-label': label, disabled: !has,
+        title: has ? to.fy + '年度 ' + to.cm + '/20〆へ' : (to ? to.fy + '年度 ' + to.cm + '/20〆はデータがありません' : '年度・締め月を選ぶと使えます'),
+        onclick: function () { S.importsFy = String(to.fy); S.importsCm = String(to.cm); renderImports(); } });
+    }
+    var cmNav = h('span', { class: 'cm-nav' }, cmStep(-1, '◀', '1か月前の締め月'), cmSel, cmStep(1, '▶', '1か月後の締め月'));
     var siteSel = sel('現場名', S.importsSite, [['all', '全て(現場名)']].concat(siteList.map(function (n) { return [n, n]; })), function (v) { S.importsSite = v; });
     var shown = rows.slice(0, IMPORTS_SHOW);
     var cnt = '新しい順・該当' + rows.length + '件のうち最新' + shown.length + '件を表示(最大' + IMPORTS_SHOW + '件)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
-    host.appendChild(h('div', { class: 'tool' }, fySel, cmSel, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; S.importsP = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
+    host.appendChild(h('div', { class: 'tool' }, fySel, cmNav, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; S.importsP = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn excel', type: 'button', text: '全件ダウンロード', onclick: downloadAllImports }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '締め月ダウンロード', onclick: openClosingDownload }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '卸日指定でダウンロード', onclick: openDateDownload })));
