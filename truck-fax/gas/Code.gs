@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261021d';
+var CODE_VERSION = '20261021e';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
@@ -27,7 +27,7 @@ var DRIVER_HEADERS = ['運送業者', '氏名', '携帯番号'];
 var DRIVER_OPTIONAL = ['車種']; // 運転手の車種(複数は「4t/10t/15t」)。列があれば読み書きする。setupSheets が無ければ列を足す
 var CHECK_FIELDS = ['手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '工事番号', '現場名', '追加変更'];
 // 取込一覧の任意の列(あれば読み書きする。無くても動く)。「追加変更」=中止/変更前/変更後、「備考」=アプリで入力したテキスト。
-var IMPORT_OPTIONAL = ['追加変更', '備考'];
+var IMPORT_OPTIONAL = ['追加変更', '備考', 'ファイルURL']; // ファイルURL=取り込んだ原本(PDF・画像)のDriveのURL。画面のファイル名を押すと開く
 var INACTIVE_LABELS = ['変更前', '中止']; // これらの行は車両台数に数えない(行は消さない)
 
 var TEXT_COLS = ['着時間', '車種', '車番', '携帯番号', '工事番号'];
@@ -43,6 +43,8 @@ function setupSheets() {
   ensureSheet_(ss, SHEET_IMPORT, IMPORT_HEADERS);
   ensureSheet_(ss, SHEET_VEHICLE, VEHICLE_HEADERS);
   ensureOptionalCols_(ensureSheet_(ss, SHEET_DRIVER, DRIVER_HEADERS), DRIVER_OPTIONAL);
+  ensureOptionalCols_(ss.getSheetByName(SHEET_IMPORT), ['ファイルURL']);
+  faxFolder_(true); // 原本の保存先フォルダ(初めて実行するとき、Driveの権限の確認が出る)
   var info = ss.getSheetByName(SHEET_INFO) || ss.insertSheet(SHEET_INFO);
   var defaults = [['Geminiモデル名', 'gemini-3.5-flash-lite'], ['タイムゾーン', 'Asia/Tokyo'], ['APIKEY', '']];
   var names = info.getRange(1, 1, Math.max(info.getLastRow(), 1), 1).getValues().map(function (r) { return String(r[0]).trim(); });
@@ -65,6 +67,48 @@ function ensureSheet_(ss, name, headers) {
 }
 
 /** 任意の列(見出し)が無ければ、見出し行の右端に足す。既存の列・値は変えない。 */
+// ---------- 取り込んだ原本(PDF・画像)のDrive保存 ----------
+// 保存先: スプレッドシートと同じフォルダの中の「FAX原本」(無ければ作る)。画面からの表示は、このフォルダとスプレッドシートのフォルダの中のファイルだけ。
+var FAX_FOLDER_NAME = 'FAX原本';
+var MAX_FAX_BYTES = 12 * 1024 * 1024;
+function sheetFolder_() {
+  var parents = DriveApp.getFileById(SpreadsheetApp.getActiveSpreadsheet().getId()).getParents();
+  return parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+}
+function faxFolder_(create) {
+  var parent = sheetFolder_();
+  var it = parent.getFoldersByName(FAX_FOLDER_NAME);
+  if (it.hasNext()) return it.next();
+  return create ? parent.createFolder(FAX_FOLDER_NAME) : null;
+}
+/** 原本をDriveに保存して、そのURLを返す。ファイルが無い・取込一覧に「ファイルURL」の列が無いときは、何もせず空文字。 */
+function saveFax_(body, now) {
+  if (!body.fileBase64) return '';
+  if (!headerMap_(sheet_(SHEET_IMPORT), [])['ファイルURL']) return '';
+  var bytes = Utilities.base64Decode(body.fileBase64);
+  if (bytes.length > MAX_FAX_BYTES) throw new Error('ファイルが大きすぎます。');
+  var mime = body.fileMime || 'application/pdf';
+  if (['application/pdf', 'image/png', 'image/jpeg'].indexOf(mime) < 0) throw new Error('対応していない形式です: ' + mime);
+  var name = Utilities.formatDate(now, tz_(), 'yyyyMMdd_HHmmss') + '_' + String(body.filename || 'fax').replace(/[\\\/:*?"<>|]/g, '_');
+  return faxFolder_(true).createFile(Utilities.newBlob(bytes, mime, name)).getUrl();
+}
+/** 画面でファイル名を押したときに、原本を返す(Base64)。許可するのは、スプレッドシートのフォルダと「FAX原本」の中のファイルだけ。 */
+function getFile_(url) {
+  var m = /\/d\/([\w-]{20,})|[?&]id=([\w-]{20,})/.exec(String(url || ''));
+  if (!m) throw new Error('ファイルのURLが読み取れません。');
+  var file = DriveApp.getFileById(m[1] || m[2]);
+  var okIds = [sheetFolder_().getId()], fax = faxFolder_(false);
+  if (fax) okIds.push(fax.getId());
+  var inside = false, parents = file.getParents();
+  while (parents.hasNext()) if (okIds.indexOf(parents.next().getId()) >= 0) inside = true;
+  if (!inside) throw new Error('このファイルは、車番連絡の原本のフォルダの外にあるため、表示できません。');
+  var mime = file.getMimeType();
+  if (['application/pdf', 'image/png', 'image/jpeg'].indexOf(mime) < 0) throw new Error('PDF・PNG・JPEGのみ表示できます: ' + mime);
+  var bytes = file.getBlob().getBytes();
+  if (bytes.length > MAX_FAX_BYTES) throw new Error('ファイルが大きすぎます。');
+  return { mime: mime, name: file.getName(), base64: Utilities.base64Encode(bytes) };
+}
+
 function ensureOptionalCols_(sh, cols) {
   var map = headerMap_(sh, []);
   cols.forEach(function (c) {
@@ -246,6 +290,7 @@ function doGet(e) {
   try {
     var a = e.parameter.action;
     if (a === 'init') return ok_(getInit_());
+    if (a === 'getFile') return ok_(getFile_(e.parameter.url));
     if (a === 'listImports') return ok_(listImports_(Number(e.parameter.limit) || 300));
     if (a === 'ping') return ok_({ pong: true, version: CODE_VERSION });
     return err_('不明なaction: ' + a);
@@ -384,14 +429,16 @@ function commit_(body) {
   var ops = body.ops || [];
   var opCount = 0;
   ops.forEach(function (op) { applyOp_(op); opCount++; });
-  var now = new Date();
-  rows.forEach(function (r) { writeRow_(imp, IMPORT_HEADERS, null, importObj_(r, now, source, '')); });
-  return { added: rows.length, ops: opCount };
+  var now = new Date(), fileUrl = '', fileWarn = '';
+  try { fileUrl = saveFax_(body, now); } catch (ex) { fileWarn = ex.message; } // 原本の保存に失敗しても、記録は止めない
+  rows.forEach(function (r) { writeRow_(imp, IMPORT_HEADERS, null, importObj_(r, now, source, '', fileUrl)); });
+  return { added: rows.length, ops: opCount, fileUrl: fileUrl, fileWarn: fileWarn };
 }
 
 /** 画面の行({業者, 積日, ...})を、取込一覧の見出し名つきの値にする。 */
-function importObj_(r, now, source, label) {
+function importObj_(r, now, source, label, fileUrl) {
   return {
+    'ファイルURL': fileUrl || '',
     '追加変更': label || '', '備考': r.備考 || '',
     'タイムスタンプ': now, 'ファイル名': source,
     '工事番号': r.工事番号 || '', '現場名': r.現場名 || '',
@@ -455,7 +502,8 @@ function applyChanges_(body) {
   });
   var opCount = 0;
   (body.ops || []).forEach(function (op) { applyOp_(op); opCount++; });
-  var now = new Date();
+  var now = new Date(), fileUrl = '', fileWarn = '';
+  if (items.some(function (it) { return it.mode === 'add'; })) { try { fileUrl = saveFax_(body, now); } catch (ex) { fileWarn = ex.message; } } // 原本の保存に失敗しても、反映は止めない
   var n = { marked: 0, added: 0 };
   // 元の行に印を付ける(行番号は変わらない)
   items.filter(function (it) { return it.mode === 'mark'; }).forEach(function (it) {
@@ -466,10 +514,10 @@ function applyChanges_(body) {
   });
   // 新しい行を追加
   items.filter(function (it) { return it.mode === 'add'; }).forEach(function (it) {
-    writeRow_(imp, IMPORT_HEADERS, null, importObj_(it.data, now, source, it.label || ''));
+    writeRow_(imp, IMPORT_HEADERS, null, importObj_(it.data, now, source, it.label || '', fileUrl));
     n.added++;
   });
-  return { marked: n.marked, added: n.added, ops: opCount };
+  return { marked: n.marked, added: n.added, ops: opCount, fileUrl: fileUrl, fileWarn: fileWarn };
 }
 
 function masterInfo_(kind) {
