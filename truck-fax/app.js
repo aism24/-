@@ -282,7 +282,7 @@
     var head = h('div', { class: 'card-head' }, h('span', { class: 'name', text: card.name }), h('span', { class: chip[1], text: chip[0] }), card.status === 'ready' ? kindBox(card) : null, h('span', { class: 'spacer' }));
     head.appendChild(h('button', { class: 'btn sm', type: 'button', text: '閉じる', onclick: function () { S.cards = S.cards.filter(function (c) { return c !== card; }); el.remove(); syncDrop(); } }));
     el.appendChild(head);
-    if (card.status === 'reading') { el.appendChild(h('div', { class: 'empty', text: 'FAXの内容を読み取っています(10〜30秒ほどかかります)…' })); return; }
+    if (card.status === 'reading') { el.appendChild(h('div', { class: 'reading-note', text: 'FAXの内容を読み取っています(10〜30秒ほどかかります)…' })); return; }
     if (card.status === 'error') {
       el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'msg bad', text: card.msg }),
         card.url ? h('button', { class: 'btn', type: 'button', text: 'もう一度読み取る', onclick: function () { extract(card); } }) : null));
@@ -377,7 +377,21 @@
     });
   }
 
+  /** 「データ記録中」のポップアップ(進行バーつき)を出し、閉じる関数を返す。終わるまで他の操作はできない。 */
+  function busyDialog(text) {
+    var dlg = h('dialog', { class: 'dlg busy' }, h('p', { class: 'dlg-title', text: text }),
+      h('div', { class: 'progress', role: 'progressbar', 'aria-label': text }, h('div', { class: 'progress-bar' })));
+    dlg.addEventListener('cancel', function (e) { e.preventDefault(); }); // Escで閉じさせない
+    document.body.appendChild(dlg);
+    dlg.showModal();
+    return function () { if (dlg.open) dlg.close(); dlg.remove(); };
+  }
+
   async function commitCard(card) {
+    var close = busyDialog('データ記録中');
+    try { await commitCardBody(card); } finally { close(); }
+  }
+  async function commitCardBody(card) {
     var rs = results(card);
     var keep = rs.filter(function (r) { return !r.skip; });
     var ops = L.mergeOps(keep.map(function (r) { return r.ops; }));
@@ -557,6 +571,10 @@
   }
 
   async function commitChange(card) {
+    var close = busyDialog('データ記録中');
+    try { await commitChangeBody(card); } finally { close(); }
+  }
+  async function commitChangeBody(card) {
     // 他のFAXを先に記録した場合など、取込一覧が変わっていたら、最新で照合し直してやり直す(古い照合のまま反映しない)
     card.busy = true; renderFoot(card);
     try {

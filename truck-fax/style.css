@@ -143,3 +143,11 @@ dialog.dlg.wide { max-width: min(96vw, 1300px); width: min(96vw, 1300px); }
 .sub-row .sub-h { margin: 0; }
 .foot-btns { display: flex; gap: 8px; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60; max-width: min(92vw, 720px); padding: 12px 20px; border-radius: 8px; background: #1a7f37; color: #fff; font-weight: 600; box-shadow: 0 6px 24px rgba(0,0,0,.35); cursor: pointer; }
+@keyframes blink-yellow { 0%, 100% { background: #fff3a8; } 50% { background: #fffde8; } }
+.reading-note { padding: 16px; margin: 8px 0; text-align: center; color: #c00000; font-weight: 700; border-radius: 6px; background: #fff3a8; animation: blink-yellow 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .reading-note { animation: none; } }
+dialog.dlg.busy { min-width: min(86vw, 360px); text-align: center; }
+.progress { height: 12px; border-radius: 6px; background: #e3e7ec; overflow: hidden; position: relative; }
+.progress-bar { position: absolute; top: 0; bottom: 0; width: 40%; border-radius: 6px; background: var(--accent); animation: progress-slide 1.2s ease-in-out infinite; }
+@keyframes progress-slide { 0% { left: -40%; } 100% { left: 100%; } }
+@media (prefers-reduced-motion: reduce) { .progress-bar { animation: none; left: 0; width: 100%; opacity: .6; } }
