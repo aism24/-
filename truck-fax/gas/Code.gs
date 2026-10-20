@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261021b';
+var CODE_VERSION = '20261021c';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
@@ -372,7 +372,7 @@ function callGemini_(parts) {
   throw new Error(last.replace(key, '***'));
 }
 
-// ---------- 記録(取込一覧への追記+マスタ更新) ----------
+// ---------- 記録(取込一覧への追記+車両情報・運転手情報の更新) ----------
 
 function commit_(body) {
   var rows = body.rows || [];
@@ -453,7 +453,7 @@ function applyChanges_(body) {
 function masterInfo_(kind) {
   if (kind === 'vehicle') return { sheet: sheet_(SHEET_VEHICLE), headers: VEHICLE_HEADERS, optional: [] };
   if (kind === 'driver') return { sheet: sheet_(SHEET_DRIVER), headers: DRIVER_HEADERS, optional: DRIVER_OPTIONAL };
-  throw new Error('不明なマスタ種別: ' + kind);
+  throw new Error('不明な種別: ' + kind);
 }
 
 /** op: {kind, mode:'add'|'update'|'delete', row, before, data} */
@@ -465,11 +465,11 @@ function applyOp_(op) {
     return;
   }
   var now = readRows_(sh, headers, op.row, op.row, mi.optional)[0];
-  if (!now) throw new Error('マスタの行(' + op.row + ')が見つかりません。画面を再読み込みしてください。');
+  if (!now) throw new Error((op.kind === 'vehicle' ? '車両情報' : '運転手情報') + 'の行(' + op.row + ')が見つかりません。画面を再読み込みしてください。');
   headers.concat(mi.optional).forEach(function (h) {
     if (mi.optional.indexOf(h) >= 0 && !Object.prototype.hasOwnProperty.call(op.before || {}, h)) return; // 任意の列は、変更前の値が渡されたときだけ照合する
     if (String(now[h]) !== String((op.before || {})[h] == null ? '' : op.before[h])) {
-      throw new Error('マスタが他の操作で変更されています(' + h + ')。画面を再読み込みしてください。');
+      throw new Error((op.kind === 'vehicle' ? '車両情報' : '運転手情報') + 'が他の操作で変更されています(' + h + ')。画面を再読み込みしてください。');
     }
   });
   if (op.mode === 'update') {
