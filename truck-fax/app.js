@@ -103,6 +103,7 @@
   function renderTabs() {
     var labels = { import: 'PDF取込', imports: '取込一覧', vehicles: '車両情報', drivers: '運転手情報' };
     var vd = dupCount('vehicle'), dd = dupCount('driver');
+    $('appname').textContent = '車番連絡　管理＿【' + labels[S.tab] + 'モード】'; // アプリ名の右に、押されているボタン名を出す
     document.querySelectorAll('#tabs button').forEach(function (b) {
       var t = b.dataset.tab, extra = '';
       if (t === 'vehicles' && vd) extra = '(重複' + vd + ')';
