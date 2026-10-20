@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 780" width="1100" height="780" font-family="'Noto Sans JP','Yu Gothic','Hiragino Sans',Meiryo,sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 880" width="1100" height="880" font-family="'Noto Sans JP','Yu Gothic','Hiragino Sans',Meiryo,sans-serif">
 <defs><filter id="b" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="5"/></filter><filter id="b2" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="3.5"/></filter></defs>
-<rect width="1100" height="780" fill="#fbfbf8"/>
+<rect width="1100" height="880" fill="#fbfbf8"/>
 <text x="70" y="150" text-anchor="start" font-size="24" font-weight="700" fill="#222">(株)正光　○○工場　様</text>
 <rect x="70" y="162" width="330" height="4" fill="#222"/>
 <text x="550" y="92" text-anchor="middle" font-size="46" font-weight="700" letter-spacing="12" fill="#222">配 車 連 絡 表</text>
@@ -8,7 +8,7 @@
 <rect x="740" y="104" width="260" height="20" rx="5" fill="#333" opacity="0.8" filter="url(#b2)"/>
 <rect x="770" y="134" width="250" height="16" rx="5" fill="#333" opacity="0.8" filter="url(#b2)"/>
 <rect x="790" y="160" width="230" height="16" rx="5" fill="#333" opacity="0.8" filter="url(#b2)"/>
-<rect x="33" y="300" width="1034" height="492" fill="#fff" stroke="#222" stroke-width="3"/>
+<g transform="translate(0,100)"><rect x="33" y="300" width="1034" height="492" fill="#fff" stroke="#222" stroke-width="3"/>
 <line x1="33" y1="362" x2="77" y2="300" stroke="#222" stroke-width="2"/>
 <line x1="77" y1="300" x2="77" y2="792" stroke="#222" stroke-width="2"/>
 <text x="122.0" y="338.0" text-anchor="middle" font-size="19" font-weight="700" fill="#222">車種</text>
@@ -86,4 +86,4 @@
 <rect x="725" y="737" width="54" height="24" rx="5" fill="#333" opacity="0.7" filter="url(#b)"/>
 <rect x="813" y="739" width="72" height="20" rx="5" fill="#333" opacity="0.7" filter="url(#b)"/>
 <text x="1067" y="832" text-anchor="end" font-size="16" fill="#555">※ 見本(内容は伏せています)</text>
-</svg>
+</g></svg>
