@@ -211,7 +211,7 @@
         var m = vs[0], diffs = [];
         if (vs.length > 1) add('master-dup-vehicle', 'warn', '車両情報に同じ車番が' + vs.length + '件あります', '「車両情報」画面で整理してください。', [OPT.ok]);
         if (row.業者 && !sameCo(row.業者, m.手配業者)) diffs.push('手配業者: マスタ「' + m.手配業者 + '」/ 今回「' + row.業者 + '」');
-        if (row.運送業者 && ck !== companyKey(m.運送業者)) diffs.push('運送業者: マスタ「' + m.運送業者 + '」/ 今回「' + row.運送業者 + '」');
+        if (row.運送業者 && !sameCo(row.運送業者, m.運送業者)) diffs.push('運送業者: マスタ「' + m.運送業者 + '」/ 今回「' + row.運送業者 + '」');
         if (row.車種 && typeKey(row.車種) !== typeKey(m.車種)) diffs.push('車種: マスタ「' + m.車種 + '」/ 今回「' + row.車種 + '」');
         if (diffs.length) {
           var vf = { id: 'vehicle-diff', masterRow: m._row, masterData: m };
@@ -223,7 +223,7 @@
 
     // 運転手
     if (name && row.運送業者) {
-      var list = idx.dByKey[ck + '|' + name] || [];
+      var list = (idx.dByName[name] || []).filter(function (d) { return sameCo(d.運送業者, row.運送業者); }); // 運送業者の書き方が違っても同じ運転手(2度目の運行で追記しない)
       if (list.length) {
         var d0 = list[0];
         if (list.length > 1) add('master-dup-driver', 'warn', '運転手マスタに同じ氏名・運送業者が' + list.length + '件あります', '「運転手」画面で整理してください。', [OPT.ok]);
@@ -231,7 +231,7 @@
           add('phone-diff', 'warn', '携帯番号がマスタと違います(' + row.氏名 + ')', 'マスタ: ' + d0.携帯番号 + ' / 今回: ' + row.携帯番号, [OPT.update, OPT.adopt, OPT.keep]);
           f[f.length - 1].masterRow = d0._row; f[f.length - 1].masterData = d0;
         }
-        var others = phone ? (idx.dByPhone[phone] || []).filter(function (x) { return x !== d0 && !(nameKey(x.氏名) === name && companyKey(x.運送業者) === ck); }) : [];
+        var others = phone ? (idx.dByPhone[phone] || []).filter(function (x) { return x !== d0 && !(nameKey(x.氏名) === name && sameCo(x.運送業者, row.運送業者)); }) : [];
         if (others.length) add('phone-shared', 'warn', 'この携帯番号は別の人にも登録されています', 'マスタ: ' + who(others[0]), [OPT.ok]);
       } else {
         var byPhone = phone ? (idx.dByPhone[phone] || []) : [];
@@ -357,8 +357,7 @@
   function fieldDiffers(f, a, b) {
     a = a == null ? '' : a; b = b == null ? '' : b;
     switch (f) {
-      case '業者': case '手配業者': return !sameCo(a, b);
-      case '運送業者': return companyKey(a) !== companyKey(b);
+      case '業者': case '手配業者': case '運送業者': return !sameCo(a, b);
       case '車番': return plateKey(a) !== plateKey(b);
       case '氏名': return nameKey(a) !== nameKey(b);
       case '携帯番号': return phoneDigits(a) !== phoneDigits(b);
