@@ -9,7 +9,10 @@
 
   var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '追加変更', '備考'];
   var MASTER_COLS = { vehicle: ['手配業者', '運送業者', '車種', '車番'], driver: ['運送業者', '氏名', '携帯番号'] };
-  var IMPORTS_LIMIT = 3000;
+  var IMPORTS_LIMIT = 3000; // 絞り込みのために読み込む件数(表に出すのは最新100件まで)
+  var IMPORTS_SHOW = 100;
+  var VIEW_HEADERS = IMPORT_HEADERS.filter(function (k) { return k !== 'タイムスタンプ'; }); // 画面・Excelに出す列
+  var INACTIVE = ['中止', '変更前'];
   var MASTER_COL_W = 170;
   var MAX_BYTES = 10 * 1024 * 1024;
 
@@ -611,12 +614,51 @@
     var fySel = sel('年度', S.importsFy, [['all', 'すべての年度']].concat(fyList.map(function (y) { return [String(y), y + '年度']; })), function (v) { S.importsFy = v; });
     var cmSel = sel('締め月', S.importsCm, [['all', 'すべての締め月']].concat(L.CLOSING_MONTH_ORDER.map(function (m) { return [String(m), m + '月20日締め(' + L.closingPeriod(m) + ')']; })), function (v) { S.importsCm = v; });
     var siteSel = sel('現場名', S.importsSite, [['all', '全て(現場名)']].concat(siteList.map(function (n) { return [n, n]; })), function (v) { S.importsSite = v; });
-    var cnt = '新しい順・' + rows.length + '件表示(最大' + IMPORTS_LIMIT + '件を読み込み)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
-    host.appendChild(h('div', { class: 'tool' }, fySel, cmSel, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; renderImports(); } }), h('span', { class: 'sub', text: cnt })));
-    var head = h('tr'); IMPORT_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); });
+    var shown = rows.slice(0, IMPORTS_SHOW);
+    var cnt = '新しい順・該当' + rows.length + '件のうち最新' + shown.length + '件を表示(最大' + IMPORTS_SHOW + '件)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
+    host.appendChild(h('div', { class: 'tool' }, fySel, cmSel, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
+      h('button', { class: 'btn orange', type: 'button', text: '降し日指定でダウンロード', onclick: openDateDownload })));
+    var head = h('tr'); VIEW_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); });
     var body = h('tbody');
-    rows.forEach(function (r) { var tr = h('tr'); IMPORT_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: r[k] || '' })); }); body.appendChild(tr); });
-    host.appendChild(rows.length ? h('div', { class: 'scroll' }, h('table', { class: 't' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' }));
+    shown.forEach(function (r) { var tr = h('tr'); VIEW_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: r[k] || '' })); }); body.appendChild(tr); });
+    host.appendChild(shown.length ? h('div', { class: 'scroll' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' }));
+  }
+
+  function todayIso() { var n = new Date(); return n.getFullYear() + '-' + ('0' + (n.getMonth() + 1)).slice(-2) + '-' + ('0' + n.getDate()).slice(-2); }
+
+  /** 降し日を指定して、取込一覧の該当行をExcelでダウンロードする。①ボタン→②日付を選ぶ→③表で確認→④OKでダウンロード */
+  function openDateDownload() {
+    var input = h('input', { type: 'date', value: todayIso(), 'aria-label': '降し日' });
+    var info = h('p', { class: 'dlg-detail' }), tableHost = h('div', { class: 'dlg-table' });
+    var cancel = h('button', { class: 'btn', type: 'button', text: 'キャンセル' });
+    var ok = h('button', { class: 'btn orange', type: 'button', text: 'この内容でExcelをダウンロード' });
+    var dlg = h('dialog', { class: 'dlg wide' }, h('p', { class: 'dlg-title', text: '降し日指定でダウンロード' }),
+      h('div', { class: 'dlg-row' }, h('label', { text: '降し日を選択:' }), input), info, tableHost, h('div', { class: 'dlg-btns' }, cancel, ok));
+    var cur = [];
+    function refresh() {
+      var key = input.value;
+      cur = key ? S.imports.filter(function (r) { return INACTIVE.indexOf(r.追加変更) < 0 && L.dateKey(r.卸日) === key; }).reverse() : [];
+      info.textContent = key ? '降し日 ' + key.replace(/-/g, '/') + ' の記録: ' + cur.length + '件(中止・変更前の行は含みません)。この内容でよければダウンロードしてください。' : '降し日を選んでください。';
+      tableHost.textContent = '';
+      if (cur.length) {
+        var head = h('tr'); VIEW_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); });
+        var body = h('tbody');
+        cur.forEach(function (r) { var tr = h('tr'); VIEW_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: r[k] || '' })); }); body.appendChild(tr); });
+        tableHost.appendChild(h('div', { class: 'scroll dlg-scroll' }, h('table', { class: 't zebra' }, h('thead', null, head), body)));
+      } else if (key) tableHost.appendChild(h('div', { class: 'empty', text: 'この日に降す記録はありません。' }));
+      ok.disabled = !cur.length;
+    }
+    input.addEventListener('change', refresh);
+    cancel.addEventListener('click', function () { dlg.close(); });
+    ok.addEventListener('click', function () {
+      if (!cur.length) return;
+      TruckXlsx.download('車番連絡_降し日' + input.value.replace(/-/g, '') + '.xlsx', '取込一覧', VIEW_HEADERS, cur.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }));
+      dlg.close();
+    });
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    document.body.appendChild(dlg);
+    refresh();
+    dlg.showModal();
   }
 
   // ---------- マスタ(車両情報・運転手)の表と編集 ----------
@@ -674,7 +716,11 @@
     var rows = kind === 'vehicle' ? L.sortVehicles(masterRows(kind)) : masterRows(kind); // 車両情報は、手配業者→運送業者→車種の順に並べて表示
     var nd = kind === 'vehicle' ? Object.keys(dups.vehiclePlate).length : Object.keys(dups.driverName).length + Object.keys(dups.driverPhone).length;
     var tblW = (cols.length + 1) * MASTER_COL_W + 'px'; // 全ての列を同じ幅(車番がおさまる幅)にそろえ、中央に置く
-    host.appendChild(h('div', { class: 'tool mastertbl', style: 'width:' + tblW }, h('span', { class: 'sub', text: rows.length + '件' + (nd ? ' ・ 重複 ' + nd + ' 組(赤)。確認して、不要な行を削除するか修正してください。' : '') })));
+    host.appendChild(h('div', { class: 'tool mastertbl', style: 'width:' + tblW }, h('span', { class: 'sub', text: rows.length + '件' + (nd ? ' ・ 重複 ' + nd + ' 組(赤)。確認して、不要な行を削除するか修正してください。' : '') }), h('span', { class: 'spacer' }),
+      h('button', { class: 'btn sm', type: 'button', text: 'Excelでダウンロード', onclick: function () {
+        var t = todayIso().replace(/-/g, '');
+        TruckXlsx.download((kind === 'vehicle' ? '車両情報_' : '運転手_') + t + '.xlsx', kind === 'vehicle' ? '車両情報' : '運転手', cols, rows.map(function (r) { return cols.map(function (k) { return r[k] || ''; }); }));
+      } })));
 
     var head = h('tr'); cols.forEach(function (k) { head.appendChild(h('th', { text: k })); }); head.appendChild(h('th', { text: '操作' }));
     var body = h('tbody');
