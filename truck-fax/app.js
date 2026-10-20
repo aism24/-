@@ -208,6 +208,11 @@
     return sel;
   }
 
+  /** 工事番号を、過去と同じ工事で初期選択した行があるときだけ、見出しの横に緑の注意書きを出す(行の中には出さない) */
+  function sugNote(rows) {
+    return rows.some(function (r) { return r._suggest; }) ? h('span', { class: 'sug-note', text: '※過去と同じ工事を選択' }) : null;
+  }
+
   function normField(name, v) {
     if (name === '車番') return L.fmtPlate(v);
     if (name === '車種') return L.fmtType(v);
@@ -225,7 +230,7 @@
     card.rows.forEach(function (row, i) {
       var tr = h('tr');
       tr.appendChild(h('td', { class: 'num', text: String(i + 1) }));
-      tr.appendChild(h('td', null, projectSelect(card, row), row._suggest ? h('div', { class: 'sug', text: '過去と同じ工事を選択' }) : null));
+      tr.appendChild(h('td', null, projectSelect(card, row)));
       tr.appendChild(h('td', { class: 'w-site', text: row.現場名 || '' }));
       FIELDS.forEach(function (f) {
         var inp = h('input', { value: row[f[0]] || '', class: f[2], 'aria-label': f[1] });
@@ -295,19 +300,19 @@
     el.textContent = '';
     var chip = { reading: ['読み取り中…', 'chip'], ready: ['確認待ち', 'chip'], saved: ['記録済み', 'chip ok'], error: ['エラー', 'chip bad'] }[card.status];
     var head = h('div', { class: 'card-head' }, h('span', { class: 'name', text: card.name }), h('span', { class: chip[1], text: chip[0] }), card.status === 'ready' ? kindBox(card) : null, h('span', { class: 'spacer' }));
-    head.appendChild(h('button', { class: 'btn sm', type: 'button', text: '閉じる', onclick: function () { S.cards = S.cards.filter(function (c) { return c !== card; }); el.remove(); syncDrop(); } }));
     el.appendChild(head);
     if (card.status === 'reading') { el.appendChild(h('div', { class: 'reading-note', text: 'FAXの内容を読み取っています(10〜30秒ほどかかります)…' })); return; }
     if (card.status === 'error') {
       el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'msg bad', text: card.msg }),
-        card.url ? h('button', { class: 'btn', type: 'button', text: 'もう一度読み取る', onclick: function () { extract(card); } }) : null));
+        card.url ? h('button', { class: 'btn', type: 'button', text: 'もう一度読み取る', onclick: function () { extract(card); } }) : null,
+        h('button', { class: 'btn', type: 'button', text: '破棄する', onclick: function () { discardCard(card); } }))); // エラーのときも、取込枠に戻せるようにする
       return;
     }
     if (card.status === 'saved') { el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'msg', text: card.msg }))); return; }
     card.warnings.forEach(function (w) { el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'badge warn', text: '注意' }), h('span', { class: 'msg', text: w }))); });
     if (card.mode === 'change') { renderChangeBody(card); return; }
     card.footHost = h('div'); // 「記録する」「破棄する」は、見出しの行の右端に置く
-    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h', text: '読み取り結果(間違いがあれば表の中で直せます)' }), h('span', { class: 'spacer' }), card.footHost));
+    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '読み取り結果(間違いがあれば表の中で直せます)', sugNote(card.rows)), h('span', { class: 'spacer' }), card.footHost));
     card.rowsHost = h('div'); card.rowsHost.appendChild(rowsTable(card)); el.appendChild(card.rowsHost);
     card.findHost = h('div'); el.appendChild(card.findHost);
     renderFindings(card); renderFoot(card);
@@ -573,7 +578,7 @@
     var el = card.el;
     if (card.res.memo) el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'badge info', text: 'FAXの連絡' }), h('span', { class: 'msg', text: card.res.memo })));
     card.footHost = h('div');
-    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h', text: '変更内容(現在の記録と、今回のFAXを並べています。違う項目は色が付きます)' }), h('span', { class: 'spacer' }), card.footHost));
+    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '変更内容(現在の記録と、今回のFAXを並べています。違う項目は色が付きます)', sugNote(card.items.map(function (it) { return it.newRow; }).filter(Boolean))), h('span', { class: 'spacer' }), card.footHost));
     if (!card.items.length) el.appendChild(h('div', { class: 'empty', text: '変更・追加・取消の対象が見つかりませんでした。FAXの区分を選び直してください。' }));
     else el.appendChild(changeTable(card));
     card.findHost = h('div'); el.appendChild(card.findHost);

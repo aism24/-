@@ -46,7 +46,7 @@ td.dup { background: var(--err-bg); }
 .badge.error { background: var(--err-bg); color: var(--err); }
 .badge.warn { background: var(--warn-bg); color: var(--warn); }
 .badge.info { background: var(--info-bg); color: var(--info); }
-.sug { font-size: 11px; color: var(--ok); }
+.sug-note { margin-left: 14px; font-weight: 700; color: #1a7f37; }
 .sub-h { margin: 12px 0 4px; font-size: 13px; font-weight: 600; }
 .foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .foot .msg { font-size: 13px; color: var(--sub); }
