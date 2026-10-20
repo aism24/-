@@ -176,4 +176,7 @@ table.t th.fit, table.t td.fit { width: 1%; }
 a.filelink { color: #1558b0; text-decoration: underline; cursor: pointer; font-weight: 600; }
 dialog.faxdlg { width: min(96vw, 1300px); max-width: none; padding: 12px; }
 .faxdlg-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.faxview .viewer { margin-top: 0; height: 78vh; }
+.faxview .viewer { margin-top: 8px; height: calc(100vh - 280px); min-height: 340px; }
+.faxrows { max-height: 28vh; }
+table.t tbody tr.hit td { background: #d6ecff; }
+dialog.faxdlg { max-height: 96vh; overflow: auto; }

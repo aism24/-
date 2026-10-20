@@ -720,9 +720,22 @@
 
   /** 取込一覧のファイル名を押したときに、原本(PDF・画像)を大きく開く。取込のときと同じく、ホイールでズーム・ドラッグで移動 */
   async function openFaxViewer(r) {
+    // 上に、この原本から記録した行の表(同じファイルURLの行。押した行は水色)。下に原本
+    var same = (S.imports || []).filter(function (x) { return x.ファイルURL && x.ファイルURL === r.ファイルURL; }).slice().reverse();
+    if (!same.some(function (x) { return x._row === r._row; })) same = [r];
+    var cols = ['工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '追加変更', '備考'];
+    var thead = h('tr'); thead.appendChild(h('th', { text: '#' })); cols.forEach(function (k) { thead.appendChild(h('th', { text: k })); });
+    var tbody = h('tbody');
+    same.forEach(function (x, i) {
+      var tr = h('tr', { class: x._row === r._row ? 'hit' : null });
+      tr.appendChild(h('td', { class: 'num', text: String(i + 1) }));
+      cols.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: x[k] || '' })); });
+      tbody.appendChild(tr);
+    });
+    var rowsTable = h('div', { class: 'scroll faxrows' }, h('table', { class: 't' }, h('thead', null, thead), tbody));
     var holder = h('div', { class: 'faxview' }, h('div', { class: 'reading-note', text: '原本を読み込んでいます…' }));
     var dlg = h('dialog', { class: 'dlg faxdlg' }, h('div', { class: 'faxdlg-head' }, h('strong', { text: importCellText(r, 'ファイル名') }), h('span', { class: 'spacer' }),
-      h('button', { class: 'btn sm', type: 'button', text: '閉じる', onclick: function () { dlg.close(); } })), holder);
+      h('button', { class: 'btn sm', type: 'button', text: '閉じる', onclick: function () { dlg.close(); } })), rowsTable, holder);
     var url = '';
     dlg.addEventListener('close', function () { if (url) URL.revokeObjectURL(url); dlg.remove(); });
     document.body.appendChild(dlg);
