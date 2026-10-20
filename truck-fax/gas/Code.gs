@@ -7,28 +7,23 @@
  *   運転手携帯番号 … 運送業者 / 氏名 / 携帯番号
  *   情報 … A列=項目名、B列=値。「Geminiモデル名」「タイムゾーン」「APIKEY」。
  *          工事番号と工事名のリスト(見出し「工事番号」「工事名」の列)も、この見出しを探して読む。
- *   マスタ変更履歴 … マスタの追加・更新・削除の記録(setupSheetsで自動作成)
  *
  * Geminiのモデル名とAPIキーは「情報」シートのセルから読む(コード修正・再デプロイ不要)。
  * APIキーはこのGAS内でだけ使い、画面には返さない。
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261020i';
+var CODE_VERSION = '20261020j';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
 var SHEET_DRIVER = '運転手携帯番号';
 var SHEET_INFO = '情報';
-var SHEET_HISTORY = 'マスタ変更履歴';
-var SHEET_CHANGE = '変更履歴';
 
 // 取込一覧の必須の見出し。FAXの送り主は「手配業者」に記録する(見出し「業者」の列が残っていれば、同じ値を入れる)。
 var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号'];
 var VEHICLE_HEADERS = ['手配業者', '運送業者', '車種', '車番'];
 var DRIVER_HEADERS = ['運送業者', '氏名', '携帯番号'];
-var HISTORY_HEADERS = ['日時', '種別', '操作', '変更前', '変更後', '契機'];
-var CHANGE_HEADERS = ['日時', '区分', 'ファイル名', '元の行', '変更前', '変更後'];
 var CHECK_FIELDS = ['手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '工事番号', '現場名', '追加変更'];
 // 取込一覧の任意の列(あれば読み書きする。無くても動く)。「追加変更」=中止/変更前/変更後、「備考」=アプリで入力したテキスト。
 var IMPORT_OPTIONAL = ['追加変更', '備考'];
@@ -47,7 +42,6 @@ function setupSheets() {
   ensureSheet_(ss, SHEET_IMPORT, IMPORT_HEADERS);
   ensureSheet_(ss, SHEET_VEHICLE, VEHICLE_HEADERS);
   ensureSheet_(ss, SHEET_DRIVER, DRIVER_HEADERS);
-  ensureSheet_(ss, SHEET_HISTORY, HISTORY_HEADERS);
   var info = ss.getSheetByName(SHEET_INFO) || ss.insertSheet(SHEET_INFO);
   var defaults = [['Geminiモデル名', 'gemini-3.5-flash-lite'], ['タイムゾーン', 'Asia/Tokyo'], ['APIKEY', '']];
   var names = info.getRange(1, 1, Math.max(info.getLastRow(), 1), 1).getValues().map(function (r) { return String(r[0]).trim(); });
@@ -204,14 +198,6 @@ function writeRow_(sh, headers, rowNo, obj) {
     cell.setValue(v);
   });
   return r;
-}
-
-function logHistory_(kind, op, before, after, source) {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_HISTORY);
-  if (!sh) return;
-  function s(o) { return o ? Object.keys(o).filter(function (k) { return k !== '_row'; }).map(function (k) { return k + '=' + o[k]; }).join(' / ') : ''; }
-  sh.appendRow([new Date(), kind === 'vehicle' ? '車両' : (kind === 'driver' ? '運転手' : '取込一覧'), op, s(before), s(after), source || '手動']);
-  sh.getRange(sh.getLastRow(), 1).setNumberFormat('yyyy/MM/dd HH:mm:ss');
 }
 
 // ---------- API ----------
@@ -415,25 +401,18 @@ function applyChanges_(body) {
   });
   var opCount = 0;
   (body.ops || []).forEach(function (op) { applyOp_(op, source); opCount++; });
-  var chg = ensureSheet_(SpreadsheetApp.getActiveSpreadsheet(), SHEET_CHANGE, CHANGE_HEADERS);
   var now = new Date();
-  function log(kind, rowNo, before, after) {
-    chg.appendRow([now, kind, source, rowNo || '', before, after]);
-    chg.getRange(chg.getLastRow(), 1).setNumberFormat('yyyy/MM/dd HH:mm:ss');
-  }
   var n = { marked: 0, added: 0 };
   // 元の行に印を付ける(行番号は変わらない)
   items.filter(function (it) { return it.mode === 'mark'; }).forEach(function (it) {
     var cur = current[it.row], obj = { '追加変更': it.label };
     if (it.note) obj['備考'] = it.note;
     writeRow_(imp, IMPORT_HEADERS, it.row, obj);
-    log(it.label === '中止' ? '中止' : '変更前', it.row, recText_(cur, ['積日', '行先', '運送業者', '車番', '氏名', '携帯番号']), '追加変更=' + it.label);
     n.marked++;
   });
   // 新しい行を追加
   items.filter(function (it) { return it.mode === 'add'; }).forEach(function (it) {
     var r = writeRow_(imp, IMPORT_HEADERS, null, importObj_(it.data, now, source, it.label || ''));
-    log(it.label || '追加', r, '', recText_({ 積日: it.data.積日, 行先: it.data.行先, 運送業者: it.data.運送業者, 車番: it.data.車番, 氏名: it.data.氏名, 携帯番号: it.data.携帯番号 }, ['積日', '行先', '運送業者', '車番', '氏名', '携帯番号']));
     n.added++;
   });
   return { marked: n.marked, added: n.added, ops: opCount };
@@ -451,7 +430,6 @@ function applyOp_(op, source) {
   var sh = mi.sheet, headers = mi.headers;
   if (op.mode === 'add') {
     writeRow_(sh, headers, null, op.data);
-    logHistory_(op.kind, '追加', null, op.data, source);
     return;
   }
   var now = readRows_(sh, headers, op.row, op.row)[0];
@@ -463,10 +441,8 @@ function applyOp_(op, source) {
   });
   if (op.mode === 'update') {
     writeRow_(sh, headers, op.row, op.data);
-    logHistory_(op.kind, '更新', op.before, op.data, source);
   } else if (op.mode === 'delete') {
     sh.deleteRow(op.row);
-    logHistory_(op.kind, '削除', op.before, null, source);
   } else {
     throw new Error('不明な操作: ' + op.mode);
   }
@@ -500,9 +476,25 @@ function normalizeSenders() {
     var rng = sh.getRange(2, map['手配業者'], n, 1), vals = rng.getValues();
     vals.forEach(function (row, i) {
       var to = canon(row[0]);
-      if (to && String(row[0]) !== to) { logHistory_(p[0] === SHEET_VEHICLE ? 'vehicle' : 'import', '手配業者を統一', { 行: i + 2, 手配業者: row[0] }, { 手配業者: to }, 'normalizeSenders'); row[0] = to; changed++; }
+      if (to && String(row[0]) !== to) { row[0] = to; changed++; }
     });
     rng.setValues(vals);
   });
   return '手配業者を ' + changed + ' か所そろえました(候補: ' + list.join('・') + ')';
+}
+
+
+// ---------- 使わなくなったシートの削除(Apps Scriptのエディタで、関数 removeUnusedSheets を1回だけ実行) ----------
+
+/** 以前のバージョンが作った、使わないシート「変更履歴」「マスタ変更履歴」を削除する(この2つだけ。他のシートには触らない)。
+ *  取込一覧の「追加変更」(変更前・変更後・中止)で経緯が分かるため、履歴のシートは不要になった。 */
+function removeUnusedSheets() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), removed = [];
+  ['変更履歴', 'マスタ変更履歴'].forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (sh) { ss.deleteSheet(sh); removed.push(name); }
+  });
+  var msg = removed.length ? '削除しました: ' + removed.join('・') : '削除するシートはありません';
+  Logger.log(msg);
+  return msg;
 }
