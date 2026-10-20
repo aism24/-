@@ -22,6 +22,18 @@
     return compact(s).replace(/\(株\)|\(有\)|\(合\)|\(同\)|株式会社|有限会社|合同会社/g, '').replace(/[()・]/g, '').toLowerCase();
   }
   function nameKey(s) { return compact(s); }
+  /** 手配業者の比較: 「大上」と「(有)大上運送 明石事業所」のように、一方が他方に含まれていれば同じ会社とみなす。 */
+  function sameCo(a, b) {
+    var x = companyKey(a), y = companyKey(b);
+    if (!x || !y) return false;
+    return x === y || x.indexOf(y) >= 0 || y.indexOf(x) >= 0;
+  }
+  /** FAXの送り主を、手配業者の候補(情報シートの一覧。例: ナミツー・大上)の名前にそろえる。当てはまらなければそのまま。 */
+  function canonSender(name, list) {
+    var k = companyKey(name), hit = '';
+    (list || []).forEach(function (c) { var ck = companyKey(c); if (!hit && ck && k.indexOf(ck) >= 0) hit = tidy(c); });
+    return hit || tidy(name);
+  }
   function typeKey(s) { return compact(s).toLowerCase(); }
   function phoneDigits(s) { return nfkc(s).replace(/\D/g, ''); }
   function fmtPhone(s) {
@@ -81,20 +93,22 @@
   }
 
   // ---------- Gemini読み取り結果の整形 ----------
-  var ROW_FIELDS = ['工事番号', '現場名', '業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号'];
+  var ROW_FIELDS = ['工事番号', '現場名', '業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '備考'];
 
   /** raw: Geminiが返したJSON(オブジェクト)。{業者, FAX日付, 明細:[{積日,卸日,行先,着時間,運送業者,車種,車番,氏名,携帯番号}]} */
   function sanitizeOcr(raw, opts) {
     var today = (opts && opts.today) || new Date();
     var warnings = [];
     raw = raw || {};
-    var sender = tidy(raw['業者']);
+    var senders = (opts && opts.senders) || [];
+    var sender = canonSender(raw['業者'], senders);
     var kind = normKind(raw['区分']);
     var memo = tidy(raw['メモ']);
     var fax = normDate(raw['FAX日付'], today.getFullYear());
     var refYear = fax ? +fax.slice(0, 4) : today.getFullYear();
     if (!fax) warnings.push('FAXの日付を読み取れなかったため、今年を基準にしています。');
-    if (!sender) warnings.push('FAXの送り主(業者)を読み取れませんでした。');
+    if (!sender) warnings.push('FAXの送り主(手配業者)を読み取れませんでした。');
+    else if (senders.length && senders.indexOf(sender) < 0) warnings.push('手配業者「' + sender + '」は、候補(' + senders.join('・') + ')に当てはまりません。必要なら表で直すか、情報シートの候補に追加してください。');
     var rows = [];
     (Array.isArray(raw['明細']) ? raw['明細'] : []).forEach(function (r) {
       r = r || {};
@@ -111,6 +125,7 @@
         車番: fmtPlate(r['車番']),
         氏名: nameKey(r['氏名']),
         携帯番号: fmtPhone(r['携帯番号']),
+        備考: '',
         struck: isTrue(r['取消線'])
       };
       if (!o.車番 && !o.氏名 && !o.携帯番号 && !o.運送業者) return; // 空欄行
@@ -181,7 +196,7 @@
       } else {
         var m = vs[0], diffs = [];
         if (vs.length > 1) add('master-dup-vehicle', 'warn', '車両情報に同じ車番が' + vs.length + '件あります', '「車両情報」画面で整理してください。', [OPT.ok]);
-        if (row.業者 && companyKey(row.業者) !== companyKey(m.手配業者)) diffs.push('手配業者: マスタ「' + m.手配業者 + '」/ 今回「' + row.業者 + '」');
+        if (row.業者 && !sameCo(row.業者, m.手配業者)) diffs.push('手配業者: マスタ「' + m.手配業者 + '」/ 今回「' + row.業者 + '」');
         if (row.運送業者 && ck !== companyKey(m.運送業者)) diffs.push('運送業者: マスタ「' + m.運送業者 + '」/ 今回「' + row.運送業者 + '」');
         if (row.車種 && typeKey(row.車種) !== typeKey(m.車種)) diffs.push('車種: マスタ「' + m.車種 + '」/ 今回「' + row.車種 + '」');
         if (diffs.length) {
@@ -306,7 +321,9 @@
   }
 
   // ---------- 変更・追加・取消(一度受領した連絡の続報) ----------
-  var CHECK_FIELDS = ['手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '工事番号', '現場名'];
+  var CHECK_FIELDS = ['手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '工事番号', '現場名', '追加変更'];
+  var INACTIVE = ['変更前', '中止']; // 取込一覧の「追加変更」がこの値の行は、車両台数に数えない(行は残す)
+  function isActiveRec(r) { return INACTIVE.indexOf(String(r && r.追加変更 != null ? r.追加変更 : '').trim()) < 0; }
   var INHERIT = ['積日', '卸日', '行先', '着時間', '車種'];
 
   function effectiveKind(res) {
@@ -317,7 +334,7 @@
   function recFields(rec) { var o = {}; CHECK_FIELDS.forEach(function (f) { o[f] = rec[f] == null ? '' : String(rec[f]); }); return o; }
   function recToRow(rec) {
     return { 工事番号: rec.工事番号 || '', 現場名: rec.現場名 || '', 業者: rec.手配業者 || '', 積日: rec.積日 || '', 卸日: rec.卸日 || '', 行先: rec.行先 || '', 着時間: rec.着時間 || '',
-      運送業者: rec.運送業者 || '', 車種: rec.車種 || '', 車番: rec.車番 || '', 氏名: rec.氏名 || '', 携帯番号: rec.携帯番号 || '' };
+      運送業者: rec.運送業者 || '', 車種: rec.車種 || '', 車番: rec.車番 || '', 氏名: rec.氏名 || '', 携帯番号: rec.携帯番号 || '', 備考: rec.備考 || '' };
   }
   function copyRow(r) { var o = {}; ROW_FIELDS.forEach(function (f) { o[f] = r[f] || ''; }); return o; }
   function inheritFrom(row, src) { if (!src) return; INHERIT.forEach(function (f) { if (!row[f] && src[f]) row[f] = src[f]; }); }
@@ -326,7 +343,8 @@
   function fieldDiffers(f, a, b) {
     a = a == null ? '' : a; b = b == null ? '' : b;
     switch (f) {
-      case '業者': case '手配業者': case '運送業者': return companyKey(a) !== companyKey(b);
+      case '業者': case '手配業者': return !sameCo(a, b);
+      case '運送業者': return companyKey(a) !== companyKey(b);
       case '車番': return plateKey(a) !== plateKey(b);
       case '氏名': return nameKey(a) !== nameKey(b);
       case '携帯番号': return phoneDigits(a) !== phoneDigits(b);
@@ -341,7 +359,7 @@
   function candidatesFor(row, struck, records) {
     var sp = struck ? plateKey(struck.車番) : '', np = plateKey(row.車番), out = [];
     (records || []).forEach(function (r) {
-      if (companyKey(r.手配業者) !== companyKey(row.業者)) return;
+      if (!isActiveRec(r) || !sameCo(r.手配業者, row.業者)) return; // 変更前・中止にした行は、元の記録の候補にしない
       var rp = plateKey(r.車番);
       var plateOld = !!sp && rp === sp, plateNew = !!np && rp === np;
       var strong = (!row.積日 || r.積日 === row.積日) && destMatch(r.行先, row.行先);
@@ -377,16 +395,16 @@
     var struck = res.rows.filter(function (r) { return r.struck; }), live = res.rows.filter(function (r) { return !r.struck; });
     var items = [], n = 0;
     function mk(type, newRow, struckRow, cands) {
-      var it = { id: ++n, type: type, newRow: newRow, struckRow: struckRow, candidates: cands, pick: null, action: null, decisions: {} };
+      var it = { id: ++n, type: type, newRow: newRow, struckRow: struckRow, faxRow: null, label: '', note: '', candidates: cands, pick: null, action: null, decisions: {} };
       items.push(it); return it;
     }
     if (kind === '取消') {
-      res.rows.forEach(function (r) { var it = mk('cancel', null, r, candidatesFor(r, null, records)); setPick(it, defaultPick(it.candidates)); });
+      res.rows.forEach(function (r) { var it = mk('cancel', null, r, candidatesFor(r, null, records)); it.faxRow = copyRow(r); it.label = '中止'; setPick(it, defaultPick(it.candidates)); });
     } else if (kind === '追加') {
       live.forEach(function (r) {
         var nr = copyRow(r), c = candidatesFor(nr, null, records);
         if (c.length) { inheritFrom(nr, recToRow(c[0].rec)); if (!nr.工事番号) { nr.工事番号 = c[0].rec.工事番号 || ''; nr.現場名 = c[0].rec.現場名 || ''; } }
-        var it = mk('add', nr, null, c); setPick(it, null);
+        var it = mk('add', nr, null, c); it.label = ''; setPick(it, null);
       });
     } else { // 変更
       live.forEach(function (r, i) {
@@ -395,20 +413,20 @@
         var c = candidatesFor(nr, s, records);
         if (struck.length && !s) { // 取消線の行より多い行は、追加の1台
           if (c.length) { inheritFrom(nr, recToRow(c[0].rec)); if (!nr.工事番号) { nr.工事番号 = c[0].rec.工事番号 || ''; nr.現場名 = c[0].rec.現場名 || ''; } }
-          var ad = mk('add', nr, null, c); setPick(ad, null); return;
+          var ad = mk('add', nr, null, c); ad.label = ''; setPick(ad, null); return; // 追加の1台(変更前・変更後ではない)
         }
-        if (!c.length) { var ad2 = mk('add', nr, null, c); setPick(ad2, null); return; } // 元の記録が無ければ、追加として記録する
-        var it = mk('update', nr, s, c); setPick(it, defaultPick(c));
+        if (!c.length) { var ad2 = mk('add', nr, null, c); ad2.label = '変更後'; setPick(ad2, null); return; } // 元の記録が無ければ、変更後の行として追加する
+        var it = mk('update', nr, s, c); it.label = '変更後'; setPick(it, defaultPick(c));
       });
       struck.slice(live.length).forEach(function (s) { // 置き換え先のない取消線の行=取消
-        var it = mk('cancel', null, s, candidatesFor(s, null, records)); setPick(it, defaultPick(it.candidates));
+        var it = mk('cancel', null, s, candidatesFor(s, null, records)); it.faxRow = copyRow(s); it.label = '中止'; setPick(it, defaultPick(it.candidates));
       });
     }
     return { kind: kind, items: items };
   }
 
   return {
-    effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, candidatesFor: candidatesFor,
+    isActiveRec: isActiveRec, INACTIVE: INACTIVE, sameCo: sameCo, canonSender: canonSender, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, candidatesFor: candidatesFor,
     fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, CHECK_FIELDS: CHECK_FIELDS, normKind: normKind,
     ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate, companyKey: companyKey,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, isMobile: isMobile, importKey: importKey,

@@ -14,7 +14,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261020g';
+var CODE_VERSION = '20261020i';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
@@ -29,12 +29,16 @@ var VEHICLE_HEADERS = ['手配業者', '運送業者', '車種', '車番'];
 var DRIVER_HEADERS = ['運送業者', '氏名', '携帯番号'];
 var HISTORY_HEADERS = ['日時', '種別', '操作', '変更前', '変更後', '契機'];
 var CHANGE_HEADERS = ['日時', '区分', 'ファイル名', '元の行', '変更前', '変更後'];
-var CHECK_FIELDS = ['手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '工事番号', '現場名'];
+var CHECK_FIELDS = ['手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '工事番号', '現場名', '追加変更'];
+// 取込一覧の任意の列(あれば読み書きする。無くても動く)。「追加変更」=中止/変更前/変更後、「備考」=アプリで入力したテキスト。
+var IMPORT_OPTIONAL = ['追加変更', '備考'];
+var INACTIVE_LABELS = ['変更前', '中止']; // これらの行は車両台数に数えない(行は消さない)
 
 var TEXT_COLS = ['着時間', '車種', '車番', '携帯番号', '工事番号'];
 var DATE_COLS = ['積日', '卸日'];
 var MAX_ROWS_PER_COMMIT = 60;
 var PAST_DEST_ROWS = 800;
+var DEFAULT_SENDERS = ['ナミツー', '大上']; // 情報シートに見出し「手配業者」の一覧が無いときの既定
 
 // ---------- 初期設定(1回だけ実行) ----------
 
@@ -107,6 +111,25 @@ function readProjects_() {
   return out;
 }
 
+/** 手配業者の候補。「情報」シートの見出し「手配業者」の下に、1行1社で書く(例: ナミツー / 大上)。無ければ既定。 */
+function readSenders_() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_INFO);
+  if (!sh || sh.getLastRow() < 1) return DEFAULT_SENDERS.slice();
+  var top = sh.getRange(1, 1, Math.min(sh.getLastRow(), 6), Math.max(sh.getLastColumn(), 1)).getValues();
+  for (var r = 0; r < top.length; r++) {
+    for (var c = 0; c < top[r].length; c++) {
+      if (String(top[r][c]).trim() !== '手配業者') continue;
+      var n = sh.getLastRow() - (r + 1), out = [];
+      if (n > 0) {
+        var vals = sh.getRange(r + 2, c + 1, n, 1).getValues();
+        for (var i = 0; i < vals.length; i++) { var v = String(vals[i][0]).trim(); if (!v) break; out.push(v); }
+      }
+      return out.length ? out : DEFAULT_SENDERS.slice();
+    }
+  }
+  return DEFAULT_SENDERS.slice();
+}
+
 // ---------- シート読み書き(見出し名ベース) ----------
 
 function sheet_(name) {
@@ -138,8 +161,8 @@ function cellStr_(v) {
   return String(v == null ? '' : v);
 }
 
-/** シートを {見出し: 値(文字列)} の配列にする。_row=シートの行番号。 */
-function readRows_(sh, headers, firstRow, lastRow) {
+/** シートを {見出し: 値(文字列)} の配列にする。_row=シートの行番号。optional の列は、あれば読む(無ければ空)。 */
+function readRows_(sh, headers, firstRow, lastRow, optional) {
   var map = headerMap_(sh, headers);
   var total = sh.getLastRow();
   var from = Math.max(firstRow || 2, 2), to = Math.min(lastRow || total, total);
@@ -155,6 +178,7 @@ function readRows_(sh, headers, firstRow, lastRow) {
       o[h] = s;
       if (s !== '') any = true;
     });
+    (optional || []).forEach(function (h) { o[h] = map[h] ? cellStr_(vals[i][map[h] - 1]) : ''; });
     if (any) out.push(o);
   }
   return out;
@@ -186,7 +210,7 @@ function logHistory_(kind, op, before, after, source) {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_HISTORY);
   if (!sh) return;
   function s(o) { return o ? Object.keys(o).filter(function (k) { return k !== '_row'; }).map(function (k) { return k + '=' + o[k]; }).join(' / ') : ''; }
-  sh.appendRow([new Date(), kind === 'vehicle' ? '車両' : '運転手', op, s(before), s(after), source || '手動']);
+  sh.appendRow([new Date(), kind === 'vehicle' ? '車両' : (kind === 'driver' ? '運転手' : '取込一覧'), op, s(before), s(after), source || '手動']);
   sh.getRange(sh.getLastRow(), 1).setNumberFormat('yyyy/MM/dd HH:mm:ss');
 }
 
@@ -227,14 +251,16 @@ function withLock_(fn) {
 
 function getInit_() {
   var imp = sheet_(SHEET_IMPORT);
-  var impRows = readRows_(imp, ['積日', '行先', '工事番号', '現場名', '車番']);
+  var impRows = readRows_(imp, ['積日', '行先', '工事番号', '現場名', '車番'], 2, null, ['追加変更']);
+  var activeRows = impRows.filter(function (r) { return INACTIVE_LABELS.indexOf(r.追加変更) < 0; });
   return {
     vehicles: readRows_(sheet_(SHEET_VEHICLE), VEHICLE_HEADERS),
     drivers: readRows_(sheet_(SHEET_DRIVER), DRIVER_HEADERS),
     projects: readProjects_(),
-    importKeys: impRows.map(function (r) { return { 積日: r.積日, 車番: r.車番 }; }),
+    importKeys: activeRows.map(function (r) { return { 積日: r.積日, 車番: r.車番 }; }), // 中止・変更前の行は、重複の判定に使わない
     pastDest: impRows.slice(-PAST_DEST_ROWS).map(function (r) { return { 行先: r.行先, 工事番号: r.工事番号, 現場名: r.現場名 }; }),
     version: CODE_VERSION,
+    senders: readSenders_(),
     model: getInfo_('Geminiモデル名'),
     keyOk: getInfo_('APIKEY') !== ''
   };
@@ -243,7 +269,7 @@ function getInit_() {
 function listImports_(limit) {
   var sh = sheet_(SHEET_IMPORT);
   var last = sh.getLastRow();
-  var rows = readRows_(sh, IMPORT_HEADERS, Math.max(2, last - limit + 1), last);
+  var rows = readRows_(sh, IMPORT_HEADERS, Math.max(2, last - limit + 1), last, IMPORT_OPTIONAL);
   return rows.reverse();
 }
 
@@ -253,8 +279,7 @@ var OCR_PROMPT_ = [
   'これは運送トラックの車番連絡FAX(配車連絡表)をスキャンしたものです。内容を次のJSONだけで返してください(前置き・説明は不要)。',
   '{"業者":"","FAX日付":"","区分":"","メモ":"","明細":[{"積日":"","卸日":"","行先":"","着時間":"","運送業者":"","車種":"","車番":"","氏名":"","携帯番号":"","取消線":false}]}',
   'ルール:',
-  '- 業者: このFAXを送ってきた会社(発信元。会社名・事業所名まで)。「御中」「様」が付いている側は宛先なので業者ではありません。',
-  '- 会社名の「㈱」「(株)」「㈲」「(有)」などの記号は、印字のとおり書き写す(「株」「有」だけに省略しない)。',
+  '- 業者: このFAXを送ってきた会社(発信元)。次の名前のうち、発信元に当たるものを、その名前だけで答える: {{senders}}。どれにも当たらないときだけ、発信元の会社名を書かれたとおりに書く(「御中」「様」が付いている側は宛先なので業者ではありません)。',
   '- FAX日付: FAXの日付(本文の日付、または余白の受信印の日付)をyyyy-mm-ddで。読めなければ空文字。',
   '- 区分: 「新規」「変更」「追加」「取消」のどれか。「再」「訂正」「変更」の印や文言があれば「変更」、「追加」「増車」なら「追加」、「取消」「キャンセル」なら「取消」。何も無ければ「新規」。',
   '- メモ: FAXに書かれた連絡の文言(例: 「変更すみません。宜しくお願い致します。」)。無ければ空文字。',
@@ -278,7 +303,7 @@ function ocr_(body) {
   if (['application/pdf', 'image/png', 'image/jpeg'].indexOf(mime) < 0) throw new Error('対応していない形式です(PDF・PNG・JPEGのみ): ' + mime);
   var today = Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd');
   var text = callGemini_([
-    { text: OCR_PROMPT_.replace('{{today}}', today) },
+    { text: OCR_PROMPT_.replace('{{today}}', today).replace('{{senders}}', readSenders_().join(' / ')) },
     { inline_data: { mime_type: mime, data: body.base64 } }
   ]);
   return { raw: parseJsonText_(text), model: getInfo_('Geminiモデル名') };
@@ -337,13 +362,14 @@ function commit_(body) {
   var opCount = 0;
   ops.forEach(function (op) { applyOp_(op, source); opCount++; });
   var now = new Date();
-  rows.forEach(function (r) { writeRow_(imp, IMPORT_HEADERS, null, importObj_(r, now, source)); });
+  rows.forEach(function (r) { writeRow_(imp, IMPORT_HEADERS, null, importObj_(r, now, source, '')); });
   return { added: rows.length, ops: opCount };
 }
 
 /** 画面の行({業者, 積日, ...})を、取込一覧の見出し名つきの値にする。 */
-function importObj_(r, now, source) {
+function importObj_(r, now, source, label) {
   return {
+    '追加変更': label || '', '備考': r.備考 || '',
     'タイムスタンプ': now, 'ファイル名': source,
     '工事番号': r.工事番号 || '', '現場名': r.現場名 || '',
     '手配業者': r.業者 || '', '業者': r.業者 || '',
@@ -364,18 +390,24 @@ function sameRecord_(cur, before) {
 
 function recText_(o, fields) { return fields.map(function (k) { return o[k]; }).filter(function (v) { return v; }).join(' '); }
 
-/** items: [{mode:'update'|'add'|'delete', row, before, data}]。取込一覧を差し替え・追加・削除し、変更履歴に残す。
+/** items: [{mode:'mark', row, label:'変更前'|'中止', before, note}, {mode:'add', data, label}]。
+ *  PDFで取り込んだ行は取込一覧に必ず残す: 行の削除・内容の上書きはしない。
+ *  mark = 元の行の「追加変更」を 変更前 / 中止 にする(車両台数に数えない行にする)。add = 新しい行を追加(label=変更後 など)。
  *  先に全件の「変更前の値」を検証してから書き込む(他の操作で変わっていたら、何も変えずに止める)。 */
 function applyChanges_(body) {
   var items = body.items || [];
   if (!items.length) throw new Error('反映する内容がありません。');
   if (items.length > MAX_ROWS_PER_COMMIT) throw new Error('一度に反映できるのは' + MAX_ROWS_PER_COMMIT + '件までです。');
   var imp = sheet_(SHEET_IMPORT);
+  var hasLabelCol = !!headerMap_(imp, [])['追加変更'];
   var source = body.filename || '';
   var current = {};
   items.forEach(function (it) {
-    if (it.mode !== 'update' && it.mode !== 'delete') return;
-    var cur = readRows_(imp, IMPORT_HEADERS, it.row, it.row)[0];
+    if (it.mode === 'add') return;
+    if (it.mode !== 'mark') throw new Error('不明な操作です(行の削除・上書きはできません): ' + it.mode);
+    if (INACTIVE_LABELS.indexOf(it.label) < 0) throw new Error('「追加変更」の値が不正です: ' + it.label);
+    if (!hasLabelCol) throw new Error('取込一覧の1行目に見出し「追加変更」がありません。');
+    var cur = readRows_(imp, IMPORT_HEADERS, it.row, it.row, IMPORT_OPTIONAL)[0];
     if (!cur) throw new Error('取込一覧の行(' + it.row + ')が見つかりません。画面を再読み込みしてください。');
     var bad = sameRecord_(cur, it.before);
     if (bad) throw new Error('取込一覧の行(' + it.row + ')が他の操作で変更されています(' + bad + ')。画面を再読み込みしてください。');
@@ -389,32 +421,22 @@ function applyChanges_(body) {
     chg.appendRow([now, kind, source, rowNo || '', before, after]);
     chg.getRange(chg.getLastRow(), 1).setNumberFormat('yyyy/MM/dd HH:mm:ss');
   }
-  var n = { update: 0, add: 0, remove: 0 };
-  // 差し替え(行番号は変わらない)
-  items.filter(function (it) { return it.mode === 'update'; }).forEach(function (it) {
-    var cur = current[it.row], obj = importObj_(it.data, now, source), diffs = [];
-    CHECK_FIELDS.forEach(function (h) {
-      var nv = h === '手配業者' ? (it.data.業者 || '') : (it.data[h] || '');
-      if (String(cur[h]) !== String(nv)) diffs.push(h + '=' + cur[h] + '→' + nv);
-    });
+  var n = { marked: 0, added: 0 };
+  // 元の行に印を付ける(行番号は変わらない)
+  items.filter(function (it) { return it.mode === 'mark'; }).forEach(function (it) {
+    var cur = current[it.row], obj = { '追加変更': it.label };
+    if (it.note) obj['備考'] = it.note;
     writeRow_(imp, IMPORT_HEADERS, it.row, obj);
-    log('変更', it.row, recText_(cur, ['積日', '行先', '運送業者', '車番', '氏名', '携帯番号']), diffs.join(' / '));
-    n.update++;
+    log(it.label === '中止' ? '中止' : '変更前', it.row, recText_(cur, ['積日', '行先', '運送業者', '車番', '氏名', '携帯番号']), '追加変更=' + it.label);
+    n.marked++;
   });
-  // 追加
+  // 新しい行を追加
   items.filter(function (it) { return it.mode === 'add'; }).forEach(function (it) {
-    var r = writeRow_(imp, IMPORT_HEADERS, null, importObj_(it.data, now, source));
-    log('追加', r, '', recText_({ 積日: it.data.積日, 行先: it.data.行先, 運送業者: it.data.運送業者, 車番: it.data.車番, 氏名: it.data.氏名, 携帯番号: it.data.携帯番号 }, ['積日', '行先', '運送業者', '車番', '氏名', '携帯番号']));
-    n.add++;
+    var r = writeRow_(imp, IMPORT_HEADERS, null, importObj_(it.data, now, source, it.label || ''));
+    log(it.label || '追加', r, '', recText_({ 積日: it.data.積日, 行先: it.data.行先, 運送業者: it.data.運送業者, 車番: it.data.車番, 氏名: it.data.氏名, 携帯番号: it.data.携帯番号 }, ['積日', '行先', '運送業者', '車番', '氏名', '携帯番号']));
+    n.added++;
   });
-  // 削除(下の行から。行番号がずれないように)
-  items.filter(function (it) { return it.mode === 'delete'; }).sort(function (a, b) { return b.row - a.row; }).forEach(function (it) {
-    var cur = current[it.row];
-    imp.deleteRow(it.row);
-    log('取消', it.row, recText_(cur, ['積日', '行先', '運送業者', '車番', '氏名', '携帯番号']), '(取込一覧から削除)');
-    n.remove++;
-  });
-  return { updated: n.update, added: n.add, removed: n.remove, ops: opCount };
+  return { marked: n.marked, added: n.added, ops: opCount };
 }
 
 function masterInfo_(kind) {
@@ -453,4 +475,34 @@ function applyOp_(op, source) {
 function masterSave_(body) {
   applyOp_({ kind: body.kind, mode: body.mode, row: body.row, before: body.before, data: body.data }, '手動(画面)');
   return { ok: true };
+}
+
+
+// ---------- 手配業者の表記をそろえる(Apps Scriptのエディタで、関数 normalizeSenders を1回だけ実行) ----------
+
+/** 「取込一覧」と「車両情報」の手配業者を、候補(情報シートの一覧。既定: ナミツー・大上)の名前にそろえる。
+ *  候補の名前を含む表記(例: 「(有)大上運送 明石事業所」→「大上」)だけを書き換える。どれにも当たらないものは変えない。 */
+function normalizeSenders() {
+  var list = readSenders_();
+  function canon(v) {
+    var t = String(v || '').normalize('NFKC').replace(/[\s\u3000]+/g, '');
+    for (var i = 0; i < list.length; i++) {
+      var c = String(list[i]).normalize('NFKC').replace(/[\s\u3000]+/g, '');
+      if (c && t.indexOf(c) >= 0) return list[i];
+    }
+    return null;
+  }
+  var changed = 0;
+  [[SHEET_IMPORT, IMPORT_HEADERS], [SHEET_VEHICLE, VEHICLE_HEADERS]].forEach(function (p) {
+    var sh = sheet_(p[0]), map = headerMap_(sh, p[1]);
+    var n = sh.getLastRow() - 1;
+    if (n < 1) return;
+    var rng = sh.getRange(2, map['手配業者'], n, 1), vals = rng.getValues();
+    vals.forEach(function (row, i) {
+      var to = canon(row[0]);
+      if (to && String(row[0]) !== to) { logHistory_(p[0] === SHEET_VEHICLE ? 'vehicle' : 'import', '手配業者を統一', { 行: i + 2, 手配業者: row[0] }, { 手配業者: to }, 'normalizeSenders'); row[0] = to; changed++; }
+    });
+    rng.setValues(vals);
+  });
+  return '手配業者を ' + changed + ' か所そろえました(候補: ' + list.join('・') + ')';
 }
