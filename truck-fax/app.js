@@ -10,6 +10,7 @@
   var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '追加変更', '備考'];
   var MASTER_COLS = { vehicle: ['手配業者', '運送業者', '車種', '車番'], driver: ['運送業者', '氏名', '携帯番号'] };
   var IMPORTS_LIMIT = 3000;
+  var MASTER_COL_W = 170;
   var MAX_BYTES = 10 * 1024 * 1024;
 
   var S = { senders: [], vehicles: [], drivers: [], projects: [], importKeyList: [], destMap: {}, model: '', keyOk: false, cards: [], tab: 'import',
@@ -672,7 +673,8 @@
     }
     var rows = masterRows(kind);
     var nd = kind === 'vehicle' ? Object.keys(dups.vehiclePlate).length : Object.keys(dups.driverName).length + Object.keys(dups.driverPhone).length;
-    host.appendChild(h('div', { class: 'tool' }, h('span', { class: 'sub', text: rows.length + '件' + (nd ? ' ・ 重複 ' + nd + ' 組(赤)。確認して、不要な行を削除するか修正してください。' : '') })));
+    var tblW = (cols.length + 1) * MASTER_COL_W + 'px'; // 全ての列を同じ幅(車番がおさまる幅)にそろえ、中央に置く
+    host.appendChild(h('div', { class: 'tool mastertbl', style: 'width:' + tblW }, h('span', { class: 'sub', text: rows.length + '件' + (nd ? ' ・ 重複 ' + nd + ' 組(赤)。確認して、不要な行を削除するか修正してください。' : '') })));
 
     var head = h('tr'); cols.forEach(function (k) { head.appendChild(h('th', { text: k })); }); head.appendChild(h('th', { text: '操作' }));
     var body = h('tbody');
@@ -708,7 +710,7 @@
       }
       body.appendChild(tr);
     });
-    host.appendChild(h('div', { class: 'scroll' }, h('table', { class: 't' }, h('thead', null, head), body)));
+    host.appendChild(h('div', { class: 'scroll mastertbl', style: 'width:' + tblW }, h('table', { class: 't master' }, h('thead', null, head), body)));
     if (!rows.length) host.appendChild(h('div', { class: 'empty', text: masterRows(kind).length ? '該当する行はありません。' : 'まだ登録がありません。FAXを取り込むと、確認のうえ自動で登録できます。' }));
   }
 
