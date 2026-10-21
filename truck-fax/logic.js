@@ -246,13 +246,7 @@
       if (list.length) {
         var d0 = list[0];
         if (list.length > 1) add('master-dup-driver', 'warn', '運転手情報に同じ氏名・運送業者が' + list.length + '件あります', '「運転手情報」画面で整理してください。', [OPT.ok]);
-        if (fmtType(row.車種) && !hasType(d0.車種, row.車種)) { // 既に登録された運転手が、まだ登録のない車種に乗った(複数の車種に乗る運転手): 車種に追加(自動)
-          idx.typeAdds = idx.typeAdds || {};
-          var merged = mergeTypes(d0.車種, idx.typeAdds[d0._row], row.車種);
-          idx.typeAdds[d0._row] = merged;
-          add('driver-type-add', 'info', 'この運転手の車種に追加します(' + row.氏名 + ')', '運転手情報の車種: ' + (d0.車種 || '(なし)') + ' → ' + merged, [OPT.addType, OPT.skipType], 'add');
-          f[f.length - 1].masterRow = d0._row; f[f.length - 1].masterData = d0; f[f.length - 1].mergedTypes = merged;
-        }
+        // 既に登録された運転手が別の車種の車に乗る場合は、車と運転手の組み合わせの追加として、記録のあとに自動で入る(車両運転手情報の1行=車と運転手の1組)
         if (phone && phoneDigits(d0.携帯番号) !== phone) {
           add('phone-diff', 'warn', '携帯番号が運転手情報と違います(' + row.氏名 + ')', '運転手情報: ' + d0.携帯番号 + ' / 今回: ' + row.携帯番号, [OPT.update, OPT.adopt, OPT.keep]);
           f[f.length - 1].masterRow = d0._row; f[f.length - 1].masterData = d0;
@@ -270,8 +264,8 @@
           if (sameName.length) {
             add('name-other-carrier', 'warn', '同じ氏名が別の運送業者で登録されています', '運転手情報: ' + who(sameName[0]) + '\n今回: 「' + row.運送業者 + ' ' + row.氏名 + '」', [OPT.newPerson, OPT.keep]);
           } else if (phone) {
-            // 車は車両情報にあるのに運転手が未登録のときは、氏名・携帯番号の読み間違いかもしれないので、人が選ぶまで記録させない
-            if (plateKnown) add('driver-new', 'warn', 'この車は登録済みですが、運転手は未登録です', row.運送業者 + ' ' + row.氏名 + '(' + row.携帯番号 + ')' + '\n' + '氏名・携帯番号の読み間違いがないか確認してください。', [OPT.register, OPT.skipReg]);
+            // 同じ車に別の運転手が乗ることがあるので、車が登録済みでも、新しい運転手は確認なしで自動登録する(車両運転手情報に、車と運転手の1組として追加)
+            if (plateKnown) add('driver-new', 'info', 'この車の、新しい運転手を登録します', row.運送業者 + ' ' + row.氏名 + '(' + row.携帯番号 + ')', [OPT.register, OPT.skipReg], 'register');
             else add('driver-new', 'info', 'この運転手は運転手情報に未登録です', row.運送業者 + ' ' + row.氏名 + '(' + row.携帯番号 + ')', [OPT.register, OPT.skipReg], 'register');
             addDriverIdx(idx, driverData(row));
           }
@@ -301,14 +295,14 @@
   function resolveRow(row, findings, decisions) {
     var out = Object.assign({}, row);
     out.車番 = fmtPlate(out.車番); out.氏名 = nameKey(out.氏名); out.携帯番号 = fmtPhone(out.携帯番号); out.車種 = fmtType(out.車種);
-    var ops = [], skip = false, blockers = [];
+    var ops = [], skip = false, blockers = [], noPair = false; // noPair: 「登録しない」「今回だけこの値」を選んだ行は、車両運転手情報に、車と運転手の組み合わせを追加しない
     findings.forEach(function (f) {
       var d = decisions && decisions[f.id] != null ? decisions[f.id] : f.defaultValue;
       if (f.level === 'error') { blockers.push(f.id); return; }
       if (d == null) { blockers.push(f.id); return; }
       var md = f.masterData;
       switch (f.id) {
-        case 'vehicle-new': if (d === 'register') ops.push({ kind: 'vehicle', mode: 'add', data: vehicleData(out) }); break;
+        case 'vehicle-new': if (d === 'register') ops.push({ kind: 'vehicle', mode: 'add', data: vehicleData(out) }); else if (d === 'skip') noPair = true; break;
         case 'vehicle-diff':
           if (d === 'update') ops.push({ kind: 'vehicle', mode: 'update', row: f.masterRow, before: pick(md, ['手配業者', '運送業者', '車種', '車番']), data: { 手配業者: out.業者 || md.手配業者, 運送業者: out.運送業者 || md.運送業者, 車種: fmtType(out.車種 || md.車種), 車番: out.車番 } });
           else if (d === 'adopt') { out.業者 = md.手配業者; out.運送業者 = md.運送業者; out.車種 = md.車種; }
@@ -316,22 +310,22 @@
         case 'phone-diff':
           if (d === 'update') ops.push({ kind: 'driver', mode: 'update', row: f.masterRow, before: pick(md, ['運送業者', '氏名', '携帯番号']), data: { 運送業者: md.運送業者, 氏名: md.氏名, 携帯番号: out.携帯番号 } });
           else if (d === 'adopt') out.携帯番号 = md.携帯番号;
-          break;
-        case 'driver-type-add':
-          if (d === 'add') ops.push({ kind: 'driver', mode: 'update', row: f.masterRow, before: pick(md, ['運送業者', '氏名', '携帯番号', '車種']), data: { 車種: f.mergedTypes } });
+          else if (d === 'keep') noPair = true;
           break;
         case 'phone-owner-diff':
           if (d === 'update') ops.push({ kind: 'driver', mode: 'update', row: f.masterRow, before: pick(md, ['運送業者', '氏名', '携帯番号']), data: Object.assign(driverData(out), { 車種: mergeTypes(md.車種, out.車種) }) });
           else if (d === 'adopt') { out.氏名 = md.氏名; out.運送業者 = md.運送業者; }
           else if (d === 'new') ops.push({ kind: 'driver', mode: 'add', data: driverData(out) });
+          else if (d === 'keep') noPair = true;
           break;
-        case 'name-other-carrier': if (d === 'new') ops.push({ kind: 'driver', mode: 'add', data: driverData(out) }); break;
-        case 'driver-new': if (d === 'register') ops.push({ kind: 'driver', mode: 'add', data: driverData(out) }); break;
+        case 'name-other-carrier': if (d === 'new') ops.push({ kind: 'driver', mode: 'add', data: driverData(out) }); else if (d === 'keep') noPair = true; break;
+        case 'driver-new': if (d === 'register') ops.push({ kind: 'driver', mode: 'add', data: driverData(out) }); else if (d === 'skip') noPair = true; break;
         case 'dup-import': if (d === 'skip') skip = true; break;
         default: break;
       }
     });
     out.車種 = fmtType(out.車種); // 車両情報・運転手情報の値に合わせた場合も、tにそろえて記録する
+    out.noPair = noPair;
     return { row: out, skip: skip, ops: ops, blockers: blockers };
   }
   function pick(o, keys) { var r = {}; keys.forEach(function (k) { r[k] = o[k] == null ? '' : o[k]; }); return r; }
@@ -540,6 +534,13 @@
       return (rankOf[ka] == null ? 2 : rankOf[ka]) - (rankOf[kb] == null ? 2 : rankOf[kb]) || cmpJa(ka, kb) || typeMin(a) - typeMin(b) || cmpJa(a.氏名, b.氏名);
     });
   }
+  // 車両・運転手情報の並び順: 手配業者(大上→ナミツー→その他)→運送業者→車種(4t→10t→15t→TR→その他)→車番→氏名
+  function sortPairs(list) {
+    return list.slice().sort(function (a, b) {
+      return senderRank(a.手配業者) - senderRank(b.手配業者) || cmpJa(companyKey(a.運送業者), companyKey(b.運送業者)) ||
+        typeRank(a.車種) - typeRank(b.車種) || cmpJa(a.車番, b.車番) || cmpJa(a.氏名, b.氏名);
+    });
+  }
   function sortVehicles(list) {
     return list.slice().sort(function (a, b) {
       return senderRank(a.手配業者) - senderRank(b.手配業者) || cmpJa(companyKey(a.運送業者), companyKey(b.運送業者)) ||
@@ -548,7 +549,7 @@
   }
 
   return {
-    alreadyImported: alreadyImported, fmtTypes: fmtTypes, mergeTypes: mergeTypes, typeList: typeList, dateKey: dateKey, sortDrivers: sortDrivers, sortVehicles: sortVehicles, typeRank: typeRank, senderRank: senderRank,
+    alreadyImported: alreadyImported, fmtTypes: fmtTypes, mergeTypes: mergeTypes, typeList: typeList, dateKey: dateKey, sortDrivers: sortDrivers, sortVehicles: sortVehicles, sortPairs: sortPairs, typeRank: typeRank, senderRank: senderRank,
     closingOf: closingOf, closingOfText: closingOfText, rowClosing: rowClosing, closingPeriod: closingPeriod, closingNeighbor: closingNeighbor, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
     fmtType: fmtType, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate, companyKey: companyKey,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,

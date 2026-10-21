@@ -8,19 +8,17 @@
   function gasUrl() { return window.__GAS_URL__ || GAS_API_URL; }
 
   var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '追加変更', '備考'];
-  var MASTER_COLS = { vehicle: ['手配業者', '運送業者', '車種', '車番'], driver: ['運送業者', '氏名', '携帯番号', '車種'] };
+  var PAIR_COLS = ['手配業者', '運送業者', '車種', '車番', '氏名', '携帯番号', '備考']; // 車両・運転手情報(シート「車両運転手情報」)。1行=車と運転手の1組
   var IMPORTS_LIMIT = 3000; // 絞り込みのために読み込む件数(表に出すのは最新100件まで)
   var IMPORTS_SHOW = 100;
   var VIEW_HEADERS = IMPORT_HEADERS.filter(function (k) { return k !== 'タイムスタンプ'; }); // 画面・Excelに出す列
   var INACTIVE = ['中止', '変更前'];
   var TABLE_HEADERS = VIEW_HEADERS.filter(function (k) { return k !== '工事番号'; }); // 取込一覧の表に出す列(工事番号は出さず、現場名=工事名を出す。Excelには両方入る)
   var CENTER_COLS = ['手配業者', '積日', '卸日', '着時間', '車種', '追加変更']; // 中央揃え(幅は中身に合わせて詰める)
-  var DRIVER_COLORS = ['#dff3e0', '#fff7cc', '#dbeafe', '#fde2e4', '#ede0f7', '#ffe8cc', '#d6f2f2', '#eceff1']; // 運転手の行を運送業者ごとに分ける薄い色
   var OTHER = 'その他'; // 工事に該当しないもの。工事番号・現場名の両方に「その他」と記録する
-  var MASTER_COL_W = 170;
   var MAX_BYTES = 10 * 1024 * 1024;
 
-  var S = { senders: [], vehicles: [], drivers: [], projects: [], importKeyList: [], destMap: {}, model: '', keyOk: false, cards: [], tab: 'import',
+  var S = { senders: [], vehicles: [], drivers: [], pairs: [], projects: [], importKeyList: [], destMap: {}, model: '', keyOk: false, cards: [], tab: 'import',
     imports: null, importsFy: null, importsCm: null, importsSite: 'all', editing: null };
   var seq = 0;
 
@@ -86,8 +84,9 @@
 
   async function loadInit(keepImports) {
     var d = await apiGet('init');
-    S.driverTypeCol = d.driverTypeCol === true; // 運転手シートに「車種」の列があるか(古いGASは返さない)
-    S.vehicles = d.vehicles || []; S.drivers = d.drivers || []; S.projects = d.projects || []; S.senders = d.senders || [];
+    S.pairs = d.pairs || []; // 車両運転手情報の全行(画面の表)
+    S.vehicles = d.vehicles || []; S.drivers = d.drivers || []; // 照合用(車番ごと・運転手ごとに1件)
+    S.projects = d.projects || []; S.senders = d.senders || [];
     S.importKeyList = (d.importKeys || []).map(function (r) { return L.importKey({ 積日: r.積日, 車番: r.車番 }); });
     S.destMap = L.buildDestMap(d.pastDest || []);
     if (!keepImports) { S.imports = null; S.importsP = null; }
@@ -95,31 +94,21 @@
   }
 
   // ---------- タブ ----------
-  function dupCount(kind) {
-    var d = L.findMasterDups(S.vehicles, S.drivers);
-    if (kind === 'vehicle') return Object.keys(d.vehiclePlate).length;
-    return Object.keys(d.driverName).length + Object.keys(d.driverPhone).length;
-  }
   function renderTabs() {
-    var labels = { import: 'PDF取込', imports: '取込一覧', vehicles: '車両情報', drivers: '運転手情報' };
-    var vd = dupCount('vehicle'), dd = dupCount('driver');
+    var labels = { import: 'PDF取込', imports: '取込一覧', pairs: '車両・運転手情報' };
     $('appname').textContent = '車番連絡　管理＿【' + labels[S.tab] + 'モード】'; // アプリ名の右に、押されているボタン名を出す
     document.querySelectorAll('#tabs button').forEach(function (b) {
-      var t = b.dataset.tab, extra = '';
-      if (t === 'vehicles' && vd) extra = '(重複' + vd + ')';
-      if (t === 'drivers' && dd) extra = '(重複' + dd + ')';
-      b.textContent = labels[t] + extra;
-      b.classList.toggle('on', t === S.tab);
+      b.textContent = labels[b.dataset.tab];
+      b.classList.toggle('on', b.dataset.tab === S.tab);
     });
   }
   function showTab(t) {
     S.tab = t;
-    document.querySelector('main').classList.toggle('wide', t === 'imports'); // 取込一覧は画面いっぱいに広げる
-    ['import', 'imports', 'vehicles', 'drivers'].forEach(function (x) { $('tab-' + x).hidden = x !== t; });
+    document.querySelector('main').classList.toggle('wide', t === 'imports' || t === 'pairs'); // 取込一覧・車両・運転手情報は画面いっぱいに広げる
+    ['import', 'imports', 'pairs'].forEach(function (x) { $('tab-' + x).hidden = x !== t; });
     renderTabs();
     if (t === 'imports') renderImports();
-    if (t === 'vehicles') renderMaster('vehicle');
-    if (t === 'drivers') renderMaster('driver');
+    if (t === 'pairs') renderPairs();
   }
 
   // ---------- 取込(PDF → 内容抽出 → 確認の表 → 記録) ----------
@@ -414,6 +403,15 @@
     return function () { if (dlg.open) dlg.close(); dlg.remove(); };
   }
 
+  /** 記録のあとの「車と運転手の組み合わせ」の追加の結果を、記録完了のメッセージに足す文 */
+  function pairText(out) {
+    var p = out && out.pairs;
+    if (!p) return '';
+    if (!p.ok) return ' ※車両・運転手情報への組み合わせの追加に失敗しました(取込一覧には記録済み): ' + p.error;
+    var n = (p.added || 0) + (p.filled || 0);
+    return '(車両・運転手情報: ' + (n ? '車と運転手の組み合わせを' + n + '件追加' : '追加なし') + ')';
+  }
+
   async function commitCard(card) {
     var close = busyDialog('データ記録中');
     try { await commitCardBody(card); } finally { close(); }
@@ -422,15 +420,14 @@
     var rs = results(card);
     var keep = rs.filter(function (r) { return !r.skip; });
     var ops = L.mergeOps(keep.map(function (r) { return r.ops; }));
-    var rows = keep.map(function (r) { var o = {}; L.ROW_FIELDS.forEach(function (k) { o[k] = r.row[k] || ''; }); return o; });
+    var rows = keep.map(function (r) { var o = {}; L.ROW_FIELDS.forEach(function (k) { o[k] = r.row[k] || ''; }); o.noPair = !!r.row.noPair; return o; }); // noPair=「登録しない」「今回だけこの値」を選んだ行(車両・運転手情報に組み合わせを追加しない)
     card.busy = true; renderFoot(card);
     try {
       var body = { filename: card.name, rows: rows, ops: ops };
       if (card.b64) { body.fileBase64 = card.b64; body.fileMime = card.mime; } // 原本をDriveに保存し、取込一覧のファイルURLに入れる
       var out = await apiPost('commit', body, 180000);
-      var cnt = function (kind, mode) { return ops.filter(function (o) { return o.kind === kind && (mode === 'add' ? o.mode === 'add' : o.mode !== 'add'); }).length; };
       card.status = 'saved';
-      card.msg = rows.length + '件を取込一覧に記録しました(車両情報: 新規' + cnt('vehicle', 'add') + '件・更新' + cnt('vehicle', 'upd') + '件 / 運転手情報: 新規' + cnt('driver', 'add') + '件・更新' + cnt('driver', 'upd') + '件)。' + (out && out.fileWarn ? ' ※原本はDriveに保存できませんでした: ' + out.fileWarn : '');
+      card.msg = rows.length + '件を取込一覧に記録しました' + pairText(out) + '。' + (out && out.fileWarn ? ' ※原本はDriveに保存できませんでした: ' + out.fileWarn : '');
       await loadInit();
       refreshReadyCards();
     } catch (e) { card.busy = false; showBanner('記録に失敗しました: ' + e.message); renderFoot(card); return; }
@@ -632,7 +629,7 @@
         } else items.push({ mode: 'mark', label: '中止', row: rec._row, before: L.recFields(rec), note: it.note || '' });
         return;
       }
-      var data = {}; L.ROW_FIELDS.forEach(function (k) { data[k] = r.res.row[k] || ''; });
+      var data = {}; L.ROW_FIELDS.forEach(function (k) { data[k] = r.res.row[k] || ''; }); data.noPair = !!r.res.row.noPair;
       opsList.push(r.res.ops);
       if (it.type === 'update' && it.action === 'apply') { // 元の記録は「変更前」として残し、今回の内容を「変更後」の行として追加する
         items.push({ mode: 'mark', label: '変更前', row: rec._row, before: L.recFields(rec) });
@@ -646,7 +643,7 @@
       if (card.b64) { cbody.fileBase64 = card.b64; cbody.fileMime = card.mime; }
       var out = await apiPost('applyChanges', cbody, 180000);
       card.status = 'saved';
-      card.msg = '取込一覧に反映しました(行を追加' + out.added + '件・「変更前」「中止」の印' + out.marked + '件)。取り込んだ行は、取込一覧に残っています。' + (out.fileWarn ? ' ※原本はDriveに保存できませんでした: ' + out.fileWarn : '');
+      card.msg = '取込一覧に反映しました(行を追加' + out.added + '件・「変更前」「中止」の印' + out.marked + '件)。取り込んだ行は、取込一覧に残っています。' + pairText(out) + (out.fileWarn ? ' ※原本はDriveに保存できませんでした: ' + out.fileWarn : '');
       await loadInit();
       refreshReadyCards();
     } catch (e) { card.busy = false; showBanner('反映に失敗しました: ' + e.message); renderFoot(card); return; }
@@ -976,30 +973,27 @@
       .catch(function (e) { if (dlg.isConnected) info.textContent = '読み込めませんでした: ' + e.message; });
   }
 
-  // ---------- 車両情報・運転手情報の表と編集 ----------
-  function masterRows(kind) { return kind === 'vehicle' ? S.vehicles : S.drivers; }
-
-  function normMaster(kind, d) {
+  // ---------- 車両・運転手情報の表と編集(シート「車両運転手情報」。1行=車と運転手の1組) ----------
+  function normPair(d) {
     var o = {};
-    MASTER_COLS[kind].forEach(function (k) { o[k] = String(d[k] == null ? '' : d[k]).trim(); });
-    if (kind === 'vehicle') { o.車番 = L.fmtPlate(o.車番); o.車種 = L.fmtType(o.車種); }
-    else { o.氏名 = L.nameKey(o.氏名); o.携帯番号 = L.fmtPhone(o.携帯番号); o.車種 = L.fmtTypes(o.車種); } // 運転手の車種は「4t/10t/15t」の形にそろえる
+    PAIR_COLS.forEach(function (k) { o[k] = String(d[k] == null ? '' : d[k]).trim(); });
+    o.車番 = L.fmtPlate(o.車番); o.車種 = L.fmtType(o.車種); o.氏名 = L.nameKey(o.氏名); o.携帯番号 = L.fmtPhone(o.携帯番号);
     return o;
   }
-  function dupMessage(kind, d, selfRow) {
-    var others = masterRows(kind).filter(function (r) { return r._row !== selfRow; });
-    if (kind === 'vehicle') {
-      return others.some(function (r) { return L.plateKey(r.車番) === L.plateKey(d.車番); }) ? '同じ車番が既に登録されています。' : '';
-    }
-    var k = L.companyKey(d.運送業者) + '|' + L.nameKey(d.氏名), p = L.phoneDigits(d.携帯番号);
-    if (others.some(function (r) { return L.companyKey(r.運送業者) + '|' + L.nameKey(r.氏名) === k; })) return '同じ運送業者・氏名が既に登録されています。';
-    if (p && others.some(function (r) { return L.phoneDigits(r.携帯番号) === p; })) return '同じ携帯番号が別の人に登録されています。';
-    return '';
+  /** 編集した行が、他の行と「同じ車・同じ運転手」の重複になるときの注意文(無ければ '') */
+  function pairDupMessage(d, selfRow) {
+    var p = L.phoneDigits(d.携帯番号), n = L.nameKey(d.氏名);
+    var hit = S.pairs.some(function (r) {
+      if (r._row === selfRow || L.plateKey(r.車番) !== L.plateKey(d.車番)) return false;
+      var rp = L.phoneDigits(r.携帯番号);
+      return p && rp ? p === rp : (L.nameKey(r.氏名) === n);
+    });
+    return hit ? '同じ車番・同じ運転手の行が、既にあります。' : '';
   }
-  async function saveMaster(kind, mode, row, before, data) {
+  async function savePair(mode, row, before, data) {
     try {
-      await apiPost('masterSave', { kind: kind, mode: mode, row: row, before: before, data: data });
-      S.editing = null; await loadInit(); renderMaster(kind); showBanner('');
+      await apiPost('masterSave', { kind: 'pair', mode: mode, row: row, before: before, data: data });
+      S.editing = null; await loadInit(); renderPairs(); showBanner('');
     } catch (e) { showBanner('保存に失敗しました: ' + e.message); }
   }
 
@@ -1027,70 +1021,46 @@
     });
   }
 
-  function renderMaster(kind) {
-    var host = $(kind === 'vehicle' ? 'tab-vehicles' : 'tab-drivers');
+  function renderPairs() {
+    var host = $('tab-pairs');
     host.textContent = '';
-    var cols = MASTER_COLS[kind];
-    var dups = L.findMasterDups(S.vehicles, S.drivers);
-    function isDup(r, k) {
-      if (kind === 'vehicle') return k === '車番' && !!dups.vehiclePlate[L.plateKey(r.車番)];
-      if (k === '氏名' || k === '運送業者') return !!dups.driverName[L.companyKey(r.運送業者) + '|' + L.nameKey(r.氏名)];
-      return k === '携帯番号' && !!dups.driverPhone[L.phoneDigits(r.携帯番号)];
-    }
-    var rows = kind === 'vehicle' ? L.sortVehicles(masterRows(kind)) : L.sortDrivers(masterRows(kind), S.vehicles); // 車両情報は手配業者→運送業者→車種、運転手情報は運送業者→車種→氏名の順に並べて表示
-    var nd = kind === 'vehicle' ? Object.keys(dups.vehiclePlate).length : Object.keys(dups.driverName).length + Object.keys(dups.driverPhone).length;
-    if (kind === 'driver' && !S.driverTypeCol) host.appendChild(h('div', { class: 'banner', style: 'margin-bottom:10px' }, '運転手の「車種」を保存するには、GAS(Code.gs)を最新版に貼り替えて、関数 setupSheets を1回実行してください(シートに「車種」の列が追加されます)。'));
-    var tblW = (cols.length + 1) * MASTER_COL_W + 'px'; // 全ての列を同じ幅(車番がおさまる幅)にそろえ、中央に置く
-    host.appendChild(h('div', { class: 'tool mastertbl', style: 'width:' + tblW }, h('span', { class: 'sub', text: rows.length + '件' + (nd ? ' ・ 重複 ' + nd + ' 組(赤)。確認して、不要な行を削除するか修正してください。' : '') }), h('span', { class: 'spacer' }),
+    var cols = PAIR_COLS;
+    var rows = L.sortPairs(S.pairs); // 手配業者(大上→ナミツー→その他)→運送業者→車種(4t→10t→15t→TR→その他)→車番→氏名の順(表示だけで、シートの行順は変えない)
+    host.appendChild(h('div', { class: 'tool' }, h('span', { class: 'sub', text: rows.length + '件(1行=車と運転手の1組。同じ車に別の運転手、同じ運転手が別の車に乗る場合は、別の行)' }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn sm excel', type: 'button', text: 'Excelでダウンロード', onclick: function () {
-        var t = todayIso().replace(/-/g, '');
-        TruckXlsx.download((kind === 'vehicle' ? '車両情報_' : '運転手情報_') + t + '.xlsx', kind === 'vehicle' ? '車両情報' : '運転手情報', cols, rows.map(function (r) { return cols.map(function (k) { return r[k] || ''; }); }));
+        TruckXlsx.download('車両運転手情報_' + todayIso().replace(/-/g, '') + '.xlsx', '車両運転手情報', cols, rows.map(function (r) { return cols.map(function (k) { return r[k] || ''; }); }));
       } })));
-
     var head = h('tr'); cols.forEach(function (k) { head.appendChild(h('th', { text: k })); }); head.appendChild(h('th', { text: '操作' }));
     var body = h('tbody');
-
-    // 行の色: 車両情報は手配業者(大上=薄い緑・ナミツー=薄い黄)、運転手は運送業者ごとに色分け
-    var companies = {};
-    if (kind === 'driver') Array.from(new Set(rows.map(function (r) { return L.companyKey(r.運送業者); }))).forEach(function (k, i) { companies[k] = DRIVER_COLORS[i % DRIVER_COLORS.length]; }); // 上から順に、運送業者ごとに色が変わっていく
-    function rowColor(r) {
-      if (kind === 'driver') return companies[L.companyKey(r.運送業者)] || '';
-      var rk = L.senderRank(r.手配業者);
-      return rk === 0 ? '#dff3e0' : (rk === 1 ? '#fff7cc' : '');
-    }
+    function rowColor(r) { var rk = L.senderRank(r.手配業者); return rk === 0 ? '#dff3e0' : (rk === 1 ? '#fff7cc' : ''); } // 行の色: 手配業者(大上=薄い緑・ナミツー=薄い黄)
     rows.forEach(function (r) {
-      var editing = S.editing && S.editing.kind === kind && S.editing.row === r._row;
+      var editing = S.editing && S.editing.kind === 'pair' && S.editing.row === r._row;
       var tr = h('tr', { style: rowColor(r) ? 'background:' + rowColor(r) : null });
+      function beforeOf() { var before = {}; cols.forEach(function (k) { before[k] = r[k] || ''; }); return before; }
       if (editing) {
         var inputs = {};
         cols.forEach(function (k) { inputs[k] = h('input', { value: r[k] || '', 'aria-label': k }); tr.appendChild(h('td', null, inputs[k])); });
         tr.appendChild(h('td', { class: 'nowrap' },
-          h('button', { class: 'btn sm primary', type: 'button', text: '保存', onclick: function () {
-            var d = normMaster(kind, Object.fromEntries(cols.map(function (k) { return [k, inputs[k].value]; })));
-            var need = kind === 'vehicle' ? d.車番 : (d.氏名 && d.運送業者);
-            if (!need) { showBanner('必須項目が空です。'); return; }
-            var dm = dupMessage(kind, d, r._row);
-            if (dm && !window.confirm(dm + '\nそれでも保存しますか?')) return;
-            var before = {}; cols.forEach(function (k) { before[k] = r[k] || ''; });
-            saveMaster(kind, 'update', r._row, before, d);
+          h('button', { class: 'btn sm primary', type: 'button', text: '保存', onclick: async function () {
+            var d = normPair(Object.fromEntries(cols.map(function (k) { return [k, inputs[k].value]; })));
+            if (!d.車番 && !d.氏名 && !d.携帯番号) { showBanner('車番か、氏名・携帯番号のどちらかは必要です。'); return; }
+            var dm = pairDupMessage(d, r._row);
+            if (dm && !(await confirmDialog(dm, 'それでも保存しますか?', '保存する'))) return;
+            savePair('update', r._row, beforeOf(), d);
           } }), ' ',
-          h('button', { class: 'btn sm', type: 'button', text: '取消', onclick: function () { S.editing = null; renderMaster(kind); } })));
+          h('button', { class: 'btn sm', type: 'button', text: '取消', onclick: function () { S.editing = null; renderPairs(); } })));
       } else {
-        cols.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (isDup(r, k) ? ' dup' : ''), text: r[k] || '' })); });
+        cols.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: r[k] || '' })); });
         tr.appendChild(h('td', { class: 'nowrap' },
-          h('button', { class: 'btn sm edit', type: 'button', text: '編集', onclick: function () { S.editing = { kind: kind, row: r._row }; renderMaster(kind); } }), ' ',
+          h('button', { class: 'btn sm edit', type: 'button', text: '編集', onclick: function () { S.editing = { kind: 'pair', row: r._row }; renderPairs(); } }), ' ',
           h('button', { class: 'btn sm del', type: 'button', text: '削除', onclick: function () {
-            confirmDialog('この行を削除しますか?', cols.map(function (k) { return r[k]; }).join(' / '), '削除する').then(function (yes) {
-              if (!yes) return;
-              var before = {}; cols.forEach(function (k) { before[k] = r[k] || ''; });
-              saveMaster(kind, 'delete', r._row, before, null);
-            });
+            confirmDialog('この行を削除しますか?', cols.map(function (k) { return r[k]; }).filter(Boolean).join(' / '), '削除する').then(function (yes) { if (yes) savePair('delete', r._row, beforeOf(), null); });
           } })));
       }
       body.appendChild(tr);
     });
-    host.appendChild(h('div', { class: 'scroll mastertbl', style: 'width:' + tblW }, h('table', { class: 't master' }, h('thead', null, head), body)));
-    if (!rows.length) host.appendChild(h('div', { class: 'empty', text: masterRows(kind).length ? '該当する行はありません。' : 'まだ登録がありません。FAXを取り込むと、確認のうえ自動で登録できます。' }));
+    host.appendChild(h('div', { class: 'scroll' }, h('table', { class: 't pairs' }, h('thead', null, head), body)));
+    if (!rows.length) host.appendChild(h('div', { class: 'empty', text: 'まだ登録がありません。FAXを取り込むと、車と運転手の組み合わせが自動で登録されます。' }));
   }
 
   // ---------- 起動 ----------
@@ -1114,7 +1084,7 @@
     document.querySelectorAll('#tabs button').forEach(function (b) { b.addEventListener('click', function () { showTab(b.dataset.tab); }); });
     wireDrop();
     if (!gasUrl()) {
-      ['import', 'imports', 'vehicles', 'drivers'].forEach(function (x) { $('tab-' + x).hidden = true; });
+      ['import', 'imports', 'pairs'].forEach(function (x) { $('tab-' + x).hidden = true; });
       $('tabs').hidden = true; $('setup').hidden = false; return;
     }
     // 起動時は、スプレッドシートのデータを読み終わるまで、ポップアップとデータバーを出して他の操作を止める。取込一覧は、初期データと同時に先読みする

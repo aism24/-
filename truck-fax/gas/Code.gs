@@ -3,8 +3,9 @@
  *
  * シート:
  *   取込一覧 … FAX1台=1行の記録(列は見出し名で読み書きする。列の追加・並べ替えに強い)
- *   車両情報 … 手配業者 / 運送業者 / 車種 / 車番
- *   運転手携帯番号 … 運送業者 / 氏名 / 携帯番号
+ *   車両運転手情報 … 手配業者 / 運送業者 / 車種 / 車番 / 氏名 / 携帯番号 / 備考。1行=車と運転手の1組(同じ車に別の運転手、同じ運転手が別の車は、別の行)。
+ *                  車番が空欄の行=車の組み合わせが無い運転手、氏名・携帯番号が空欄の行=運転手の組み合わせが無い車。
+ *   (旧)車両情報・運転手携帯番号 … 2026-10-22に「車両運転手情報」へ統合。移行用の関数(previewMergedSheet・createMergedSheet)だけが読む
  *   情報 … A列=項目名、B列=値。「Geminiモデル名」「タイムゾーン」「APIKEY」。
  *          工事番号と工事名のリスト(見出し「工事番号」「工事名」の列)も、この見出しを探して読む。
  *
@@ -13,7 +14,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261022a';
+var CODE_VERSION = '20261022b';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_VEHICLE = '車両情報';
@@ -41,8 +42,7 @@ var DEFAULT_SENDERS = ['ナミツー', '大上']; // 情報シートに見出し
 function setupSheets() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   ensureSheet_(ss, SHEET_IMPORT, IMPORT_HEADERS);
-  ensureSheet_(ss, SHEET_VEHICLE, VEHICLE_HEADERS);
-  ensureOptionalCols_(ensureSheet_(ss, SHEET_DRIVER, DRIVER_HEADERS), DRIVER_OPTIONAL);
+  ensureSheet_(ss, SHEET_MERGED, MERGED_HEADERS);
   ensureOptionalCols_(ss.getSheetByName(SHEET_IMPORT), ['ファイルURL']);
   faxFolder_(true); // 原本の保存先フォルダ(初めて実行するとき、Driveの権限の確認が出る)
   var info = ss.getSheetByName(SHEET_INFO) || ss.insertSheet(SHEET_INFO);
@@ -343,11 +343,11 @@ function getInit_() {
   var imp = readAll_(SHEET_IMPORT, ['積日', '行先', '工事番号', '現場名', '車番'], ['追加変更']);
   var impRows = imp.rows;
   var activeRows = impRows.filter(function (r) { return INACTIVE_LABELS.indexOf(r.追加変更) < 0; });
-  var drv = readAll_(SHEET_DRIVER, DRIVER_HEADERS, DRIVER_OPTIONAL);
+  var pairs = readAll_(SHEET_MERGED, MERGED_HEADERS).rows;
   return {
-    vehicles: readAll_(SHEET_VEHICLE, VEHICLE_HEADERS).rows,
-    drivers: drv.rows,
-    driverTypeCol: !!drv.map['車種'],
+    pairs: pairs, // 車両運転手情報の全行(画面の表)
+    vehicles: pairsToVehicles_(pairs), // 照合用: 車番ごとに1件(同じ車に複数の運転手がいても1件)
+    drivers: pairsToDrivers_(pairs), // 照合用: 運転手ごとに1件(複数の車に乗っても1件)
     projects: readProjects_(),
     importKeys: activeRows.map(function (r) { return { 積日: r.積日, 車番: r.車番 }; }), // 中止・変更前の行は、重複の判定に使わない
     pastDest: impRows.slice(-PAST_DEST_ROWS).map(function (r) { return { 行先: r.行先, 工事番号: r.工事番号, 現場名: r.現場名 }; }),
@@ -457,7 +457,8 @@ function commit_(body) {
   var now = new Date(), fileUrl = '', fileWarn = '';
   try { fileUrl = saveFax_(body, now); } catch (ex) { fileWarn = ex.message; } // 原本の保存に失敗しても、記録は止めない
   rows.forEach(function (r) { writeRow_(imp, IMPORT_HEADERS, null, importObj_(r, now, source, '', fileUrl)); });
-  return { added: rows.length, ops: opCount, fileUrl: fileUrl, fileWarn: fileWarn };
+  var pairInfo = safePairs_(rows);
+  return { added: rows.length, ops: opCount, fileUrl: fileUrl, fileWarn: fileWarn, pairs: pairInfo };
 }
 
 /** 画面の行({業者, 積日, ...})を、取込一覧の見出し名つきの値にする。 */
@@ -542,38 +543,151 @@ function applyChanges_(body) {
     writeRow_(imp, IMPORT_HEADERS, null, importObj_(it.data, now, source, it.label || '', fileUrl));
     n.added++;
   });
-  return { marked: n.marked, added: n.added, ops: opCount, fileUrl: fileUrl, fileWarn: fileWarn };
+  var pairInfo = safePairs_(items.filter(function (it) { return it.mode === 'add' && INACTIVE_LABELS.indexOf(it.label) < 0; }).map(function (it) { return it.data; })); // 「中止」の行は、組み合わせを追加しない
+  return { marked: n.marked, added: n.added, ops: opCount, fileUrl: fileUrl, fileWarn: fileWarn, pairs: pairInfo };
 }
 
-function masterInfo_(kind) {
-  if (kind === 'vehicle') return { sheet: sheet_(SHEET_VEHICLE), headers: VEHICLE_HEADERS, optional: [] };
-  if (kind === 'driver') return { sheet: sheet_(SHEET_DRIVER), headers: DRIVER_HEADERS, optional: DRIVER_OPTIONAL };
+// ---------- 車両運転手情報(車と運転手の組み合わせ)の読み書き ----------
+// 画面の照合(logic.js)は、「車両」と「運転手」の2つの一覧を前提にしている。そのため、車両運転手情報の行から、車番ごと・運転手ごとに1件の一覧を作って返す(pairsToVehicles_ / pairsToDrivers_)。
+// 車・運転手を登録・更新する操作(op: vehicle / driver)は、車両運転手情報の行に対する操作に読み替える(applyOp_)。FAXの1行ごとの「車と運転手の組み合わせ」は、記録のあとで ensurePairs_ が追加する。
+
+/** 運転手の同一判定: 両方に携帯番号があれば番号で、無ければ氏名(運送業者の書き方の違いは同じ会社とみなす) */
+function sameDriver_(a, b) {
+  var pa = mgPhone_(a.携帯番号), pb = mgPhone_(b.携帯番号);
+  if (pa && pb) return pa === pb;
+  var na = mgCompact_(a.氏名), nb = mgCompact_(b.氏名);
+  if (!na || !nb || na !== nb) return false;
+  var ca = mgCompanyKey_(a.運送業者), cb = mgCompanyKey_(b.運送業者);
+  return !ca || !cb || ca === cb || ca.indexOf(cb) >= 0 || cb.indexOf(ca) >= 0;
+}
+function hasDriver_(r) { return !!(mgCompact_(r.氏名) || mgPhone_(r.携帯番号)); }
+
+function pairsToVehicles_(pairs) {
+  var seen = {}, out = [];
+  pairs.forEach(function (r) {
+    var k = mgPlateKey_(r.車番);
+    if (!k || seen[k]) return;
+    seen[k] = true;
+    out.push({ _row: r._row, 手配業者: r.手配業者, 運送業者: r.運送業者, 車種: r.車種, 車番: r.車番 });
+  });
+  return out;
+}
+function pairsToDrivers_(pairs) {
+  var out = [];
+  pairs.forEach(function (r) {
+    if (!hasDriver_(r)) return;
+    for (var i = 0; i < out.length; i++) if (sameDriver_(out[i], r)) return; // 運転手の代表の行は、最初の行(更新の照合に使う)
+    out.push({ _row: r._row, 運送業者: r.運送業者, 氏名: r.氏名, 携帯番号: r.携帯番号, 車種: '' });
+  });
+  return out;
+}
+
+var PAIR_VEHICLE_FIELDS = ['手配業者', '運送業者', '車種', '車番'];
+var PAIR_DRIVER_FIELDS = ['運送業者', '氏名', '携帯番号'];
+
+function mergedRowsNow_() { return readAll_(SHEET_MERGED, MERGED_HEADERS).rows; }
+function mergedWrite_(rowNo, obj) { return writeRow_(sheet_(SHEET_MERGED), MERGED_HEADERS, rowNo, obj); }
+
+/** 変更前の値との照合(他の人が先に変えていたら止める) */
+function mergedCheckBefore_(now, before, fields, label) {
+  fields.forEach(function (f) {
+    if (!Object.prototype.hasOwnProperty.call(before || {}, f)) return;
+    if (String(now[f]) !== String(before[f] == null ? '' : before[f])) throw new Error(label + 'が他の操作で変更されています(' + f + ')。画面を再読み込みしてください。');
+  });
+}
+function mergedRowAt_(rowNo, label) {
+  var now = readRows_(sheet_(SHEET_MERGED), MERGED_HEADERS, rowNo, rowNo)[0];
+  if (!now) throw new Error(label + 'の行(' + rowNo + ')が見つかりません。画面を再読み込みしてください。');
+  return now;
+}
+function mergedDefaults_() { var o = {}; MERGED_HEADERS.forEach(function (h) { o[h] = ''; }); return o; }
+
+/** op: {kind:'vehicle'|'driver'|'pair', mode:'add'|'update'|'delete', row, before, data}
+ *  vehicle/driver(FAX取込の自動登録・食い違いの更新): 車・運転手を、車両運転手情報の行に読み替える。
+ *  pair(「車両・運転手情報」の表の編集・削除): 行そのものを操作する。 */
+function applyOp_(op) {
+  var kind = op.kind, mode = op.mode;
+  if (kind === 'pair') {
+    var now = mergedRowAt_(op.row, '車両・運転手情報');
+    if (mode === 'update') { mergedCheckBefore_(now, op.before, MERGED_HEADERS, '車両・運転手情報'); mergedWrite_(op.row, op.data); return; }
+    if (mode === 'delete') { mergedCheckBefore_(now, op.before, MERGED_HEADERS, '車両・運転手情報'); sheet_(SHEET_MERGED).deleteRow(op.row); return; }
+    throw new Error('不明な操作: ' + mode);
+  }
+  if (kind === 'vehicle') {
+    if (mode === 'add') { // 車だけの行(運転手は、記録のあとの組み合わせの追加で入る)
+      var v = mergedDefaults_(); PAIR_VEHICLE_FIELDS.forEach(function (f) { v[f] = op.data[f] || ''; });
+      mergedWrite_(null, v); return;
+    }
+    if (mode === 'update') { // その車番のすべての行(別の運転手の行を含む)を更新する
+      var cur = mergedRowAt_(op.row, '車両');
+      mergedCheckBefore_(cur, op.before, PAIR_VEHICLE_FIELDS, '車両');
+      var key = mgPlateKey_(cur.車番);
+      mergedRowsNow_().forEach(function (r) { if (mgPlateKey_(r.車番) === key) mergedWrite_(r._row, pick_(op.data, PAIR_VEHICLE_FIELDS)); });
+      return;
+    }
+    throw new Error('不明な操作: ' + mode);
+  }
+  if (kind === 'driver') {
+    if (mode === 'add') { // 運転手だけの行(車は、記録のあとの組み合わせの追加で入る)
+      var d = mergedDefaults_(); PAIR_DRIVER_FIELDS.forEach(function (f) { d[f] = op.data[f] || ''; });
+      mergedWrite_(null, d); return;
+    }
+    if (mode === 'update') { // その運転手のすべての行(複数の車に乗る行を含む)を更新する。運転手の「車種」は、車の側の列なので、ここでは扱わない
+      var rep = mergedRowAt_(op.row, '運転手');
+      mergedCheckBefore_(rep, op.before, PAIR_DRIVER_FIELDS, '運転手');
+      mergedRowsNow_().forEach(function (r) { if (sameDriver_(r, rep)) mergedWrite_(r._row, pick_(op.data, PAIR_DRIVER_FIELDS)); });
+      return;
+    }
+    throw new Error('不明な操作: ' + mode);
+  }
   throw new Error('不明な種別: ' + kind);
 }
+function pick_(obj, keys) { var o = {}; keys.forEach(function (k) { if (obj && Object.prototype.hasOwnProperty.call(obj, k)) o[k] = obj[k]; }); return o; }
 
-/** op: {kind, mode:'add'|'update'|'delete', row, before, data} */
-function applyOp_(op) {
-  var mi = masterInfo_(op.kind);
-  var sh = mi.sheet, headers = mi.headers;
-  if (op.mode === 'add') {
-    writeRow_(sh, headers, null, op.data);
-    return;
-  }
-  var now = readRows_(sh, headers, op.row, op.row, mi.optional)[0];
-  if (!now) throw new Error((op.kind === 'vehicle' ? '車両情報' : '運転手情報') + 'の行(' + op.row + ')が見つかりません。画面を再読み込みしてください。');
-  headers.concat(mi.optional).forEach(function (h) {
-    if (mi.optional.indexOf(h) >= 0 && !Object.prototype.hasOwnProperty.call(op.before || {}, h)) return; // 任意の列は、変更前の値が渡されたときだけ照合する
-    if (String(now[h]) !== String((op.before || {})[h] == null ? '' : op.before[h])) {
-      throw new Error((op.kind === 'vehicle' ? '車両情報' : '運転手情報') + 'が他の操作で変更されています(' + h + ')。画面を再読み込みしてください。');
+/** 取込一覧への記録は済んでいるので、組み合わせの追加に失敗しても、記録は取り消さない(失敗は結果に入れて、画面で知らせる) */
+function safePairs_(rowsData) {
+  try { var r = ensurePairs_(rowsData); r.ok = true; return r; }
+  catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+}
+
+/** 記録した行(取込一覧に追加した行)ごとに、「車と運転手の組み合わせ」が車両運転手情報に無ければ追加する。
+ *  行は、noPair(「登録しない」「今回だけこの値」を選んだ行)・車番なし・運転手なしのものを除く。
+ *  ① 同じ車番・同じ運転手の行が既にあれば何もしない ② 同じ車番で運転手が空欄の行があれば、そこに運転手を入れる
+ *  ③ 同じ運転手で車番が空欄の行があれば、そこに車を入れる ④ どれも無ければ新しい行を追加する(手配業者・運送業者・車種は、同じ車番の行があればその値、無ければFAXの値)。
+ *  ②と③が両方あるとき(車も運転手も新規登録した直後)は、②に運転手を入れて、③の行は消す。 */
+function ensurePairs_(rowsData) {
+  var pairs = mergedRowsNow_(), toDelete = [], added = 0, filled = 0;
+  rowsData.forEach(function (r) {
+    if (r.noPair) return;
+    var pk = mgPlateKey_(r.車番);
+    var drv = { 運送業者: r.運送業者, 氏名: r.氏名, 携帯番号: r.携帯番号 };
+    if (!pk || !hasDriver_(drv)) return;
+    var plateRows = pairs.filter(function (x) { return mgPlateKey_(x.車番) === pk && x._deleted !== true; });
+    if (plateRows.some(function (x) { return sameDriver_(x, drv); })) return; // ① 既にある
+    // 既に登録されている同じ運転手の氏名・携帯番号の表記を、そのまま使う
+    var known = null;
+    pairs.some(function (x) { if (x._deleted !== true && hasDriver_(x) && sameDriver_(x, drv)) { known = x; return true; } return false; });
+    var name = known ? known.氏名 : mgCompact_(r.氏名), phone = known ? (known.携帯番号 || (mgPhone_(r.携帯番号) ? mgFmtPhone_(r.携帯番号) : '')) : (mgPhone_(r.携帯番号) ? mgFmtPhone_(r.携帯番号) : '');
+    var blankDriver = plateRows.filter(function (x) { return !hasDriver_(x); })[0];
+    var driverOnly = pairs.filter(function (x) { return x._deleted !== true && !mgPlateKey_(x.車番) && hasDriver_(x) && sameDriver_(x, drv); })[0];
+    if (blankDriver) { // ②
+      var o2 = { 氏名: name, 携帯番号: phone }; if (driverOnly && driverOnly.備考 && !blankDriver.備考) o2.備考 = driverOnly.備考;
+      mergedWrite_(blankDriver._row, o2); blankDriver.氏名 = name; blankDriver.携帯番号 = phone; filled++;
+      if (driverOnly) { driverOnly._deleted = true; toDelete.push(driverOnly._row); }
+      return;
     }
+    if (driverOnly) { // ③
+      var base = plateRows[0];
+      var o3 = { 手配業者: base ? base.手配業者 : mgNfkc_(r.業者 || r.手配業者 || '').trim(), 運送業者: base ? base.運送業者 : mgNfkc_(r.運送業者).trim(), 車種: base ? base.車種 : mgFmtType_(r.車種), 車番: base ? base.車番 : mgCompact_(r.車番) };
+      mergedWrite_(driverOnly._row, o3); Object.keys(o3).forEach(function (k) { driverOnly[k] = o3[k]; }); filled++;
+      return;
+    }
+    var b = plateRows[0]; // ④
+    var nr = { 手配業者: b ? b.手配業者 : mgNfkc_(r.業者 || r.手配業者 || '').trim(), 運送業者: b ? b.運送業者 : mgNfkc_(r.運送業者).trim(), 車種: b ? b.車種 : mgFmtType_(r.車種), 車番: b ? b.車番 : mgCompact_(r.車番), 氏名: name, 携帯番号: phone, 備考: '' };
+    var rowNo = mergedWrite_(null, nr); nr._row = rowNo; pairs.push(nr); added++;
   });
-  if (op.mode === 'update') {
-    writeRow_(sh, headers, op.row, op.data);
-  } else if (op.mode === 'delete') {
-    sh.deleteRow(op.row);
-  } else {
-    throw new Error('不明な操作: ' + op.mode);
-  }
+  toDelete.sort(function (a, b) { return b - a; }).forEach(function (n) { sheet_(SHEET_MERGED).deleteRow(n); }); // 下の行から消す(行番号がずれないように)
+  return { added: added, filled: filled, removed: toDelete.length };
 }
 
 function masterSave_(body) {
