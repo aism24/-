@@ -94,3 +94,4 @@ Previewデプロイが発生する)
 `git diff HEAD^ HEAD --quiet -- ./<フォルダ名>` と書くと存在しないパスを指して常にスキップ
 (CANCELED)になるため、`-- .` と書く。
 - 2026-10-21: 全コード点検の修正を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。コミット ba10f76。app-launcher=dpl_3VoDeMW・tori-huguai=dpl_CuY7Xyc・company-ai=dpl_EAXkrPp、いずれもREADY。本番HTMLの `?v=` がmainと一致を確認)。デプロイ前の直近24時間は0回、今回3回。連携は0件のまま。
+- 2026-10-21(2回目): 全コード点検の修正(jissun-open=PR #843・#844、tdf-dim-count=PR #846・#847)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。コミット d3e6b1a。jissun-open=dpl_JCpuBZ5、tdf-dim-count=dpl_JA1mtpf、いずれもREADY。本番の index.html・core.js・app.js がmainと一致を確認)。デプロイ前の直近24時間は3回、今回2回。連携は0件のまま。
