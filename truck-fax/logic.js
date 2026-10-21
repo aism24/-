@@ -1,7 +1,7 @@
 /* 車番連絡FAX取込の純粋ロジック(画面・テスト共通。DOM・通信は使わない)
  * - 表記ゆれの正規化(車番・電話・会社名・氏名・日付・時刻)
  * - Gemini読み取り結果の整形(sanitizeOcr)
- * - 車両情報・運転手情報(シート「車両情報」「運転手携帯番号」)との照合(evaluateBatch)と、確認結果の反映(resolveRow)
+ * - 車両・運転手情報(シート「車両運転手情報」)との照合(evaluateBatch)と、確認結果の反映(resolveRow)。照合は、車番ごと・運転手ごとに1件の一覧(GASが作る)を前提にする
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -171,19 +171,7 @@
   }
 
   function vehicleData(row) { return { 手配業者: row.業者, 運送業者: row.運送業者, 車種: row.車種, 車番: fmtPlate(row.車番) }; }
-  // 運転手の車種は「4t/10t/15t」のようにスラッシュでつなぐ(複数の車種に乗る運転手のため)。重複を除き、4t→10t→15t→TR→その他の順にそろえる。
-  function typeList(s) {
-    var seen = {}, out = [];
-    String(s == null ? '' : s).split(/[\/／、,，]+/).forEach(function (t) {
-      var f = fmtType(t); if (!f || seen[typeKey(f)]) return; seen[typeKey(f)] = true; out.push(f);
-    });
-    return out;
-  }
-  function typeListText(arr) { return arr.slice().sort(function (a, b) { return typeRank(a) - typeRank(b) || (a < b ? -1 : a > b ? 1 : 0); }).join('/'); }
-  function fmtTypes(s) { return typeListText(typeList(s)); }
-  function mergeTypes() { var all = []; for (var i = 0; i < arguments.length; i++) all = all.concat(typeList(arguments[i])); return fmtTypes(all.join('/')); }
-  function hasType(list, t) { var k = typeKey(fmtType(t)); return typeList(list).some(function (x) { return typeKey(x) === k; }); }
-  function driverData(row) { return { 運送業者: row.運送業者, 氏名: nameKey(row.氏名), 携帯番号: fmtPhone(row.携帯番号), 車種: fmtTypes(row.車種) }; }
+  function driverData(row) { return { 運送業者: row.運送業者, 氏名: nameKey(row.氏名), 携帯番号: fmtPhone(row.携帯番号) }; }
   function importKey(row) { return row.積日 + '|' + plateKey(row.車番); }
   function who(d) { return '「' + d.運送業者 + ' ' + d.氏名 + '(' + d.携帯番号 + ')」'; }
 
@@ -196,17 +184,14 @@
     ok: { value: 'ok', label: '確認した(このまま記録する)' },
     recordAgain: { value: 'record', label: '重複を承知で記録する' },
     skipRow: { value: 'skip', label: 'この行は記録しない' },
-    newPerson: { value: 'new', label: '別人として新規登録する' },
-    addType: { value: 'add', label: '運転手情報の車種に追加する' },
-    skipType: { value: 'skip', label: '追加しない' }
+    newPerson: { value: 'new', label: '別人として新規登録する' }
   };
 
   /** 1行を照合して指摘(findings)を返す。idx は書き換える(同じFAX内の新規登録を後続行から見えるようにする)。 */
   function checkRow(row, idx, importKeys, seen) {
     var f = [];
-    function add(id, level, title, detail, options, def) { // 選択肢の文言の {M} は、車両情報の指摘なら「車両情報」、運転手の指摘なら「運転手情報」にする
-      var m = id.indexOf('vehicle') === 0 ? '車両情報' : '運転手情報';
-      f.push({ id: id, level: level, title: title, detail: detail || '', options: (options || []).map(function (o) { return { value: o.value, label: o.label.replace('{M}', m) }; }), defaultValue: def == null ? null : def });
+    function add(id, level, title, detail, options, def) { // 選択肢の文言の {M} は「車両・運転手情報」にする
+      f.push({ id: id, level: level, title: title, detail: detail || '', options: (options || []).map(function (o) { return { value: o.value, label: o.label.replace('{M}', '車両・運転手情報') }; }), defaultValue: def == null ? null : def });
     }
 
     var plate = plateKey(row.車番), name = nameKey(row.氏名), phone = phoneDigits(row.携帯番号);
@@ -220,21 +205,20 @@
     else if (!isMobile(phone)) add('phone-format', 'warn', '携帯番号の形式が違います', '「' + row.携帯番号 + '」は携帯の番号(070/080/090 + 8桁)ではありません。読み間違いの可能性があります。', [OPT.ok]);
 
     // 車両
-    var plateKnown = !!(plate && (idx.vByPlate[plate] || []).length); // この行の照合より前から、車番が車両情報にあったか
+    var plateKnown = !!(plate && (idx.vByPlate[plate] || []).length); // この行の照合より前から、車番が車両・運転手情報にあったか
     if (plate) {
       var vs = idx.vByPlate[plate] || [];
       if (!vs.length) {
-        add('vehicle-new', 'info', 'この車番は車両情報に未登録です', row.車番 + '(' + row.運送業者 + ')', [OPT.register, OPT.skipReg], 'register');
+        add('vehicle-new', 'info', 'この車番は車両・運転手情報に未登録です', row.車番 + '(' + row.運送業者 + ')', [OPT.register, OPT.skipReg], 'register');
         push(idx.vByPlate, plate, vehicleData(row));
       } else {
         var m = vs[0], diffs = [];
-        if (vs.length > 1) add('master-dup-vehicle', 'warn', '車両情報に同じ車番が' + vs.length + '件あります', '「車両情報」画面で整理してください。', [OPT.ok]);
-        if (row.業者 && !sameCo(row.業者, m.手配業者)) diffs.push('手配業者: 車両情報「' + m.手配業者 + '」/ 今回「' + row.業者 + '」');
-        if (row.運送業者 && !sameCo(row.運送業者, m.運送業者)) diffs.push('運送業者: 車両情報「' + m.運送業者 + '」/ 今回「' + row.運送業者 + '」');
-        if (row.車種 && typeKey(row.車種) !== typeKey(m.車種)) diffs.push('車種: 車両情報「' + m.車種 + '」/ 今回「' + row.車種 + '」');
+        if (row.業者 && !sameCo(row.業者, m.手配業者)) diffs.push('手配業者: 登録済み「' + m.手配業者 + '」/ 今回「' + row.業者 + '」');
+        if (row.運送業者 && !sameCo(row.運送業者, m.運送業者)) diffs.push('運送業者: 登録済み「' + m.運送業者 + '」/ 今回「' + row.運送業者 + '」');
+        if (row.車種 && typeKey(row.車種) !== typeKey(m.車種)) diffs.push('車種: 登録済み「' + m.車種 + '」/ 今回「' + row.車種 + '」');
         if (diffs.length) {
           var vf = { id: 'vehicle-diff', masterRow: m._row, masterData: m };
-          add('vehicle-diff', 'warn', '車両情報と食い違っています(車番 ' + row.車番 + ')', diffs.join('\n'), [OPT.update, OPT.adopt, OPT.keep]);
+          add('vehicle-diff', 'warn', '登録済みの車の情報と食い違っています(車番 ' + row.車番 + ')', diffs.join('\n'), [OPT.update, OPT.adopt, OPT.keep]);
           f[f.length - 1].masterRow = vf.masterRow; f[f.length - 1].masterData = m;
         }
       }
@@ -245,28 +229,28 @@
       var list = (idx.dByName[name] || []).filter(function (d) { return sameCo(d.運送業者, row.運送業者); }); // 運送業者の書き方が違っても同じ運転手(2度目の運行で追記しない)
       if (list.length) {
         var d0 = list[0];
-        if (list.length > 1) add('master-dup-driver', 'warn', '運転手情報に同じ氏名・運送業者が' + list.length + '件あります', '「運転手情報」画面で整理してください。', [OPT.ok]);
+        if (list.length > 1) add('master-dup-driver', 'warn', '車両・運転手情報に、同じ氏名・運送業者の運転手が' + list.length + '人います', '「車両・運転手情報」の表で確認してください。', [OPT.ok]);
         // 既に登録された運転手が別の車種の車に乗る場合は、車と運転手の組み合わせの追加として、記録のあとに自動で入る(車両運転手情報の1行=車と運転手の1組)
         if (phone && phoneDigits(d0.携帯番号) !== phone) {
-          add('phone-diff', 'warn', '携帯番号が運転手情報と違います(' + row.氏名 + ')', '運転手情報: ' + d0.携帯番号 + ' / 今回: ' + row.携帯番号, [OPT.update, OPT.adopt, OPT.keep]);
+          add('phone-diff', 'warn', '携帯番号が登録済みの運転手と違います(' + row.氏名 + ')', '登録済み: ' + d0.携帯番号 + ' / 今回: ' + row.携帯番号, [OPT.update, OPT.adopt, OPT.keep]);
           f[f.length - 1].masterRow = d0._row; f[f.length - 1].masterData = d0;
         }
         var others = phone ? (idx.dByPhone[phone] || []).filter(function (x) { return x !== d0 && !(nameKey(x.氏名) === name && sameCo(x.運送業者, row.運送業者)); }) : [];
-        if (others.length) add('phone-shared', 'warn', 'この携帯番号は別の人にも登録されています', '運転手情報: ' + who(others[0]), [OPT.ok]);
+        if (others.length) add('phone-shared', 'warn', 'この携帯番号は別の人にも登録されています', '登録済み: ' + who(others[0]), [OPT.ok]);
       } else {
         var byPhone = phone ? (idx.dByPhone[phone] || []) : [];
         if (byPhone.length) {
           var o0 = byPhone[0];
-          add('phone-owner-diff', 'warn', 'この携帯番号は、運転手情報では別の氏名(または運送業者)です', '運転手情報: ' + who(o0) + '\n今回: 「' + row.運送業者 + ' ' + row.氏名 + '」\n氏名の変更・読み間違い・運送業者の変更の可能性があります。', [OPT.update, OPT.adopt, OPT.newPerson, OPT.keep]);
+          add('phone-owner-diff', 'warn', 'この携帯番号は、登録済みでは別の氏名(または運送業者)です', '登録済み: ' + who(o0) + '\n今回: 「' + row.運送業者 + ' ' + row.氏名 + '」\n氏名の変更・読み間違い・運送業者の変更の可能性があります。', [OPT.update, OPT.adopt, OPT.newPerson, OPT.keep]);
           f[f.length - 1].masterRow = o0._row; f[f.length - 1].masterData = o0;
         } else {
           var sameName = idx.dByName[name] || [];
           if (sameName.length) {
-            add('name-other-carrier', 'warn', '同じ氏名が別の運送業者で登録されています', '運転手情報: ' + who(sameName[0]) + '\n今回: 「' + row.運送業者 + ' ' + row.氏名 + '」', [OPT.newPerson, OPT.keep]);
+            add('name-other-carrier', 'warn', '同じ氏名が別の運送業者で登録されています', '登録済み: ' + who(sameName[0]) + '\n今回: 「' + row.運送業者 + ' ' + row.氏名 + '」', [OPT.newPerson, OPT.keep]);
           } else if (phone) {
             // 同じ車に別の運転手が乗ることがあるので、車が登録済みでも、新しい運転手は確認なしで自動登録する(車両運転手情報に、車と運転手の1組として追加)
             if (plateKnown) add('driver-new', 'info', 'この車の、新しい運転手を登録します', row.運送業者 + ' ' + row.氏名 + '(' + row.携帯番号 + ')', [OPT.register, OPT.skipReg], 'register');
-            else add('driver-new', 'info', 'この運転手は運転手情報に未登録です', row.運送業者 + ' ' + row.氏名 + '(' + row.携帯番号 + ')', [OPT.register, OPT.skipReg], 'register');
+            else add('driver-new', 'info', 'この運転手は車両・運転手情報に未登録です', row.運送業者 + ' ' + row.氏名 + '(' + row.携帯番号 + ')', [OPT.register, OPT.skipReg], 'register');
             addDriverIdx(idx, driverData(row));
           }
         }
@@ -313,7 +297,7 @@
           else if (d === 'keep') noPair = true;
           break;
         case 'phone-owner-diff':
-          if (d === 'update') ops.push({ kind: 'driver', mode: 'update', row: f.masterRow, before: pick(md, ['運送業者', '氏名', '携帯番号']), data: Object.assign(driverData(out), { 車種: mergeTypes(md.車種, out.車種) }) });
+          if (d === 'update') ops.push({ kind: 'driver', mode: 'update', row: f.masterRow, before: pick(md, ['運送業者', '氏名', '携帯番号']), data: driverData(out) });
           else if (d === 'adopt') { out.氏名 = md.氏名; out.運送業者 = md.運送業者; }
           else if (d === 'new') ops.push({ kind: 'driver', mode: 'add', data: driverData(out) });
           else if (d === 'keep') noPair = true;
@@ -324,7 +308,7 @@
         default: break;
       }
     });
-    out.車種 = fmtType(out.車種); // 車両情報・運転手情報の値に合わせた場合も、tにそろえて記録する
+    out.車種 = fmtType(out.車種); // 登録済みの値に合わせた場合も、tにそろえて記録する
     out.noPair = noPair;
     return { row: out, skip: skip, ops: ops, blockers: blockers };
   }
@@ -346,18 +330,6 @@
       });
     });
     return result;
-  }
-
-  /** 車両情報・運転手情報内の重複(車番・氏名+運送業者・携帯番号)を検出。キー→行番号配列で、2件以上のものだけ。 */
-  function findMasterDups(vehicles, drivers) {
-    var vd = {}, dd = {}, pd = {};
-    vehicles.forEach(function (v) { var k = plateKey(v.車番); if (k) push(vd, k, v._row); });
-    drivers.forEach(function (d) {
-      push(dd, companyKey(d.運送業者) + '|' + nameKey(d.氏名), d._row);
-      var p = phoneDigits(d.携帯番号); if (p) push(pd, p, d._row);
-    });
-    function multi(m) { var r = {}; Object.keys(m).forEach(function (k) { if (m[k].length > 1) r[k] = m[k]; }); return r; }
-    return { vehiclePlate: multi(vd), driverName: multi(dd), driverPhone: multi(pd) };
   }
 
   // ---------- 変更・追加・取消(一度受領した連絡の続報) ----------
@@ -512,8 +484,6 @@
     else if (i >= CLOSING_MONTH_ORDER.length) { i = 0; f += 1; }
     return { fy: f, cm: CLOSING_MONTH_ORDER[i] };
   }
-  /** 締め月の期間の表示(例: 12月→「11/21〜12/20」、4月→「3/21〜4/20」) */
-  function closingPeriod(cm) { var pm = cm === 1 ? 12 : cm - 1; return pm + '/21〜' + cm + '/20'; }
 
   // 車両情報の並び順: 手配業者(大上→ナミツー→その他)→運送業者→車種(4t→10t→15t→TR→その他)→車番
   function senderRank(t) { var k = companyKey(t); return k.indexOf(companyKey('大上')) >= 0 ? 0 : (k.indexOf(companyKey('ナミツー')) >= 0 ? 1 : 2); }
@@ -524,16 +494,6 @@
     return /TR/i.test(s) ? 1000 : 2000;
   }
   function cmpJa(a, b) { a = String(a == null ? '' : a); b = String(b == null ? '' : b); return a < b ? -1 : (a > b ? 1 : 0); }
-  // 運転手情報の並び順: 運送業者でまとめる(大上・ナミツーの車に乗る会社の順)→車種(4t→10t→15t→TR→その他。複数なら一番小さい車種)→氏名
-  function sortDrivers(list, vehicles) {
-    var rankOf = {};
-    (vehicles || []).forEach(function (v) { var k = companyKey(v.運送業者), r = senderRank(v.手配業者); if (rankOf[k] == null || r < rankOf[k]) rankOf[k] = r; });
-    function typeMin(d) { var l = typeList(d.車種); return l.length ? Math.min.apply(null, l.map(typeRank)) : 3000; }
-    return list.slice().sort(function (a, b) {
-      var ka = companyKey(a.運送業者), kb = companyKey(b.運送業者);
-      return (rankOf[ka] == null ? 2 : rankOf[ka]) - (rankOf[kb] == null ? 2 : rankOf[kb]) || cmpJa(ka, kb) || typeMin(a) - typeMin(b) || cmpJa(a.氏名, b.氏名);
-    });
-  }
   // 車両・運転手情報の並び順: 手配業者(大上→ナミツー→その他)→運送業者→車種(4t→10t→15t→TR→その他)→車番→氏名
   function sortPairs(list) {
     return list.slice().sort(function (a, b) {
@@ -541,18 +501,12 @@
         typeRank(a.車種) - typeRank(b.車種) || cmpJa(a.車番, b.車番) || cmpJa(a.氏名, b.氏名);
     });
   }
-  function sortVehicles(list) {
-    return list.slice().sort(function (a, b) {
-      return senderRank(a.手配業者) - senderRank(b.手配業者) || cmpJa(companyKey(a.運送業者), companyKey(b.運送業者)) ||
-        typeRank(a.車種) - typeRank(b.車種) || cmpJa(a.車番, b.車番);
-    });
-  }
 
   return {
-    alreadyImported: alreadyImported, fmtTypes: fmtTypes, mergeTypes: mergeTypes, typeList: typeList, dateKey: dateKey, sortDrivers: sortDrivers, sortVehicles: sortVehicles, sortPairs: sortPairs, typeRank: typeRank, senderRank: senderRank,
-    closingOf: closingOf, closingOfText: closingOfText, rowClosing: rowClosing, closingPeriod: closingPeriod, closingNeighbor: closingNeighbor, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
-    fmtType: fmtType, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate, companyKey: companyKey,
+    alreadyImported: alreadyImported, dateKey: dateKey, sortPairs: sortPairs, senderRank: senderRank,
+    closingOf: closingOf, rowClosing: rowClosing, closingNeighbor: closingNeighbor, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
+    fmtType: fmtType, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,
-    buildDestMap: buildDestMap, suggestProject: suggestProject, projectName: projectName, sanitizeOcr: sanitizeOcr, evaluateBatch: evaluateBatch, resolveRow: resolveRow, mergeOps: mergeOps, findMasterDups: findMasterDups
+    buildDestMap: buildDestMap, suggestProject: suggestProject, projectName: projectName, sanitizeOcr: sanitizeOcr, evaluateBatch: evaluateBatch, resolveRow: resolveRow, mergeOps: mergeOps
   };
 });

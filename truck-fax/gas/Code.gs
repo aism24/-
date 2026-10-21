@@ -5,7 +5,6 @@
  *   取込一覧 … FAX1台=1行の記録(列は見出し名で読み書きする。列の追加・並べ替えに強い)
  *   車両運転手情報 … 手配業者 / 運送業者 / 車種 / 車番 / 氏名 / 携帯番号 / 備考。1行=車と運転手の1組(同じ車に別の運転手、同じ運転手が別の車は、別の行)。
  *                  車番が空欄の行=車の組み合わせが無い運転手、氏名・携帯番号が空欄の行=運転手の組み合わせが無い車。
- *   (旧)車両情報・運転手携帯番号 … 2026-10-22に「車両運転手情報」へ統合。移行用の関数(previewMergedSheet・createMergedSheet)だけが読む
  *   情報 … A列=項目名、B列=値。「Geminiモデル名」「タイムゾーン」「APIKEY」。
  *          工事番号と工事名のリスト(見出し「工事番号」「工事名」の列)も、この見出しを探して読む。
  *
@@ -14,18 +13,15 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261022b';
+var CODE_VERSION = '20261022c';
 
 var SHEET_IMPORT = '取込一覧';
-var SHEET_VEHICLE = '車両情報';
-var SHEET_DRIVER = '運転手携帯番号';
+var SHEET_MERGED = '車両運転手情報'; // 1行=車と運転手の1組。シートの列は MERGED_HEADERS(見出し名で読み書きする)
 var SHEET_INFO = '情報';
+var MERGED_HEADERS = ['手配業者', '運送業者', '車種', '車番', '氏名', '携帯番号', '備考'];
 
 // 取込一覧の必須の見出し。FAXの送り主は「手配業者」に記録する(見出し「業者」の列が残っていれば、同じ値を入れる)。
 var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号'];
-var VEHICLE_HEADERS = ['手配業者', '運送業者', '車種', '車番'];
-var DRIVER_HEADERS = ['運送業者', '氏名', '携帯番号'];
-var DRIVER_OPTIONAL = ['車種']; // 運転手の車種(複数は「4t/10t/15t」)。列があれば読み書きする。setupSheets が無ければ列を足す
 var CHECK_FIELDS = ['手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '工事番号', '現場名', '追加変更'];
 // 取込一覧の任意の列(あれば読み書きする。無くても動く)。「追加変更」=中止/変更前/変更後、「備考」=アプリで入力したテキスト。
 var IMPORT_OPTIONAL = ['追加変更', '備考', 'ファイルURL']; // ファイルURL=取り込んだ原本(PDF・画像)のDriveのURL。画面のファイル名を押すと開く
@@ -443,7 +439,7 @@ function callGemini_(parts) {
   throw new Error(last.replace(key, '***'));
 }
 
-// ---------- 記録(取込一覧への追記+車両情報・運転手情報の更新) ----------
+// ---------- 記録(取込一覧への追記+車両・運転手情報の更新) ----------
 
 function commit_(body) {
   var rows = body.rows || [];
@@ -547,25 +543,44 @@ function applyChanges_(body) {
   return { marked: n.marked, added: n.added, ops: opCount, fileUrl: fileUrl, fileWarn: fileWarn, pairs: pairInfo };
 }
 
+// ---------- 照合用の正規化(全角・空白・表記の違いをそろえる。画面の logic.js と同じ規則) ----------
+
+function nfkc_(s) {
+  var t = String(s == null ? '' : s);
+  if (typeof t.normalize === 'function') return t.normalize('NFKC');
+  return t.replace(/[\uFF01-\uFF5E]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).replace(/\u3000/g, ' ').replace(/\u3231/g, '(株)').replace(/\u3232/g, '(有)');
+}
+function compact_(s) { return nfkc_(s).replace(/[\s\u3000]+/g, ''); }
+function plateKey_(s) { return compact_(s).replace(/[-‐-―−ー・.]/g, '').toLowerCase(); }
+function companyKey_(s) { return compact_(s).replace(/\(株\)|\(有\)|\(合\)|\(同\)|株式会社|有限会社|合同会社/g, '').replace(/[()・]/g, '').toLowerCase(); }
+function phoneDigits_(s) { return nfkc_(s).replace(/\D/g, ''); }
+function fmtPhone_(s) {
+  var d = phoneDigits_(s);
+  if (d.length === 11) return d.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
+  if (d.length === 10) return /^0[36]/.test(d) ? d.replace(/(\d{2})(\d{4})(\d{4})/, '$1-$2-$3') : d.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
+  return nfkc_(s).replace(/[\s\u3000]+/g, ' ').trim();
+}
+function fmtType_(s) { return nfkc_(s).replace(/[\s\u3000]+/g, '').replace(/(\d)T/g, '$1t'); }
+
 // ---------- 車両運転手情報(車と運転手の組み合わせ)の読み書き ----------
 // 画面の照合(logic.js)は、「車両」と「運転手」の2つの一覧を前提にしている。そのため、車両運転手情報の行から、車番ごと・運転手ごとに1件の一覧を作って返す(pairsToVehicles_ / pairsToDrivers_)。
 // 車・運転手を登録・更新する操作(op: vehicle / driver)は、車両運転手情報の行に対する操作に読み替える(applyOp_)。FAXの1行ごとの「車と運転手の組み合わせ」は、記録のあとで ensurePairs_ が追加する。
 
 /** 運転手の同一判定: 両方に携帯番号があれば番号で、無ければ氏名(運送業者の書き方の違いは同じ会社とみなす) */
 function sameDriver_(a, b) {
-  var pa = mgPhone_(a.携帯番号), pb = mgPhone_(b.携帯番号);
+  var pa = phoneDigits_(a.携帯番号), pb = phoneDigits_(b.携帯番号);
   if (pa && pb) return pa === pb;
-  var na = mgCompact_(a.氏名), nb = mgCompact_(b.氏名);
+  var na = compact_(a.氏名), nb = compact_(b.氏名);
   if (!na || !nb || na !== nb) return false;
-  var ca = mgCompanyKey_(a.運送業者), cb = mgCompanyKey_(b.運送業者);
+  var ca = companyKey_(a.運送業者), cb = companyKey_(b.運送業者);
   return !ca || !cb || ca === cb || ca.indexOf(cb) >= 0 || cb.indexOf(ca) >= 0;
 }
-function hasDriver_(r) { return !!(mgCompact_(r.氏名) || mgPhone_(r.携帯番号)); }
+function hasDriver_(r) { return !!(compact_(r.氏名) || phoneDigits_(r.携帯番号)); }
 
 function pairsToVehicles_(pairs) {
   var seen = {}, out = [];
   pairs.forEach(function (r) {
-    var k = mgPlateKey_(r.車番);
+    var k = plateKey_(r.車番);
     if (!k || seen[k]) return;
     seen[k] = true;
     out.push({ _row: r._row, 手配業者: r.手配業者, 運送業者: r.運送業者, 車種: r.車種, 車番: r.車番 });
@@ -577,7 +592,7 @@ function pairsToDrivers_(pairs) {
   pairs.forEach(function (r) {
     if (!hasDriver_(r)) return;
     for (var i = 0; i < out.length; i++) if (sameDriver_(out[i], r)) return; // 運転手の代表の行は、最初の行(更新の照合に使う)
-    out.push({ _row: r._row, 運送業者: r.運送業者, 氏名: r.氏名, 携帯番号: r.携帯番号, 車種: '' });
+    out.push({ _row: r._row, 運送業者: r.運送業者, 氏名: r.氏名, 携帯番号: r.携帯番号 });
   });
   return out;
 }
@@ -621,8 +636,8 @@ function applyOp_(op) {
     if (mode === 'update') { // その車番のすべての行(別の運転手の行を含む)を更新する
       var cur = mergedRowAt_(op.row, '車両');
       mergedCheckBefore_(cur, op.before, PAIR_VEHICLE_FIELDS, '車両');
-      var key = mgPlateKey_(cur.車番);
-      mergedRowsNow_().forEach(function (r) { if (mgPlateKey_(r.車番) === key) mergedWrite_(r._row, pick_(op.data, PAIR_VEHICLE_FIELDS)); });
+      var key = plateKey_(cur.車番);
+      mergedRowsNow_().forEach(function (r) { if (plateKey_(r.車番) === key) mergedWrite_(r._row, pick_(op.data, PAIR_VEHICLE_FIELDS)); });
       return;
     }
     throw new Error('不明な操作: ' + mode);
@@ -659,17 +674,17 @@ function ensurePairs_(rowsData) {
   var pairs = mergedRowsNow_(), toDelete = [], added = 0, filled = 0;
   rowsData.forEach(function (r) {
     if (r.noPair) return;
-    var pk = mgPlateKey_(r.車番);
+    var pk = plateKey_(r.車番);
     var drv = { 運送業者: r.運送業者, 氏名: r.氏名, 携帯番号: r.携帯番号 };
     if (!pk || !hasDriver_(drv)) return;
-    var plateRows = pairs.filter(function (x) { return mgPlateKey_(x.車番) === pk && x._deleted !== true; });
+    var plateRows = pairs.filter(function (x) { return plateKey_(x.車番) === pk && x._deleted !== true; });
     if (plateRows.some(function (x) { return sameDriver_(x, drv); })) return; // ① 既にある
     // 既に登録されている同じ運転手の氏名・携帯番号の表記を、そのまま使う
     var known = null;
     pairs.some(function (x) { if (x._deleted !== true && hasDriver_(x) && sameDriver_(x, drv)) { known = x; return true; } return false; });
-    var name = known ? known.氏名 : mgCompact_(r.氏名), phone = known ? (known.携帯番号 || (mgPhone_(r.携帯番号) ? mgFmtPhone_(r.携帯番号) : '')) : (mgPhone_(r.携帯番号) ? mgFmtPhone_(r.携帯番号) : '');
+    var name = known ? known.氏名 : compact_(r.氏名), phone = known ? (known.携帯番号 || (phoneDigits_(r.携帯番号) ? fmtPhone_(r.携帯番号) : '')) : (phoneDigits_(r.携帯番号) ? fmtPhone_(r.携帯番号) : '');
     var blankDriver = plateRows.filter(function (x) { return !hasDriver_(x); })[0];
-    var driverOnly = pairs.filter(function (x) { return x._deleted !== true && !mgPlateKey_(x.車番) && hasDriver_(x) && sameDriver_(x, drv); })[0];
+    var driverOnly = pairs.filter(function (x) { return x._deleted !== true && !plateKey_(x.車番) && hasDriver_(x) && sameDriver_(x, drv); })[0];
     if (blankDriver) { // ②
       var o2 = { 氏名: name, 携帯番号: phone }; if (driverOnly && driverOnly.備考 && !blankDriver.備考) o2.備考 = driverOnly.備考;
       mergedWrite_(blankDriver._row, o2); blankDriver.氏名 = name; blankDriver.携帯番号 = phone; filled++;
@@ -678,12 +693,12 @@ function ensurePairs_(rowsData) {
     }
     if (driverOnly) { // ③
       var base = plateRows[0];
-      var o3 = { 手配業者: base ? base.手配業者 : mgNfkc_(r.業者 || r.手配業者 || '').trim(), 運送業者: base ? base.運送業者 : mgNfkc_(r.運送業者).trim(), 車種: base ? base.車種 : mgFmtType_(r.車種), 車番: base ? base.車番 : mgCompact_(r.車番) };
+      var o3 = { 手配業者: base ? base.手配業者 : nfkc_(r.業者 || r.手配業者 || '').trim(), 運送業者: base ? base.運送業者 : nfkc_(r.運送業者).trim(), 車種: base ? base.車種 : fmtType_(r.車種), 車番: base ? base.車番 : compact_(r.車番) };
       mergedWrite_(driverOnly._row, o3); Object.keys(o3).forEach(function (k) { driverOnly[k] = o3[k]; }); filled++;
       return;
     }
     var b = plateRows[0]; // ④
-    var nr = { 手配業者: b ? b.手配業者 : mgNfkc_(r.業者 || r.手配業者 || '').trim(), 運送業者: b ? b.運送業者 : mgNfkc_(r.運送業者).trim(), 車種: b ? b.車種 : mgFmtType_(r.車種), 車番: b ? b.車番 : mgCompact_(r.車番), 氏名: name, 携帯番号: phone, 備考: '' };
+    var nr = { 手配業者: b ? b.手配業者 : nfkc_(r.業者 || r.手配業者 || '').trim(), 運送業者: b ? b.運送業者 : nfkc_(r.運送業者).trim(), 車種: b ? b.車種 : fmtType_(r.車種), 車番: b ? b.車番 : compact_(r.車番), 氏名: name, 携帯番号: phone, 備考: '' };
     var rowNo = mergedWrite_(null, nr); nr._row = rowNo; pairs.push(nr); added++;
   });
   toDelete.sort(function (a, b) { return b - a; }).forEach(function (n) { sheet_(SHEET_MERGED).deleteRow(n); }); // 下の行から消す(行番号がずれないように)
@@ -693,181 +708,4 @@ function ensurePairs_(rowsData) {
 function masterSave_(body) {
   applyOp_({ kind: body.kind, mode: body.mode, row: body.row, before: body.before, data: body.data });
   return { ok: true };
-}
-
-
-// ---------- 「車両運転手情報」シートへの移行(1回だけ実行。成功したら、この節は消してよい) ----------
-// 車両情報と運転手携帯番号を合体した表。1行=「車」と「運転手」の1つの組み合わせ。同じ車に別の運転手、同じ運転手が別の車、のどちらも別の行になる。
-// 元データ: ①取込一覧の記録(車番・氏名・携帯番号の組み合わせ。「変更前」「中止」の行は除く) ②車両情報(組み合わせの無い車は、氏名・携帯番号を空欄の行にする) ③運転手携帯番号(組み合わせの無い運転手は、車番を空欄の行にする。複数の車種に乗る運転手は、備考に「10t/高TR」の形で書く)
-// 手順: Apps Script のエディタで、previewMergedSheet(書かずに件数だけ確認)→ createMergedSheet(書き込み)を実行する。結果は「実行ログ」に出る。
-// 車両情報・運転手携帯番号・取込一覧は、この関数では一切書き換えない。新しいシートに記録が既にあるときは、何も書かずに止まる(上書きしない)。
-var SHEET_MERGED = '車両運転手情報';
-var MERGED_HEADERS = ['手配業者', '運送業者', '車種', '車番', '氏名', '携帯番号', '備考'];
-
-function mgNfkc_(s) {
-  var t = String(s == null ? '' : s);
-  if (typeof t.normalize === 'function') return t.normalize('NFKC');
-  return t.replace(/[！-～]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).replace(/　/g, ' ').replace(/㈱/g, '(株)').replace(/㈲/g, '(有)');
-}
-function mgCompact_(s) { return mgNfkc_(s).replace(/[\s　]+/g, ''); }
-function mgPlateKey_(s) { return mgCompact_(s).replace(/[-‐-―−ー・.]/g, '').toLowerCase(); }
-function mgCompanyKey_(s) { return mgCompact_(s).replace(/\(株\)|\(有\)|\(合\)|\(同\)|株式会社|有限会社|合同会社/g, '').replace(/[()・]/g, '').toLowerCase(); }
-function mgPhone_(s) { return mgNfkc_(s).replace(/\D/g, ''); }
-function mgFmtPhone_(s) {
-  var d = mgPhone_(s);
-  if (d.length === 11) return d.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
-  if (d.length === 10) return /^0[36]/.test(d) ? d.replace(/(\d{2})(\d{4})(\d{4})/, '$1-$2-$3') : d.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
-  return mgNfkc_(s).replace(/[\s　]+/g, ' ').trim();
-}
-function mgFmtType_(s) { return mgNfkc_(s).replace(/[\s　]+/g, '').replace(/(\d)T/g, '$1t'); }
-function mgTypeRank_(t) {
-  var m = /(\d+(?:\.\d+)?)t/i.exec(mgCompact_(t));
-  if (m) return +m[1];
-  return /TR/i.test(mgCompact_(t)) ? 1000 : 2000;
-}
-/** 「4t/10t/15t」のように複数書かれた車種を、重複を除いて小さい順に並べた配列にする */
-function mgTypeList_(s) {
-  var seen = {}, out = [];
-  String(s == null ? '' : s).split(/[\/／、,，]+/).forEach(function (t) {
-    var f = mgFmtType_(t), k = f.toLowerCase();
-    if (!f || seen[k]) return;
-    seen[k] = true; out.push(f);
-  });
-  return out.sort(function (a, b) { return mgTypeRank_(a) - mgTypeRank_(b) || (a < b ? -1 : a > b ? 1 : 0); });
-}
-function mgSenderRank_(t) { var k = mgCompanyKey_(t); return k.indexOf(mgCompanyKey_('大上')) >= 0 ? 0 : (k.indexOf(mgCompanyKey_('ナミツー')) >= 0 ? 1 : 2); }
-function mgCmp_(a, b) { return a < b ? -1 : (a > b ? 1 : 0); }
-
-/** 3つのシートから、新しいシートに入れる行を作る(書き込みはしない)。戻り値 {rows, summary} */
-function buildMerged_() {
-  var vehicles = readAll_(SHEET_VEHICLE, VEHICLE_HEADERS).rows;
-  var drivers = readAll_(SHEET_DRIVER, DRIVER_HEADERS, DRIVER_OPTIONAL).rows;
-  var imports = readAll_(SHEET_IMPORT, ['手配業者', '運送業者', '車種', '車番', '氏名', '携帯番号'], ['追加変更']).rows;
-
-  // 車両情報: 車番ごと(同じ車番が2行あれば、先の行を使う)
-  var vByPlate = {};
-  vehicles.forEach(function (v) { var k = mgPlateKey_(v.車番); if (k && !vByPlate[k]) vByPlate[k] = v; });
-  // 運転手携帯番号: 携帯番号ごと・氏名ごと(氏名で探すときは、運送業者の書き方の違い=一方が他方に含まれる、を同じ会社とみなす。例: 「(有)大上運送 明石事業所」と「大上運送」)
-  var dByPhone = {}, dByName = {};
-  drivers.forEach(function (d) {
-    var p = mgPhone_(d.携帯番号), n = mgCompact_(d.氏名);
-    if (p && !dByPhone[p]) dByPhone[p] = d;
-    if (n) (dByName[n] = dByName[n] || []).push(d);
-  });
-  function sameCo_(a, b) { var x = mgCompanyKey_(a), y = mgCompanyKey_(b); return !!x && !!y && (x === y || x.indexOf(y) >= 0 || y.indexOf(x) >= 0); }
-  function findDriver_(phone, co, name) {
-    if (phone && dByPhone[phone]) return dByPhone[phone];
-    var l = name ? (dByName[name] || []) : [];
-    for (var i = 0; i < l.length; i++) if (sameCo_(l[i].運送業者, co)) return l[i];
-    return null;
-  }
-
-  var out = [], seenPair = {}, usedPlate = {}, usedDriver = {};
-  function driverNote_(d) { var l = d ? mgTypeList_(d.車種) : []; return l.length > 1 ? l.join('/') : ''; }
-  function driverIdOf_(phone, co, name) { return phone ? 'p' + phone : (mgCompact_(name) ? 'n' + mgCompanyKey_(co) + '|' + mgCompact_(name) : ''); }
-
-  // ① 取込一覧(シートの上から=古い記録から順に)。車番のある行だけ
-  var used = 0;
-  imports.forEach(function (r) {
-    if (INACTIVE_LABELS.indexOf(r.追加変更) >= 0) return;
-    var pk = mgPlateKey_(r.車番);
-    if (!pk) return;
-    used++;
-    var phone = mgPhone_(r.携帯番号), name = mgCompact_(r.氏名);
-    var d = findDriver_(phone, r.運送業者, name);
-    if (d) { if (!phone) phone = mgPhone_(d.携帯番号); if (!name) name = mgCompact_(d.氏名); }
-    var did = driverIdOf_(phone, d ? d.運送業者 : r.運送業者, name);
-    var key = pk + '|' + did;
-    if (seenPair[key]) return;
-    seenPair[key] = true;
-    var v = vByPlate[pk];
-    out.push({
-      手配業者: v ? mgNfkc_(v.手配業者).trim() : mgNfkc_(r.手配業者).trim(),
-      運送業者: v ? mgNfkc_(v.運送業者).trim() : mgNfkc_(r.運送業者).trim(),
-      車種: v ? mgFmtType_(v.車種) : mgFmtType_(r.車種),
-      車番: mgCompact_(v ? v.車番 : r.車番),
-      氏名: d ? mgCompact_(d.氏名) : name,
-      携帯番号: phone ? mgFmtPhone_(phone) : '',
-      備考: driverNote_(d)
-    });
-    usedPlate[pk] = true;
-    if (did) usedDriver[did] = true;
-  });
-  var paired = out.length;
-
-  // ② 組み合わせの無い車(氏名・携帯番号は空欄)
-  var vehOnly = 0;
-  Object.keys(vByPlate).forEach(function (pk) {
-    if (usedPlate[pk]) return;
-    var v = vByPlate[pk];
-    out.push({ 手配業者: mgNfkc_(v.手配業者).trim(), 運送業者: mgNfkc_(v.運送業者).trim(), 車種: mgFmtType_(v.車種), 車番: mgCompact_(v.車番), 氏名: '', 携帯番号: '', 備考: '' });
-    vehOnly++;
-  });
-
-  // ③ 組み合わせの無い運転手(車番は空欄。車種が1つならその車種、複数なら空欄にして備考に書く)
-  var drvOnly = 0;
-  drivers.forEach(function (d) {
-    var phone = mgPhone_(d.携帯番号), name = mgCompact_(d.氏名);
-    if (!name && !phone) return;
-    var did = driverIdOf_(phone, d.運送業者, name);
-    if (usedDriver[did] || (phone && usedDriver['p' + phone]) || usedDriver['n' + mgCompanyKey_(d.運送業者) + '|' + name]) return;
-    usedDriver[did] = true;
-    var tl = mgTypeList_(d.車種);
-    out.push({ 手配業者: '', 運送業者: mgNfkc_(d.運送業者).trim(), 車種: tl.length === 1 ? tl[0] : '', 車番: '', 氏名: name, 携帯番号: phone ? mgFmtPhone_(phone) : '', 備考: driverNote_(d) });
-    drvOnly++;
-  });
-
-  out.sort(function (a, b) {
-    return mgSenderRank_(a.手配業者) - mgSenderRank_(b.手配業者) || mgCmp_(mgCompanyKey_(a.運送業者), mgCompanyKey_(b.運送業者)) ||
-      mgTypeRank_(a.車種) - mgTypeRank_(b.車種) || mgCmp_(a.車番, b.車番) || mgCmp_(a.氏名, b.氏名);
-  });
-
-  // 内訳(「同じ車に別の運転手」「同じ運転手が別の車」の数)
-  var perPlate = {}, perDriver = {};
-  out.forEach(function (r) {
-    var pk = mgPlateKey_(r.車番), did = driverIdOf_(mgPhone_(r.携帯番号), r.運送業者, r.氏名);
-    if (pk && did) { perPlate[pk] = (perPlate[pk] || 0) + 1; perDriver[did] = (perDriver[did] || 0) + 1; }
-  });
-  function over1(o) { return Object.keys(o).filter(function (k) { return o[k] > 1; }).length; }
-  var summary = {
-    元_車両情報: vehicles.length, 元_運転手携帯番号: drivers.length, 元_取込一覧の記録のうち車番のある行: used,
-    新シートに入れる行数: out.length, 車と運転手の組み合わせ: paired, 運転手が未登録の車: vehOnly, 車が未登録の運転手: drvOnly,
-    同じ車に複数の運転手がいる車の数: over1(perPlate), 複数の車に乗る運転手の数: over1(perDriver)
-  };
-  return { rows: out, summary: summary };
-}
-
-/** 書き込まずに、新しいシートに入れる件数を確認する(実行ログに出る) */
-function previewMergedSheet() {
-  var m = buildMerged_();
-  Logger.log(JSON.stringify(m.summary));
-  return JSON.stringify(m.summary);
-}
-
-/** 「車両運転手情報」シートに記録する。見出し行は必要(無いときは作る)。記録が既にあるときは、何も書かずに止まる */
-function createMergedSheet() {
-  var ss = ss_();
-  var sh = ss.getSheetByName(SHEET_MERGED) || ss.insertSheet(SHEET_MERGED);
-  if (sh.getLastRow() < 1) { sh.getRange(1, 1, 1, MERGED_HEADERS.length).setValues([MERGED_HEADERS]).setFontWeight('bold'); sh.setFrozenRows(1); }
-  var map = headerMapOf_(sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0], MERGED_HEADERS, SHEET_MERGED);
-  var dataRows = 0;
-  if (sh.getLastRow() > 1) {
-    var cols = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(sh.getLastColumn(), 1)).getValues();
-    cols.forEach(function (r) { if (r.some(function (v) { return String(v).trim() !== ''; })) dataRows++; });
-  }
-  if (dataRows > 0) throw new Error('シート「' + SHEET_MERGED + '」には、既に' + dataRows + '行の記録があります。上書きしないため、何も書きませんでした(やり直すときは、見出し行以外を消してから実行してください)。');
-  var m = buildMerged_();
-  var width = sh.getLastColumn(), n = m.rows.length;
-  if (!n) throw new Error('入れる行がありません。');
-  if (sh.getMaxRows() < n + 1) sh.insertRowsAfter(sh.getMaxRows(), n + 1 - sh.getMaxRows());
-  var values = m.rows.map(function (r) {
-    var line = []; for (var i = 0; i < width; i++) line.push('');
-    MERGED_HEADERS.forEach(function (h) { line[map[h] - 1] = r[h]; });
-    return line;
-  });
-  var rng = sh.getRange(2, 1, n, width);
-  rng.setNumberFormat('@'); // 携帯番号の先頭の0・車番の文字を、そのまま文字として保存する
-  rng.setValues(values);
-  Logger.log(JSON.stringify(m.summary));
-  return 'OK: ' + n + '行を「' + SHEET_MERGED + '」に記録しました。' + JSON.stringify(m.summary);
 }

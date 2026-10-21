@@ -41,7 +41,6 @@ table.t .w-time { min-width: 66px; } table.t .w-type { min-width: 72px; } table.
 .num { text-align: center; color: var(--sub); }
 td.nowrap { white-space: nowrap; }
 td.pre { white-space: pre-wrap; }
-td.dup { background: var(--err-bg); }
 .badge { display: inline-block; font-size: 11px; padding: 0 7px; border-radius: 9px; font-weight: 600; white-space: nowrap; }
 .badge.error { background: var(--err-bg); color: var(--err); }
 .badge.warn { background: var(--warn-bg); color: var(--warn); }
@@ -78,7 +77,6 @@ code { background: var(--th); padding: 1px 5px; border-radius: 4px; }
 @media (max-width: 600px) { main { padding: 10px; } }
 @media print { .tabs, .drop, .foot { display: none; } }
 
-.foot .msg.okmsg { color: var(--ok); font-weight: 600; }
 
 .kindbox { font-size: 12px; color: var(--sub); display: inline-flex; align-items: center; gap: 4px; }
 .kindbox select { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
@@ -118,9 +116,6 @@ table.t.change .ctlitem select { width: auto; min-width: 260px; max-width: 520px
 table.t .w-note { min-width: 120px; } table.t.change .w-note { min-width: 100px; }
 
 body.dragging::after { content: 'ここにドロップして取り込み'; position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; color: #fff; background: rgba(20,40,70,.6); border: 4px dashed #fff; pointer-events: none; }
-.mastertbl { max-width: 100%; margin-left: auto; margin-right: auto; }
-table.t.master { table-layout: fixed; }
-table.t.master th, table.t.master td { text-align: center; overflow: hidden; text-overflow: ellipsis; }
 button.btn.excel { background: #217346; border-color: #185a36; color: #fff; font-weight: 700; }
 table.t.zebra tbody tr:nth-child(odd) td { background: #fff; }
 table.t.zebra tbody tr:nth-child(even) td { background: #fff7cc; }
@@ -154,10 +149,6 @@ dialog.dlg.busy { min-width: min(86vw, 360px); text-align: center; }
 main.wide { max-width: none; padding: 12px 8px; }
 table.t.zebra tbody tr.pick { cursor: pointer; }
 table.t.zebra tbody tr.pick:hover td { filter: brightness(0.96); }
-table.t.zebra tbody tr.sel td { background: #d6ecff; border-top: 3px double #1d6fb8; border-bottom: 3px double #1d6fb8; }
-table.t.zebra tbody tr.sel td:first-child { border-left: 3px double #1d6fb8; }
-table.t.zebra tbody tr.sel td:last-child { border-right: 3px double #1d6fb8; }
-table.t.zebra tbody tr.sel input, table.t.zebra tbody tr.sel select { min-width: 5.5em; background: #fff; }
 /* 取込の初期画面: 見本の配車連絡表(drop-sample-1.svg=ナミツー形式、drop-sample-2.svg=大上形式。氏名・携帯番号・業者名などの内容は伏せたダミー)を、ゆっくり入れ替えながら背景に出し、案内の文字を画面の中心に置く */
 .drop { position: relative; overflow: hidden; justify-content: center; width: min(100%, 980px); min-height: 560px; margin: 24px auto 0; } /* 見本のFAXがちょうど入る大きさ。画面が広くても、取込枠は広げない */
 .drop::before, .drop::after { content: ''; position: absolute; z-index: 0; left: 5%; width: 90%; aspect-ratio: 1100 / 880; top: 50%; transform: translateY(-33%); background: center / 100% 100% no-repeat; opacity: .9; box-shadow: 0 0 0 1px #d9dee4, 0 6px 20px rgba(0,0,0,.18); } /* 見本は、取込枠(幅980px以内)の90%。案内の文字が、見本の余白(宛名・送り主の下)に重なる位置 */
