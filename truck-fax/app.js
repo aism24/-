@@ -12,13 +12,12 @@
   var IMPORTS_LIMIT = 3000; // 絞り込みのために読み込む件数(表に出すのは最新100件まで)
   var IMPORTS_SHOW = 100;
   var VIEW_HEADERS = IMPORT_HEADERS.filter(function (k) { return k !== 'タイムスタンプ'; }); // 画面・Excelに出す列
-  var INACTIVE = ['中止', '変更前'];
   var TABLE_HEADERS = VIEW_HEADERS.filter(function (k) { return k !== '工事番号'; }); // 取込一覧の表に出す列(工事番号は出さず、現場名=工事名を出す。Excelには両方入る)
   var CENTER_COLS = ['手配業者', '積日', '卸日', '着時間', '車種', '追加変更']; // 中央揃え(幅は中身に合わせて詰める)
   var OTHER = 'その他'; // 工事に該当しないもの。工事番号・現場名の両方に「その他」と記録する
   var MAX_BYTES = 10 * 1024 * 1024;
 
-  var S = { senders: [], vehicles: [], drivers: [], pairs: [], projects: [], importKeyList: [], destMap: {}, model: '', keyOk: false, cards: [], tab: 'import',
+  var S = { senders: [], vehicles: [], drivers: [], pairs: [], projects: [], importKeyList: [], destMap: {}, cards: [], tab: 'import',
     imports: null, importsFy: null, importsCm: null, importsSite: 'all', editing: null };
   var seq = 0;
 
@@ -1036,7 +1035,7 @@
     var body = h('tbody');
     function rowColor(r) { var rk = L.senderRank(r.手配業者); return rk === 0 ? '#dff3e0' : (rk === 1 ? '#fff7cc' : ''); } // 行の色: 手配業者(大上=薄い緑・ナミツー=薄い黄)
     rows.forEach(function (r) {
-      var editing = S.editing && S.editing.kind === 'pair' && S.editing.row === r._row;
+      var editing = S.editing === r._row; // 編集中の行(シートの行番号)
       var tr = h('tr', { style: rowColor(r) ? 'background:' + rowColor(r) : null });
       function beforeOf() { var before = {}; cols.forEach(function (k) { before[k] = r[k] || ''; }); return before; }
       if (editing) {
@@ -1054,7 +1053,7 @@
       } else {
         cols.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: r[k] || '' })); });
         tr.appendChild(h('td', { class: 'nowrap' },
-          h('button', { class: 'btn sm edit', type: 'button', text: '編集', onclick: function () { S.editing = { kind: 'pair', row: r._row }; renderPairs(); } }), ' ',
+          h('button', { class: 'btn sm edit', type: 'button', text: '編集', onclick: function () { S.editing = r._row; renderPairs(); } }), ' ',
           h('button', { class: 'btn sm del', type: 'button', text: '削除', onclick: function () {
             confirmDialog('この行を削除しますか?', cols.map(function (k) { return r[k]; }).filter(Boolean).join(' / '), '削除する').then(function (yes) { if (yes) savePair('delete', r._row, beforeOf(), null); });
           } })));
