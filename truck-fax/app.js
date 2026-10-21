@@ -17,7 +17,7 @@
   var OTHER = 'その他'; // 工事に該当しないもの。工事番号・現場名の両方に「その他」と記録する
   var MAX_BYTES = 10 * 1024 * 1024;
 
-  var S = { senders: [], vehicles: [], drivers: [], pairs: [], projects: [], importKeyList: [], destMap: {}, cards: [], tab: 'import',
+  var S = { initSeq: 0, reloadP: null, senders: [], vehicles: [], drivers: [], pairs: [], projects: [], importKeyList: [], destMap: {}, cards: [], tab: 'import',
     imports: null, importsFy: null, importsCm: null, importsSite: 'all', editing: null };
   var seq = 0;
 
@@ -82,7 +82,9 @@
   }
 
   async function loadInit(keepImports) {
+    var seq = ++S.initSeq;
     var d = await apiGet('init');
+    if (seq !== S.initSeq) return; // もっと新しい読み込みが始まっている(古い応答で、新しい内容を戻さない)
     S.pairs = d.pairs || []; // 車両運転手情報の全行(画面の表)
     S.vehicles = d.vehicles || []; S.drivers = d.drivers || []; // 照合用(車番ごと・運転手ごとに1件)
     S.projects = d.projects || []; S.senders = d.senders || [];
@@ -90,6 +92,17 @@
     S.destMap = L.buildDestMap(d.pastDest || []);
     if (!keepImports) { S.imports = null; S.importsP = null; }
     renderTabs();
+  }
+
+  /** 保存・記録のあと、最新のデータ(照合用の一覧など)を、画面を止めずに裏で読み直す。読み直しの間に新しいFAXの照合が始まらないよう、S.reloadP で待てる */
+  function reloadInit() {
+    var p = loadInit().then(function () {
+      refreshReadyCards();
+      if (S.tab === 'pairs' && S.editing === null) renderPairs(); // 編集中の行は、入力が消えないよう、描き直さない
+    }).catch(function (e) { showBanner('最新のデータを読み込めませんでした(保存は済んでいます): ' + e.message); });
+    S.reloadP = p;
+    p.then(function () { if (S.reloadP === p) S.reloadP = null; });
+    return p;
   }
 
   // ---------- タブ ----------
@@ -149,6 +162,7 @@
         return;
       }
       if (recs) card.records = recs.slice(0, 500);
+      if (S.reloadP) await S.reloadP; // 直前の記録・保存の読み直しが終わってから照合する
       if (L.isChange(res)) await enterKind(card, L.effectiveKind(res));
       else enterNormal(card);
       card.status = 'ready';
@@ -408,7 +422,7 @@
     if (!p) return '';
     if (!p.ok) return ' ※車両・運転手情報への組み合わせの追加に失敗しました(取込一覧には記録済み): ' + p.error;
     var n = (p.added || 0) + (p.filled || 0);
-    return '(車両・運転手情報: ' + (n ? '車と運転手の組み合わせを' + n + '件追加' : '追加なし') + ')';
+    return '(車両・運転手情報: ' + (n ? '車と運転手の組み合わせを' + n + '件追加' : '追加なし') + (p.noted ? '・手配業者違いの備考を' + p.noted + '件記入' : '') + ')';
   }
 
   async function commitCard(card) {
@@ -427,8 +441,8 @@
       var out = await apiPost('commit', body, 180000);
       card.status = 'saved';
       card.msg = rows.length + '件を取込一覧に記録しました' + pairText(out) + '。' + (out && out.fileWarn ? ' ※原本はDriveに保存できませんでした: ' + out.fileWarn : '');
-      await loadInit();
-      refreshReadyCards();
+      rows.forEach(function (r) { S.importKeyList.push(L.importKey({ 積日: r.積日, 車番: r.車番 })); }); // 重複の判定は、記録した分をその場で足す(読み直しを待たない)
+      reloadInit();
     } catch (e) { card.busy = false; showBanner('記録に失敗しました: ' + e.message); renderFoot(card); return; }
     card.busy = false; showBanner(''); finishCard(card);
   }
@@ -459,6 +473,7 @@
   }
 
   async function enterKind(card, kind) {
+    if (S.reloadP) await S.reloadP;
     if (kind === '新規') { enterNormal(card); return; }
     if (!card.records) card.records = (await loadImports(true)).slice(0, 500);
     var plan = L.buildChangePlan(card.res, card.records, kind);
@@ -643,8 +658,8 @@
       var out = await apiPost('applyChanges', cbody, 180000);
       card.status = 'saved';
       card.msg = '取込一覧に反映しました(行を追加' + out.added + '件・「変更前」「中止」の印' + out.marked + '件)。取り込んだ行は、取込一覧に残っています。' + pairText(out) + (out.fileWarn ? ' ※原本はDriveに保存できませんでした: ' + out.fileWarn : '');
-      await loadInit();
-      refreshReadyCards();
+      items.forEach(function (it) { if (it.mode === 'add' && it.label !== '中止' && it.label !== '変更前') S.importKeyList.push(L.importKey({ 積日: it.data.積日, 車番: it.data.車番 })); });
+      reloadInit();
     } catch (e) { card.busy = false; showBanner('反映に失敗しました: ' + e.message); renderFoot(card); return; }
     card.busy = false; showBanner(''); finishCard(card);
   }
@@ -992,7 +1007,10 @@
   async function savePair(mode, row, before, data) {
     try {
       await apiPost('masterSave', { kind: 'pair', mode: mode, row: row, before: before, data: data });
-      S.editing = null; await loadInit(); renderPairs(); showBanner('');
+      if (mode === 'update') { var r = S.pairs.filter(function (x) { return x._row === row; })[0]; if (r) Object.keys(data).forEach(function (k) { r[k] = data[k]; }); }
+      else { S.pairs = S.pairs.filter(function (x) { return x._row !== row; }); S.pairs.forEach(function (x) { if (x._row > row) x._row--; }); } // 行を削除すると、下の行の番号が1つ上がる
+      S.editing = null; renderPairs(); showBanner(''); // 保存した内容は、その場で表に反映し、照合用の一覧などは裏で読み直す
+      reloadInit();
     } catch (e) { showBanner('保存に失敗しました: ' + e.message); }
   }
 
@@ -1018,6 +1036,12 @@
       document.body.appendChild(dlg);
       dlg.showModal();
     });
+  }
+
+  /** 備考に、手配業者の名前が2つ以上ある(「大上/ナミツー」=同じ車・運転手を、別の手配業者も手配した)か。その場合だけ、備考を赤太文字で出す */
+  function isDualNote(note) {
+    var t = L.nameKey(note);
+    return S.senders.filter(function (c) { return t.indexOf(L.nameKey(c)) >= 0; }).length >= 2;
   }
 
   function renderPairs() {
@@ -1051,7 +1075,7 @@
           } }), ' ',
           h('button', { class: 'btn sm', type: 'button', text: '取消', onclick: function () { S.editing = null; renderPairs(); } })));
       } else {
-        cols.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: r[k] || '' })); });
+        cols.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (k === '備考' && isDualNote(r[k]) ? ' dual' : ''), text: r[k] || '' })); });
         tr.appendChild(h('td', { class: 'nowrap' },
           h('button', { class: 'btn sm edit', type: 'button', text: '編集', onclick: function () { S.editing = r._row; renderPairs(); } }), ' ',
           h('button', { class: 'btn sm del', type: 'button', text: '削除', onclick: function () {

@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261022c';
+var CODE_VERSION = '20261022e';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_MERGED = '車両運転手情報'; // 1行=車と運転手の1組。シートの列は MERGED_HEADERS(見出し名で読み書きする)
@@ -54,6 +54,7 @@ function setupSheets() {
 }
 
 function ensureSheet_(ss, name, headers) {
+  HEADER_ROWS_ = {};
   var sh = ss.getSheetByName(name) || ss.insertSheet(name);
   if (sh.getLastRow() === 0) {
     sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
@@ -111,6 +112,7 @@ function getFile_(url) {
 }
 
 function ensureOptionalCols_(sh, cols) {
+  HEADER_ROWS_ = {};
   var map = headerMap_(sh, []);
   cols.forEach(function (c) {
     if (map[c]) return;
@@ -118,6 +120,7 @@ function ensureOptionalCols_(sh, cols) {
     sh.getRange(1, col).setValue(c).setFontWeight('bold');
     map[c] = col;
   });
+  HEADER_ROWS_ = {}; // 見出しを足したので、読み直させる
 }
 
 function firstEmptyRowInA_(sh) {
@@ -206,8 +209,15 @@ function sheet_(name) {
 }
 
 function headerMap_(sh, required) {
-  var lastCol = sh.getLastColumn();
-  return headerMapOf_(lastCol > 0 ? sh.getRange(1, 1, 1, lastCol).getValues()[0] : [], required, sh.getName());
+  return headerMapOf_(headerRow_(sh), required, sh.getName());
+}
+
+/** シートの1行目の値の並び。1回の実行の中では、見出し行は変わらないので、シートごとに1回だけ読む(書き込みのたびに読み直さない。2026-10-22)。見出しを書き換える関数は、HEADER_ROWS_ を空にする。 */
+var HEADER_ROWS_ = {};
+function headerRow_(sh) {
+  var k = sh.getName();
+  if (!HEADER_ROWS_[k]) { var lastCol = sh.getLastColumn(); HEADER_ROWS_[k] = lastCol > 0 ? sh.getRange(1, 1, 1, lastCol).getValues()[0] : []; }
+  return HEADER_ROWS_[k];
 }
 
 /** 1行目の値の並びから {見出し: 列番号(1始まり)} を作る。必須の見出しが無ければエラー。 */
@@ -275,19 +285,33 @@ function parseDate_(s) {
 }
 
 /** 1行を書く。row が null なら末尾に追加。obj は {見出し: 値}。 */
+/** 列番号(1始まり)→A1表記の列(1→A、27→AA) */
+function colLetter_(n) { var t = ''; while (n > 0) { var m = (n - 1) % 26; t = String.fromCharCode(65 + m) + t; n = Math.floor((n - 1) / 26); } return t; }
+
+/** 1行を書く。row が null なら末尾に追加(1回の書き込みで、行全体を書く)。既存の行を更新するときは、渡された項目のセルだけを書く(他のセルは変えない)。
+ *  表示形式(文字・日付・日時)は、セルの範囲をまとめて1回で設定する。以前は1セルずつ(1行の追加で約48回のAPI呼び出し)だった。 */
 function writeRow_(sh, headers, rowNo, obj) {
-  var map = headerMap_(sh, headers);
+  var row = headerRow_(sh), map = headerMapOf_(row, headers, sh.getName());
   var r = rowNo || (sh.getLastRow() + 1);
-  Object.keys(obj).forEach(function (h) {
-    if (!map[h]) return;
-    var cell = sh.getRange(r, map[h]);
-    if (TEXT_COLS.indexOf(h) >= 0) cell.setNumberFormat('@');
-    else if (DATE_COLS.indexOf(h) >= 0) cell.setNumberFormat('yyyy/MM/dd');
-    else if (h === 'タイムスタンプ') cell.setNumberFormat('yyyy/MM/dd HH:mm:ss');
-    var v = obj[h];
-    if (DATE_COLS.indexOf(h) >= 0) v = parseDate_(v);
-    cell.setValue(v);
+  var keys = Object.keys(obj).filter(function (h) { return map[h]; });
+  var fmt = { text: [], date: [], stamp: [] };
+  keys.forEach(function (h) {
+    var a1 = colLetter_(map[h]) + r;
+    if (TEXT_COLS.indexOf(h) >= 0) fmt.text.push(a1);
+    else if (DATE_COLS.indexOf(h) >= 0) fmt.date.push(a1);
+    else if (h === 'タイムスタンプ') fmt.stamp.push(a1);
   });
+  if (fmt.text.length) sh.getRangeList(fmt.text).setNumberFormat('@');
+  if (fmt.date.length) sh.getRangeList(fmt.date).setNumberFormat('yyyy/MM/dd');
+  if (fmt.stamp.length) sh.getRangeList(fmt.stamp).setNumberFormat('yyyy/MM/dd HH:mm:ss');
+  function val(h) { return DATE_COLS.indexOf(h) >= 0 ? parseDate_(obj[h]) : obj[h]; }
+  if (!rowNo) {
+    var line = []; for (var i = 0; i < row.length; i++) line.push('');
+    keys.forEach(function (h) { line[map[h] - 1] = val(h); });
+    sh.getRange(r, 1, 1, row.length).setValues([line]);
+  } else {
+    keys.forEach(function (h) { sh.getRange(r, map[h]).setValue(val(h)); });
+  }
   return r;
 }
 
@@ -659,6 +683,34 @@ function applyOp_(op) {
 }
 function pick_(obj, keys) { var o = {}; keys.forEach(function (k) { if (obj && Object.prototype.hasOwnProperty.call(obj, k)) o[k] = obj[k]; }); return o; }
 
+/** 運送業者の書き方の違いは同じ会社とみなす(一方が他方に含まれていれば同じ。画面の logic.js の sameCo と同じ規則) */
+function sameCo_(a, b) { var x = companyKey_(a), y = companyKey_(b); return !!x && !!y && (x === y || x.indexOf(y) >= 0 || y.indexOf(x) >= 0); }
+/** 手配業者の書き方を、候補(情報シートの一覧。例: 大上・ナミツー)の名前にそろえる。当てはまらなければ、そのまま */
+function canonSender_(v, cands) {
+  var k = companyKey_(v);
+  for (var i = 0; i < cands.length; i++) { var ck = companyKey_(cands[i]); if (ck && k.indexOf(ck) >= 0) return nfkc_(cands[i]).replace(/[\s\u3000]+/g, ' ').trim(); }
+  return nfkc_(v).replace(/[\s\u3000]+/g, ' ').trim();
+}
+function senderRank_(n) { var k = companyKey_(n); return k.indexOf(companyKey_('大上')) >= 0 ? 0 : (k.indexOf(companyKey_('ナミツー')) >= 0 ? 1 : 2); }
+
+/** 「手配業者は別だが、運送業者・車種・車番・氏名・携帯番号は同じ」(大上が手配していた組み合わせを、ナミツーも手配した)とき、その行の備考に「大上/ナミツー」を書く。
+ *  手配業者の列は変えない。備考に他の文字(例: 10t/高TR)があれば残し、後ろに足す。既に両方が書かれていれば何もしない。書いたら true。 */
+function addSenderNote_(row, r) {
+  var s1 = String(row.手配業者 || '').trim(), s2 = String(r.業者 || r.手配業者 || '').trim();
+  if (!s1 || !s2 || sameCo_(s1, s2) || !sameCo_(row.運送業者, r.運送業者)) return false;
+  var cands = readSenders_(), a = canonSender_(s1, cands), b = canonSender_(s2, cands);
+  if (a === b) return false;
+  var note = String(row.備考 || ''), names = {}, other = note;
+  names[a] = 1; names[b] = 1;
+  cands.forEach(function (c) { var cn = nfkc_(c).trim(); if (cn && note.indexOf(cn) >= 0) { names[cn] = 1; other = other.split(cn).join(''); } });
+  other = other.replace(/^[\s\u3000\/／]+|[\s\u3000\/／]+$/g, '').replace(/[\/／]{2,}/g, '/');
+  var list = Object.keys(names).sort(function (x, y) { return senderRank_(x) - senderRank_(y) || (x < y ? -1 : x > y ? 1 : 0); }).join('/');
+  var next = other ? other + ' ' + list : list;
+  if (next === note) return false;
+  mergedWrite_(row._row, { 備考: next }); row.備考 = next;
+  return true;
+}
+
 /** 取込一覧への記録は済んでいるので、組み合わせの追加に失敗しても、記録は取り消さない(失敗は結果に入れて、画面で知らせる) */
 function safePairs_(rowsData) {
   try { var r = ensurePairs_(rowsData); r.ok = true; return r; }
@@ -671,14 +723,15 @@ function safePairs_(rowsData) {
  *  ③ 同じ運転手で車番が空欄の行があれば、そこに車を入れる ④ どれも無ければ新しい行を追加する(手配業者・運送業者・車種は、同じ車番の行があればその値、無ければFAXの値)。
  *  ②と③が両方あるとき(車も運転手も新規登録した直後)は、②に運転手を入れて、③の行は消す。 */
 function ensurePairs_(rowsData) {
-  var pairs = mergedRowsNow_(), toDelete = [], added = 0, filled = 0;
+  var pairs = mergedRowsNow_(), toDelete = [], added = 0, filled = 0, noted = 0;
   rowsData.forEach(function (r) {
     if (r.noPair) return;
     var pk = plateKey_(r.車番);
     var drv = { 運送業者: r.運送業者, 氏名: r.氏名, 携帯番号: r.携帯番号 };
     if (!pk || !hasDriver_(drv)) return;
     var plateRows = pairs.filter(function (x) { return plateKey_(x.車番) === pk && x._deleted !== true; });
-    if (plateRows.some(function (x) { return sameDriver_(x, drv); })) return; // ① 既にある
+    var exact = plateRows.filter(function (x) { return hasDriver_(x) && sameDriver_(x, drv); })[0];
+    if (exact) { if (addSenderNote_(exact, r)) noted++; return; } // ① 既にある(手配業者だけが違うときは、備考に「大上/ナミツー」を書く)
     // 既に登録されている同じ運転手の氏名・携帯番号の表記を、そのまま使う
     var known = null;
     pairs.some(function (x) { if (x._deleted !== true && hasDriver_(x) && sameDriver_(x, drv)) { known = x; return true; } return false; });
@@ -702,7 +755,7 @@ function ensurePairs_(rowsData) {
     var rowNo = mergedWrite_(null, nr); nr._row = rowNo; pairs.push(nr); added++;
   });
   toDelete.sort(function (a, b) { return b - a; }).forEach(function (n) { sheet_(SHEET_MERGED).deleteRow(n); }); // 下の行から消す(行番号がずれないように)
-  return { added: added, filled: filled, removed: toDelete.length };
+  return { added: added, filled: filled, removed: toDelete.length, noted: noted };
 }
 
 function masterSave_(body) {
