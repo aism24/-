@@ -191,3 +191,4 @@ table.t.pairs th:nth-child(7), table.t.pairs td:nth-child(7) { min-width: 9em; }
 table.t.pairs input { box-sizing: border-box; font: inherit; padding: 3px 4px; border: 1px solid var(--line); border-radius: 4px; background: #fff; text-align: center; width: 8em; }
 table.t.pairs td:nth-child(1) input { width: 6em; } table.t.pairs td:nth-child(2) input { width: 10em; } table.t.pairs td:nth-child(3) input { width: 6.5em; } table.t.pairs td:nth-child(4) input { width: 10em; }
 table.t.pairs td:nth-child(5) input { width: 7em; } table.t.pairs td:nth-child(6) input { width: 9em; } table.t.pairs td:nth-child(7) input { width: 10em; } /* 編集中の入力欄の幅(表が広がりすぎないように) */
+table.t.pairs td.dual { color: #c00000; font-weight: 800; } /* 備考に手配業者が2つ以上(大上/ナミツー): 同じ車・運転手を別の手配業者も手配した場合だけ、赤太文字 */
