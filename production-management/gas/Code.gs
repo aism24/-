@@ -6,7 +6,7 @@
  * SpreadsheetApp.getActiveSpreadsheet()で自分自身の索引スプレッドシートを参照するため、
  * SPREADSHEET_IDの設定は不要です。
  *
- * このアプリ本体(index.html / app.js)はフロントエンド(GitHub Pages)で、GASは
+ * このアプリ本体(index.html / app.js)はフロントエンド(Vercelで配信する静的ページ)で、GASは
  * JSON APIのみを提供します(グラフ描画・表の組み立てはすべてブラウザ側で行います)。
  *
  * ■ 読み取り専用の原則
