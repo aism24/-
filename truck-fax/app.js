@@ -860,7 +860,7 @@
     var now = new Date(), cur = L.closingOf(now.getFullYear(), now.getMonth() + 1, now.getDate());
     var fy0 = S.importsFy !== 'all' && S.importsFy != null ? S.importsFy : String(cur.fy), cm0 = S.importsCm !== 'all' && S.importsCm != null ? S.importsCm : String(cur.cm);
     var fySel = h('select', { 'aria-label': '年度' }), cmSel = h('select', { 'aria-label': '締め月' });
-    L.CLOSING_MONTH_ORDER.forEach(function (m) { cmSel.appendChild(h('option', { value: String(m), text: m + '月20日締め(' + L.closingPeriod(m) + ')' })); });
+    L.CLOSING_MONTH_ORDER.forEach(function (m) { cmSel.appendChild(h('option', { value: String(m), text: m + '/20〆' })); });
     cmSel.value = cm0;
     var info = h('p', { class: 'dlg-detail', text: '記録を読み込んでいます…' }), tableHost = h('div', { class: 'dlg-table' });
     var cancel = h('button', { class: 'btn', type: 'button', text: 'キャンセル' });
@@ -871,7 +871,7 @@
     function refresh() {
       var fy = fySel.value, cm = cmSel.value;
       shown = all.filter(function (r) { var c = L.rowClosing(r); return c && String(c.fy) === fy && String(c.cm) === cm; });
-      info.textContent = fy + '年度 ' + cm + '月20日締め(' + L.closingPeriod(+cm) + ')の記録: ' + shown.length + '件(中止・変更前の行も含みます)。この内容でよければダウンロードしてください。';
+      info.textContent = fy + '年度 ' + cm + '/20〆の記録: ' + shown.length + '件(中止・変更前の行も含みます)。この内容でよければダウンロードしてください。';
       tableHost.textContent = '';
       if (shown.length) {
         var head = h('tr'); VIEW_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); });
