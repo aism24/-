@@ -8,7 +8,9 @@
  * セットアップ: スプレッドシートの「拡張機能→Apps Script」にこのコードを貼り付け、
  * 「デプロイ→新しいデプロイ→ウェブアプリ(実行ユーザー=自分、アクセス=全員)」。
  * 発行された /exec のURLを、jissun-open/index.html の GAS_URL に設定する。
+ * コードを直したら CODE_VERSION を更新し、再デプロイ後に /exec をGETで開いて version を確認する。
  */
+const CODE_VERSION = '2026-10-21-ver';
 const SHEET_NAME = '記録';
 
 function doPost(e) {
@@ -19,9 +21,9 @@ function doPost(e) {
   }
 }
 
-// 動作確認用(ブラウザでURLを開くと応答する)
+// 動作確認用(ブラウザでURLを開くと応答する。version で反映中のコードの版を確認できる)
 function doGet() {
-  return json_({ status: 'success', data: 'jissun-open log API' });
+  return json_({ status: 'success', data: 'jissun-open log API', version: CODE_VERSION });
 }
 
 function logOpen_() {
