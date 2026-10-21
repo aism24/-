@@ -191,3 +191,5 @@ dialog.faxdlg { max-height: 96vh; overflow: auto; }
 .cm-nav { display: inline-flex; align-items: center; gap: 4px; }
 .cm-nav .cm-step { padding: 5px 9px; }
 .cm-nav .cm-step:disabled { opacity: .35; cursor: not-allowed; }
+select[aria-label=年度], select[aria-label=締め月] { text-align: center; text-align-last: center; } /* 年度・締め月のリストの文字は中央揃え(取込一覧・ダウンロードのポップアップとも) */
+select[aria-label=年度] option, select[aria-label=締め月] option { text-align: center; }
