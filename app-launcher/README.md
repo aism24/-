@@ -81,17 +81,16 @@ app-launcher/gas/Index.html … 既存のIndex.html（丸ごと貼り替え用�
 - レスポンスは常にHTTP 200で返り、成否は返却JSONの`status`フィールド（`success`/`error`）で
   判定します。
 
-## 2. フロントエンド（GitHub Pages）のセットアップ
+## 2. フロントエンド（Vercel）のセットアップ
 
-1. 上記手順で取得した新しいデプロイURLを `app-launcher/app.js` 先頭の `GAS_API_URL` に設定します。
-2. `main`ブランチにマージ済みであれば、`https://aism24.github.io/-/app-launcher/` で自動的に
-   公開されます（このリポジトリのGitHub Pagesは`main`ブランチのrootから配信する設定のため）。
-   リポジトリ直下（`https://aism24.github.io/-/`）にアクセスした場合も、自動転送により
-   同じページが表示されます。
+1. デプロイURLは `app-launcher/app.js` 先頭の `GAS_API_URL` に設定済みです(変える場合だけ書き換える)。
+2. 画面は Vercel(https://app-launcher-ashy.vercel.app/)で配信します。本番反映は「デプロイして」の指示時のみ。
+   開発中の画面確認は raw.githack(`https://raw.githack.com/aism24/-/<ブランチ>/app-launcher/index.html`)で行います。
+   (旧GitHub Pagesは使いません。冒頭の説明・「既存アプリとの関係」は初期構成の記録です。)
 
 ## 3. 動作確認
 
-1. GitHub PagesのURLを開き、分類ごとのカード一覧が表示されること。
+1. 画面のURLを開き、分類ごとのカード一覧が表示されること。
 2. カードをクリックすると、対象アプリが別タブで開くこと。
 3. スプレッドシートの「記録」シートに、クリックした日時・アプリ名の行が追記されること。
 4. 「情報」シートに新しい行（アプリ）を追加すると、リロード後に一覧へ反映されること。
