@@ -70,21 +70,18 @@ CLAUDE.md から分離(2026-10-21)。恒久ルールは CLAUDE.md、ここは詳
 | huguai (Vercelプロジェクト名「tori-huguai」。https://tori-huguai.vercel.app/) | huguai | 解除(2026-10-15、ユーザーがVercelでプロジェクトを作成し、本番デプロイ1回(dpl_CPJjCRe、コミット1d00b81=PR #726)→直後にユーザーが連携を解除。`list_projects`(repoUrl=aism24/-)0件を確認。ユーザーの手動デプロイでClaudeの `create_deployment` ではない。2026-10-16、「デプロイして」の指示で `create_deployment` により、2回目(dpl_6BNecPu、コミット17bf6db=PR #730、PDF固定幅1280px)、3回目(dpl_HuWZsmy、コミット1d9b8cb=PR #733月リストの並び・#734年度連動)、4回目(dpl_BjEauQ4、コミット19063ad=PR #735取得中の表示・#736今月に戻す・#737見出しの年表記)を、連携なしで本番デプロイ、いずれもREADY。10/16のデプロイは計3回) | アプリ名「社内不具合アプリNew」(社内不具合記録アプリ(鳥取)のVercel版)。静的サイト(関数なし)。`huguai/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止。GAS(`huguai/gas/Code.gs`、スプレッドシート「社内不具合アプリVercel版」にバインド)がデータ処理。本番反映は「デプロイして」の指示時のみ `create_deployment`(teamIdは渡さない=403。project=tori-huguai)。2026-10-15時点でClaudeのVercelツールは `get_project` 等がteam指定で403、`web_fetch_vercel_url` も403(本番ページの中身は未確認)。引き継ぎ書はDriveの保存先フォルダ(上の表)にある |
 | truck-fax(Vercelプロジェクトは未作成) | truck-fax | 未連携(プロジェクト自体が無い。2026-10-20) | アプリ名「車番連絡 取込」(スプレッドシート「車番連絡自動化」)。画面の確認はraw.githack(コミット固定のURL)。`truck-fax/vercel.json` の `git.deploymentEnabled=false` で自動デプロイ停止済み。公開するときは、ユーザーがVercelでプロジェクトを作成(Root Directory=truck-fax)→「デプロイして」の指示で `create_deployment`(teamIdは渡さない)。GAS(`truck-fax/gas/Code.gs`。コンテナバインド。Webアプリは「全員」)は、貼り替え→「新バージョン」で反映する(`CODE_VERSION` で確認)。引き継ぎ書はDriveの保存先フォルダ(上の表) |
 
-2026-10-19、15プロジェクト(pdf-diff-pythonapp・daily-report・jissun-open・tori-huguai・shipping-list-link・tdf-dim-count・excel-drawing-link-tool・dxf-launcher・company-ai・cost-insight・-tori-robo・jissun-master-jidokinyu・unso-check・-tdf-master-web・production-management)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(ボタン追加の反映。コミット96e4414)。連携は0件のまま(`list_projects` で確認)。直近24時間のデプロイ回数は計20回(上限100)。**`vercel.json` の `git.deploymentEnabled=false` が無いフォルダ: pdf-diff-app(functionsの設定だけ)・unso-check・production-management・tdf-master-web・jissun-master-jidokinyu・kozai-toriai・weld-heat-management。連携は0件なので今は自動デプロイされないが、これらのVercelプロジェクトを `aism24/-` に連携し直す前に、必ずそのフォルダへ置くこと(特に pdf-diff-app は1デプロイごとにFunctions Storageを消費する)。**
-2026-10-14、tdf-dim-count(新規)も作成直後に連携を解除し、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。
-2026-10-08、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。cost-insightは連携なしのまま `create_deployment` で本番デプロイできた(dpl_EthcYT7、コミット5c49df9)。
-**運用の原則**: 全アプリのGit連携を解除したままにする。連携が無ければpush・マージでデプロイは起きず、ユーザーが「デプロイして」と指示したアプリだけを `create_deployment` で1つずつデプロイする(連携は不要。Vercelプロジェクトの新規作成と連携の付け外しだけがユーザー操作)。連携が1件でも残っていたら、これまで通りpush・マージ前にユーザーへ解除を依頼する。
+**運用の原則**: 全アプリのGit連携を解除したままにする。連携が無ければpush・マージでデプロイは起きず、ユーザーが「デプロイして」と指示したアプリだけを `create_deployment` で1つずつデプロイする(連携は不要。Vercelプロジェクトの新規作成と連携の付け外しだけがユーザー操作)。連携が1件でも残っていたら、push・マージ前にユーザーへ解除を依頼する。
 
-2026-10-07現在、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携。cost-insight・tori-robo・app-launcherとも解除済み)。
-2026-10-07(午後)、shipping-list-linkも解除済みで0件を再確認。
+**最新の確認**: 2026-10-21、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。
 
-2026-09-29、sonekibunkiの連携も解除され、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。公開時は連携を戻してから、指示があったときだけ `create_deployment` で1回デプロイする。
+**`vercel.json` の `git.deploymentEnabled=false` が無いフォルダ**(2026-10-19時点): pdf-diff-app(functionsの設定だけ)・unso-check・production-management・tdf-master-web・jissun-master-jidokinyu・kozai-toriai・weld-heat-management。連携は0件なので今は自動デプロイされないが、これらのVercelプロジェクトを `aism24/-` に連携し直す前に、必ずそのフォルダへ置くこと(特に pdf-diff-app は1デプロイごとにFunctions Storageを消費する)。
 
-2026-09-27、sonekibunki(production-profit)を新規作成・連携。以降(〜9/28の解除まで) `list_projects`(repoUrl=aism24/-)は sonekibunki の1件が正常(vercel.jsonで自動デプロイ停止済み)。それ以外が返ったらマージしないこと。
-
-2026-09-24、ユーザーが全プロジェクトのGit連携を解除。`list_projects`(repoUrl=aism24/-)の結果が0件であることを確認済み(push/マージしてもデプロイされない状態)。
-
-※2026-09-24、PR #306(関数を`api/diff.py`1本に統合・scipy除去)を本番デプロイ済み(1件のみ、3モードとも正解値一致を本番APIで確認)。その後連携を再解除し0件を確認。
+### 連携・デプロイの経緯(履歴)
+- 2026-09-24: ユーザーが全プロジェクトの連携を解除(0件確認)。PR #306(関数を`api/diff.py`1本に統合・scipy除去)を本番デプロイ(1件のみ、3モードとも正解値一致を本番APIで確認)し、再解除して0件を確認。
+- 2026-09-27〜29: sonekibunki(production-profit)を新規作成・連携(この間 `list_projects` は同1件が正常)。9/29に解除し0件。
+- 2026-10-05〜08: app-launcher・cost-insight・tori-robo・shipping-list-link の連携を順次解除し0件。10/8、cost-insightは連携なしの `create_deployment` で本番デプロイできた(dpl_EthcYT7、コミット5c49df9)。
+- 2026-10-14: tdf-dim-count(新規)も作成直後に連携を解除し0件。
+- 2026-10-19: 15プロジェクト(pdf-diff-pythonapp・daily-report・jissun-open・tori-huguai・shipping-list-link・tdf-dim-count・excel-drawing-link-tool・dxf-launcher・company-ai・cost-insight・-tori-robo・jissun-master-jidokinyu・unso-check・-tdf-master-web・production-management)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(ボタン追加の反映。コミット96e4414)。連携は0件のまま。直近24時間のデプロイ回数は計20回(上限100)。
 
 ※Functions Storage(Hobby上限10GB)の大半はpdf-diff-pythonapp。(以下は統合前の状況)3つのPython関数それぞれに約300MBのライブラリ
 (scipy 143MB・numpy 73MB・PyMuPDF 65MB等)が同梱され、1デプロイ≒1GB消費する。デプロイは必要最小限にすること。
