@@ -7,7 +7,7 @@
  *  - 共通: キャッシュ(データ版数方式)・設定・日付ヘルパー
  *  - データ読込: loadData_()が1リクエスト1回だけ不具合記録シートを読む
  *  - 集計: buildAgg_()が1回の走査で年度/月/工事/明細の集計をまとめて作る
- *  - 生産重量: 6時間キャッシュ+スクリプトプロパティに永続保存(毎日2時に更新)
+ *  - 生産重量: 6時間キャッシュ+スクリプトプロパティに永続保存(毎朝7〜8時に更新)
  */
 
 var CONFIG_SHEET_NAME = '情報';
@@ -624,7 +624,7 @@ function getKekkaBunsekiContentRecords(filter) {
  * 生産重量マスタ（マスタQUERY）の「QUERY」シートを締め月単位（fiscalYear-closingMonth）で
  * 重量合計にまとめる。このスプレッドシートを開くだけで約12秒かかる(QUERY数式の再計算と推測)。
  * 重量の反映は1日1回のため、結果は CacheService(6時間) と スクリプトプロパティ(永続) の2か所に保存し、
- * 毎日2時のトリガー(warmProductionWeightCache)で更新する。画面は保存済みの値を即表示する。
+ * 毎朝7〜8時のトリガー(warmProductionWeightCache)で更新する(元のマスタQUERYが更新された後に読むため。2時に読むと前日分が入らず値が古くなった)。画面は保存済みの値を即表示する。
  * 列構成: A工事番号 B部位 C加工先 D製品マーク E長さ F本数 G重量 H加工(日付)
  */
 var WEIGHT_KEY = 'pw2';
@@ -715,13 +715,13 @@ function applyWeights_(out, kind) {
   return out;
 }
 
-/** 毎日2時のトリガー: 重量を再計算して保存し、集計・一覧のキャッシュも作り直す */
+/** 毎朝7〜8時のトリガー: 重量を再計算して保存し、集計・一覧のキャッシュも作り直す */
 function warmProductionWeightCache() {
   refreshWeights_();
   warmCaches_();
 }
 
-/** 毎日7時のトリガー: 集計・一覧・マスタのキャッシュを作り直す(朝の最初の表示を速くする) */
+/** キャッシュだけを作り直す(トリガーには登録していない。warmProductionWeightCache が同じ処理を含む) */
 function warmAnalysisCaches() {
   warmCaches_();
 }
@@ -734,7 +734,7 @@ function warmCaches_() {
 }
 
 /**
- * セットアップ用(初回のみApps Scriptエディタから手動実行): 毎日2時(重量の更新)と7時(キャッシュの作り直し)の
+ * セットアップ用(初回のみApps Scriptエディタから手動実行): 毎朝7〜8時(重量の更新+キャッシュの作り直し)の
  * 時間主導トリガーを登録する。再実行しても重複登録しないよう既存分を削除してから作る。
  */
 function setupProductionWeightCacheTrigger() {
@@ -742,8 +742,7 @@ function setupProductionWeightCacheTrigger() {
     var f = t.getHandlerFunction();
     if (f === 'warmProductionWeightCache' || f === 'warmAnalysisCaches') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('warmProductionWeightCache').timeBased().everyDays(1).atHour(2).create();
-  ScriptApp.newTrigger('warmAnalysisCaches').timeBased().everyDays(1).atHour(7).create();
+  ScriptApp.newTrigger('warmProductionWeightCache').timeBased().everyDays(1).atHour(7).create();
 }
 
 /** ===================== 結果分析(集計) ===================== */
