@@ -228,7 +228,7 @@ var AI_LOGIC = (function () {
   var ABS_HEADER = ['AbID', '社員No', '自', '至', '申請項目', '事由', '振替日', '直属上司', '元'];
   // B2(鉄構)・B5(建設・総務)のAbsenteeismを1つに合体。B5の社員No・直属上司には+2000。AbIDで重複を除く(先に来た行を採用)
   function mergeAbsence(v2, v5) {
-    var rows = [], seen = {}, skipped = 0, warnings = [];
+    var rows = [], seen = {}, warnings = [];
     function add(values, kind) {
       if (!values || values.length < 2) return;
       var ix = colIndex(values[0]), before = rows.length;
@@ -238,7 +238,7 @@ var AI_LOGIC = (function () {
       var off = kind === 'B5' ? 2000 : 0;
       for (var k = 1; k < values.length; k++) {
         var r = values[k], id = String(g(r, 'AbID')).trim(), no = parseInt(nfkc(g(r, '登録者')), 10), from = normDate(g(r, '自'));
-        if (!id || isNaN(no) || !from) { if (id || !isNaN(no)) skipped++; continue; }
+        if (!id || isNaN(no) || !from) continue;
         if (seen[id]) continue;
         seen[id] = true;
         var boss = parseInt(nfkc(g(r, '直属上司')), 10);
@@ -246,10 +246,9 @@ var AI_LOGIC = (function () {
                    normDate(g(r, '振替日')), isNaN(boss) ? '' : boss + off, kind]);
       }
     }
-    var n2 = 0;
-    add(v2, 'B2'); n2 = rows.length; add(v5, 'B5');
+    add(v2, 'B2'); var n2 = rows.length; add(v5, 'B5');
     if (v5 && v5.length > 50 && rows.length - n2 === 0 && !warnings.length) warnings.push('B5のAbsenteeismから1件も取り込めませんでした');
-    return { table: rows, skipped: skipped, warnings: warnings };
+    return { table: rows, warnings: warnings };
   }
 
   // 期間(from〜to)。今日(today)から、質問文の指定を読み取る。指定なしは「今年度(4/1〜翌3/31。有給の付与は4月)」
@@ -361,7 +360,9 @@ var AI_LOGIC = (function () {
     }
     var who = people.length > 1 ? 'ambiguous' : people.length === 1 ? 'person' : 'self';
     if (who === 'self' && !/(取った|取って|取得|使った|使って|消化|休んだ|遅刻|早退|欠勤|何日|何回|残|状況|確認|履歴|一覧|届)/.test(t)) return null;
-    return { who: who, people: people, period: parsePeriod(q, today), remain: /(残り|残数|残日|残って|あと何日|余り)/.test(t) };
+    var day = parseDay(q, today) || (/(明日|あした)/.test(t) ? addDays(today, 1) : ''); // 「昨日」「10/5」などの日付は、その1日で集計する(全員分の質問と同じ)
+    var period = day ? { from: day, to: day, label: day, isDay: true } : parsePeriod(q, today);
+    return { who: who, people: people, period: period, remain: /(残り|残数|残日|残って|あと何日|余り)/.test(t) };
   }
 
   // 申請1件が、期間内で何日分か(至があれば、休日を除いた日数。休日の情報が無い日は土日を休みとみなす)
@@ -660,7 +661,7 @@ var AI_LOGIC = (function () {
     var total = 0, days = {}, people = {}, byP = {}, byC = {}, byW = {}, detail = [], srcs = {};
     rows.forEach(function (r) {
       if (f.no != null && Number(r[1]) !== Number(f.no)) return;
-      if (f.project && !(squash(r[5]) === squash(f.project.name) || (r[3] && r[3] === f.project.id) || (f.project.no && r[4] === f.project.no && squash(r[5]) === squash(f.project.name)))) return;
+      if (f.project && !(squash(r[5]) === squash(f.project.name) || (r[3] && r[3] === f.project.id))) return;
       var h = Number(r[7]); total += h; days[r[2]] = 1; people[r[1]] = (people[r[1]] || 0) + h; srcs[r[8]] = 1;
       var pk = (r[5] || r[4] || '(工事不明)') + (r[4] && r[5] ? '(' + r[4] + ')' : '');
       byP[pk] = (byP[pk] || 0) + h; byC[r[6] || '(不明)'] = (byC[r[6] || '(不明)'] || 0) + h; byW[r[1]] = (byW[r[1]] || 0) + h;
@@ -743,7 +744,7 @@ var AI_LOGIC = (function () {
       var d = find(addDays(today, 1), c.want, 400);
       out = d ? '次の' + (c.want === '出勤' ? '出勤日' : '休日') + 'は ' + dlabel(d) + '(' + ago(d) + ')です。' + (st(today) === c.want ? '(今日も' + (c.want === '出勤' ? '出勤日' : '休日') + 'です)' : '') : '会社カレンダーに、今後の' + c.want + 'が登録されていません。';
     } else if (c.kind === 'renkyu') {
-      var best = null, i, d0 = today, startToday = null;
+      var best = null, i, startToday = null;
       // 今日が連休の途中なら、その旨を添える
       if (st(today) === '休日') { var a = today, b = today; while (st(addDays(a, -1)) === '休日') a = addDays(a, -1); while (st(addDays(b, 1)) === '休日') b = addDays(b, 1); if (a !== b) startToday = [a, b]; }
       var cur = addDays(startToday ? startToday[1] : today, 1);
@@ -788,7 +789,7 @@ var AI_LOGIC = (function () {
     return { rows: rows, undated: undated };
   }
   var PROD_TOPIC = /(生産重量|加工重量|生産量|加工量|生産実績|何トン|生産.{0,6}(重量|トン)|加工.{0,6}(重量|トン))/;
-  var SITES = ['本社', '夢前', '鳥取'];
+  var SITES = PROD_SITES;
   function parseProdQuery(q, today, projects) {
     var t = nfkc(q);
     if (!PROD_TOPIC.test(t)) return null;
@@ -818,8 +819,9 @@ var AI_LOGIC = (function () {
     var out = [ctx.title + ' の ' + ctx.period.label + ' の生産重量(加工完了分)です(' + ctx.asOf + ' 時点のデータ)。'];
     if (!sum.count) { out.push('この期間に加工完了の実績が見つかりませんでした。'); return out.join('\n'); }
     out.push('合計 ' + fmtNum(sum.total) + 'トン(' + sum.count + '点)' + (ctx.workDays ? '、出勤日' + ctx.workDays + '日で日平均 ' + fmtNum(sum.total / ctx.workDays) + 'トン' : ''));
-    if (ctx.period.isDay === undefined || !ctx.period.isDay) {
-      var ds = Object.keys(sum.byDay).sort(); var peak = ds.sort(function (a, b) { return sum.byDay[b] - sum.byDay[a]; })[0];
+    if (!ctx.period.isDay) {
+      var ds = Object.keys(sum.byDay).sort(), peak = ds[0]; // 重量が最大の日(同じなら日付の早い方)
+      ds.forEach(function (d) { if (sum.byDay[d] > sum.byDay[peak]) peak = d; });
       if (ds.length > 1) out.push('最大の日: ' + dfmt(peak) + ' ' + fmtNum(sum.byDay[peak]) + 'トン');
     }
     var mk = function (title, o, n) { out.push('', title); top(o, n).forEach(function (x) { out.push('・' + x[0] + ': ' + fmtNum(x[1]) + 'トン'); }); };

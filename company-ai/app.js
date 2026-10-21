@@ -47,22 +47,16 @@
   }
 
   function showLogin(msg) {
-    $('loginCard').style.display = ''; $('chatCard').style.display = 'none'; $('who').textContent = '';
+    $('loginCard').style.display = ''; $('chatCard').style.display = 'none';
     var el = $('loginErr'); el.style.display = msg ? '' : 'none'; el.textContent = msg || '';
   }
-  function showChat(me) {
+  function showChat() {
     $('loginCard').style.display = 'none'; $('chatCard').style.display = '';
   }
 
-  // ログイン確認中の表示(Google側が遅いと30秒ほどかかることがあるため、待っていることを伝える)
-  function loginBusy(on, tries) {
-    var el = $('loginBusy'); el.style.display = on ? '' : 'none';
-    if (on) el.textContent = 'ログインを確認しています…' + (tries > 1 ? '(混み合っているため再試行しています ' + tries + '/' + MAX_TRIES + ')' : '(最大30秒ほどかかることがあります)');
-    $('gsiBtn').style.display = on ? 'none' : '';
-  }
   // 名簿の確認(me)は、結果を待たずに質問画面を先に出して、裏で確かめる。登録が無い・期限切れのときだけログイン画面に戻す
   function checkMe() {
-    showChat({});
+    showChat();
     return api('me', null).catch(function (e) {
       if (e.code === 'net') return; // 通信の失敗は、質問を送るときにもう一度確かめる
       $('log').textContent = ''; tokenSet(''); token = ''; showLogin(e.message); renderBtn();
@@ -71,7 +65,7 @@
   function onCredential(resp) { token = resp.credential; tokenSet(token); checkMe(); }
 
   function initLogin() {
-    if (DEMO) { showChat({ name: 'デモ', isAdmin: false }); return; }
+    if (DEMO) { showChat(); return; }
     if (!CFG.GAS_URL || !CFG.CLIENT_ID) { $('setupNote').style.display = ''; showLogin(''); return; }
     var saved = tokenGet();
     if (saved) { token = saved; checkMe(); }

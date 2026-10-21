@@ -1,9 +1,12 @@
 /**
- * 社内AI(第1弾): 就業規則への質問 + ログイン照合 + 質問ログ/👎報告 + 毎朝の名簿取り込み + 朝3時のメール
+ * 社内AI: 就業規則への質問(AI) + ログイン照合 + 質問ログ/👎報告 + 毎朝のメール。
+ * 数字の質問はAIを使わず、コードが集計して答える: 有給・欠勤(全員分の届一覧・日報の未提出者を含む)・日報(工数)・生産重量・会社カレンダー。
+ * 毎晩のデータ取り込み: 名簿・カレンダー・工事・有給欠勤・日報(1時台)、生産重量(2時台)。メールは3時台、5分おきにキャッシュを温める(keepWarm)。
  * スプレッドシート「社内AI」にコンテナバインドして使う。設置手順は README.md。
- * 純粋な処理(条文分割・検索・名簿の合体・プロンプト)は Logic.gs。
+ * 純粋な処理(条文分割・検索・名簿の合体・質問の解釈・集計・文章づくり)は Logic.gs。
  */
 var MODEL = 'gemini-3.5-flash-lite'; // 固定。明示の指示があるときだけ変える(自動選択・可変にしない)
+var CODE_VERSION = '2026-10-21-tidy'; // デプロイ後に doGet(URLをGETで開く)の version で、反映を確認する。コードを変えたら更新する
 var SHEET = { OPERATOR: 'Operator', ADMIN: '管理者', RULES: '規則', STAGE: '規則_取込', HIST: '規則履歴',
               LOG: '質問ログ', CAL: 'CompanyCalendar', CONS: 'Construction', META: '設定', INFO: '諸情報', ABS: '有給欠勤',
               WORK: '日報', WORKP: '日報_過去', CONT: '作業内容', CONS5: '工事_建設', PROD: '生産重量', PRODS: '生産重量_状態' };
@@ -99,7 +102,7 @@ function replay_(user, rid, fn) {
 }
 
 // ---------- Webアプリ ----------
-function doGet() { return json_({ ok: true, app: '社内AI', model: MODEL }); }
+function doGet() { return json_({ ok: true, app: '社内AI', model: MODEL, version: CODE_VERSION }); }
 
 function doPost(e) {
   try {
@@ -161,11 +164,11 @@ function loadRules_() {
 }
 
 function callGemini_(prompt) {
-  var res, code;
+  var res, code, apiKey = prop_('GEMINI_API_KEY'); // 設定シートの読み込みは1回だけ(下の再送のたびに読み直さない)
   for (var i = 0; i < 3; i++) { // 一時的な障害(500/502/503/504)は、少し待って最大3回まで送る
     res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent', {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      headers: { 'x-goog-api-key': prop_('GEMINI_API_KEY') },
+      headers: { 'x-goog-api-key': apiKey },
       payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }],
                                 generationConfig: { temperature: 0, responseMimeType: 'application/json' } })
     });
