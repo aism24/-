@@ -72,11 +72,12 @@
     ttlEl.textContent = cur.name + ' ／ レイヤ ' + ch.name + (width ? ' ／ 長さ ±' + width + 'mm でまとめ' : '');
     var h = '';
     if (!s.rows.length) {
-      h += '<div class="small c">このレイヤには、数値テキストがありません</div>';
+      // 数値テキストはあるが全部不一致のときは、下の「集計対象外」の表に出る
+      h += '<div class="small c">' + (s.ng.length ? '一致する寸法がありません(数値テキストはすべて、テキストの数と線の本数が不一致です)' : 'このレイヤには、数値テキストがありません') + '</div>';
     } else if (!g) {
       h += '<table><tr><th>テキスト(寸法)</th><th>線の本数</th></tr>';
       s.rows.forEach(function (r) { h += '<tr><td class="c">' + esc(r.text) + '</td><td class="c' + (r.count ? '' : ' warn') + '">' + r.count + '</td></tr>'; });
-      h += '<tr><th>合計(テキスト' + s.textCount + '個・線は重複なし)</th><th style="text-align:center">' + s.total + '</th></tr></table>';
+      h += '<tr><th>合計(' + s.textCount + '種類・線は重複なし)</th><th style="text-align:center">' + s.total + '</th></tr></table>';
     } else {
       h += '<table><tr><th>手配長さ</th><th>範囲</th><th>本数</th><th>元のテキスト</th></tr>';
       g.groups.forEach(function (x) { h += '<tr><td class="c">' + tehai(x.rep) + '</td><td class="c">' + x.min.toFixed(1) + '〜' + x.max.toFixed(1) + '</td><td>' + x.count + '</td><td style="text-align:left">' + esc(x.texts.join('、')) + '</td></tr>'; });
