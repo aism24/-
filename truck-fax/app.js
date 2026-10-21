@@ -1026,7 +1026,9 @@
     host.textContent = '';
     var cols = PAIR_COLS;
     var rows = L.sortPairs(S.pairs); // 手配業者(大上→ナミツー→その他)→運送業者→車種(4t→10t→15t→TR→その他)→車番→氏名の順(表示だけで、シートの行順は変えない)
-    host.appendChild(h('div', { class: 'tool' }, h('span', { class: 'sub', text: rows.length + '件(1行=車と運転手の1組。同じ車に別の運転手、同じ運転手が別の車に乗る場合は、別の行)' }), h('span', { class: 'spacer' }),
+    var wrap = h('div', { class: 'pairs-wrap' }); // 表の幅は中身に合わせ、画面の中央に置く(見出しの行・表とも同じ幅)
+    host.appendChild(wrap);
+    wrap.appendChild(h('div', { class: 'tool' }, h('span', { class: 'sub', text: rows.length + '件(1行=車と運転手の1組。同じ車に別の運転手、同じ運転手が別の車に乗る場合は、別の行)' }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn sm excel', type: 'button', text: 'Excelでダウンロード', onclick: function () {
         TruckXlsx.download('車両運転手情報_' + todayIso().replace(/-/g, '') + '.xlsx', '車両運転手情報', cols, rows.map(function (r) { return cols.map(function (k) { return r[k] || ''; }); }));
       } })));
@@ -1059,8 +1061,8 @@
       }
       body.appendChild(tr);
     });
-    host.appendChild(h('div', { class: 'scroll' }, h('table', { class: 't pairs' }, h('thead', null, head), body)));
-    if (!rows.length) host.appendChild(h('div', { class: 'empty', text: 'まだ登録がありません。FAXを取り込むと、車と運転手の組み合わせが自動で登録されます。' }));
+    wrap.appendChild(h('div', { class: 'scroll' }, h('table', { class: 't pairs' }, h('thead', null, head), body)));
+    if (!rows.length) wrap.appendChild(h('div', { class: 'empty', text: 'まだ登録がありません。FAXを取り込むと、車と運転手の組み合わせが自動で登録されます。' }));
   }
 
   // ---------- 起動 ----------
