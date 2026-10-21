@@ -534,6 +534,13 @@ async function handleSelectedFile(file) {
     const buf = await file.arrayBuffer();
     const workbook = XLSX.read(buf, { type: "array", cellDates: true });
     const rows = parseHaulingSheet(workbook);
+    // 0行のまま取り込むと、データ0行の「未確定」が残って確定も次の取込みもできなくなるため、ここで止める
+    // (GAS側のimportHaulingFileでも同じ理由で拒否する)
+    if (rows.length === 0) {
+      statusEl.textContent = "「配車」シートに取り込める行がありません(0行)。ファイルを確認してください: " + file.name;
+      statusEl.className = "import-status error";
+      return;
+    }
 
     pendingImport = { fileName: file.name, rows: rows };
     detectedInfo.style.display = "block";
@@ -791,16 +798,11 @@ function closingToFiscalYearMonth_(closingStr) {
   return { fiscalYear: m === 12 ? y + 1 : y, month: m };
 }
 
-// 20日締めチェック画面の初期表示。以前は「年ボタンの選択肢取得」「デフォルト締め月の判定」
-// 「集計結果取得」の3回に分けてGASを呼んでいたため、呼び出しごとのオーバーヘッド(スプレッド
-// シートを開く処理等)が重なって表示が遅くなっていた。GAS側のgetCheckScreenInitに統合し、
-// 1回のリクエストで全て取得する。
+// 20日締めチェック画面の初期表示。GASは呼ばず、ensureHaulingData()で取得済みのキャッシュから
+// 年ボタンの選択肢・実績のある最新の締め月・初期表示する集計結果をブラウザ内で計算する
+// (キャッシュが未取得のときだけ、読み込み中ポップアップを出して1回取得する)。
 // preselect: { company, closingMonth } が指定された場合、デフォルトの業者「全て」+最新月では
 // なく、その業者+締め月の結果を開いた状態で表示する(Excel取込み直後の確定促し用)。
-// 【本更新で修正】以前はpreselect指定時も一旦「全て」の結果をGAS側で計算させてから使わずに
-// 捨て、refreshCheckResult()で単体の結果を別リクエストとして取り直していた(配車データの
-// 二重読み込み+GAS呼び出しがもう1往復発生していた)。GAS側にpreselectの業者+締め月を渡し、
-// 最初から単体の結果を返してもらう形にして、この無駄な往復を無くした。
 async function initCheckScreen(preselect) {
   checkState = { company: null, fiscalYear: null, month: null };
   document.getElementById("check-status-badge").innerHTML = "";

@@ -27,7 +27,12 @@
  *   - 毎月1日、スプレッドシートを丸ごとコピーしてGoogle Driveの「保存用バックアップ」
  *     フォルダへ保存する(backupSpreadsheetToDrive。createBackupTriggerで設定した
  *     月次トリガーから呼ばれる)
+ *
+ * コードを直したら CODE_VERSION を更新し、新しいバージョンでデプロイした後に
+ * 「/exec?action=ping」をGETで開いて version が一致することを確認する。
  */
+
+const CODE_VERSION = "2026-10-21-unso1";
 
 const SHEET_HAULING = "配車データ";
 const SHEET_STATUS = "締め状態";
@@ -266,6 +271,7 @@ function errRes_(message) { return jsonResponse_({ status: "error", message: mes
 function doGet(e) {
   try {
     const p = e.parameter;
+    if (p.action === "ping") return ok_({ version: CODE_VERSION });
     if (p.action === "listCompanies") return ok_(listCompanies());
     if (p.action === "getClosingCheck") return ok_(getClosingCheck(p.company, p.closingMonth));
     if (p.action === "getClosingCheckAll") return ok_(getClosingCheckAll(p.closingMonth));
@@ -584,9 +590,27 @@ function isBlankOrZero_(v) {
   return !isNaN(n) && n === 0;
 }
 
+// 現場待機(時刻)を "HH:MM" にそろえる。シートでは "6:15" 等が時刻型(1899/12/30の日時)に
+// 自動変換されて読み戻されるため、取込み中の文字列("06:15")とそのままでは一致しない。
+// Asia/Tokyoは常にUTC+9なので、dateToYmdJst_と同じく9時間足したUTC基準で時分を取り出す。
+function normalizeTime_(value) {
+  if (value instanceof Date && !isNaN(value)) {
+    const totalMin = Math.round(((value.getTime() + 9 * 60 * 60 * 1000) % 86400000 + 86400000) % 86400000 / 60000) % 1440;
+    return pad2_(Math.floor(totalMin / 60)) + ":" + pad2_(totalMin % 60);
+  }
+  if (typeof value === "number") {
+    const totalMin = Math.round(value * 24 * 60) % 1440;
+    return pad2_(Math.floor(totalMin / 60)) + ":" + pad2_(totalMin % 60);
+  }
+  const s = String(value == null ? "" : value).trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  return m ? pad2_(Number(m[1])) + ":" + m[2] : s;
+}
+
 // 重複判定用に1項目分の値を比較可能な文字列に正規化する
 function normalizeForCompare_(field, value) {
   if (field === "積日" || field === "降日") return cellToYmd_(value);
+  if (field === "現場待機") return normalizeTime_(value);
   if (field === "総重量" || field === "通常単価") return String(Math.round(toNum_(value) * 100) / 100);
   return String(value == null ? "" : value).trim();
 }
@@ -606,17 +630,15 @@ function findDuplicateRow_(candidateRow, existingRows) {
 }
 
 // 取込み中の行群(newRows)が、既に取り込まれている行群(existingRows)と完全に同一内容かどうかを判定する。
-// 行数が異なる、またはDUPLICATE_CHECK_FIELDS(11項目)のいずれか1つでも不一致な行があれば「別内容」と判断する。
-// 同じファイルの誤った再アップロード検知用のため、行の並び順まで一致することを前提とする。
+// 行数が異なる、またはDUPLICATE_CHECK_FIELDS(11項目)が一致しない行があれば「別内容」と判断する。
+// 「配車データ」シートは開くたびに並び替わる(onOpen)ため、行の並び順は問わない
+// (各行の11項目をつないだ文字列を並べ替えてから比べる)。
 function isExactSameBatch_(newRows, existingRows) {
   if (newRows.length === 0 || newRows.length !== existingRows.length) return false;
-  for (let i = 0; i < newRows.length; i++) {
-    const matches = DUPLICATE_CHECK_FIELDS.every(field =>
-      normalizeForCompare_(field, newRows[i][field]) === normalizeForCompare_(field, existingRows[i][field])
-    );
-    if (!matches) return false;
-  }
-  return true;
+  const rowKey = row => DUPLICATE_CHECK_FIELDS.map(field => normalizeForCompare_(field, row[field])).join("\u0001");
+  const a = newRows.map(rowKey).sort();
+  const b = existingRows.map(rowKey).sort();
+  return a.every((k, i) => k === b[i]);
 }
 
 /**
@@ -733,6 +755,12 @@ function importHaulingFile(payload) {
       imported: false, company: company, closingMonth: targetClosing,
       importedCount: 0, excludedRows: excludedRows,
     };
+  }
+
+  // 取り込める行が0行(見出しだけのファイル等)のときは保存しない。保存すると、データ0行の
+  // 「未確定」が残り(確定ボタンはデータがあるときだけ出る)、以後すべての取込みが止まるため。
+  if (okRows.length === 0) {
+    throw new Error("取り込める行がありません(配車データが0行です)。ファイルを確認してください: " + fileName);
   }
 
   // 未確定の状態へ再アップロードする際、既に取り込まれている内容と完全に一致する場合は、

@@ -74,7 +74,7 @@ CLAUDE.md から分離(2026-10-21)。恒久ルールは CLAUDE.md、ここは詳
 
 **最新の確認**: 2026-10-21、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。
 
-**`vercel.json` の `git.deploymentEnabled=false` が無いフォルダ**(2026-10-19時点。2026-10-21に production-management へ追加済み=PR #856): pdf-diff-app(functionsの設定だけ)・unso-check・tdf-master-web・jissun-master-jidokinyu・kozai-toriai・weld-heat-management。連携は0件なので今は自動デプロイされないが、これらのVercelプロジェクトを `aism24/-` に連携し直す前に、必ずそのフォルダへ置くこと(特に pdf-diff-app は1デプロイごとにFunctions Storageを消費する)。
+**`vercel.json` の `git.deploymentEnabled=false` が無いフォルダ**(2026-10-19時点。2026-10-21に production-management・unso-check へ追加済み): pdf-diff-app(functionsの設定だけ)・tdf-master-web・jissun-master-jidokinyu・kozai-toriai・weld-heat-management。連携は0件なので今は自動デプロイされないが、これらのVercelプロジェクトを `aism24/-` に連携し直す前に、必ずそのフォルダへ置くこと(特に pdf-diff-app は1デプロイごとにFunctions Storageを消費する)。
 
 ### 連携・デプロイの経緯(履歴)
 - 2026-09-24: ユーザーが全プロジェクトの連携を解除(0件確認)。PR #306(関数を`api/diff.py`1本に統合・scipy除去)を本番デプロイ(1件のみ、3モードとも正解値一致を本番APIで確認)し、再解除して0件を確認。
