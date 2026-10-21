@@ -18,7 +18,7 @@
   **例外(新規アプリ、2026-10-20〜。truck-faxが最初)**: モデル名とAPIキーはスプレッドシートの「情報」シート(A列=項目名、B列=値。項目名 `Geminiモデル名`・`APIKEY`)をGASがA列の項目名で探して読む。セルが空なら別モデルに黙って切り替えず「情報シートの◯◯が空です」とエラー。既存アプリ(company-ai・huguai等)はユーザーが指示するまで変えない。
 - コードを変えたら回帰テストで前回値が悪化していないか確認する。テストファイルは作業後に削除する(tdf-dim-countの正解データ・テストは例外)。
 - アプリ・コードはすべて `aism24/-` の直下にアプリごとのフォルダで置く(新リポジトリは作らない)。
-- 各アプリのフォルダに `vercel.json` `{"git":{"deploymentEnabled":false}}` を置き、push・マージでビルドが走らないようにする。置いていないフォルダ(pdf-diff-app・unso-check・production-management・tdf-master-web・jissun-master-jidokinyu・kozai-toriai・weld-heat-management)は、Vercelへ連携し直す前に必ず置く。
+- 各アプリのフォルダに `vercel.json` `{"git":{"deploymentEnabled":false}}` を置き、push・マージでビルドが走らないようにする。置いていないフォルダ(pdf-diff-app・unso-check・tdf-master-web・jissun-master-jidokinyu・kozai-toriai・weld-heat-management)は、Vercelへ連携し直す前に必ず置く。
 - GitHubのPages(`aism24.github.io`)は使わない。公開はVercel(フォルダ=Root Directory。Framework=Other)。名前が似たVercelプロジェクトが別実装のことがあるので、URLは実際にfetchして中身を確認してから使う。
 - 作業完了時、効果のあったやり方(Before→After数値つき)とユーザーが繰り返した指示を `docs/know-how.md` に追記(1項目5行以内。ローカルセッションの知見もここが正)。恒久ルール化すべきものは提案してから本ファイルに追記する。
 
