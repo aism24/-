@@ -488,24 +488,9 @@ function fillRecordsCache_(all) {
   cachePutPairs_(pairs);
 }
 
-/** 旧仕様(年度の指定なし=全期間)用。画面からは使われないためキャッシュしない */
-function recordsDirect_(year, month) {
-  var d = loadData_();
-  var tz = getConfig_().timezone;
-  var rows = d.rows.filter(function (r) { return r[d.id]; }).filter(function (r) {
-    var dt = r[d.date];
-    if (!(dt instanceof Date)) return false;
-    var info = getClosingInfo_(dt);
-    if (year && info.fiscalYear !== Number(year)) return false;
-    if (month && info.closingMonth !== Number(month)) return false;
-    return true;
-  });
-  rows = sortByDateDesc_(rows, d.date);
-  return { rows: rows.map(function (r) { return rowToObject_(d.headers, r, tz); }), total: rows.length };
-}
-
 function getRecords(year, month) {
-  if (!year) return recordsDirect_(year, month);
+  // 年度の指定が無いのは、日付のある記録が1件も無いとき(画面は必ず年度を選んで呼ぶ)
+  if (!year) return { rows: [], total: 0 };
   var sum = recordsEntry_('sum');
   if (!sum.yearCounts[Number(year)]) return { rows: [], total: 0 };
   var entry = recordsEntry_(Number(year));
@@ -721,11 +706,6 @@ function warmProductionWeightCache() {
   warmCaches_();
 }
 
-/** キャッシュだけを作り直す(トリガーには登録していない。warmProductionWeightCache が同じ処理を含む) */
-function warmAnalysisCaches() {
-  warmCaches_();
-}
-
 function warmCaches_() {
   var key = cacheKey_('mst:' + ver_('masterVer'), 'all');
   cachePutBig_(key, buildMasterData_());
@@ -740,6 +720,7 @@ function warmCaches_() {
 function setupProductionWeightCacheTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     var f = t.getHandlerFunction();
+    // warmAnalysisCaches は廃止した旧トリガー(関数は削除済み)。残っていれば一緒に消す
     if (f === 'warmProductionWeightCache' || f === 'warmAnalysisCaches') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('warmProductionWeightCache').timeBased().everyDays(1).atHour(7).create();
@@ -1017,10 +998,10 @@ function uploadPhoto(base64Data, mimeType, filename) {
 
 function ocrProductName(base64Data, mimeType) {
   var cfg = getConfig_();
-  // 情報シートのAPIKEY行(B5)から取得
+  // 情報シートの項目名「APIKEY」の行から取得(getConfig_)
   var apiKey = cfg.apiKey;
   if (!apiKey) {
-    throw new Error('情報シートの APIKEY（B5）が空です。');
+    throw new Error('情報シートの APIKEY の行が空です。');
   }
 
   var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
