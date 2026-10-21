@@ -193,3 +193,6 @@ dialog.faxdlg { max-height: 96vh; overflow: auto; }
 .cm-nav .cm-step:disabled { opacity: .35; cursor: not-allowed; }
 select[aria-label=年度], select[aria-label=締め月] { text-align: center; text-align-last: center; } /* 年度・締め月のリストの文字は中央揃え(取込一覧・ダウンロードのポップアップとも) */
 select[aria-label=年度] option, select[aria-label=締め月] option { text-align: center; }
+table.t.pairs { table-layout: auto; width: 100%; } /* 車両・運転手情報の表: 画面いっぱいに広げ、列は中身に合わせる */
+table.t.pairs th, table.t.pairs td { text-align: center; white-space: nowrap; }
+table.t.pairs input { width: 100%; min-width: 6em; box-sizing: border-box; font: inherit; padding: 3px 4px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
