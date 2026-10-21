@@ -1,5 +1,5 @@
 (function () {
-  // GAS(Webアプリ)のURL。未設定の間は sample/links.json(動作確認用)を使い、PDF保存・記録は行わない
+  // GAS(Webアプリ)のURL。必須(マスタの取得・元PDFの保存・記録に使う)。未設定ならマスタを取得できない
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbw0NvmN8vjr4g0TNx1TQ8DffC6FWwK6GfBOZb32N0mTp3CrcYXLNOpkxhXo2ce1PwE6/exec';
   // PDFに埋め込むリンクの形式。'web'=Webページ(open.html)経由で jissun:// 起動(Acrobatの「ファイルを起動」警告を回避)
   //                              'file'=マスタのfile://を直接埋め込む(従来形式。Acrobatの警告が2回出る)
@@ -31,8 +31,9 @@
         if (r.ok) { var m = await r.json(); if (m && m.links) return { m: ShippingCore.expandMaster(m), via: u ? '中継API(古いデータ)' : '中継API' }; }
       } catch (e) {}
     }
-    var r2 = await fetch(GAS_URL ? GAS_URL + '?action=links' + (q ? '&' + q : '') : 'sample/links.json', { cache: 'no-store' });
-    return { m: ShippingCore.expandMaster(await r2.json()), via: GAS_URL ? 'GAS直接' : '動作確認用サンプル' };
+    if (!GAS_URL) throw new Error('GAS_URL が未設定です');
+    var r2 = await fetch(GAS_URL + '?action=links' + (q ? '&' + q : ''), { cache: 'no-store' });
+    return { m: ShippingCore.expandMaster(await r2.json()), via: 'GAS直接' };
   }
   // 「マスタ更新分確認中」ポップアップ。取得中は流れるバー、終了時はバーを100%にしてから閉じる
   var busyTimer = null;
