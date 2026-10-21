@@ -686,10 +686,17 @@
       s.value = value; s.addEventListener('change', function () { onchange(s.value); renderImports(); });
       return s;
     }
-    var fySel = sel('年度', S.importsFy, [['all', 'すべての年度']].concat(fyList.map(function (y) { return [String(y), y + '年度']; })), function (v) { S.importsFy = v; });
-    var cmSel = sel('締め月', S.importsCm, [['all', 'すべての締め月']].concat(L.CLOSING_MONTH_ORDER.map(function (m) { return [String(m), m + '/20〆']; })), function (v) { S.importsCm = v; });
+    var haveCl = {}; cl.forEach(function (c) { if (c) haveCl[c.fy + '-' + c.cm] = 1; }); // データのある 年度-締め月
+    var fySel = sel('年度', S.importsFy, [['all', 'すべての年度']].concat(fyList.map(function (y) { return [String(y), y + '年度']; })), function (v) {
+      S.importsFy = v;
+      var ms = closingMonthsWithData(haveCl, v); // 年度を変えたとき、選んでいた締め月がその年度に無ければ、データのある一番新しい月にする
+      if (v !== 'all' && S.importsCm !== 'all' && ms.length && ms.indexOf(+S.importsCm) < 0) S.importsCm = String(ms[ms.length - 1]);
+    });
+    // 締め月のリストには、データのある月だけを出す(選んでいる月は、データが無くても残す)
+    var cmMonths = closingMonthsWithData(haveCl, S.importsFy);
+    if (S.importsCm !== 'all' && cmMonths.indexOf(+S.importsCm) < 0) cmMonths = L.CLOSING_MONTH_ORDER.filter(function (m) { return cmMonths.indexOf(m) >= 0 || m === +S.importsCm; });
+    var cmSel = sel('締め月', S.importsCm, [['all', 'すべての締め月']].concat(cmMonths.map(function (m) { return [String(m), m + '/20〆']; })), function (v) { S.importsCm = v; });
     // 締め月のリストの左右に ◀▶。1か月前・後へ移動する。データが無い月・「すべて」のときは押せない(グレーアウト)
-    var haveCl = {}; cl.forEach(function (c) { if (c) haveCl[c.fy + '-' + c.cm] = 1; });
     function goCm(to) { S.importsFy = String(to.fy); S.importsCm = String(to.cm); renderImports(); }
     var prevBtn = cmStepButton(-1, '◀', '1か月前の締め月', goCm), nextBtn = cmStepButton(1, '▶', '1か月後の締め月', goCm);
     prevBtn.update(S.importsFy, S.importsCm, haveCl); nextBtn.update(S.importsFy, S.importsCm, haveCl);
@@ -705,6 +712,14 @@
     var body = h('tbody');
     shown.forEach(function (r) { body.appendChild(importRow(r)); });
     host.appendChild(shown.length ? h('div', { class: 'scroll' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' }));
+  }
+
+  /** データのある締め月(12,1,…,11の順)。fy='all' のときは、どの年度かにデータのある月 */
+  function closingMonthsWithData(haveCl, fy) {
+    return L.CLOSING_MONTH_ORDER.filter(function (m) {
+      if (fy !== 'all') return !!haveCl[fy + '-' + m];
+      return Object.keys(haveCl).some(function (k) { return k.split('-')[1] === String(m); });
+    });
   }
 
   /** 締め月のリストの左右に置く ◀▶ ボタン(delta=-1:1か月前、+1:1か月後)。update(年度, 締め月, データのある月の表)で、移動先にデータが無いとき(「すべて」のときも)グレーにして押せなくする。押すと apply(移動先{fy,cm}) を呼ぶ */
@@ -869,16 +884,24 @@
     var now = new Date(), cur = L.closingOf(now.getFullYear(), now.getMonth() + 1, now.getDate());
     var fy0 = S.importsFy !== 'all' && S.importsFy != null ? S.importsFy : String(cur.fy), cm0 = S.importsCm !== 'all' && S.importsCm != null ? S.importsCm : String(cur.cm);
     var fySel = h('select', { 'aria-label': '年度' }), cmSel = h('select', { 'aria-label': '締め月' });
-    L.CLOSING_MONTH_ORDER.forEach(function (m) { cmSel.appendChild(h('option', { value: String(m), text: m + '/20〆' })); });
+    function fillCm(want) { // 締め月のリストは、選んだ年度のデータのある月だけ。選んでいた月が無ければ、一番新しい月にする(データが全く無い年度は、want だけ)
+      var ms = closingMonthsWithData(haveCl, fySel.value || fy0), pick = want;
+      if (!ms.length) ms = [+want]; else if (ms.indexOf(+want) < 0) pick = String(ms[ms.length - 1]);
+      cmSel.textContent = '';
+      ms.forEach(function (m) { cmSel.appendChild(h('option', { value: String(m), text: m + '/20〆' })); });
+      cmSel.value = pick;
+    }
+    var haveCl = {};
+    L.CLOSING_MONTH_ORDER.forEach(function (m) { cmSel.appendChild(h('option', { value: String(m), text: m + '/20〆' })); }); // 読み込み前は全部(読み込み後に、データのある月だけにする)
     cmSel.value = cm0;
-    function goCm(to) { fySel.value = String(to.fy); cmSel.value = String(to.cm); refresh(); } // 移動先にはデータがあるので、その年度は年度のリストにある
+    function goCm(to) { fySel.value = String(to.fy); fillCm(String(to.cm)); refresh(); } // 移動先にはデータがあるので、その年度は年度のリストにある
     var prevBtn = cmStepButton(-1, '◀', '1か月前の締め月', goCm), nextBtn = cmStepButton(1, '▶', '1か月後の締め月', goCm);
     var info = h('p', { class: 'dlg-detail', text: '記録を読み込んでいます…' }), tableHost = h('div', { class: 'dlg-table' });
     var cancel = h('button', { class: 'btn', type: 'button', text: 'キャンセル' });
     var ok = h('button', { class: 'btn excel', type: 'button', text: 'この内容でExcelをダウンロード', disabled: true });
     var dlg = h('dialog', { class: 'dlg wide' }, h('p', { class: 'dlg-title', text: '締め月ダウンロード' }),
       h('div', { class: 'dlg-row' }, h('label', { text: '年度・締め月を選択:' }), fySel, h('span', { class: 'cm-nav' }, prevBtn, cmSel, nextBtn)), info, tableHost, h('div', { class: 'dlg-btns' }, cancel, ok));
-    var all = [], shown = [], open = true, haveCl = {};
+    var all = [], shown = [], open = true;
     function refresh() {
       var fy = fySel.value, cm = cmSel.value;
       prevBtn.update(fy, cm, haveCl); nextBtn.update(fy, cm, haveCl);
@@ -893,7 +916,7 @@
       } else tableHost.appendChild(h('div', { class: 'empty', text: 'この締め月の記録はありません。' }));
       ok.disabled = !shown.length;
     }
-    fySel.addEventListener('change', refresh); cmSel.addEventListener('change', refresh);
+    fySel.addEventListener('change', function () { fillCm(cmSel.value); refresh(); }); cmSel.addEventListener('change', refresh);
     cancel.addEventListener('click', function () { dlg.close(); });
     ok.addEventListener('click', function () {
       if (!shown.length) return;
@@ -910,6 +933,7 @@
       all.forEach(function (r) { var c = L.rowClosing(r); if (c) { fys[c.fy] = 1; haveCl[c.fy + '-' + c.cm] = 1; } });
       Object.keys(fys).sort(function (a, b) { return b - a; }).forEach(function (y) { fySel.appendChild(h('option', { value: y, text: y + '年度' })); });
       fySel.value = fy0;
+      fillCm(cmSel.value);
       refresh();
     } catch (e) { if (open) info.textContent = '読み込めませんでした: ' + e.message; }
   }
