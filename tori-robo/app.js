@@ -226,7 +226,13 @@ if (typeof document !== 'undefined') {
           if (st.data) { setStatus(''); return; }
           return load(false, true); // 手元にデータが無い場合だけ読み直す
         }
-        if (!useSample) saveCachedData(res.data);
+        if (!useSample) {
+          // 手元(前回の保存・「最新のデータを読み込む」の結果)より古い結果では上書きしない。
+          // 中継API(api/data)はCDNに古い結果を最大5分(その後も1回)残すため、最新にした直後に開き直すと古いデータが届くことがある
+          const curGen = st.data && st.data.generatedAt;
+          if (curGen && res.data.generatedAt && res.data.generatedAt < curGen) { if (!cached) setStatus(''); return; }
+          saveCachedData(res.data);
+        }
         if (cached && cached.generatedAt === res.data.generatedAt) return; // 変更なし
         st.data = res.data;
         init();
@@ -690,7 +696,7 @@ if (typeof document !== 'undefined') {
       ws.getRow(3).height = 32;
       ws.pageSetup.printArea = 'A1:H' + (r + 3); // 印刷範囲はA:H・A4横1ページに収める
 
-      // --- 全て抽出(製品ごと1行) ---
+      // --- 全て抽出(溶接した記録ごとに1行。並び・「同じ製品」は listRecords) ---
       const wd = wb.addWorksheet('全て抽出', { views: [{ state: 'frozen', ySplit: 1 }], pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
       const dh = ['工事番号', '工事名', '図面番号', '製品名', 'サイズ', '重量(t)', 'ロボット', '加工日', '日付', '開始', '終了', '経過時間(分)', 'アークタイム(分)', '非アークタイム(分)', 'ワイヤ使用量(kg)', '換算溶接長(m)', '確認'];
       const dr = wd.getRow(1);
