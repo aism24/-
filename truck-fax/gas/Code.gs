@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261022f';
+var CODE_VERSION = '20261022g';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_MERGED = '車両運転手情報'; // 1行=車と運転手の1組。シートの列は MERGED_HEADERS(見出し名で読み書きする)
@@ -364,6 +364,7 @@ function getInit_() {
   var impRows = imp.rows;
   var activeRows = impRows.filter(function (r) { return INACTIVE_LABELS.indexOf(r.追加変更) < 0; });
   var pairs = readAll_(SHEET_MERGED, MERGED_HEADERS).rows;
+  try { syncTypeNotes_(pairs); } catch (e) { /* 備考の自動記入に失敗しても、表示は続ける */ }
   return {
     pairs: pairs, // 車両運転手情報の全行(画面の表)
     vehicles: pairsToVehicles_(pairs), // 照合用: 車番ごとに1件(同じ車に複数の運転手がいても1件)
@@ -758,11 +759,47 @@ function ensurePairs_(rowsData) {
     var nr = { 手配業者: b ? b.手配業者 : nfkc_(r.業者 || r.手配業者 || '').trim(), 運送業者: b ? b.運送業者 : nfkc_(r.運送業者).trim(), 車種: fmtType_(r.車種) || (b ? b.車種 : ''), 車番: b ? b.車番 : compact_(r.車番), 氏名: name, 携帯番号: phone, 備考: '' };
     var rowNo = mergedWrite_(null, nr); nr._row = rowNo; pairs.push(nr); added++;
   });
+  syncTypeNotes_(pairs); // 運転手が複数の車種に乗るときの備考(行の削除より前に書く)
   toDelete.sort(function (a, b) { return b - a; }).forEach(function (n) { sheet_(SHEET_MERGED).deleteRow(n); }); // 下の行から消す(行番号がずれないように)
   return { added: added, filled: filled, removed: toDelete.length, noted: noted };
 }
 
+/** 車種の並び順(4t→10t→15t→TR→その他)。画面の logic.js の typeRank と同じ */
+function typeRank_(t) {
+  var m = /(\d+(?:\.\d+)?)t/i.exec(compact_(t));
+  if (m) return +m[1];
+  return /TR/i.test(compact_(t)) ? 1000 : 2000;
+}
+/** 同じ運転手が、車種の違う車に乗る(車両運転手情報に、車種違いの行が2つ以上ある)とき、その運転手のどの行の備考にも、車種を「10t/高TR」の形で書く。
+ *  備考の他の文字(例: 大上/ナミツー)は残す。前に書いた車種の並び(車種が増えたときの「10t/高TR」など)は、新しい並びに置き換える。変わる行だけ書く。 */
+function syncTypeNotes_(pairs) {
+  var groups = [];
+  pairs.forEach(function (r) {
+    if (r._deleted === true || !hasDriver_(r) || !typeKey_(r.車種)) return;
+    for (var i = 0; i < groups.length; i++) if (sameDriver_(groups[i].rep, r)) { groups[i].rows.push(r); return; }
+    groups.push({ rep: r, rows: [r] });
+  });
+  groups.forEach(function (g) {
+    var seen = {}, types = [];
+    g.rows.forEach(function (r) { var k = typeKey_(r.車種); if (!seen[k]) { seen[k] = true; types.push(fmtType_(r.車種)); } });
+    if (types.length < 2) return;
+    types.sort(function (a, b) { return typeRank_(a) - typeRank_(b) || (a < b ? -1 : a > b ? 1 : 0); });
+    var token = types.join('/'), keys = {};
+    types.forEach(function (t) { keys[typeKey_(t)] = true; });
+    g.rows.forEach(function (r) {
+      var rest = String(r.備考 || '').split(/[\s\u3000]+/).filter(function (w) {
+        if (!w) return false;
+        var parts = w.split(/[\/／]/);
+        return !parts.every(function (x) { return keys[typeKey_(x)]; }); // 車種だけの並び(前に書いたもの)は外す
+      }).join(' ');
+      var next = rest ? token + ' ' + rest : token;
+      if (next !== String(r.備考 || '')) { mergedWrite_(r._row, { 備考: next }); r.備考 = next; }
+    });
+  });
+}
+
 function masterSave_(body) {
   applyOp_({ kind: body.kind, mode: body.mode, row: body.row, before: body.before, data: body.data });
+  if (body.kind === 'pair') { try { syncTypeNotes_(mergedRowsNow_()); } catch (e) { /* 失敗しても保存は済んでいる */ } }
   return { ok: true };
 }
