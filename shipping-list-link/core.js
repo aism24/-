@@ -105,7 +105,8 @@
         if (!/^\d+$/.test(q.text) || !/^\d+\.\d+$/.test(w.text) || z.X0 - w.X1 > 45) continue;   // 同じ列の「製品名 台数 重量 図番」だけ
         if (z.text.indexOf('-') < 0 || !shapes[shape(z.text)]) continue;
         var v = links[z.text + '\t' + n.text];
-        if (Array.isArray(v)) { stats.dup++; stats.partial.push({ page: pn, zuban: z.text, name: n.text, reason: '重複' }); continue; }
+        // 重複(マスタに複数リンク)はリンクを付けないので、通常の出荷リストと同じくNGにも数える
+        if (Array.isArray(v)) { stats.dup++; stats.ng++; stats.partial.push({ page: pn, zuban: z.text, name: n.text, reason: '重複' }); continue; }
         if (v) { annots.push({ rect: n.rect, ul: n.ul, uri: mapUri(v) }); stats.linked++; continue; }
         stats.ng++;
         stats.partial.push({ page: pn, zuban: z.text, name: n.text, reason: zset[z.text] ? '製品名が不一致' : 'マスタに無い図番' });
