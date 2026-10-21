@@ -12,4 +12,6 @@
 - **トリガー:** GASを貼り替えたら、Apps Scriptエディタで `setupProductionWeightCacheTrigger` を1回だけ手動実行する(毎朝7〜8時に `warmProductionWeightCache` 1本=重量の更新+キャッシュの作り直し。既存のトリガーは自動で削除して作り直す)。
 - **画面:** ホームは即表示し、マスタ・結果分析・一覧は裏で先読み。前回の結果(localStorage)を先に表示してから最新に差し替える。PDF用ライブラリはPDFを作るときだけ読み込む。
 - **Gemini:** モデル名はコードに固定(`gemini-3.5-flash-lite`)。APIキーは情報シートの項目名「APIKEY」の行(行位置は問わない。現在はB5)。
+- **既存の記録を編集して保存**しても、画面に無い列(部署選択(処理者)・処理者・状況写真2)は書き換えない(`COLUMNS_NOT_ON_FORM`)。
+- Code.gs を直したら `CODE_VERSION` を更新する。貼り替え後は `{"fn":"ping"}` をPOSTして版を確認する。
 - ブラウザのコンソールに `[API] 関数名 total=…ms server=…ms` を出力(totalとserverの差が通信オーバーヘッド)。

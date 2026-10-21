@@ -10,6 +10,9 @@
  *  - 生産重量: 6時間キャッシュ+スクリプトプロパティに永続保存(毎朝7〜8時に更新)
  */
 
+/** デプロイ後に doPost の ping で反映を確認するための版表記(コードを変えたら更新する) */
+var CODE_VERSION = '2026-10-21-edit-keep';
+
 var CONFIG_SHEET_NAME = '情報';
 var DATA_SHEET = '不具合記録';
 var INSPECTOR_SHEET = '検査員';
@@ -28,6 +31,9 @@ var COLUMNS = [
   '対策', '検査確認者', 'コメント有無', 'コメント', '状況写真', '製品名写真', '状況写真2'
 ];
 
+/** 画面の入力・編集に無い列。既存の記録を編集して保存しても、これらの列は書き換えない(元の値を残す) */
+var COLUMNS_NOT_ON_FORM = ['部署選択(処理者)', '処理者', '状況写真2'];
+
 /** JSON API: フロント(Vercel)から fetch(POST) で呼ばれる。許可した関数のみ実行 */
 var API_FUNCTIONS = {
   getMasterData: getMasterData, saveRecord: saveRecord,
@@ -37,7 +43,8 @@ var API_FUNCTIONS = {
   getKekkaBunsekiBootstrap: getKekkaBunsekiBootstrap, getKekkaBunsekiYear: getKekkaBunsekiYear,
   getKekkaBunsekiMonth: getKekkaBunsekiMonth, getKekkaBunsekiByProject: getKekkaBunsekiByProject,
   uploadPhoto: uploadPhoto, ocrProductName: ocrProductName, logPdfDownload: logPdfDownload,
-  getProductionWeights: getProductionWeights, clearCache: clearCache
+  getProductionWeights: getProductionWeights, clearCache: clearCache,
+  ping: function () { return { version: CODE_VERSION }; }
 };
 
 function doGet() {
@@ -386,7 +393,15 @@ function saveRecord(formData) {
       }
       if (targetRow === -1) throw new Error('レコードが見つかりません: ' + formData.id);
       rowData[0] = formData.id;
-      sheet.getRange(targetRow, 1, 1, rowData.length).setValues([rowData]);
+      // 画面にある列だけ書き込む。連続する列ごとにまとめて書き、画面に無い列(処理者・状況写真2)には触れない
+      var start = 0;
+      while (start < COLUMNS.length) {
+        if (COLUMNS_NOT_ON_FORM.indexOf(COLUMNS[start]) !== -1) { start++; continue; }
+        var end = start;
+        while (end + 1 < COLUMNS.length && COLUMNS_NOT_ON_FORM.indexOf(COLUMNS[end + 1]) === -1) end++;
+        sheet.getRange(targetRow, start + 1, 1, end - start + 1).setValues([rowData.slice(start, end + 1)]);
+        start = end + 1;
+      }
       result = { id: formData.id, isNew: false };
     } else {
       var existingIds = ids.map(function (r) { return String(r[0]); });

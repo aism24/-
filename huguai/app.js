@@ -51,7 +51,6 @@ function hideLoading() {
   }
 }
 
-/** GAS WebアプリのURL（config.js で定義） */
 /** localStorage(使えない環境でも動くよう、失敗は無視する) */
 var Store = {
   get: function (k) { try { var v = localStorage.getItem('hg:' + k); return v ? JSON.parse(v) : null; } catch (e) { return null; } },
@@ -939,9 +938,9 @@ var Bunseki = {
     Bunseki.token++;
     document.getElementById('view').innerHTML =
       '<div class="menu-grid">' +
-      '<button class="menu-btn secondary" onclick="Bunseki.showCounts(\'field\',\'選択物件名\',\'物件\')">物件</button>' +
-      '<button class="menu-btn tertiary" onclick="Bunseki.showCounts(\'process\',\'加工先\',\'加工先\')">加工先</button>' +
-      '<button class="menu-btn" style="background:#9334e8;" onclick="Bunseki.showCounts(\'process\',\'分類\',\'分類\')">分類</button>' +
+      '<button class="menu-btn secondary" onclick="Bunseki.showCounts(\'field\',\'選択物件名\')">物件</button>' +
+      '<button class="menu-btn tertiary" onclick="Bunseki.showCounts(\'process\',\'加工先\')">加工先</button>' +
+      '<button class="menu-btn" style="background:#9334e8;" onclick="Bunseki.showCounts(\'process\',\'分類\')">分類</button>' +
       '</div>';
     // メニューを開いたらすぐ3つの件数を裏で取得しておく(押したとき待たずに表示できる)
     Bunseki.COUNT_DEFS.forEach(function (d) { Bunseki.fetchCounts_(d.mode, d.field).catch(function () {}); });
@@ -951,7 +950,7 @@ var Bunseki = {
     return App.fetchBoot('bn:' + mode + ':' + field, mode === 'field' ? 'getBunsekiByField' : 'getBunsekiByProcessType', [field]);
   },
 
-  showCounts: function (mode, field, title) {
+  showCounts: function (mode, field) {
     App.currentBack = Bunseki.showMenu;
     var token = ++Bunseki.token;
     var key = 'bn:' + mode + ':' + field;
@@ -994,7 +993,7 @@ var Bunseki = {
   showTableEl: function (el) { Bunseki.showTable(el.getAttribute('data-mode'), el.getAttribute('data-field'), el.getAttribute('data-v')); },
 
   showTable: function (mode, field, value) {
-    App.currentBack = function () { Bunseki.showCounts(mode, field, field); };
+    App.currentBack = function () { Bunseki.showCounts(mode, field); };
     var token = ++Bunseki.token;
     var serverField = (mode === 'process' && field === '分類') ? '分類グループ' : field;
     var key = serverField + '|' + value;
@@ -1043,6 +1042,7 @@ var KekkaBunseki = {
   yearChart: null,
   PDF_WIDTH: 1280, // PDFを作るときの固定幅(px)。PCの横画面相当
   yearChartSpec: null, // PDF用にグラフを描き直すための表とオプション
+  yearSeq: 0, // 年度(左)の取得・表示のたびに進める。古い応答が新しい表示を上書きしないようにする
   touched: false,
   ym: null,
 
@@ -1084,6 +1084,7 @@ var KekkaBunseki = {
   },
 
   applyBoot_: function (boot) {
+    KekkaBunseki.yearSeq++;
     KekkaBunseki.summary = boot.summary;
     var years = Object.keys(boot.summary.yearCounts).sort(function (a, b) { return b - a; });
     KekkaBunseki.years = years;
@@ -1091,6 +1092,12 @@ var KekkaBunseki = {
     KekkaBunseki.monthYearSel = KekkaBunseki.yearSel;
     KekkaBunseki.monthSel = boot.defaultMonth;
     KekkaBunseki.renderShell();
+    if (!boot.yearData || !boot.monthData) {
+      var empty = '<div class="card">発生日の入った不具合記録がありません</div>';
+      document.getElementById('kekkaYearBody').innerHTML = empty;
+      document.getElementById('kekkaMonthBody').innerHTML = empty;
+      return;
+    }
     KekkaBunseki.renderYear(boot.yearData);
     KekkaBunseki.renderMonth(boot.monthData);
     KekkaBunseki.alignPreChartBlocks_();
@@ -1121,6 +1128,7 @@ var KekkaBunseki = {
 
   toggleMode: function () {
     KekkaBunseki.touched = true;
+    KekkaBunseki.yearSeq++;
     if (KekkaBunseki.mode === 'yearMonth') {
       App.ready(function () {
         KekkaBunseki.mode = 'project';
@@ -1428,8 +1436,6 @@ var KekkaBunseki = {
       }).join(''));
   },
 
-  openDetail: { left: null, right: null },
-
   showContentDetailEl: function (el) { KekkaBunseki.showContentDetail(el.getAttribute('data-side'), el.getAttribute('data-v')); },
 
   showContentDetail: function (side, contentName) {
@@ -1483,8 +1489,6 @@ var KekkaBunseki = {
     var existing = document.getElementById(cardId);
     if (existing) existing.remove();
 
-    KekkaBunseki.openDetail[position] = { title: title, rows: rows };
-
     var card = document.createElement('div');
     card.id = cardId;
     card.className = 'kekka-detail-card kekka-detail-card-' + position;
@@ -1497,7 +1501,6 @@ var KekkaBunseki = {
   },
 
   closeDetailModal: function (position) {
-    KekkaBunseki.openDetail[position] = null;
     var card = document.getElementById('kekkaDetailCard_' + position);
     if (card) card.remove();
     var overlay = document.getElementById('kekkaDetailOverlayRoot');
@@ -1629,10 +1632,13 @@ var KekkaBunseki = {
 
   /** quiet=true: 読み込み中の表示は呼び出し側が出し入れする(年度連動で左右を同時に読むとき) */
   loadYear: function (quiet) {
+    var seq = ++KekkaBunseki.yearSeq;
     if (!quiet) showLoading('集計中...');
     return callServer('getKekkaBunsekiYear', KekkaBunseki.yearSel).then(function (data) {
       return GoogleChartsReady.then(function () {
         if (!quiet) hideLoading();
+        // 取得中に別の年度へ移動していたり、画面が切り替わっていたら、この結果は表示しない
+        if (seq !== KekkaBunseki.yearSeq) return;
         KekkaBunseki.renderYear(data);
         KekkaBunseki.syncWeights_(data, data.weightReady, data.weightStale);
       });
