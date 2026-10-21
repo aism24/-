@@ -18,6 +18,11 @@
   function fmtType(s) { return nfkc(s).replace(/[\s\u3000]+/g, '').replace(/(\d)T/g, '$1t'); } // 全角の「Ｔ」「４」なども半角にそろう
   function tidy(s) { return String(s == null ? '' : s).replace(/[\s\u3000]+/g, ' ').trim(); }
 
+  /** 運送業者: かっこ書きは取り除いて記録する(例: トランスポート千税(チカラ)→トランスポート千税)。(株)(有)(合)(同)などの会社の種類は残す。 */
+  function fmtCarrier(s) {
+    return tidy(String(s == null ? '' : s).replace(/[(（]([^()（）]*)[)）]/g, function (m, inner) { return /^[\s　]*(株|有|合|同|社|資|名|財|学|医)[\s　]*$/.test(inner) ? m : ''; })).replace(/\s{2,}/g, ' ');
+  }
+
   function plateKey(s) { return compact(s).replace(/[-‐-―−ー・.]/g, '').toLowerCase(); }
   function fmtPlate(s) { return compact(s); }
   function companyKey(s) {
@@ -136,7 +141,7 @@
         卸日: normDate(r['卸日'], refYear),
         行先: tidy(r['行先']),
         着時間: normTime(r['着時間']),
-        運送業者: tidy(r['運送業者']),
+        運送業者: fmtCarrier(r['運送業者']),
         車種: fmtType(r['車種']),
         車番: fmtPlate(r['車番']),
         氏名: nameKey(r['氏名']),
