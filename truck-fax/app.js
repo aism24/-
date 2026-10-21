@@ -856,7 +856,7 @@
       var rows = all.slice().reverse().map(function (r) { return heads.map(function (k) { return r[k] || ''; }); });
       close(); close = function () {};
       if (!rows.length) { toast('取込一覧に記録がありません。'); return; }
-      TruckXlsx.download('過去全件一覧.xlsx', '取込一覧', heads, rows);
+      TruckXlsx.download('過去全件一覧' + todayIso().replace(/-/g, '') + '.xlsx', '取込一覧', heads, rows);
       toast('全件(' + rows.length + '件)をダウンロードしました。');
     } catch (e) { showBanner('全件の読み込みに失敗しました: ' + e.message); }
     finally { close(); }
