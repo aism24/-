@@ -8,7 +8,7 @@
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzLhyh3XzvJ-95n-VV7r7Upx_0AfGsqoPAaySmFSpwKdsqfP_EwjOTNzuyJgdTQvMxS/exec';
 const HOURLY_COST_DEFAULT = 4000;
 const LS_KEY = 'tori-robo-overrides-v1';
-const DATA_CACHE_KEY = 'tori-robo-data-v1'; // 前回の読み込み結果。次回の表示を即時にするため(裏で最新を取得して差し替える)
+const DATA_CACHE_KEY = 'tori-robo-data-v1'; // 前回の読み込み結果。次回の表示を即時にするため(裏で最新を取得して差し替える。手元より古い結果では差し替えない)
 
 // ========== 純粋関数(テストでも使う) ==========
 
@@ -228,9 +228,11 @@ if (typeof document !== 'undefined') {
         }
         if (!useSample) {
           // 手元(前回の保存・「最新のデータを読み込む」の結果)より古い結果では上書きしない。
-          // 中継API(api/data)はCDNに古い結果を最大5分(その後も1回)残すため、最新にした直後に開き直すと古いデータが届くことがある
+          // 中継API(api/data)はCDNに古い結果を最大5分(その後も1回)残すため、最新にした直後に開き直すと古いデータが届くことがある。
+          // ただし「最新のデータを読み込む」・工事名の保存の後(GASから直接読む)は、日時に関係なく取り込む(サーバー側の結果が古い日時に戻された場合も追従できるように)
           const curGen = st.data && st.data.generatedAt;
-          if (curGen && res.data.generatedAt && res.data.generatedAt < curGen) { if (!cached) setStatus(''); return; }
+          const direct = refresh === true || !!fresh;
+          if (!direct && curGen && res.data.generatedAt && res.data.generatedAt < curGen) { if (!cached) setStatus(''); return; }
           saveCachedData(res.data);
         }
         if (cached && cached.generatedAt === res.data.generatedAt) return; // 変更なし
