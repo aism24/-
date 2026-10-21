@@ -1092,18 +1092,22 @@ var KekkaBunseki = {
     KekkaBunseki.monthYearSel = KekkaBunseki.yearSel;
     KekkaBunseki.monthSel = boot.defaultMonth;
     KekkaBunseki.renderShell();
-    if (!boot.yearData || !boot.monthData) {
-      var empty = '<div class="card">発生日の入った不具合記録がありません</div>';
-      document.getElementById('kekkaYearBody').innerHTML = empty;
-      document.getElementById('kekkaMonthBody').innerHTML = empty;
-      return;
-    }
+    if (KekkaBunseki.renderEmptyIfNoData_(boot.yearData, boot.monthData)) return;
     KekkaBunseki.renderYear(boot.yearData);
     KekkaBunseki.renderMonth(boot.monthData);
     KekkaBunseki.alignPreChartBlocks_();
     KekkaBunseki.syncWeights_(boot.yearData, boot.weightReady, boot.weightStale);
     KekkaBunseki.syncWeights_(boot.monthData, boot.weightReady, boot.weightStale);
     KekkaBunseki.prefetchNeighbors_();
+  },
+
+  /** 発生日のある記録が1件も無いとき(集計が無いとき)は、集計の代わりにメッセージを出す。出したらtrue */
+  renderEmptyIfNoData_: function (yearData, monthData) {
+    if (yearData && monthData) return false;
+    var empty = '<div class="card">発生日の入った不具合記録がありません</div>';
+    document.getElementById('kekkaYearBody').innerHTML = empty;
+    document.getElementById('kekkaMonthBody').innerHTML = empty;
+    return true;
   },
 
   /** 「今月に戻す」: 年度(左)・月(右)とも、今の会計年度・締め月にする(データが無い年度のときは最新の年度) */
@@ -1154,6 +1158,7 @@ var KekkaBunseki = {
       App.setHeaderAction2('工事別分析', KekkaBunseki.toggleMode, 'header-action-btn-yellow');
       App.setTodayAction(KekkaBunseki.goToday);
       KekkaBunseki.renderShell();
+      if (KekkaBunseki.renderEmptyIfNoData_(KekkaBunseki.yearData, KekkaBunseki.monthData)) return;
       KekkaBunseki.renderYear(KekkaBunseki.yearData);
       KekkaBunseki.renderMonth(KekkaBunseki.monthData);
       KekkaBunseki.alignPreChartBlocks_();
@@ -1226,10 +1231,13 @@ var KekkaBunseki = {
   },
 
   loadProject: function () {
+    var nav = App.navId;
     showLoading('集計中...');
     callServer('getKekkaBunsekiByProject', KekkaBunseki.projectSel).then(function (data) {
       return GoogleChartsReady.then(function () {
         hideLoading();
+        // 取得中に別の画面(ホームなど)へ移った・年度/月別へ戻ったときは、この結果は表示しない
+        if (nav !== App.navId || KekkaBunseki.mode !== 'project') return;
         KekkaBunseki.projectData = data;
         KekkaBunseki.yearData = data;
         KekkaBunseki.projectCheckedKeys = {};
@@ -1633,12 +1641,14 @@ var KekkaBunseki = {
   /** quiet=true: 読み込み中の表示は呼び出し側が出し入れする(年度連動で左右を同時に読むとき) */
   loadYear: function (quiet) {
     var seq = ++KekkaBunseki.yearSeq;
+    var nav = App.navId;
     if (!quiet) showLoading('集計中...');
     return callServer('getKekkaBunsekiYear', KekkaBunseki.yearSel).then(function (data) {
       return GoogleChartsReady.then(function () {
         if (!quiet) hideLoading();
-        // 取得中に別の年度へ移動していたり、画面が切り替わっていたら、この結果は表示しない
-        if (seq !== KekkaBunseki.yearSeq) return;
+        // 取得中に、別の年度へ移動した・工事別分析に切り替えた・別の画面(ホームなど)へ移った
+        // ときは、この結果は表示しない
+        if (seq !== KekkaBunseki.yearSeq || nav !== App.navId) return;
         KekkaBunseki.renderYear(data);
         KekkaBunseki.syncWeights_(data, data.weightReady, data.weightStale);
       });
@@ -1656,12 +1666,14 @@ var KekkaBunseki = {
 
   loadMonth: function (quiet) {
     var year = KekkaBunseki.monthYearSel, month = KekkaBunseki.monthSel;
+    var nav = App.navId;
     var e = KekkaBunseki.monthFetch_(year, month);
     if (!quiet && !e.done) showLoading('集計中...');
     return e.p.then(function (data) {
       return GoogleChartsReady.then(function () {
         if (!quiet) hideLoading();
-        // 取得中に別の月へ移動していたら、この結果は表示しない
+        // 取得中に別の月へ移動した・工事別分析に切り替えた・別の画面(ホームなど)へ移ったときは、この結果は表示しない
+        if (nav !== App.navId || KekkaBunseki.mode !== 'yearMonth') return;
         if (String(year) !== String(KekkaBunseki.monthYearSel) || Number(month) !== Number(KekkaBunseki.monthSel)) return;
         KekkaBunseki.renderMonth(data);
         KekkaBunseki.syncWeights_(data, data.weightReady, data.weightStale);
@@ -1745,9 +1757,10 @@ var KekkaBunseki = {
   syncWeights_: function (data, weightReady, weightStale) {
     if ((weightReady !== false && !weightStale) || !data) return;
     if (!App.weightPromise) App.prefetchWeights();
+    var nav = App.navId;
     App.weightPromise.then(function (map) {
       if (!map || !KekkaBunseki.applyWeights_(data, map)) return;
-      if (KekkaBunseki.mode !== 'yearMonth') return;
+      if (KekkaBunseki.mode !== 'yearMonth' || nav !== App.navId) return;
       if (data === KekkaBunseki.yearData) KekkaBunseki.renderYear(data);
       else if (data === KekkaBunseki.monthData) KekkaBunseki.renderMonth(data);
       KekkaBunseki.alignPreChartBlocks_();
