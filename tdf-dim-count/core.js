@@ -17,7 +17,8 @@
     return Math.abs(x) < 1e7 && Math.abs(y) < 1e7 && h > 0 && h < 5000 && Math.abs(w) < 5000 && Math.abs(r) < 10;
   }
 
-  // 線のレイヤ: ref0が「xx yy 03 00」形式ならyy(+10バイト目)、そうでなければ線記録の直後(+56〜+200)の最初の印
+  // 線のレイヤ: ref0(線記録の+8〜+11の語)の下位2バイトが 0x0003/0x0043(バイト列 03 00 yy ?? / 43 00 yy ??)なら yy(+10バイト目)、
+  // そうでなければ線記録の直後(+56〜+200)の最初の印
   function lineLayer(u8, dv, i) {
     var w = dv.getUint32(i + 8, true), lo = w & 0xffff;
     if (lo === 0x0003 || lo === 0x0043) return (w >>> 16) & 0xff;
