@@ -18,8 +18,8 @@
 // ============================================================
 
 // デプロイ後に doPost の ping で反映を確認するための版表記(コードを変えたら更新する)。
-const CODE_VERSION = '2026-10-21-lock';
-const SPREADSHEET_ID =SpreadsheetApp.getActiveSpreadsheet().getId();
+const CODE_VERSION = '2026-10-21-lock2';
+const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
 const SHEET_NAME = '情報';
 const LOG_SHEET_NAME = '記録';
 
@@ -120,8 +120,14 @@ function getAppGroups() {
 // 残るため、LockServiceで順番に処理する(書き込む内容・列・順序は従来と同じ)。
 // ロックが取れなくても例外にはせず記録を諦める(記録はベストエフォート)。
 function logAppOpen(appName) {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(10000)) return;
+  // ロック機能が使えない(権限未承認など)場合は、従来どおりロック無しで記録する。
+  let lock = null;
+  try {
+    lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return;
+  } catch (err) {
+    lock = null;
+  }
   try {
     const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(LOG_SHEET_NAME);
     if (!sheet) return;
@@ -129,12 +135,12 @@ function logAppOpen(appName) {
     sheet.getRange(2, 1, 1, 2).setValues([[new Date(), appName]]);
     SpreadsheetApp.flush();
   } finally {
-    lock.releaseLock();
+    if (lock) lock.releaseLock();
   }
 }
 
 /* =====================================================================
- * ここから下は「アプリ一覧ポータル」(GitHub Pages版)専用の追加分。
+ * ここから下は「アプリ一覧ポータル」(Vercel版。旧GitHub Pages版から継承)専用の追加分。
  * 上記の既存コードは一切変更していない(既存のGAS Webアプリ・doGet/logAppOpenの
  * 動作への影響はゼロ)。
  *
@@ -143,7 +149,7 @@ function logAppOpen(appName) {
  * 公開すること。既存デプロイ(Index.html用、doGetでレンダリング)はそのまま残し、
  * 「デプロイを管理」から追加デプロイを作成し、そちらだけ
  * 次のユーザーとして実行:自分 / アクセスできるユーザー:全員 にする
- * (GitHub Pagesからの匿名fetchに対応するため)。
+ * (Vercel(ブラウザ)からの匿名fetchに対応するため)。
  * 新規デプロイのURLを app-launcher/app.js 先頭の GAS_API_URL 定数に設定すること。
  * ===================================================================== */
 
