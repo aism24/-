@@ -359,8 +359,12 @@ var AI_LOGIC = (function () {
       return { who: 'all', people: [], period: perA, remain: false, group: findGroup(q, roster) };
     }
     var who = people.length > 1 ? 'ambiguous' : people.length === 1 ? 'person' : 'self';
-    if (who === 'self' && !/(取った|取って|取得|使った|使って|消化|休んだ|遅刻|早退|欠勤|何日|何回|残|状況|確認|履歴|一覧|届)/.test(t)) return null;
-    var day = parseDay(q, today) || (/(明日|あした)/.test(t) ? addDays(today, 1) : ''); // 「昨日」「10/5」などの日付は、その1日で集計する(全員分の質問と同じ)
+    // 「昨日」「10/5」などの日付は、その1日で集計する(全員分の質問と同じ)。「6/1〜6/30」「9月21日から」のような範囲は、先頭の日付だけを1日と読まないよう、日付として読まない
+    var day = /[〜~]|から/.test(t) ? '' : (parseDay(q, today) || (/(明日|あした)/.test(t) ? addDays(today, 1) : ''));
+    // 「私」だけで話題の語(有給・欠勤)がある質問は規則の質問とみなす。ただし日付があれば(「私の昨日の有給」)、その日の記録を調べる質問とみなす。
+    // 日付があっても、規則を尋ねる言い方(手続・申請方法・もらえる など)は、従来どおり規則の質問
+    var dataCue = /(取った|取って|取得|使った|使って|消化|休んだ|遅刻|早退|欠勤|何日|何回|残|状況|確認|履歴|一覧|届)/.test(t);
+    if (who === 'self' && !dataCue && !(day && !ABS_RULEY.test(t))) return null;
     var period = day ? { from: day, to: day, label: day, isDay: true } : parsePeriod(q, today);
     return { who: who, people: people, period: period, remain: /(残り|残数|残日|残って|あと何日|余り)/.test(t) };
   }
