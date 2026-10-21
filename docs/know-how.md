@@ -554,3 +554,8 @@
 - 原因: 中継API(api/data)はCDNが古い結果を最大5分(その後も1回)返すのに、届いた結果を無条件に localStorage へ保存・表示していた
 - やり方: 届いた結果の generatedAt が手元より古ければ捨てる。ただしボタン等でGASから直接読んだときは日時に関係なく取り込む(サーバー側が古い版に戻された場合に追従できるように)。Playwright の addInitScript で保存を仕込み、応答の日時を変えて組み合わせを全部試す
 - 使ったアプリ: tori-robo(同じ作りの daily-report・shipping-list-link 等も点検時に確認する)
+
+### 日付で動く画面の新旧比較は、テスト用ブラウザを日本時間にする(production-management 10/21)
+- 効果: 「日本時間10/21 8時」に固定したのに前の期間(10/20〆)が表示され、平均の照合が93件中5件しか合わない(誤判定)→ timezoneId 指定で93件すべて一致
+- 原因: Playwright のブラウザは既定でUTC。`clock.setFixedTime` で日本時間の朝9時前を指定すると、ブラウザ内では前日になる
+- やり方: `browser.newContext({ timezoneId: 'Asia/Tokyo' })`。締め期間・「今日」・営業日を扱うアプリ(production-management・huguai・tori-robo 等)は必ず指定する
