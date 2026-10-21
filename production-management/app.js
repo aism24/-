@@ -604,8 +604,16 @@ function renderChart() {
     const totalWeight = cumActual.length ? cumActual[cumActual.length - 1] : 0;
 
     const target = state.targets[site] || 0;
-    const avg = avgDenom > 0 ? totalWeight / avgDenom : 0;
-    const belowTarget = target > 0 && avg < target;
+    // 平均の分子は分母(営業日数)と同じ範囲にそろえる。進行中の期間は「今日より前」の累積
+    // (「現時点のデータを取得」で今日の途中までの生産が入っても、分母に今日を含めないので分子からも除く)。
+    // 経過した営業日が0日(期間の初日など)は平均を出さず(null=「−」表示)、目標未達の赤にもしない。
+    let avgWeight = totalWeight;
+    if (isOngoingPeriod) {
+      avgWeight = 0;
+      dates.forEach(function (d, i) { if (parseDateKey(d) < today) avgWeight = cumActual[i]; });
+    }
+    const avg = avgDenom > 0 ? avgWeight / avgDenom : null;
+    const belowTarget = target > 0 && avg !== null && avg < target;
     cumStats.push({ site: site, color: color, value: totalWeight, avg: avg, belowTarget: belowTarget });
 
     let cumTarget = 0;
@@ -811,7 +819,7 @@ function renderCumStats(cumStats) {
     value.innerHTML = (Math.round(s.value * 10) / 10).toFixed(1) + '<span class="unit">t</span>';
     const avg = document.createElement('div');
     avg.className = 'avg' + (s.belowTarget ? ' warn' : '');
-    avg.innerHTML = '平均生産重量＝' + (Math.round(s.avg * 10) / 10).toFixed(1) + '<span class="unit">t/日</span>';
+    avg.innerHTML = '平均生産重量＝' + (s.avg === null ? '−' : (Math.round(s.avg * 10) / 10).toFixed(1)) + '<span class="unit">t/日</span>';
     card.appendChild(label);
     card.appendChild(value);
     card.appendChild(avg);
