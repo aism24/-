@@ -93,4 +93,4 @@ Previewデプロイが発生する)
 【Ignored Build Stepの注意】コマンドはRoot Directory内で実行される。
 `git diff HEAD^ HEAD --quiet -- ./<フォルダ名>` と書くと存在しないパスを指して常にスキップ
 (CANCELED)になるため、`-- .` と書く。
-
+- 2026-10-21: 全コード点検の修正を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。コミット ba10f76。app-launcher=dpl_3VoDeMW・tori-huguai=dpl_CuY7Xyc・company-ai=dpl_EAXkrPp、いずれもREADY。本番HTMLの `?v=` がmainと一致を確認)。デプロイ前の直近24時間は0回、今回3回。連携は0件のまま。
