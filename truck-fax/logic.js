@@ -216,7 +216,7 @@
         // 手配業者だけが違う(同じ車を、別の手配業者(大上/ナミツー)も手配した)ときは、食い違いとして確認しない。GAS が、その組み合わせの備考に「大上/ナミツー」を書く
         var senderDiff = row.業者 && !sameCo(row.業者, m.手配業者) ? '手配業者: 登録済み「' + m.手配業者 + '」/ 今回「' + row.業者 + '」' : '';
         if (row.運送業者 && !sameCo(row.運送業者, m.運送業者)) diffs.push('運送業者: 登録済み「' + m.運送業者 + '」/ 今回「' + row.運送業者 + '」');
-        if (row.車種 && typeKey(row.車種) !== typeKey(m.車種)) diffs.push('車種: 登録済み「' + m.車種 + '」/ 今回「' + row.車種 + '」');
+        // 車種が違うだけのときは、確認しない(別の車種の車として、記録のあと GAS が車両・運転手情報に別の行で追加する)
         if (diffs.length) {
           if (senderDiff) diffs.unshift(senderDiff); // 他の項目も違うときは、手配業者の違いも並べて見せる
           var vf = { id: 'vehicle-diff', masterRow: m._row, masterData: m };
@@ -290,7 +290,7 @@
       switch (f.id) {
         case 'vehicle-new': if (d === 'register') ops.push({ kind: 'vehicle', mode: 'add', data: vehicleData(out) }); else if (d === 'skip') noPair = true; break;
         case 'vehicle-diff':
-          if (d === 'update') ops.push({ kind: 'vehicle', mode: 'update', row: f.masterRow, before: pick(md, ['手配業者', '運送業者', '車種', '車番']), data: { 手配業者: out.業者 || md.手配業者, 運送業者: out.運送業者 || md.運送業者, 車種: fmtType(out.車種 || md.車種), 車番: out.車番 } });
+          if (d === 'update') ops.push({ kind: 'vehicle', mode: 'update', row: f.masterRow, before: pick(md, ['手配業者', '運送業者', '車種', '車番']), data: { 手配業者: out.業者 || md.手配業者, 運送業者: out.運送業者 || md.運送業者, 車番: out.車番 } }); // 車種は渡さない(同じ車番に車種の違う行があるため、各行の車種は変えない)
           else if (d === 'adopt') { out.業者 = md.手配業者; out.運送業者 = md.運送業者; out.車種 = md.車種; }
           break;
         case 'phone-diff':
