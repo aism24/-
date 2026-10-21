@@ -6,7 +6,7 @@
  * 純粋な処理(条文分割・検索・名簿の合体・質問の解釈・集計・文章づくり)は Logic.gs。
  */
 var MODEL = 'gemini-3.5-flash-lite'; // 固定。明示の指示があるときだけ変える(自動選択・可変にしない)
-var CODE_VERSION = '2026-10-21-tidy'; // デプロイ後に doGet(URLをGETで開く)の version で、反映を確認する。コードを変えたら更新する
+var CODE_VERSION = '2026-10-21-day'; // デプロイ後に doGet(URLをGETで開く)の version で、反映を確認する。コードを変えたら更新する
 var SHEET = { OPERATOR: 'Operator', ADMIN: '管理者', RULES: '規則', STAGE: '規則_取込', HIST: '規則履歴',
               LOG: '質問ログ', CAL: 'CompanyCalendar', CONS: 'Construction', META: '設定', INFO: '諸情報', ABS: '有給欠勤',
               WORK: '日報', WORKP: '日報_過去', CONT: '作業内容', CONS5: '工事_建設', PROD: '生産重量', PRODS: '生産重量_状態' };
