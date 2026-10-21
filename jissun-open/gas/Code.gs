@@ -3,14 +3,14 @@
  *
  * 対象スプレッドシート: 実寸法師を開く_Vercel記録(シート「記録」。A1=見出し「タイムスタンプ」)
  * ページが開かれるたびに1行記録する。常にA2が最新(古いものは下へ移る)。
- * 送られる情報は無く、サーバー側の現在日時だけを記録する。
+ * 画面は {"action":"logOpen"} を送るが中身は使わず、サーバー側の現在日時だけを記録する。
  *
  * セットアップ: スプレッドシートの「拡張機能→Apps Script」にこのコードを貼り付け、
  * 「デプロイ→新しいデプロイ→ウェブアプリ(実行ユーザー=自分、アクセス=全員)」。
  * 発行された /exec のURLを、jissun-open/index.html の GAS_URL に設定する。
  * コードを直したら CODE_VERSION を更新し、再デプロイ後に /exec をGETで開いて version を確認する。
  */
-const CODE_VERSION = '2026-10-21-ver';
+const CODE_VERSION = '2026-10-21-ver2';
 const SHEET_NAME = '記録';
 
 function doPost(e) {
