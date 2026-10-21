@@ -17,7 +17,9 @@
 // A:日時  B:アプリ名  (1行目はヘッダー。2行目に最新の記録を挿入していく=新しい順)
 // ============================================================
 
-const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
+// デプロイ後に doPost の ping で反映を確認するための版表記(コードを変えたら更新する)。
+const CODE_VERSION = '2026-10-21-lock';
+const SPREADSHEET_ID =SpreadsheetApp.getActiveSpreadsheet().getId();
 const SHEET_NAME = '情報';
 const LOG_SHEET_NAME = '記録';
 
@@ -114,11 +116,21 @@ function getAppGroups() {
 // アプリ起動時にクライアント側(Index.html)から呼び出される。
 // 「記録」シートの2行目(ヘッダーの直下)に [日時, アプリ名] を挿入する。
 // 既存の記録は下に押し出されるため、常に最新の記録が上から並ぶ。
+// 同時に2人が起動すると、行挿入と書き込みが入り混じって片方の記録が上書きされ空行が
+// 残るため、LockServiceで順番に処理する(書き込む内容・列・順序は従来と同じ)。
+// ロックが取れなくても例外にはせず記録を諦める(記録はベストエフォート)。
 function logAppOpen(appName) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(LOG_SHEET_NAME);
-  if (!sheet) return;
-  sheet.insertRowBefore(2);
-  sheet.getRange(2, 1, 1, 2).setValues([[new Date(), appName]]);
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return;
+  try {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(LOG_SHEET_NAME);
+    if (!sheet) return;
+    sheet.insertRowBefore(2);
+    sheet.getRange(2, 1, 1, 2).setValues([[new Date(), appName]]);
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /* =====================================================================
@@ -161,6 +173,7 @@ function doPost(e) {
     const params = body.params || {};
 
     if (action === 'getAppGroups') return apiJsonOk_(getAppGroups());
+    if (action === 'ping') return apiJsonOk_({ version: CODE_VERSION });
     if (action === 'logAppOpen') {
       logAppOpen(params.appName);
       return apiJsonOk_({});

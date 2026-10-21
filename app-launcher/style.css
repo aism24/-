@@ -49,12 +49,9 @@ h1 {
 .category-row:has(.card.active) {
   z-index: 10;
 }
-.category-row:first-of-type {
-  margin-top: 0;
-}
 /* 分類ラベルは全行共通の固定幅にする。幅は最長の分類文字列「★★調整中★★」が
    1行に収まる幅を基準にしている。これにより、どの分類でもボタン列の開始位置
-   (左端)が揃う。これより長い分類名は categoryLabelHtml_() 側で最後の
+   (左端)が揃う。これより長い分類名は app.js の categoryLabelHtml() 側で最後の
    アンダースコアの位置に改行を入れて2行に収める。 */
 h2.category {
   flex: 0 0 116px;

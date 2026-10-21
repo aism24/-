@@ -1,5 +1,5 @@
 /* =====================================================================
- * アプリ一覧ポータル - フロントエンド(GitHub Pages版)
+ * アプリ一覧ポータル - フロントエンド(Vercel版)
  *
  * GAS側の新規JSON API(doPost)を叩いてアプリ一覧を取得し、クリック時に
  * 「記録」シートへのログ追記(logAppOpen)を送信する。既存のGAS Webアプリ
@@ -82,7 +82,7 @@ function isPinned(app) {
   } catch (e) { return false; }
 }
 
-function isFav(app) { return isPinned(app) || loadFavs().indexOf(favKey(app)) !== -1; }
+function isFav(app, favList) { return isPinned(app) || favList.indexOf(favKey(app)) !== -1; }
 
 function toggleFav(app) {
   const list = loadFavs();
@@ -189,7 +189,7 @@ function renderGroups(groups) {
   const split = function (wantFav) {
     return groups.map(function (g) {
       return { category: g.category, apps: g.apps.filter(function (app) {
-        return (isPinned(app) || favSet.indexOf(favKey(app)) !== -1) === wantFav;
+        return isFav(app, favSet) === wantFav;
       }) };
     }).filter(function (g) { return g.apps.length > 0; });
   };
@@ -205,7 +205,7 @@ function renderGroups(groups) {
       t.textContent = title;
       sec.appendChild(t);
     }
-    list.forEach(function (group) { sec.appendChild(buildRow(group)); });
+    list.forEach(function (group) { sec.appendChild(buildRow(group, favSet)); });
     root.appendChild(sec);
   };
   addSection('fav-section', 'お気に入り（右上の会社ロゴをオンオフすると追加できます）', favGroups);
@@ -213,60 +213,61 @@ function renderGroups(groups) {
   applySearch();
 }
 
-function buildRow(group) {
-  {
-    const row = document.createElement('div');
-    row.className = 'category-row';
+function buildRow(group, favSet) {
+  const row = document.createElement('div');
+  row.className = 'category-row';
+  // 検索用に元の分類名を保持する(表示側は最後の「_」を<br>に置き換えるため、
+  // h2のtextContentでは「_」が消えて全名で一致しなくなる)。
+  row.dataset.category = group.category;
 
-    const h2 = document.createElement('h2');
-    h2.className = 'category';
-    h2.innerHTML = categoryLabelHtml(group.category);
-    row.appendChild(h2);
+  const h2 = document.createElement('h2');
+  h2.className = 'category';
+  h2.innerHTML = categoryLabelHtml(group.category);
+  row.appendChild(h2);
 
-    const grid = document.createElement('div');
-    grid.className = 'grid';
+  const grid = document.createElement('div');
+  grid.className = 'grid';
 
-    group.apps.forEach(function (app) {
-      const card = document.createElement('div');
-      card.className = 'card';
-      card.style.setProperty('--accent', app.color);
-      card.style.setProperty('--text', app.textColor || '#fff');
-      card.innerHTML =
+  group.apps.forEach(function (app) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.setProperty('--accent', app.color);
+    card.style.setProperty('--text', app.textColor || '#fff');
+    card.innerHTML =
+      '<div class="icon">' + escapeHtml(app.initial) + '</div>' +
+      '<div class="details">' +
         '<div class="icon">' + escapeHtml(app.initial) + '</div>' +
-        '<div class="details">' +
-          '<div class="icon">' + escapeHtml(app.initial) + '</div>' +
-          '<div class="name">' + escapeHtml(app.name) + '</div>' +
-          (app.description ? '<div class="desc">' + escapeHtml(app.description) + '</div>' : '') +
-        '</div>';
-      const fav = document.createElement('button');
-      fav.type = 'button';
-      const pinned = isPinned(app);
-      fav.className = 'fav' + (isFav(app) ? ' on' : '') + (pinned ? ' pinned' : '');
-      fav.setAttribute('aria-label', pinned ? '常にお気に入り(固定。解除できません)' : 'お気に入りに追加/解除');
-      if (pinned) fav.title = '常にお気に入り(固定)';
-      fav.innerHTML = '<svg viewBox="36 40 392 452" aria-hidden="true"><use href="#fav-mark"/></svg>';
-      fav.addEventListener('click', function (e) {
-        e.stopPropagation();
-        e.preventDefault();
-        if (pinned) return; // 固定のアプリはオンオフ不可
-        toggleFav(app);
-        renderGroups(lastGroups);
-      });
-      card.appendChild(fav);
-      cardApps.set(card, app);
-      if (supportsHover) {
-        // マウス環境: ホバーで詳細が見えるので、クリックはそのまま即起動でよい
-        // (タッチ環境の2段階タップ処理は上のdocument委譲リスナーが担当する)。
-        card.addEventListener('click', function () {
-          openApp(card);
-        });
-      }
-      grid.appendChild(card);
+        '<div class="name">' + escapeHtml(app.name) + '</div>' +
+        (app.description ? '<div class="desc">' + escapeHtml(app.description) + '</div>' : '') +
+      '</div>';
+    const fav = document.createElement('button');
+    fav.type = 'button';
+    const pinned = isPinned(app);
+    fav.className = 'fav' + (isFav(app, favSet) ? ' on' : '') + (pinned ? ' pinned' : '');
+    fav.setAttribute('aria-label', pinned ? '常にお気に入り(固定。解除できません)' : 'お気に入りに追加/解除');
+    if (pinned) fav.title = '常にお気に入り(固定)';
+    fav.innerHTML = '<svg viewBox="36 40 392 452" aria-hidden="true"><use href="#fav-mark"/></svg>';
+    fav.addEventListener('click', function (e) {
+      e.stopPropagation();
+      e.preventDefault();
+      if (pinned) return; // 固定のアプリはオンオフ不可
+      toggleFav(app);
+      renderGroups(lastGroups);
     });
+    card.appendChild(fav);
+    cardApps.set(card, app);
+    if (supportsHover) {
+      // マウス環境: ホバーで詳細が見えるので、クリックはそのまま即起動でよい
+      // (タッチ環境の2段階タップ処理は上のdocument委譲リスナーが担当する)。
+      card.addEventListener('click', function () {
+        openApp(card);
+      });
+    }
+    grid.appendChild(card);
+  });
 
-    row.appendChild(grid);
-    return row;
-  }
+  row.appendChild(grid);
+  return row;
 }
 
 /* ---------------------------------------------------------------------
@@ -370,7 +371,7 @@ function applySearch() {
 
   let shown = 0;
   root.querySelectorAll('.category-row').forEach(function (row) {
-    const category = row.querySelector('h2.category').textContent;
+    const category = row.dataset.category;
     let rowShown = 0;
     row.querySelectorAll('.card').forEach(function (card) {
       const app = cardApps.get(card);

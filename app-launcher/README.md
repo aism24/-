@@ -69,9 +69,9 @@ app-launcher/gas/Index.html … 既存のIndex.html（丸ごと貼り替え用�
    - **アクセスできるユーザー**: **「全員」**
 5. 「デプロイ」をクリックし、発行された新しいウェブアプリのURL
    （`https://script.google.com/macros/s/xxxxx/exec`）をコピーします。
-6. **このURLをClaudeとのチャットに貼り付けてください。** `app.js` の `GAS_API_URL`
-   （現在は `PASTE_NEW_DEPLOYMENT_URL_HERE` というプレースホルダーになっています）に反映して
-   GitHubにpushします。
+6. 発行されたURLは `app.js` の `GAS_API_URL` に設定済みです(再デプロイするときは、
+   既存デプロイを「編集→新バージョン」にすればURLは変わりません)。
+   Code.gsを変えたら `CODE_VERSION` を更新し、`{"action":"ping"}` をPOSTして版を確認します。
 
 ### 注意点（既存アプリと共通）
 
