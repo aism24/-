@@ -32,7 +32,7 @@
  * 「/exec?action=ping」をGETで開いて version が一致することを確認する。
  */
 
-const CODE_VERSION = "2026-10-21-unso1";
+const CODE_VERSION = "2026-10-22-unso2";
 
 const SHEET_HAULING = "配車データ";
 const SHEET_STATUS = "締め状態";
@@ -607,10 +607,9 @@ function normalizeTime_(value) {
   return m ? pad2_(Number(m[1])) + ":" + m[2] : s;
 }
 
-// 重複判定用に1項目分の値を比較可能な文字列に正規化する
+// 重複判定用に1項目分の値を比較可能な文字列に正規化する(前月分の重複判定 findDuplicateRow_ でも使う)
 function normalizeForCompare_(field, value) {
   if (field === "積日" || field === "降日") return cellToYmd_(value);
-  if (field === "現場待機") return normalizeTime_(value);
   if (field === "総重量" || field === "通常単価") return String(Math.round(toNum_(value) * 100) / 100);
   return String(value == null ? "" : value).trim();
 }
@@ -635,7 +634,10 @@ function findDuplicateRow_(candidateRow, existingRows) {
 // (各行の11項目をつないだ文字列を並べ替えてから比べる)。
 function isExactSameBatch_(newRows, existingRows) {
   if (newRows.length === 0 || newRows.length !== existingRows.length) return false;
-  const rowKey = row => DUPLICATE_CHECK_FIELDS.map(field => normalizeForCompare_(field, row[field])).join("\u0001");
+  // 現場待機だけは時刻を "HH:MM" にそろえて比べる(この判定だけ。前月分の重複判定 findDuplicateRow_ の
+  // 「11項目中7項目以上一致」の数え方は変えないため、normalizeForCompare_ には入れていない)
+  const norm = (field, value) => field === "現場待機" ? normalizeTime_(value) : normalizeForCompare_(field, value);
+  const rowKey = row => DUPLICATE_CHECK_FIELDS.map(field => norm(field, row[field])).join("\u0001");
   const a = newRows.map(rowKey).sort();
   const b = existingRows.map(rowKey).sort();
   return a.every((k, i) => k === b[i]);
