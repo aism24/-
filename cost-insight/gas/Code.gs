@@ -51,7 +51,12 @@
  *   POST {action:'settings', changes:[{no, done?:true/false, year?:'R8'/''}], basic?:{targetProfitRate?, otherFixedMonthly?}}(秘密キー不要。画面の「完了・年度の設定」から誰でも保存できる)
  *     工事データの D 完了('完了'/空欄)・E 年度 を工事No単位で書く(送られてきた項目だけ)。工事データに無い工事Noは末尾に追加する。
  *     同じ工事Noの行が複数あれば上の行に書き、応答の dup で知らせる。最後に保存した内容が正。
+ *   GET ?action=ping    : { status, data:{ version } }(貼り替え・デプロイ後に CODE_VERSION と一致するか確かめる)
+ *
+ * コードを直したら CODE_VERSION を更新し、新しいバージョンでデプロイした後に ?action=ping で版を確認する。
  */
+
+const CODE_VERSION = '2026-10-23-ci1';
 
 const PM_API_URL = 'https://script.google.com/macros/s/AKfycbya0wgwbTuBN1laM8tWFGTJhJw--pTAOBAYVyrsOoXbrOXZgs9q3ZsErTSQZwJFT2c2/exec';
 const DR_API_URL = 'https://script.google.com/macros/s/AKfycbyiocXgXi_YEMUUq5BJPe7CUi2V-LJIBvLwceextYV-82hEArRKRaHQ5peVj5oMfTsW/exec';
@@ -79,6 +84,7 @@ const BASIC_KEYS = [
 function doGet(e) {
   try {
     const action = (e && e.parameter && e.parameter.action) || 'getData';
+    if (action === 'ping') return json_({ status: 'success', data: { version: CODE_VERSION } });
     if (action === 'getData') return dataResponse_(false);
     if (action === 'refresh') return dataResponse_(true);
     if (action === 'master') return json_({ status: 'success', data: { works: readMasterList_() } });
@@ -834,6 +840,8 @@ function readSettings_() {
     const names = [k[0]].concat(k[3] ? [k[3]] : []);
     if (raw === undefined) Object.keys(basic).some(function (name) { if (names.some(function (n) { return name.indexOf(n) === 0; })) { raw = basic[name]; return true; } return false; });
     const isNum = k[1] === 'targetProfitRate' || k[1] === 'otherFixedMonthly';
+    // 目標利益率はセルが「8%」のような%表示でも読む(読めないと画面は既定の5%で計算してしまうため)
+    if (k[1] === 'targetProfitRate' && raw !== undefined) raw = String(raw).replace(/[%％]\s*$/, '');
     s[k[1]] = (raw === undefined || raw === '') ? k[2] : (isNum ? numOrNull_(raw) : raw);
   });
   s.works = readWorks_(sheet_(SHEETS.MASTER));
