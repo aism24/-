@@ -529,6 +529,8 @@ async function handleSelectedFile(file) {
     if (!detected) {
       statusEl.textContent = "ファイル名から業者・締め日を判定できませんでした。ファイル名を確認してください: " + file.name;
       statusEl.className = "import-status error";
+      // 選択欄を空にしておく(同じファイルを直して選び直したときも、選択の変化として読み込ませるため)
+      document.getElementById("file-input").value = "";
       return;
     }
     const buf = await file.arrayBuffer();
@@ -539,6 +541,7 @@ async function handleSelectedFile(file) {
     if (rows.length === 0) {
       statusEl.textContent = "「配車」シートに取り込める行がありません(0行)。ファイルを確認してください: " + file.name;
       statusEl.className = "import-status error";
+      document.getElementById("file-input").value = "";
       return;
     }
 
