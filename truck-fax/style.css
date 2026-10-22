@@ -166,7 +166,7 @@ table.t.zebra tbody tr.pick:hover td { filter: brightness(0.96); }
 @media (max-width: 760px) { .drop-card { padding: 12px 16px; gap: 8px; } .drop-main { font-size: 24px; } .drop-card span { font-size: 12px; } }
 table.t th.c, table.t td.c { text-align: center; }
 table.t th.fit, table.t td.fit { width: 1%; }
-a.filelink { color: #1558b0; text-decoration: underline; cursor: pointer; font-weight: 600; }
+tr.before td { color: #d32f2f; text-decoration: line-through; } /* 取込一覧の「変更前」の行 */
 dialog.faxdlg { width: min(96vw, 1300px); max-width: none; padding: 12px; }
 .faxdlg-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .faxview .viewer { margin-top: 8px; height: calc(100vh - 280px); min-height: 340px; }

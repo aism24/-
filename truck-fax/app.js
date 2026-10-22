@@ -760,12 +760,9 @@
     if (k === '積日' || k === '卸日') { var d = L.dateKey(v); return d ? (+d.slice(5, 7)) + '/' + (+d.slice(8, 10)) : v; }
     return v;
   }
-  /** ファイル名のセルの中身。ファイルURLがあれば、押すと原本が開くリンクにする */
-  function fileNameNode(r) {
-    var t = importCellText(r, 'ファイル名');
-    if (!r.ファイルURL) return t;
-    return h('a', { href: '#', class: 'filelink', title: '原本を開く', text: t, onclick: function (e) { e.preventDefault(); e.stopPropagation(); openFaxViewer(r); } });
-  }
+  /** 取込一覧の「変更前」の行か(表とExcelで、赤字・取り消し線にする) */
+  function isBeforeRow(r) { return String(r && r.追加変更 != null ? r.追加変更 : '').trim() === '変更前'; }
+  function struckOf(list) { return { struck: list.map(isBeforeRow) }; }
 
   /** 取込一覧の1つのセルの編集用の入力欄。d=その行の編集中の内容。内容が変わったら onChange を呼ぶ */
   function importEditControl(k, d, onChange) {
@@ -869,8 +866,8 @@
   }
 
   function importRow(r) {
-    var tr = h('tr', { class: 'pick' });
-    TABLE_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (CENTER_COLS.indexOf(k) >= 0 ? ' c fit' : '') }, k === 'ファイル名' ? fileNameNode(r) : importCellText(r, k))); });
+    var tr = h('tr', { class: 'pick' + (isBeforeRow(r) ? ' before' : '') }); // 行を押すと原本が開く(ファイル名はリンクにしない)
+    TABLE_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (CENTER_COLS.indexOf(k) >= 0 ? ' c fit' : '') }, importCellText(r, k))); });
     tr.appendChild(h('td', { class: 'nowrap' }));
     tr.addEventListener('click', function () { openFaxViewer(r); });
     return tr;
@@ -882,10 +879,11 @@
     try {
       var all = await apiGet('listImports', { limit: 1000000 }); // 新しい順で、シートの全行
       var heads = IMPORT_HEADERS.concat(['ファイルURL']);
-      var rows = all.slice().reverse().map(function (r) { return heads.map(function (k) { return r[k] || ''; }); });
+      var ordered = all.slice().reverse();
+      var rows = ordered.map(function (r) { return heads.map(function (k) { return r[k] || ''; }); });
       close(); close = function () {};
       if (!rows.length) { toast('取込一覧に記録がありません。'); return; }
-      TruckXlsx.download('過去全件一覧' + todayIso().replace(/-/g, '') + '.xlsx', '取込一覧', heads, rows);
+      TruckXlsx.download('過去全件一覧' + todayIso().replace(/-/g, '') + '.xlsx', '取込一覧', heads, rows, struckOf(ordered));
       toast('全件(' + rows.length + '件)をダウンロードしました。');
     } catch (e) { showBanner('全件の読み込みに失敗しました: ' + e.message); }
     finally { close(); }
@@ -934,7 +932,7 @@
     cancel.addEventListener('click', function () { dlg.close(); });
     ok.addEventListener('click', function () {
       if (!shown.length) return;
-      TruckXlsx.download(cmSel.value + '月20日〆車番一覧.xlsx', '取込一覧', VIEW_HEADERS, shown.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }));
+      TruckXlsx.download(cmSel.value + '月20日〆車番一覧.xlsx', '取込一覧', VIEW_HEADERS, shown.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }), struckOf(shown));
       dlg.close();
     });
     dlg.addEventListener('close', function () { open = false; dlg.remove(); });
@@ -979,7 +977,7 @@
     cancel.addEventListener('click', function () { dlg.close(); });
     ok.addEventListener('click', function () {
       if (!cur.length) return;
-      TruckXlsx.download((+input.value.slice(5, 7)) + '月' + (+input.value.slice(8, 10)) + '日着車番一覧.xlsx', '取込一覧', VIEW_HEADERS, cur.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }));
+      TruckXlsx.download((+input.value.slice(5, 7)) + '月' + (+input.value.slice(8, 10)) + '日着車番一覧.xlsx', '取込一覧', VIEW_HEADERS, cur.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }), struckOf(cur));
       dlg.close();
     });
     dlg.addEventListener('close', function () { dlg.remove(); });
