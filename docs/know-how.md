@@ -559,3 +559,9 @@
 - 効果: 「日本時間10/21 8時」に固定したのに前の期間(10/20〆)が表示され、平均の照合が93件中5件しか合わない(誤判定)→ timezoneId 指定で93件すべて一致
 - 原因: Playwright のブラウザは既定でUTC。`clock.setFixedTime` で日本時間の朝9時前を指定すると、ブラウザ内では前日になる
 - やり方: `browser.newContext({ timezoneId: 'Asia/Tokyo' })`。締め期間・「今日」・営業日を扱うアプリ(production-management・huguai・tori-robo 等)は必ず指定する
+
+### GASをNodeのvmで動かす新旧比較は、Dateをvmの中で作る(unso-check 10/23)
+- 効果: 時刻型セルの再現で「新コードでも警告が出ない」と誤判定(現場待機ありの同じ内容・並び順違い200場面で警告0)→ vm内のDateで作り直すと200場面すべて警告(内容違いの89場面は警告0のまま)
+- 原因: vmの外で作った Date は、vmの中の `instanceof Date` が false になる(コードではなくテスト側の誤り)
+- やり方: `const D = vm.runInContext("Date", ctx); new D(1899,11,30,6,15)`。時刻・日付は `TZ=Asia/Tokyo` で実行。乱数比較で差が出なくても、しきい値の境目を1つずつ変えて確かめる(乱数400場面で見えなかった判定の変化が見つかった)
+- 使ったアプリ: unso-check
