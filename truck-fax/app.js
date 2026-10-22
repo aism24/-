@@ -502,6 +502,7 @@
       if (rec && it.type === 'update' && it.action === 'apply') skip[L.importKey({ 積日: rec.積日, 車番: rec.車番 })] = true;
     });
     card.findings = L.evaluateBatch(card.rows, { vehicles: S.vehicles, drivers: S.drivers, importKeys: S.importKeyList.filter(function (k) { return !skip[k]; }) });
+    card.items.forEach(function (it) { if (it.action === 'skip' && it.rowIdx >= 0) card.findings[it.rowIdx] = []; }); // 記録しない行は、確認を出さない
   }
 
   function changeResults(card) {
@@ -523,7 +524,7 @@
 
   var TYPE_LABEL = { update: '変更', add: '追加', cancel: '取消' };
   var ACTION_LABEL = {
-    update: { apply: 'この記録を「変更前」にして、今回の内容を「変更後」として追加する', asnew: '変更前にはせず、別の1台として追加する', skip: '反映しない' },
+    update: { apply: 'この記録を「変更前」にして、今回の内容を「変更後」として追加する', asnew: '変更前にはせず、別の1台として追加する', skip: '変更なし(記録しない)' },
     add: { apply: '1台追加して記録する', skip: '反映しない' },
     cancel: { apply: 'この記録を「中止」にする', record: '元の記録が無いので、このFAXの内容を「中止」として追加する', skip: '反映しない' }
   };
@@ -586,6 +587,7 @@
       trs.forEach(function (cells3, k) { tbody.appendChild(h('tr', { class: k === 0 ? 'grp' : '' }, cells3)); });
       tbody.appendChild(h('tr', { class: 'ctl' }, h('td', { colspan: FIELDS.length + 3 },
         h('label', { class: 'ctlitem' }, it.type === 'add' ? '元の記録: ' : '元の記録(取込一覧): ', pick), h('label', { class: 'ctlitem' }, '対応: ', act),
+        it.same && it.action === 'skip' ? h('span', { class: 'ctlitem', text: '※取込一覧の記録と同じ内容のため、記録しません' }) : null,
         it.type === 'cancel' ? h('label', { class: 'ctlitem' }, '備考: ', (function () { var n = h('input', { value: it.note || '', placeholder: '中止の理由など(任意)', 'aria-label': '備考' }); n.addEventListener('input', function () { it.note = n.value; }); return n; })()) : null)));
     });
     return h('div', { class: 'scroll' }, h('table', { class: 't change' }, h('thead', null, h('tr', null, heads.map(function (t) { return h('th', { text: t }); }))), tbody));
@@ -605,7 +607,7 @@
   function renderChangeFoot(card) {
     var rs = changeResults(card), blockers = 0, active = 0, todo = [];
     rs.forEach(function (r) { blockers += r.blockers.length; if (r.active) active++; r.blockers.forEach(function (b) { todo.push(r.no + '件目: ' + b); }); });
-    var msg = blockers > 0 ? '反映するには、あと ' + blockers + ' 件の対応が必要です → ' + todo.slice(0, 3).join(' / ') + (todo.length > 3 ? ' ほか' : '') : (active === 0 ? '反映する内容がありません。' : '準備OKです。内容を確認して「反映する」を押してください。');
+    var msg = blockers > 0 ? '反映するには、あと ' + blockers + ' 件の対応が必要です → ' + todo.slice(0, 3).join(' / ') + (todo.length > 3 ? ' ほか' : '') : (active === 0 ? (card.items.length && card.items.every(function (it) { return it.same && it.action === 'skip'; }) ? 'すべての行が、取込一覧の記録と同じです(変更なし)。「破棄する」で閉じてください。' : '反映する内容がありません。') : '準備OKです。内容を確認して「反映する」を押してください。');
     var f = footParts(card, '破棄する', function () { discardCard(card); });
     f.btn.textContent = '反映する'; f.btn.disabled = blockers > 0 || active === 0 || !!card.busy; f.btn.onclick = function () { commitChange(card); };
     f.msg.textContent = msg; f.hint();
