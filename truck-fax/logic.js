@@ -373,16 +373,18 @@
   function destMatch(a, b) { var x = compact(a), y = compact(b); if (!x || !y) return true; return x === y || x.indexOf(y) >= 0 || y.indexOf(x) >= 0; }
 
   /** 取込一覧の記録(records)から、「元の記録」の候補を点数順に返す。
-   *  点数: 取消線の車番と同じ=4、今回の車番と同じ=3、同じ手配(手配業者+積日+行先)=1。 */
+   *  点数: 取消線の車番と同じ=6、行先が同じ(両方に記入あり)=4、今回の車番と同じ=3、運転手が同じ=2、積日が同じ=1。
+   *  変更のFAXでは、車や運転手が入れ替わっても行先(どの便か)は変わらないことが多いため、行先を重く見る。 */
   function candidatesFor(row, struck, records) {
-    var sp = struck ? plateKey(struck.車番) : '', np = plateKey(row.車番), out = [];
+    var sp = struck ? plateKey(struck.車番) : '', np = plateKey(row.車番), nm = nameKey(row.氏名), out = [];
     (records || []).forEach(function (r) {
       if (!isActiveRec(r) || !sameCo(r.手配業者, row.業者)) return; // 変更前・中止にした行は、元の記録の候補にしない
       var rp = plateKey(r.車番);
-      var plateOld = !!sp && rp === sp, plateNew = !!np && rp === np;
-      var strong = (!row.積日 || r.積日 === row.積日) && destMatch(r.行先, row.行先);
-      var score = (plateOld ? 4 : 0) + (plateNew ? 3 : 0) + (strong ? 1 : 0);
-      if (plateOld || plateNew || strong) out.push({ rec: r, score: score });
+      var plateOld = !!sp && rp === sp, plateNew = !!np && rp === np, nameSame = !!nm && nameKey(r.氏名) === nm;
+      var daySame = !row.積日 || r.積日 === row.積日, destSame = !!compact(row.行先) && !!compact(r.行先) && destMatch(r.行先, row.行先);
+      var strong = daySame && destMatch(r.行先, row.行先);
+      var score = (plateOld ? 6 : 0) + (destSame ? 4 : 0) + (plateNew ? 3 : 0) + (nameSame && daySame ? 2 : 0) + (row.積日 && r.積日 === row.積日 ? 1 : 0);
+      if (plateOld || plateNew || strong || (nameSame && daySame)) out.push({ rec: r, score: score });
     });
     out.sort(function (a, b) { return b.score - a.score; });
     return out;
@@ -392,6 +394,30 @@
     if (!c.length || c[0].score < 3) return null;
     return (c.length === 1 || c[1].score < c[0].score) ? 0 : null;
   }
+  /** FAXの複数の行と元の記録を1対1で組み合わせる(点数の合計が最大になる組み合わせ)。
+   *  cands[i]=行iの候補。返り値: 行ごとの候補の番号(null=選ばない)。点数3未満(積日・運転手だけの一致)は選ばない。 */
+  function assignPicks(cands) {
+    var MAXC = 4, best = { sum: -1, picks: null }, used = {}, cur = [];
+    var lists = cands.map(function (c) { return c.slice(0, MAXC).map(function (x, i) { return { i: i, score: x.score, key: x.rec._row }; }).filter(function (x) { return x.score >= 3; }); });
+    if (lists.length > 7) return cands.map(function (c) { return defaultPick(c); }); // 行が多いときは、行ごとに選ぶ(組み合わせが多すぎるため)
+    (function dfs(k, sum) {
+      if (k === lists.length) { if (sum > best.sum) best = { sum: sum, picks: cur.slice() }; return; }
+      lists[k].forEach(function (x) {
+        if (used[x.key]) return;
+        used[x.key] = true; cur.push(x.i); dfs(k + 1, sum + x.score); cur.pop(); used[x.key] = false;
+      });
+      cur.push(null); dfs(k + 1, sum); cur.pop();
+    })(0, 0);
+    return best.picks;
+  }
+  /** FAXの行が、取込一覧の記録と、書かれている項目すべて一致するか(空欄の項目は比べない)。 */
+  function sameAsRecord(r, rec) {
+    var pairs = [
+      [r.業者, rec.手配業者, companyKey], [r.積日, rec.積日, dateKey], [r.卸日, rec.卸日, dateKey], [r.行先, rec.行先, nameKey], [r.着時間, rec.着時間, normTime],
+      [r.運送業者, rec.運送業者, companyKey], [r.車種, rec.車種, typeKey], [r.車番, rec.車番, plateKey], [r.氏名, rec.氏名, nameKey], [r.携帯番号, rec.携帯番号, phoneDigits]
+    ];
+    return pairs.every(function (p) { return !String(p[0] == null ? '' : p[0]).trim() || p[2](p[0]) === p[2](p[1]); });
+  }
 
   /** 候補を選んだ(idx。null=該当なし)ときの更新。空欄の項目は元の記録から引き継ぐ。 */
   function setPick(item, idx) {
@@ -400,7 +426,8 @@
     if (rec && item.newRow) {
       var base = recToRow(rec);
       inheritFrom(item.newRow, base);
-      if (!item.newRow.工事番号) { item.newRow.工事番号 = base.工事番号; item.newRow.現場名 = base.現場名; }
+      // 工事番号は元の記録から引き継ぐ(空欄か、行先からの自動の候補のとき。人が選んだ工事番号は変えない)
+      if (base.工事番号 && (!item.newRow.工事番号 || item.newRow._suggest)) { item.newRow.工事番号 = base.工事番号; item.newRow.現場名 = base.現場名; item.newRow._suggest = false; }
     }
     item.action = rec ? 'apply' : (item.type === 'add' ? 'apply' : null);
   }
@@ -425,17 +452,34 @@
         var it = mk('add', nr, null, c); it.label = ''; setPick(it, null);
       });
     } else { // 変更
+      // 1) 取込一覧の記録と全く同じ行は「変更なし」(記録しない)。その記録は、他の行の元の記録にしない
+      var sameRec = live.map(function (r) {
+        var hit = (records || []).filter(function (rec) { return isActiveRec(rec) && sameAsRecord(r, rec); });
+        return hit.length ? hit[0] : null;
+      });
+      var taken = {};
+      sameRec.forEach(function (rec) { if (rec) taken[rec._row] = true; });
+      var others = (records || []).filter(function (rec) { return !taken[rec._row]; });
+      // 2) 残りの行は、元の記録と1対1で組み合わせ、既定で「変更前→変更後」を選んでおく
+      var updates = [];
       live.forEach(function (r, i) {
         var s = struck[i] || null, nr = copyRow(r);
         if (s) inheritFrom(nr, s);
-        var c = candidatesFor(nr, s, records);
+        if (sameRec[i]) {
+          var sr = sameRec[i], sm = mk('update', nr, s, [{ rec: sr, score: 99 }]);
+          inheritFrom(nr, recToRow(sr)); if (!nr.工事番号) { nr.工事番号 = sr.工事番号 || ''; nr.現場名 = sr.現場名 || ''; }
+          sm.label = '変更後'; sm.same = true; setPick(sm, 0); sm.action = 'skip'; return;
+        }
+        var c = candidatesFor(nr, s, others);
         if (struck.length && !s) { // 取消線の行より多い行は、追加の1台
           if (c.length) { inheritFrom(nr, recToRow(c[0].rec)); if (!nr.工事番号) { nr.工事番号 = c[0].rec.工事番号 || ''; nr.現場名 = c[0].rec.現場名 || ''; } }
           var ad = mk('add', nr, null, c); ad.label = ''; setPick(ad, null); return; // 追加の1台(変更前・変更後ではない)
         }
         if (!c.length) { var ad2 = mk('add', nr, null, c); ad2.label = '変更後'; setPick(ad2, null); return; } // 元の記録が無ければ、変更後の行として追加する
-        var it = mk('update', nr, s, c); it.label = '変更後'; setPick(it, defaultPick(c));
+        var it = mk('update', nr, s, c); it.label = '変更後'; updates.push(it);
       });
+      var picks = assignPicks(updates.map(function (it) { return it.candidates; }));
+      updates.forEach(function (it, k) { setPick(it, picks[k]); });
       struck.slice(live.length).forEach(function (s) { // 置き換え先のない取消線の行=取消
         var it = mk('cancel', null, s, candidatesFor(s, null, records)); it.faxRow = copyRow(s); it.note = it.faxRow.備考 || ''; it.label = '中止'; setPick(it, defaultPick(it.candidates));
       });
@@ -470,15 +514,8 @@
   function alreadyImported(res, records) {
     var rows = (res && res.rows) || [];
     if (!rows.length || !records || !records.length) return false;
-    function same(r, rec) {
-      var pairs = [
-        [r.業者, rec.手配業者, companyKey], [r.積日, rec.積日, dateKey], [r.卸日, rec.卸日, dateKey], [r.行先, rec.行先, nameKey], [r.着時間, rec.着時間, normTime],
-        [r.運送業者, rec.運送業者, companyKey], [r.車種, rec.車種, typeKey], [r.車番, rec.車番, plateKey], [r.氏名, rec.氏名, nameKey], [r.携帯番号, rec.携帯番号, phoneDigits]
-      ];
-      return pairs.every(function (p) { return !String(p[0] == null ? '' : p[0]).trim() || p[2](p[0]) === p[2](p[1]); });
-    }
     return rows.every(function (r) {
-      return records.some(function (rec) { return (r.struck || res.kind === '取消' || isActiveRec(rec)) && same(r, rec); });
+      return records.some(function (rec) { return (r.struck || res.kind === '取消' || isActiveRec(rec)) && sameAsRecord(r, rec); });
     });
   }
 
