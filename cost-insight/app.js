@@ -1,25 +1,19 @@
 /*
  * コストインサイト 画面
  *   GAS(getData)から 生産重量・工数(cache)・工事マスタ等(settings)・実行予算(budget)を受け取り、
- *   calc.js(CICalc)で 3つの単価・損益 を計算して、工事別/工場別/期間別 のグラフと表にする。
+ *   calc.js(CICalc)でモデルを作る。画面の切り替え・読み込み・実行予算の取込・設定の保存を受け持つ。
+ *   各分析画面は simple.js(シンプル版)・detail.js(詳細版)・workone.js(工事別)・extract.js(実行予算の表)。
  */
 'use strict';
 
 // GAS(スプレッドシート「コストインサイト」のウェブアプリ)
 const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbwDhzAWpmCmwrLoFM6gS1GDWYWcc7OvqjdGa7HNObCTednh-FttOPdF3JZlOQVe-Y3Q0A/exec';
-const SITES = ['本社', '夢前', '鳥取'];
-// 系列の色(識別用。順番固定)。加工単価=青、仕入単価=オレンジ、時間単価=アクア。損益は 黒字=青 / 赤字=赤
-const COLOR = { proc: '#2a78d6', purchase: '#eb6834', hour: '#1baf7a', plus: '#2a78d6', minus: '#e34948', grid: '#e1e0d9', muted: '#333' };
-
-const state = { data: null, model: null, tab: 'work', charts: [], edits: {}, basicEdits: {}, view: 'menu' };
+const state = { data: null, model: null, edits: {}, basicEdits: {}, view: 'menu' };
 
 const fmt = (v, d) => (v === null || v === undefined || !isFinite(v)) ? '—' : Number(v).toLocaleString('ja-JP', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 });
-const man = v => (v === null || v === undefined || !isFinite(v)) ? '—' : fmt(v / 1e4); // 万円
 const pct = v => (v === null || v === undefined || !isFinite(v)) ? '—' : (v * 100).toFixed(1) + '%';
 const esc = s => String(s === null || s === undefined ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const est = on => on ? '<span class="est" title="見込みを含む">見込</span>' : '';
 const pad2 = n => (n < 10 ? '0' : '') + n;
-const todayYmd = () => { const d = new Date(); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); };
 
 /* ===================== 読み込み(ポップアップに進み具合を出す) ===================== */
 
@@ -62,8 +56,6 @@ function applyData(d) {
   state.data = d;
   state.model = CICalc.build(d);
   const b = d.budget;
-  document.getElementById('status').textContent = '生産・日報の集計: ' + new Date(d.cache.generatedAt).toLocaleString('ja-JP')
-    + ' / 実行予算の受信: ' + (b ? new Date(b.at).toLocaleString('ja-JP') : 'まだ受信していません');
   document.getElementById('budget').textContent = b ? '前回取込: ' + new Date(b.at).toLocaleString('ja-JP') + '(' + Object.keys(b.rows || {}).length + 'ファイル)' : '前回取込: まだ取り込んでいません';
 }
 
@@ -71,7 +63,6 @@ async function load() {
   const bar = startLoadingBar();
   try {
     applyData(await gasGet('getData'));
-    setupFilters();
     renderSettings();
     bar.done();
     setTimeout(() => document.getElementById('loading').classList.add('done'), 300);
@@ -117,7 +108,6 @@ async function checkImport() {
       showImportStatus('', '取込結果を読み込んでいます…');
       applyData(await gasGet('getData'));
       renderSettings();
-      render();
       // 完了後はホームへ戻らず、この画面で待機(③実行予算最新確認でテーブルを表示する)
       showImportStatus('ok', '取込が完了しました。③実行予算最新確認を押すと、結果のテーブルを表示します。');
     } else {
@@ -138,7 +128,6 @@ async function showLatestBudget() {
   try {
     applyData(await gasGet('getData'));
     renderSettings();
-    render();
     document.getElementById('imp-status').hidden = true;
     showView('extract');
   } catch (e) {
@@ -167,7 +156,6 @@ async function refreshProduction() {
     renderSettings();
     if (window.SimpleView) SimpleView.reload();
     if (window.DetailView) DetailView.reload();
-    if (state.view === 'progress') render();
     const last = window.CIKit && CIKit.lastDataYmd();
     bar.done();
     title.textContent = '更新しました' + (last ? '(〜' + Number(last.slice(5, 7)) + '/' + Number(last.slice(8)) + 'の実績)' : '');
@@ -190,7 +178,7 @@ function closeLoading() {
   document.getElementById('ld-note').textContent = '初回は30秒ほどかかることがあります';
 }
 
-/* ===================== 画面の切り替え(メニュー / 3つのモード) ===================== */
+/* ===================== 画面の切り替え(メニュー / 各モード) ===================== */
 
 // 固定する上部(アプリ名+操作バー)の高さを CSS 変数に入れる(グラフ・カードの高さと固定位置の計算用)
 function syncStickyOffsets() {
@@ -206,10 +194,6 @@ function showView(name) {
   document.querySelectorAll('.view').forEach(v => { v.hidden = v.id !== 'v-' + name; });
   window.scrollTo(0, 0);
   document.querySelector('main').classList.toggle('wide', name === 'simple' || name === 'detail' || name === 'extract' || name === 'workone'); // シンプル版・実行予算抽出は画面いっぱいに使う
-  if (name === 'progress') {
-    document.querySelector('#v-progress .home-row button').dataset.go = state.tab === 'site' ? 'sitemode' : 'menu';
-    render(); // グラフは表示されてから描く(非表示のままだと大きさが決まらない)
-  }
   syncStickyOffsets();
   if (name === 'extract' && window.ExtractView) ExtractView.show();
   if (name === 'workone' && window.WorkView) WorkView.show();
@@ -217,203 +201,15 @@ function showView(name) {
   if (name === 'detail' && window.DetailView) DetailView.show();
 }
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => showView(b.dataset.go)));
-// 進捗・結果確認 → 分析の種類(工事別結果分析 / 工場別進捗分析)を選んで分析画面へ
-const AN_TITLE = { work: '工事別結果分析', site: '工場別進捗分析' };
+// ホームの①②: 工場別は 詳細版/シンプル版 を先に選ぶ。工事別は 工事を選んでその工事だけの結果を表示
 document.querySelectorAll('[data-analysis]').forEach(b => b.addEventListener('click', () => {
-  if (b.dataset.analysis === 'site') { showView('sitemode'); return; } // 工場別は 詳細版/シンプル版 を先に選ぶ
-  if (b.dataset.analysis === 'work') { showView('workone'); return; } // 工事別は 工事を選んでその工事だけの結果を表示
-  state.tab = b.dataset.analysis;
-  document.getElementById('an-title').textContent = AN_TITLE[state.tab];
-  showView('progress');
+  showView(b.dataset.analysis === 'site' ? 'sitemode' : 'workone');
 }));
 
 // 工場別進捗分析 → 詳細版(従来の表とグラフ) / シンプル版(simple.js)
 document.querySelectorAll('[data-sitemode]').forEach(b => b.addEventListener('click', () => {
   showView(b.dataset.sitemode === 'simple' ? 'simple' : 'detail'); // 詳細版=目標シミュレーター
 }));
-
-/* ===================== 絞り込み ===================== */
-
-function setupFilters() {
-  const m = state.model;
-  const from = m.analysisFrom, last = m.cells.reduce((x, c) => c.ymd > x ? c.ymd : x, from);
-  // 期(11/21始まり)と月度の一覧(分析できる期間のみ)
-  const fySel = document.getElementById('f-fy'), pSel = document.getElementById('f-period');
-  const fys = [], periods = [];
-  for (let p = CICalc.periodKeyOf(from); p <= CICalc.periodKeyOf(last); p = CICalc.shiftPeriod(p, 1)) {
-    periods.push(p);
-    const fy = CICalc.fiscalYearOf(p);
-    if (fys.indexOf(fy) < 0) fys.push(fy);
-  }
-  fySel.innerHTML = fys.slice().reverse().map(fy => `<option value="${fy}">${fy}/11/21〜${fy + 1}/11/20期</option>`).join('');
-  pSel.innerHTML = periods.slice().reverse().map(p => `<option value="${p}">${CICalc.periodLabel(p)}(${CICalc.periodRange(p).from.slice(5).replace('-', '/')}〜${CICalc.periodRange(p).to.slice(5).replace('-', '/')})</option>`).join('');
-  const fromIn = document.getElementById('f-from'), toIn = document.getElementById('f-to');
-  fromIn.min = toIn.min = from; fromIn.max = toIn.max = last;
-  fromIn.value = from; toIn.value = last;
-  document.getElementById('f-min').textContent = from.replace(/-/g, '/');
-  document.getElementById('f-sites').innerHTML = SITES.map(s => `<label><input type="checkbox" value="${s}" checked> ${s}</label>`).join(' ');
-  document.querySelectorAll('#filters select, #filters input').forEach(el => el.addEventListener('change', render));
-  }
-
-function currentRange() {
-  const m = state.model, mode = document.querySelector('input[name="f-mode"]:checked').value;
-  let from, to;
-  if (mode === 'fy') { const r = CICalc.fiscalRange(Number(document.getElementById('f-fy').value)); from = r.from; to = r.to; }
-  else if (mode === 'period') { const r = CICalc.periodRange(document.getElementById('f-period').value); from = r.from; to = r.to; }
-  else { from = document.getElementById('f-from').value; to = document.getElementById('f-to').value; }
-  if (!from || from < m.analysisFrom) from = m.analysisFrom; // 生産重量が無い期間は選べない
-  if (!to) to = todayYmd();
-  return { from, to };
-}
-
-function currentFilter() {
-  const r = currentRange();
-  return {
-    from: r.from, to: r.to,
-    sites: Array.from(document.querySelectorAll('#f-sites input:checked')).map(i => i.value),
-    doneOnly: document.getElementById('f-done').checked,
-  };
-}
-
-/* ===================== 描画 ===================== */
-
-function render() {
-  const m = state.model;
-  if (!m || state.view !== 'progress') return;
-    const mode = document.querySelector('input[name="f-mode"]:checked').value;
-  document.getElementById('f-fy').disabled = mode !== 'fy';
-  document.getElementById('f-period').disabled = mode !== 'period';
-  document.getElementById('f-from').disabled = document.getElementById('f-to').disabled = mode !== 'range';
-
-  const f = currentFilter();
-  const cells = CICalc.filterCells(m, f);
-  const total = CICalc.summarize(cells);
-  document.getElementById('range-note').textContent = '対象: ' + f.from.replace(/-/g, '/') + '〜' + f.to.replace(/-/g, '/')
-    + ' / ' + (f.sites.length ? f.sites.join('・') : '工場なし') + (f.doneOnly ? ' / 完了の工事のみ' : '');
-  renderKpis(total);
-
-  let rows;
-  if (state.tab === 'work') rows = workRows(cells);
-  else if (state.tab === 'site') rows = f.sites.map(s => ({ key: s, label: s, t: CICalc.summarize(cells.filter(c => c.site === s)) }));
-  else {
-    const g = CICalc.groupBy(cells, c => c.period);
-    rows = Object.keys(g).sort().map(p => ({ key: p, label: CICalc.periodLabel(p), t: g[p] }));
-  }
-  // グラフには単価か損益がある行だけ出す(実行予算なし等の工事で空き枠が並ばないように)
-  renderCharts(rows.filter(r => r.t.procUnit !== null || r.t.hourRate !== null || r.t.profitSales > 0));
-  renderTable(rows, total);
-  renderNotes(cells);
-}
-
-// 工事別の行。単価は工事ごとに決まった値、金額は期間内のセルの合計
-function workRows(cells) {
-  const m = state.model, g = {};
-  cells.forEach(c => { (g[c.no] || (g[c.no] = [])).push(c); });
-  return Object.keys(g).sort().map(no => {
-    const w = m.works[no];
-    return { key: no, label: no + ' ' + w.name, w, t: CICalc.summarize(g[no]) };
-  }).filter(r => r.t.weight > 0 || r.t.hours > 0);
-}
-
-function renderKpis(t) { document.getElementById('kpis').innerHTML = kpiHtml(t); }
-
-// 3つの単価・損益・生産重量のカード(進捗画面・工事別結果分析で共通)
-function kpiHtml(t) {
-  const k = (label, value, unit, sub) => `<div class="kpi"><div class="kpi-l">${label}</div><div class="kpi-v">${value}<small>${unit}</small></div><div class="kpi-s">${sub || ''}</div></div>`;
-  return [
-    k('1t当たり加工単価', fmt(t.procUnit), '円/t', '売上 ' + man(t.sales) + '万円'),
-    k('1t当たり仕入単価', fmt(t.purchaseUnit) + est(t.purchaseEst), '円/t', '仕入 ' + man(t.purchase) + '万円'),
-    k('1時間当たり単価', fmt(t.hourRate) + est(t.laborEst), '円/h', '労務費 ' + man(t.labor) + '万円'),
-    k('損益', man(t.profit), '万円', '利益率 ' + pct(t.profitRate)),
-    k('生産重量', fmt(t.weight, 1), 't', '工数 ' + fmt(t.hours) + 'h(人工/t ' + (t.weight > 0 ? (t.hours / 8 / t.weight).toFixed(2) : '—') + ')'),
-  ].join('');
-}
-
-function destroyCharts() { state.charts.forEach(c => c.destroy()); state.charts = []; }
-
-function baseOptions(yTitle) {
-  return {
-    responsive: true, maintainAspectRatio: false, animation: false,
-    interaction: { mode: 'index', intersect: false },
-    plugins: {
-      legend: { position: 'top', align: 'start', labels: { boxWidth: 12, color: '#52514e' } },
-      tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmt(ctx.parsed.y) + ' ' + yTitle } },
-    },
-    scales: {
-      x: { grid: { display: false }, ticks: { color: COLOR.muted, maxRotation: 60, autoSkip: true } },
-      y: { title: { display: true, text: yTitle, color: COLOR.muted }, grid: { color: COLOR.grid }, ticks: { color: COLOR.muted, callback: v => fmt(v) } },
-    },
-  };
-}
-
-function renderCharts(rows) {
-  destroyCharts();
-  const isPeriod = state.tab === 'period';
-  const labels = rows.map(r => state.tab === 'work' ? r.key : r.label);
-  const type = isPeriod ? 'line' : 'bar';
-  const ds = (label, data, color, extra) => Object.assign(isPeriod
-    ? { label, data, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, spanGaps: true }
-    : { label, data, backgroundColor: color, borderRadius: 4, borderSkipped: 'start', maxBarThickness: 28 }, extra || {});
-  const nz = v => (v === null || v === undefined || !isFinite(v)) ? null : v;
-
-  // 1) 1t当たり単価(加工・仕入)
-  state.charts.push(new Chart(document.getElementById('c-ton'), {
-    type, data: { labels, datasets: [
-      ds('加工単価', rows.map(r => nz(r.t.procUnit)), COLOR.proc),
-      ds('仕入単価', rows.map(r => nz(r.t.purchaseUnit)), COLOR.purchase),
-    ] }, options: baseOptions('円/t'),
-  }));
-  // 2) 1時間当たり単価
-  const hopt = baseOptions('円/h');
-  hopt.plugins.legend.display = false;
-  state.charts.push(new Chart(document.getElementById('c-hour'), {
-    type, data: { labels, datasets: [ds('時間単価', rows.map(r => nz(r.t.hourRate)), COLOR.hour)] }, options: hopt,
-  }));
-  // 3) 損益(黒字=青・赤字=赤)
-  const popt = baseOptions('万円');
-  popt.plugins.legend.display = false;
-  const profits = rows.map(r => r.t.profitSales > 0 ? r.t.profit / 1e4 : null);
-  state.charts.push(new Chart(document.getElementById('c-profit'), {
-    type: 'bar', data: { labels, datasets: [{ label: '損益', data: profits, backgroundColor: profits.map(v => v < 0 ? COLOR.minus : COLOR.plus), borderRadius: 4, borderSkipped: 'start', maxBarThickness: 28 }] },
-    options: popt,
-  }));
-}
-
-function renderTable(rows, total) {
-  const isWork = state.tab === 'work';
-  const head = '<tr><th>' + (isWork ? '工事' : state.tab === 'site' ? '工場' : '月度') + '</th>'
-    + (isWork ? '<th>完了</th><th class="n">契約総重量(t)</th><th class="n">生産割合</th>' : '')
-    + '<th class="n">生産重量(t)</th><th class="n">工数(h)</th><th class="n">人工/t</th>'
-    + '<th class="n">加工単価(円/t)</th><th class="n">仕入単価(円/t)</th><th class="n">時間単価(円/h)</th>'
-    + '<th class="n">売上(万円)</th><th class="n">仕入(万円)</th><th class="n">労務費(万円)</th><th class="n">損益(万円)</th><th class="n">利益率</th>'
-    + (isWork ? '<th>注意</th>' : '') + '</tr>';
-  const line = (label, t, w, cls) => {
-    const ok = t.profitSales > 0;
-    return `<tr class="${cls || ''}"><td class="name">${esc(label)}</td>`
-      + (isWork ? `<td>${w && w.done ? '完了' : ''}</td><td class="n">${w ? fmt(w.totalWeight, 1) : ''}</td><td class="n">${w ? pct(w.coverage) : ''}</td>` : '')
-      + `<td class="n">${fmt(t.weight, 1)}</td><td class="n">${fmt(t.hours)}</td><td class="n">${t.weight > 0 ? (t.hours / 8 / t.weight).toFixed(2) : '—'}</td>`
-      + `<td class="n">${fmt(t.procUnit)}</td><td class="n">${fmt(t.purchaseUnit)}${est(t.purchaseEst)}</td><td class="n">${fmt(t.hourRate)}${est(t.laborEst)}</td>`
-      + `<td class="n">${man(t.sales)}</td><td class="n">${man(t.purchase)}</td><td class="n">${man(t.labor)}</td>`
-      + `<td class="n ${ok && t.profit < 0 ? 'neg' : ''}">${ok ? man(t.profit) : '—'}</td><td class="n">${ok ? pct(t.profitRate) : '—'}</td>`
-      + (isWork ? `<td class="note-cell">${w ? esc(w.notes.join(' / ')) : ''}</td>` : '') + '</tr>';
-  };
-  document.getElementById('table').innerHTML = head
-    + rows.map(r => line(r.label, r.t, r.w, r.w && (r.w.dataShort || !r.w.hasBudget || r.w.procUnit === null) ? 'warnrow' : '')).join('')
-    + line('合計', total, null, 'total');
-}
-
-function renderNotes(cells) {
-  const m = state.model, ng = {};
-  cells.forEach(c => { if (!c.ok) { const g = ng[c.no] || (ng[c.no] = { w: 0, h: 0 }); g.w += c.weight; g.h += c.hours; } });
-  const list = Object.keys(ng).sort().filter(no => ng[no].w > 0 || ng[no].h > 0);
-  const items = [];
-  if (list.length) items.push('損益に入れていない工事(実行予算なし・契約金額なし・単価なし): '
-    + list.map(no => esc(no + ' ' + m.works[no].name) + '(' + fmt(ng[no].w, 1) + 't/' + fmt(ng[no].h) + 'h)').join('、'));
-  items.push('「見込」: 仕入は未完の工事の予算の値、時間単価は労務費の締めより後の工数(直近の確定単価で計算)を含みます。');
-  items.push('共通の工数(基本設定の共通扱い工事No・工事No不明)は、同じ工場・同じ月度の各工事に工数比で按分しています。');
-  items.push('生産重量のデータは ' + m.analysisFrom.replace(/-/g, '/') + ' からのため、それより前の期間は選べません(時間単価の計算には前の工数・労務費も使っています)。');
-  document.getElementById('notes').innerHTML = items.map(t => '<li>' + t + '</li>').join('');
-}
 
 /* ===================== 設定(目標利益率（対売比率）・月額概算固定費=基本設定シート / 完了・年度=工事データ D・E 列) ===================== */
 
@@ -442,9 +238,15 @@ function onBasicChange(ev) {
   updateSaveButton();
 }
 
+// 今の会社の年度(11/21始まり・11/20決算。決算の年の令和で呼ぶ 例: 2025/11/21〜2026/11/20 = R8)。端末の時間帯に関わらず日本時間で決める
+function currentFiscalReiwa() {
+  const d = new Date(Date.now() + 9 * 3600000), y = d.getUTCFullYear(), m = d.getUTCMonth() + 1, day = d.getUTCDate();
+  return (m > 11 || (m === 11 && day >= 21) ? y + 1 : y) - 2018;
+}
+
 function yearOptions() {
   const set = {};
-  for (let i = 6; i <= new Date().getFullYear() - 2018 + 1; i++) set['R' + i] = true; // R6〜来年度
+  for (let i = 6; i <= currentFiscalReiwa() + 1; i++) set['R' + i] = true; // R6〜来年度
   Object.values(state.data.settings.works).forEach(w => { if (w.year) set[w.year] = true; });
   return [''].concat(Object.keys(set).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))));
 }
@@ -522,7 +324,6 @@ async function saveSettings() {
     state.edits = {};
     state.basicEdits = {};
     state.model = CICalc.build(state.data);
-    render();
     renderSettings();
     const dup = (body.data && body.data.dup) || [];
     msg.textContent = `保存しました(${changes.length + Object.keys(basic).length}件)` + (dup.length ? `。工事データに同じ工事Noの行が複数あります(上の行に保存): ${dup.join('、')}` : '');

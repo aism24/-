@@ -34,9 +34,10 @@
     for (let t = ymdToUtc(from), e = ymdToUtc(to); t <= e; t += 86400000) if (isWorkDay(cal, utcToYmd(t))) n++;
     return n;
   }
+  // 目標利益率(%)。基本設定シートの値(0%も有効)。空欄・読めない値のときだけ既定の5%
   const goalRate = () => {
-    const g = Number((state.data.settings || {}).targetProfitRate);
-    return isFinite(g) && g > 0 ? g : 5;
+    const raw = (state.data.settings || {}).targetProfitRate, g = Number(raw);
+    return raw !== null && raw !== undefined && raw !== '' && isFinite(g) && g >= 0 ? g : 5;
   };
   const headcount = () => (state.data.settings && state.data.settings.headcount) || {};
 
