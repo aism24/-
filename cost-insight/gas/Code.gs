@@ -56,7 +56,7 @@
  * コードを直したら CODE_VERSION を更新し、新しいバージョンでデプロイした後に ?action=ping で版を確認する。
  */
 
-const CODE_VERSION = '2026-10-23-ci1';
+const CODE_VERSION = '2026-10-23-ci2';
 
 const PM_API_URL = 'https://script.google.com/macros/s/AKfycbya0wgwbTuBN1laM8tWFGTJhJw--pTAOBAYVyrsOoXbrOXZgs9q3ZsErTSQZwJFT2c2/exec';
 const DR_API_URL = 'https://script.google.com/macros/s/AKfycbyiocXgXi_YEMUUq5BJPe7CUi2V-LJIBvLwceextYV-82hEArRKRaHQ5peVj5oMfTsW/exec';
@@ -762,7 +762,11 @@ function saveBasicSettings_(basic) {
     let row = 0;
     for (let i = 0; i < colA.length; i++) if (prefixes[key].some(function (n) { return String(colA[i][0]).trim().indexOf(n) === 0; })) { row = i + 2; break; }
     if (!row) { row = Math.max(last, 1) + 1; sh.getRange(row, 1).setValue(labels[key]); }
-    sh.getRange(row, 2).setValue(v);
+    const cell = sh.getRange(row, 2);
+    // 目標利益率のセルが%表示だと、8 を書くと「800%」と表示され、次に読むと800%になる(readSettings_ は「8%」を 8 と読むため)。
+    // %表示のときだけ文字の書式(@)にしてから書き、表示を「8」にそろえる
+    if (key === 'targetProfitRate' && /%/.test(String(cell.getNumberFormat()))) cell.setNumberFormat('@');
+    cell.setValue(v);
     done[key] = v;
   });
   return done;
