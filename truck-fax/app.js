@@ -108,7 +108,8 @@
   // ---------- タブ ----------
   function renderTabs() {
     var labels = { import: 'PDF取込', imports: '取込一覧', pairs: '車両・運転手情報' };
-    $('appname').textContent = '車番連絡　管理＿【' + labels[S.tab] + 'モード】'; // アプリ名の右に、押されているボタン名を出す
+    // アプリ名の右に、押されているボタン名を出す(【】内は濃い緑・太字・80%の大きさ)
+    $('appname').innerHTML = '車番連絡　管理＿【<span class="mode">' + labels[S.tab] + 'モード</span>】';
     document.querySelectorAll('#tabs button').forEach(function (b) {
       b.textContent = labels[b.dataset.tab];
       b.classList.toggle('on', b.dataset.tab === S.tab);
