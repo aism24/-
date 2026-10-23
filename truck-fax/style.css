@@ -167,7 +167,7 @@ table.t.zebra tbody tr.pick:hover td { filter: brightness(0.96); }
 table.t th.c, table.t td.c { text-align: center; }
 table.t th.fit, table.t td.fit { width: 1%; }
 /* 取込一覧の表: 列の幅は中身に合わせ(画面いっぱいに広げない)、左右の余白は同じ。ファイル名・現場名は左揃え、他は中央揃え */
-.scroll.fitcols { width: fit-content; max-width: 100%; }
+.scroll.fitcols { width: fit-content; max-width: 100%; margin: 0 auto; } /* 表そのものは画面の中央に置く(2026-10-23、ユーザー指示) */
 .scroll.fitcols table.t { width: auto; }
 .scroll.fitcols table.t th, .scroll.fitcols table.t td { padding: 3px 8px; }
 .scroll.fitcols table.t th.c, .scroll.fitcols table.t td.c { text-align: center; }
