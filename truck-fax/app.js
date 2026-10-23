@@ -816,11 +816,11 @@
     });
     var rowsTable = h('div', { class: 'scroll faxrows' }, h('table', { class: 't' }, h('thead', null, thead), tbody));
     var holder = h('div', { class: 'faxview' }, h('div', { class: 'reading-note', text: r.ファイルURL ? '原本を読み込んでいます…' : 'この記録には原本がありません(PDFで取り込んだ記録ではありません)。' }));
-    var tool = h('div', { class: 'tool' }, h('button', { class: 'btn sm', type: 'button', text: 'すべての行に戻す', onclick: function () { tryClose(); } }),
+    var tool = h('div', { class: 'tool' }, h('button', { class: 'btn sm back-list', type: 'button', text: 'すべての行に戻す', onclick: function () { tryClose(); } }),
       h('strong', { class: 'file-name', text: importCellText(r, 'ファイル名') }), h('span', { class: 'sub', text: 'この原本から記録した' + drafts.length + '行(押した行は水色)。表の中で直せます' }),
       status, saveBtn);
     var paneHead = h('div', { class: 'faxpane-head' }, h('strong', { text: '原本: ' + importCellText(r, 'ファイル名') }), h('span', { class: 'spacer' }),
-      h('button', { class: 'btn sm', type: 'button', text: '画像を閉じる', onclick: function () { tryClose(); } }));
+      h('button', { class: 'btn sm back-list', type: 'button', text: '画像を閉じる', onclick: function () { tryClose(); } }));
     var url = '';
     var el = h('div', { class: 'impfile' }, tool, rowsTable, h('div', { class: 'faxpane' }, paneHead, holder));
     var me = { el: el, fit: fitPane };
