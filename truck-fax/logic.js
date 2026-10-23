@@ -126,7 +126,12 @@
   /** 備考から、特記事項ではない部分を除く(2026-10-23、ユーザー指示): 「入場予定時間:夢前工場」のように、入場予定時間の欄の下にある積地(時刻を含まない)と、「積地:…」。
    *  「入場予定時間:8:00」のように時刻を含むものは残す。 */
   function cleanNote(t) {
-    return String(t || '').split(/\s*\/\s*/).filter(function (seg) { return seg && !/^(入場予定時間|積地)\s*[:：]\s*[^0-9０-９]*$/.test(seg.trim()); }).join(' / ');
+    return String(t || '').split(/\s*\/\s*/).filter(function (seg) { return seg && !/^(入場予定時間|積地)\s*[:：]\s*[^0-9０-９]*$/.test(seg.trim()) && !/^現着時間/.test(seg.trim()); }).join(' / ');
+  }
+  /** 備考の「現着時間(荷卸し時間):6:30待機」から時刻を取り出す(着時間が空のときに使う)。無ければ '' */
+  function arrivalFromNote(t) {
+    var m = /現着時間[^:：]*[:：]\s*([0-9０-９]{1,2}\s*[:：時]\s*[0-9０-９]{0,2})/.exec(nfkc(t));
+    return m ? normTime(m[1]) : '';
   }
   /** raw: Geminiが返したJSON(オブジェクト)。{業者, FAX日付, 明細:[{積日,卸日,行先,着時間,運送業者,車種,車番,氏名,携帯番号}]} */
   function sanitizeOcr(raw, opts) {
@@ -158,9 +163,10 @@
         車番: fmtPlate(r['車番']),
         氏名: nameKey(r['氏名']),
         携帯番号: fmtPhone(r['携帯番号']),
-        備考: [cleanNote(tidy(r['備考'])), memo].filter(Boolean).join(' / '), // FAXの備考欄・特記などの文字と、FAXの連絡文(メモ)
+        備考: [cleanNote(tidy(r['備考'])), memo].filter(Boolean).join(' / '), // FAXの備考欄・特記などの文字と、FAXの連絡文(メモ)。現着時間・積地は入れない
         struck: isTrue(r['取消線'])
       };
+      if (!o.着時間) o.着時間 = arrivalFromNote(r['備考']); // 着時間が空で、備考に「現着時間:6:30待機」があれば、着時間に入れる
       if (!o.車番 && !o.氏名 && !o.携帯番号 && !o.運送業者) return; // 空欄行
       // 年またぎ(12月積み・1月卸し)
       if (o.積日 && o.卸日 && o.卸日 < o.積日) {
