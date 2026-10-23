@@ -29,11 +29,12 @@
     var struck = (opts && opts.struck) || [];
     var left = opts && opts.leftCols;
     var center = headers.map(function (hd) { return !!left && left.indexOf(hd) < 0; });
+    var centerHead = headers.map(function (hd, i) { return center[i] || ((opts && opts.centerHeads) || []).indexOf(hd) >= 0; }); // opts.centerHeads: 見出しだけ中央揃えにする列
     var all = [headers].concat(rows);
     var widths = headers.map(function (_, c) { var m = 6; all.forEach(function (r) { m = Math.max(m, width(r[c])); }); return Math.min(m + 2, 60); });
     var sheetRows = all.map(function (r, ri) {
       return '<row r="' + (ri + 1) + '">' + r.map(function (v, ci) {
-        return '<c r="' + colName(ci) + (ri + 1) + '" t="inlineStr"' + ' s="' + ((ri === 0 ? 1 : struck[ri - 1] ? 2 : 0) + (center[ci] ? 3 : 0)) + '"' + '><is><t xml:space="preserve">' + esc(v) + '</t></is></c>';
+        return '<c r="' + colName(ci) + (ri + 1) + '" t="inlineStr"' + ' s="' + ((ri === 0 ? 1 : struck[ri - 1] ? 2 : 0) + ((ri === 0 ? centerHead[ci] : center[ci]) ? 3 : 0)) + '"' + '><is><t xml:space="preserve">' + esc(v) + '</t></is></c>';
       }).join('') + '</row>';
     }).join('');
     var X = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
