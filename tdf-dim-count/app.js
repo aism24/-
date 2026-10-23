@@ -4,7 +4,8 @@
   var openBtn = document.getElementById('open'), file = document.getElementById('file');
   var out = document.getElementById('out'), info = document.getElementById('info');
   var layerEl = document.getElementById('layer'), xlsxBtn = document.getElementById('xlsx');
-  var cur = null, last = null, width = 0;
+  var cur = null, last = null, width = 0, mode = 1;
+  var modeEl = document.getElementById('modebtns'), segWrap = document.getElementById('seg');
   var segEl = document.getElementById('segbtns'), ttlEl = document.getElementById('ttl');
   function setHH() { document.documentElement.style.setProperty('--hh', document.querySelector('header').offsetHeight + 'px'); }
   function setS3() { document.documentElement.style.setProperty('--s3h', document.getElementById('sticky3').offsetHeight + 'px'); }
@@ -13,6 +14,14 @@
     var b = document.createElement('button'); b.textContent = n === 0 ? 'まとめない' : '±' + n; b.dataset.n = n;
     b.onclick = function () { width = n; render(); }; segEl.appendChild(b);
   });
+
+  // モード: 1=拾い出し(寸法ごとの本数)、2=ブロック分け製品名で仕訳け
+  function setMode(m) {
+    mode = m;
+    Array.prototype.forEach.call(modeEl.children, function (b) { b.classList.toggle('on', parseInt(b.dataset.m, 10) === mode); });
+    segWrap.style.display = mode === 2 ? 'none' : '';
+  }
+  Array.prototype.forEach.call(modeEl.children, function (b) { b.onclick = function () { setMode(parseInt(b.dataset.m, 10)); render(); }; });
 
   openBtn.onclick = function () { file.click(); };
   var depth = 0;
@@ -24,7 +33,7 @@
   layerEl.onchange = render;
   xlsxBtn.onclick = download;
   document.getElementById('reset').onclick = function () {
-    cur = null; last = null; width = 0;
+    cur = null; last = null; width = 0; setMode(1);
     file.value = '';
     info.textContent = '';
     layerEl.innerHTML = '<option value="">（先にTDFを選んでください）</option>';
@@ -65,9 +74,10 @@
     if (!cur || !layerEl.value) { reset('レイヤを選ぶと表示されます'); return; }
     var no = parseInt(layerEl.value, 10);
     var ch = cur.choices.filter(function (c) { return c.no === no; })[0];
+    if (mode === 2) { renderBlocks(no, ch); return; }
     var s = TdfDim.summarize(cur.parsed, no);
     var g = width ? TdfDim.groupLengths(cur.parsed, no, width) : null;
-    last = { name: cur.name, layer: ch.name, s: s, g: g, width: width };
+    last = { mode: 1, name: cur.name, layer: ch.name, s: s, g: g, width: width };
     Array.prototype.forEach.call(segEl.children, function (b) { b.classList.toggle('on', parseInt(b.dataset.n, 10) === width); });
     ttlEl.textContent = cur.name + ' ／ レイヤ ' + ch.name + (width ? ' ／ 長さ ±' + width + 'mm でまとめ' : '');
     var h = '';
@@ -93,6 +103,26 @@
     card2.classList.toggle('alert', !s.rows.length);
   }
 
+  // ②ブロック分け製品名で仕訳け(組にならない寸法と「_」の無い製品名は出さない。core.js の blockNames)
+  function renderBlocks(no, ch) {
+    var b = TdfDim.blockNames(cur.parsed, no);
+    last = { mode: 2, name: cur.name, layer: ch.name, b: b };
+    ttlEl.textContent = cur.name + ' ／ レイヤ ' + ch.name + ' ／ ブロック分け製品名で仕訳け';
+    var h = '';
+    if (!b.rows.length) {
+      h += '<div class="small c">このレイヤには、寸法と組になる「_」入りの製品名テキストがありません</div>';
+    } else {
+      h += '<table><tr><th>ブロック入り製品名</th><th>ブロック</th><th>製品名</th><th>本数</th><th>長さ</th></tr>';
+      b.rows.forEach(function (r) {
+        h += '<tr><td>' + esc(r.name) + '</td><td class="c">' + esc(r.block) + '</td><td style="text-align:left">' + esc(r.product) + '</td><td class="c">' + r.count + '</td><td class="c">' + esc(r.lengths.join(',')) + '</td></tr>';
+      });
+      h += '<tr><th>合計(' + b.rows.length + '種類)</th><th></th><th></th><th style="text-align:center">' + b.total + '</th><th></th></tr></table>';
+    }
+    out.className = ''; out.innerHTML = h; setS3();
+    xlsxBtn.disabled = !b.rows.length;
+    card2.classList.toggle('alert', !b.rows.length);
+  }
+
   // Excelダウンロード時に、ファイル名・レイヤ名・総本数だけを記録(失敗しても作業は止めない)
   function logDownload(fileName, layer, total) {
     if (!GAS_URL) return;
@@ -105,6 +135,7 @@
   function download() {
     if (!last) return;
     if (typeof XLSX === 'undefined') { alert('Excel出力用ライブラリを読み込めませんでした。ネットワークを確認してください。'); return; }
+    if (last.mode === 2) { downloadBlocks(); return; }
     var rows = [['ファイル', 'レイヤ', 'テキスト(寸法)', '線の本数']];
     last.s.rows.forEach(function (r) { rows.push([last.name, last.layer, parseFloat(r.text), r.count]); });
     rows.push(['', '', '合計(線は重複なし)', last.s.total]);
@@ -134,5 +165,28 @@
     a.download = last.name.replace(/\.tdf$/i, '') + '_' + last.layer + '_寸法本数.xlsx';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     logDownload(last.name, last.layer, last.s.total);
+  }
+
+  function saveBook(wb, fileName) {
+    var buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+
+  function downloadBlocks() {
+    var rows = [['ブロック入り製品名', 'ブロック', '製品名', '本数', '長さ']];
+    last.b.rows.forEach(function (r) {
+      rows.push([r.name, r.block, r.product, r.count, r.lengths.length === 1 ? parseFloat(r.lengths[0]) : r.lengths.join(',')]);
+    });
+    rows.push(['合計(' + last.b.rows.length + '種類)', '', '', last.b.total, '']);
+    var ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 28 }, { wch: 10 }, { wch: 22 }, { wch: 8 }, { wch: 20 }];
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'ブロック分け');
+    saveBook(wb, last.name.replace(/\.tdf$/i, '') + '_' + last.layer + '_ブロック分け.xlsx');
+    logDownload(last.name, last.layer, last.b.total);
   }
 })();

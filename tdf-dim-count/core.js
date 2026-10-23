@@ -128,7 +128,8 @@
         for (var k = rs + 52; k < rs + 900 && k < n - 3; k++) { if (isTag(u8, k)) { lay = u8[k + 2]; break; } }
         // 後方に印がない(ファイル末尾に近い)場合は、直前100バイト内の最後の印を使う(2026-10-14、TBの7020.2で確認)
         if (lay < 0) { for (var q = rs - 4; q >= rs - 100 && q >= 0; q--) { if (isTag(u8, q)) { lay = u8[q + 2]; break; } } }
-        var rec = { text: tx, rot: dv.getFloat64(rs + 36, true) * 180 / Math.PI, layer: lay, id: dv.getUint32(rs + 48, true) };
+        var rec = { text: tx, rot: dv.getFloat64(rs + 36, true) * 180 / Math.PI, layer: lay, id: dv.getUint32(rs + 48, true),
+          x: dv.getFloat64(rs + 4, true), y: dv.getFloat64(rs + 12, true) };
         if (tx !== null) { texts.push(rec); if (!(rec.id in bodyById)) bodyById[rec.id] = tx; } else cands.push(rec);
       }
     }
@@ -209,7 +210,43 @@
     return { groups: groups, total: items.length };
   }
 
-  var api = { groupLengths: groupLengths, allLayers: allLayers, analyze: analyze, parse: parse, summarize: summarize, extractContents: extractContents, readLayers: readLayers, DEFAULT_LAYER: DEFAULT_LAYER };
+  // ②ブロック分け製品名: 集計対象(テキスト数=線の本数)の寸法値テキストと、同じレイヤの数値でないテキスト(製品名)を、
+  // 互いに最も近いもの同士で1対1に組にする(どちらかに、より近い相手がいれば組にしない)。
+  // 製品名は最初の「_」で分け、左=製品名・右=ブロック。「_」の無い製品名と、組にならない寸法は出さない。
+  // 2026-10-23、別工事の図面(TB)で、組の距離は200〜206、2番目に近い製品名は1820以上離れていた(224本すべて1対1)
+  function blockNames(parsed, layerNo) {
+    var ok = {};
+    analyze(parsed, layerNo).forEach(function (x) { if (x.ok) ok[String(x.v)] = 1; });
+    var dims = [], names = [];
+    parsed.texts.forEach(function (t) {
+      if (t.layer !== layerNo || !t.text) return;
+      if (NUM.test(t.text)) { if (ok[String(parseFloat(t.text))]) dims.push(t); } else names.push(t);
+    });
+    function nearest(a, list) {
+      var best = -1, bd = Infinity;
+      list.forEach(function (b, k) { var d = Math.hypot(b.x - a.x, b.y - a.y); if (d < bd) { bd = d; best = k; } });
+      return best;
+    }
+    var nameToDim = names.map(function (m) { return nearest(m, dims); });
+    var byName = {};
+    dims.forEach(function (d, di) {
+      var ni = nearest(d, names);
+      if (ni < 0 || nameToDim[ni] !== di) return;
+      var nm = names[ni].text, u = nm.indexOf('_');
+      if (u < 0) return;
+      if (!byName[nm]) byName[nm] = { name: nm, product: nm.slice(0, u), block: nm.slice(u + 1), count: 0, lens: {} };
+      byName[nm].count++; byName[nm].lens[d.text] = 1;
+    });
+    var rows = Object.keys(byName).map(function (k) {
+      var r = byName[k];
+      r.lengths = Object.keys(r.lens).sort(function (a, b) { return parseFloat(a) - parseFloat(b); });
+      delete r.lens; return r;
+    });
+    rows.sort(function (a, b) { return a.name.localeCompare(b.name, 'ja', { numeric: true }); });
+    return { rows: rows, total: rows.reduce(function (a, r) { return a + r.count; }, 0) };
+  }
+
+  var api = { blockNames: blockNames, groupLengths: groupLengths, allLayers: allLayers, analyze: analyze, parse: parse, summarize: summarize, extractContents: extractContents, readLayers: readLayers, DEFAULT_LAYER: DEFAULT_LAYER };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TdfDim = api;
 })(typeof self !== 'undefined' ? self : this);
