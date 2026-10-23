@@ -380,7 +380,7 @@ async function initSyncPopup(){
   const startedAt = showFakeProgress('日報アプリと同期しています', INITIAL_LOAD_PROGRESS_DURATION_MS, true);
   try {
     await loadAllData();
-    hideFakeProgressNow(() => setHomeButtonsEnabled(true));
+    hideFakeProgressNow(() => { setHomeButtonsEnabled(true); setTimeout(renderNextPending_, 0); });
   } catch (err) {
     hideFakeProgressNow(() => {
       showToast('データの取得に失敗しました: ' + err.message);
@@ -388,12 +388,16 @@ async function initSyncPopup(){
   }
 }
 
-/* 起動時データの取得。①Vercel中継API(api/data。サーバー側で再試行+CDNキャッシュ)→
+/* 起動時データの取得。⓪Vercel中継APIで「毎回取る分(live)」+「アーカイブ分(版ごとに長期キャッシュ)」→
+   ①失敗時はVercel中継APIの全部入り(init。サーバー側で再試行+CDNキャッシュ)→
    ②失敗時(確認用URL等で関数が無い場合も)GASのgetInitialData(5件を1回にまとめたもの)→
    ③GAS側が未更新(不明なaction)なら従来の5件並行取得。
    ブラウザからGASへ直接POSTすると、Google側の2段階応答(受取URL echo)が一定割合で
    404/CORS errorになるため(2026-10-06実測)、通常は①で済ませる。 */
 async function fetchInitialData_(){
+  try {
+    return await fetchSplit_();
+  } catch (e) { /* ①へ */ }
   try {
     return await fetchRelay_('init');
   } catch (e) { /* ②へ */ }
@@ -412,8 +416,30 @@ async function fetchInitialData_(){
   return { master, rows, calendar, absenteeism, absenteeismDetail, fetchedAt: null };
 }
 
-async function fetchRelay_(kind){
-  const res = await fetch('api/data?kind=' + kind);
+/* 日報の約99%は月1回程度しか変わらないアーカイブ分。毎回取るのは現行分(live)だけにし、
+   アーカイブ分はliveが返す版(archiveVersion)をURLに入れて取る(中継APIが1年キャッシュを指示するため、
+   2回目以降はブラウザに保存済みのものが使われる)。組み立てた結果はgetInitialDataと同じ形
+   (行の並びもアーカイブ分→現行分)。届出(absenteeism)はabsenteeismDetailの同じ行から作る。 */
+async function fetchSplit_(){
+  const live = await fetchRelay_('live');
+  const archive = await fetchRelay_('archive', { v: live.archiveVersion });
+  // liveとアーカイブの版が食い違う(月1回の移し替えの前後で、片方だけ古い)と、行が二重・欠けになりうるため使わない
+  if (archive.version !== live.archiveVersion) throw new Error('アーカイブの版が一致しません');
+  const detail = expandRows_(live.absenteeismDetail);
+  return {
+    master: live.master,
+    rows: expandRows_(archive.rows).concat(expandRows_(live.currentRows)),
+    calendar: live.calendar,
+    absenteeism: detail.map(a => ({ operatorNo: a.operatorNo, from: a.from, to: a.to, type: a.type })),
+    absenteeismDetail: detail,
+    fetchedAt: live.fetchedAt
+  };
+}
+
+async function fetchRelay_(kind, query){
+  let url = 'api/data?kind=' + kind;
+  if (query) Object.keys(query).forEach(k => { url += '&' + k + '=' + encodeURIComponent(query[k]); });
+  const res = await fetch(url);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const json = await res.json();
   if (json.status !== 'success') throw new Error(json.message || '中継APIエラー');
@@ -482,16 +508,39 @@ async function loadAllData(){
     r5Input.value = r5InputValue_(d);
   }
 
-  recomputeScreen('r1');
-  recomputeScreen('r2');
-  renderR3Preview();
-  renderR4Preview();
-  renderR5Preview();
+  /* 各画面の描画(遅いPCで合計約3秒)は、データ取得直後にまとめて行うと同期ポップアップが
+     その分閉じないため、ポップアップを閉じた後に1画面ずつ裏で行う。それより先に画面を開いた場合は、
+     開いた時点でその画面を描画する(showScreen)。 */
+  PENDING_RENDERS_ = Object.keys(SCREEN_RENDERERS_);
+}
+
+/* 画面名 → データ取得後に最初に行う描画 */
+const SCREEN_RENDERERS_ = {
+  report1: () => recomputeScreen('r1'),
+  report2: () => recomputeScreen('r2'),
+  report3: () => renderR3Preview(),
+  report4: () => renderR4Preview(),
+  report5: () => renderR5Preview()
+};
+let PENDING_RENDERS_ = [];
+
+function renderPending_(name){
+  const i = PENDING_RENDERS_.indexOf(name);
+  if(i === -1) return;
+  PENDING_RENDERS_.splice(i, 1);
+  SCREEN_RENDERERS_[name]();
+}
+
+function renderNextPending_(){
+  if(!PENDING_RENDERS_.length) return;
+  renderPending_(PENDING_RENDERS_[0]);
+  setTimeout(renderNextPending_, 0);
 }
 
 function showScreen(name){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+name).classList.add('active');
+  renderPending_(name);
   window.scrollTo(0,0);
   /* ①日報入力チェックのsticky積み重ね(集計条件パネル/ファイル名見出し/th)は
      実測した高さをtopに使うため、画面がdisplay:noneの間に描画されると
@@ -1238,14 +1287,31 @@ function getR4Month(){
 const R4_FACTORY_RANK = { '本社': 0, '夢前': 1, '鳥取': 2 };
 const R4_DEPT_RANK = { '設計管理': 0, '工場': 1 }; /* 事務(内部値は設計管理)を優先 */
 
+/* 届出の一覧を社員Noごとに分けたもの(元の並び順のまま)。①は社員×日付のマスごとに届出を探すため、
+   毎回一覧全体(約1.4万件)を走査すると遅い(遅いPCで1秒超)。一覧の配列ごとに1回だけ作り、
+   データを取り直して配列が替われば作り直す。 */
+const LEAVE_INDEX_CACHE_ = new WeakMap();
+function leavesOf_(operatorNo, list){
+  let index = LEAVE_INDEX_CACHE_.get(list);
+  if(!index){
+    index = new Map();
+    list.forEach(a => {
+      if(!index.has(a.operatorNo)) index.set(a.operatorNo, []);
+      index.get(a.operatorNo).push(a);
+    });
+    LEAVE_INDEX_CACHE_.set(list, index);
+  }
+  return index.get(operatorNo) || [];
+}
+
 /* 指定日が終日「有給」または「欠勤」の対象かどうか(半日有給・遅早等は対象外)。
    list省略時はABSENTEEISM(本社/夢前/鳥取)を見る。①日報入力チェックの「総務建築」
    拠点はKENCHIKU_ABSENTEEISMを渡して呼ぶ(社員No体系が別のため混在させない)。 */
 function fullDayLeaveType(operatorNo, dateStr, list){
-  const arr = list || ABSENTEEISM;
+  const arr = leavesOf_(operatorNo, list || ABSENTEEISM);
   for(let i = 0; i < arr.length; i++){
     const a = arr[i];
-    if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to &&
+    if(dateStr >= a.from && dateStr <= a.to &&
        (a.type === '有給' || a.type === '欠勤')) return a.type;
   }
   return null;
@@ -1253,15 +1319,15 @@ function fullDayLeaveType(operatorNo, dateStr, list){
 
 /* 指定日にAbsenteeismの届出(種別問わず)があるかどうか */
 function hasAnyLeave(operatorNo, dateStr, list){
-  return (list || ABSENTEEISM).some(a => a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to);
+  return leavesOf_(operatorNo, list || ABSENTEEISM).some(a => dateStr >= a.from && dateStr <= a.to);
 }
 
 /* 指定日のAbsenteeism届出(種別問わず)の種別テキストを返す(未来日の表示用)。なければnull */
 function anyLeaveTypeText(operatorNo, dateStr, list){
-  const arr = list || ABSENTEEISM;
+  const arr = leavesOf_(operatorNo, list || ABSENTEEISM);
   for(let i = 0; i < arr.length; i++){
     const a = arr[i];
-    if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to) return a.type;
+    if(dateStr >= a.from && dateStr <= a.to) return a.type;
   }
   return null;
 }
@@ -1321,9 +1387,10 @@ async function ensureKenchikuLeaveData_(){
    未入力でも赤色にせず、届出ありの配色にする)。本社/夢前/鳥取側のfullDayLeaveType
    (有給・欠勤のみ)は変更しない。 */
 function kenchikuFullDayLeaveType_(operatorNo, dateStr){
-  for(let i = 0; i < KENCHIKU_ABSENTEEISM.length; i++){
-    const a = KENCHIKU_ABSENTEEISM[i];
-    if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to &&
+  const arr = leavesOf_(operatorNo, KENCHIKU_ABSENTEEISM);
+  for(let i = 0; i < arr.length; i++){
+    const a = arr[i];
+    if(dateStr >= a.from && dateStr <= a.to &&
        (a.type === '有給' || a.type === '欠勤' || a.type === '代休')) return a.type;
   }
   return null;
@@ -1332,9 +1399,10 @@ function kenchikuFullDayLeaveType_(operatorNo, dateStr){
 /* 半日有給・半日欠勤なのに、通常のフル勤務と同じくらいの時間が入っている場合
    (どちらかの入力ミスの可能性が高い、ユーザー指定)を検出する。 */
 function kenchikuHalfDayLeaveType_(operatorNo, dateStr){
-  for(let i = 0; i < KENCHIKU_ABSENTEEISM.length; i++){
-    const a = KENCHIKU_ABSENTEEISM[i];
-    if(a.operatorNo === operatorNo && dateStr >= a.from && dateStr <= a.to &&
+  const arr = leavesOf_(operatorNo, KENCHIKU_ABSENTEEISM);
+  for(let i = 0; i < arr.length; i++){
+    const a = arr[i];
+    if(dateStr >= a.from && dateStr <= a.to &&
        (a.type === '半日有給' || a.type === '半日欠勤')) return a.type;
   }
   return null;
