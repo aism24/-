@@ -402,9 +402,12 @@
       if (!isActiveRec(r) || !sameCo(r.手配業者, row.業者)) return; // 変更前・中止にした行は、元の記録の候補にしない
       var rp = plateKey(r.車番);
       var plateOld = !!sp && rp === sp, plateNew = !!np && rp === np, nameSame = !!nm && nameKey(r.氏名) === nm;
-      var daySame = !row.積日 || r.積日 === row.積日, destSame = !!compact(row.行先) && !!compact(r.行先) && destMatch(r.行先, row.行先);
+      var dk = dateKey(row.積日), rk = dateKey(r.積日), dd = dateKey(row.卸日), rd = dateKey(r.卸日);
+      var daySame = !dk || rk === dk, destSame = !!compact(row.行先) && !!compact(r.行先) && destMatch(r.行先, row.行先);
       var strong = daySame && destMatch(r.行先, row.行先);
-      var score = (plateOld ? 6 : 0) + (destSame ? 4 : 0) + (plateNew ? 3 : 0) + (nameSame && daySame ? 2 : 0) + (row.積日 && r.積日 === row.積日 ? 1 : 0);
+      // 積日・卸日が両方書かれていて違うときは、別の便の可能性が高いので大きく減点(同じ運転手が連続で運ぶことがある。2026-10-23、ユーザー指示)
+      var score = (plateOld ? 6 : 0) + (destSame ? 4 : 0) + (plateNew ? 3 : 0) + (nameSame && daySame ? 2 : 0) + (dk && rk === dk ? 1 : 0)
+        - (dk && rk && rk !== dk ? 4 : 0) - (dd && rd && rd !== dd ? 2 : 0);
       if (plateOld || plateNew || strong || (nameSame && daySame)) out.push({ rec: r, score: score });
     });
     out.sort(function (a, b) { return b.score - a.score; });
@@ -453,12 +456,21 @@
     item.action = rec ? 'apply' : (item.type === 'add' ? 'apply' : null);
   }
 
+  /** 取消線と読まれた行が、本当に取込一覧の記録を消したものか。同じ車番の記録はあるが、どれも積日が違う(=別の便。例: 9/25に運んだ立田さんが9/28も運ぶ)ときは false。
+   *  Geminiが「再」の印のあるFAXで、取消線の無い行を取消線ありと読むことがある(2026-10-23、実測)。同じ車番の記録が無いときは、読み取りのまま(true)。 */
+  function struckHasOrigin(r, records) {
+    var pk = plateKey(r.車番), dk = dateKey(r.積日);
+    var same = (records || []).filter(function (rec) { return sameCo(rec.手配業者, r.業者) && pk && plateKey(rec.車番) === pk; }); // 変更前・中止の行も含めて、同じ車番の記録
+    if (!same.length) return true;
+    return same.some(function (rec) { return isActiveRec(rec) && (!dk || dateKey(rec.積日) === dk); });
+  }
   /** FAXの読み取り結果(res)と取込一覧の記録(records)から、変更・追加・取消の一覧(items)を作る。
    *  item: {id, type:'update'|'add'|'cancel', newRow, struckRow, candidates, pick, action, decisions}
    *  action: null(未選択)|'apply'|'asnew'|'skip' */
   function buildChangePlan(res, records, kindOverride) {
     var kind = kindOverride || effectiveKind(res);
-    var struck = res.rows.filter(function (r) { return r.struck; }), live = res.rows.filter(function (r) { return !r.struck; });
+    var rows = kind === '変更' ? res.rows.map(function (r) { return r.struck && !struckHasOrigin(r, records) ? Object.assign({}, r, { struck: false }) : r; }) : res.rows;
+    var struck = rows.filter(function (r) { return r.struck; }), live = rows.filter(function (r) { return !r.struck; });
     var items = [], n = 0;
     function mk(type, newRow, struckRow, cands) {
       var it = { id: ++n, type: type, newRow: newRow, struckRow: struckRow, faxRow: null, label: '', note: '', candidates: cands, pick: null, action: null, decisions: {} };
@@ -496,7 +508,7 @@
           if (c.length) { inheritFrom(nr, recToRow(c[0].rec)); if (!nr.工事番号) { nr.工事番号 = c[0].rec.工事番号 || ''; nr.現場名 = c[0].rec.現場名 || ''; } }
           var ad = mk('add', nr, null, c); ad.label = ''; setPick(ad, null); return; // 追加の1台(変更前・変更後ではない)
         }
-        if (!c.length) { var ad2 = mk('add', nr, null, c); ad2.label = '変更後'; setPick(ad2, null); return; } // 元の記録が無ければ、変更後の行として追加する
+        if (!c.some(function (x) { return x.score >= 3; })) { var ad2 = mk('add', nr, null, c); ad2.label = '変更後'; setPick(ad2, null); return; } // 元の記録が無ければ(積日・卸日の違う別の便だけなら)、変更後の行として追加する
         var it = mk('update', nr, s, c); it.label = '変更後'; updates.push(it);
       });
       var picks = assignPicks(updates.map(function (it) { return it.candidates; }));
