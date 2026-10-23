@@ -893,7 +893,7 @@
     var paneHead = h('div', { class: 'faxpane-head' }, h('strong', { text: '原本: ' + importCellText(r, 'ファイル名') }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn sm back-list', type: 'button', text: '画像を閉じる', onclick: function () { tryClose(); } }));
     var url = '';
-    var el = h('div', { class: 'impfile' }, tool, rowsTable, h('div', { class: 'faxpane' }, paneHead, holder));
+    var el = h('div', { class: 'impfile' }, h('div', { class: 'imp-wrap' }, tool, rowsTable), h('div', { class: 'faxpane' }, paneHead, holder)); // 上の行と表は、取込一覧と同じく中央に置く
     var me = { el: el, fit: fitPane };
     S.importsFile = me;
 

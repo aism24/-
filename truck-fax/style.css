@@ -184,7 +184,7 @@ table.t tbody tr.hit td { background: #d6ecff; }
 .impfile .tool .file-name { color: var(--on-bg); font-size: 15px; }
 .impfile .tool .faxdlg-status.ok { color: #7ee08f; } .impfile .tool .faxdlg-status.err { color: #ffb4ab; }
 .impfile .faxrows { max-height: none; }
-.impfile .faxrows { width: fit-content; max-width: 100%; } /* 表は中身に合わせた幅(画面いっぱいに広げない) */
+.impfile .faxrows { width: fit-content; max-width: 100%; margin: 0 auto; } /* 表は中身に合わせた幅(画面いっぱいに広げない) */
 .impfile .faxrows table.t { width: auto; }
 .impfile .faxrows th.c, .impfile .faxrows td.c { text-align: center; }
 .impfile .faxrows td.c input { text-align: center; }
