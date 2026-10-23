@@ -163,7 +163,8 @@
       rows.push(o);
     });
     if (!rows.length) warnings.push('明細(車両の行)を読み取れませんでした。');
-    return { sender: sender, faxDate: fax, kind: kind, memo: memo, rows: rows, warnings: warnings };
+    var rot = Math.round(Number(raw['回転']) / 90) * 90; rot = ((rot % 360) + 360) % 360; // 原本を正しい向きにする回転(時計回り。0・90・180・270)。GASが古いときは0
+    return { sender: sender, faxDate: fax, kind: kind, memo: memo, rows: rows, warnings: warnings, rotate: rot || 0 };
   }
 
   // ---------- 車両情報・運転手情報との照合 ----------
