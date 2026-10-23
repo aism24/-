@@ -152,11 +152,13 @@
     card.status = 'reading'; renderCard(card);
     try {
       var recsP = loadImports(true).catch(function () { return null; }); // OCRと同時に取込一覧を読み込む(待ち時間を重ねる)
+      var rotP = card.rotate ? Promise.resolve(card.rotate) : TruckViewer.detectRotation(card.orig, card.mime).catch(function () { return 0; }); // 原本の向きを、読み取りと同時に画像から判定する
       var b64 = await fileToBase64(card.file); card.b64 = b64;
       var d = await apiPost('ocr', { filename: card.name, mimeType: card.mime, base64: b64 }, 180000);
       var res = L.sanitizeOcr(d.raw, { today: new Date(), senders: S.senders });
       card.res = res; card.warnings = res.warnings;
-      if (res.rotate) await setCardRotation(card, card.rotate + res.rotate, true); // 横倒し・逆さまの原本は、正しい向きに回す(表示も保存も)
+      var deg = await rotP; // 横倒し・逆さまの原本は、正しい向きに回す(表示も保存も)。Geminiの「回転」は当てにならないので使わない(2026-10-23 実測)
+      if (deg && deg !== card.rotate) await setCardRotation(card, deg, true);
       var recs = await recsP; // 取れなかったときは null: 再取込のチェックを省く
       if (recs && L.alreadyImported(res, recs)) { // 既に取り込んだ内容と全く同じ: 取込をやめる
         S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); if (card.url) URL.revokeObjectURL(card.url); syncDrop();
