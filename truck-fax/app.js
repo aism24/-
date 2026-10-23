@@ -727,6 +727,7 @@
     var body = h('tbody');
     shown.forEach(function (r) { body.appendChild(importRow(r)); });
     host.appendChild(shown.length ? h('div', { class: 'scroll' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' }));
+    TruckViewer.preload(); prefetchFaxes(shown); // 原本をすぐ開けるよう、pdf.js と表の上の原本を先に読む
   }
 
   /** データのある締め月(12,1,…,11の順)。fy='all' のときは、どの年度かにデータのある月 */
@@ -789,6 +790,35 @@
     inp.addEventListener('input', function () { d[k] = inp.value; onChange(); });
     inp.addEventListener('change', function () { var v = normField(k, inp.value); inp.value = v; d[k] = v; onChange(); });
     return inp;
+  }
+
+  // 原本(getFile)は、ファイルURLごとに1回だけ読み、覚えておく(2回目からはすぐ開く)。GASの1回の応答に3〜4秒かかるため(2026-10-23に実測)、
+  // 取込一覧を出したら、表の上から原本を先に読み、行にマウスを乗せたときも読み始める
+  var FAX_CACHE = {}; // ファイルURL → Promise<Blob>
+  var FAX_PREFETCH = 10; // 取込一覧を出したときに先に読む原本の数(表の上から、違う原本を)
+  function fetchFax(url) {
+    if (!FAX_CACHE[url]) {
+      FAX_CACHE[url] = apiGet('getFile', { url: url }).then(function (d) {
+        var bin = atob(d.base64), bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new Blob([bytes], { type: d.mime });
+      });
+      FAX_CACHE[url].catch(function () { delete FAX_CACHE[url]; }); // 失敗したものは覚えない(次に押したとき読み直す)
+    }
+    return FAX_CACHE[url];
+  }
+  var faxQueue = [], faxQueueBusy = 0;
+  /** 表の上の行から、まだ読んでいない原本を2つずつ順に読む */
+  function prefetchFaxes(list) {
+    var seen = {};
+    faxQueue = list.map(function (r) { return r.ファイルURL; }).filter(function (u) { if (!u || seen[u]) return false; seen[u] = 1; return true; })
+      .slice(0, FAX_PREFETCH).filter(function (u) { return !FAX_CACHE[u]; }); // 上から10個の原本のうち、まだ読んでいないもの(描き直しのたびに先へ広げない)
+    function next() {
+      var u = faxQueue.shift(); if (!u) return;
+      faxQueueBusy++;
+      (FAX_CACHE[u] || fetchFax(u)).catch(function () {}).then(function () { faxQueueBusy--; next(); });
+    }
+    while (faxQueueBusy < 2 && faxQueue.length) next();
   }
 
   /** 取込一覧の行を押したとき: 表を、その行と同じ原本から記録した行だけに絞り(その場で編集できる)、下に原本(PDF・画像)を出す。
@@ -862,14 +892,11 @@
     renderImports();
     window.scrollTo(0, 0);
     if (!r.ファイルURL) return;
-    apiGet('getFile', { url: r.ファイルURL }).then(function (d) {
+    fetchFax(r.ファイルURL).then(function (blob) {
       if (S.importsFile !== me) return; // 読み込みの間に、一覧へ戻した
-      var bin = atob(d.base64), bytes = new Uint8Array(bin.length);
-      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      var blob = new Blob([bytes], { type: d.mime });
       url = URL.createObjectURL(blob);
       holder.textContent = '';
-      holder.appendChild(TruckViewer.create(blob, d.mime, url));
+      holder.appendChild(TruckViewer.create(blob, blob.type, url));
       fitPane();
     }).catch(function (err) { holder.textContent = ''; holder.appendChild(h('div', { class: 'empty', text: '原本を開けませんでした: ' + err.message })); });
   }
@@ -881,6 +908,11 @@
     TABLE_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (CENTER_COLS.indexOf(k) >= 0 ? ' c fit' : '') }, importCellText(r, k))); });
     tr.appendChild(h('td', { class: 'nowrap' }));
     tr.addEventListener('click', function () { openImportFile(r); });
+    if (r.ファイルURL) { // マウスを0.15秒止めたら、押す前に原本を読み始める(表の上を通り過ぎただけの行は読まない)
+      var hoverT = 0;
+      tr.addEventListener('mouseenter', function () { hoverT = setTimeout(function () { fetchFax(r.ファイルURL).catch(function () {}); }, 150); });
+      tr.addEventListener('mouseleave', function () { clearTimeout(hoverT); });
+    }
     return tr;
   }
 
