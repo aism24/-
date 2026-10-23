@@ -72,7 +72,7 @@ CLAUDE.md から分離(2026-10-21)。恒久ルールは CLAUDE.md、ここは詳
 
 **運用の原則**: 全アプリのGit連携を解除したままにする。連携が無ければpush・マージでデプロイは起きず、ユーザーが「デプロイして」と指示したアプリだけを `create_deployment` で1つずつデプロイする(連携は不要。Vercelプロジェクトの新規作成と連携の付け外しだけがユーザー操作)。連携が1件でも残っていたら、push・マージ前にユーザーへ解除を依頼する。
 
-**最新の確認**: 2026-10-21、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。
+**最新の確認**: 2026-10-23、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携)。
 
 **`vercel.json` の `git.deploymentEnabled=false` が無いフォルダ**(2026-10-19時点。2026-10-21に production-management・unso-check へ追加済み): pdf-diff-app(functionsの設定だけ)・tdf-master-web・jissun-master-jidokinyu・kozai-toriai・weld-heat-management。連携は0件なので今は自動デプロイされないが、これらのVercelプロジェクトを `aism24/-` に連携し直す前に、必ずそのフォルダへ置くこと(特に pdf-diff-app は1デプロイごとにFunctions Storageを消費する)。
 
@@ -95,6 +95,7 @@ Previewデプロイが発生する)
 (CANCELED)になるため、`-- .` と書く。
 - 2026-10-21: 全コード点検の修正を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。コミット ba10f76。app-launcher=dpl_3VoDeMW・tori-huguai=dpl_CuY7Xyc・company-ai=dpl_EAXkrPp、いずれもREADY。本番HTMLの `?v=` がmainと一致を確認)。デプロイ前の直近24時間は0回、今回3回。連携は0件のまま。
 - 2026-10-21(2回目): 全コード点検の修正(jissun-open=PR #843・#844、tdf-dim-count=PR #846・#847)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。コミット d3e6b1a。jissun-open=dpl_JCpuBZ5、tdf-dim-count=dpl_JA1mtpf、いずれもREADY。本番の index.html・core.js・app.js がmainと一致を確認)。デプロイ前の直近24時間は3回、今回2回。連携は0件のまま。
+- 2026-10-23: tdf-dim-count の「② ブロック分け製品名で仕訳け」(PR #913〜#915)と利用記録の2段階化(起動でA列、ダウンロードで同じ行のB:E。PR #916。GASは貼り替え済み=CODE_VERSION 2026-10-23-open-log)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。コミット 8a5cfa0、dpl_FCMi4Tj、READY。本番の index.html・core.js・app.js がmainと一致を確認)。デプロイ前の直近24時間は5回、今回1回。連携は0件のまま。
 - 2026-10-21(3回目): shipping-list-link の全コード点検の修正(PR #850。加工予定表の重複をNGに数える・実データ入りの sample/links.json 削除)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。コミット 0a7fbed。dpl_21YCTjE、READY)。本番の index.html・app.js・core.js がmainと一致、sample/links.json は404、api/links は200(29,027件)を確認。デプロイ前の直近24時間は5回、今回1回。連携は0件のまま。
 - 2026-10-21(4回目): tori-robo の全コード点検の修正(PR #852・#853。「最新のデータを読み込む」のあと開き直すと古いデータに戻る不具合の修正ほか)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。project=-tori-robo、コミット 1f333e5。dpl_G7vc7xL、READY)。本番の index.html・app.js・style.css がmainと一致(app.js?v=sp54)、api/data は200を確認。デプロイ前の直近24時間は6回、今回1回。連携は0件のまま。
 - 2026-10-21(5回目): production-management の全コード点検の修正(PR #856。平均生産重量が締め期間の初日に0.0で赤になる・当日分が平均に混ざる不具合の修正、README更新、vercel.json 追加)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。コミット ccac2a5。dpl_7ZFNWvY、READY)。本番 https://masamiz-production-management.vercel.app/ の index.html・app.js・style.css・manual.html がmainと一致(app.js?v=20261021a)を確認。デプロイ前の直近24時間は7回、今回1回。連携は0件のまま。
