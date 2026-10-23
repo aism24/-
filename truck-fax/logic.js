@@ -593,6 +593,20 @@
     return { fy: f, cm: CLOSING_MONTH_ORDER[i] };
   }
 
+  /** 取込一覧の表の並び(2026-10-23、ユーザー指示): 同じファイル(原本)の行をまとめ、まとまり同士は卸日の早い順(まとまりの中で一番早い卸日。同じなら取込順)。
+   *  まとまりの中は、卸日の早い順→手配業者(大上→ナミツー→その他)→取込順(シートの行番号)。ファイルは ファイルURL(無ければファイル名)で見分ける */
+  function sortImportRows(list) {
+    function fileKey(r) { return String(r.ファイルURL || r.ファイル名 || ('row' + r._row)); }
+    function dk(r) { return dateKey(r.卸日) || dateKey(r.積日) || '9999-99-99'; }
+    var g = {};
+    list.forEach(function (r) { var k = fileKey(r), x = g[k] || (g[k] = { day: '9999-99-99', row: Infinity }); if (dk(r) < x.day) x.day = dk(r); if (r._row < x.row) x.row = r._row; });
+    return list.slice().sort(function (a, b) {
+      var ka = fileKey(a), kb = fileKey(b), ga = g[ka], gb = g[kb];
+      if (ka !== kb) return ga.day < gb.day ? -1 : ga.day > gb.day ? 1 : ga.row - gb.row;
+      return (dk(a) < dk(b) ? -1 : dk(a) > dk(b) ? 1 : 0) || senderRank(a.手配業者) - senderRank(b.手配業者) || a._row - b._row;
+    });
+  }
+
   // 車両情報の並び順: 手配業者(大上→ナミツー→その他)→運送業者→車種(4t→10t→15t→TR→その他)→車番
   function senderRank(t) { var k = companyKey(t); return k.indexOf(companyKey('大上')) >= 0 ? 0 : (k.indexOf(companyKey('ナミツー')) >= 0 ? 1 : 2); }
   function typeRank(t) {
@@ -611,7 +625,7 @@
   }
 
   return {
-    alreadyImported: alreadyImported, dateKey: dateKey, sortPairs: sortPairs, senderRank: senderRank,
+    alreadyImported: alreadyImported, sortImportRows: sortImportRows, dateKey: dateKey, sortPairs: sortPairs, senderRank: senderRank,
     closingOf: closingOf, rowClosing: rowClosing, closingNeighbor: closingNeighbor, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
     fmtType: fmtType, canonCarrier: canonCarrier, diffPart: diffPart, companyKey: companyKey, effectiveKind: effectiveKind, guessKind: guessKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,
