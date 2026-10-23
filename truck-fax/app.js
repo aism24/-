@@ -164,7 +164,9 @@
       }
       if (recs) card.records = recs.slice(0, 500);
       if (S.reloadP) await S.reloadP; // 直前の記録・保存の読み直しが終わってから照合する
-      if (L.isChange(res)) await enterKind(card, L.effectiveKind(res));
+      var g = L.guessKind(res, recs); // 「再」の印が無い変更の再送も、取込一覧から「変更」と判断する
+      if (g.reason) card.warnings = card.warnings.concat([g.reason + '違うときは「このFAXは」で選び直してください。']);
+      if (g.kind !== '新規') await enterKind(card, g.kind);
       else enterNormal(card);
       card.status = 'ready';
     } catch (e) { card.status = 'error'; card.msg = e.message; }
