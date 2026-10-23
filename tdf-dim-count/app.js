@@ -133,13 +133,19 @@
     card2.classList.toggle('alert', !b.rows.length);
   }
 
-  // Excelダウンロード時に、ファイル名・レイヤ名・総本数だけを記録(失敗しても作業は止めない)
-  function logDownload(fileName, layer, total) {
+  // 利用記録(画面には何も出さない。失敗しても作業は止めない)。起動ごとの目印 SESSION で、起動の行とダウンロードを結び付ける
+  function logPost(data) {
     if (!GAS_URL) return;
     try {
       fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, keepalive: true,
-        body: JSON.stringify({ action: 'logDownload', fileName: fileName, layer: layer, total: total }) }).catch(function () {});
+        body: JSON.stringify(data) }).catch(function () {});
     } catch (e) { /* 記録の失敗は無視 */ }
+  }
+  var SESSION = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  logPost({ action: 'logOpen', sessionId: SESSION });
+  // Excelダウンロード時に、ファイル名・レイヤ名・総本数だけを記録
+  function logDownload(fileName, layer, total) {
+    logPost({ action: 'logDownload', sessionId: SESSION, fileName: fileName, layer: layer, total: total });
   }
 
   function download() {
