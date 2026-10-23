@@ -164,7 +164,8 @@
       }
       if (recs) card.records = recs.slice(0, 500);
       if (S.reloadP) await S.reloadP; // 直前の記録・保存の読み直しが終わってから照合する
-      var g = L.guessKind(res, recs); // 「再」の印が無い変更の再送も、取込一覧から「変更」と判断する
+      var g = L.guessKind(res, recs); // 「再」の印が無い変更の再送は「変更」、当てはまる記録が無い「変更」は「新規」と、取込一覧から判断する
+      if (g.rows) res.rows = g.rows; // 取消線の読み誤りを直した行
       if (g.reason) card.warnings = card.warnings.concat([g.reason + '違うときは「このFAXは」で選び直してください。']);
       if (g.kind !== '新規') await enterKind(card, g.kind);
       else enterNormal(card);
