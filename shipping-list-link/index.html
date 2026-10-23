@@ -32,7 +32,6 @@ body.dragging::after{content:"ここにドロップ";position:fixed;inset:0;z-in
 #modal.show{display:flex}.mbox{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px 28px;max-width:420px;width:100%;text-align:center;box-shadow:0 0 30px rgba(88,166,255,.2)}
 #modalText div{margin:6px 0;font-size:16px}#modalText div:first-child{font-weight:bold;font-size:18px}
 #modal.mok #modalText div:first-child{color:var(--ok)}#modal.mng #modalText div:first-child{color:var(--warn)}
-#modalNote{font-size:12px;color:#8a94a6;margin-top:6px}
 #modalOk{margin-top:16px;min-width:120px;padding:8px 18px;font-size:16px;border:0;border-radius:8px;background:var(--acc);color:#000;font-weight:bold;cursor:pointer}
 .manual{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;background:#ffd400;color:#000;font-weight:bold;font-size:15px;text-decoration:none;padding:10px 26px;border-radius:999px;border:2px solid #fff3a0;white-space:nowrap;animation:manualGlow 2s ease-in-out infinite}
 .manual:hover{background:#ffe34d}
@@ -73,13 +72,13 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
 </div>
 <div id="msg"></div>
 <div id="busyModal" class="show"><div class="mbox" role="status" aria-live="polite">マスタ更新分確認中<div class="bar" id="busyBar"></div></div></div>
-<div id="modal"><div class="mbox" id="mbox"><div id="modalText"></div><button id="ngToggle" type="button" style="display:none"></button><div id="ngList" style="display:none"></div><div id="modalNote"></div><button id="modalOk" type="button">OK</button></div></div>
+<div id="modal"><div class="mbox" id="mbox"><div id="modalText"></div><button id="ngToggle" type="button" style="display:none"></button><div id="ngList" style="display:none"></div><button id="modalOk" type="button">OK</button></div></div>
 <p class="small" style="text-align:center">図番と製品名が完全一致した行の製品名にリンクを付け、PDFを自動でダウンロードします。リンクは社内ネットワーク内でのみ開けます。</p>
 </main>
 <a class="manual" href="manual/after-download.pdf" target="_blank" rel="noopener">ダウンロード後の説明書</a>
 <script src="vendor/pdf.min.js?v=20261015a"></script>
 <script src="vendor/pdf-lib.min.js?v=20261015a"></script>
 <script src="core.js?v=20261021a"></script>
-<script src="app.js?v=20261021a"></script>
+<script src="app.js?v=20261023a"></script>
 <script src="to-launcher.js?v=20261019" data-target=".hdr h1" data-mode="in"></script>
 </body></html>

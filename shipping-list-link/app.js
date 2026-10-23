@@ -119,7 +119,6 @@
   function popup(lines, ok, partial) {
     modalOpen = true;
     $('modalText').innerHTML = lines.map(function (l) { return '<div>' + esc(l) + '</div>'; }).join('');
-    $('modalNote').textContent = '';
     var has = partial && partial.length;
     $('ngToggle').style.display = has ? '' : 'none';
     $('ngToggle').textContent = 'NG一覧を見る(' + (has ? partial.length : 0) + '件)';
@@ -178,7 +177,7 @@
         body: JSON.stringify({ name: name, pages: s.pages, linked: s.linked, ng: s.ng, pdf: b64(buf) }) });
       var j = await r.json();
       if (!j.ok) throw new Error(j.error);
-    } catch (e) { if (modalOpen) $('modalNote').textContent = '(元PDFの保存・記録に失敗しました)'; }
+    } catch (e) { /* 保存・記録の失敗は画面に出さない(利用者の作業には影響しない) */ }
   }
   var drop = $('drop'), inp = $('file');
   drop.onclick = function () { inp.click(); };
