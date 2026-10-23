@@ -167,16 +167,19 @@ table.t.zebra tbody tr.pick:hover td { filter: brightness(0.96); }
 table.t th.c, table.t td.c { text-align: center; }
 table.t th.fit, table.t td.fit { width: 1%; }
 tr.before td { color: #d32f2f; text-decoration: line-through; } /* 取込一覧の「変更前」の行 */
-dialog.faxdlg { width: min(96vw, 1300px); max-width: none; padding: 12px; }
-.faxdlg-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .faxview .viewer { margin-top: 8px; height: calc(100vh - 280px); min-height: 340px; }
 .faxrows { max-height: 28vh; }
 table.t tbody tr.hit td { background: #d6ecff; }
-dialog.faxdlg { max-height: 96vh; overflow: auto; }
 
 .faxrows input, .faxrows select { font: inherit; padding: 3px 4px; min-width: 3.5em; box-sizing: border-box; background: #fff; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); }
 .btn.save-edit { background: #fff200; color: #0a3fd0; font-weight: 800; border: 1px solid #b8a800; }
 .faxdlg-status { font-size: 13px; font-weight: 600; }
+/* 取込一覧で行を押したとき: その原本の行だけの表(編集できる)と、下に原本 */
+.impfile .tool .file-name { color: var(--on-bg); font-size: 15px; }
+.impfile .tool .faxdlg-status.ok { color: #7ee08f; } .impfile .tool .faxdlg-status.err { color: #ffb4ab; }
+.impfile .faxrows { max-height: none; }
+.faxpane { margin-top: 10px; padding: 10px 12px 12px; background: var(--card); border-radius: 8px; }
+.faxpane-head { display: flex; align-items: center; gap: 10px; }
 .faxdlg-status.ok { color: #1a7a2e; }
 .faxdlg-status.err { color: #c0281c; }
 

@@ -17,7 +17,7 @@
   var OTHER = 'その他'; // 工事に該当しないもの。工事番号・現場名の両方に「その他」と記録する
   var MAX_BYTES = 10 * 1024 * 1024;
 
-  var S = { initSeq: 0, reloadP: null, senders: [], vehicles: [], drivers: [], pairs: [], projects: [], importKeyList: [], destMap: {}, cards: [], tab: 'import',
+  var S = { initSeq: 0, reloadP: null, senders: [], vehicles: [], drivers: [], pairs: [], projects: [], importKeyList: [], destMap: {}, cards: [], importsFile: null, tab: 'import',
     imports: null, importsFy: null, importsCm: null, importsSite: 'all', editing: null };
   var seq = 0;
 
@@ -677,6 +677,7 @@
       catch (e) { host.textContent = ''; host.appendChild(h('div', { class: 'empty', text: '取得に失敗しました: ' + e.message })); return; }
     }
     host.textContent = '';
+    if (S.importsFile) { host.appendChild(S.importsFile.el); S.importsFile.fit(); return; } // 1つの原本の行だけに絞っている(openImportFile)
     if (S.importsFy == null) { // 初期値は、本日の年度・締め月
       var n = new Date(), now = L.closingOf(n.getFullYear(), n.getMonth() + 1, n.getDate());
       S.importsFy = String(now.fy); S.importsCm = String(now.cm);
@@ -749,7 +750,7 @@
     return b;
   }
 
-  // ---------- 取込一覧の行の編集(行をクリック→原本のポップアップが開き、その中の表で編集する) ----------
+  // ---------- 取込一覧の行の編集(行をクリック→その原本の行だけに絞った表で編集し、下に原本を出す) ----------
   var IMPORT_LABELS = ['', '変更前', '変更後', '中止'];
   function importDraftOf(r) { var d = {}; VIEW_HEADERS.forEach(function (k) { if (k !== 'ファイル名') d[k] = r[k] || ''; }); return d; }
 
@@ -790,9 +791,10 @@
     return inp;
   }
 
-  /** 取込一覧の行を押したときに、その行の原本(PDF・画像)を大きく開く。上の表(この原本から記録した行)は、その場で編集できる。
-   *  何か編集すると「編集内容を保存」が出る。編集したまま「閉じる」を押すと、破棄してよいか確認する。 */
-  async function openFaxViewer(r) {
+  /** 取込一覧の行を押したとき: 表を、その行と同じ原本から記録した行だけに絞り(その場で編集できる)、下に原本(PDF・画像)を出す。
+   *  何か編集すると「編集内容を保存」が出る。「すべての行に戻す」「画像を閉じる」で元の一覧に戻る(編集したままなら、破棄してよいか確認する)。
+   *  画面(表・原本)は S.importsFile.el に1回だけ作り、取込一覧を描き直しても同じものを出す(原本のズーム・編集中の内容を保つ) */
+  function openImportFile(r) {
     var same = r.ファイルURL ? (S.imports || []).filter(function (x) { return x.ファイルURL && x.ファイルURL === r.ファイルURL; }).slice().reverse() : [r];
     if (!same.some(function (x) { return x._row === r._row; })) same = [r];
     var cols = ['現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '追加変更', '備考'];
@@ -814,13 +816,26 @@
     });
     var rowsTable = h('div', { class: 'scroll faxrows' }, h('table', { class: 't' }, h('thead', null, thead), tbody));
     var holder = h('div', { class: 'faxview' }, h('div', { class: 'reading-note', text: r.ファイルURL ? '原本を読み込んでいます…' : 'この記録には原本がありません(PDFで取り込んだ記録ではありません)。' }));
-    var dlg = h('dialog', { class: 'dlg faxdlg' }, h('div', { class: 'faxdlg-head' }, h('strong', { text: importCellText(r, 'ファイル名') }), h('span', { class: 'spacer' }), status, saveBtn,
-      h('button', { class: 'btn sm', type: 'button', text: '閉じる', onclick: function () { tryClose(); } })), rowsTable, holder);
+    var tool = h('div', { class: 'tool' }, h('button', { class: 'btn sm', type: 'button', text: 'すべての行に戻す', onclick: function () { tryClose(); } }),
+      h('strong', { class: 'file-name', text: importCellText(r, 'ファイル名') }), h('span', { class: 'sub', text: 'この原本から記録した' + drafts.length + '行(押した行は水色)。表の中で直せます' }),
+      status, saveBtn);
+    var paneHead = h('div', { class: 'faxpane-head' }, h('strong', { text: '原本: ' + importCellText(r, 'ファイル名') }), h('span', { class: 'spacer' }),
+      h('button', { class: 'btn sm', type: 'button', text: '画像を閉じる', onclick: function () { tryClose(); } }));
     var url = '';
+    var el = h('div', { class: 'impfile' }, tool, rowsTable, h('div', { class: 'faxpane' }, paneHead, holder));
+    var me = { el: el, fit: fitPane };
+    S.importsFile = me;
 
+    /** 原本の表示の高さを、画面の下端までにする */
+    function fitPane() {
+      var v = holder.querySelector('.viewer'); if (!v || !el.isConnected) return;
+      v.style.height = Math.max(340, window.innerHeight - v.getBoundingClientRect().top - 16) + 'px';
+    }
     async function tryClose() {
       if (dirty() && !(await confirmDialog('編集内容は破棄されますが閉じますか?', '保存していない編集内容は消えます。', 'OK'))) return;
-      dlg.close();
+      if (url) URL.revokeObjectURL(url);
+      if (S.importsFile === me) S.importsFile = null;
+      renderImports();
     }
     async function saveEdits() {
       var todo = drafts.filter(changed);
@@ -839,37 +854,33 @@
         }
         status.textContent = '保存しました(' + todo.length + '行)。'; status.className = 'faxdlg-status ok';
         saveBtn.style.display = 'none';
-        renderImports();
-        loadInit(true).catch(function () {}); // 重複の判定などに使う最新の記録を読み直す
+        loadInit(true).catch(function () {}); // 重複の判定などに使う最新の記録を読み直す(一覧の表は、戻したときに描き直す)
       } catch (err) { status.textContent = '保存に失敗しました: ' + err.message; status.className = 'faxdlg-status err'; }
       finally { close(); }
     }
 
-    dlg.addEventListener('cancel', function (ev) { ev.preventDefault(); tryClose(); }); // Escキーも「閉じる」と同じ扱い
-    var downOutside = false; // ポップアップの外側(暗い部分)を押したときも「閉じる」と同じ扱い。文字選択のドラッグが外で終わっただけのときは閉じない
-    function outside(ev) { var rc = dlg.getBoundingClientRect(); return ev.clientX < rc.left || ev.clientX > rc.right || ev.clientY < rc.top || ev.clientY > rc.bottom; }
-    dlg.addEventListener('mousedown', function (ev) { downOutside = ev.target === dlg && outside(ev); });
-    dlg.addEventListener('click', function (ev) { if (downOutside && ev.target === dlg && outside(ev)) tryClose(); downOutside = false; });
-    dlg.addEventListener('close', function () { if (url) URL.revokeObjectURL(url); dlg.remove(); });
-    document.body.appendChild(dlg);
-    dlg.showModal();
+    renderImports();
+    window.scrollTo(0, 0);
     if (!r.ファイルURL) return;
-    try {
-      var d = await apiGet('getFile', { url: r.ファイルURL });
+    apiGet('getFile', { url: r.ファイルURL }).then(function (d) {
+      if (S.importsFile !== me) return; // 読み込みの間に、一覧へ戻した
       var bin = atob(d.base64), bytes = new Uint8Array(bin.length);
       for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       var blob = new Blob([bytes], { type: d.mime });
       url = URL.createObjectURL(blob);
       holder.textContent = '';
       holder.appendChild(TruckViewer.create(blob, d.mime, url));
-    } catch (err) { holder.textContent = ''; holder.appendChild(h('div', { class: 'empty', text: '原本を開けませんでした: ' + err.message })); }
+      fitPane();
+    }).catch(function (err) { holder.textContent = ''; holder.appendChild(h('div', { class: 'empty', text: '原本を開けませんでした: ' + err.message })); });
   }
 
+  window.addEventListener('resize', function () { if (S.importsFile) S.importsFile.fit(); });
+
   function importRow(r) {
-    var tr = h('tr', { class: 'pick' + (isBeforeRow(r) ? ' before' : '') }); // 行を押すと原本が開く(ファイル名はリンクにしない)
+    var tr = h('tr', { class: 'pick' + (isBeforeRow(r) ? ' before' : '') }); // 行を押すと、その原本の行だけに絞り、下に原本を出す(ファイル名はリンクにしない)
     TABLE_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (CENTER_COLS.indexOf(k) >= 0 ? ' c fit' : '') }, importCellText(r, k))); });
     tr.appendChild(h('td', { class: 'nowrap' }));
-    tr.addEventListener('click', function () { openFaxViewer(r); });
+    tr.addEventListener('click', function () { openImportFile(r); });
     return tr;
   }
 
