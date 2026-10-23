@@ -13,8 +13,8 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 syste
 .logo-mark { fill: #e60012; }
 .logo-text { fill: var(--ink); }
 .company { font-weight: 600; white-space: nowrap; }
-.tabs { grid-column: 1; grid-row: 1; justify-self: start; display: flex; gap: 6px; flex-wrap: wrap; }
-.tabs button { border: 1px solid var(--line); background: var(--card); padding: 6px 14px; font: inherit; color: var(--ink); cursor: pointer; border-radius: 6px; white-space: nowrap; }
+.tabs { grid-column: 1; grid-row: 1; justify-self: start; display: flex; gap: 4px; flex-wrap: wrap; }
+.tabs button { border: 1px solid var(--line); background: var(--card); padding: 6px 8px; font: inherit; color: var(--ink); cursor: pointer; border-radius: 6px; white-space: nowrap; } /* 左右の余白は小さめ(8px)。取込枠の幅(980px)の中で、3つのボタンが1行に収まるように */
 .tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .banner { max-width: 1468px; margin: 12px auto 0; padding: 10px 12px; border-radius: 6px; background: var(--err-bg); color: var(--err); }
 main { padding: 16px; max-width: 1500px; margin: 0 auto; }
