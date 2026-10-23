@@ -210,7 +210,12 @@
 ### 大きなマスタJSONはPCのブラウザに保存して開くのを速くする(出荷リスト、10/23)
 - 効果: 開いてから使えるまで 0.3〜約20秒(CDNに保存が無いと中継10秒待ち→GAS直接)→ 2回目以降は約0.6秒(Playwright、29,339件の実マスタ)。ボタンの再生成は変わったExcelだけ読む
 - やり方: 取得JSONをIndexedDBに保存→次回は保存分をすぐ表示し、裏でGASの軽い `action=info` の更新日時と比較。違えば `api/links?v=<更新日時>` で取り直す(版ごとにCDNに残る)/ GASはExcelごとの抜き出し結果をDriveに残し、更新日時が同じExcelは読まない / PR #882
-- 注意点: 初回・シークレットウィンドウは従来どおり取得。差分読み=全件読みの一致を模擬環境(DriveApp等の偽物)で確認してから出す
+- 注意点: 初回・シークレットウィンドウは従来どおり取得。差分読み=全件読みの一致を模擬環境(DriveApp等の偽物)で確認してから出す。詳細手順 → [docs/know-how/master-cache-speedup.md](know-how/master-cache-speedup.md)
+- 使ったアプリ: shipping-list-link
+
+### 隠しボタン: 会社ロゴを5回続けてクリックすると、そのPCだけ表示(出荷リスト、10/23)
+- 効果: 全員には非表示のまま、管理者のPCだけ「← アプリ一覧へ」を出せる(5回で表示・もう一度5回で非表示。localStorage に記憶)
+- やり方: script タグを後から差し込めば to-launcher.js がそのまま動く(`document.currentScript` の data 属性を読むため)/ PR #884
 - 使ったアプリ: shipping-list-link
 
 ## ユーザーがよく出す指示(繰り返し・訂正が多いもの)
