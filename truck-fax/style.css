@@ -210,3 +210,8 @@ table.t.pairs input { box-sizing: border-box; font: inherit; padding: 3px 4px; b
 table.t.pairs td:nth-child(1) input { width: 6em; } table.t.pairs td:nth-child(2) input { width: 10em; } table.t.pairs td:nth-child(3) input { width: 6.5em; } table.t.pairs td:nth-child(4) input { width: 10em; }
 table.t.pairs td:nth-child(5) input { width: 7em; } table.t.pairs td:nth-child(6) input { width: 9em; } table.t.pairs td:nth-child(7) input { width: 10em; } /* 編集中の入力欄の幅(表が広がりすぎないように) */
 table.t.pairs td.dual { color: #c00000; font-weight: 800; } /* 備考に手配業者が2つ以上(大上/ナミツー): 同じ車・運転手を別の手配業者も手配した場合だけ、赤太文字 */
+/* 確認が必要な項目: 食い違う部分だけ(「ティ」か「テイ」か) */
+.difflines { margin-top: 4px; white-space: normal; }
+.difflines mark { padding: 0 3px; border-radius: 3px; font-weight: 700; font-size: 15px; }
+.difflines .diff-a { background: #e3f2fd; color: #0d47a1; } .difflines .diff-b { background: #ffe0b2; color: #b23c00; }
+.difflines .diff-ctx { color: var(--sub); } .difflines .diff-note { color: var(--sub); font-size: 12px; margin-left: 6px; }

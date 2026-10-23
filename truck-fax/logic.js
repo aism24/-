@@ -25,8 +25,15 @@
 
   function plateKey(s) { return compact(s).replace(/[-‐-―−ー・.]/g, '').toLowerCase(); }
   function fmtPlate(s) { return compact(s); }
-  function companyKey(s) {
-    return compact(s).replace(/\(株\)|\(有\)|\(合\)|\(同\)|株式会社|有限会社|合同会社/g, '').replace(/[()・]/g, '').toLowerCase();
+  var SMALL_KANA = { 'ァ': 'ア', 'ィ': 'イ', 'ゥ': 'ウ', 'ェ': 'エ', 'ォ': 'オ', 'ッ': 'ツ', 'ャ': 'ヤ', 'ュ': 'ユ', 'ョ': 'ヨ', 'ヮ': 'ワ', 'ヵ': 'カ', 'ヶ': 'ケ' };
+  function companyKey(s) { // 小さいカナは大きいカナとみなす(FAXの読み取りで「ロジスティクス」が「ロジステイクス」になることがある)
+    return compact(s).replace(/\(株\)|\(有\)|\(合\)|\(同\)|株式会社|有限会社|合同会社/g, '').replace(/[()・]/g, '').replace(/[ァィゥェォッャュョヮヵヶ]/g, function (c) { return SMALL_KANA[c]; }).toLowerCase();
+  }
+  /** 運送業者の書き方を、車両・運転手情報に登録済みの書き方にそろえる(会社の種類・小さいカナ・空白の違いだけのとき)。当てはまらなければそのまま */
+  function canonCarrier(name, pairs) {
+    var k = companyKey(name); if (!k) return name;
+    for (var i = 0; i < (pairs || []).length; i++) { var c = pairs[i].運送業者; if (c && companyKey(c) === k) return c; }
+    return name;
   }
   function nameKey(s) { return compact(s); }
   /** 手配業者の比較: 「大上」と「(有)大上運送 明石事業所」のように、一方が他方に含まれていれば同じ会社とみなす。 */
@@ -184,6 +191,13 @@
   function vehicleData(row) { return { 手配業者: row.業者, 運送業者: row.運送業者, 車種: row.車種, 車番: fmtPlate(row.車番) }; }
   function driverData(row) { return { 運送業者: row.運送業者, 氏名: nameKey(row.氏名), 携帯番号: fmtPhone(row.携帯番号) }; }
   function importKey(row) { return row.積日 + '|' + plateKey(row.車番); }
+  /** 2つの文字の、食い違う部分だけ(前後の同じ部分を除く)。例: 近畿ロジスティクス / 近畿ロジステイクス → {a:'ィ', b:'イ'} */
+  function diffPart(a, b) {
+    a = nfkc(a); b = nfkc(b);
+    var i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+    var j = 0; while (j < a.length - i && j < b.length - i && a[a.length - 1 - j] === b[b.length - 1 - j]) j++;
+    return { a: a.slice(i, a.length - j), b: b.slice(i, b.length - j), pre: a.slice(Math.max(0, i - 2), i), suf: a.slice(a.length - j, a.length - j + 2) };
+  }
   function who(d) { return '「' + d.運送業者 + ' ' + d.氏名 + '(' + d.携帯番号 + ')」'; }
 
   var OPT = {
@@ -202,7 +216,7 @@
   function checkRow(row, idx, importKeys, seen) {
     var f = [];
     function add(id, level, title, detail, options, def) { // 選択肢の文言の {M} は「車両・運転手情報」にする
-      f.push({ id: id, level: level, title: title, detail: detail || '', options: (options || []).map(function (o) { return { value: o.value, label: o.label.replace('{M}', '車両・運転手情報') }; }), defaultValue: def == null ? null : def });
+      f.push({ id: id, level: level, title: title, detail: detail || '', diffs: [], options: (options || []).map(function (o) { return { value: o.value, label: o.label.replace('{M}', '車両・運転手情報') }; }), defaultValue: def == null ? null : def });
     }
 
     var plate = plateKey(row.車番), name = nameKey(row.氏名), phone = phoneDigits(row.携帯番号);
@@ -226,13 +240,14 @@
         var m = vs[0], diffs = [];
         // 手配業者だけが違う(同じ車を、別の手配業者(大上/ナミツー)も手配した)ときは、食い違いとして確認しない。GAS が、その組み合わせの備考に「大上/ナミツー」を書く
         var senderDiff = row.業者 && !sameCo(row.業者, m.手配業者) ? '手配業者: 登録済み「' + m.手配業者 + '」/ 今回「' + row.業者 + '」' : '';
-        if (row.運送業者 && !sameCo(row.運送業者, m.運送業者)) diffs.push('運送業者: 登録済み「' + m.運送業者 + '」/ 今回「' + row.運送業者 + '」');
+        var dl = []; // 食い違う部分だけを並べて見せる(「ティ」か「テイ」か)
+        if (row.運送業者 && !sameCo(row.運送業者, m.運送業者)) { diffs.push('運送業者: 登録済み「' + m.運送業者 + '」/ 今回「' + row.運送業者 + '」'); dl.push({ label: '運送業者', a: m.運送業者, b: row.運送業者 }); }
         // 車種が違うだけのときは、確認しない(別の車種の車として、記録のあと GAS が車両・運転手情報に別の行で追加する)
         if (diffs.length) {
           if (senderDiff) diffs.unshift(senderDiff); // 他の項目も違うときは、手配業者の違いも並べて見せる
           var vf = { id: 'vehicle-diff', masterRow: m._row, masterData: m };
           add('vehicle-diff', 'warn', '登録済みの車の情報と食い違っています(車番 ' + row.車番 + ')', diffs.join('\n'), [OPT.update, OPT.adopt, OPT.keep]);
-          f[f.length - 1].masterRow = vf.masterRow; f[f.length - 1].masterData = m;
+          f[f.length - 1].masterRow = vf.masterRow; f[f.length - 1].masterData = m; f[f.length - 1].diffs = dl;
         }
       }
     }
@@ -246,7 +261,7 @@
         // 既に登録された運転手が別の車種の車に乗る場合は、車と運転手の組み合わせの追加として、記録のあとに自動で入る(車両運転手情報の1行=車と運転手の1組)
         if (phone && phoneDigits(d0.携帯番号) !== phone) {
           add('phone-diff', 'warn', '携帯番号が登録済みの運転手と違います(' + row.氏名 + ')', '登録済み: ' + d0.携帯番号 + ' / 今回: ' + row.携帯番号, [OPT.update, OPT.adopt, OPT.keep]);
-          f[f.length - 1].masterRow = d0._row; f[f.length - 1].masterData = d0;
+          f[f.length - 1].masterRow = d0._row; f[f.length - 1].masterData = d0; f[f.length - 1].diffs = [{ label: '携帯番号', a: d0.携帯番号, b: row.携帯番号 }];
         }
         var others = phone ? (idx.dByPhone[phone] || []).filter(function (x) { return x !== d0 && !(nameKey(x.氏名) === name && sameCo(x.運送業者, row.運送業者)); }) : [];
         if (others.length) add('phone-shared', 'warn', 'この携帯番号は別の人にも登録されています', '登録済み: ' + who(others[0]), [OPT.ok]);
@@ -256,6 +271,7 @@
           var o0 = byPhone[0];
           add('phone-owner-diff', 'warn', 'この携帯番号は、登録済みでは別の氏名(または運送業者)です', '登録済み: ' + who(o0) + '\n今回: 「' + row.運送業者 + ' ' + row.氏名 + '」\n氏名の変更・読み間違い・運送業者の変更の可能性があります。', [OPT.update, OPT.adopt, OPT.newPerson, OPT.keep]);
           f[f.length - 1].masterRow = o0._row; f[f.length - 1].masterData = o0;
+          f[f.length - 1].diffs = [nameKey(o0.氏名) !== name ? { label: '氏名', a: o0.氏名, b: row.氏名 } : null, !sameCo(o0.運送業者, row.運送業者) ? { label: '運送業者', a: o0.運送業者, b: row.運送業者 } : null].filter(Boolean);
         } else {
           var sameName = idx.dByName[name] || [];
           if (sameName.length) {
@@ -597,7 +613,7 @@
   return {
     alreadyImported: alreadyImported, dateKey: dateKey, sortPairs: sortPairs, senderRank: senderRank,
     closingOf: closingOf, rowClosing: rowClosing, closingNeighbor: closingNeighbor, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
-    fmtType: fmtType, effectiveKind: effectiveKind, guessKind: guessKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate,
+    fmtType: fmtType, canonCarrier: canonCarrier, diffPart: diffPart, companyKey: companyKey, effectiveKind: effectiveKind, guessKind: guessKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,
     buildDestMap: buildDestMap, suggestProject: suggestProject, projectName: projectName, sanitizeOcr: sanitizeOcr, evaluateBatch: evaluateBatch, resolveRow: resolveRow, mergeOps: mergeOps
   };
