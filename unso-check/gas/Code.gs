@@ -22,6 +22,7 @@
  *   - 「配車データ」シートは開くたびに自動で並び替わる(締め月→業者→物件名→降日の優先順、
  *     最新が上)。並び替え後、ID列は2行目から行番号に合わせて振り直される。onOpen()参照
  *   - 「締め状態」シートも開くたびに自動で並び替わる(締め月→業者の優先順、最新が上)。onOpen()参照
+ *   - 「データ記録」シートに取込み・確定の履歴を残す(2行目が最新)。logImport_・logConfirm_参照
  *   - 確定済みの(業者+締め月)を丸ごとやり直したい場合は、フロントの隠しコマンド(ロゴ5回タップ)
  *     経由でdeleteConfirmedMonthを呼び、「配車データ」「締め状態」両シートの該当行を削除できる
  *   - 毎月1日、スプレッドシートを丸ごとコピーしてGoogle Driveの「保存用バックアップ」
@@ -32,11 +33,12 @@
  * 「/exec?action=ping」をGETで開いて version が一致することを確認する。
  */
 
-const CODE_VERSION = "2026-10-22-unso2";
+const CODE_VERSION = "2026-10-23-unso3";
 
 const SHEET_HAULING = "配車データ";
 const SHEET_STATUS = "締め状態";
 const SHEET_COMPANY = "業者マスタ";
+const SHEET_LOG = "データ記録";
 
 const DEFAULT_COMPANIES = ["日本興運", "誠和梱包", "用瀬運送", "川崎クレーン", "鳥取グレーン", "山陰運送"];
 
@@ -47,6 +49,8 @@ const HAULING_HEADERS = [
 ];
 const STATUS_HEADERS = ["業者", "締め月", "状態", "取込日時", "確定日時"];
 const COMPANY_HEADERS = ["業者名"];
+// 「データ記録」シート(取込み・確定の履歴。2行目が最新)。列の位置は見出し名で探す
+const LOG_HEADERS = ["取込日時", "取込業者", "確定日時", "締め月"];
 
 // 重複判定(前月分混入チェック)で比較する項目。この並び順のまま比較する。
 const DUPLICATE_CHECK_FIELDS = [
@@ -466,8 +470,58 @@ function confirmClosing(company, closingMonth) {
     if (!existing) throw new Error("取り込み済みのデータがありません: " + company + " " + closingMonth);
     if (existing.状態 === "確定済み") return { ok: true, alreadyConfirmed: true };
     upsertStatus_(company, closingMonth, "確定済み", { 確定日時: true });
+    logConfirm_(company, closingMonth, existing.取込日時);
     return { ok: true };
   });
+}
+
+// ---------- データ記録(取込み・確定の履歴) ----------
+
+// 「データ記録」シートの全行を読み、newRowを2行目(最新)に置いて書き戻す。
+// 同じ業者+締め月の未確定の行(確定日時が空)は、取込み直しとみなして消す(1回の締め=1行)。
+function writeLogRows_(newRow, company, closingMonth) {
+  const sh = ensureSheet_(ss_(), SHEET_LOG, LOG_HEADERS);
+  const map = headerMap_(sh);
+  const numCols = Math.max(sh.getLastColumn(), LOG_HEADERS.length);
+  const lastRow = sh.getLastRow();
+  const values = lastRow >= 2 ? sh.getRange(2, 1, lastRow - 1, numCols).getValues() : [];
+  const cell = (row, name) => (map[name] ? row[map[name] - 1] : "");
+  const kept = values.filter(row =>
+    !(cell(row, "取込業者") === company && cellToYmd_(cell(row, "締め月")) === closingMonth && cell(row, "確定日時") === "")
+  );
+  const out = new Array(numCols).fill("");
+  Object.keys(newRow).forEach(name => { if (map[name]) out[map[name] - 1] = newRow[name]; });
+  const finalRows = [out].concat(kept);
+  // 日時・締め月の文字列が日付型に自動変換されないよう、文字列書式にしてから書く
+  const range = sh.getRange(2, 1, finalRows.length, numCols);
+  range.setNumberFormat("@");
+  range.setValues(finalRows);
+  if (finalRows.length < values.length) {
+    sh.getRange(finalRows.length + 2, 1, values.length - finalRows.length, numCols).clearContent();
+  }
+}
+
+function logImport_(company, closingMonth, importedAt) {
+  writeLogRows_({ 取込日時: importedAt, 取込業者: company, 確定日時: "", 締め月: closingMonth }, company, closingMonth);
+}
+
+// 確定時は、同じ業者+締め月の未確定の行を消し、確定日時を入れた行を2行目に置く。
+// 取込日時はその行(無ければ締め状態の取込日時)を引き継ぐ。
+function logConfirm_(company, closingMonth, statusImportedAt) {
+  const sh = ensureSheet_(ss_(), SHEET_LOG, LOG_HEADERS);
+  const map = headerMap_(sh);
+  let importedAt = statusImportedAt instanceof Date
+    ? Utilities.formatDate(statusImportedAt, "Asia/Tokyo", "yyyy/MM/dd HH:mm:ss")
+    : String(statusImportedAt || "");
+  const lastRow = sh.getLastRow();
+  if (lastRow >= 2 && map["取込業者"] && map["締め月"] && map["確定日時"] && map["取込日時"]) {
+    const values = sh.getRange(2, 1, lastRow - 1, sh.getLastColumn()).getValues();
+    const hit = values.find(row =>
+      row[map["取込業者"] - 1] === company && cellToYmd_(row[map["締め月"] - 1]) === closingMonth && row[map["確定日時"] - 1] === ""
+    );
+    if (hit && hit[map["取込日時"] - 1] !== "") importedAt = String(hit[map["取込日時"] - 1]);
+  }
+  writeLogRows_({ 取込日時: importedAt, 取込業者: company, 確定日時: nowStr_(), 締め月: closingMonth }, company, closingMonth);
 }
 
 // 「一意の月を全てやり直したい」場合の管理者向け復旧手段。指定した(業者+締め月)のうち
@@ -832,6 +886,7 @@ function importHaulingFile(payload) {
       sh.getRange(finalRows.length + 2, 1, values.length - finalRows.length, numCols).clearContent();
     }
     upsertStatus_(company, targetClosing, "未確定", { 取込日時: true });
+    logImport_(company, targetClosing, now);
 
     return { imported: true, company: company, closingMonth: targetClosing, importedCount: outRows.length, excludedRows: [] };
   });
