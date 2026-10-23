@@ -152,13 +152,13 @@
     card.status = 'reading'; renderCard(card);
     try {
       var recsP = loadImports(true).catch(function () { return null; }); // OCRと同時に取込一覧を読み込む(待ち時間を重ねる)
-      var rotP = card.rotate ? Promise.resolve(card.rotate) : TruckViewer.detectRotation(card.orig, card.mime).catch(function () { return 0; }); // 原本の向きを、読み取りと同時に画像から判定する
-      var b64 = await fileToBase64(card.file); card.b64 = b64;
-      var d = await apiPost('ocr', { filename: card.name, mimeType: card.mime, base64: b64 }, 180000);
+      // 横倒し・逆さまの原本は、読み取りの前に正しい向きに回す(表示・保存も)。Geminiは向きを正しく返さず、横倒しのままだと車番を読み違えた(い→し。2026-10-23 実測)
+      if (!card.rotate) { var deg = await TruckViewer.detectRotation(card.orig, card.mime).catch(function () { return 0; }); if (deg) await setCardRotation(card, deg, true); }
+      if (!card.b64) card.b64 = await fileToBase64(card.file);
+      var d = await apiPost('ocr', { filename: card.name, mimeType: card.mime, base64: card.b64 }, 180000);
       var res = L.sanitizeOcr(d.raw, { today: new Date(), senders: S.senders });
+      res.rows.forEach(function (r) { r.運送業者 = L.canonCarrier(r.運送業者, S.pairs); }); // 登録済みの運送業者は、その書き方にそろえる(「ロジステイクス」→「ロジスティクス」など)
       card.res = res; card.warnings = res.warnings;
-      var deg = await rotP; // 横倒し・逆さまの原本は、正しい向きに回す(表示も保存も)。Geminiの「回転」は当てにならないので使わない(2026-10-23 実測)
-      if (deg && deg !== card.rotate) await setCardRotation(card, deg, true);
       var recs = await recsP; // 取れなかったときは null: 再取込のチェックを省く
       if (recs && L.alreadyImported(res, recs)) { // 既に取り込んだ内容と全く同じ: 取込をやめる
         S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); if (card.url) URL.revokeObjectURL(card.url); syncDrop();
@@ -261,6 +261,19 @@
   }
 
   var LEVEL = { error: '要修正', warn: '要確認', info: '自動' };
+  /** 食い違う部分だけを「〜か？〜か？」で見せる(例: 運送業者: …ス「ティ」クス か「テイ」か)。登録済み=左、今回=右 */
+  function diffLines(diffs) {
+    if (!diffs || !diffs.length) return null;
+    var box = h('div', { class: 'difflines' });
+    diffs.forEach(function (d) {
+      var p = L.diffPart(d.a, d.b);
+      box.appendChild(h('div', null, '違い(' + d.label + '): ',
+        h('span', { class: 'diff-ctx', text: p.pre }), h('mark', { class: 'diff-a', text: p.a || '(なし)' }), h('span', { class: 'diff-ctx', text: p.suf }), ' か ',
+        h('span', { class: 'diff-ctx', text: p.pre }), h('mark', { class: 'diff-b', text: p.b || '(なし)' }), h('span', { class: 'diff-ctx', text: p.suf }), ' か?',
+        h('span', { class: 'diff-note', text: '(左=登録済み、右=今回)' })));
+    });
+    return box;
+  }
   function findingsTable(card) {
     var body = h('tbody'), n = 0;
     card.findings.forEach(function (fs, i) {
@@ -281,7 +294,7 @@
         body.appendChild(h('tr', null,
           h('td', { class: 'num', text: String(card.rowLabels ? card.rowLabels[i] : i + 1) }),
           h('td', { class: 'nowrap' }, h('span', { class: 'badge ' + f.level, text: LEVEL[f.level] })),
-          h('td', { class: 'pre' }, h('strong', { text: f.title }), f.detail ? '\n' + f.detail : ''),
+          h('td', { class: 'pre' }, h('strong', { text: f.title }), f.detail ? '\n' + f.detail : '', diffLines(f.diffs)),
           h('td', null, act)));
       });
     });
