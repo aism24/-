@@ -116,6 +116,11 @@
     return out;
   }
 
+  /** 備考から、特記事項ではない部分を除く(2026-10-23、ユーザー指示): 「入場予定時間:夢前工場」のように、入場予定時間の欄の下にある積地(時刻を含まない)と、「積地:…」。
+   *  「入場予定時間:8:00」のように時刻を含むものは残す。 */
+  function cleanNote(t) {
+    return String(t || '').split(/\s*\/\s*/).filter(function (seg) { return seg && !/^(入場予定時間|積地)\s*[:：]\s*[^0-9０-９]*$/.test(seg.trim()); }).join(' / ');
+  }
   /** raw: Geminiが返したJSON(オブジェクト)。{業者, FAX日付, 明細:[{積日,卸日,行先,着時間,運送業者,車種,車番,氏名,携帯番号}]} */
   function sanitizeOcr(raw, opts) {
     var today = (opts && opts.today) || new Date();
@@ -146,7 +151,7 @@
         車番: fmtPlate(r['車番']),
         氏名: nameKey(r['氏名']),
         携帯番号: fmtPhone(r['携帯番号']),
-        備考: [tidy(r['備考']), memo].filter(Boolean).join(' / '), // FAXの備考欄・特記などの文字と、FAXの連絡文(メモ)
+        備考: [cleanNote(tidy(r['備考'])), memo].filter(Boolean).join(' / '), // FAXの備考欄・特記などの文字と、FAXの連絡文(メモ)
         struck: isTrue(r['取消線'])
       };
       if (!o.車番 && !o.氏名 && !o.携帯番号 && !o.運送業者) return; // 空欄行
@@ -349,6 +354,22 @@
     return res.kind === '新規' && res.rows.some(function (r) { return r.struck; }) ? '変更' : res.kind;
   }
   function isChange(res) { return effectiveKind(res) !== '新規'; }
+  /** 「新規」と読めたFAXが、実は変更の再送かを、取込一覧の記録から判断する(2026-10-23、ユーザー指示)。
+   *  「再」の印・取消線が無くても、次のどちらかなら「変更」として扱う(画面で選び直せる):
+   *  ①一部の行が、取込一覧の記録(中止・変更前を除く)と全く同じ(全部の行が同じなら、取込自体をやめる=alreadyImported)
+   *  ②備考・特記・連絡文に「変更」「訂正」「差替」があり、取込一覧に同じ手配業者・同じ積日の記録がある
+   *  返り値: { kind, reason }(reason は画面に出す説明。変えないときは '') */
+  function guessKind(res, records) {
+    var k = effectiveKind(res);
+    if (k !== '新規' || !records || !records.length) return { kind: k, reason: '' };
+    var rows = res.rows || [], active = records.filter(isActiveRec);
+    var same = rows.filter(function (r) { return active.some(function (rec) { return sameAsRecord(r, rec); }); }).length;
+    if (same > 0 && same < rows.length) return { kind: '変更', reason: '取込一覧に同じ内容の行(' + same + '行)があるため、変更のFAXとして扱います。' };
+    var cue = rows.some(function (r) { return /変更|訂正|差し?替/.test(r.備考 || ''); });
+    var sameDay = rows.some(function (r) { return r.積日 && active.some(function (rec) { return dateKey(rec.積日) === dateKey(r.積日) && sameCo(rec.手配業者, r.業者); }); });
+    if (cue && sameDay) return { kind: '変更', reason: '「変更」などの記載があり、同じ手配業者・積日の記録が取込一覧にあるため、変更のFAXとして扱います。' };
+    return { kind: k, reason: '' };
+  }
 
   function recFields(rec) { var o = {}; CHECK_FIELDS.forEach(function (f) { o[f] = rec[f] == null ? '' : String(rec[f]); }); return o; }
   function recToRow(rec) {
@@ -549,7 +570,7 @@
   return {
     alreadyImported: alreadyImported, dateKey: dateKey, sortPairs: sortPairs, senderRank: senderRank,
     closingOf: closingOf, rowClosing: rowClosing, closingNeighbor: closingNeighbor, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
-    fmtType: fmtType, effectiveKind: effectiveKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate,
+    fmtType: fmtType, effectiveKind: effectiveKind, guessKind: guessKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,
     buildDestMap: buildDestMap, suggestProject: suggestProject, projectName: projectName, sanitizeOcr: sanitizeOcr, evaluateBatch: evaluateBatch, resolveRow: resolveRow, mergeOps: mergeOps
   };
