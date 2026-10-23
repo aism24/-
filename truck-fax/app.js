@@ -719,14 +719,15 @@
     var siteSel = sel('現場名', S.importsSite, [['all', '全て(現場名)']].concat(siteList.map(function (n) { return [n, n]; })), function (v) { S.importsSite = v; });
     var shown = rows.slice(0, IMPORTS_SHOW);
     var cnt = '新しい順・該当' + rows.length + '件のうち最新' + shown.length + '件を表示(最大' + IMPORTS_SHOW + '件)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
-    host.appendChild(h('div', { class: 'tool' }, fySel, cmNav, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; S.importsP = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
+    var wrap = h('div', { class: 'imp-wrap' }); host.appendChild(wrap); // 上の絞り込み・ボタンの行と表を、表の幅に合わせて中央に置く
+    wrap.appendChild(h('div', { class: 'tool' }, fySel, cmNav, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; S.importsP = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn excel', type: 'button', text: '全件ダウンロード', onclick: downloadAllImports }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '締め月ダウンロード', onclick: openClosingDownload }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '卸日指定でダウンロード', onclick: openDateDownload })));
     var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: LEFT_COLS.indexOf(k) >= 0 ? null : 'c', text: k })); }); // 「操作」の列は無い(行を押すと編集できる)
     var body = h('tbody');
     shown.forEach(function (r) { body.appendChild(importRow(r)); });
-    host.appendChild(shown.length ? h('div', { class: 'scroll fitcols' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' }));
+    wrap.appendChild(shown.length ? h('div', { class: 'scroll fitcols' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' }));
     TruckViewer.preload(); prefetchFaxes(shown); // 原本をすぐ開けるよう、pdf.js と表の上の原本を先に読む
   }
 
