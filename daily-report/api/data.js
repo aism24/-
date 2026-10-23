@@ -1,5 +1,5 @@
-// 起動時データと総務建築データ(getKenchikuCheckData)を、Vercelのサーバー側で取得してCDNにキャッシュする中継API。
-//   kind=live    … 毎回取る分(マスタ・カレンダー・届出・現行DailyReportの行+アーカイブの版)。GASの getLiveData
+// 起動時データと総務建築データ(getKenchikuCheckData)を、Vercelのサーバー側で取得する中継API(アーカイブ分だけCDN・ブラウザに長期キャッシュ)。
+//   kind=live    … 起動の度に取る分(マスタ・カレンダー・届出・現行DailyReportの行+アーカイブの版)。GASの getLiveData
 //   kind=archive&v=<版> … アーカイブ分の行(月1回程度しか変わらない)。版がURLに入るので1年キャッシュする。GASの getArchiveData
 //   kind=init    … 従来の全部入り(getInitialData)。live/archive が使えないときの予備
 // ブラウザからGASへ直接POSTすると、Google側の2段階応答(受取URL echo)が一定割合で
@@ -72,8 +72,9 @@ module.exports = async function handler(req, res) {
   const started = Date.now();
   const kind = (req.query && req.query.kind) || 'init';
   try {
-    // 5分は即返し、その後1日は古い結果を返しつつ裏で更新(待たされない)
-    const SWR = 'public, s-maxage=300, stale-while-revalidate=86400';
+    // 毎日更新される分(現行DailyReport・DailyReport建築を含むlive・init・kenchiku)は、起動の度に最新を返す
+    // (ユーザー指定。以前は5分+古い結果を最大1日返していたため、前回の内容のまま表示されることがあった)
+    const FRESH = 'no-store';
     if (kind === 'archive') {
       const v = String((req.query && req.query.v) || '');
       const data = await gasPostRetry('getArchiveData', started);
@@ -86,7 +87,7 @@ module.exports = async function handler(req, res) {
     else if (kind === 'live') data = await loadLive(started);
     else if (kind === 'kenchiku') data = await gasPostRetry('getKenchikuCheckData', started);
     else throw new Error('不明なkind: ' + kind);
-    send(res, data, SWR);
+    send(res, data, FRESH);
   } catch (e) {
     res.setHeader('Cache-Control', 'no-store');
     res.status(502).json({ status: 'error', message: 'GAS取得に失敗: ' + String(e && e.message || e) });

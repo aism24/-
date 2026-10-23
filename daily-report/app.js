@@ -389,11 +389,11 @@ async function initSyncPopup(){
 }
 
 /* 起動時データの取得。⓪Vercel中継APIで「毎回取る分(live)」+「アーカイブ分(版ごとに長期キャッシュ)」→
-   ①失敗時はVercel中継APIの全部入り(init。サーバー側で再試行+CDNキャッシュ)→
+   ①失敗時はVercel中継APIの全部入り(init。サーバー側で再試行)→
    ②失敗時(確認用URL等で関数が無い場合も)GASのgetInitialData(5件を1回にまとめたもの)→
    ③GAS側が未更新(不明なaction)なら従来の5件並行取得。
    ブラウザからGASへ直接POSTすると、Google側の2段階応答(受取URL echo)が一定割合で
-   404/CORS errorになるため(2026-10-06実測)、通常は①で済ませる。 */
+   404/CORS errorになるため(2026-10-06実測)、通常は⓪で済ませる。 */
 async function fetchInitialData_(){
   try {
     return await fetchSplit_();
@@ -439,7 +439,9 @@ async function fetchSplit_(){
 async function fetchRelay_(kind, query){
   let url = 'api/data?kind=' + kind;
   if (query) Object.keys(query).forEach(k => { url += '&' + k + '=' + encodeURIComponent(query[k]); });
-  const res = await fetch(url);
+  // 毎日更新される分(現行DailyReport・DailyReport建築)は起動の度に最新を取る(ブラウザの保存を使わない)。
+  // アーカイブ分だけは版がURLに入っているので、ブラウザに保存済みのものを使ってよい
+  const res = await fetch(url, kind === 'archive' ? {} : { cache: 'no-store' });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const json = await res.json();
   if (json.status !== 'success') throw new Error(json.message || '中継APIエラー');
@@ -459,8 +461,8 @@ function expandRows_(rows){
   return out;
 }
 
-/* 中継APIはCDNキャッシュ(最大1日前の結果を返しつつ裏で更新)のため、データの時刻を表示する。
-   15分より古ければ、再読み込みで最新になる旨を添える。 */
+/* データの時刻を表示する(中継APIは起動の度に最新を返すため通常は今の時刻。
+   15分より古ければ、再読み込みで最新になる旨を添える)。 */
 function showDataTime_(fetchedAt){
   const el = document.getElementById('homeDataTime');
   if (!el || !fetchedAt) return;
@@ -1340,7 +1342,7 @@ async function ensureKenchikuData_(){
   if(KENCHIKU_LOADED || KENCHIKU_LOADING || KENCHIKU_FAILED) return;
   KENCHIKU_LOADING = true;
   try{
-    // 通常はVercel中継(CDNキャッシュ)。失敗時はGASへ直接
+    // 通常はVercel中継(サーバー側で再試行)。失敗時はGASへ直接
     const data = await fetchRelay_('kenchiku').catch(() => apiPostRetry('getKenchikuCheckData', {}, 2));
     KENCHIKU_OPERATORS = data.operators || [];
     KENCHIKU_ROWS = data.rows || [];
@@ -1355,6 +1357,9 @@ async function ensureKenchikuData_(){
   }
   if(document.getElementById('screen-report4').classList.contains('active')){
     withRecalcPopup(renderR4Preview);
+  } else if(PENDING_RENDERS_.indexOf('report4') === -1){
+    // ①を開いていない間に届いた場合、①の表は「読み込み中」のまま描画済みのことがあるため、次に開いたときに描き直す
+    PENDING_RENDERS_.push('report4');
   }
   // ②有給等届けの確認は総務建築を常時表示するため、画面の表示状態によらず再描画する
   renderR5Preview();
