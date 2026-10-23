@@ -361,6 +361,7 @@
    *  返り値: { kind, reason }(reason は画面に出す説明。変えないときは '') */
   function guessKind(res, records) {
     var k = effectiveKind(res);
+    if (k === '変更') return changeOrNew(res, records);
     if (k !== '新規' || !records || !records.length) return { kind: k, reason: '' };
     var rows = res.rows || [], active = records.filter(isActiveRec);
     var same = rows.filter(function (r) { return active.some(function (rec) { return sameAsRecord(r, rec); }); }).length;
@@ -463,6 +464,20 @@
     var same = (records || []).filter(function (rec) { return sameCo(rec.手配業者, r.業者) && pk && plateKey(rec.車番) === pk; }); // 変更前・中止の行も含めて、同じ車番の記録
     if (!same.length) return true;
     return same.some(function (rec) { return isActiveRec(rec) && (!dk || dateKey(rec.積日) === dk); });
+  }
+  /** 「変更」と読めたFAXでも、取込一覧に当てはまる記録が1つも無い(取消線の行が別の便と分かり、どの行にも元の記録の候補が無い)ときは、
+   *  全く別の車番連絡として「新規」で扱う(2026-10-23、ユーザー指示。例: 9/25積のFAXのあとの、「再」の印のある9/28積のFAX)。
+   *  返り値の rows は、取消線の読み誤りを直した行(新規にするときだけ)。 */
+  function changeOrNew(res, records) {
+    var keep = { kind: '変更', reason: '' };
+    var rows = (res.rows || []).map(function (r) { return r.struck && !struckHasOrigin(r, records) ? Object.assign({}, r, { struck: false }) : r; });
+    if (!rows.length || rows.some(function (r) { return r.struck; })) return keep;
+    var active = (records || []).filter(isActiveRec);
+    var matched = rows.some(function (r) {
+      return active.some(function (rec) { return sameAsRecord(r, rec); }) || candidatesFor(r, null, records).some(function (c) { return c.score >= 3; });
+    });
+    if (matched) return keep;
+    return { kind: '新規', rows: rows, reason: '「再」「変更」などの印がありますが、取込一覧に当てはまる記録(同じ積日・卸日・車番など)が無いため、新しい車番連絡として扱います。' };
   }
   /** FAXの読み取り結果(res)と取込一覧の記録(records)から、変更・追加・取消の一覧(items)を作る。
    *  item: {id, type:'update'|'add'|'cancel', newRow, struckRow, candidates, pick, action, decisions}
