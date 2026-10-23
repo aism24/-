@@ -748,8 +748,8 @@
     var cmNav = h('span', { class: 'cm-nav' }, prevBtn, cmSel, nextBtn);
     requestAnimationFrame(function () { fitSelect(fySel); fitSelect(cmSel); }); // 年度・締め月のリストの幅を、選んでいる文字に合わせる(左右の空白を同じに)
     var siteSel = sel('現場名', S.importsSite, [['all', '全て(現場名)']].concat(siteList.map(function (n) { return [n, n]; })), function (v) { S.importsSite = v; });
-    var shown = rows.slice(0, IMPORTS_SHOW);
-    var cnt = '新しい順・該当' + rows.length + '件のうち最新' + shown.length + '件を表示(最大' + IMPORTS_SHOW + '件)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
+    var shown = L.sortImportRows(rows.slice(0, IMPORTS_SHOW)); // 新しい100件を、ファイルごと・卸日の早い順に並べる
+    var cnt = 'ファイルごと・卸日の早い順・該当' + rows.length + '件のうち最新' + shown.length + '件を表示(最大' + IMPORTS_SHOW + '件)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
     var wrap = h('div', { class: 'imp-wrap' }); host.appendChild(wrap); // 上の絞り込み・ボタンの行と表を、表の幅に合わせて中央に置く
     wrap.appendChild(h('div', { class: 'tool' }, fySel, cmNav, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; S.importsP = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn excel', type: 'button', text: '全件ダウンロード', onclick: downloadAllImports }), ' ',
