@@ -16,6 +16,9 @@
  *   の照合はしない)のため個人の特定はできず、選択された工場名をB列に記録する。
  */
 
+/* Code.gsを変えたら更新する(doPostの action=ping / GETの ?action=ping で、反映された版を確認する) */
+const CODE_VERSION = '2026-10-23-dr1';
+
 const DAILY_REPORT_SS_ID_FALLBACK = '1t2-KPP3NEfC-xW4yl5IbcI4dVuGilDnMbGWZN3H_t1U';
 const INFO_SHEET_NAME = '情報';
 const RECORD_SHEET_NAME = '記録';
@@ -42,6 +45,11 @@ const KENCHIKU_LUNCH_END_MIN_ = 13 * 60;
 /* ===================== エントリポイント ===================== */
 
 function doGet(e) {
+  /* 版の確認用(?action=ping)。それ以外は従来どおり画面(Index)を返す */
+  if (e && e.parameter && e.parameter.action === 'ping') {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', data: { version: CODE_VERSION } }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('日報集計アプリ')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
@@ -133,8 +141,9 @@ function logFactorySelection(factory) {
 
 /* ===================== マスタ取得(クライアント初期表示用) ===================== */
 
-function getMasterData() {
-  const ss = SpreadsheetApp.openById(getDailyReportSsId_());
+/* ss: 呼び出し元で開いたDailyReport(省略時はここで開く。google.script.runからは引数なしで呼ばれる) */
+function getMasterData(ss) {
+  ss = ss || SpreadsheetApp.openById(getDailyReportSsId_());
 
   const constructionRows = ss.getSheetByName(SHEET_NAMES.CONSTRUCTION).getDataRange().getValues();
   const constructions = [];
@@ -179,8 +188,8 @@ function getMasterData() {
 /* ===================== ④日報入力チェック用: CompanyCalendar/Absenteeism ===================== */
 
 /* 日付('yyyy/MM/dd')→'出勤'|'休日' のマップを返す */
-function getCompanyCalendarData() {
-  const ss = SpreadsheetApp.openById(getDailyReportSsId_());
+function getCompanyCalendarData(ss) {
+  ss = ss || SpreadsheetApp.openById(getDailyReportSsId_());
   const sheet = ss.getSheetByName(SHEET_NAMES.COMPANY_CALENDAR);
   if (!sheet) return {};
   const rows = sheet.getDataRange().getValues();
@@ -1186,8 +1195,8 @@ function classifyInfoFiles_() {
    変換してしまい、キャッシュ読み込み後にtoDate_で正しく再解釈できず日付がNaNになる
    不具合があったため(実データで確認済み)。読み込み時点で文字列化しておけば、
    新規読み込み・キャッシュ経由のどちらでも同じ形式になり、この問題が起きない。 */
-function loadDailyReportRowsFromSs_(ssId) {
-  const ss = SpreadsheetApp.openById(ssId);
+function loadDailyReportRowsFromSs_(ssOrId) {
+  const ss = typeof ssOrId === 'string' ? SpreadsheetApp.openById(ssOrId) : ssOrId; // 開いたSpreadsheetも受け取れる
   const values = ss.getSheetByName(SHEET_NAMES.DAILY_REPORT).getDataRange().getValues();
   const rows = [];
   for (let i = 1; i < values.length; i++) {
@@ -1289,9 +1298,15 @@ function loadArchiveRowsCached_(fileId, cache) {
    他のファイルと重複しない前提のため無条件に全件採用する。 */
 function getMergedDailyReportRows_() {
   const info = classifyInfoFiles_();
-  const archives = info.archives; // startYear昇順
-  let merged = [];
+  let merged = getArchivePartRows_(info.archives);
+  merged = merged.concat(loadDailyReportRowsFromSs_(info.current.id));
+  return merged;
+}
 
+/* アーカイブ分(重複区間を除いたもの)だけを返す。getMergedDailyReportRows_の前半と、
+   アーカイブ分だけを返すgetArchiveDataJson_の両方から使う。 */
+function getArchivePartRows_(archives) { // archivesはstartYear昇順
+  const merged = [];
   const cache = readArchiveCache_(); // 巨大なキャッシュファイルはこの1回だけ読む
   let cacheChanged = false;
 
@@ -1310,25 +1325,26 @@ function getMergedDailyReportRows_() {
   }
 
   if (cacheChanged) writeArchiveCache_(cache); // 変更があった場合のみ1回だけ書き戻す
-
-  merged = merged.concat(loadDailyReportRowsFromSs_(info.current.id));
   return merged;
 }
 
 /* getAllDailyReportRows()の複数ファイル対応版。既存のgetAllDailyReportRows()は
    無改変のまま残し、新API(doPost)からはこちらを使う。 */
 function getAllDailyReportRowsMerged_() {
-  return getMergedDailyReportRows_().map(function (r) {
-    return {
-      operatorNo: r.operatorNo,
-      factory: r.factory,
-      dept: r.dept,
-      workDate: formatDate_(toDate_(r.workDate)),
-      constructionId: r.constructionId,
-      workCode: r.workCode,
-      hours: r.hours
-    };
-  });
+  return getMergedDailyReportRows_().map(toApiRow_);
+}
+
+/* 画面へ返す1行の形(作業日は'yyyy/MM/dd')。 */
+function toApiRow_(r) {
+  return {
+    operatorNo: r.operatorNo,
+    factory: r.factory,
+    dept: r.dept,
+    workDate: formatDate_(toDate_(r.workDate)),
+    constructionId: r.constructionId,
+    workCode: r.workCode,
+    hours: r.hours
+  };
 }
 
 /* getMasterData()の複数ファイル対応版フロントエンド向け拡張。既存のgetMasterData()は
@@ -1340,9 +1356,9 @@ function getAllDailyReportRowsMerged_() {
    アーカイブのうち最も開始年が古いもの(earliestArchiveYear)も返す。ハードコードせず
    「情報」シートの実際の登録内容から都度求めることで、将来アーカイブが入れ替わっても
    自動的に選択範囲が追従する。 */
-function getMasterDataWithStatus_() {
-  const master = getMasterData();
-  const ss = SpreadsheetApp.openById(getDailyReportSsId_());
+function getMasterDataWithStatus_(ss, info) {
+  ss = ss || SpreadsheetApp.openById(getDailyReportSsId_());
+  const master = getMasterData(ss);
   const opRows = ss.getSheetByName(SHEET_NAMES.OPERATOR).getDataRange().getValues();
   const activeByNo = {};
   for (let i = 1; i < opRows.length; i++) {
@@ -1351,7 +1367,7 @@ function getMasterDataWithStatus_() {
   }
   master.operators.forEach(function (o) { o.active = !!activeByNo[o.no]; });
 
-  const info = classifyInfoFiles_();
+  info = info || classifyInfoFiles_();
   let earliestArchiveYear = null;
   info.archives.forEach(function (a) {
     if (earliestArchiveYear === null || a.startYear < earliestArchiveYear) earliestArchiveYear = a.startYear;
@@ -1367,8 +1383,8 @@ function getMasterDataWithStatus_() {
    operatorNo/from/to/typeのみ)は無改変のまま残し、こちらは新規の別関数として持つ。
    アーカイブ横断は不要(Absenteeismシートには過去全期間の記録がそのまま残っている、
    ヒアリングで確認済み)。 */
-function getAbsenteeismDetail_() {
-  const ss = SpreadsheetApp.openById(getDailyReportSsId_());
+function getAbsenteeismDetail_(ss) {
+  ss = ss || SpreadsheetApp.openById(getDailyReportSsId_());
   const sheet = ss.getSheetByName(SHEET_NAMES.ABSENTEEISM);
   if (!sheet) return [];
   const rows = sheet.getDataRange().getValues();
@@ -1488,6 +1504,98 @@ function getInitialData_() {
   };
 }
 
+/* ===================== 起動時データの分割取得(確定済みのアーカイブ分と、毎回取る現行分) ===================== */
+/* 日報の約99%はアーカイブ(月1回程度しか変わらない)で、現行DailyReportは直近の数百行だけ。
+   getInitialData_は毎回アーカイブ分まで含めて約20MBを作り直していたため(実測 約25秒)、
+   ・getLiveData_ : マスタ・カレンダー・届出・現行分の行と、アーカイブの版(archiveVersion)
+   ・getArchiveDataJson_ : アーカイブ分の行(版付き。版ごとに作って保存したものを返す)
+   に分ける。画面はアーカイブ分を版ごとに長期キャッシュし、毎回取るのは現行分だけになる。
+   アーカイブ分+現行分の並び・内容は getAllDailyReportRowsMerged_ と同じ。
+   届出(absenteeism)はabsenteeismDetailと同じ行から作れるため、画面側で作る(二重に返さない)。 */
+
+/* アーカイブの版。登録されているアーカイブ(開始年)と各ファイルの最終更新日時から作る
+   (ファイルIDは含めない)。どれかが更新・追加されると版が変わる。 */
+function archiveVersion_(archives) {
+  if (!archives.length) return ARCHIVE_PART_FORMAT_ + '-none';
+  return ARCHIVE_PART_FORMAT_ + '-' + archives.map(function (a) {
+    return a.startYear + '_' + DriveApp.getFileById(a.id).getLastUpdated().getTime();
+  }).join('-');
+}
+
+function getLiveData_() {
+  const info = classifyInfoFiles_();
+  const ssId = getDailyReportSsId_();
+  const ss = SpreadsheetApp.openById(ssId); // マスタ・カレンダー・届出(従来どおりgetDailyReportSsId_のファイル)
+  const currentSs = info.current.id === ssId ? ss : SpreadsheetApp.openById(info.current.id); // 日報の行(従来どおり「DailyReport」行のファイル)
+  return {
+    master: getMasterDataWithStatus_(ss, info),
+    currentRows: loadDailyReportRowsFromSs_(currentSs).map(toApiRow_),
+    calendar: getCompanyCalendarData(ss),
+    absenteeismDetail: getAbsenteeismDetail_(ss),
+    archiveVersion: archiveVersion_(info.archives),
+    fetchedAt: new Date().getTime()
+  };
+}
+
+/* 保存ファイルの中身の形が変わったら上げる(版に入るので、古い保存は使われなくなる)。 */
+const ARCHIVE_PART_FORMAT_ = 'a1';
+const ARCHIVE_PART_CACHE_FILE_NAME_ = '_daily_report_archive_part.json';
+const ARCHIVE_ROW_KEYS_ = ['operatorNo', 'factory', 'dept', 'workDate', 'constructionId', 'workCode', 'hours'];
+
+/* 行を「列ごとの番号配列+重複を除いた値の辞書」に詰める(api/data.js の compactRows と同じ形。hoursは数値のまま)。 */
+function compactApiRows_(rows) {
+  const dict = {}, cols = {};
+  ARCHIVE_ROW_KEYS_.forEach(function (k) {
+    if (k === 'hours') { cols[k] = rows.map(function (r) { return r[k]; }); return; }
+    const index = new Map(), values = [];
+    cols[k] = rows.map(function (r) {
+      const v = r[k];
+      if (!index.has(v)) { index.set(v, values.length); values.push(v); }
+      return index.get(v);
+    });
+    dict[k] = values;
+  });
+  return { format: 'compact1', n: rows.length, dict: dict, cols: cols };
+}
+
+/* {version, rows(compact1)} のJSON文字列。保存ファイルの1行目が今の版と同じならそれを返し、
+   違えば(アーカイブが更新された・初回)作り直して保存する(月1回程度)。 */
+function getArchiveDataJson_() {
+  const info = classifyInfoFiles_();
+  const version = archiveVersion_(info.archives);
+  const folder = getContainerFolder_();
+  const readSaved = function () {
+    const it = folder.getFilesByName(ARCHIVE_PART_CACHE_FILE_NAME_);
+    const file = it.hasNext() ? it.next() : null;
+    if (!file) return { file: null, json: null };
+    const text = file.getBlob().getDataAsString();
+    const nl = text.indexOf('\n');
+    return { file: file, json: (nl > 0 && text.slice(0, nl) === version) ? text.slice(nl + 1) : null };
+  };
+  let saved = readSaved();
+  if (saved.json) return saved.json;
+  /* 作り直しは同時に1つだけ(中継APIが並行して再試行するため)。ログイン記録のスクリプトロックとは
+     別のドキュメントロックを使い、作り直し中もログイン記録を待たせない。 */
+  const lock = LockService.getDocumentLock();
+  lock.waitLock(120000);
+  try {
+    saved = readSaved(); // 待っている間に他の実行が作り直していれば、それを使う
+    if (saved.json) return saved.json;
+    return buildArchivePart_(info, version, folder, saved.file);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function buildArchivePart_(info, version, folder, file) {
+  const rows = getArchivePartRows_(info.archives).map(toApiRow_);
+  const json = JSON.stringify({ version: version, rows: compactApiRows_(rows) });
+  const content = version + '\n' + json;
+  if (file) file.setContent(content);
+  else folder.createFile(ARCHIVE_PART_CACHE_FILE_NAME_, content, MimeType.PLAIN_TEXT);
+  return json;
+}
+
 function apiJsonErr_(message) {
   return ContentService
     .createTextOutput(JSON.stringify({ status: 'error', message: message }))
@@ -1510,6 +1618,13 @@ function doPost(e) {
     if (action === 'getAbsenteeismData') return apiJsonOk_(getAbsenteeismData());
     if (action === 'getAbsenteeismDetail') return apiJsonOk_(getAbsenteeismDetail_());
     if (action === 'getInitialData') return apiJsonOk_(getInitialData_());
+    if (action === 'getLiveData') return apiJsonOk_(getLiveData_());
+    if (action === 'getArchiveData') {
+      // 保存済みのJSON文字列をそのまま返す(数MBのJSON.parse/stringifyをしない)
+      return ContentService.createTextOutput('{"status":"success","data":' + getArchiveDataJson_() + '}')
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    if (action === 'ping') return apiJsonOk_({ version: CODE_VERSION });
     if (action === 'generateReport1') return apiJsonOk_(generateReport1(params));
     if (action === 'generateReport2') return apiJsonOk_(generateReport2(params));
     if (action === 'generateReport3') return apiJsonOk_(generateReport3(params));
