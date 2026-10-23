@@ -2,6 +2,8 @@
  * 出荷リスト図番リンク付与アプリ用 GAS(ms-tottori アカウントで実行)
  *  - 毎朝: マスタExcelのハイパーリンクを抜き出し「リンク表(JSON)」をDriveに保存
  *  - doGet : リンク表JSONを返す(?action=links) / 軽い状態確認(?action=info) / 今すぐ再生成(?action=rebuild。Excelに変更がなければ省略、連打は1分で制限、件数が旧の90%未満なら上書きしない)
+ *            ?action=rebuild は前回の再生成後に更新されたExcelだけを読み直す(他は「Excelごとの抜き出し結果」を流用)。毎朝は全件読み直す
+ *            / 版の確認(?action=ping → {ok, version})
  *  - doPost: 取り込んだ元PDFを保存フォルダへ保存し、スプレッドシート「記録」の2行目に日時/ページ数/URLを挿入(最新が上)
  *
  * 【初回セットアップ】 ①このコードを貼り付け ②setupDaily を1回実行(権限を承認) ③buildMaster を1回実行
@@ -12,6 +14,8 @@ var SAVE_FOLDER_ID = '1vekpzwfn-W0MqRyWWYzWdS4A6jp2bEt3';   // 取込PDF保存�
 var SHEET_ID = '19l9P9C15wQ0jIcjIc_czZCiyDbnesQbq-Q88ttndMfs';
 var SHEET_NAME = '記録';
 var LINKS_FILE_NAME = '_リンク表.json';
+var STORE_FILE_NAME = '_リンク表_Excel別.json'; // Excelごとの抜き出し結果(ボタンの再生成で、変更の無いExcelを読み直さないため)
+var CODE_VERSION = '20261023a';                // コードを変えたら更新する(?action=ping で確認)
 var COL_ZUBAN = 'F', COL_NAME = 'G'; // 図番列 / 製品名(製品マーク)列
 
 /* ===== 純粋関数(GAS API非依存・Nodeでテスト可能) ===== */
@@ -126,14 +130,36 @@ function masterFiles_() {
 function signature_(files) {
   return files.map(function (f) { return f.getName() + '|' + f.getLastUpdated().toISOString(); }).sort().join('\n');
 }
-function build_(force) {
-  var files = masterFiles_(), list = [], sources = [];
+/** Excelごとの抜き出し結果(STORE_FILE_NAME)を読む。{ ファイルID: {name, modified, d, links} }。無い・壊れているときは {} */
+function readStore_() {
+  try {
+    var ex = DriveApp.getFolderById(SAVE_FOLDER_ID).getFilesByName(STORE_FILE_NAME);
+    return ex.hasNext() ? (JSON.parse(ex.next().getBlob().getDataAsString('UTF-8')).files || {}) : {};
+  } catch (e) { return {}; }
+}
+function writeStore_(files) {
+  var folder = DriveApp.getFolderById(SAVE_FOLDER_ID), ex = folder.getFilesByName(STORE_FILE_NAME), json = JSON.stringify({ files: files });
+  if (ex.hasNext()) ex.next().setContent(json); else folder.createFile(STORE_FILE_NAME, json, 'application/json');
+}
+/** マスタExcel → リンク表JSON。incremental=true のときは、名前と更新日時が前回と同じExcelは読まずに前回の抜き出し結果を使う */
+function build_(force, incremental) {
+  var t0 = Date.now(), files = masterFiles_(), list = [], sources = [], store = incremental ? readStore_() : {}, nextStore = {}, reread = [];
   for (var fi = 0; fi < files.length; fi++) {
-    var f = files[fi];
-    var one = readXlsxLinks_(f.getBlob());
+    var f = files[fi], id = f.getId(), name = f.getName(), modified = f.getLastUpdated().toISOString(), prev = store[id], one;
+    if (prev && prev.name === name && prev.modified === modified) {
+      one = expandLinks_(prev);
+      nextStore[id] = prev;
+    } else {
+      var t1 = Date.now();
+      one = readXlsxLinks_(f.getBlob());
+      reread.push(name + ' ' + (Date.now() - t1) + 'ms');
+      var c = compactLinks_(one);
+      nextStore[id] = { name: name, modified: modified, d: c.d, links: c.links };
+    }
     list.push(one);
-    sources.push({ name: f.getName(), count: Object.keys(one).length, modified: f.getLastUpdated().toISOString() });
+    sources.push({ name: name, count: Object.keys(one).length, modified: modified });
   }
+  console.log('Excel読み直し ' + reread.length + '/' + files.length + '件: ' + reread.join(', '));
   var merged = mergeLinks_(list), count = Object.keys(merged).length, props = PropertiesService.getScriptProperties();
   var folder = DriveApp.getFolderById(SAVE_FOLDER_ID), ex = folder.getFilesByName(LINKS_FILE_NAME), exFile = ex.hasNext() ? ex.next() : null;
   var meta = JSON.parse(props.getProperty('meta') || 'null');
@@ -149,10 +175,14 @@ function build_(force) {
   var excelModified = maxModified_(sources);
   props.setProperty('meta', JSON.stringify({ updated: updated, count: count, excelModified: excelModified, sig: signature_(files) }));
   props.deleteProperty('rejected');
+  try { writeStore_(nextStore); } catch (e) { console.log('Excel別の抜き出し結果の保存に失敗: ' + e); }   // 失敗しても次回は全件読み直すだけ
   cacheClear_();
-  return { ok: true, updated: updated, count: count, prevCount: prevCount, excelModified: excelModified };
+  cachePut_(json);   // 画面が次に読むGAS側キャッシュを、消すだけでなく新しいリンク表で作り直しておく
+  var ms = Date.now() - t0;
+  console.log('再生成 ' + ms + 'ms(件数 ' + count + ')');
+  return { ok: true, updated: updated, count: count, prevCount: prevCount, excelModified: excelModified, reread: reread.length, ms: ms };
 }
-/** 毎朝6時のトリガー用(トリガーは引数にイベントを渡すので、force を取らない形にしている) */
+/** 毎朝6時のトリガー用(トリガーは引数にイベントを渡すので、force を取らない形にしている)。安全のため全件読み直す */
 function buildMaster() { return build_(false); }
 /** 件数が正当に10%以上減ったときだけ、Apps Scriptから手動実行する(安全弁を無視して作り直す) */
 function buildMasterForce() { return build_(true); }
@@ -160,16 +190,28 @@ function setupDaily() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'buildMaster') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('buildMaster').timeBased().everyDays(1).atHour(6).inTimezone('Asia/Tokyo').create();
 }
-/** リンク表を圧縮形式にする: 同じフォルダ名(URLの最後の「/」まで)を d に1回だけ持ち、links の値は「d の番号|ファイル名」。6.6MB→約1.4MB */
+/** リンク表を圧縮形式にする: 同じフォルダ名(URLの最後の「/」まで)を d に1回だけ持ち、links の値は「d の番号|ファイル名」。6.6MB→約1.4MB
+ *  重複(リンクが複数)の値は配列のまま、要素ごとに同じ形にする */
+function compactLinks_(src) {
+  var d = [], idx = {}, links = {};
+  var one = function (v) {
+    var i = v.lastIndexOf('/') + 1, p = v.slice(0, i);
+    if (!(p in idx)) { idx[p] = d.length; d.push(p); }
+    return idx[p] + '|' + v.slice(i);
+  };
+  Object.keys(src).forEach(function (k) { var v = src[k]; links[k] = Array.isArray(v) ? v.map(one) : one(v); });
+  return { d: d, links: links };
+}
+function expandLinks_(c) {
+  var links = {};
+  var one = function (v) { var i = v.indexOf('|'); return (i > 0 ? c.d[+v.slice(0, i)] : '') + v.slice(i + 1); };
+  Object.keys(c.links).forEach(function (k) { var v = c.links[k]; links[k] = Array.isArray(v) ? v.map(one) : one(v); });
+  return links;
+}
 function compactMaster_(m) {
   if (m.d) return m;
-  var d = [], idx = {}, links = {};
-  Object.keys(m.links).forEach(function (k) {
-    var v = m.links[k], i = v.lastIndexOf('/') + 1, p = v.slice(0, i);
-    if (!(p in idx)) { idx[p] = d.length; d.push(p); }
-    links[k] = idx[p] + '|' + v.slice(i);
-  });
-  return { updated: m.updated, sources: m.sources, d: d, links: links };
+  var c = compactLinks_(m.links);
+  return { updated: m.updated, sources: m.sources, d: c.d, links: c.links };
 }
 // GAS側キャッシュ(CacheService)。1キー約100KBまでなので、gzip+base64にして90,000文字ずつに分けて持つ。再生成(build_)で破棄
 var CACHE_CHUNK = 90000, CACHE_SEC = 21600;
@@ -217,7 +259,7 @@ function rebuildNow_() {
     // マスタExcelに変更がなければ(名前+更新日時が前回の再生成時と同じ)、約30秒かかる再生成を省く
     if (meta && meta.sig && signature_(masterFiles_()) === meta.sig) return { ok: true, unchanged: true, updated: meta.updated, count: meta.count, excelModified: meta.excelModified };
     props.setProperty('lastRebuildAt', String(Date.now()));
-    return build_(false);
+    return build_(false, true);   // 前回の再生成後に更新されたExcelだけを読み直す
   } finally { lock.releaseLock(); }
 }
 /** 軽い状態確認(Driveを読まない)。画面が再生成の完了を待つときに使う */
@@ -228,7 +270,7 @@ function info_() {
 
 function doGet(e) {
   var a = (e && e.parameter && e.parameter.action) || 'links';
-  if (a === 'ping') return json_({ ok: true });
+  if (a === 'ping') return json_({ ok: true, version: CODE_VERSION });
   if (a === 'info') return json_(info_());
   if (a === 'rebuild') {
     try { return json_(rebuildNow_()); } catch (err) { return json_({ ok: false, error: String(err) }); }

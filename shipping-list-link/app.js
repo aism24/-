@@ -19,21 +19,48 @@
     $('master').innerHTML = 'マスタ: ' + Object.keys(m.links).length + '件 / 更新 <b id="mUpd"' + (changed ? ' class="flash"' : '') + '>' + esc(fmt(m.updated)) + '</b>' +
       ' / Excel最終更新 ' + esc(fmt(excelMod(m))) + (note ? ' / ' + esc(note) : '');
   }
+  function sec(t0) { return ((Date.now() - t0) / 1000).toFixed(1) + '秒'; }
   // 取得経路: Vercelの中継API(CDNキャッシュ・gzip)を優先。失敗時だけGASを直接呼ぶ(GitHub上の確認用URLには中継APIが無いのでこちらになる)
-  // bust=true: 「最新を取得」ボタン用。URLに時刻を付けてCDNキャッシュを避ける
-  async function fetchMaster(bust) {
-    var q = bust ? 't=' + Date.now() : '';
-    // 中継APIは10秒で打ち切る。GASが遅いときは待ち続けず、CDNに残っている古いリンク表(最大1日前)を使う
-    var urls = bust ? ['api/links?' + q, 'api/links'] : ['api/links'];
+  // o.bust=true: 「最新を取得」ボタン用。CDNキャッシュを避ける(失敗時はCDNに残っている古いリンク表も試す)
+  // o.ver: 取りに行く版(リンク表の更新日時)。URLに付けるので、CDNには版ごとに保存され、2人目以降は速く取れる
+  // 戻り値の raw はGASが返した圧縮形式のまま(このPCに保存する用)
+  async function fetchMaster(o) {
+    o = o || {};
+    var q = o.ver ? 'v=' + encodeURIComponent(o.ver) : o.bust ? 't=' + Date.now() : '';
+    // 中継APIは10秒で打ち切る(o.wait で変更可)。GASが遅いときは待ち続けず、CDNに残っている古いリンク表(最大1日前)を使う
+    var urls = q ? ['api/links?' + q] : ['api/links'];
+    if (o.bust) urls.push('api/links');
     for (var u = 0; u < urls.length; u++) {
       try {
-        var r = await fetch(urls[u], { signal: AbortSignal.timeout(10000) });
-        if (r.ok) { var m = await r.json(); if (m && m.links) return { m: ShippingCore.expandMaster(m), via: u ? '中継API(古いデータ)' : '中継API' }; }
+        var r = await fetch(urls[u], { signal: AbortSignal.timeout(o.wait || 10000) });
+        if (r.ok) { var m = await r.json(); if (m && m.links) return { raw: m, m: ShippingCore.expandMaster(m), via: u ? '中継API(古いデータ)' : '中継API' }; }
       } catch (e) {}
     }
     if (!GAS_URL) throw new Error('GAS_URL が未設定です');
-    var r2 = await fetch(GAS_URL + '?action=links' + (q ? '&' + q : ''), { cache: 'no-store' });
-    return { m: ShippingCore.expandMaster(await r2.json()), via: 'GAS直接' };
+    var r2 = await fetch(GAS_URL + '?action=links' + (q ? '&' + q : ''), { cache: 'no-store' }), raw = await r2.json();
+    return { raw: raw, m: ShippingCore.expandMaster(raw), via: 'GAS直接' };
+  }
+  // このPCのブラウザに保存したリンク表(IndexedDB)。開いたときはこれをすぐ使い、裏でGASの更新日時と比べて新しければ取り直す
+  // 使えない環境(シークレットウィンドウ等)では null を返し、従来どおり毎回取得する
+  function localDb(mode, fn) {
+    return new Promise(function (ok, ng) {
+      var rq = indexedDB.open('shipping-list-link', 1);
+      rq.onupgradeneeded = function () { rq.result.createObjectStore('kv'); };
+      rq.onerror = function () { ng(rq.error); };
+      rq.onsuccess = function () {
+        var db = rq.result, tx = db.transaction('kv', mode), req = fn(tx.objectStore('kv'));
+        tx.oncomplete = function () { db.close(); ok(req.result); };
+        tx.onerror = tx.onabort = function () { db.close(); ng(tx.error); };
+      };
+      setTimeout(function () { ng(new Error('timeout')); }, 3000);
+    });
+  }
+  async function localGet() {
+    try { var raw = await localDb('readonly', function (st) { return st.get('master'); }); return raw && raw.links && raw.updated ? raw : null; }
+    catch (e) { return null; }
+  }
+  function localPut(raw) {
+    try { localDb('readwrite', function (st) { return st.put(raw, 'master'); }).catch(function () {}); } catch (e) {}
   }
   // 「マスタ更新分確認中」ポップアップ。取得中は流れるバー、終了時はバーを100%にしてから閉じる
   var busyTimer = null;
@@ -44,13 +71,35 @@
     bar.classList.add('full');
     busyTimer = setTimeout(function () { m.classList.remove('show'); bar.classList.remove('full'); }, 500);
   }
+  // 開いたとき: このPCに保存したリンク表があれば、それを表示してすぐポップアップを閉じ、最新かどうかは裏で確認する
   async function loadMaster() {
     busy(true);
+    var t0 = Date.now(), raw = await localGet();
+    if (raw) {
+      var s0 = sec(t0);
+      showMaster(ShippingCore.expandMaster(raw), 'このPCの保存分 ' + s0 + '・最新か確認中');
+      busy(false);
+      if (GAS_URL) checkLatest(s0);
+      return;
+    }
     try {
-      var t0 = Date.now(), got = await fetchMaster();
-      showMaster(got.m, got.via + ' ' + ((Date.now() - t0) / 1000).toFixed(1) + '秒');
+      var got = await fetchMaster();
+      showMaster(got.m, got.via + ' ' + sec(t0));
+      localPut(got.raw);
     } catch (e) { if (!links) $('master').textContent = 'マスタの取得に失敗しました: ' + e; }
     finally { busy(false); }
+  }
+  // 裏で最新か確認: GASの軽い状態確認(action=info)の更新日時が、表示中のリンク表と違えば取り直して差し替え・保存する
+  async function checkLatest(s0) {
+    var mine = cur, base = 'このPCの保存分 ' + s0;
+    try {
+      var j = await (await fetch(GAS_URL + '?action=info', { cache: 'no-store', signal: AbortSignal.timeout(30000) })).json();
+      if (!j.updated || j.updated === mine.updated) { if (cur === mine) showMaster(mine, base + '・最新を確認済み'); return; }
+      var t0 = Date.now(), got = await fetchMaster({ ver: j.updated, wait: 20000 });
+      if (cur !== mine) return;   // 確認中に「最新を取得」ボタンで差し替わっていたら、そちらを優先
+      showMaster(got.m, got.via + ' ' + sec(t0) + '・新しいマスタに更新');
+      localPut(got.raw);
+    } catch (e) { if (cur === mine) showMaster(mine, base + '・最新か確認できませんでした'); }
   }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   // 「最新のリンク付きマスタを取得」: GASにマスタExcel→リンク表JSONの再生成を依頼し、画面のマスタを読み直す。
@@ -89,10 +138,11 @@
         msg.className = 'small ok'; msg.textContent = '最新です。';
         return;
       }
-      var got = await fetchMaster(true), m = got.m, oldN = prev ? Object.keys(prev.links).length : 0, newN = Object.keys(m.links).length;
+      var got = await fetchMaster({ bust: true, ver: j.updated }), m = got.m, oldN = prev ? Object.keys(prev.links).length : 0, newN = Object.keys(m.links).length;
       var was = prev ? fmt(prev.updated) : '-';
       var sameData = prev && oldN === newN && excelMod(prev) === excelMod(m);
       showMaster(m, got.via);
+      localPut(got.raw);   // 次に開いたときは、このPCに保存したこのリンク表をすぐ使う
       msg.className = 'small ok';
       if (j.unchanged) msg.textContent = '最新です。';
       else if (j.throttled) msg.textContent = '1分以内に更新済みです(更新 ' + fmt(m.updated) + ')。';

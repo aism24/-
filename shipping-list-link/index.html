@@ -33,10 +33,10 @@ body.dragging::after{content:"ここにドロップ";position:fixed;inset:0;z-in
 #modalText div{margin:6px 0;font-size:16px}#modalText div:first-child{font-weight:bold;font-size:18px}
 #modal.mok #modalText div:first-child{color:var(--ok)}#modal.mng #modalText div:first-child{color:var(--warn)}
 #modalOk{margin-top:16px;min-width:120px;padding:8px 18px;font-size:16px;border:0;border-radius:8px;background:var(--acc);color:#000;font-weight:bold;cursor:pointer}
-.manual{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;background:#ffd400;color:#000;font-weight:bold;font-size:15px;text-decoration:none;padding:10px 26px;border-radius:999px;border:2px solid #fff3a0;white-space:nowrap;animation:manualGlow 2s ease-in-out infinite}
+.manualWrap{text-align:center;margin:10px 0 20px}
+.manual{display:inline-block;background:#ffd400;color:#000;font-weight:bold;font-size:15px;text-decoration:none;padding:10px 26px;border-radius:999px;border:2px solid #fff3a0;white-space:nowrap;animation:manualGlow 2s ease-in-out infinite}
 .manual:hover{background:#ffe34d}
 @keyframes manualGlow{0%,100%{box-shadow:0 0 6px #ffd400,0 0 14px rgba(255,212,0,.55)}50%{box-shadow:0 0 14px #ffe66d,0 0 32px rgba(255,212,0,.9)}}
-main{padding-bottom:84px!important}
 main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
 .sub{color:#8a94a6;font-size:13px;margin-bottom:16px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;text-align:center}
 .sub #master{grid-column:2}.sub #refresh{grid-column:3;justify-self:end}
@@ -74,11 +74,13 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
 <div id="busyModal" class="show"><div class="mbox" role="status" aria-live="polite">マスタ更新分確認中<div class="bar" id="busyBar"></div></div></div>
 <div id="modal"><div class="mbox" id="mbox"><div id="modalText"></div><button id="ngToggle" type="button" style="display:none"></button><div id="ngList" style="display:none"></div><button id="modalOk" type="button">OK</button></div></div>
 <p class="small" style="text-align:center">図番と製品名が完全一致した行の製品名にリンクを付け、PDFを自動でダウンロードします。リンクは社内ネットワーク内でのみ開けます。</p>
+<div class="manualWrap"><a class="manual" href="manual/after-download.pdf" target="_blank" rel="noopener">ダウンロード後の説明書</a></div>
 </main>
-<a class="manual" href="manual/after-download.pdf" target="_blank" rel="noopener">ダウンロード後の説明書</a>
 <script src="vendor/pdf.min.js?v=20261015a"></script>
 <script src="vendor/pdf-lib.min.js?v=20261015a"></script>
-<script src="core.js?v=20261021a"></script>
-<script src="app.js?v=20261023a"></script>
+<script src="core.js?v=20261023a"></script>
+<script src="app.js?v=20261023b"></script>
+<!-- 「← アプリ一覧へ」ボタンは一時的に非表示(2026-10-23、ユーザー指示)。復活するときは下の行のコメントを外すだけ(to-launcher.js はそのまま残している)
 <script src="to-launcher.js?v=20261019" data-target=".hdr h1" data-mode="in"></script>
+-->
 </body></html>

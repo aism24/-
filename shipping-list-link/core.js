@@ -190,10 +190,11 @@
   // 圧縮形式のリンク表({d:[フォルダ…], links:{キー:"番号|ファイル名"}})を、従来の {キー:URL} に戻す。従来形式はそのまま返す
   function expandMaster(m) {
     if (!m || !m.d) return m;
-    var links = {}, k, v, i;
+    var links = {}, k, v;
+    var one = function (s) { var i = s.indexOf('|'); return (i > 0 ? m.d[+s.slice(0, i)] : '') + s.slice(i + 1); };
     for (k in m.links) {
-      v = m.links[k]; i = v.indexOf('|');
-      links[k] = (i > 0 ? m.d[+v.slice(0, i)] : '') + v.slice(i + 1);
+      v = m.links[k];
+      links[k] = Array.isArray(v) ? v.map(one) : one(v);   // 重複(リンクが複数)は配列のまま戻す
     }
     return { updated: m.updated, sources: m.sources, links: links };
   }
