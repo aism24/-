@@ -13,7 +13,7 @@
   var IMPORTS_SHOW = 100;
   var VIEW_HEADERS = IMPORT_HEADERS.filter(function (k) { return k !== 'タイムスタンプ'; }); // 画面・Excelに出す列
   var TABLE_HEADERS = VIEW_HEADERS.filter(function (k) { return k !== '工事番号'; }); // 取込一覧の表に出す列(工事番号は出さず、現場名=工事名を出す。Excelには両方入る)
-  var LEFT_COLS = ['ファイル名', '現場名']; // 取込一覧の表で左揃えにする列。他の列は中央揃え(列の幅は、どれも中身に合わせて詰める。2026-10-23、ユーザー指示)
+  var LEFT_COLS = ['ファイル名', '現場名', '備考']; // 取込一覧の表で左揃えにする列(備考は、見出しだけ中央揃え)。他の列は中央揃え(列の幅は、どれも中身に合わせて詰める。2026-10-23、ユーザー指示)
   var OTHER = 'その他'; // 工事に該当しないもの。工事番号・現場名の両方に「その他」と記録する
   var MAX_BYTES = 10 * 1024 * 1024;
 
@@ -725,7 +725,7 @@
       h('button', { class: 'btn excel', type: 'button', text: '全件ダウンロード', onclick: downloadAllImports }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '締め月ダウンロード', onclick: openClosingDownload }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '卸日指定でダウンロード', onclick: openDateDownload })));
-    var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: LEFT_COLS.indexOf(k) >= 0 ? null : 'c', text: k })); }); // 「操作」の列は無い(行を押すと編集できる)
+    var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: LEFT_COLS.indexOf(k) >= 0 && k !== '備考' ? null : 'c', text: k })); }); // 備考は、見出しだけ中央揃え。「操作」の列は無い(行を押すと編集できる)
     var body = h('tbody');
     shown.forEach(function (r) { body.appendChild(importRow(r)); });
     wrap.appendChild(shown.length ? h('div', { class: 'scroll fitcols' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' }));
@@ -774,7 +774,7 @@
   }
   /** 取込一覧の「変更前」の行か(表とExcelで、赤字・取り消し線にする) */
   function isBeforeRow(r) { return String(r && r.追加変更 != null ? r.追加変更 : '').trim() === '変更前'; }
-  function struckOf(list) { return { struck: list.map(isBeforeRow), leftCols: LEFT_COLS.concat(['ファイルURL']) }; } // Excelも、ファイル名・現場名(とファイルURL)は左揃え、他は中央揃え
+  function struckOf(list) { return { struck: list.map(isBeforeRow), leftCols: LEFT_COLS.concat(['ファイルURL']), centerHeads: ['備考'] }; } // Excelも、ファイル名・現場名(とファイルURL)は左揃え、他は中央揃え
 
   /** 入力欄の幅を、その列(同じ列の入力欄)でいちばん長い中身に合わせる。全角は1文字=1em、半角は0.6em。左右の余白は同じ。空欄でも3em */
   function textEm(v) { var w = 0; String(v || '').split('').forEach(function (c) { w += c.charCodeAt(0) > 0xff ? 1 : 0.6; }); return w; }
@@ -877,12 +877,12 @@
     saveBtn.style.display = 'none';
     function onChange() { saveBtn.style.display = dirty() ? '' : 'none'; if (dirty()) status.textContent = ''; }
 
-    var thead = h('tr'); thead.appendChild(h('th', { class: 'c', text: '#' })); cols.forEach(function (k) { thead.appendChild(h('th', { class: k === '現場名' ? null : 'c', text: k })); });
+    var thead = h('tr'); thead.appendChild(h('th', { class: 'c', text: '#' })); cols.forEach(function (k) { thead.appendChild(h('th', { class: k === '現場名' ? null : 'c', text: k })); }); // 備考は、見出しだけ中央揃え
     var tbody = h('tbody');
     drafts.forEach(function (e, i) {
       var tr = h('tr', { class: e.row._row === r._row ? 'hit' : null });
       tr.appendChild(h('td', { class: 'num', text: String(i + 1) }));
-      cols.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (k === '現場名' ? '' : ' c') }, importEditControl(k, e.d, onChange))); }); // 現場名だけ左揃え、他は中央揃え
+      cols.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (k === '現場名' || k === '備考' ? '' : ' c') }, importEditControl(k, e.d, onChange))); }); // 現場名・備考は左揃え、他は中央揃え
       tbody.appendChild(tr);
     });
     var rowsTable = h('div', { class: 'scroll faxrows' }, h('table', { class: 't' }, h('thead', null, thead), tbody));
