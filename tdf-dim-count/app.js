@@ -120,13 +120,13 @@
     if (!b.rows.length) {
       h += '<div class="small c">このレイヤには、寸法と組になる「_」入りの製品名テキストがありません</div>';
     } else {
-      h += '<table><tr><th>ブロック入り製品名</th><th>ブロック</th><th>製品名</th><th>本数</th><th>長さ</th></tr>';
+      h += '<table><tr><th>ブロック</th><th>製品名</th><th>本数</th><th>長さ</th><th>ブロック入り製品名</th></tr>';
       b.rows.forEach(function (r, i) {
-        h += '<tr><td>' + esc(r.name) + '</td><td class="c">' + esc(r.block) + '</td><td style="text-align:left">' + esc(r.product) + '</td><td class="c">' + r.count + '</td><td class="c">' + esc(r.lengths.join(',')) + '</td></tr>';
+        h += '<tr><td class="c">' + esc(r.block) + '</td><td>' + esc(r.product) + '</td><td class="c">' + r.count + '</td><td class="c">' + esc(r.lengths.join(',')) + '</td><td style="text-align:left">' + esc(r.name) + '</td></tr>';
         var sub = blockSub(b.rows, i);
-        if (sub) h += '<tr class="bsub"><td>' + esc(r.block) + ' 小計(' + sub.n + '種類)</td><td></td><td></td><td class="c">' + sub.count + '</td><td></td></tr>';
+        if (sub) h += '<tr class="bsub"><td colspan="2">' + esc(r.block) + ' 小計(' + sub.n + '種類)</td><td class="c">' + sub.count + '</td><td></td><td></td></tr>';
       });
-      h += '<tr><th>合計(' + b.rows.length + '種類)</th><th></th><th></th><th style="text-align:center">' + b.total + '</th><th></th></tr></table>';
+      h += '<tr><th colspan="2">合計(' + b.rows.length + '種類)</th><th style="text-align:center">' + b.total + '</th><th></th><th></th></tr></table>';
     }
     out.className = ''; out.innerHTML = h; setS3();
     xlsxBtn.disabled = !b.rows.length;
@@ -187,15 +187,15 @@
   }
 
   function downloadBlocks() {
-    var rows = [['ブロック入り製品名', 'ブロック', '製品名', '本数', '長さ']];
+    var rows = [['ブロック', '製品名', '本数', '長さ', 'ブロック入り製品名']];
     last.b.rows.forEach(function (r, i) {
-      rows.push([r.name, r.block, r.product, r.count, r.lengths.length === 1 ? parseFloat(r.lengths[0]) : r.lengths.join(',')]);
+      rows.push([r.block, r.product, r.count, r.lengths.length === 1 ? parseFloat(r.lengths[0]) : r.lengths.join(','), r.name]);
       var sub = blockSub(last.b.rows, i);
-      if (sub) rows.push([r.block + ' 小計(' + sub.n + '種類)', '', '', sub.count, '']);
+      if (sub) rows.push([r.block + ' 小計(' + sub.n + '種類)', '', sub.count, '', '']);
     });
-    rows.push(['合計(' + last.b.rows.length + '種類)', '', '', last.b.total, '']);
+    rows.push(['合計(' + last.b.rows.length + '種類)', '', last.b.total, '', '']);
     var ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{ wch: 28 }, { wch: 10 }, { wch: 22 }, { wch: 8 }, { wch: 20 }];
+    ws['!cols'] = [{ wch: 18 }, { wch: 22 }, { wch: 8 }, { wch: 20 }, { wch: 28 }];
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'ブロック分け');
     saveBook(wb, last.name.replace(/\.tdf$/i, '') + '_' + last.layer + '_ブロック分け.xlsx');
