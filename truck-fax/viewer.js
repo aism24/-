@@ -20,7 +20,8 @@
 
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
 
-  function create(file, mime, url) {
+  /** opts.onRotate(delta): 指定すると、原本の上に「↺ 左に90°」「↻ 右に90°」を出す(押すと delta=-90/+90 で呼ぶ) */
+  function create(file, mime, url, opts) {
     var box = el('div', 'viewer');
     var bar = el('div', 'viewer-bar');
     var label = el('span', 'viewer-zoom', '');
@@ -47,6 +48,10 @@
     bar.appendChild(label);
     bar.appendChild(btn('＋', '拡大', function () { zoomAt(1.3, box.clientWidth / 2, box.clientHeight / 2); }));
     bar.appendChild(btn('全体表示', '幅に合わせる', fit));
+    if (opts && opts.onRotate) {
+      bar.appendChild(btn('↺ 左に90°', '原本を左に90°回す(保存する原本も回る)', function () { opts.onRotate(-90); }));
+      bar.appendChild(btn('↻ 右に90°', '原本を右に90°回す(保存する原本も回る)', function () { opts.onRotate(90); }));
+    }
 
     box.addEventListener('wheel', function (e) {
       e.preventDefault();
@@ -100,5 +105,45 @@
     loadPdfJs().then(function () { return fetch(BASE + 'pdf.worker.min.js'); }).catch(function () {});
   }
 
-  root.TruckViewer = { create: create, preload: preload };
+  // ---------- 原本の回転(表示も、Driveに保存する原本も、回したものにする) ----------
+  var LIB_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js', libLoading = null;
+  function loadPdfLib() {
+    if (root.PDFLib) return Promise.resolve(root.PDFLib);
+    if (!libLoading) libLoading = new Promise(function (resolve, reject) {
+      var s = document.createElement('script'); s.src = LIB_URL;
+      s.onload = function () { resolve(root.PDFLib); };
+      s.onerror = function () { libLoading = null; reject(new Error('pdf-lib を読み込めませんでした')); };
+      document.head.appendChild(s);
+    });
+    return libLoading;
+  }
+  /** 原本(PDF・PNG・JPEG)を時計回りに deg(90の倍数)回したファイルを返す。PDFはページの向きの設定だけを変える(画質は変わらない)。画像は描き直す */
+  function rotateFile(file, mime, deg) {
+    deg = ((deg % 360) + 360) % 360;
+    if (!deg) return Promise.resolve(file);
+    if (mime === 'application/pdf') {
+      return Promise.all([loadPdfLib(), file.arrayBuffer()]).then(function (v) {
+        var lib = v[0];
+        return lib.PDFDocument.load(v[1], { ignoreEncryption: true }).then(function (doc) {
+          doc.getPages().forEach(function (pg) { pg.setRotation(lib.degrees((pg.getRotation().angle + deg) % 360)); });
+          return doc.save();
+        });
+      }).then(function (bytes) { return new File([bytes], file.name || 'fax.pdf', { type: mime }); });
+    }
+    return new Promise(function (resolve, reject) {
+      var u = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var side = deg % 180 !== 0, c = document.createElement('canvas');
+        c.width = side ? img.naturalHeight : img.naturalWidth; c.height = side ? img.naturalWidth : img.naturalHeight;
+        var ctx = c.getContext('2d');
+        ctx.translate(c.width / 2, c.height / 2); ctx.rotate(deg * Math.PI / 180); ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+        URL.revokeObjectURL(u);
+        c.toBlob(function (b) { if (b) resolve(new File([b], file.name || 'fax', { type: mime })); else reject(new Error('画像を回せませんでした')); }, mime, 0.92);
+      };
+      img.onerror = function () { URL.revokeObjectURL(u); reject(new Error('画像を読み込めませんでした')); };
+      img.src = u;
+    });
+  }
+
+  root.TruckViewer = { create: create, preload: preload, rotateFile: rotateFile };
 })(typeof self !== 'undefined' ? self : this);

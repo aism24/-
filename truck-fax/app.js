@@ -136,7 +136,7 @@
 
   function addFiles(files) { // 1回に取り込めるのは1ファイル(複数入れたときは最初の1つ)
     Array.prototype.slice.call(files, 0, 1).forEach(function (file) {
-      var card = { id: ++seq, mode: 'normal', kind: '新規', res: null, records: null, items: [], file: file, name: file.name, mime: file.type || 'application/pdf', status: 'reading', rows: [], decisions: [], findings: [], warnings: [], msg: '', url: '', busy: false };
+      var card = { id: ++seq, mode: 'normal', kind: '新規', res: null, records: null, items: [], file: file, orig: file, rotate: 0, name: file.name, mime: file.type || 'application/pdf', status: 'reading', rows: [], decisions: [], findings: [], warnings: [], msg: '', url: '', busy: false };
       S.cards.unshift(card);
       card.el = h('div', { class: 'card' });
       $('cards').insertBefore(card.el, $('cards').firstChild);
@@ -156,6 +156,7 @@
       var d = await apiPost('ocr', { filename: card.name, mimeType: card.mime, base64: b64 }, 180000);
       var res = L.sanitizeOcr(d.raw, { today: new Date(), senders: S.senders });
       card.res = res; card.warnings = res.warnings;
+      if (res.rotate) await setCardRotation(card, card.rotate + res.rotate, true); // 横倒し・逆さまの原本は、正しい向きに回す(表示も保存も)
       var recs = await recsP; // 取れなかったときは null: 再取込のチェックを省く
       if (recs && L.alreadyImported(res, recs)) { // 既に取り込んだ内容と全く同じ: 取込をやめる
         S.cards = S.cards.filter(function (c) { return c !== card; }); card.el.remove(); if (card.url) URL.revokeObjectURL(card.url); syncDrop();
@@ -297,10 +298,21 @@
   function renderCard(card) {
     renderCardBody(card);
     if (card.url && card.status !== 'saved') {
-      if (!card.viewer) card.viewer = TruckViewer.create(card.file, card.mime, card.url);
+      if (!card.viewer) card.viewer = TruckViewer.create(card.file, card.mime, card.url, { onRotate: function (d) { setCardRotation(card, card.rotate + d); } }); // 原本の上に、左右90°回すボタン
       card.el.appendChild(card.viewer);
     }
     syncDrop();
+  }
+  /** 取り込んだ原本を、元のファイルから時計回りに deg 回したものにする。表示と、Driveに保存する原本(card.b64)の両方を差し替える */
+  async function setCardRotation(card, deg, quiet) {
+    deg = ((deg % 360) + 360) % 360;
+    try {
+      var f = await TruckViewer.rotateFile(card.orig, card.mime, deg);
+      card.rotate = deg; card.file = f; card.b64 = await fileToBase64(f);
+      if (card.url) URL.revokeObjectURL(card.url);
+      card.url = URL.createObjectURL(f); card.viewer = null;
+    } catch (e) { if (!quiet) toast('原本を回せませんでした: ' + e.message); return; }
+    if (!quiet) renderCard(card);
   }
   function syncDrop() { $('drop').hidden = S.cards.some(function (c) { return c.status === 'reading' || c.status === 'ready'; }); }
 
