@@ -103,6 +103,14 @@
     card2.classList.toggle('alert', !s.rows.length);
   }
 
+  // rows はブロック順(core.js の blockNames)。i がブロックの最後の行なら、そのブロックの種類数・本数を返す
+  function blockSub(rows, i) {
+    if (i + 1 < rows.length && rows[i + 1].block === rows[i].block) return null;
+    var n = 0, count = 0;
+    for (var k = i; k >= 0 && rows[k].block === rows[i].block; k--) { n++; count += rows[k].count; }
+    return { n: n, count: count };
+  }
+
   // ②ブロック分け製品名で仕訳け(組にならない寸法と「_」の無い製品名は出さない。core.js の blockNames)
   function renderBlocks(no, ch) {
     var b = TdfDim.blockNames(cur.parsed, no);
@@ -113,8 +121,10 @@
       h += '<div class="small c">このレイヤには、寸法と組になる「_」入りの製品名テキストがありません</div>';
     } else {
       h += '<table><tr><th>ブロック入り製品名</th><th>ブロック</th><th>製品名</th><th>本数</th><th>長さ</th></tr>';
-      b.rows.forEach(function (r) {
+      b.rows.forEach(function (r, i) {
         h += '<tr><td>' + esc(r.name) + '</td><td class="c">' + esc(r.block) + '</td><td style="text-align:left">' + esc(r.product) + '</td><td class="c">' + r.count + '</td><td class="c">' + esc(r.lengths.join(',')) + '</td></tr>';
+        var sub = blockSub(b.rows, i);
+        if (sub) h += '<tr class="bsub"><td>' + esc(r.block) + ' 小計(' + sub.n + '種類)</td><td></td><td></td><td class="c">' + sub.count + '</td><td></td></tr>';
       });
       h += '<tr><th>合計(' + b.rows.length + '種類)</th><th></th><th></th><th style="text-align:center">' + b.total + '</th><th></th></tr></table>';
     }
@@ -178,8 +188,10 @@
 
   function downloadBlocks() {
     var rows = [['ブロック入り製品名', 'ブロック', '製品名', '本数', '長さ']];
-    last.b.rows.forEach(function (r) {
+    last.b.rows.forEach(function (r, i) {
       rows.push([r.name, r.block, r.product, r.count, r.lengths.length === 1 ? parseFloat(r.lengths[0]) : r.lengths.join(',')]);
+      var sub = blockSub(last.b.rows, i);
+      if (sub) rows.push([r.block + ' 小計(' + sub.n + '種類)', '', '', sub.count, '']);
     });
     rows.push(['合計(' + last.b.rows.length + '種類)', '', '', last.b.total, '']);
     var ws = XLSX.utils.aoa_to_sheet(rows);

@@ -213,6 +213,7 @@
   // ②ブロック分け製品名: 集計対象(テキスト数=線の本数)の寸法値テキストと、同じレイヤの数値でないテキスト(製品名)を、
   // 互いに最も近いもの同士で1対1に組にする(どちらかに、より近い相手がいれば組にしない)。
   // 製品名は最初の「_」で分け、左=製品名・右=ブロック。「_」の無い製品名と、組にならない寸法は出さない。
+  // 並び: ブロックの昇順、同じブロック内はブロック入り製品名の昇順(数字は数として比べる。2026-10-23 ユーザー指定)
   // 2026-10-23、別工事の図面(TB)で、組の距離は200〜206、2番目に近い製品名は1820以上離れていた(224本すべて1対1)
   function blockNames(parsed, layerNo) {
     var ok = {};
@@ -242,7 +243,9 @@
       r.lengths = Object.keys(r.lens).sort(function (a, b) { return parseFloat(a) - parseFloat(b); });
       delete r.lens; return r;
     });
-    rows.sort(function (a, b) { return a.name.localeCompare(b.name, 'ja', { numeric: true }); });
+    rows.sort(function (a, b) {
+      return a.block.localeCompare(b.block, 'ja', { numeric: true }) || a.name.localeCompare(b.name, 'ja', { numeric: true });
+    });
     return { rows: rows, total: rows.reduce(function (a, r) { return a + r.count; }, 0) };
   }
 
