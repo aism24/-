@@ -95,5 +95,10 @@
     return box;
   }
 
-  root.TruckViewer = { create: create };
+  /** pdf.js を先に読み込んでおく(取込一覧を開いたとき。原本を初めて開くときの待ち時間を減らす)。失敗しても何もしない */
+  function preload() {
+    loadPdfJs().then(function () { return fetch(BASE + 'pdf.worker.min.js'); }).catch(function () {});
+  }
+
+  root.TruckViewer = { create: create, preload: preload };
 })(typeof self !== 'undefined' ? self : this);
