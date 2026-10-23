@@ -716,6 +716,7 @@
     var prevBtn = cmStepButton(-1, '◀', '1か月前の締め月', goCm), nextBtn = cmStepButton(1, '▶', '1か月後の締め月', goCm);
     prevBtn.update(S.importsFy, S.importsCm, haveCl); nextBtn.update(S.importsFy, S.importsCm, haveCl);
     var cmNav = h('span', { class: 'cm-nav' }, prevBtn, cmSel, nextBtn);
+    requestAnimationFrame(function () { fitSelect(fySel); fitSelect(cmSel); }); // 年度・締め月のリストの幅を、選んでいる文字に合わせる(左右の空白を同じに)
     var siteSel = sel('現場名', S.importsSite, [['all', '全て(現場名)']].concat(siteList.map(function (n) { return [n, n]; })), function (v) { S.importsSite = v; });
     var shown = rows.slice(0, IMPORTS_SHOW);
     var cnt = '新しい順・該当' + rows.length + '件のうち最新' + shown.length + '件を表示(最大' + IMPORTS_SHOW + '件)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
@@ -731,6 +732,14 @@
     TruckViewer.preload(); prefetchFaxes(shown); // 原本をすぐ開けるよう、pdf.js と表の上の原本を先に読む
   }
 
+  /** リストの幅を、選んでいる項目の文字の幅+左右同じ余白+▼の幅にする(長い項目「すべての締め月」に引っぱられて、広くなりすぎないように) */
+  function fitSelect(sel) {
+    if (!sel.isConnected) return;
+    var cs = getComputedStyle(sel), cv = fitSelect.cv || (fitSelect.cv = document.createElement('canvas')), ctx = cv.getContext('2d');
+    ctx.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+    var opt = sel.options[sel.selectedIndex], tw = ctx.measureText(opt ? opt.text : '').width;
+    sel.style.width = Math.ceil(tw + 2 * 14 + 22) + 'px'; // 左右の余白14pxずつ+▼の場所22px
+  }
   /** データのある締め月(12,1,…,11の順)。fy='all' のときは、どの年度かにデータのある月 */
   function closingMonthsWithData(haveCl, fy) {
     return L.CLOSING_MONTH_ORDER.filter(function (m) {
