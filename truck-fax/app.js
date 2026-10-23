@@ -723,7 +723,7 @@
       h('button', { class: 'btn excel', type: 'button', text: '全件ダウンロード', onclick: downloadAllImports }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '締め月ダウンロード', onclick: openClosingDownload }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '卸日指定でダウンロード', onclick: openDateDownload })));
-    var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: LEFT_COLS.indexOf(k) >= 0 ? null : 'c', text: k })); }); head.appendChild(h('th', { text: '操作' }));
+    var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: LEFT_COLS.indexOf(k) >= 0 ? null : 'c', text: k })); }); // 「操作」の列は無い(行を押すと編集できる)
     var body = h('tbody');
     shown.forEach(function (r) { body.appendChild(importRow(r)); });
     host.appendChild(shown.length ? h('div', { class: 'scroll fitcols' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' }));
@@ -939,7 +939,6 @@
   function importRow(r) {
     var tr = h('tr', { class: 'pick' + (isBeforeRow(r) ? ' before' : '') }); // 行を押すと、その原本の行だけに絞り、下に原本を出す(ファイル名はリンクにしない)
     TABLE_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (LEFT_COLS.indexOf(k) >= 0 ? '' : ' c') }, importCellText(r, k))); });
-    tr.appendChild(h('td', { class: 'nowrap' }));
     tr.addEventListener('click', function () { openImportFile(r); });
     if (r.ファイルURL) { // マウスを0.15秒止めたら、押す前に原本を読み始める(表の上を通り過ぎただけの行は読まない)
       var hoverT = 0;
