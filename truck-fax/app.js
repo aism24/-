@@ -755,10 +755,12 @@
       h('button', { class: 'btn excel', type: 'button', text: '全件ダウンロード', onclick: downloadAllImports }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '締め月ダウンロード', onclick: openClosingDownload }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '卸日指定でダウンロード', onclick: openDateDownload })));
-    var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: LEFT_COLS.indexOf(k) >= 0 && k !== '備考' ? null : 'c', text: k })); }); // 備考は、見出しだけ中央揃え。「操作」の列は無い(行を押すと編集できる)
+    var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: 'c', text: k })); }); // 見出しは、どの列も中央揃え(2026-10-23、ユーザー指示)。「操作」の列は無い(行を押すと編集できる)
     var body = h('tbody');
     shown.forEach(function (r) { body.appendChild(importRow(r)); });
-    wrap.appendChild(shown.length ? h('div', { class: 'scroll fitcols' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' }));
+    var tbox = shown.length ? h('div', { class: 'scroll fitcols listbox' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' });
+    wrap.appendChild(tbox);
+    if (shown.length) requestAnimationFrame(fitListHeight); // 上の行(絞り込み・ボタン)と表の見出しは動かさず、表の中だけをスクロールする
     TruckViewer.preload(); prefetchFaxes(shown); // 原本をすぐ開けるよう、pdf.js と表の上の原本を先に読む
   }
 
@@ -804,7 +806,13 @@
   }
   /** 取込一覧の「変更前」の行か(表とExcelで、赤字・取り消し線にする) */
   function isBeforeRow(r) { return String(r && r.追加変更 != null ? r.追加変更 : '').trim() === '変更前'; }
-  function struckOf(list) { return { struck: list.map(isBeforeRow), leftCols: LEFT_COLS.concat(['ファイルURL']), centerHeads: ['備考'] }; } // Excelも、ファイル名・現場名(とファイルURL)は左揃え、他は中央揃え
+  function struckOf(list) { return { struck: list.map(isBeforeRow), leftCols: LEFT_COLS.concat(['ファイルURL']), centerHeads: LEFT_COLS.concat(['ファイルURL']) }; } // Excelも、ファイル名・現場名・備考(とファイルURL)の中身は左揃え、他は中央揃え。見出しはすべて中央揃え
+  /** 取込一覧の表の高さを、画面の下端までにする(表の中だけがスクロールし、見出しの行は上に残る) */
+  function fitListHeight() {
+    var box = document.querySelector('#tab-imports .listbox'); if (!box || !box.isConnected) return;
+    box.style.maxHeight = Math.max(240, window.innerHeight - box.getBoundingClientRect().top - 16) + 'px';
+  }
+  window.addEventListener('resize', fitListHeight);
 
   /** 入力欄の幅を、その列(同じ列の入力欄)でいちばん長い中身に合わせる。全角は1文字=1em、半角は0.6em。左右の余白は同じ。空欄でも3em */
   function textEm(v) { var w = 0; String(v || '').split('').forEach(function (c) { w += c.charCodeAt(0) > 0xff ? 1 : 0.6; }); return w; }
@@ -907,7 +915,7 @@
     saveBtn.style.display = 'none';
     function onChange() { saveBtn.style.display = dirty() ? '' : 'none'; if (dirty()) status.textContent = ''; }
 
-    var thead = h('tr'); thead.appendChild(h('th', { class: 'c', text: '#' })); cols.forEach(function (k) { thead.appendChild(h('th', { class: k === '現場名' ? null : 'c', text: k })); }); // 備考は、見出しだけ中央揃え
+    var thead = h('tr'); thead.appendChild(h('th', { class: 'c', text: '#' })); cols.forEach(function (k) { thead.appendChild(h('th', { class: 'c', text: k })); }); // 見出しは、どの列も中央揃え
     var tbody = h('tbody');
     drafts.forEach(function (e, i) {
       var tr = h('tr', { class: e.row._row === r._row ? 'hit' : null });
