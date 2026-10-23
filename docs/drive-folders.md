@@ -19,7 +19,7 @@ CLAUDE.md から分離(2026-10-21)。要点は CLAUDE.md の「引き継ぎ書�
 |---|---|---|
 | 生産損益分析アプリ(損益分岐。production-profit / sonekibunki) | https://drive.google.com/drive/folders/1Ly54tAkSLk5zFTmohHrj2thy7BNPTaWg | `1Ly54tAkSLk5zFTmohHrj2thy7BNPTaWg` |
 | 実行予算まとめアプリ(管理用スプレッドシート「実行予算」も同じフォルダ内。2026-09-29登録) | https://drive.google.com/drive/folders/1EwfXNOal_AdY6MzARgEGV_aKAcf6HjWN | `1EwfXNOal_AdY6MzARgEGV_aKAcf6HjWN` |
-| コストインサイト(cost-insight。原価管理・生産進捗分析。管理用スプレッドシート「コストインサイト」も同じフォルダ内。2026-10-01登録) | https://drive.google.com/drive/folders/1iB0Za-pfjZm3jfgyhQ4ktMkhEaCjivbO | `1iB0Za-pfjZm3jfgyhQ4ktMkhEaCjivbO` |
+| コストインサイト(cost-insight。原価管理・生産進捗分析。管理用スプレッドシート「コストインサイト」も同じフォルダ内。2026-10-01登録。引き継ぎ書のタイトルは「コストインサイト引き継ぎ書 YYYY-MM-DD 統合版 最新版(…)」。2026-10-23に第4版を作成し、最新は第4版(2026-10-23)) | https://drive.google.com/drive/folders/1iB0Za-pfjZm3jfgyhQ4ktMkhEaCjivbO | `1iB0Za-pfjZm3jfgyhQ4ktMkhEaCjivbO` |
 | 梁ロボ(tori-robo。鳥取梁ロボ管理。管理用スプレッドシート「鳥取梁ロボ管理データ」も同じフォルダ内。2026-10-02登録) | https://drive.google.com/drive/folders/1E0FH8FPtfcyyIK-lH0O-JC1I1vRCb5Iw | `1E0FH8FPtfcyyIK-lH0O-JC1I1vRCb5Iw` |
 | リンク付き出荷リスト(shipping-list-link。出荷リストPDFの製品名に実寸法師へのハイパーリンクを付与。元PDF・リンク表・記録シート「PDFに図番ハイパーリンク付与」も同じフォルダ内。2026-10-05登録。引き継ぎ書のGoogleドキュメントのタイトルは「リンク付き出荷リスト」) | https://drive.google.com/drive/folders/1vekpzwfn-W0MqRyWWYzWdS4A6jp2bEt3 | `1vekpzwfn-W0MqRyWWYzWdS4A6jp2bEt3` |
 | アプリランチャー(app-launcher。アプリ一覧・検索。管理用スプレッドシート「アプリ一Launcher」も同じフォルダ内。引き継ぎ書のGoogleドキュメントのタイトルは「アプリランチャー引き継ぎ書 (vN) 最新版」。2026-10-05登録) | https://drive.google.com/drive/folders/1wjoBjlZ4lzCt7weocczUVRfjZV4axbpX | `1wjoBjlZ4lzCt7weocczUVRfjZV4axbpX` |
