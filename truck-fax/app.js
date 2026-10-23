@@ -13,7 +13,7 @@
   var IMPORTS_SHOW = 100;
   var VIEW_HEADERS = IMPORT_HEADERS.filter(function (k) { return k !== 'タイムスタンプ'; }); // 画面・Excelに出す列
   var TABLE_HEADERS = VIEW_HEADERS.filter(function (k) { return k !== '工事番号'; }); // 取込一覧の表に出す列(工事番号は出さず、現場名=工事名を出す。Excelには両方入る)
-  var CENTER_COLS = ['手配業者', '積日', '卸日', '着時間', '車種', '追加変更']; // 中央揃え(幅は中身に合わせて詰める)
+  var LEFT_COLS = ['ファイル名', '現場名']; // 取込一覧の表で左揃えにする列。他の列は中央揃え(列の幅は、どれも中身に合わせて詰める。2026-10-23、ユーザー指示)
   var OTHER = 'その他'; // 工事に該当しないもの。工事番号・現場名の両方に「その他」と記録する
   var MAX_BYTES = 10 * 1024 * 1024;
 
@@ -723,10 +723,10 @@
       h('button', { class: 'btn excel', type: 'button', text: '全件ダウンロード', onclick: downloadAllImports }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '締め月ダウンロード', onclick: openClosingDownload }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '卸日指定でダウンロード', onclick: openDateDownload })));
-    var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: CENTER_COLS.indexOf(k) >= 0 ? 'c fit' : null, text: k })); }); head.appendChild(h('th', { text: '操作' }));
+    var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: LEFT_COLS.indexOf(k) >= 0 ? null : 'c', text: k })); }); head.appendChild(h('th', { text: '操作' }));
     var body = h('tbody');
     shown.forEach(function (r) { body.appendChild(importRow(r)); });
-    host.appendChild(shown.length ? h('div', { class: 'scroll' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' }));
+    host.appendChild(shown.length ? h('div', { class: 'scroll fitcols' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' }));
     TruckViewer.preload(); prefetchFaxes(shown); // 原本をすぐ開けるよう、pdf.js と表の上の原本を先に読む
   }
 
@@ -764,8 +764,30 @@
   }
   /** 取込一覧の「変更前」の行か(表とExcelで、赤字・取り消し線にする) */
   function isBeforeRow(r) { return String(r && r.追加変更 != null ? r.追加変更 : '').trim() === '変更前'; }
-  function struckOf(list) { return { struck: list.map(isBeforeRow) }; }
+  function struckOf(list) { return { struck: list.map(isBeforeRow), leftCols: LEFT_COLS.concat(['ファイルURL']) }; } // Excelも、ファイル名・現場名(とファイルURL)は左揃え、他は中央揃え
 
+  /** 入力欄の幅を、その列(同じ列の入力欄)でいちばん長い中身に合わせる。全角は1文字=1em、半角は0.6em。左右の余白は同じ。空欄でも3em */
+  function textEm(v) { var w = 0; String(v || '').split('').forEach(function (c) { w += c.charCodeAt(0) > 0xff ? 1 : 0.6; }); return w; }
+  function fitInput(inp) {
+    var td = inp.closest('td'), table = inp.closest('table');
+    var list = [inp];
+    if (td && table) { var col = td.cellIndex; list = Array.prototype.slice.call(table.querySelectorAll('tbody tr')).map(function (tr) { return tr.cells[col] && tr.cells[col].querySelector('input'); }).filter(Boolean); }
+    var w = Math.max.apply(null, list.map(function (x) { return textEm(x.value || x.placeholder); }));
+    var css = 'calc(' + Math.max(3, w + 1.2).toFixed(1) + 'em + 12px)';
+    list.forEach(function (x) { x.style.width = css; });
+  }
+  /** 表の中の入力欄・リストの幅を、列ごとにそろえる(表を画面に出したあとに呼ぶ) */
+  function fitTableControls(table) {
+    table.querySelectorAll('tbody tr:first-child input').forEach(fitInput);
+    var heads = table.querySelectorAll('tbody tr:first-child select');
+    heads.forEach(function (s0) {
+      var col = s0.closest('td').cellIndex;
+      var sels = Array.prototype.slice.call(table.querySelectorAll('tbody tr')).map(function (tr) { return tr.cells[col] && tr.cells[col].querySelector('select'); }).filter(Boolean);
+      sels.forEach(function (x) { x.style.width = ''; });
+      var w = Math.max.apply(null, sels.map(function (x) { return x.offsetWidth; }));
+      if (w > 0) sels.forEach(function (x) { x.style.width = w + 'px'; });
+    });
+  }
   /** 取込一覧の1つのセルの編集用の入力欄。d=その行の編集中の内容。内容が変わったら onChange を呼ぶ */
   function importEditControl(k, d, onChange) {
     if (k === '現場名') { // 現場名(工事名)の欄で、工事を選び直せる。選ぶと、工事番号も合わせて保存する
@@ -786,9 +808,18 @@
       ls.addEventListener('change', function () { d.追加変更 = ls.value; onChange(); });
       return ls;
     }
-    var inp = h('input', { value: d[k], 'aria-label': k, size: String(Math.max(4, String(d[k]).length + 2)) });
-    inp.addEventListener('input', function () { d[k] = inp.value; onChange(); });
-    inp.addEventListener('change', function () { var v = normField(k, inp.value); inp.value = v; d[k] = v; onChange(); });
+    if (k === '積日' || k === '卸日') { // m/d で表示・入力する(年は元の値の年。保存するのは 2026/10/20 の形)
+      var year = (L.dateKey(d[k]) || L.dateKey(d.積日) || String(new Date().getFullYear())).slice(0, 4);
+      var di = h('input', { value: importCellText(d, k), 'aria-label': k + '(m/d)', placeholder: 'm/d' });
+      fitInput(di);
+      di.addEventListener('input', function () { d[k] = L.normDate(di.value, +year) || di.value; fitInput(di); onChange(); });
+      di.addEventListener('change', function () { if (L.dateKey(d[k])) di.value = importCellText(d, k); fitInput(di); onChange(); });
+      return di;
+    }
+    var inp = h('input', { value: d[k], 'aria-label': k });
+    fitInput(inp);
+    inp.addEventListener('input', function () { d[k] = inp.value; fitInput(inp); onChange(); });
+    inp.addEventListener('change', function () { var v = normField(k, inp.value); inp.value = v; d[k] = v; fitInput(inp); onChange(); });
     return inp;
   }
 
@@ -836,12 +867,12 @@
     saveBtn.style.display = 'none';
     function onChange() { saveBtn.style.display = dirty() ? '' : 'none'; if (dirty()) status.textContent = ''; }
 
-    var thead = h('tr'); thead.appendChild(h('th', { text: '#' })); cols.forEach(function (k) { thead.appendChild(h('th', { text: k })); });
+    var thead = h('tr'); thead.appendChild(h('th', { class: 'c', text: '#' })); cols.forEach(function (k) { thead.appendChild(h('th', { class: k === '現場名' ? null : 'c', text: k })); });
     var tbody = h('tbody');
     drafts.forEach(function (e, i) {
       var tr = h('tr', { class: e.row._row === r._row ? 'hit' : null });
       tr.appendChild(h('td', { class: 'num', text: String(i + 1) }));
-      cols.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' }, importEditControl(k, e.d, onChange))); });
+      cols.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (k === '現場名' ? '' : ' c') }, importEditControl(k, e.d, onChange))); }); // 現場名だけ左揃え、他は中央揃え
       tbody.appendChild(tr);
     });
     var rowsTable = h('div', { class: 'scroll faxrows' }, h('table', { class: 't' }, h('thead', null, thead), tbody));
@@ -858,7 +889,9 @@
 
     /** 原本の表示の高さを、画面の下端までにする */
     function fitPane() {
-      var v = holder.querySelector('.viewer'); if (!v || !el.isConnected) return;
+      if (!el.isConnected) return;
+      if (!me.fitted) { fitTableControls(rowsTable.querySelector('table')); me.fitted = true; } // 画面に出してから、列ごとに幅をそろえる(1回だけ)
+      var v = holder.querySelector('.viewer'); if (!v) return;
       v.style.height = Math.max(340, window.innerHeight - v.getBoundingClientRect().top - 16) + 'px';
     }
     async function tryClose() {
@@ -905,7 +938,7 @@
 
   function importRow(r) {
     var tr = h('tr', { class: 'pick' + (isBeforeRow(r) ? ' before' : '') }); // 行を押すと、その原本の行だけに絞り、下に原本を出す(ファイル名はリンクにしない)
-    TABLE_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (CENTER_COLS.indexOf(k) >= 0 ? ' c fit' : '') }, importCellText(r, k))); });
+    TABLE_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (LEFT_COLS.indexOf(k) >= 0 ? '' : ' c') }, importCellText(r, k))); });
     tr.appendChild(h('td', { class: 'nowrap' }));
     tr.addEventListener('click', function () { openImportFile(r); });
     if (r.ファイルURL) { // マウスを0.15秒止めたら、押す前に原本を読み始める(表の上を通り過ぎただけの行は読まない)
