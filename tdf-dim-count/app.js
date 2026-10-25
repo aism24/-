@@ -37,12 +37,12 @@
   window.addEventListener('dragenter', function (e) { e.preventDefault(); if (!started()) return; depth++; document.body.classList.add('dragging'); });
   window.addEventListener('dragover', function (e) { e.preventDefault(); });
   window.addEventListener('dragleave', function () { if (--depth <= 0) { depth = 0; document.body.classList.remove('dragging'); } });
-  window.addEventListener('drop', function (e) { e.preventDefault(); depth = 0; document.body.classList.remove('dragging'); if (!started()) return; load(e.dataTransfer.files[0]); });
+  window.addEventListener('drop', function (e) { e.preventDefault(); depth = 0; document.body.classList.remove('dragging'); if (!started()) return; var f = e.dataTransfer.files[0]; if (f && !/\.tdf$/i.test(f.name)) { alert('TDFファイル(.tdf)を選んでください: ' + f.name); return; } load(f); });
   file.onchange = function () { load(file.files[0]); };
   layerEl.onchange = render;
   xlsxBtn.onclick = download;
   document.getElementById('reset').onclick = function () {
-    cur = null; last = null; width = 0; setMode(1);
+    cur = null; width = 0; setMode(1);
     file.value = '';
     info.textContent = '';
     layerEl.innerHTML = '<option value="">（先にTDFを選んでください）</option>';
@@ -57,6 +57,8 @@
   function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
   var card2 = document.getElementById('card2');
   function reset(msg) { card2.classList.remove('alert'); ttlEl.textContent = ''; last = null; xlsxBtn.disabled = true; out.className = 'small'; out.innerHTML = msg; }
+
+  function fail(msg) { reset('<span class="warn">読み込みに失敗しました: ' + esc(msg) + '</span>'); }
 
   function load(f) {
     if (!f) return;
@@ -73,10 +75,11 @@
         }).join('');
         layerEl.disabled = false;
         reset('レイヤを選ぶと表示されます');
-        var gen = cur.choices.filter(function (c) { return c.name === 'GEN'; })[0];
+        var gen = cur.choices.filter(function (c) { return c.name === TdfDim.DEFAULT_LAYER; })[0];
         if (gen) { layerEl.value = gen.no; render(); }
-      } catch (e) { reset('<span class="warn">読み込みに失敗しました: ' + esc(e.message || e) + '</span>'); }
+      } catch (e) { fail(e.message || e); }
     };
+    r.onerror = function () { fail(r.error ? r.error.message : 'ファイルを読めませんでした'); };
     r.readAsArrayBuffer(f);
   }
 
@@ -96,8 +99,8 @@
       h += '<div class="small c">' + (s.ng.length ? '一致する寸法がありません(数値テキストはすべて、テキストの数と線の本数が不一致です)' : 'このレイヤには、数値テキストがありません') + '</div>';
     } else if (!g) {
       h += '<table><tr><th>テキスト(寸法)</th><th>線の本数</th></tr>';
-      s.rows.forEach(function (r) { h += '<tr><td class="c">' + esc(r.text) + '</td><td class="c' + (r.count ? '' : ' warn') + '">' + r.count + '</td></tr>'; });
-      h += '<tr><th>合計(' + s.textCount + '種類・線は重複なし)</th><th style="text-align:center">' + s.total + '</th></tr></table>';
+      s.rows.forEach(function (r) { h += '<tr><td class="c">' + esc(r.text) + '</td><td class="c">' + r.count + '</td></tr>'; });
+      h += '<tr><th>合計(' + s.types + '種類・線は重複なし)</th><th style="text-align:center">' + s.total + '</th></tr></table>';
     } else {
       h += '<table><tr><th>手配長さ</th><th>範囲</th><th>本数</th><th>元のテキスト</th></tr>';
       g.groups.forEach(function (x) { h += '<tr><td class="c">' + tehai(x.rep) + '</td><td class="c">' + x.min.toFixed(1) + '〜' + x.max.toFixed(1) + '</td><td>' + x.count + '</td><td style="text-align:left">' + esc(x.texts.join('、')) + '</td></tr>'; });
@@ -108,9 +111,14 @@
       s.ng.forEach(function (r) { h += '<tr><td class="c">' + esc(r.text) + '</td><td class="c">' + r.textCount + '</td><td class="c">' + r.lineCount + '</td></tr>'; });
       h += '</table></div>';
     }
+    showOut(h, s.rows.length > 0);
+  }
+
+  // 集計テーブルを出す。has=出力できる行があるか(なければExcelボタンを無効にし、②のカードを点滅させる)
+  function showOut(h, has) {
     out.className = ''; out.innerHTML = h; setS3();
-    xlsxBtn.disabled = !s.rows.length;
-    card2.classList.toggle('alert', !s.rows.length);
+    xlsxBtn.disabled = !has;
+    card2.classList.toggle('alert', !has);
   }
 
   // rows はブロック順(core.js の blockNames)。i がブロックの最後の行なら、そのブロックの種類数・本数を返す
@@ -138,9 +146,7 @@
       });
       h += '<tr><th colspan="2">合計(' + b.rows.length + '種類)</th><th style="text-align:center">' + b.total + '</th><th></th><th></th></tr></table>';
     }
-    out.className = ''; out.innerHTML = h; setS3();
-    xlsxBtn.disabled = !b.rows.length;
-    card2.classList.toggle('alert', !b.rows.length);
+    showOut(h, b.rows.length > 0);
   }
 
   // 更新履歴: スプレッドシートのシート「更新履歴」A:C(更新履歴|内容|状況)をGASから読んでポップアップに出す
@@ -154,6 +160,7 @@
   }
   document.getElementById('histBtn').onclick = function () {
     histEl.classList.add('on'); histBody.textContent = '読み込み中…';
+    if (!GAS_URL) { histBody.textContent = '更新履歴を読み込めませんでした'; return; }
     fetch(GAS_URL + '?action=history').then(function (r) { return r.json(); }).then(function (j) {
       if (j.status !== 'success' || !Array.isArray(j.data)) throw new Error(j.message || '');
       showHist(j.data);
@@ -205,12 +212,7 @@
       wn['!cols'] = [{ wch: 36 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 12 }];
       XLSX.utils.book_append_sheet(wb, wn, '不一致(対象外)');
     }
-    var buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-    var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = last.name.replace(/\.tdf$/i, '') + '_' + last.layer + '_寸法本数.xlsx';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    saveBook(wb, last.name.replace(/\.tdf$/i, '') + '_' + last.layer + '_寸法本数.xlsx');
     logDownload(last.name, last.layer, last.s.total);
   }
 
@@ -221,6 +223,8 @@
     a.href = URL.createObjectURL(blob);
     a.download = fileName;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    // 保存が始まってから一時URLを解放する(すぐ解放すると保存に失敗するブラウザがある)
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 10000);
   }
 
   function downloadBlocks() {

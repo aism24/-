@@ -15,7 +15,7 @@ function actual(f, layer) {
   const p = load(f);
   const L = C.allLayers(p).find(l => l.name === layer);
   const s = C.summarize(p, L.no);
-  const r = { layerNo: L.no, types: s.textCount, total: s.total, rows: s.rows.map(x => x.text + ':' + x.count), ng: s.ng.map(x => x.text + ':' + x.textCount + '/' + x.lineCount) };
+  const r = { layerNo: L.no, types: s.types, total: s.total, rows: s.rows.map(x => x.text + ':' + x.count), ng: s.ng.map(x => x.text + ':' + x.textCount + '/' + x.lineCount) };
   [10, 20, 30].forEach(n => { const g = C.groupLengths(p, L.no, n); r['group' + n] = g.groups.length + '/' + g.total; });
   // ②ブロック分け製品名(expected に blocks がある項目だけ)
   const b = C.blockNames(p, L.no);
