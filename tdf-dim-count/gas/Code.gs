@@ -12,10 +12,10 @@
  *
  * セットアップ: スプレッドシートの「拡張機能→Apps Script」にこのコードを貼り付け、
  * 「デプロイ→デプロイを管理→編集→バージョン: 新バージョン→デプロイ」(URLは変わらない)。
- * 反映の確認: /exec?action=ping を開くと CODE_VERSION が返る。
+ * 反映の確認: /exec をブラウザで開くと CODE_VERSION(version)が返る。
  * 更新履歴: /exec?action=history で、シート「更新履歴」のA:C(更新履歴|内容|状況)の空でない行を返す(1行目は見出し)。
  */
-const CODE_VERSION = '2026-10-26-history';
+const CODE_VERSION = '2026-10-26-optimize';
 const SHEET_NAME = '記録';
 const META_KEY = 'tdfSession';
 const HISTORY_SHEET = '更新履歴';
@@ -63,6 +63,20 @@ function clearMeta_(sh, row) {
   sh.getRange(row + ':' + row).getDeveloperMetadata().forEach(function (m) { if (m.getKey() === META_KEY) m.remove(); });
 }
 
+// row の位置に空の行を作る(after=true なら row の下に入れて row+1)。入れた行番号を返す
+function insertBlank_(sh, row, after) {
+  if (after) { sh.insertRowAfter(row); row++; } else sh.insertRowBefore(row);
+  clearMeta_(sh, row);
+  sh.getRange(row, 1, 1, 5).clearContent();
+  return row;
+}
+
+// 「=」「+」「-」「@」で始まる文字列は、シートで数式として扱われないよう先頭に ' を付ける
+function plain_(v, max) {
+  const s = String(v || '').slice(0, max);
+  return /^[=+\-@]/.test(s) ? "'" + s : s;
+}
+
 function sid_(sessionId) {
   return String(sessionId || '').replace(/[^0-9a-z]/gi, '').slice(0, 40);
 }
@@ -73,9 +87,7 @@ function logOpen_(sessionId) {
   lock.waitLock(10000);
   try {
     const sh = sheet_();
-    sh.insertRowBefore(2); // 常に2行目が最新の起動
-    clearMeta_(sh, 2);
-    sh.getRange(2, 1, 1, 5).clearContent();
+    insertBlank_(sh, 2, false); // 常に2行目が最新の起動
     sh.getRange(2, 1).setValue(new Date()).setNumberFormat('yyyy/mm/dd hh:mm:ss');
     if (sid) sh.getRange('2:2').addDeveloperMetadata(META_KEY, sid);
     return { row: 2 };
@@ -90,7 +102,7 @@ function logDownload_(sessionId, fileName, layer, total) {
   lock.waitLock(10000);
   try {
     const sh = sheet_();
-    const vals = [new Date(), String(fileName || '').slice(0, 200), String(layer || '').slice(0, 100), Number(total) || 0];
+    const vals = [new Date(), plain_(fileName, 200), plain_(layer, 100), Number(total) || 0];
     let row = 0, openAt = '';
     if (sid) {
       const found = sh.createDeveloperMetadataFinder().withKey(META_KEY).withValue(sid).find();
@@ -100,17 +112,11 @@ function logDownload_(sessionId, fileName, layer, total) {
       if (sh.getRange(row, 2).getValue() !== '') {
         // 同じ起動で2回目以降: 起動の行のすぐ下に入れる
         openAt = sh.getRange(row, 1).getValue();
-        sh.insertRowAfter(row);
-        row++;
-        clearMeta_(sh, row);
-        sh.getRange(row, 1, 1, 5).clearContent();
+        row = insertBlank_(sh, row, true);
         sh.getRange(row, 1).setValue(openAt).setNumberFormat('yyyy/mm/dd hh:mm:ss');
       }
     } else {
-      sh.insertRowBefore(2);
-      row = 2;
-      clearMeta_(sh, row);
-      sh.getRange(row, 1, 1, 5).clearContent();
+      row = insertBlank_(sh, 2, false);
     }
     sh.getRange(row, 2, 1, 4).setValues([vals]);
     sh.getRange(row, 2).setNumberFormat('yyyy/mm/dd hh:mm:ss');

@@ -11,7 +11,6 @@
   var DEFAULT_LAYER = 'GEN';
 
   function okHeader(dv, rs) {
-    if (rs < 0) return false;
     var x = dv.getFloat64(rs + 4, true), y = dv.getFloat64(rs + 12, true), h = dv.getFloat64(rs + 20, true),
       w = dv.getFloat64(rs + 28, true), r = dv.getFloat64(rs + 36, true);
     return Math.abs(x) < 1e7 && Math.abs(y) < 1e7 && h > 0 && h < 5000 && Math.abs(w) < 5000 && Math.abs(r) < 10;
@@ -37,7 +36,7 @@
     var sig = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
     for (var k = 0; k < 8; k++) if (u8[k] !== sig[k]) return buf;
     var dv = new DataView(buf);
-    var ss = 1 << dv.getUint16(30, true), mss = 1 << dv.getUint16(32, true);
+    var ss = 1 << dv.getUint16(30, true);
     var nFat = dv.getUint32(44, true), dirStart = dv.getUint32(48, true);
     var difStart = dv.getUint32(68, true), nDif = dv.getUint32(72, true);
     var END = 0xfffffffe;
@@ -110,8 +109,7 @@
         var x1 = dv.getFloat64(i + 24, true), y1 = dv.getFloat64(i + 32, true);
         var x2 = dv.getFloat64(i + 40, true), y2 = dv.getFloat64(i + 48, true);
         if (Math.abs(x1) < 1e6 && Math.abs(y1) < 1e6 && Math.abs(x2) < 1e6 && Math.abs(y2) < 1e6) {
-          lines.push({ length: Math.hypot(x2 - x1, y2 - y1), angle: Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI,
-            layer: lineLayer(u8, dv, i) });
+          lines.push({ length: Math.hypot(x2 - x1, y2 - y1), layer: lineLayer(u8, dv, i) });
         }
       }
       // テキスト(マーカー 00 N 2N 00)。文字列を持つ「本体」と、同じid_fieldを指すだけの「参照」がある
@@ -128,7 +126,7 @@
         for (var k = rs + 52; k < rs + 900 && k < n - 3; k++) { if (isTag(u8, k)) { lay = u8[k + 2]; break; } }
         // 後方に印がない(ファイル末尾に近い)場合は、直前100バイト内の最後の印を使う(2026-10-14、TBの7020.2で確認)
         if (lay < 0) { for (var q = rs - 4; q >= rs - 100 && q >= 0; q--) { if (isTag(u8, q)) { lay = u8[q + 2]; break; } } }
-        var rec = { text: tx, rot: dv.getFloat64(rs + 36, true) * 180 / Math.PI, layer: lay, id: dv.getUint32(rs + 48, true),
+        var rec = { text: tx, layer: lay, id: dv.getUint32(rs + 48, true),
           x: dv.getFloat64(rs + 4, true), y: dv.getFloat64(rs + 12, true) };
         if (tx !== null) { texts.push(rec); if (!(rec.id in bodyById)) bodyById[rec.id] = tx; } else cands.push(rec);
       }
@@ -178,7 +176,7 @@
     var rows = all.filter(function (x) { return x.ok; }).map(function (x) { return { text: x.text, count: x.lineCount }; });
     var ng = all.filter(function (x) { return !x.ok; }).map(function (x) { return { text: x.text, textCount: x.textCount, lineCount: x.lineCount }; });
     var total = rows.reduce(function (a, r) { return a + r.count; }, 0);
-    return { rows: rows, ng: ng, total: total, textCount: rows.length };
+    return { rows: rows, ng: ng, total: total, types: rows.length };
   }
 
   // 長さを±N(mm)でまとめる。代表の長さ=本数が最も多い長さ(0.1mm単位。同数なら±N内の本数が多い方、さらに小さい方)。

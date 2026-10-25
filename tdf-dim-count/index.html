@@ -3,11 +3,9 @@
 <title>実寸データより長さと本数集計</title>
 <style>
 body{font-family:system-ui,"Yu Gothic",sans-serif;margin:0;padding:16px;background:#3b3f45;color:#222}
-h1{font-size:20px;margin:0 0 4px}.sub{color:#666;font-size:13px;margin-bottom:14px}
+h1{font-size:20px;margin:0 0 4px}
 .card{background:#fff;border-radius:8px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px #0002}
 select{padding:6px 8px;font-size:15px;min-width:220px}
-#drop{border:2px dashed #8a9bb5;border-radius:8px;padding:28px;text-align:center;color:#556;cursor:pointer}
-#drop.over{background:#e8f0fe}
 table{border-collapse:collapse;width:100%;max-width:520px}th,td{border:1px solid #ccd;padding:6px 10px;text-align:right}
 th{background:#eef1f6}td:first-child,th:first-child{text-align:left}
 .warn{color:#b00}button{padding:7px 14px;font-size:14px;cursor:pointer;margin-right:6px}
@@ -32,7 +30,7 @@ body.dragging #overlay{display:flex}
 @media(max-width:760px){.row{grid-template-columns:auto;justify-items:center}header{grid-template-columns:1fr;justify-items:center}#brand,#hleft{justify-self:center}}
 .row{display:grid;grid-template-columns:210px 1fr;justify-content:stretch;align-items:center;column-gap:14px;row-gap:6px}.ctl{display:flex;align-items:center;gap:12px}.row .step{text-align:left;white-space:nowrap}
 .row .step,.row .small{margin:0}.c{text-align:center}
-#out table{margin:8px auto 0;width:auto}#out th,#out td{white-space:nowrap}#out tr:first-child th{text-align:center}#out td.c{text-align:center}#out b{display:block;text-align:center}
+#out table{margin:8px auto 0;width:auto}#out th,#out td{white-space:nowrap}#out tr:first-child th{text-align:center}#out td.c{text-align:center}
 #hleft{justify-self:start;display:flex;align-items:center;gap:8px}#hleft button{white-space:nowrap}#reset{margin:0}
 #xlsx{background:#27ae60;color:#fff;font-weight:700;border:1px solid #1e8449;border-radius:4px}
 #xlsx:disabled{background:#c8c8c8;color:#fff;border-color:#b0b0b0;opacity:1;cursor:not-allowed}
@@ -80,9 +78,10 @@ body.dragging #overlay{display:flex}
 <div id="out" class="small c">レイヤを選ぶと表示されます</div></div>
 </div>
 </main>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="core.js?v=r35"></script>
-<script src="app.js?v=r35"></script>
+<!-- Excel出力用。ダウンロード時にしか使わないので defer(読み込み待ちで画面の起動を止めない) -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="core.js?v=r36"></script>
+<script src="app.js?v=r36"></script>
 <script>
 (function(){var N=8,i=1,m=document.getElementById('manual'),img=document.getElementById('mimg'),pg=document.getElementById('mpg'),pv=document.getElementById('mprev'),nx=document.getElementById('mnext');
 function show(n){i=Math.max(1,Math.min(N,n));img.src='manual/p-'+i+'.jpg';pg.textContent=i+' / '+N;pv.disabled=i===1;nx.disabled=i===N}
