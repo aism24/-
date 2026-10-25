@@ -240,6 +240,9 @@ var App = {
   },
 
   init: function () {
+    // 利用記録(画面には何も出さない)。起動ごとの目印で、起動の行とPDFダウンロードを結び付ける
+    App.sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    callServer('logAppLaunch', App.sessionId).catch(function () {});
     App.master = Store.get('master');
     App.loadMaster();
     App.prefetchWeights();
@@ -2087,7 +2090,7 @@ var KekkaBunseki = {
       document.body.appendChild(a);
       a.click();
       setTimeout(function () { a.remove(); URL.revokeObjectURL(url); }, 3000);
-      callServer('logPdfDownload', pdfName).catch(function () {});
+      callServer('logPdfDownload', pdfName, App.sessionId).catch(function () {});
     }).catch(function (err) {
       hideLoading();
       showToast('PDF作成失敗: ' + (err.message || err));

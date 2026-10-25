@@ -2,7 +2,7 @@
 
 画面（静的サイト）はVercel、データ処理はGAS（`gas/Code.gs`をWebアプリ化したJSON API）。
 - `config.js` の `GAS_API_URL` にGASの `/exec` URLを設定する。
-- データ: 「社内不具合アプリVercel版」スプレッドシート（情報・記録シート）。PDF保存時に「記録」シートへ追記。
+- データ: 「社内不具合アプリVercel版」スプレッドシート（情報・記録シート）。「記録」シートに利用記録(A=アプリ起動日時・B=タイムスタンプ・C=ファイル名。2行目が最新。起動時に2行目へ行を入れてAを書き、PDFダウンロード時に同じ起動の行のB:Cを書く。同じ起動で2回目以降は上書き。起動の行は行の開発者メタデータ(見えない)で探す)。
 - Gemini: モデル `gemini-3.5-flash-lite` 固定。APIキーは情報シートの項目名「APIKEY」の行(行位置は問わない。現在はB5)。
 - Vercel: Root Directory=`huguai`、Framework=Other。`vercel.json`で自動デプロイ停止（公開は `create_deployment`）。
 
