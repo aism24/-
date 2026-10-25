@@ -7,6 +7,7 @@
   var cur = null, last = null, width = 0, mode = 1;
   var modeEl = document.getElementById('modebtns'), segWrap = document.getElementById('seg');
   var segEl = document.getElementById('segbtns'), ttlEl = document.getElementById('ttl');
+  var condEl = document.querySelector('#cond .condtxt');
   function setHH() { document.documentElement.style.setProperty('--hh', document.querySelector('header').offsetHeight + 'px'); }
   function setS3() { document.documentElement.style.setProperty('--s3h', document.getElementById('sticky3').offsetHeight + 'px'); }
   setHH(); setS3(); window.addEventListener('resize', function () { setHH(); setS3(); });
@@ -20,6 +21,7 @@
     mode = m;
     Array.prototype.forEach.call(modeEl.children, function (b) { b.classList.toggle('on', parseInt(b.dataset.m, 10) === mode); });
     segWrap.style.display = mode === 2 ? 'none' : '';
+    condEl.textContent = mode === 2 ? 'リスト化条件＝レイヤの完全一致' : '集計抽出条件＝レイヤの完全一致、数値と寸法線の完全一致';
   }
   Array.prototype.forEach.call(modeEl.children, function (b) { b.onclick = function () { setMode(parseInt(b.dataset.m, 10)); render(); }; });
   // 起動画面: 集計方法を選ぶまでは手順①〜③を出さない。選んだら通常の画面へ
