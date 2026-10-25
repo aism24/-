@@ -623,3 +623,4 @@
 
 - **リファクタの回帰確認は「画面+Excelの中身」を変更前後で丸ごと突き合わせる(tdf-dim-count、2026-10-26)**: 変更前のmainを `git archive` で取り出し、Playwright(file://で開き、GASへの通信は `page.route` で偽の応答)で全操作(TDF4件×まとめ幅4種+②+リセット)の `#out` のHTML・ボタンの状態・ダウンロードしたExcelの全シート(XLSX.readで読む)・ファイル名・送信した記録を保存→変更後と比較。65場面すべて一致を確認してからマージした。GASはシートのモック(配列+行に付く目印)で同じ操作列を流して比較。
 - **ダウンロード時にしか使わないCDNライブラリは `defer` にする(tdf-dim-count、2026-10-26)**: body末尾の通常の `<script>` だと、ライブラリの取得が終わるまで app.js が動かない。xlsx.full.min.js(約900KB)を4秒遅らせた模擬で、起動画面のボタンが押せるまで 4425ms→48ms。使う側は従来どおり `typeof XLSX === 'undefined'` なら警告。
+- **raw.githack はブラウザ(Playwright含む)で開くと案内画面が出る(2026-10-26)**: curl では本物のHTML(text/html)が返るが、Chromiumで開くと「External Content Notice | rawgit.hack」の画面になり、アプリの要素が見つからずテストが30秒で失敗した。自動の挙動確認は `git archive origin/main <フォルダ>` で取り出して file:// で開く(GASは `page.route` で偽の応答)。raw.githack はユーザーが目で見る用だけにする。
