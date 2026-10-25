@@ -143,6 +143,27 @@
     card2.classList.toggle('alert', !b.rows.length);
   }
 
+  // 更新履歴: スプレッドシートのシート「更新履歴」A:C(更新履歴|内容|状況)をGASから読んでポップアップに出す
+  var histEl = document.getElementById('hist'), histBody = document.getElementById('histbody');
+  function fmtDay(v) { var m = /^(\d{4})(\d{2})(\d{2})$/.exec(v); return m ? m[1] + '/' + m[2] + '/' + m[3] : v; }
+  function showHist(rows) {
+    if (!rows.length) { histBody.textContent = '更新履歴はまだありません'; return; }
+    var h = '<table><tr><th>更新日</th><th>内容</th><th>状況</th></tr>';
+    rows.forEach(function (r) { h += '<tr><td class="d">' + esc(fmtDay(r[0])) + '</td><td>' + esc(r[1]) + '</td><td>' + esc(r[2]) + '</td></tr>'; });
+    histBody.innerHTML = h + '</table>';
+  }
+  document.getElementById('histBtn').onclick = function () {
+    histEl.classList.add('on'); histBody.textContent = '読み込み中…';
+    fetch(GAS_URL + '?action=history').then(function (r) { return r.json(); }).then(function (j) {
+      if (j.status !== 'success' || !Array.isArray(j.data)) throw new Error(j.message || '');
+      showHist(j.data);
+    }).catch(function () { histBody.textContent = '更新履歴を読み込めませんでした'; });
+  };
+  function closeHist() { histEl.classList.remove('on'); }
+  document.getElementById('histclose').onclick = closeHist;
+  histEl.onclick = function (e) { if (e.target === histEl) closeHist(); };
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeHist(); });
+
   // 利用記録(画面には何も出さない。失敗しても作業は止めない)。起動ごとの目印 SESSION で、起動の行とダウンロードを結び付ける
   function logPost(data) {
     if (!GAS_URL) return;

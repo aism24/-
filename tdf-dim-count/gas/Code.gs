@@ -13,10 +13,12 @@
  * セットアップ: スプレッドシートの「拡張機能→Apps Script」にこのコードを貼り付け、
  * 「デプロイ→デプロイを管理→編集→バージョン: 新バージョン→デプロイ」(URLは変わらない)。
  * 反映の確認: /exec?action=ping を開くと CODE_VERSION が返る。
+ * 更新履歴: /exec?action=history で、シート「更新履歴」のA:C(更新履歴|内容|状況)の空でない行を返す(1行目は見出し)。
  */
-const CODE_VERSION = '2026-10-23-open-log';
+const CODE_VERSION = '2026-10-26-history';
 const SHEET_NAME = '記録';
 const META_KEY = 'tdfSession';
+const HISTORY_SHEET = '更新履歴';
 
 function doPost(e) {
   try {
@@ -29,9 +31,25 @@ function doPost(e) {
   }
 }
 
-// 動作確認用(ブラウザでURLを開くと応答する)
-function doGet() {
-  return json_({ status: 'success', data: 'tdf-dim-count log API', version: CODE_VERSION });
+// 動作確認用(ブラウザでURLを開くと応答する)。?action=history で更新履歴を返す
+function doGet(e) {
+  try {
+    if (e && e.parameter && e.parameter.action === 'history') return json_({ status: 'success', data: history_(), version: CODE_VERSION });
+    return json_({ status: 'success', data: 'tdf-dim-count log API', version: CODE_VERSION });
+  } catch (err) {
+    return json_({ status: 'error', message: err.message });
+  }
+}
+
+// シート「更新履歴」A:C の表示値。空行は飛ばして上から順に返す
+function history_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HISTORY_SHEET);
+  if (!sh) throw new Error('シート「' + HISTORY_SHEET + '」がありません');
+  const last = sh.getLastRow();
+  if (last < 2) return [];
+  return sh.getRange(2, 1, last - 1, 3).getDisplayValues()
+    .filter(function (r) { return r.join('').trim() !== ''; })
+    .map(function (r) { return [r[0].trim(), r[1].trim(), r[2].trim()]; });
 }
 
 function sheet_() {
