@@ -11,7 +11,7 @@
  */
 
 /** デプロイ後に doPost の ping で反映を確認するための版表記(コードを変えたら更新する) */
-var CODE_VERSION = '2026-10-21-edit-keep';
+var CODE_VERSION = '2026-10-25-launch-log';
 
 var CONFIG_SHEET_NAME = '情報';
 var DATA_SHEET = '不具合記録';
@@ -42,7 +42,8 @@ var API_FUNCTIONS = {
   getFilteredRecords: getFilteredRecords, getKekkaBunsekiContentRecords: getKekkaBunsekiContentRecords,
   getKekkaBunsekiBootstrap: getKekkaBunsekiBootstrap, getKekkaBunsekiYear: getKekkaBunsekiYear,
   getKekkaBunsekiMonth: getKekkaBunsekiMonth, getKekkaBunsekiByProject: getKekkaBunsekiByProject,
-  uploadPhoto: uploadPhoto, ocrProductName: ocrProductName, logPdfDownload: logPdfDownload,
+  uploadPhoto: uploadPhoto, ocrProductName: ocrProductName,
+  logAppLaunch: logAppLaunch, logPdfDownload: logPdfDownload,
   getProductionWeights: getProductionWeights, clearCache: clearCache,
   ping: function () { return { version: CODE_VERSION }; }
 };
@@ -66,11 +67,71 @@ function doPost(e) {
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
 
-/** PDFダウンロード記録: 「記録」シートに タイムスタンプ・ファイル名 を追記 */
-function logPdfDownload(filename) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('記録');
-  sheet.appendRow([Utilities.formatDate(new Date(), getConfig_().timezone, 'yyyy/MM/dd HH:mm:ss'), filename]);
-  return true;
+/*
+ * 利用記録: 「記録」シート A=アプリ起動日時 B=タイムスタンプ C=ファイル名。2行目が常に最新。
+ * 起動ごとに画面が作る目印(sessionId)を、行の開発者メタデータ(シート上には見えない)に付けて、
+ * PDFダウンロード時に起動の行を探して B:C を書く。同じ起動で2回目以降は B:C を上書きする。
+ */
+var LOG_SHEET = '記録';
+var LOG_META_KEY = 'huguaiSession';
+
+function logSheet_() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LOG_SHEET);
+  if (!sh) throw new Error('シート「' + LOG_SHEET + '」がありません');
+  return sh;
+}
+
+function logSid_(sessionId) {
+  return String(sessionId || '').replace(/[^0-9a-z]/gi, '').slice(0, 40);
+}
+
+function logNow_() {
+  return Utilities.formatDate(new Date(), getConfig_().timezone, 'yyyy/MM/dd HH:mm:ss');
+}
+
+/** 2行目に空の行を入れる(隣の行の目印が引き継がれていたら消す) */
+function logInsertTop_(sh) {
+  sh.insertRowBefore(2);
+  sh.getRange('2:2').getDeveloperMetadata().forEach(function (m) { if (m.getKey() === LOG_META_KEY) m.remove(); });
+  sh.getRange(2, 1, 1, 3).clearContent();
+}
+
+/** アプリ起動記録: 2行目に起動日時を入れる */
+function logAppLaunch(sessionId) {
+  var sid = logSid_(sessionId);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = logSheet_();
+    logInsertTop_(sh);
+    sh.getRange(2, 1).setValue(logNow_());
+    if (sid) sh.getRange('2:2').addDeveloperMetadata(LOG_META_KEY, sid);
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** PDFダウンロード記録: 起動の行の B:C に タイムスタンプ・ファイル名 を書く(起動の行が無ければ2行目に新しく入れ、Aは空) */
+function logPdfDownload(filename, sessionId) {
+  var sid = logSid_(sessionId);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = logSheet_();
+    var row = 0;
+    if (sid) {
+      var found = sh.createDeveloperMetadataFinder().withKey(LOG_META_KEY).withValue(sid).find();
+      if (found.length) row = found[0].getLocation().getRow().getRow();
+    }
+    if (!row) { logInsertTop_(sh); row = 2; }
+    var name = String(filename || '').slice(0, 200);
+    if (/^[=+\-@]/.test(name)) name = "'" + name; // 数式として扱われないように
+    sh.getRange(row, 2, 1, 2).setValues([[logNow_(), name]]);
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /** ===================== キャッシュ(データ版数方式) ===================== */
