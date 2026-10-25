@@ -22,13 +22,20 @@
     segWrap.style.display = mode === 2 ? 'none' : '';
   }
   Array.prototype.forEach.call(modeEl.children, function (b) { b.onclick = function () { setMode(parseInt(b.dataset.m, 10)); render(); }; });
+  // 起動画面: 集計方法を選ぶまでは手順①〜③を出さない。選んだら通常の画面へ
+  var startEl = document.getElementById('start'), workEl = document.getElementById('work');
+  function started() { return workEl.hidden === false; }
+  function showStart(on) { startEl.hidden = on === false; workEl.hidden = on !== false; if (on === false) setS3(); }
+  Array.prototype.forEach.call(document.getElementById('startbtns').children, function (b) {
+    b.onclick = function () { setMode(parseInt(b.dataset.m, 10)); showStart(false); };
+  });
 
   openBtn.onclick = function () { file.click(); };
   var depth = 0;
-  window.addEventListener('dragenter', function (e) { e.preventDefault(); depth++; document.body.classList.add('dragging'); });
+  window.addEventListener('dragenter', function (e) { e.preventDefault(); if (!started()) return; depth++; document.body.classList.add('dragging'); });
   window.addEventListener('dragover', function (e) { e.preventDefault(); });
   window.addEventListener('dragleave', function () { if (--depth <= 0) { depth = 0; document.body.classList.remove('dragging'); } });
-  window.addEventListener('drop', function (e) { e.preventDefault(); depth = 0; document.body.classList.remove('dragging'); load(e.dataTransfer.files[0]); });
+  window.addEventListener('drop', function (e) { e.preventDefault(); depth = 0; document.body.classList.remove('dragging'); if (!started()) return; load(e.dataTransfer.files[0]); });
   file.onchange = function () { load(file.files[0]); };
   layerEl.onchange = render;
   xlsxBtn.onclick = download;
@@ -40,6 +47,7 @@
     layerEl.disabled = true;
     Array.prototype.forEach.call(segEl.children, function (b) { b.classList.remove('on'); });
     reset('レイヤを選ぶと表示されます');
+    showStart(true);
   };
 
   // 手配長さ: 代表の長さを1の位で四捨五入して10単位にする(876→880, 2551→2550)
