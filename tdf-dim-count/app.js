@@ -143,7 +143,7 @@
     card2.classList.toggle('alert', !b.rows.length);
   }
 
-  // 更新履歴: 記録シートのI:K(更新履歴|内容|状況)をGASから読んでポップアップに出す
+  // 更新履歴: スプレッドシートのシート「更新履歴」A:C(更新履歴|内容|状況)をGASから読んでポップアップに出す
   var histEl = document.getElementById('hist'), histBody = document.getElementById('histbody');
   function fmtDay(v) { var m = /^(\d{4})(\d{2})(\d{2})$/.exec(v); return m ? m[1] + '/' + m[2] + '/' + m[3] : v; }
   function showHist(rows) {
