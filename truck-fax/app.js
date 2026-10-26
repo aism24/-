@@ -778,7 +778,8 @@
       h('button', { class: 'btn excel', type: 'button', text: '積日指定でダウンロード', onclick: openDateDownload })));
     var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: 'c', text: k })); }); // 見出しは、どの列も中央揃え(2026-10-23、ユーザー指示)。「操作」の列は無い(行を押すと編集できる)
     var body = h('tbody');
-    shown.forEach(function (r) { body.appendChild(importRow(r)); });
+    var pairs = L.pairBeforeAfter(shown); // 変更前→変更後の組み合わせ(変わった項目に矢印・色を付ける)
+    shown.forEach(function (r) { body.appendChild(importRow(r, pairs[r._row])); });
     var tbox = shown.length ? h('div', { class: 'scroll fitcols listbox' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' });
     wrap.appendChild(tbox);
     if (shown.length) requestAnimationFrame(fitListHeight); // 上の行(絞り込み・ボタン)と表の見出しは動かさず、表の中だけをスクロールする
@@ -1010,9 +1011,14 @@
 
   window.addEventListener('resize', function () { if (S.importsFile) S.importsFile.fit(); });
 
-  function importRow(r) {
-    var tr = h('tr', { class: 'pick' + (isBeforeRow(r) ? ' before' : '') }); // 行を押すと、その原本の行だけに絞り、下に原本を出す(ファイル名はリンクにしない)
-    TABLE_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (LEFT_COLS.indexOf(k) >= 0 ? '' : ' c') }, importCellText(r, k))); });
+  function importRow(r, pair) {
+    var tr = h('tr', { class: 'pick' + (isBeforeRow(r) ? ' before' : '') + (pair && pair.role === 'after' ? ' after-row' : '') }); // 行を押すと、その原本の行だけに絞り、下に原本を出す(ファイル名はリンクにしない)
+    TABLE_HEADERS.forEach(function (k) {
+      var chg = pair && pair.changed[k]; // 変更前の行の変わった項目には、変更後へ向かう矢印「⤵」。変更後の行の同じ項目は色を付ける
+      var td = h('td', { class: 'nowrap' + (LEFT_COLS.indexOf(k) >= 0 ? '' : ' c') + (chg && pair.role === 'after' ? ' chg' : '') }, importCellText(r, k));
+      if (chg && pair.role === 'before') td.appendChild(h('span', { class: 'chg-arrow', text: ' ⤵', title: '下の行(変更後)で変わりました' }));
+      tr.appendChild(td);
+    });
     tr.addEventListener('click', function () { openImportFile(r); });
     if (r.ファイルURL) { // マウスを0.15秒止めたら、押す前に原本を読み始める(表の上を通り過ぎただけの行は読まない)
       var hoverT = 0;
