@@ -1119,6 +1119,7 @@
       h('label', { class: 'f', text: '依頼の種類' }), kindBoxes, btnWrap,
       h('label', { class: 'f', text: '内容' }), content,
       h('label', { class: 'f', text: '集計したExcelなどの資料(あれば1ファイル・10MBまで)' }), file,
+      h('p', { class: 'note', style: 'color:#c62828;font-weight:700', text: '※指定様式があればほぼその通りにダウンロードします。' }),
       h('label', { class: 'f', text: 'お名前(任意)' }), nameIn, h('p', { class: 'note', text: '※匿名の場合は、内容を充実させてください' }),
       msg, h('div', { class: 'dlg-btns', style: 'margin-top:14px' }, cancel, send));
     function kind() { var c = dlg.querySelector('input[name=reqKind]:checked'); return c ? c.value : ''; }
