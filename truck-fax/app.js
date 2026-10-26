@@ -1016,7 +1016,11 @@
     TABLE_HEADERS.forEach(function (k) {
       var chg = pair && pair.changed[k]; // 変更前の行の変わった項目には、変更後へ向かう矢印「⤵」。変更後の行の同じ項目は色を付ける
       var td = h('td', { class: 'nowrap' + (LEFT_COLS.indexOf(k) >= 0 ? '' : ' c') + (chg && pair.role === 'after' ? ' chg' : '') }, importCellText(r, k));
-      if (chg && pair.role === 'before') td.appendChild(h('span', { class: 'chg-arrow', text: ' ⤵', title: '下の行(変更後)で変わりました' }));
+      if (chg && pair.role === 'before') { // 矢印は文字「⤵」ではなく図(SVG)にする: 文字だと、フォントによっては太字にならないため(2026-10-27、ユーザー指示=紫の太字)
+        var ar = h('span', { class: 'chg-arrow', title: '下の行(変更後)で変わりました' });
+        ar.innerHTML = '<svg viewBox="0 0 20 18" width="1.15em" height="1em" aria-hidden="true"><path d="M2 3 H11 Q16 3 16 8 V14 M11.5 10 L16 14.5 L20.5 10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        td.appendChild(document.createTextNode(' ')); td.appendChild(ar);
+      }
       tr.appendChild(td);
     });
     tr.addEventListener('click', function () { openImportFile(r); });
