@@ -643,12 +643,24 @@ if (typeof document !== 'undefined') {
       document.body.appendChild(ov);
     }
 
-    // Excelダウンロードを記録(GAS action=logDownload)。サンプル時は送らない。結果は待たず、失敗しても無視する
+    // アプリ起動を記録(GAS action=logStart。「記録」シートのA列)。画面には何も出さず、失敗しても無視する。サンプル時は送らない
+    let launchAt = ''; // GASが返した起動日時。ダウンロード記録を同じ行に書くための目印
+    function logStart() {
+      if (!GAS_API_URL || /[?&]sample=1/.test(location.search)) return;
+      try {
+        fetch(GAS_API_URL + '?action=logStart', { credentials: 'omit' })
+          .then(function (r) { return r.json(); })
+          .then(function (res) { if (res && res.status === 'success' && res.data) launchAt = res.data.at || ''; })
+          .catch(function () {});
+      } catch (e) { /* 記録の失敗は無視 */ }
+    }
+
+    // Excelダウンロードを記録(GAS action=logDownload。起動の行のB:Cへ)。サンプル時は送らない。結果は待たず、失敗しても無視する
     function logDownload() {
       if (st.sample || !GAS_API_URL) return;
       const period = st.start.replace(/-/g, '/') + ' 〜 ' + st.end.replace(/-/g, '/');
       try {
-        fetch(GAS_API_URL + '?action=logDownload&period=' + encodeURIComponent(period), { credentials: 'omit', keepalive: true }).catch(function () {});
+        fetch(GAS_API_URL + '?action=logDownload&period=' + encodeURIComponent(period) + '&start=' + encodeURIComponent(launchAt), { credentials: 'omit', keepalive: true }).catch(function () {});
       } catch (e) { /* 記録の失敗は無視 */ }
     }
 
@@ -783,6 +795,7 @@ if (typeof document !== 'undefined') {
     }
 
     loadOverrides();
+    logStart();
     load();
   })();
 }

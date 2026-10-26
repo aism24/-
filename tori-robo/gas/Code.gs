@@ -20,7 +20,7 @@
  *   S〜T : 会社カレンダー(Date / 出勤・休日)。最初の日付より前のデータは集計しない
  *   V〜W : 工事名称の別名表(入力名 / 工事番号)。アプリの画面から追記される
  *   Y〜Z : 入力工事名 / 正式工事名(別名表の名前版。人が見る用。アプリはV:Wを参照する)
- *   「記録」シート : A=日時 / B=期間(Excelダウンロードの記録。2行目が最新)
+ *   「記録」シート : A=起動日時 / B=ダウンロード日時 / C=期間(2行目が最新。ダウンロードしていない起動はB:Cが空欄)
  *
  * ■ 突き合わせ
  *   ロボ側の「工事名称」(手入力)→工事、「柱番号」(手入力)=工事マスターの「製品マーク」。
@@ -30,6 +30,7 @@
 
 // ========== 設定 ==========
 
+const CODE_VERSION = '2026-10-26-log-start'; // コードを直したら更新。?action=ping で貼り替え後の版を確認できる
 const INFO_SHEET_NAME = '各種情報';
 const CACHE_FOLDER_PROP = 'CACHE_FOLDER_ID';
 const MASTER_CACHE_FILE_NAME = '_cache_tottori_robot_masters.json';
@@ -198,7 +199,9 @@ function doGet(e) {
     const action = p.action || 'getData';
     if (action === 'getData') return okRaw_(getSnapshotText_());
     if (action === 'refresh') return ok_(refreshSnapshot_(false));
-    if (action === 'logDownload') return ok_(logDownload_(p.period));
+    if (action === 'logStart') return ok_(logStart_());
+    if (action === 'logDownload') return ok_(logDownload_(p.period, p.start));
+    if (action === 'ping') return ok_({ version: CODE_VERSION });
     if (action === 'saveAlias') return ok_(saveAlias_(p.name, p.workNo));
     return errRes_('不明なaction: ' + action);
   } catch (err) {
@@ -393,20 +396,56 @@ function readAlias_(rows) {
   return alias;
 }
 
-// Excelダウンロードの記録: シート「記録」の2行目に挿入(常に2行目が最新、古いものほど下)。A=日時 / B=期間。
+// アプリ起動・Excelダウンロードの記録: シート「記録」。A=起動日時 / B=ダウンロード日時 / C=期間。
+// 起動のたびに2行目へ挿入(常に2行目が最新、古いものほど下)。ダウンロードしていない起動はB:Cが空欄。
+// ダウンロード時は、その起動の行(A=起動日時が一致する行。見つからなければ2行目)のB:Cを上書きする(同じ起動中に複数回なら最新で上書き)。
 const LOG_SHEET_NAME = '記録';
-function logDownload_(period) {
+const LOG_FIND_ROWS = 500; // 起動の行を探す範囲(2行目から)
+function logSheet_() {
+  let sh = ss_().getSheetByName(LOG_SHEET_NAME);
+  if (!sh) {
+    sh = ss_().insertSheet(LOG_SHEET_NAME);
+    sh.getRange(1, 1, 1, 3).setValues([['起動日時', '日時', '期間']]);
+  }
+  return sh;
+}
+function nowText_() { return Utilities.formatDate(new Date(), TIMEZONE, 'yyyy/MM/dd HH:mm:ss'); }
+function logStart_() {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
-    let sh = ss_().getSheetByName(LOG_SHEET_NAME);
-    if (!sh) {
-      sh = ss_().insertSheet(LOG_SHEET_NAME);
-      sh.getRange(1, 1, 1, 2).setValues([['日時', '期間']]);
-    }
+    const sh = logSheet_();
     sh.insertRowBefore(2);
-    const now = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy/MM/dd HH:mm:ss');
-    sh.getRange(2, 1, 1, 2).setNumberFormat('@').setValues([[now, String(period || '')]]);
+    const now = nowText_();
+    sh.getRange(2, 1, 1, 3).setNumberFormat('@').setValues([[now, '', '']]);
+    return { logged: true, at: now };
+  } finally {
+    lock.releaseLock();
+  }
+}
+function logDownload_(period, start) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sh = logSheet_();
+    const now = nowText_();
+    start = String(start || '');
+    let row = 0;
+    if (start) { // 起動日時が一致する行を探す(他の人の起動が間に入っていても、自分の起動の行に書くため)
+      const n = Math.min(Math.max(sh.getLastRow() - 1, 0), LOG_FIND_ROWS);
+      if (n > 0) {
+        const a = sh.getRange(2, 1, n, 1).getValues();
+        for (let i = 0; i < n; i++) if (String(a[i][0]) === start) { row = i + 2; break; }
+      }
+    } else if (sh.getLastRow() >= 2) {
+      row = 2;
+    }
+    if (!row) { // 起動の記録が無い(起動記録の失敗・古い版の画面など)ときは、新しい行として2行目に入れる
+      sh.insertRowBefore(2);
+      row = 2;
+      sh.getRange(2, 1).setNumberFormat('@').setValue(start || now);
+    }
+    sh.getRange(row, 2, 1, 2).setNumberFormat('@').setValues([[now, String(period || '')]]);
     return { logged: true, at: now };
   } finally {
     lock.releaseLock();
