@@ -1128,7 +1128,7 @@
     var kindBoxes = REQ_KINDS.map(function (k) { return h('label', { class: 'opt' }, h('input', { type: 'radio', name: 'reqKind', value: k }), ' ' + k); });
     var btnSel = h('select', null, h('option', { value: '', text: '選んでください' }), REQ_BUTTONS.map(function (b) { return h('option', { value: b, text: b }); }));
     var btnWrap = h('div', { hidden: true }, h('label', { class: 'f', text: '対象のボタン' }), btnSel);
-    var content = h('textarea', { placeholder: 'どう変えたいか、今困っていることを書いてください\n＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿\n例）現場名別で表示してダウンロードしたい。\n・卸日日付の新しいものが上に来るようにして。\n・変更前の表示は消して。\n\n↑↑このように書くと理解しやすいです。\n＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿' });
+    var content = h('textarea', { placeholder: 'どう変えたいか、今困っていることを書いてください\n＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿\n例）現場名別で表示してダウンロードしたい。\n・卸日の日付の新しいものが上に来るようにして。\n・変更前の表示は消して。\n\n↑↑このように書くと理解しやすいです。\n＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿' });
     var file = h('input', { type: 'file' });
     var nameIn = h('input', { type: 'text', maxlength: '50' });
     var anonNote = h('p', { class: 'note', style: 'color:#c62828;font-weight:700', text: '※匿名の場合は、内容を細かく設定してください。' }); // 名前が入ったら消す
