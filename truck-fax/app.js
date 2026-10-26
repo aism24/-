@@ -782,7 +782,17 @@
     shown.forEach(function (r) { body.appendChild(importRow(r, pairs[r._row])); });
     var tbox = shown.length ? h('div', { class: 'scroll fitcols listbox' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' });
     wrap.appendChild(tbox);
-    if (shown.length) requestAnimationFrame(fitListHeight); // 上の行(絞り込み・ボタン)と表の見出しは動かさず、表の中だけをスクロールする
+    if (shown.length) requestAnimationFrame(function () { // 上の行(絞り込み・ボタン)と表の見出しは動かさず、表の中だけをスクロールする
+      fitListHeight();
+      var fr = S.importsFocusRow; S.importsFocusRow = null; // 原本を閉じて戻ったときは、開いていた行が表の一番上(見出しの下)に来るようにスクロールする(2026-10-27、ユーザー指示)
+      var box = document.querySelector('#tab-imports .listbox'), tr = fr && box && box.querySelector('tr[data-row="' + fr + '"]');
+      if (tr) {
+        var delta = tr.getBoundingClientRect().top - box.getBoundingClientRect().top - box.querySelector('thead').offsetHeight;
+        var room = box.scrollHeight - box.clientHeight - box.scrollTop; // 下にスクロールできる残り。足りないとき(下の方の行)は、下に余白を足して一番上まで動かせるようにする
+        if (delta > room) box.style.paddingBottom = Math.ceil(delta - room) + 'px';
+        box.scrollTop += delta;
+      }
+    });
     TruckViewer.preload(); prefetchFaxes(shown); // 原本をすぐ開けるよう、pdf.js と表の上の原本を先に読む
   }
 
@@ -968,6 +978,7 @@
       if (dirty() && !(await confirmDialog('編集内容は破棄されますが閉じますか?', '保存していない編集内容は消えます。', 'OK'))) return;
       if (url) URL.revokeObjectURL(url);
       if (S.importsFile === me) S.importsFile = null;
+      S.importsFocusRow = r._row; // 戻ったとき、開いていた行を一番上にする
       renderImports();
     }
     async function saveEdits() {
@@ -1012,7 +1023,7 @@
   window.addEventListener('resize', function () { if (S.importsFile) S.importsFile.fit(); });
 
   function importRow(r, pair) {
-    var tr = h('tr', { class: 'pick' + (isBeforeRow(r) ? ' before' : '') + (pair && pair.role === 'after' ? ' after-row' : '') }); // 行を押すと、その原本の行だけに絞り、下に原本を出す(ファイル名はリンクにしない)
+    var tr = h('tr', { 'data-row': String(r._row), class: 'pick' + (isBeforeRow(r) ? ' before' : '') + (pair && pair.role === 'after' ? ' after-row' : '') }); // 行を押すと、その原本の行だけに絞り、下に原本を出す(ファイル名はリンクにしない)
     TABLE_HEADERS.forEach(function (k) {
       var chg = pair && pair.changed[k]; // 変更前の行の変わった項目には、変更後へ向かう矢印「⤵」。変更後の行の同じ項目は色を付ける
       var td = h('td', { class: 'nowrap' + (LEFT_COLS.indexOf(k) >= 0 ? '' : ' c') + (chg && pair.role === 'after' ? ' chg' : '') }, importCellText(r, k));
