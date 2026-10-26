@@ -87,7 +87,7 @@ dialog.dlg.req-form { background: #ffe6f1; max-width: min(96vw, 760px); width: m
 .req-form label.f { display: block; margin: 10px 0 2px; font-weight: 600; font-size: 13px; }
 .req-form .opt { display: block; margin: 4px 0; }
 .req-form select, .req-form textarea, .req-form input[type=text] { width: 100%; box-sizing: border-box; font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
-.req-form textarea { min-height: 120px; resize: vertical; }
+.req-form textarea { min-height: 200px; resize: vertical; }
 .req-form .note { font-size: 12px; color: var(--sub); margin: 2px 0 0; }
 .req-form .bad { color: var(--err); font-weight: 600; margin: 8px 0 0; }
 .kindbox { font-size: 12px; color: var(--sub); display: inline-flex; align-items: center; gap: 4px; }
