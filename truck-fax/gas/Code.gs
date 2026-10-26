@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261023b';
+var CODE_VERSION = '20261026a';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_MERGED = '車両運転手情報'; // 1行=車と運転手の1組。シートの列は MERGED_HEADERS(見出し名で読み書きする)
@@ -331,6 +331,8 @@ function doGet(e) {
     if (a === 'init') return ok_(getInit_());
     if (a === 'getFile') return ok_(getFile_(e.parameter.url));
     if (a === 'listImports') return ok_(listImports_(Number(e.parameter.limit) || 300));
+    if (a === 'logStart') return ok_(logStart_());
+    if (a === 'logDownload') return ok_(logDownload_(e.parameter.file, e.parameter.start));
     if (a === 'ping') return ok_({ pong: true, version: CODE_VERSION });
     return err_('不明なaction: ' + a);
   } catch (ex) { return err_(ex.message); }
@@ -346,6 +348,52 @@ function doPost(e) {
     if (body.action === 'masterSave') return ok_(withLock_(function () { return masterSave_(body); }));
     return err_('不明なaction: ' + body.action);
   } catch (ex) { return err_(ex.message); }
+}
+
+// 利用記録: シート「記録」。A=アプリ起動日時 / B=ダウンロード日時 / C=ファイル名。常に2行目が最新(古いものほど下)。
+// 起動のたびに2行目へ挿入(B:Cは空欄)。ダウンロードは、その起動の行のB:Cが空ならそこへ、すでに入っていれば新しい行を2行目に挿入(Aは同じ起動日時)。
+// 画面には何も返さない・出さない(利用者に分からないようにする)。
+var LOG_SHEET = '記録';
+var LOG_FIND_ROWS = 500; // 起動の行を探す範囲(2行目から)
+function logSheet_() {
+  var sh = ss_().getSheetByName(LOG_SHEET);
+  if (!sh) {
+    sh = ss_().insertSheet(LOG_SHEET);
+    sh.getRange(1, 1, 1, 3).setValues([['アプリ起動', 'ダウンロード日時', 'ファイル名']]);
+  }
+  return sh;
+}
+function nowText_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy/MM/dd HH:mm:ss'); }
+function logStart_() {
+  return withLock_(function () {
+    var sh = logSheet_();
+    sh.insertRowBefore(2);
+    var now = nowText_();
+    sh.getRange(2, 1, 1, 3).setNumberFormat('@').setValues([[now, '', '']]);
+    return { logged: true, at: now };
+  });
+}
+function logDownload_(file, start) {
+  return withLock_(function () {
+    var sh = logSheet_();
+    var now = nowText_();
+    start = String(start || '');
+    var row = 0;
+    if (start) { // 起動日時が一致し、B列が空の行(まだダウンロードの記録が無い起動の行)
+      var n = Math.min(Math.max(sh.getLastRow() - 1, 0), LOG_FIND_ROWS);
+      if (n > 0) {
+        var a = sh.getRange(2, 1, n, 2).getValues();
+        for (var i = 0; i < n; i++) if (String(a[i][0]) === start && String(a[i][1]) === '') { row = i + 2; break; }
+      }
+    }
+    if (!row) { // 2回目以降のダウンロード、または起動の記録が無い(失敗・古い画面)ときは、新しい行を2行目に挿入
+      sh.insertRowBefore(2);
+      row = 2;
+      sh.getRange(2, 1).setNumberFormat('@').setValue(start || now);
+    }
+    sh.getRange(row, 2, 1, 2).setNumberFormat('@').setValues([[now, String(file || '')]]);
+    return { logged: true, at: now };
+  });
 }
 
 function withLock_(fn) {
