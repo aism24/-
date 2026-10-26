@@ -181,7 +181,7 @@ table.t th.fit, table.t td.fit { width: 1%; }
 .scroll.fitcols table.t th, .scroll.fitcols table.t td { padding: 3px 8px; }
 .scroll.fitcols table.t th.c, .scroll.fitcols table.t td.c { text-align: center; }
 tr.before td { color: #d32f2f; text-decoration: line-through; } /* 取込一覧の「変更前」の行 */
-tr.before td .chg-arrow { display: inline-block; text-decoration: none; font-weight: 900; font-size: 1.25em; line-height: 1; color: #d32f2f; } /* 変更前の行で、変更後に変わった項目の矢印 */
+tr.before td .chg-arrow { display: inline-block; text-decoration: none; font-weight: 900; font-size: 1.25em; line-height: 1; color: #7b1fa2; } /* 変更前の行で、変更後に変わった項目の矢印 */
 tr.after-row td.chg { background: #ffe4e4; color: #b71c1c; font-weight: 800; } /* 変更後の行で、変わった項目 */
 .faxview .viewer { margin-top: 8px; height: calc(100vh - 280px); min-height: 340px; }
 .faxrows { max-height: 28vh; }
