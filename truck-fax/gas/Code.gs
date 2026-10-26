@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261026b';
+var CODE_VERSION = '20261026c';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_MERGED = '車両運転手情報'; // 1行=車と運転手の1組。シートの列は MERGED_HEADERS(見出し名で読み書きする)
@@ -416,6 +416,13 @@ function requestFolder_() {
   var parent = sheetFolder_();
   var it = parent.getFoldersByName(REQUEST_FOLDER_NAME);
   return it.hasNext() ? it.next() : parent.createFolder(REQUEST_FOLDER_NAME);
+}
+/** 初回の権限承認用(エディタで1回実行)。「情報」シートの「変更指示メール宛先」へ、テストメールを1通送る。実行すると、メール送信の権限の承認画面が出る(承認すれば、画面からの依頼メールも届く)。 */
+function sendTestMail() {
+  var to = getInfo_('変更指示メール宛先');
+  if (!to) throw new Error('情報シートの「変更指示メール宛先」が空です');
+  MailApp.sendEmail(to, '【truck-fax】テストメール', 'メール送信の権限の確認です。このメールが届けば、追加変更依頼のメールも届きます。');
+  return '送信しました: ' + to;
 }
 function changeRequest_(body) {
   var kind = String(body.kind || '');
