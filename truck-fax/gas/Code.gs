@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261026a';
+var CODE_VERSION = '20261026c';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_MERGED = '車両運転手情報'; // 1行=車と運転手の1組。シートの列は MERGED_HEADERS(見出し名で読み書きする)
@@ -345,6 +345,7 @@ function doPost(e) {
     if (body.action === 'commit') return ok_(withLock_(function () { return commit_(body); }));
     if (body.action === 'updateImport') return ok_(withLock_(function () { return updateImport_(body); }));
     if (body.action === 'applyChanges') return ok_(withLock_(function () { return applyChanges_(body); }));
+    if (body.action === 'changeRequest') return ok_(withLock_(function () { return changeRequest_(body); }));
     if (body.action === 'masterSave') return ok_(withLock_(function () { return masterSave_(body); }));
     return err_('不明なaction: ' + body.action);
   } catch (ex) { return err_(ex.message); }
@@ -394,6 +395,78 @@ function logDownload_(file, start) {
     sh.getRange(row, 2, 1, 2).setNumberFormat('@').setValues([[now, String(file || '')]]);
     return { logged: true, at: now };
   });
+}
+
+// ---------- 追加変更依頼(画面「追加変更依頼」→「AIに変更指示」) ----------
+// 依頼の内容を、シート「変更指示」へ1行追記し、添付をDriveの「アプリ作成依頼資料」フォルダへ保存し、管理者へメールする。
+// 列は見出し名で読み書きする(受付日時/依頼の種類/対象ボタン名/氏名/内容/添付ファイル名/添付ファイルURL/対応状況/対応メモ)。
+// 情報シートの項目: 「変更指示メール宛先」(メールの送り先。空ならメールは送らず、対応メモに理由を書く)、「変更指示保存先ID」(空なら、スプレッドシートと同じフォルダの中の「アプリ作成依頼資料」)。
+var SHEET_REQUEST = '変更指示';
+var REQUEST_HEADERS = ['受付日時', '依頼の種類', '対象ボタン名', '氏名', '内容', '添付ファイル名', '添付ファイルURL', '対応状況', '対応メモ'];
+var REQUEST_KINDS = ['新規ボタンの追加', '既存ボタンの修正', '既存ボタンの削除'];
+var REQUEST_BUTTONS = ['全件ダウンロード', '締め月ダウンロード', '積日指定でダウンロード', 'Excelでダウンロード(車両・運転手情報)'];
+var REQUEST_FOLDER_NAME = 'アプリ作成依頼資料';
+var MAX_REQUEST_BYTES = 10 * 1024 * 1024;
+function requestFolder_() {
+  var id = getInfo_('変更指示保存先ID');
+  if (id) {
+    try { return DriveApp.getFolderById(id); }
+    catch (ex) { throw new Error('情報シートの「変更指示保存先ID」のフォルダを開けません。'); }
+  }
+  var parent = sheetFolder_();
+  var it = parent.getFoldersByName(REQUEST_FOLDER_NAME);
+  return it.hasNext() ? it.next() : parent.createFolder(REQUEST_FOLDER_NAME);
+}
+/** 初回の権限承認用(エディタで1回実行)。「情報」シートの「変更指示メール宛先」へ、テストメールを1通送る。実行すると、メール送信の権限の承認画面が出る(承認すれば、画面からの依頼メールも届く)。 */
+function sendTestMail() {
+  var to = getInfo_('変更指示メール宛先');
+  if (!to) throw new Error('情報シートの「変更指示メール宛先」が空です');
+  MailApp.sendEmail(to, '【truck-fax】テストメール', 'メール送信の権限の確認です。このメールが届けば、追加変更依頼のメールも届きます。');
+  return '送信しました: ' + to;
+}
+function changeRequest_(body) {
+  var kind = String(body.kind || '');
+  var button = String(body.button || '');
+  var content = String(body.content || '').trim();
+  var who = String(body.name || '').trim();
+  if (REQUEST_KINDS.indexOf(kind) < 0) throw new Error('依頼の種類を選んでください。');
+  if (kind === REQUEST_KINDS[0]) button = '';
+  else if (REQUEST_BUTTONS.indexOf(button) < 0) throw new Error('対象のボタンを選んでください。');
+  if (!content) throw new Error('内容を入力してください。');
+  if (content.length > 5000) throw new Error('内容が長すぎます(5000文字まで)。');
+  var now = new Date();
+  var fileName = '', fileUrl = '';
+  if (body.fileBase64) {
+    var bytes = Utilities.base64Decode(body.fileBase64);
+    if (bytes.length > MAX_REQUEST_BYTES) throw new Error('ファイルは10MB以内にしてください。');
+    fileName = String(body.filename || 'file').replace(/[\\\/:*?"<>|]/g, '_');
+    var saved = Utilities.formatDate(now, tz_(), 'yyyyMMdd_HHmmss') + '_' + fileName;
+    fileUrl = requestFolder_().createFile(Utilities.newBlob(bytes, body.fileMime || 'application/octet-stream', saved)).getUrl();
+  }
+  var at = nowText_();
+  var memo = '';
+  try {
+    var to = getInfo_('変更指示メール宛先');
+    if (!to) throw new Error('情報シートの「変更指示メール宛先」が空です');
+    MailApp.sendEmail(to, '【truck-fax】AIに変更指示:' + kind + (button ? '(' + button + ')' : ''), [
+      '受付日時: ' + at,
+      '依頼の種類: ' + kind,
+      '対象ボタン: ' + (button || '(なし)'),
+      '氏名: ' + (who || '匿名'),
+      '添付ファイル: ' + (fileName ? fileName + ' ' + fileUrl : '(なし)'),
+      '', '【内容】', content, '',
+      '変更指示シート: ' + ss_().getUrl()
+    ].join('\n'));
+  } catch (ex) { memo = 'メール未送信: ' + ex.message; }
+  var sh = ss_().getSheetByName(SHEET_REQUEST);
+  if (!sh) { sh = ss_().insertSheet(SHEET_REQUEST); sh.getRange(1, 1, 1, REQUEST_HEADERS.length).setValues([REQUEST_HEADERS]).setFontWeight('bold'); sh.setFrozenRows(1); }
+  var map = headerMapOf_(sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0], REQUEST_HEADERS, SHEET_REQUEST);
+  var vals = { '受付日時': at, '依頼の種類': kind, '対象ボタン名': button, '氏名': who || '匿名', '内容': content, '添付ファイル名': fileName, '添付ファイルURL': fileUrl, '対応状況': '未対応', '対応メモ': memo };
+  var row = new Array(Math.max(sh.getLastColumn(), 1)).fill('');
+  REQUEST_HEADERS.forEach(function (k) { row[map[k] - 1] = vals[k]; });
+  var r = sh.getLastRow() + 1;
+  sh.getRange(r, 1, 1, row.length).setNumberFormat('@').setValues([row]);
+  return { saved: true };
 }
 
 function withLock_(fn) {

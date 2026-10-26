@@ -218,6 +218,9 @@
 - やり方: script タグを後から差し込めば to-launcher.js がそのまま動く(`document.currentScript` の data 属性を読むため)/ PR #884
 - 使ったアプリ: shipping-list-link
 
+- **GASで初めてメールを送るときは、メールを送る関数をエディタで1回実行して承認する(truck-fax、2026-10-26)**: Webアプリからの `MailApp.sendEmail` が「権限がありません(script.send_mail)」で失敗。メールを送らない関数(setupSheets)を実行しても承認画面が出ず、デプロイ更新だけでも出ない。実際に `MailApp.sendEmail` を呼ぶ関数(`sendTestMail`。宛先は情報シートから読む)を実行したら承認画面が出て、承認後すぐ届いた。
+  - Before: 依頼メール未送信(シートの対応メモに「メール未送信」)→ After: 承認後の1回目から受信。宛先アドレスはコードに書かず情報シートに置く(公開リポジトリ)。
+
 ## ユーザーがよく出す指示(繰り返し・訂正が多いもの)
 - アプリは完全無料で実装し、URLで配布する(常に最新版)。
 - Geminiを使うときのモデル名は `gemini-3.5-flash-lite` に固定。
