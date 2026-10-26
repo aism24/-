@@ -1110,6 +1110,8 @@
     var content = h('textarea', { placeholder: 'どう変えたいか、今困っていることを書いてください' });
     var file = h('input', { type: 'file' });
     var nameIn = h('input', { type: 'text', maxlength: '50' });
+    var anonNote = h('p', { class: 'note', style: 'color:#c62828;font-weight:700', text: '※匿名の場合は、内容を細かく設定してください。' }); // 名前が入ったら消す
+    nameIn.addEventListener('input', function () { anonNote.hidden = !!nameIn.value.trim(); });
     var msg = h('p', { class: 'bad', hidden: true });
     var cancel = h('button', { class: 'btn', type: 'button', text: 'キャンセル' });
     var send = h('button', { class: 'btn primary', type: 'button', text: 'AIに変更指示' });
@@ -1120,7 +1122,7 @@
       h('label', { class: 'f', text: '内容' }), content,
       h('label', { class: 'f', text: '集計したExcelなどの資料(あれば1ファイル・10MBまで)' }), file,
       h('p', { class: 'note', style: 'color:#c62828;font-weight:700', text: '※指定様式があればほぼその通りにダウンロードします。' }),
-      h('label', { class: 'f', text: 'お名前(任意)' }), nameIn, h('p', { class: 'note', text: '※匿名の場合は、内容を充実させてください' }),
+      h('label', { class: 'f', text: 'お名前(任意)' }), nameIn, anonNote,
       msg, h('div', { class: 'dlg-btns', style: 'margin-top:14px' }, cancel, send));
     function kind() { var c = dlg.querySelector('input[name=reqKind]:checked'); return c ? c.value : ''; }
     function syncKind() { btnWrap.hidden = !(kind() === REQ_KINDS[1] || kind() === REQ_KINDS[2]); }
