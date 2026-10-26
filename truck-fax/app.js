@@ -775,7 +775,7 @@
     wrap.appendChild(h('div', { class: 'tool' }, fySel, cmNav, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; S.importsP = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn excel', type: 'button', text: '全件ダウンロード', onclick: downloadAllImports }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '締め月ダウンロード', onclick: openClosingDownload }), ' ',
-      h('button', { class: 'btn excel', type: 'button', text: '卸日指定でダウンロード', onclick: openDateDownload })));
+      h('button', { class: 'btn excel', type: 'button', text: '積日指定でダウンロード', onclick: openDateDownload })));
     var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: 'c', text: k })); }); // 見出しは、どの列も中央揃え(2026-10-23、ユーザー指示)。「操作」の列は無い(行を押すと編集できる)
     var body = h('tbody');
     shown.forEach(function (r) { body.appendChild(importRow(r)); });
@@ -1094,14 +1094,14 @@
     } catch (e) { if (open) info.textContent = '読み込めませんでした: ' + e.message; }
   }
 
-  /** 卸日を指定して、取込一覧の該当行をExcelでダウンロードする。①ボタン→②日付を選ぶ→③表で確認→④OKでダウンロード */
+  /** 積日を指定して、取込一覧の該当行をExcelでダウンロードする。①ボタン→②日付を選ぶ→③表で確認→④OKでダウンロード */
   function openDateDownload() {
-    var input = h('input', { type: 'date', value: todayIso(), 'aria-label': '卸日' });
+    var input = h('input', { type: 'date', value: todayIso(), 'aria-label': '積日' });
     var info = h('p', { class: 'dlg-detail' }), tableHost = h('div', { class: 'dlg-table' });
     var cancel = h('button', { class: 'btn', type: 'button', text: 'キャンセル' });
     var ok = h('button', { class: 'btn excel', type: 'button', text: 'この内容でExcelをダウンロード' });
-    // 卸日の左右に ◀▶(記録のある、前・後ろの日へ移動。記録の無い日は選ばれない。前後に記録が無いときはグレーで押せない)
-    function recordDays() { var set = {}; all.forEach(function (r) { var k = L.dateKey(r.卸日); if (k) set[k] = true; }); return Object.keys(set).sort(); }
+    // 積日の左右に ◀▶(記録のある、前・後ろの日へ移動。記録の無い日は選ばれない。前後に記録が無いときはグレーで押せない)
+    function recordDays() { var set = {}; all.forEach(function (r) { var k = L.dateKey(r.積日); if (k) set[k] = true; }); return Object.keys(set).sort(); }
     function neighborDay(delta) {
       var key = input.value; if (!key) return null;
       var days = recordDays();
@@ -1110,19 +1110,19 @@
       return null;
     }
     function stepDay(delta) { var to = neighborDay(delta); if (to) { input.value = to; refresh(); } }
-    var prevBtn = h('button', { class: 'btn sm cm-step', type: 'button', text: '◀', 'aria-label': '前の記録のある卸日', disabled: true, onclick: function () { stepDay(-1); } });
-    var nextBtn = h('button', { class: 'btn sm cm-step', type: 'button', text: '▶', 'aria-label': '次の記録のある卸日', disabled: true, onclick: function () { stepDay(1); } });
-    var dlg = h('dialog', { class: 'dlg wide' }, h('p', { class: 'dlg-title', text: '卸日指定でダウンロード' }),
-      h('div', { class: 'dlg-row' }, h('label', { text: '卸日を選択:' }), h('span', { class: 'cm-nav' }, prevBtn, input, nextBtn)), info, tableHost, h('div', { class: 'dlg-btns' }, cancel, ok));
+    var prevBtn = h('button', { class: 'btn sm cm-step', type: 'button', text: '◀', 'aria-label': '前の記録のある積日', disabled: true, onclick: function () { stepDay(-1); } });
+    var nextBtn = h('button', { class: 'btn sm cm-step', type: 'button', text: '▶', 'aria-label': '次の記録のある積日', disabled: true, onclick: function () { stepDay(1); } });
+    var dlg = h('dialog', { class: 'dlg wide' }, h('p', { class: 'dlg-title', text: '積日指定でダウンロード' }),
+      h('div', { class: 'dlg-row' }, h('label', { text: '積日を選択:' }), h('span', { class: 'cm-nav' }, prevBtn, input, nextBtn)), info, tableHost, h('div', { class: 'dlg-btns' }, cancel, ok));
     var cur = [], all = [], loaded = false;
     function refresh() {
       var key = input.value;
       if (!loaded) { info.textContent = '記録を読み込んでいます…'; ok.disabled = true; return; }
-      cur = key ? all.filter(function (r) { return L.dateKey(r.卸日) === key; }) : [];
+      cur = key ? all.filter(function (r) { return L.dateKey(r.積日) === key; }) : [];
       var pt = neighborDay(-1), nt = neighborDay(1);
       prevBtn.disabled = !pt; nextBtn.disabled = !nt;
       prevBtn.title = pt ? pt.replace(/-/g, '/') + ' へ' : '前に記録のある日はありません'; nextBtn.title = nt ? nt.replace(/-/g, '/') + ' へ' : '後ろに記録のある日はありません';
-      info.textContent = !key ? '卸日を選んでください。' : (cur.length ? '卸日 ' + key.replace(/-/g, '/') + ' の記録: ' + cur.length + '件(中止・変更前の行も含みます)。この内容でよければダウンロードしてください。' : '卸日 ' + key.replace(/-/g, '/') + ' の記録: 0件');
+      info.textContent = !key ? '積日を選んでください。' : (cur.length ? '積日 ' + key.replace(/-/g, '/') + ' の記録: ' + cur.length + '件(中止・変更前の行も含みます)。この内容でよければダウンロードしてください。' : '積日 ' + key.replace(/-/g, '/') + ' の記録: 0件');
       tableHost.textContent = '';
       if (cur.length) {
         var head = h('tr'); VIEW_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); });
@@ -1136,14 +1136,14 @@
     cancel.addEventListener('click', function () { dlg.close(); });
     ok.addEventListener('click', function () {
       if (!cur.length) return;
-      downloadXlsx((+input.value.slice(5, 7)) + '月' + (+input.value.slice(8, 10)) + '日着車番一覧.xlsx', '取込一覧', VIEW_HEADERS, cur.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }), struckOf(cur));
+      downloadXlsx((+input.value.slice(5, 7)) + '月' + (+input.value.slice(8, 10)) + '日積車番一覧.xlsx', '取込一覧', VIEW_HEADERS, cur.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }), struckOf(cur));
       dlg.close();
     });
     dlg.addEventListener('close', function () { dlg.remove(); });
     document.body.appendChild(dlg);
     refresh();
     dlg.showModal();
-    apiGet('listImports', { limit: 1000000 }).then(function (d) { all = d.slice().reverse(); loaded = true; if (dlg.isConnected) refresh(); }) // シートの全行から選ぶ(古い卸日も出る)
+    apiGet('listImports', { limit: 1000000 }).then(function (d) { all = d.slice().reverse(); loaded = true; if (dlg.isConnected) refresh(); }) // シートの全行から選ぶ(古い積日も出る)
       .catch(function (e) { if (dlg.isConnected) info.textContent = '読み込めませんでした: ' + e.message; });
   }
 
