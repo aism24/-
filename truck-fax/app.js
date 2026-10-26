@@ -1100,31 +1100,36 @@
     var info = h('p', { class: 'dlg-detail' }), tableHost = h('div', { class: 'dlg-table' });
     var cancel = h('button', { class: 'btn', type: 'button', text: 'キャンセル' });
     var ok = h('button', { class: 'btn excel', type: 'button', text: 'この内容でExcelをダウンロード' });
-    // 卸日の左右に ◀▶(1日前・1日後へ移動。記録が無い日も移動できる。日付が空のときは押せない)
-    function stepDay(delta) {
-      if (!input.value) return;
-      var d = new Date(+input.value.slice(0, 4), +input.value.slice(5, 7) - 1, +input.value.slice(8, 10) + delta);
-      input.value = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
-      refresh();
+    // 卸日の左右に ◀▶(記録のある、前・後ろの日へ移動。記録の無い日は選ばれない。前後に記録が無いときはグレーで押せない)
+    function recordDays() { var set = {}; all.forEach(function (r) { var k = L.dateKey(r.卸日); if (k) set[k] = true; }); return Object.keys(set).sort(); }
+    function neighborDay(delta) {
+      var key = input.value; if (!key) return null;
+      var days = recordDays();
+      if (delta < 0) { for (var i = days.length - 1; i >= 0; i--) if (days[i] < key) return days[i]; }
+      else { for (var j = 0; j < days.length; j++) if (days[j] > key) return days[j]; }
+      return null;
     }
-    var prevBtn = h('button', { class: 'btn sm cm-step', type: 'button', text: '◀', 'aria-label': '1日前の卸日', title: '1日前へ', onclick: function () { stepDay(-1); } });
-    var nextBtn = h('button', { class: 'btn sm cm-step', type: 'button', text: '▶', 'aria-label': '1日後の卸日', title: '1日後へ', onclick: function () { stepDay(1); } });
+    function stepDay(delta) { var to = neighborDay(delta); if (to) { input.value = to; refresh(); } }
+    var prevBtn = h('button', { class: 'btn sm cm-step', type: 'button', text: '◀', 'aria-label': '前の記録のある卸日', disabled: true, onclick: function () { stepDay(-1); } });
+    var nextBtn = h('button', { class: 'btn sm cm-step', type: 'button', text: '▶', 'aria-label': '次の記録のある卸日', disabled: true, onclick: function () { stepDay(1); } });
     var dlg = h('dialog', { class: 'dlg wide' }, h('p', { class: 'dlg-title', text: '卸日指定でダウンロード' }),
       h('div', { class: 'dlg-row' }, h('label', { text: '卸日を選択:' }), h('span', { class: 'cm-nav' }, prevBtn, input, nextBtn)), info, tableHost, h('div', { class: 'dlg-btns' }, cancel, ok));
     var cur = [], all = [], loaded = false;
     function refresh() {
       var key = input.value;
-      prevBtn.disabled = nextBtn.disabled = !key;
       if (!loaded) { info.textContent = '記録を読み込んでいます…'; ok.disabled = true; return; }
       cur = key ? all.filter(function (r) { return L.dateKey(r.卸日) === key; }) : [];
-      info.textContent = key ? '卸日 ' + key.replace(/-/g, '/') + ' の記録: ' + cur.length + '件(中止・変更前の行も含みます)。この内容でよければダウンロードしてください。' : '卸日を選んでください。';
+      var pt = neighborDay(-1), nt = neighborDay(1);
+      prevBtn.disabled = !pt; nextBtn.disabled = !nt;
+      prevBtn.title = pt ? pt.replace(/-/g, '/') + ' へ' : '前に記録のある日はありません'; nextBtn.title = nt ? nt.replace(/-/g, '/') + ' へ' : '後ろに記録のある日はありません';
+      info.textContent = !key ? '卸日を選んでください。' : (cur.length ? '卸日 ' + key.replace(/-/g, '/') + ' の記録: ' + cur.length + '件(中止・変更前の行も含みます)。この内容でよければダウンロードしてください。' : '卸日 ' + key.replace(/-/g, '/') + ' の記録: 0件');
       tableHost.textContent = '';
       if (cur.length) {
         var head = h('tr'); VIEW_HEADERS.forEach(function (k) { head.appendChild(h('th', { text: k })); });
         var body = h('tbody');
         cur.forEach(function (r) { var tr = h('tr'); VIEW_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap', text: r[k] || '' })); }); body.appendChild(tr); });
         tableHost.appendChild(h('div', { class: 'scroll dlg-scroll' }, h('table', { class: 't zebra' }, h('thead', null, head), body)));
-      } else if (key) tableHost.appendChild(h('div', { class: 'empty', text: 'この日に降す記録はありません。' }));
+      } else if (key) tableHost.appendChild(h('div', { class: 'empty', style: 'color:#b3261e;font-weight:700', text: '輸送記録がありません' }));
       ok.disabled = !cur.length;
     }
     input.addEventListener('change', refresh);
