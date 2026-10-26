@@ -7,6 +7,27 @@
   var GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyfyFEJn4alzJGmbWIhKwKeRvJ2OlkgyM4wZFk7ldUVCs5Yx-khi5FOWLen6cvvIYQ/exec';
   function gasUrl() { return window.__GAS_URL__ || GAS_API_URL; }
 
+  // 利用記録(GAS「記録」シート。A=アプリ起動日時 / B=ダウンロード日時 / C=ファイル名)。利用者に分からないよう、画面には何も出さず、結果は待たず、失敗しても無視する
+  var launchAt = ''; // GASが返した起動日時。ダウンロードの記録を同じ起動と結びつける目印
+  function logStart() {
+    try {
+      fetch(gasUrl() + '?action=logStart', { credentials: 'omit' })
+        .then(function (r) { return r.json(); })
+        .then(function (res) { if (res && res.status === 'success' && res.data) launchAt = res.data.at || ''; })
+        .catch(function () {});
+    } catch (e) { /* 記録の失敗は無視 */ }
+  }
+  function logDownload(fileName) {
+    try {
+      fetch(gasUrl() + '?action=logDownload&file=' + encodeURIComponent(fileName) + '&start=' + encodeURIComponent(launchAt), { credentials: 'omit', keepalive: true }).catch(function () {});
+    } catch (e) { /* 記録の失敗は無視 */ }
+  }
+  // Excelのダウンロード(記録つき)。ダウンロードの4か所はすべてここを通す
+  function downloadXlsx(fileName, sheetName, heads, rows, struck) {
+    TruckXlsx.download(fileName, sheetName, heads, rows, struck);
+    logDownload(fileName);
+  }
+
   var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '追加変更', '備考'];
   var PAIR_COLS = ['手配業者', '運送業者', '車種', '車番', '氏名', '携帯番号', '備考']; // 車両・運転手情報(シート「車両運転手情報」)。1行=車と運転手の1組
   var IMPORTS_LIMIT = 3000; // 絞り込みのために読み込む件数(表に出すのは最新100件まで)
@@ -1006,7 +1027,7 @@
       var rows = ordered.map(function (r) { return heads.map(function (k) { return r[k] || ''; }); });
       close(); close = function () {};
       if (!rows.length) { toast('取込一覧に記録がありません。'); return; }
-      TruckXlsx.download('過去全件一覧' + todayIso().replace(/-/g, '') + '.xlsx', '取込一覧', heads, rows, struckOf(ordered));
+      downloadXlsx('過去全件一覧' + todayIso().replace(/-/g, '') + '.xlsx', '取込一覧', heads, rows, struckOf(ordered));
       toast('全件(' + rows.length + '件)をダウンロードしました。');
     } catch (e) { showBanner('全件の読み込みに失敗しました: ' + e.message); }
     finally { close(); }
@@ -1055,7 +1076,7 @@
     cancel.addEventListener('click', function () { dlg.close(); });
     ok.addEventListener('click', function () {
       if (!shown.length) return;
-      TruckXlsx.download(cmSel.value + '月20日〆車番一覧.xlsx', '取込一覧', VIEW_HEADERS, shown.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }), struckOf(shown));
+      downloadXlsx(cmSel.value + '月20日〆車番一覧.xlsx', '取込一覧', VIEW_HEADERS, shown.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }), struckOf(shown));
       dlg.close();
     });
     dlg.addEventListener('close', function () { open = false; dlg.remove(); });
@@ -1100,7 +1121,7 @@
     cancel.addEventListener('click', function () { dlg.close(); });
     ok.addEventListener('click', function () {
       if (!cur.length) return;
-      TruckXlsx.download((+input.value.slice(5, 7)) + '月' + (+input.value.slice(8, 10)) + '日着車番一覧.xlsx', '取込一覧', VIEW_HEADERS, cur.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }), struckOf(cur));
+      downloadXlsx((+input.value.slice(5, 7)) + '月' + (+input.value.slice(8, 10)) + '日着車番一覧.xlsx', '取込一覧', VIEW_HEADERS, cur.map(function (r) { return VIEW_HEADERS.map(function (k) { return r[k] || ''; }); }), struckOf(cur));
       dlg.close();
     });
     dlg.addEventListener('close', function () { dlg.remove(); });
@@ -1177,7 +1198,7 @@
     host.appendChild(wrap);
     wrap.appendChild(h('div', { class: 'tool' }, h('span', { class: 'sub', text: rows.length + '件(1行=車と運転手の1組。同じ車に別の運転手、同じ運転手が別の車に乗る場合は、別の行)' }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn sm excel', type: 'button', text: 'Excelでダウンロード', onclick: function () {
-        TruckXlsx.download('車両運転手情報_' + todayIso().replace(/-/g, '') + '.xlsx', '車両運転手情報', cols, rows.map(function (r) { return cols.map(function (k) { return r[k] || ''; }); }));
+        downloadXlsx('車両運転手情報_' + todayIso().replace(/-/g, '') + '.xlsx', '車両運転手情報', cols, rows.map(function (r) { return cols.map(function (k) { return r[k] || ''; }); }));
       } })));
     var head = h('tr'); cols.forEach(function (k) { head.appendChild(h('th', { text: k })); }); head.appendChild(h('th', { text: '操作' }));
     var body = h('tbody');
@@ -1236,6 +1257,7 @@
       ['import', 'imports', 'pairs'].forEach(function (x) { $('tab-' + x).hidden = true; });
       $('tabs').hidden = true; $('setup').hidden = false; return;
     }
+    logStart();
     // 起動時は、スプレッドシートのデータを読み終わるまで、ポップアップとデータバーを出して他の操作を止める。取込一覧は、初期データと同時に先読みする
     var close = busyDialog('データ読み込み中');
     var preload = loadImports(); preload.catch(function () {});
