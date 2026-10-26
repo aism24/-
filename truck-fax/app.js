@@ -1055,7 +1055,7 @@
     var info = h('p', { class: 'dlg-detail', text: '記録を読み込んでいます…' }), tableHost = h('div', { class: 'dlg-table' });
     var cancel = h('button', { class: 'btn', type: 'button', text: 'キャンセル' });
     var ok = h('button', { class: 'btn excel', type: 'button', text: 'この内容でExcelをダウンロード', disabled: true });
-    var dlg = h('dialog', { class: 'dlg wide' }, h('p', { class: 'dlg-title', text: '締め月ダウンロード' }),
+    var dlg = h('dialog', { class: 'dlg wide' }, h('p', { class: 'dlg-title' }, '締め月ダウンロード', h('span', { style: 'white-space:pre;color:#c62828;font-weight:700', text: '   卸日を基準として２０日〆期間判定とする' })), // タイトルの右に、スペース3つ+赤太字の注記(2026-10-26、ユーザー指示)
       h('div', { class: 'dlg-row' }, h('label', { text: '年度・締め月を選択:' }), fySel, h('span', { class: 'cm-nav' }, prevBtn, cmSel, nextBtn)), info, tableHost, h('div', { class: 'dlg-btns' }, cancel, ok));
     var all = [], shown = [], open = true;
     function refresh() {
