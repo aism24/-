@@ -1023,7 +1023,7 @@
     try {
       var all = await apiGet('listImports', { limit: 1000000 }); // 新しい順で、シートの全行
       var heads = IMPORT_HEADERS.concat(['ファイルURL']);
-      var ordered = all.slice().reverse();
+      var ordered = L.sortImportRows(all); // 取込一覧の「すべての締め月」と同じ並び(ファイルごと→卸日の早い順→大上→ナミツー→取込順。2026-10-26、ユーザー指示)
       var rows = ordered.map(function (r) { return heads.map(function (k) { return r[k] || ''; }); });
       close(); close = function () {};
       if (!rows.length) { toast('取込一覧に記録がありません。'); return; }
@@ -1061,7 +1061,7 @@
     function refresh() {
       var fy = fySel.value, cm = cmSel.value;
       prevBtn.update(fy, cm, haveCl); nextBtn.update(fy, cm, haveCl);
-      shown = all.filter(function (r) { var c = L.rowClosing(r); return c && String(c.fy) === fy && String(c.cm) === cm; });
+      shown = L.sortImportRows(all.filter(function (r) { var c = L.rowClosing(r); return c && String(c.fy) === fy && String(c.cm) === cm; })); // 取込一覧と同じ並び(画面の表もExcelも。2026-10-26、ユーザー指示)
       info.textContent = fy + '年度 ' + cm + '/20〆の記録: ' + shown.length + '件(中止・変更前の行も含みます)。この内容でよければダウンロードしてください。';
       tableHost.textContent = '';
       if (shown.length) {
