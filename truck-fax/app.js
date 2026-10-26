@@ -1094,6 +1094,60 @@
     } catch (e) { if (open) info.textContent = '読み込めませんでした: ' + e.message; }
   }
 
+
+  // ---------- 追加変更依頼(ヘッダーのボタン→「AIに変更指示」。GASがシート・Drive・メールへ回す。画面には「記録した」等は出さない) ----------
+  var REQ_KINDS = ['新規ボタンの追加', '既存ボタンの修正', '既存ボタンの削除'];
+  var REQ_BUTTONS = ['全件ダウンロード', '締め月ダウンロード', '積日指定でダウンロード', 'Excelでダウンロード(車両・運転手情報)']; // 変更するときは、GAS(Code.gs)の REQUEST_BUTTONS も同じにする
+  function openChangeRequest() {
+    var kindBoxes = REQ_KINDS.map(function (k) { return h('label', { class: 'opt' }, h('input', { type: 'radio', name: 'reqKind', value: k }), ' ' + k); });
+    var btnSel = h('select', null, h('option', { value: '', text: '選んでください' }), REQ_BUTTONS.map(function (b) { return h('option', { value: b, text: b }); }));
+    var btnWrap = h('div', { hidden: true }, h('label', { class: 'f', text: '対象のボタン' }), btnSel);
+    var content = h('textarea', { placeholder: 'どう変えたいか、今困っていることを書いてください' });
+    var file = h('input', { type: 'file' });
+    var nameIn = h('input', { type: 'text', maxlength: '50' });
+    var msg = h('p', { class: 'bad', hidden: true });
+    var cancel = h('button', { class: 'btn', type: 'button', text: 'キャンセル' });
+    var send = h('button', { class: 'btn primary', type: 'button', text: 'AIに変更指示' });
+    var dlg = h('dialog', { class: 'dlg req-form', style: 'width:min(92vw,520px)' },
+      h('p', { class: 'dlg-title', text: 'AIに変更指示' }),
+      h('p', { class: 'dlg-detail', text: '④のExcelダウンロードなど、アプリの追加・変更したい点を教えてください。' }),
+      h('label', { class: 'f', text: '依頼の種類' }), kindBoxes, btnWrap,
+      h('label', { class: 'f', text: '内容' }), content,
+      h('label', { class: 'f', text: '集計したExcelなどの資料(あれば1ファイル・10MBまで)' }), file,
+      h('label', { class: 'f', text: 'お名前(任意)' }), nameIn, h('p', { class: 'note', text: '※匿名の場合は、内容を充実させてください' }),
+      msg, h('div', { class: 'dlg-btns', style: 'margin-top:14px' }, cancel, send));
+    function kind() { var c = dlg.querySelector('input[name=reqKind]:checked'); return c ? c.value : ''; }
+    function syncKind() { btnWrap.hidden = !(kind() === REQ_KINDS[1] || kind() === REQ_KINDS[2]); }
+    kindBoxes.forEach(function (l) { l.firstChild.addEventListener('change', syncKind); });
+    function fail(t) { msg.textContent = t; msg.hidden = false; }
+    cancel.addEventListener('click', function () { dlg.close(); });
+    dlg.addEventListener('close', function () { dlg.remove(); });
+    send.addEventListener('click', async function () {
+      msg.hidden = true;
+      var k = kind();
+      if (!k) return fail('依頼の種類を選んでください。');
+      if (k !== REQ_KINDS[0] && !btnSel.value) return fail('対象のボタンを選んでください。');
+      if (!content.value.trim()) return fail('内容を入力してください。');
+      var f = file.files[0];
+      if (f && f.size > MAX_BYTES) return fail('ファイルは10MB以内にしてください。');
+      send.disabled = true; cancel.disabled = true; send.textContent = '送信中…';
+      try {
+        var payload = { kind: k, button: k === REQ_KINDS[0] ? '' : btnSel.value, content: content.value, name: nameIn.value };
+        if (f) { payload.filename = f.name; payload.fileMime = f.type || 'application/octet-stream'; payload.fileBase64 = await fileToBase64(f); }
+        await apiPost('changeRequest', payload, 120000);
+        dlg.close();
+        var done = h('dialog', { class: 'dlg' }, h('p', { class: 'dlg-detail', text: 'アプリの追加変更対応は、数日必要な場合があります' }),
+          h('div', { class: 'dlg-btns' }, h('button', { class: 'btn primary', type: 'button', text: 'OK', onclick: function () { done.close(); } })));
+        done.addEventListener('close', function () { done.remove(); });
+        document.body.appendChild(done); done.showModal();
+      } catch (e) {
+        fail(e.message || '送信できませんでした。もう一度お試しください。');
+        send.disabled = false; cancel.disabled = false; send.textContent = 'AIに変更指示';
+      }
+    });
+    document.body.appendChild(dlg); dlg.showModal();
+  }
+
   /** 積日を指定して、取込一覧の該当行をExcelでダウンロードする。①ボタン→②日付を選ぶ→③表で確認→④OKでダウンロード */
   function openDateDownload() {
     var input = h('input', { type: 'date', value: todayIso(), 'aria-label': '積日' });
@@ -1272,6 +1326,7 @@
       ['import', 'imports', 'pairs'].forEach(function (x) { $('tab-' + x).hidden = true; });
       $('tabs').hidden = true; $('setup').hidden = false; return;
     }
+    var rb = $('reqBtn'); if (rb) rb.addEventListener('click', openChangeRequest);
     logStart();
     // 起動時は、スプレッドシートのデータを読み終わるまで、ポップアップとデータバーを出して他の操作を止める。取込一覧は、初期データと同時に先読みする
     var close = busyDialog('データ読み込み中');
