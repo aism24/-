@@ -1136,9 +1136,9 @@
     var msg = h('p', { class: 'bad', hidden: true });
     var cancel = h('button', { class: 'btn', type: 'button', text: 'キャンセル' });
     var send = h('button', { class: 'btn primary', type: 'button', text: 'AIに変更指示' });
-    var dlg = h('dialog', { class: 'dlg req-form', style: 'width:min(92vw,520px)' },
+    var dlg = h('dialog', { class: 'dlg req-form' },
       h('p', { class: 'dlg-title', text: 'AIに変更指示' }),
-      h('p', { class: 'dlg-detail', text: '④のExcelダウンロードなど、アプリの追加・変更したい点を教えてください。' }),
+      h('p', { class: 'dlg-detail', text: '追加変更したい項目を選び、必要なデータを添付して「AIに変更指示」ボタンを押してください。' }),
       h('label', { class: 'f', text: '依頼の種類' }), kindBoxes, btnWrap,
       h('label', { class: 'f', text: '内容' }), content,
       h('label', { class: 'f', text: '集計したExcelなどの資料(あれば1ファイル・10MBまで)' }), file,
