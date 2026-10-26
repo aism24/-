@@ -81,6 +81,9 @@ code { background: var(--th); padding: 1px 5px; border-radius: 4px; }
 
 .req-btn { font: inherit; font-weight: 700; padding: 6px 12px; margin-right: 6px; border-radius: 6px; border: 2px solid #ff4da6; background: #ffd9ea; color: #7a0f45; cursor: pointer; white-space: nowrap; box-shadow: 0 0 6px 2px rgba(255,77,166,.85), 0 0 14px 4px rgba(255,77,166,.45); } /* 追加変更依頼: 背景ピンク・縁が光りっぱなし(2026-10-26、ユーザー指示) */
 .req-btn:hover { background: #ffc4e0; }
+dialog.dlg.req-form { background: #ffe6f1; max-width: min(96vw, 760px); width: min(96vw, 760px); } /* AIに変更指示: 薄いピンク背景・説明が1行に入る幅(2026-10-27、ユーザー指示) */
+.req-form .dlg-title { text-align: center; font-size: 24px; color: #e0157f; font-weight: 700; }
+.req-form .dlg-detail { word-break: normal; }
 .req-form label.f { display: block; margin: 10px 0 2px; font-weight: 600; font-size: 13px; }
 .req-form .opt { display: block; margin: 4px 0; }
 .req-form select, .req-form textarea, .req-form input[type=text] { width: 100%; box-sizing: border-box; font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
