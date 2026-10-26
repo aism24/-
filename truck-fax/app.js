@@ -1118,7 +1118,7 @@
     function refresh() {
       var key = input.value;
       if (!loaded) { info.textContent = '記録を読み込んでいます…'; ok.disabled = true; return; }
-      cur = key ? all.filter(function (r) { return L.dateKey(r.積日) === key; }) : [];
+      cur = key ? L.sortImportRows(all.filter(function (r) { return L.dateKey(r.積日) === key; })) : []; // 取込一覧と同じ並び(画面の表もExcelも。2026-10-26、ユーザー指示)
       var pt = neighborDay(-1), nt = neighborDay(1);
       prevBtn.disabled = !pt; nextBtn.disabled = !nt;
       prevBtn.title = pt ? pt.replace(/-/g, '/') + ' へ' : '前に記録のある日はありません'; nextBtn.title = nt ? nt.replace(/-/g, '/') + ' へ' : '後ろに記録のある日はありません';
