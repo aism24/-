@@ -976,15 +976,20 @@
         if (!String(d.車番).trim()) { status.textContent = '車番は空にできません。'; status.className = 'faxdlg-status err'; return; }
         if ((d.積日 && !L.dateKey(d.積日)) || (d.卸日 && !L.dateKey(d.卸日))) { status.textContent = '積日・卸日は 2026/10/20 の形で入力してください。'; status.className = 'faxdlg-status err'; return; }
       }
+      var link = await askLink(todo.map(function (t) { return { source: 'import', row: t.row._row, before: L.recFields(t.row), data: t.d }; }), 'この行だけ直す').catch(function (err) { status.textContent = '連動の確認に失敗しました: ' + err.message; status.className = 'faxdlg-status err'; return null; });
+      if (!link) return;
       var close = busyDialog('データ記録中');
       try {
+        var linkedAll = '';
         for (var j = 0; j < todo.length; j++) {
           var e = todo[j];
-          await apiPost('updateImport', { row: e.row._row, before: L.recFields(e.row), data: e.d }, 60000);
+          var res = await apiPost('updateImport', { row: e.row._row, before: L.recFields(e.row), data: e.d, link: link === 'all' }, 120000);
+          if (res && res.linked) linkedAll = linkedText(res.linked) || linkedAll;
           Object.keys(e.d).forEach(function (k) { e.row[k] = e.d[k]; });
           e.orig = JSON.stringify(e.d);
         }
-        status.textContent = '保存しました(' + todo.length + '行)。'; status.className = 'faxdlg-status ok';
+        status.textContent = '保存しました(' + todo.length + '行)。' + linkedAll; status.className = 'faxdlg-status ok';
+        if (link === 'all') loadImports(true).catch(function () {});
         saveBtn.style.display = 'none';
         loadInit(true).catch(function () {}); // 重複の判定などに使う最新の記録を読み直す(一覧の表は、戻したときに描き直す)
       } catch (err) { status.textContent = '保存に失敗しました: ' + err.message; status.className = 'faxdlg-status err'; }
@@ -1105,6 +1110,8 @@
     var content = h('textarea', { placeholder: 'どう変えたいか、今困っていることを書いてください' });
     var file = h('input', { type: 'file' });
     var nameIn = h('input', { type: 'text', maxlength: '50' });
+    var anonNote = h('p', { class: 'note', style: 'color:#c62828;font-weight:700', text: '※匿名の場合は、内容を細かく設定してください。' }); // 名前が入ったら消す
+    nameIn.addEventListener('input', function () { anonNote.hidden = !!nameIn.value.trim(); });
     var msg = h('p', { class: 'bad', hidden: true });
     var cancel = h('button', { class: 'btn', type: 'button', text: 'キャンセル' });
     var send = h('button', { class: 'btn primary', type: 'button', text: 'AIに変更指示' });
@@ -1114,7 +1121,8 @@
       h('label', { class: 'f', text: '依頼の種類' }), kindBoxes, btnWrap,
       h('label', { class: 'f', text: '内容' }), content,
       h('label', { class: 'f', text: '集計したExcelなどの資料(あれば1ファイル・10MBまで)' }), file,
-      h('label', { class: 'f', text: 'お名前(任意)' }), nameIn, h('p', { class: 'note', text: '※匿名の場合は、内容を充実させてください' }),
+      h('p', { class: 'note', style: 'color:#c62828;font-weight:700', text: '※指定様式があればほぼその通りにダウンロードします。' }),
+      h('label', { class: 'f', text: 'お名前(任意)' }), nameIn, anonNote,
       msg, h('div', { class: 'dlg-btns', style: 'margin-top:14px' }, cancel, send));
     function kind() { var c = dlg.querySelector('input[name=reqKind]:checked'); return c ? c.value : ''; }
     function syncKind() { btnWrap.hidden = !(kind() === REQ_KINDS[1] || kind() === REQ_KINDS[2]); }
@@ -1219,13 +1227,67 @@
     return hit ? '同じ車番・同じ運転手の行が、既にあります。' : '';
   }
   async function savePair(mode, row, before, data) {
+    var link = 'only';
+    if (mode === 'update') {
+      try { link = await askLink([{ source: 'pair', row: row, before: before, data: data }], '車両・運転手情報だけ直す'); }
+      catch (e) { showBanner('連動の確認に失敗しました: ' + e.message); return; }
+      if (!link) return;
+    }
     try {
-      await apiPost('masterSave', { kind: 'pair', mode: mode, row: row, before: before, data: data });
+      var res = await apiPost('masterSave', { kind: 'pair', mode: mode, row: row, before: before, data: data, link: link === 'all' }, 120000);
+      if (res && res.linked) { toast(linkedText(res.linked)); loadImports(true).catch(function () {}); }
       if (mode === 'update') { var r = S.pairs.filter(function (x) { return x._row === row; })[0]; if (r) Object.keys(data).forEach(function (k) { r[k] = data[k]; }); }
       else { S.pairs = S.pairs.filter(function (x) { return x._row !== row; }); S.pairs.forEach(function (x) { if (x._row > row) x._row--; }); } // 行を削除すると、下の行の番号が1つ上がる
       S.editing = null; renderPairs(); showBanner(''); // 保存した内容は、その場で表に反映し、照合用の一覧などは裏で読み直す
       reloadInit();
     } catch (e) { showBanner('保存に失敗しました: ' + e.message); }
+  }
+
+  // ---------- 取込一覧 ⇔ 車両・運転手情報の連動(共通の6項目を直したとき、同じ「車番+氏名+車種」の他の行・記録も直す。GAS: linkPreview・link=true) ----------
+  var LINK_FIELDS = ['手配業者', '運送業者', '車種', '車番', '氏名', '携帯番号'];
+  function linkTouches(before, data) {
+    return LINK_FIELDS.some(function (f) { return data && Object.prototype.hasOwnProperty.call(data, f) && String(data[f] == null ? '' : data[f]).trim() !== String(before[f] == null ? '' : before[f]).trim(); });
+  }
+  function linkDialog(lines, warn, onlyText) {
+    return new Promise(function (resolve) {
+      var dlg = h('dialog', { class: 'dlg', style: 'width:min(92vw,520px)' },
+        h('p', { class: 'dlg-title', text: '同じ内容の他の記録も直しますか?' }),
+        h('div', { class: 'dlg-detail' }, lines.map(function (t) { return h('div', { text: t }); })),
+        warn ? h('p', { class: 'dlg-detail', style: 'color:#c62828;font-weight:700', text: warn }) : null,
+        h('div', { class: 'dlg-btns' },
+          h('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: function () { dlg.close('cancel'); } }),
+          h('button', { class: 'btn', type: 'button', text: onlyText, onclick: function () { dlg.close('only'); } }),
+          h('button', { class: 'btn primary', type: 'button', text: 'すべて直す', onclick: function () { dlg.close('all'); } })));
+      dlg.addEventListener('close', function () { var v = dlg.returnValue; dlg.remove(); resolve(v === 'all' || v === 'only' ? v : null); });
+      document.body.appendChild(dlg);
+      dlg.showModal();
+    });
+  }
+  /** items=[{source:'import'|'pair', row, before, data}]。連動する行の件数を確かめ、あれば確認する。戻り値: 'all'(連動して直す)・'only'(この行だけ)・null(キャンセル) */
+  async function askLink(items, onlyText) {
+    var sum = { pairs: 0, imports: 0, inactive: 0, cp: 0, ci: 0, key: false, co: {} };
+    var need = items.filter(function (it) { return linkTouches(it.before, it.data); });
+    if (!need.length) return 'only';
+    var close = busyDialog('連動する記録を確認中');
+    try {
+      for (var i = 0; i < need.length; i++) {
+        var r = await apiPost('linkPreview', need[i], 60000);
+        sum.pairs += r.pairs; sum.imports += r.imports; sum.inactive += r.importsInactive; sum.cp += r.companyPairs; sum.ci += r.companyImports;
+        if (r.keyChanged) sum.key = true;
+        if (r.companyFrom && (r.companyPairs || r.companyImports)) sum.co[r.companyFrom + '→' + r.companyTo] = true;
+      }
+    } finally { close(); }
+    if (!(sum.pairs + sum.imports + sum.cp + sum.ci)) return 'only';
+    var lines = [];
+    if (sum.pairs) lines.push('車両・運転手情報のほかの行: ' + sum.pairs + '行');
+    if (sum.imports) lines.push('取込一覧のほかの記録: ' + sum.imports + '件' + (sum.inactive ? '(うち変更前・中止 ' + sum.inactive + '件)' : ''));
+    if (sum.cp || sum.ci) lines.push('運送業者「' + Object.keys(sum.co).join('」「').replace(/→/g, '」→「') + '」: 他の運転手の車両・運転手情報 ' + sum.cp + '行、取込一覧 ' + sum.ci + '件');
+    return linkDialog(lines, sum.key ? '※車番・氏名・車種を直しています。別の人に替えた場合は、過去の記録も書き換わります。' : '', onlyText);
+  }
+  function linkedText(l) {
+    if (!l) return '';
+    var p = (l.pairs || 0) + (l.companyPairs || 0), i = (l.imports || 0) + (l.companyImports || 0);
+    return p + i ? '連動して更新しました(車両・運転手情報 ' + p + '行、取込一覧 ' + i + '件)。' : '';
   }
 
   /** 画面中央のポップアップでお知らせする(OKボタンで閉じる) */

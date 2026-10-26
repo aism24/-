@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261026c';
+var CODE_VERSION = '20261026d';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_MERGED = '車両運転手情報'; // 1行=車と運転手の1組。シートの列は MERGED_HEADERS(見出し名で読み書きする)
@@ -346,6 +346,7 @@ function doPost(e) {
     if (body.action === 'updateImport') return ok_(withLock_(function () { return updateImport_(body); }));
     if (body.action === 'applyChanges') return ok_(withLock_(function () { return applyChanges_(body); }));
     if (body.action === 'changeRequest') return ok_(withLock_(function () { return changeRequest_(body); }));
+    if (body.action === 'linkPreview') return ok_(linkPreview_(body));
     if (body.action === 'masterSave') return ok_(withLock_(function () { return masterSave_(body); }));
     return err_('不明なaction: ' + body.action);
   } catch (ex) { return err_(ex.message); }
@@ -646,7 +647,8 @@ function updateImport_(body) {
   if ('追加変更' in obj && ['', '変更前', '変更後', '中止'].indexOf(obj.追加変更) < 0) throw new Error('「追加変更」の値が不正です: ' + obj.追加変更);
   ['積日', '卸日'].forEach(function (k) { if (obj[k] && !/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(obj[k])) throw new Error(k + 'は 2026/10/20 の形で入力してください。'); });
   writeRow_(imp, IMPORT_HEADERS, row, obj);
-  return { ok: true, row: row };
+  var linked = body.link === true ? applyLink_('import', row, body.before, data) : null;
+  return { ok: true, row: row, linked: linked };
 }
 
 /** items: [{mode:'mark', row, label:'変更前'|'中止', before, note}, {mode:'add', data, label}]。
@@ -923,6 +925,78 @@ function syncTypeNotes_(pairs) {
 
 function masterSave_(body) {
   applyOp_({ kind: body.kind, mode: body.mode, row: body.row, before: body.before, data: body.data });
+  var linked = body.kind === 'pair' && body.mode === 'update' && body.link === true ? applyLink_('pair', body.row, body.before, body.data) : null;
   if (body.kind === 'pair') { try { syncTypeNotes_(mergedRowsNow_()); } catch (e) { /* 失敗しても保存は済んでいる */ } }
-  return { ok: true };
+  return { ok: true, linked: linked };
+}
+
+// ---------- 取込一覧 ⇔ 車両運転手情報の連動(2026-10-26、ユーザー指示) ----------
+// 共通の6項目(手配業者・運送業者・車種・車番・氏名・携帯番号)を一方で直したとき、もう一方の「同じ組み合わせ」の行も同じに直す。
+// 同じ組み合わせ = 直す前の「車番+氏名+車種」が一致する行(変更前・中止の行も含む)。
+// 運送業者の名前を直したときは、同じ運送業者名(書き方の違いは同じとみなす)の他の運転手の行・記録の運送業者も直す。
+// 画面は、保存の前に linkPreview で件数を確かめ、ユーザーが「すべて直す」を選んだときだけ link=true で保存する。
+var LINK_FIELDS = ['手配業者', '運送業者', '車種', '車番', '氏名', '携帯番号'];
+var LINK_MAX_ROWS = 600;
+function linkSame_(f, a, b) {
+  a = String(a == null ? '' : a); b = String(b == null ? '' : b);
+  if (f === '車番') return plateKey_(a) === plateKey_(b);
+  if (f === '車種') return typeKey_(a) === typeKey_(b);
+  if (f === '携帯番号') return phoneDigits_(a) === phoneDigits_(b);
+  return compact_(a) === compact_(b);
+}
+function linkValue_(f, v) {
+  v = String(v == null ? '' : v).trim();
+  if (f === '車種') return fmtType_(v);
+  if (f === '携帯番号') return fmtPhone_(v);
+  return v;
+}
+/** 連動の計画。source='import'|'pair'、row=いま直している行(連動の対象から外す)、before=直す前の値、data=直した値。 */
+function linkPlan_(source, row, before, data) {
+  before = before || {}; data = data || {};
+  var after = {}, changed = [];
+  LINK_FIELDS.forEach(function (f) {
+    var b = String(before[f] == null ? '' : before[f]).trim();
+    var d = Object.prototype.hasOwnProperty.call(data, f) ? String(data[f] == null ? '' : data[f]).trim() : b;
+    if (d !== b) { changed.push(f); after[f] = linkValue_(f, d); } else after[f] = b;
+  });
+  var plan = { changed: changed, after: after, pairs: [], imports: [], companyPairs: [], companyImports: [], importsInactive: 0, keyChanged: false };
+  if (!changed.length) return plan;
+  plan.keyChanged = changed.indexOf('車番') >= 0 || changed.indexOf('氏名') >= 0 || changed.indexOf('車種') >= 0;
+  var keyPlate = plateKey_(before.車番), keyName = compact_(before.氏名), keyType = typeKey_(before.車種);
+  var hasKey = !!(keyPlate || keyName);
+  function keyMatch(r) { return hasKey && plateKey_(r.車番) === keyPlate && compact_(r.氏名) === keyName && typeKey_(r.車種) === keyType; }
+  function differs(r, fields) { return fields.some(function (f) { return !linkSame_(f, r[f], after[f]); }); }
+  var oldCo = companyKey_(before.運送業者), spread = changed.indexOf('運送業者') >= 0 && !!oldCo;
+  var pairRows = mergedRowsNow_();
+  var impRows = readRows_(sheet_(SHEET_IMPORT), IMPORT_HEADERS, 2, null, IMPORT_OPTIONAL);
+  pairRows.forEach(function (r) {
+    if (source === 'pair' && r._row === row) return;
+    if (keyMatch(r)) { if (differs(r, changed)) plan.pairs.push(r._row); }
+    else if (spread && companyKey_(r.運送業者) === oldCo && differs(r, ['運送業者'])) plan.companyPairs.push(r._row);
+  });
+  impRows.forEach(function (r) {
+    if (source === 'import' && r._row === row) return;
+    if (keyMatch(r)) {
+      if (differs(r, changed)) { plan.imports.push(r._row); if (INACTIVE_LABELS.indexOf(r.追加変更) >= 0) plan.importsInactive++; }
+    } else if (spread && companyKey_(r.運送業者) === oldCo && differs(r, ['運送業者'])) plan.companyImports.push(r._row);
+  });
+  return plan;
+}
+function linkPreview_(body) {
+  var p = linkPlan_(body.source, Number(body.row), body.before, body.data);
+  return { changed: p.changed, keyChanged: p.keyChanged, pairs: p.pairs.length, imports: p.imports.length, importsInactive: p.importsInactive,
+    companyPairs: p.companyPairs.length, companyImports: p.companyImports.length, companyFrom: p.changed.indexOf('運送業者') >= 0 ? String((body.before || {}).運送業者 || '') : '', companyTo: p.after.運送業者 };
+}
+/** 連動して書き込む(先に、いま直している行の保存が済んでいること)。返り値は、直した行数。 */
+function applyLink_(source, row, before, data) {
+  var p = linkPlan_(source, Number(row), before, data);
+  var total = p.pairs.length + p.imports.length + p.companyPairs.length + p.companyImports.length;
+  if (total > LINK_MAX_ROWS) throw new Error('連動する行が多すぎます(' + total + '行)。画面の「この行だけ直す」で保存してください。');
+  function vals(fields) { var o = {}; fields.forEach(function (f) { o[f] = p.after[f]; }); return o; }
+  p.pairs.forEach(function (r) { mergedWrite_(r, vals(p.changed)); });
+  p.companyPairs.forEach(function (r) { mergedWrite_(r, vals(['運送業者'])); });
+  var imp = sheet_(SHEET_IMPORT);
+  p.imports.forEach(function (r) { writeRow_(imp, IMPORT_HEADERS, r, vals(p.changed)); });
+  p.companyImports.forEach(function (r) { writeRow_(imp, IMPORT_HEADERS, r, vals(['運送業者'])); });
+  return { pairs: p.pairs.length, imports: p.imports.length, companyPairs: p.companyPairs.length, companyImports: p.companyImports.length };
 }
