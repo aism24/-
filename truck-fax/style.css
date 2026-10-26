@@ -83,7 +83,7 @@ code { background: var(--th); padding: 1px 5px; border-radius: 4px; }
 .req-btn:hover { background: #ffc4e0; }
 dialog.dlg.req-form { background: #ffe6f1; max-width: min(96vw, 760px); width: min(96vw, 760px); } /* AIに変更指示: 薄いピンク背景・説明が1行に入る幅(2026-10-27、ユーザー指示) */
 .req-form .dlg-title { text-align: center; font-size: 24px; color: #e0157f; font-weight: 700; }
-.req-form .dlg-detail { word-break: normal; }
+.req-form .dlg-detail { word-break: normal; text-align: center; }
 .req-form label.f { display: block; margin: 10px 0 2px; font-weight: 600; font-size: 13px; }
 .req-form .opt { display: block; margin: 4px 0; }
 .req-form select, .req-form textarea, .req-form input[type=text] { width: 100%; box-sizing: border-box; font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
