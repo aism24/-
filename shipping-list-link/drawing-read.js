@@ -74,21 +74,26 @@
         var s0 = LOCATE_SIDE / Math.max(W, H), sH = READ_DPI / 72, pdfPage = out.getPage(pn - 1), annots = [];
         var full = await renderRegion(page, s0, 0, 0, W * s0, H * s0);
         var loc = await call('locate', full.canvas);
-        // 図面番号: 右下の図面番号欄を高解像度で読み直し、マスタにある方を採る(場所探しで読んだ値も候補)
-        var cands = [];
+        // 右下の図面番号欄の画像(着色の範囲を求めるのに使う。ここでは読み取りを呼ばない)
         var nb = boxPx(loc.drawingNumberBox, W * sH, H * sH), nr = null, rx0 = 0, ry0 = 0;
         if (nb) {
           var padx = (nb.x1 - nb.x0) * 0.6 + 40, pady = (nb.y1 - nb.y0) * 3 + 60;   // 欄の罫線(上は「図面番号」の文字の上)まで入る広さ
           rx0 = clamp(nb.x0 - padx, 0, W * sH); ry0 = clamp(nb.y0 - pady, 0, H * sH); var rx1 = clamp(nb.x1 + padx, 0, W * sH), ry1 = clamp(nb.y1 + pady, 0, H * sH);
           nr = await renderRegion(page, sH, rx0, ry0, rx1 - rx0, ry1 - ry0);
-          try { cands.push((await call('number', nr.canvas)).text); } catch (e) { /* 読み直しに失敗しても、場所探しの値で続ける */ }
         }
-        if (loc.drawingNumber) cands.push(loc.drawingNumber);
-        var zRead = cands.filter(Boolean).filter(function (t) { return byZ[fold(t)]; })[0], zShow = cands.filter(Boolean)[0] || '';
-        var tables = loc.tables || [];
-        if (!tables.length) { stats.ng++; stats.partial.push({ page: pn, zuban: zShow, name: '', reason: '製品表が見つかりません' }); continue; }
-        if (!zRead) { tables.forEach(function () { stats.ng++; }); stats.partial.push({ page: pn, zuban: zShow, name: '', reason: 'マスタに無い図番(読み取り: ' + (zShow || '読めず') + ')' }); continue; }
-        var entries = byZ[fold(zRead)], used = {};
+        // 速い道: 全体画像の1回の読み取りで、図面番号がマスタにあり、製品表のセルがその図番の製品名と一致すればそこで確定する(Geminiの呼び出し1回)。
+        // 遅い道(確定できなかったときだけ): 図面番号欄と製品表を高解像度で切り出して読み直す(最大2回追加)
+        var numMemo = null, readNumber = async function () {
+          if (numMemo) return numMemo;
+          var cs = [];
+          if (nr) { try { cs.push((await call('number', nr.canvas)).text); } catch (e) { /* 読み直しに失敗しても、場所探しの値で続ける */ } }
+          if (loc.drawingNumber) cs.push(loc.drawingNumber);
+          cs = cs.filter(Boolean);
+          return (numMemo = { z: cs.filter(function (t) { return byZ[fold(t)]; })[0], show: cs[0] || '' });
+        };
+        var tables = loc.tables || [], used = {}, zMsg = false;
+        if (!tables.length) { stats.ng++; stats.partial.push({ page: pn, zuban: loc.drawingNumber || '', name: '', reason: '製品表が見つかりません' }); continue; }
+        var zFast = loc.drawingNumber && byZ[fold(loc.drawingNumber)] ? loc.drawingNumber : null;
         for (var ti = 0; ti < tables.length; ti++) {
           var tb = boxPx(tables[ti].box, W * sH, H * sH);
           if (!tb) { stats.ng++; continue; }
@@ -96,17 +101,38 @@
           var px = (tb.x1 - tb.x0) * 0.03 + 24, py = (tb.y1 - tb.y0) * 0.3 + 24;
           var cx0 = clamp(tb.x0 - px, 0, W * sH), cy0 = clamp(tb.y0 - py, 0, H * sH), cx1 = clamp(tb.x1 + px, 0, W * sH), cy1 = clamp(tb.y1 + py, 0, H * sH);
           var tr = await renderRegion(page, sH, cx0, cy0, cx1 - cx0, cy1 - cy0);
-          var tbl = await call('table', tr.canvas), cw = tr.canvas.width, ch = tr.canvas.height, hit = null, seen = [];
-          (tbl.cells || []).forEach(function (c, ci) {
-            if (c.text) seen.push(c.text);
-            if (hit || !c.text) return;
-            for (var ei = 0; ei < entries.length; ei++) if (!used[ei] && entries[ei].f === fold(c.text)) { hit = { e: entries[ei], ei: ei, c: c }; return; }
-          });
-          if (!hit) { stats.ng++; stats.partial.push({ page: pn, zuban: zRead, name: seen.join(' | '), reason: '製品名が不一致(読み取った表の文字を表示)' }); continue; }
-          used[hit.ei] = 1;
+          var hit = null, seen = [], zUse = zFast, tbx = null;
+          function pick(cells, z) {
+            var es = byZ[fold(z)], found = null;
+            (cells || []).forEach(function (c) {
+              if (c.text) seen.push(c.text);
+              if (found || !c.text) return;
+              for (var ei = 0; ei < es.length; ei++) if (!used[fold(z) + '#' + ei] && es[ei].f === fold(c.text)) { found = { e: es[ei], k: fold(z) + '#' + ei, c: c }; return; }
+            });
+            return found;
+          }
+          if (zFast && tables[ti].cells) {
+            hit = pick(tables[ti].cells, zFast);
+            var fb = hit && boxPx(hit.c.box, W * sH, H * sH);
+            if (fb) tbx = { x0: fb.x0 - cx0, y0: fb.y0 - cy0, x1: fb.x1 - cx0, y1: fb.y1 - cy0 }; else hit = null;
+          }
+          if (!hit) {
+            seen = [];
+            var zn = await readNumber();
+            zUse = zn.z;
+            if (!zUse) {
+              stats.ng++;
+              if (!zMsg) { zMsg = true; stats.partial.push({ page: pn, zuban: zn.show, name: '', reason: 'マスタに無い図番(読み取り: ' + (zn.show || '読めず') + ')' }); }
+              continue;
+            }
+            var tbl = await call('table', tr.canvas);
+            hit = pick(tbl.cells, zUse);
+            if (hit) tbx = boxPx(hit.c.box, tr.canvas.width, tr.canvas.height);
+          }
+          if (!hit) { stats.ng++; stats.partial.push({ page: pn, zuban: zUse, name: seen.join(' | '), reason: '製品名が不一致(読み取った表の文字を表示)' }); continue; }
+          used[hit.k] = 1;
           if (Array.isArray(hit.e.v)) { stats.dup++; stats.ng++; stats.partial.push({ page: pn, zuban: hit.e.zuban, name: hit.e.name, reason: '重複' }); continue; }
-          var tbx = boxPx(hit.c.box, cw, ch);
-          if (!tbx) { stats.ng++; stats.partial.push({ page: pn, zuban: zRead, name: hit.c.text, reason: 'セルの位置を読み取れません' }); continue; }
+          if (!tbx) { stats.ng++; stats.partial.push({ page: pn, zuban: zUse, name: hit.c.text, reason: 'セルの位置を読み取れません' }); continue; }
           var cell = cellFromLines(tr.canvas, { x0: tb.x0 - cx0, y0: tb.y0 - cy0, x1: tb.x1 - cx0, y1: tb.y1 - cy0 }, tbx);
           var A = tr.vp.convertToPdfPoint(cx0 + cell.x0, cy0 + cell.y0), B = tr.vp.convertToPdfPoint(cx0 + cell.x1, cy0 + cell.y1);
           annots.push({ rect: [Math.min(A[0], B[0]), Math.min(A[1], B[1]), Math.max(A[0], B[0]), Math.max(A[1], B[1])], uri: hit.e.v });

@@ -15,7 +15,7 @@ var SHEET_ID = '19l9P9C15wQ0jIcjIc_czZCiyDbnesQbq-Q88ttndMfs';
 var SHEET_NAME = '記録';
 var LINKS_FILE_NAME = '_リンク表.json';
 var STORE_FILE_NAME = '_リンク表_Excel別.json'; // Excelごとの抜き出し結果(ボタンの再生成で、変更の無いExcelを読み直さないため)
-var CODE_VERSION = '20261027a';                // コードを変えたら更新する(?action=ping で確認)
+var CODE_VERSION = '20261027b';                // コードを変えたら更新する(?action=ping で確認)
 var COL_ZUBAN = 'F', COL_NAME = 'G'; // 図番列 / 製品名(製品マーク)列
 
 /* ===== 純粋関数(GAS API非依存・Nodeでテスト可能) ===== */
@@ -290,9 +290,11 @@ var OCR_KINDS = {
       '1. drawingNumber: 右下の表題欄の「図面番号」欄に書かれた文字(例 EA1-2G-01)。読めなければ空文字。\n' +
       '2. drawingNumberBox: その図面番号の文字の位置 [ymin,xmin,ymax,xmax](画像全体を0〜1000とした値)。\n' +
       '3. tables: 図面内の「製品表」の位置の一覧。製品表とは、罫線で囲まれた横1行の表で、右端のセルが台数(例「1台」)になっているもの。' +
-      '梁は「製品名|設計符号|部材サイズ|台数」、柱は「設計符号|設計符号|製品名|図示|台数」の並び。キープランの中の文字、表題欄、注記の表は含めない。見つからなければ空配列。',
+      '梁は「製品名|設計符号|部材サイズ|台数」、柱は「設計符号|設計符号|製品名|図示|台数」の並び。キープランの中の文字、表題欄、注記の表は含めない。見つからなければ空配列。' +
+      ' 各表には cells も付ける: 左のセルから順に、各セルの文字 text と、その文字の位置 box([ymin,xmin,ymax,xmax]、画像全体を0〜1000とした値)。空のセルは text を空文字にする。',
     schema: { type: 'OBJECT', properties: { drawingNumber: { type: 'STRING' }, drawingNumberBox: OCR_BOX,
-      tables: { type: 'ARRAY', items: { type: 'OBJECT', properties: { box: OCR_BOX }, required: ['box'] } } }, required: ['drawingNumber', 'tables'] }
+      tables: { type: 'ARRAY', items: { type: 'OBJECT', properties: { box: OCR_BOX, cells: { type: 'ARRAY', items: { type: 'OBJECT',
+      properties: { text: { type: 'STRING' }, box: OCR_BOX }, required: ['text'] } } }, required: ['box'] } } }, required: ['drawingNumber', 'tables'] }
   },
   number: {
     prompt: '画像は図面の表題欄の「図面番号」欄です。図面番号の文字だけを text に返してください(英大文字・数字・ハイフンのみ。例 EA1-2G-01)。読めなければ空文字。',
