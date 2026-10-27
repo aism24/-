@@ -35,7 +35,6 @@
   // 比較用: 前後の空白を除き、全角半角などをそろえる
   function norm(s) { return String(s).normalize('NFKC').replace(/[\s ]+/g, ' ').trim(); }
   function shape(t) { return t.replace(/[0-9]/g, '9').replace(/[A-Z]/g, 'A').replace(/[a-z]/g, 'a'); }
-  function encodeUri(u) { return u.replace(/[^\x21-\x7e]/g, function (c) { return encodeURIComponent(c); }); }
 
   // シートの行ごとのセル(文字のあるものだけ)を読む
   function readRows(xml, sst) {
@@ -204,7 +203,7 @@
       var rl = '';
       adds.forEach(function (a) {
         var id = 'rIdSL' + (++n);
-        rl += '<Relationship Id="' + id + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="' + encodeXml(encodeUri(a.uri)) + '" TargetMode="External"/>';
+        rl += '<Relationship Id="' + id + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="' + encodeXml(a.uri) + '" TargetMode="External"/>';
         hl += '<hyperlink ref="' + a.ref + '" r:id="' + id + '"/>';
       });
       rx = rx.replace('</Relationships>', rl + '</Relationships>');
