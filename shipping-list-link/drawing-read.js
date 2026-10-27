@@ -31,20 +31,36 @@
   // tbl: 製品表の範囲(canvas上のpx)/ cb: 読み取ったセルの文字の範囲。使うのは中心の位置だけ
   // 1. 表の左右ほぼ全幅に渡る横線のうち、文字の中心から上下にいちばん近い線 → セルの上端・下端
   // 2. 上端〜下端のほぼ全高に渡る縦線 → 列の区切り。文字の中心を挟む2本 → セルの左端・右端
-  function cellFromLines(canvas, tbl, cb) {
+  // opt(省略可): { idx: 読み取った表の中で左から何番目のセルか, first: 左端のセルの文字の範囲 }。横位置のずれに強い「左から数えて何番目の区切りか」で左右を決める
+  function cellFromLines(canvas, tbl, cb, opt) {
     var w = canvas.width, h = canvas.height, d = canvas.getContext('2d').getImageData(0, 0, w, h).data;
     function dark(x, y) { x = clamp(Math.round(x), 0, w - 1); y = clamp(Math.round(y), 0, h - 1); var i = (y * w + x) * 4; return (d[i] + d[i + 1] + d[i + 2]) / 3 < 170; }
-    var xc = (cb.x0 + cb.x1) / 2, yc = (cb.y0 + cb.y1) / 2, tw = tbl.x1 - tbl.x0;
-    var xa = tbl.x0 + tw * 0.1, xb = tbl.x1 - tw * 0.1;
-    function hFrac(y) { var n = 0, t = 0, x; for (x = xa; x <= xb; x += 2) { t++; if (dark(x, y - 1) || dark(x, y) || dark(x, y + 1)) n++; } return n / t; }
+    var xc = (cb.x0 + cb.x1) / 2, yc = (cb.y0 + cb.y1) / 2, tw = tbl.x1 - tbl.x0, T = null, B = null;
+    function hFrac(y, xa, xb) { var n = 0, t = 0, x; for (x = xa; x <= xb; x += 2) { t++; if (dark(x, y - 1) || dark(x, y) || dark(x, y + 1)) n++; } return t ? n / t : 0; }
     function vFrac(x, ya, yb) { var n = 0, t = 0, y; for (y = ya; y <= yb; y += 2) { t++; if (dark(x - 1, y) || dark(x, y) || dark(x + 1, y)) n++; } return n / t; }
-    var T = null, B = null, y;
-    for (y = yc; y >= Math.max(0, yc - h * 0.5); y--) if (hFrac(y) >= 0.85) { T = y; break; }
-    for (y = yc; y <= Math.min(h - 1, yc + h * 0.5); y++) if (hFrac(y) >= 0.85) { B = y; break; }
+    // 上端・下端: 先に、そのセルの文字のあたり(横幅は文字の範囲)で探す。表の枠の外に文字(重量など)がはみ出す表でも見つかるように。だめなら表の中央80%で探す
+    var ranges = [[cb.x0, cb.x1], [tbl.x0 + tw * 0.1, tbl.x1 - tw * 0.1]], ri, y;
+    for (ri = 0; ri < ranges.length && (T === null || B === null); ri++) {
+      T = null; B = null;
+      for (y = yc; y >= Math.max(0, yc - h * 0.5); y--) if (hFrac(y, ranges[ri][0], ranges[ri][1]) >= 0.85) { T = y; break; }
+      for (y = yc; y <= Math.min(h - 1, yc + h * 0.5); y++) if (hFrac(y, ranges[ri][0], ranges[ri][1]) >= 0.85) { B = y; break; }
+    }
     if (T !== null && B !== null && B - T >= 8) {
       var lines = [], x, last = -99;
       for (x = 0; x < w; x++) if (vFrac(x, T + 3, B - 3) >= 0.85) { if (x - last > 3) lines.push([x, x]); else lines[lines.length - 1][1] = x; last = x; }
       var L = null, R = null;
+      if (opt && opt.idx >= 0) {
+        // 上の罫線をたどって表の左右の端を見つけ、その中の縦線で区切られた「左から idx 番目」のセルにする
+        // (Geminiの横位置は1セル近くずれることがあるので、横位置ではなく順番で決める)
+        var dk = function (xx) { return dark(xx, T - 1) || dark(xx, T) || dark(xx, T + 1); }, Lx = clamp(xc, 0, w - 1), Rx = Lx, gp = 0, xx;
+        for (xx = Lx, gp = 0; xx >= 0; xx--) { if (dk(xx)) { gp = 0; Lx = xx; } else if (++gp > 4) break; }
+        for (xx = Rx, gp = 0; xx < w; xx++) { if (dk(xx)) { gp = 0; Rx = xx; } else if (++gp > 4) break; }
+        var inner = lines.filter(function (l) { var c = (l[0] + l[1]) / 2; return c >= Lx - 4 && c <= Rx + 4; });
+        if (inner.length > opt.idx + 1) {
+          var l0 = (inner[opt.idx][0] + inner[opt.idx][1]) / 2, l1 = (inner[opt.idx + 1][0] + inner[opt.idx + 1][1]) / 2;
+          if (l1 - l0 >= 8) return { x0: l0, y0: T, x1: l1, y1: B, snapped: true };
+        }
+      }
       lines.forEach(function (l) { var c = (l[0] + l[1]) / 2; if (c <= xc) L = c; else if (R === null) R = c; });
       if (L !== null && R !== null && R - L >= 8) return { x0: L, y0: T, x1: R, y1: B, snapped: true };
     }
@@ -69,11 +85,26 @@
       return r.data;
     }
     try {
-      for (var pn = 1; pn <= doc.numPages; pn++) {
+      // ページごとの処理。ページは並行して読む(Geminiの待ち時間が重ならないように)。結果の順序は最後に頁順に整える
+      var pageJob = async function (pn) {
         var page = await doc.getPage(pn), v1 = page.getViewport({ scale: 1 }), W = v1.width, H = v1.height;
         var s0 = LOCATE_SIDE / Math.max(W, H), sH = READ_DPI / 72, pdfPage = out.getPage(pn - 1), annots = [];
         var full = await renderRegion(page, s0, 0, 0, W * s0, H * s0);
         var loc = await call('locate', full.canvas);
+        // 製品表を見落としたときだけ: ページを上下2つ(少し重ねる)に分け、拡大して探し直す。位置はページ全体の0〜1000に直して使う
+        if (!(loc.tables || []).length) {
+          var halves = [[0, 0.55], [0.45, 0.55]], sh = (2400 / W);
+          var found = await Promise.all(halves.map(async function (h) {
+            try {
+              var part = await renderRegion(page, sh, 0, H * sh * h[0], W * sh, H * sh * h[1]), r2 = await call('locate', part.canvas), off = h[0] * 1000, hh = h[1];
+              var mapBox = function (b) { return b && b.length === 4 ? [off + b[0] * hh, b[1], off + b[2] * hh, b[3]] : b; };
+              return (r2.tables || []).map(function (t) {
+                return { box: mapBox(t.box), cells: (t.cells || []).map(function (c) { return { text: c.text, box: mapBox(c.box) }; }) };
+              });
+            } catch (e) { return []; }
+          }));
+          loc.tables = [].concat.apply([], found);
+        }
         // 右下の図面番号欄の画像(着色の範囲を求めるのに使う。ここでは読み取りを呼ばない)
         var nb = boxPx(loc.drawingNumberBox, W * sH, H * sH), nr = null, rx0 = 0, ry0 = 0;
         if (nb) {
@@ -92,16 +123,16 @@
           return (numMemo = { z: cs.filter(function (t) { return byZ[fold(t)]; })[0], show: cs[0] || '' });
         };
         var tables = loc.tables || [], used = {}, zMsg = false;
-        if (!tables.length) { stats.ng++; stats.partial.push({ page: pn, zuban: loc.drawingNumber || '', name: '', reason: '製品表が見つかりません' }); continue; }
+        if (!tables.length) { stats.ng++; stats.partial.push({ page: pn, zuban: loc.drawingNumber || '', name: '', reason: '製品表が見つかりません' }); return; }
         var zFast = loc.drawingNumber && byZ[fold(loc.drawingNumber)] ? loc.drawingNumber : null;
         for (var ti = 0; ti < tables.length; ti++) {
           var tb = boxPx(tables[ti].box, W * sH, H * sH);
           if (!tb) { stats.ng++; continue; }
           stats.tables++;
-          var px = (tb.x1 - tb.x0) * 0.03 + 24, py = (tb.y1 - tb.y0) * 0.3 + 24;
+          var px = Math.max((tb.x1 - tb.x0) * 0.03 + 24, W * sH * 0.04), py = (tb.y1 - tb.y0) * 0.3 + 24;   // 横はGeminiの位置のずれ(最大でページ幅の数%)を見込んで広く
           var cx0 = clamp(tb.x0 - px, 0, W * sH), cy0 = clamp(tb.y0 - py, 0, H * sH), cx1 = clamp(tb.x1 + px, 0, W * sH), cy1 = clamp(tb.y1 + py, 0, H * sH);
           var tr = await renderRegion(page, sH, cx0, cy0, cx1 - cx0, cy1 - cy0);
-          var hit = null, seen = [], zUse = zFast, tbx = null;
+          var hit = null, seen = [], zUse = zFast, tbx = null, cellOpt = null;
           function pick(cells, z) {
             var es = byZ[fold(z)], found = null;
             (cells || []).forEach(function (c) {
@@ -114,7 +145,10 @@
           if (zFast && tables[ti].cells) {
             hit = pick(tables[ti].cells, zFast);
             var fb = hit && boxPx(hit.c.box, W * sH, H * sH);
-            if (fb) tbx = { x0: fb.x0 - cx0, y0: fb.y0 - cy0, x1: fb.x1 - cx0, y1: fb.y1 - cy0 }; else hit = null;
+            if (fb) {
+              tbx = { x0: fb.x0 - cx0, y0: fb.y0 - cy0, x1: fb.x1 - cx0, y1: fb.y1 - cy0 };
+                            cellOpt = { idx: tables[ti].cells.indexOf(hit.c) };
+            } else hit = null;
           }
           if (!hit) {
             seen = [];
@@ -127,13 +161,16 @@
             }
             var tbl = await call('table', tr.canvas);
             hit = pick(tbl.cells, zUse);
-            if (hit) tbx = boxPx(hit.c.box, tr.canvas.width, tr.canvas.height);
+            if (hit) {
+              tbx = boxPx(hit.c.box, tr.canvas.width, tr.canvas.height);
+              cellOpt = { idx: tbl.cells.indexOf(hit.c) };
+            }
           }
           if (!hit) { stats.ng++; stats.partial.push({ page: pn, zuban: zUse, name: seen.join(' | '), reason: '製品名が不一致(読み取った表の文字を表示)' }); continue; }
           used[hit.k] = 1;
           if (Array.isArray(hit.e.v)) { stats.dup++; stats.ng++; stats.partial.push({ page: pn, zuban: hit.e.zuban, name: hit.e.name, reason: '重複' }); continue; }
           if (!tbx) { stats.ng++; stats.partial.push({ page: pn, zuban: zUse, name: hit.c.text, reason: 'セルの位置を読み取れません' }); continue; }
-          var cell = cellFromLines(tr.canvas, { x0: tb.x0 - cx0, y0: tb.y0 - cy0, x1: tb.x1 - cx0, y1: tb.y1 - cy0 }, tbx);
+          var cell = cellFromLines(tr.canvas, { x0: tb.x0 - cx0, y0: tb.y0 - cy0, x1: tb.x1 - cx0, y1: tb.y1 - cy0 }, tbx, cellOpt);
           var A = tr.vp.convertToPdfPoint(cx0 + cell.x0, cy0 + cell.y0), B = tr.vp.convertToPdfPoint(cx0 + cell.x1, cy0 + cell.y1);
           annots.push({ rect: [Math.min(A[0], B[0]), Math.min(A[1], B[1]), Math.max(A[0], B[0]), Math.max(A[1], B[1])], uri: hit.e.v });
           stats.linked++;
@@ -154,7 +191,10 @@
           pdfPage.drawRectangle({ x: a.rect[0], y: a.rect[1], width: a.rect[2] - a.rect[0], height: a.rect[3] - a.rect[1],
             color: PDFLib.rgb(0.62, 0.78, 1), blendMode: PDFLib.BlendMode.Multiply });
         });
-      }
+      };
+      var nextPage = 1, worker = async function () { while (nextPage <= doc.numPages) await pageJob(nextPage++); };
+      await Promise.all([worker(), worker(), worker()]);
+      stats.partial.sort(function (a, b) { return a.page - b.page; });
     } finally { doc.destroy(); }
     return { bytes: await out.save(), stats: stats };
   }

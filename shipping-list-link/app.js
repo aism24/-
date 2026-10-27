@@ -211,8 +211,8 @@
     try {
       var buf = await file.arrayBuffer(), isXlsx = /\.xls[xm]$/i.test(file.name);
       var r = isXlsx ? await ShippingXlsx.linkXlsx(JSZip, buf, links, mapOpt()) : await ShippingCore.linkPdf(pdfjsLib, PDFLib, buf, links, mapOpt());
-      // 文字データの無い詳細図(文字が線で描かれたCAD図面): 文字から図番らしい語が1つも見つからず、文字そのものも少ないときだけ、画像として読み取る
-      if (!isXlsx && GAS_URL && r.stats.linked === 0 && r.stats.ng === 0 && r.stats.rows <= 10 * r.stats.pages) {
+      // 詳細図(図番・製品名が線で描かれたCAD図面。寸法などの文字データだけ入っていることもある): 文字から図番らしい語が1つも見つからないときだけ、画像として読み取る
+      if (!isXlsx && GAS_URL && r.stats.linked === 0 && r.stats.ng === 0) {
         $('msg').textContent = '図面を画像として読み取り中…(1枚あたり十数秒かかります)';
         r = await ShippingDrawing.linkDrawing(pdfjsLib, PDFLib, buf, links, askGas);
       }
