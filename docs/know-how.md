@@ -682,3 +682,10 @@
 - やり方: リンク先はマスタの値をそのまま `<Relationship Target=… TargetMode="External">` に入れる(XMLのエスケープだけ)。PDF(Acrobat)は `%E2%91%A0` 形式でよい
 - 注意点: マスタは日本語が生の文字で空白だけ `%20`。Excelは%を「UTF-8でなくANSI」と読んで化ける
 - 使ったアプリ: shipping-list-link
+
+### Playwrightで所要時間を測るとき、画面に無い(非表示の)ボタンを `click()` しない(shipping-list-link 10/27)
+- 効果: 「8ページの詳細図 50〜60秒」と報告していたのが、実際は約21〜24秒(非表示の「NG一覧を見る」を `click()` して、既定の30秒待ちが加算されていた)→ ダウンロードやポップアップの出現時点で時刻を取る形に直して測り直した
+- やり方: `waitForSelector('#modal.show')` の直後に経過時間を記録し、そのあとで `evaluate` で表示内容を読む。クリックが必要なら `{timeout: 1000}` を付ける
+- 注意点: 速度の数値を報告する前に、待ち時間が計測に混ざっていないか(隠れた `click`・`waitFor`)を確認する
+- 使ったアプリ: shipping-list-link
+

@@ -6,6 +6,7 @@
 (function (root) {
   var LOCATE_SIDE = 2000;   // 場所を探すための全体画像の長辺(px)
   var READ_DPI = 300;       // 読み取り用の切り出し画像の解像度
+  var HALF_SIDE = 2400;     // 製品表を見落としたとき、上下に分けて探し直す画像の横幅(px)
 
   function fold(s) { return String(s).normalize('NFKC').replace(/\s+/g, '').toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1'); }
 
@@ -18,6 +19,13 @@
     await page.render({ canvasContext: ctx, viewport: vp, transform: [1, 0, 0, 1, -x0, -y0] }).promise;
     return { canvas: c, vp: vp };
   }
+  // canvas の画素を手放す(複数ページを並行して読むとき、メモリを使い続けないように)
+  function release(c) { if (c && c.canvas) { c.canvas.width = 0; c.canvas.height = 0; } }
+  // 切り出し画像上の範囲({x0,y0,x1,y1}。切り出し画像の左上が (ox,oy))→ PDFのページ座標の矩形 [x0,y0,x1,y1]
+  function pdfRect(vp, ox, oy, r) {
+    var a = vp.convertToPdfPoint(ox + r.x0, oy + r.y0), b = vp.convertToPdfPoint(ox + r.x1, oy + r.y1);
+    return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
+  }
   function jpeg(canvas) { return canvas.toDataURL('image/jpeg', 0.9).replace(/^data:image\/jpeg;base64,/, ''); }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
   // [ymin,xmin,ymax,xmax](0〜1000)→ 範囲 {x0,y0,x1,y1}(px)。不正なら null
@@ -27,11 +35,12 @@
     if (r.x1 <= r.x0 || r.y1 <= r.y0) return null;
     return r;
   }
-  // 製品表の罫線からセルの範囲を求める(Geminiが返す文字の枠は上下にずれることがあるため、枠の大きさには頼らない)
-  // tbl: 製品表の範囲(canvas上のpx)/ cb: 読み取ったセルの文字の範囲。使うのは中心の位置だけ
-  // 1. 表の左右ほぼ全幅に渡る横線のうち、文字の中心から上下にいちばん近い線 → セルの上端・下端
-  // 2. 上端〜下端のほぼ全高に渡る縦線 → 列の区切り。文字の中心を挟む2本 → セルの左端・右端
-  // opt(省略可): { idx: 読み取った表の中で左から何番目のセルか, first: 左端のセルの文字の範囲 }。横位置のずれに強い「左から数えて何番目の区切りか」で左右を決める
+  // 製品表の罫線からセルの範囲を求める(Geminiが返す文字の枠は上下・左右にずれることがあるため、枠の大きさや横位置には頼らない)
+  // tbl: 製品表の範囲(canvas上のpx)/ cb: 読み取ったセルの文字の範囲(使うのは中心の位置だけ)
+  // opt.idx(省略可): 読み取った表の中で左から何番目のセルか
+  // 1. 文字の中心から上下にいちばん近い、ほぼ全幅に渡る横線 → セルの上端・下端
+  // 2. 上端〜下端のほぼ全高に渡る縦線 → 列の区切り。opt.idx があれば、上の罫線をたどって見つけた表の端から数えて idx 番目と次の区切りを左右の端にする
+  //    (無ければ、文字の中心を挟む2本)
   function cellFromLines(canvas, tbl, cb, opt) {
     var w = canvas.width, h = canvas.height, d = canvas.getContext('2d').getImageData(0, 0, w, h).data;
     function dark(x, y) { x = clamp(Math.round(x), 0, w - 1); y = clamp(Math.round(y), 0, h - 1); var i = (y * w + x) * 4; return (d[i] + d[i + 1] + d[i + 2]) / 3 < 170; }
@@ -68,137 +77,143 @@
     return { x0: cb.x0 - m, y0: cb.y0 - m, x1: cb.x1 + m, y1: cb.y1 + m, snapped: false };
   }
 
-  // links: { "図番\t製品名": url | [url,...] } / ask(kind, base64Jpeg) → Promise<{ok, data|error}>
-  async function linkDrawing(pdfjsLib, PDFLib, data, links, ask) {
+  // links: { "図番\t製品名": url | [url,...] } / ask(kind, base64Jpeg) → Promise<{ok, data|error}> / opts.mapUri(url): PDFに入れるリンク先の変換(省略可)
+  async function linkDrawing(pdfjsLib, PDFLib, data, links, ask, opts) {
+    var mapUri = (opts && opts.mapUri) || function (u) { return u; };
     var doc = await pdfjsLib.getDocument({ data: new Uint8Array(data.slice(0)) }).promise;
     var out = await PDFLib.PDFDocument.load(data, { ignoreEncryption: true });
-    var stats = { pages: doc.numPages, linked: 0, dup: 0, ng: 0, partial: [], tables: 0 };
+    var stats = { pages: doc.numPages, linked: 0, dup: 0, ng: 0, partial: [] };
     // 図番 → その図番の製品名の一覧(比較用にそろえた形)
     var byZ = {};
     Object.keys(links).forEach(function (k) {
       var p = k.split('\t'), z = fold(p[0]);
       (byZ[z] = byZ[z] || []).push({ zuban: p[0], name: p[1], f: fold(p[1]), v: links[k] });
     });
-    async function call(kind, canvas) {
-      var r = await ask(kind, jpeg(canvas));
-      if (!r || !r.ok) throw new Error((r && r.error) || '読み取りに失敗しました');
-      return r.data;
+    async function call(kind, r, keep) {   // keep=true: 送ったあとも画像を使い続けるので手放さない
+      var res = await ask(kind, jpeg(r.canvas));
+      if (!keep) release(r);
+      if (!res || !res.ok) throw new Error((res && res.error) || '読み取りに失敗しました');
+      return res.data;
+    }
+    // 読み取ったセルの中から、図番 z の製品名(まだ使っていないもの)と一致する最初のセルを探す。seen には読み取った文字を集める
+    function pick(cells, z, used, seen) {
+      var fz = fold(z), es = byZ[fz];
+      for (var ci = 0; ci < (cells || []).length; ci++) {
+        var c = cells[ci];
+        if (!c.text) continue;
+        seen.push(c.text);
+        var fc = fold(c.text);
+        for (var ei = 0; ei < es.length; ei++) if (!used[fz + '#' + ei] && es[ei].f === fc) return { e: es[ei], k: fz + '#' + ei, c: c };
+      }
+      return null;
+    }
+    // ページごとの処理。ページは並行して読む(Geminiの待ち時間が重ならないように)。結果の順序は最後に頁順に整える
+    async function pageJob(pn) {
+      var page = await doc.getPage(pn), v1 = page.getViewport({ scale: 1 }), W = v1.width, H = v1.height;
+      var s0 = LOCATE_SIDE / Math.max(W, H), sH = READ_DPI / 72, PW = W * sH, PH = H * sH, pdfPage = out.getPage(pn - 1), annots = [];
+      var loc = await call('locate', await renderRegion(page, s0, 0, 0, W * s0, H * s0));
+      // 製品表を見落としたときだけ: ページを上下2つ(少し重ねる)に分け、拡大して探し直す。位置はページ全体の0〜1000に直して使う
+      if (!(loc.tables || []).length) {
+        var sh = HALF_SIDE / W, found = await Promise.all([[0, 0.55], [0.45, 0.55]].map(async function (h) {
+          try {
+            var r2 = await call('locate', await renderRegion(page, sh, 0, H * sh * h[0], W * sh, H * sh * h[1])), off = h[0] * 1000;
+            var mapBox = function (b) { return b && b.length === 4 ? [off + b[0] * h[1], b[1], off + b[2] * h[1], b[3]] : b; };
+            return (r2.tables || []).map(function (t) {
+              return { box: mapBox(t.box), cells: (t.cells || []).map(function (c) { return { text: c.text, box: mapBox(c.box) }; }) };
+            });
+          } catch (e) { return []; }
+        }));
+        loc.tables = [].concat.apply([], found);
+      }
+      var tables = loc.tables || [];
+      if (!tables.length) { stats.ng++; stats.partial.push({ page: pn, zuban: loc.drawingNumber || '', name: '', reason: '製品表が見つかりません' }); return; }
+
+      // 右下の図面番号欄の画像。読み直し(遅い道)と、図面番号欄の着色の範囲を求めるのに使う。必要になったときだけ描く
+      var numMemo = null, numRead = null;
+      function numberImage() {
+        if (numMemo) return numMemo;
+        var nb = boxPx(loc.drawingNumberBox, PW, PH);
+        if (!nb) return (numMemo = Promise.resolve(null));
+        var padx = (nb.x1 - nb.x0) * 0.6 + 40, pady = (nb.y1 - nb.y0) * 3 + 60;   // 欄の罫線(上は「図面番号」の文字の上)まで入る広さ
+        var rx0 = clamp(nb.x0 - padx, 0, PW), ry0 = clamp(nb.y0 - pady, 0, PH), rx1 = clamp(nb.x1 + padx, 0, PW), ry1 = clamp(nb.y1 + pady, 0, PH);
+        return (numMemo = renderRegion(page, sH, rx0, ry0, rx1 - rx0, ry1 - ry0).then(function (r) { return { r: r, nb: nb, rx0: rx0, ry0: ry0 }; }));
+      }
+      async function readNumber() {   // 図面番号を高解像度で読み直し、マスタにある方を採る(場所探しで読んだ値も候補)
+        if (numRead) return numRead;
+        var cs = [], im = await numberImage();
+        if (im) { try { cs.push((await call('number', im.r, true)).text); } catch (e) { /* 読み直しに失敗しても、場所探しの値で続ける */ } }
+        if (loc.drawingNumber) cs.push(loc.drawingNumber);
+        cs = cs.filter(Boolean);
+        return (numRead = { z: cs.filter(function (t) { return byZ[fold(t)]; })[0], show: cs[0] || '' });
+      }
+
+      // 速い道: 全体画像の1回の読み取りで、図面番号がマスタにあり、製品表のセルがその図番の製品名と一致すればそこで確定する(Geminiの呼び出し1回)。
+      // 遅い道(確定できなかったときだけ): 図面番号欄と製品表を高解像度で切り出して読み直す(最大2回追加)
+      var used = {}, zMsg = false, zFast = loc.drawingNumber && byZ[fold(loc.drawingNumber)] ? loc.drawingNumber : null;
+      for (var ti = 0; ti < tables.length; ti++) {
+        var tb = boxPx(tables[ti].box, PW, PH);
+        if (!tb) { stats.ng++; continue; }
+        var px = Math.max((tb.x1 - tb.x0) * 0.03 + 24, PW * 0.04), py = (tb.y1 - tb.y0) * 0.3 + 24;   // 横はGeminiの位置のずれ(最大でページ幅の数%)を見込んで広く
+        var cx0 = clamp(tb.x0 - px, 0, PW), cy0 = clamp(tb.y0 - py, 0, PH), cx1 = clamp(tb.x1 + px, 0, PW), cy1 = clamp(tb.y1 + py, 0, PH);
+        var tr = await renderRegion(page, sH, cx0, cy0, cx1 - cx0, cy1 - cy0);
+        var hit = null, seen = [], zUse = zFast, tbx = null, cellOpt = null;
+        if (zFast && tables[ti].cells) {
+          hit = pick(tables[ti].cells, zFast, used, seen);
+          var fb = hit && boxPx(hit.c.box, PW, PH);
+          if (fb) { tbx = { x0: fb.x0 - cx0, y0: fb.y0 - cy0, x1: fb.x1 - cx0, y1: fb.y1 - cy0 }; cellOpt = { idx: tables[ti].cells.indexOf(hit.c) }; }
+          else hit = null;
+        }
+        if (!hit) {
+          seen = [];
+          var zn = await readNumber();
+          zUse = zn.z;
+          if (!zUse) {
+            release(tr); stats.ng++;
+            if (!zMsg) { zMsg = true; stats.partial.push({ page: pn, zuban: zn.show, name: '', reason: 'マスタに無い図番(読み取り: ' + (zn.show || '読めず') + ')' }); }
+            continue;
+          }
+          var tbl = await call('table', tr, true);
+          hit = pick(tbl.cells, zUse, used, seen);
+          if (hit) { tbx = boxPx(hit.c.box, tr.canvas.width, tr.canvas.height); cellOpt = { idx: tbl.cells.indexOf(hit.c) }; }
+        }
+        var ng = null;
+        if (!hit) ng = { zuban: zUse, name: seen.join(' | '), reason: '製品名が不一致(読み取った表の文字を表示)' };
+        else if (Array.isArray(hit.e.v)) { stats.dup++; ng = { zuban: hit.e.zuban, name: hit.e.name, reason: '重複' }; }
+        else if (!tbx) ng = { zuban: zUse, name: hit.c.text, reason: 'セルの位置を読み取れません' };
+        if (hit) used[hit.k] = 1;
+        if (ng) { stats.ng++; ng.page = pn; stats.partial.push(ng); release(tr); continue; }
+        var cell = cellFromLines(tr.canvas, { x0: tb.x0 - cx0, y0: tb.y0 - cy0, x1: tb.x1 - cx0, y1: tb.y1 - cy0 }, tbx, cellOpt);
+        annots.push({ rect: pdfRect(tr.vp, cx0, cy0, cell), uri: mapUri(hit.e.v) });
+        stats.linked++;
+        release(tr);
+      }
+      // 図面番号(右下)にも、製品名と同じリンクと着色を付ける(製品名にリンクが付いたページだけ。欄の罫線が見つかったときだけ)
+      if (annots.length) {
+        var im = await numberImage();
+        if (im) {
+          var nl = { x0: im.nb.x0 - im.rx0, y0: im.nb.y0 - im.ry0, x1: im.nb.x1 - im.rx0, y1: im.nb.y1 - im.ry0 }, nc = cellFromLines(im.r.canvas, nl, nl);
+          if (nc.snapped) annots.push({ rect: pdfRect(im.r.vp, im.rx0, im.ry0, nc), uri: annots[0].uri });
+        }
+      }
+      var imEnd = numMemo && await numMemo;
+      if (imEnd) release(imEnd.r);
+      annots.forEach(function (a) {
+        var ctx = out.context, act = ctx.obj({ S: 'URI', URI: PDFLib.PDFString.of(root.ShippingCore.encodeUri(a.uri)) });
+        pdfPage.node.addAnnot(ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Link', Rect: a.rect, Border: [0, 0, 0], A: act })));
+        // 図面は文字が細かく下線だと文字に重なるので、セル全体を薄い青で塗る(乗算なので文字はそのまま見える)
+        pdfPage.drawRectangle({ x: a.rect[0], y: a.rect[1], width: a.rect[2] - a.rect[0], height: a.rect[3] - a.rect[1],
+          color: PDFLib.rgb(0.62, 0.78, 1), blendMode: PDFLib.BlendMode.Multiply });
+      });
     }
     try {
-      // ページごとの処理。ページは並行して読む(Geminiの待ち時間が重ならないように)。結果の順序は最後に頁順に整える
-      var pageJob = async function (pn) {
-        var page = await doc.getPage(pn), v1 = page.getViewport({ scale: 1 }), W = v1.width, H = v1.height;
-        var s0 = LOCATE_SIDE / Math.max(W, H), sH = READ_DPI / 72, pdfPage = out.getPage(pn - 1), annots = [];
-        var full = await renderRegion(page, s0, 0, 0, W * s0, H * s0);
-        var loc = await call('locate', full.canvas);
-        // 製品表を見落としたときだけ: ページを上下2つ(少し重ねる)に分け、拡大して探し直す。位置はページ全体の0〜1000に直して使う
-        if (!(loc.tables || []).length) {
-          var halves = [[0, 0.55], [0.45, 0.55]], sh = (2400 / W);
-          var found = await Promise.all(halves.map(async function (h) {
-            try {
-              var part = await renderRegion(page, sh, 0, H * sh * h[0], W * sh, H * sh * h[1]), r2 = await call('locate', part.canvas), off = h[0] * 1000, hh = h[1];
-              var mapBox = function (b) { return b && b.length === 4 ? [off + b[0] * hh, b[1], off + b[2] * hh, b[3]] : b; };
-              return (r2.tables || []).map(function (t) {
-                return { box: mapBox(t.box), cells: (t.cells || []).map(function (c) { return { text: c.text, box: mapBox(c.box) }; }) };
-              });
-            } catch (e) { return []; }
-          }));
-          loc.tables = [].concat.apply([], found);
-        }
-        // 右下の図面番号欄の画像(着色の範囲を求めるのに使う。ここでは読み取りを呼ばない)
-        var nb = boxPx(loc.drawingNumberBox, W * sH, H * sH), nr = null, rx0 = 0, ry0 = 0;
-        if (nb) {
-          var padx = (nb.x1 - nb.x0) * 0.6 + 40, pady = (nb.y1 - nb.y0) * 3 + 60;   // 欄の罫線(上は「図面番号」の文字の上)まで入る広さ
-          rx0 = clamp(nb.x0 - padx, 0, W * sH); ry0 = clamp(nb.y0 - pady, 0, H * sH); var rx1 = clamp(nb.x1 + padx, 0, W * sH), ry1 = clamp(nb.y1 + pady, 0, H * sH);
-          nr = await renderRegion(page, sH, rx0, ry0, rx1 - rx0, ry1 - ry0);
-        }
-        // 速い道: 全体画像の1回の読み取りで、図面番号がマスタにあり、製品表のセルがその図番の製品名と一致すればそこで確定する(Geminiの呼び出し1回)。
-        // 遅い道(確定できなかったときだけ): 図面番号欄と製品表を高解像度で切り出して読み直す(最大2回追加)
-        var numMemo = null, readNumber = async function () {
-          if (numMemo) return numMemo;
-          var cs = [];
-          if (nr) { try { cs.push((await call('number', nr.canvas)).text); } catch (e) { /* 読み直しに失敗しても、場所探しの値で続ける */ } }
-          if (loc.drawingNumber) cs.push(loc.drawingNumber);
-          cs = cs.filter(Boolean);
-          return (numMemo = { z: cs.filter(function (t) { return byZ[fold(t)]; })[0], show: cs[0] || '' });
-        };
-        var tables = loc.tables || [], used = {}, zMsg = false;
-        if (!tables.length) { stats.ng++; stats.partial.push({ page: pn, zuban: loc.drawingNumber || '', name: '', reason: '製品表が見つかりません' }); return; }
-        var zFast = loc.drawingNumber && byZ[fold(loc.drawingNumber)] ? loc.drawingNumber : null;
-        for (var ti = 0; ti < tables.length; ti++) {
-          var tb = boxPx(tables[ti].box, W * sH, H * sH);
-          if (!tb) { stats.ng++; continue; }
-          stats.tables++;
-          var px = Math.max((tb.x1 - tb.x0) * 0.03 + 24, W * sH * 0.04), py = (tb.y1 - tb.y0) * 0.3 + 24;   // 横はGeminiの位置のずれ(最大でページ幅の数%)を見込んで広く
-          var cx0 = clamp(tb.x0 - px, 0, W * sH), cy0 = clamp(tb.y0 - py, 0, H * sH), cx1 = clamp(tb.x1 + px, 0, W * sH), cy1 = clamp(tb.y1 + py, 0, H * sH);
-          var tr = await renderRegion(page, sH, cx0, cy0, cx1 - cx0, cy1 - cy0);
-          var hit = null, seen = [], zUse = zFast, tbx = null, cellOpt = null;
-          function pick(cells, z) {
-            var es = byZ[fold(z)], found = null;
-            (cells || []).forEach(function (c) {
-              if (c.text) seen.push(c.text);
-              if (found || !c.text) return;
-              for (var ei = 0; ei < es.length; ei++) if (!used[fold(z) + '#' + ei] && es[ei].f === fold(c.text)) { found = { e: es[ei], k: fold(z) + '#' + ei, c: c }; return; }
-            });
-            return found;
-          }
-          if (zFast && tables[ti].cells) {
-            hit = pick(tables[ti].cells, zFast);
-            var fb = hit && boxPx(hit.c.box, W * sH, H * sH);
-            if (fb) {
-              tbx = { x0: fb.x0 - cx0, y0: fb.y0 - cy0, x1: fb.x1 - cx0, y1: fb.y1 - cy0 };
-                            cellOpt = { idx: tables[ti].cells.indexOf(hit.c) };
-            } else hit = null;
-          }
-          if (!hit) {
-            seen = [];
-            var zn = await readNumber();
-            zUse = zn.z;
-            if (!zUse) {
-              stats.ng++;
-              if (!zMsg) { zMsg = true; stats.partial.push({ page: pn, zuban: zn.show, name: '', reason: 'マスタに無い図番(読み取り: ' + (zn.show || '読めず') + ')' }); }
-              continue;
-            }
-            var tbl = await call('table', tr.canvas);
-            hit = pick(tbl.cells, zUse);
-            if (hit) {
-              tbx = boxPx(hit.c.box, tr.canvas.width, tr.canvas.height);
-              cellOpt = { idx: tbl.cells.indexOf(hit.c) };
-            }
-          }
-          if (!hit) { stats.ng++; stats.partial.push({ page: pn, zuban: zUse, name: seen.join(' | '), reason: '製品名が不一致(読み取った表の文字を表示)' }); continue; }
-          used[hit.k] = 1;
-          if (Array.isArray(hit.e.v)) { stats.dup++; stats.ng++; stats.partial.push({ page: pn, zuban: hit.e.zuban, name: hit.e.name, reason: '重複' }); continue; }
-          if (!tbx) { stats.ng++; stats.partial.push({ page: pn, zuban: zUse, name: hit.c.text, reason: 'セルの位置を読み取れません' }); continue; }
-          var cell = cellFromLines(tr.canvas, { x0: tb.x0 - cx0, y0: tb.y0 - cy0, x1: tb.x1 - cx0, y1: tb.y1 - cy0 }, tbx, cellOpt);
-          var A = tr.vp.convertToPdfPoint(cx0 + cell.x0, cy0 + cell.y0), B = tr.vp.convertToPdfPoint(cx0 + cell.x1, cy0 + cell.y1);
-          annots.push({ rect: [Math.min(A[0], B[0]), Math.min(A[1], B[1]), Math.max(A[0], B[0]), Math.max(A[1], B[1])], uri: hit.e.v });
-          stats.linked++;
-        }
-        // 図面番号(右下)にも、製品名と同じリンクと着色を付ける(製品名にリンクが付いたページだけ。欄の罫線が見つかったときだけ)
-        if (annots.length && nr && nb) {
-          var nl = { x0: nb.x0 - rx0, y0: nb.y0 - ry0, x1: nb.x1 - rx0, y1: nb.y1 - ry0 }, nc = cellFromLines(nr.canvas, nl, nl);
-          if (nc.snapped) {
-            var NA = nr.vp.convertToPdfPoint(rx0 + nc.x0, ry0 + nc.y0), NB = nr.vp.convertToPdfPoint(rx0 + nc.x1, ry0 + nc.y1);
-            annots.push({ rect: [Math.min(NA[0], NB[0]), Math.min(NA[1], NB[1]), Math.max(NA[0], NB[0]), Math.max(NA[1], NB[1])], uri: annots[0].uri });
-          }
-        }
-        annots.forEach(function (a) {
-          var ctx = out.context;
-          var act = ctx.obj({ S: 'URI', URI: PDFLib.PDFString.of(root.ShippingCore.encodeUri(a.uri)) });
-          pdfPage.node.addAnnot(ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Link', Rect: a.rect, Border: [0, 0, 0], A: act })));
-          // 図面は文字が細かく下線だと文字に重なるので、セル全体を薄い青で塗る(乗算なので文字はそのまま見える)
-          pdfPage.drawRectangle({ x: a.rect[0], y: a.rect[1], width: a.rect[2] - a.rect[0], height: a.rect[3] - a.rect[1],
-            color: PDFLib.rgb(0.62, 0.78, 1), blendMode: PDFLib.BlendMode.Multiply });
-        });
-      };
-      var nextPage = 1, worker = async function () { while (nextPage <= doc.numPages) await pageJob(nextPage++); };
+      var nextPage = 1;
+      var worker = async function () { while (nextPage <= doc.numPages) await pageJob(nextPage++); };
       await Promise.all([worker(), worker(), worker()]);
       stats.partial.sort(function (a, b) { return a.page - b.page; });
-    } finally { doc.destroy(); }
+    } finally { doc.destroy(); }   // pdf.js のworker・ページ資源を解放
     return { bytes: await out.save(), stats: stats };
   }
 
-  var api = { linkDrawing: linkDrawing, fold: fold, cellFromLines: cellFromLines, boxPx: boxPx };
+  var api = { linkDrawing: linkDrawing };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ShippingDrawing = api;
 })(typeof window !== 'undefined' ? window : this);

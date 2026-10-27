@@ -33,8 +33,14 @@
     return n;
   }
   // 比較用: 前後の空白を除き、全角半角などをそろえる
-  function norm(s) { return String(s).normalize('NFKC').replace(/[\s ]+/g, ' ').trim(); }
+  function norm(s) { return String(s).normalize('NFKC').replace(/\s+/g, ' ').trim(); }
   function shape(t) { return t.replace(/[0-9]/g, '9').replace(/[A-Z]/g, 'A').replace(/[a-z]/g, 'a'); }
+
+  function inRange(ref, rng) {
+    if (rng.indexOf(':') < 0) return false;
+    var pr = rng.split(':'), c = colIndex(ref), r = +/\d+/.exec(ref)[0], c0 = colIndex(pr[0]), c1 = colIndex(pr[1]), r0 = +/\d+/.exec(pr[0])[0], r1 = +/\d+/.exec(pr[1])[0];
+    return c >= c0 && c <= c1 && r >= r0 && r <= r1;
+  }
 
   // シートの行ごとのセル(文字のあるものだけ)を読む
   function readRows(xml, sst) {
@@ -46,13 +52,12 @@
       var cells = [], cre = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g, cm;
       while ((cm = cre.exec(rm[2]))) {
         var a = attrs(cm[1]), body = cm[2] || '', v = '';
-        if (!a.r) continue;
+        if (!a.r || a.t === 'e' || a.t === 'b') continue;
         if (a.t === 'inlineStr') v = textOf(body);
         else {
           var vm = /<v>([\s\S]*?)<\/v>/.exec(body);
           if (!vm) continue;
           v = a.t === 's' ? (sst[+vm[1]] || '') : decodeXml(vm[1]);
-          if (a.t === 'e' || a.t === 'b') continue;
         }
         v = norm(v);
         if (v) cells.push({ ref: a.r, col: colIndex(a.r), text: v, s: a.s });
@@ -64,14 +69,18 @@
   }
 
   // 1行の中で、(図番, 製品名)がマスタと完全一致するセットを、列が近い順に1対1で組にする
-  // lookup(図番, 製品名) → {key, v}(v は URL か、重複なら配列) / null
-  function pairRow(cells, lookup) {
-    var cand = [], i, j;
-    for (i = 0; i < cells.length; i++) for (j = 0; j < cells.length; j++) {
-      if (i === j || cells[i].text === cells[j].text) continue;
-      var hit = lookup(cells[i].text, cells[j].text);
-      if (hit) cand.push({ z: cells[i], n: cells[j], d: Math.abs(cells[i].col - cells[j].col), hit: hit });
-    }
+  // idx: { z: {図番の文字:1}, n: {製品名の文字:1} }(マスタにある文字だけを候補にして、全セルの総当たりを避ける)
+  // lookup(図番, 製品名) → マスタの値(URL。重複なら配列)/ なければ undefined
+  function pairRow(cells, idx, lookup) {
+    var zs = cells.filter(function (c) { return idx.z[c.text]; }), ns = cells.filter(function (c) { return idx.n[c.text]; }), cand = [];
+    if (!zs.length || !ns.length) return [];
+    zs.forEach(function (z) {
+      ns.forEach(function (n) {
+        if (z.text === n.text) return;
+        var v = lookup(z.text, n.text);
+        if (v) cand.push({ z: z, n: n, d: Math.abs(z.col - n.col), v: v });
+      });
+    });
     cand.sort(function (p, q) { return p.d - q.d || p.n.col - q.n.col || p.z.col - q.z.col; });
     var used = {}, out = [];
     cand.forEach(function (c) {
@@ -94,21 +103,18 @@
     while ((m = re.exec(relsXml))) { var ra = attrs(m[0]); if (ra.Id) rels[ra.Id] = ra.Target; }
     var sst = parseSharedStrings(await rd('xl/sharedStrings.xml'));
 
-    // マスタの索引(正規化したキー → 元のキー)。完全一致を先に探し、無ければ全角半角などをそろえて探す
-    var nidx = {}, zset = {}, shapes = {}, k, p0;
+    // マスタの索引。比較は全角半角・空白をそろえた形で行う(nidx: 「図番\t製品名」→ 値、zset/nset: 図番・製品名として存在する文字、shapes: 図番の「形」)
+    var nidx = {}, zset = {}, nset = {}, shapes = {};
     Object.keys(links).forEach(function (key) {
-      p0 = key.split('\t');
-      nidx[norm(p0[0]) + '\t' + norm(p0[1])] = key;
-      zset[norm(p0[0])] = 1; shapes[shape(norm(p0[0]))] = 1;
+      var p0 = key.split('\t'), z = norm(p0[0]), n = norm(p0[1]);
+      nidx[z + '\t' + n] = links[key];
+      zset[z] = 1; nset[n] = 1; shapes[shape(z)] = 1;
     });
-    function lookup(z, n) {
-      var key = nidx[z + '\t' + n];
-      return key ? { key: key, v: links[key] } : null;
-    }
+    var idx = { z: zset, n: nset };
+    function lookup(z, n) { return nidx[z + '\t' + n]; }
     function zubanLike(t) { return t.indexOf('-') >= 0 && shapes[shape(t)]; }
 
     var stats = { sheets: 0, rows: 0, linked: 0, dup: 0, ng: 0, partial: [] };
-    var sheetsDone = [];
     var sre = /<sheet\b[^>]*>/g, sm;
     var styleCache = {}, styles = await rd('xl/styles.xml'), stylesChanged = false, fontsAdded = [], xfsAdded = [];
     var fontList = null, xfList = null;
@@ -155,24 +161,19 @@
       var xml = await rd(path);
       if (!xml) continue;
       stats.sheets++;
-      var adds = [], skip = {};   // adds: {ref, uri, s}
+      var adds = [];   // adds: {ref, uri, s}
       // 既存のハイパーリンク(同じセルは置き換え。範囲リンクの中のセルは触らない)
       var existing = [], hre = /<hyperlink\b[^>]*?\/>/g, hm;
       while ((hm = hre.exec(xml))) existing.push({ tag: hm[0], a: attrs(hm[0]) });
-      function inRange(ref, rng) {
-        if (rng.indexOf(':') < 0) return false;
-        var pr = rng.split(':'), c = colIndex(ref), r = +/\d+/.exec(ref)[0], c0 = colIndex(pr[0]), c1 = colIndex(pr[1]), r0 = +/\d+/.exec(pr[0])[0], r1 = +/\d+/.exec(pr[1])[0];
-        return c >= c0 && c <= c1 && r >= r0 && r <= r1;
-      }
       readRows(xml, sst).forEach(function (row) {
         stats.rows++;
-        var pairs = pairRow(row.cells, lookup), linkedHere = 0, loc = sa.name + '!' + row.row;
+        var pairs = pairRow(row.cells, idx, lookup), linkedHere = 0, loc = sa.name + '!' + row.row;
         pairs.forEach(function (c) {
-          if (Array.isArray(c.hit.v)) { stats.dup++; stats.partial.push({ page: loc, zuban: c.z.text, name: c.n.text, reason: '重複' }); return; }
+          if (Array.isArray(c.v)) { stats.dup++; stats.partial.push({ page: loc, zuban: c.z.text, name: c.n.text, reason: '重複' }); return; }
           if (existing.some(function (e) { return e.a.ref && inRange(c.n.ref, e.a.ref); })) {
             stats.partial.push({ page: loc, zuban: c.z.text, name: c.n.text, reason: '既存のリンク範囲内のため付けず' }); return;
           }
-          adds.push({ ref: c.n.ref, uri: mapUri(c.hit.v), s: c.n.s });
+          adds.push({ ref: c.n.ref, uri: mapUri(c.v), s: c.n.s });
           linkedHere++; stats.linked++;
         });
         if (!linkedHere) {
@@ -228,6 +229,6 @@
     return { bytes: bytes, stats: stats };
   }
 
-  var api = { linkXlsx: linkXlsx, pairRow: pairRow, norm: norm };
+  var api = { linkXlsx: linkXlsx };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ShippingXlsx = api;
 })(typeof window !== 'undefined' ? window : this);
