@@ -938,8 +938,10 @@
   function struckOf(list) { return { struck: list.map(isBeforeRow), leftCols: LEFT_COLS.concat(['ファイルURL']), centerHeads: LEFT_COLS.concat(['ファイルURL']) }; } // Excelも、ファイル名・現場名・備考(とファイルURL)の中身は左揃え、他は中央揃え。見出しはすべて中央揃え
   /** 取込一覧の表の高さを、画面の下端までにする(表の中だけがスクロールし、見出しの行は上に残る) */
   function fitListHeight() {
-    var box = document.querySelector('#tab-imports .listbox'); if (!box || !box.isConnected) return;
-    box.style.maxHeight = Math.max(240, window.innerHeight - box.getBoundingClientRect().top - 16) + 'px';
+    Array.prototype.forEach.call(document.querySelectorAll('#tab-imports .listbox, #tab-pairs .listbox'), function (box) { // 取込一覧と、車両・運転手情報(2026-10-28)。見えている方だけ
+      if (!box.isConnected || box.closest('[hidden]')) return;
+      box.style.maxHeight = Math.max(240, window.innerHeight - box.getBoundingClientRect().top - 16) + 'px';
+    });
   }
   window.addEventListener('resize', fitListHeight);
 
@@ -1460,6 +1462,7 @@
 
   function renderPairs() {
     var host = $('tab-pairs');
+    var prevBox = host.querySelector('.listbox'), prevTop = prevBox ? prevBox.scrollTop : 0; // 編集・保存で描き直しても、表のスクロール位置を保つ
     host.textContent = '';
     var cols = PAIR_COLS;
     var rows = L.sortPairs(S.pairs); // 手配業者(大上→ナミツー→その他)→運送業者→車種(4t→10t→15t→TR→その他)→車番→氏名の順(表示だけで、シートの行順は変えない)
@@ -1498,7 +1501,10 @@
       }
       body.appendChild(tr);
     });
-    wrap.appendChild(h('div', { class: 'scroll' }, h('table', { class: 't pairs' }, h('thead', null, head), body)));
+    // 表の中だけをスクロールする(2026-10-28、ユーザー指示): 上の行(件数・Excelでダウンロード)と、表の見出しは動かない。高さは fitListHeight(取込一覧と同じ)
+    var pbox = h('div', { class: 'scroll listbox' }, h('table', { class: 't pairs' }, h('thead', null, head), body));
+    wrap.appendChild(pbox);
+    if (rows.length) requestAnimationFrame(function () { fitListHeight(); pbox.scrollTop = prevTop; });
     if (!rows.length) wrap.appendChild(h('div', { class: 'empty', text: 'まだ登録がありません。FAXを取り込むと、車と運転手の組み合わせが自動で登録されます。' }));
   }
 
