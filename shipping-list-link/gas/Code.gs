@@ -5,6 +5,7 @@
  *            ?action=rebuild は前回の再生成後に更新されたExcelだけを読み直す(他は「Excelごとの抜き出し結果」を流用)。毎朝は全件読み直す
  *            / 版の確認(?action=ping → {ok, version})
  *  - doPost: 取り込んだ元PDFを保存フォルダへ保存し、スプレッドシート「記録」の2行目に日時/ページ数/URLを挿入(最新が上)
+ *            / {action:'ocr', kind, image}: 詳細図PDFの切り出し画像をGeminiで読む(モデル名・APIKEYは「情報」シートから。1日400回まで)。?action=ocrcheck で設定の確認
  *
  * 【初回セットアップ】 ①このコードを貼り付け ②setupDaily を1回実行(権限を承認) ③buildMaster を1回実行
  *  ④デプロイ → ウェブアプリ(実行ユーザー=自分 / アクセス=全員)→ URLを app.js の GAS_URL に設定
@@ -15,7 +16,7 @@ var SHEET_ID = '19l9P9C15wQ0jIcjIc_czZCiyDbnesQbq-Q88ttndMfs';
 var SHEET_NAME = '記録';
 var LINKS_FILE_NAME = '_リンク表.json';
 var STORE_FILE_NAME = '_リンク表_Excel別.json'; // Excelごとの抜き出し結果(ボタンの再生成で、変更の無いExcelを読み直さないため)
-var CODE_VERSION = '20261027b';                // コードを変えたら更新する(?action=ping で確認)
+var CODE_VERSION = '20261027c';                // コードを変えたら更新する(?action=ping で確認)
 var COL_ZUBAN = 'F', COL_NAME = 'G'; // 図番列 / 製品名(製品マーク)列
 
 /* ===== 純粋関数(GAS API非依存・Nodeでテスト可能) ===== */
@@ -307,18 +308,23 @@ var OCR_KINDS = {
       properties: { text: { type: 'STRING' }, box: OCR_BOX }, required: ['text'] } } }, required: ['cells'] }
   }
 };
-function infoValue_(name) {
+function infoMap_() {   // 情報シート(A列=項目名、B列=値)を1回で読む
   var sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName('情報');
   if (!sh) throw new Error('スプレッドシートに「情報」シートがありません');
-  var v = sh.getDataRange().getValues();
-  for (var i = 0; i < v.length; i++) if (String(v[i][0]).trim() === name) return String(v[i][1] || '').trim();
-  return '';
+  var v = sh.getDataRange().getValues(), o = {};
+  for (var i = 0; i < v.length; i++) o[String(v[i][0]).trim()] = String(v[i][1] || '').trim();
+  return o;
 }
 function ocrSettings_() {
-  var model = infoValue_('Geminiモデル名'), key = infoValue_('APIKEY');
+  // 情報シートの読み込み(読み取りのたびにスプレッドシートを開かないよう)は、60秒だけスクリプトのキャッシュに持つ。キーやモデル名を変えたら、最大60秒で反映される
+  var cache = CacheService.getScriptCache(), hit = cache.get('ocr_settings');
+  if (hit) return JSON.parse(hit);
+  var info = infoMap_(), model = info['Geminiモデル名'], key = info['APIKEY'];
   if (!model) throw new Error('情報シートのGeminiモデル名が空です');
   if (!key) throw new Error('情報シートのAPIKEYが空です');
-  return { model: model, key: key };
+  var st = { model: model, key: key };
+  cache.put('ocr_settings', JSON.stringify(st), 60);
+  return st;
 }
 function geminiCall_(st, parts, schema) {
   var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(st.model) + ':generateContent', {
