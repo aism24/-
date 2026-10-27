@@ -194,6 +194,13 @@
   };
   if (GAS_URL) $('refresh').onclick = refreshMaster; else $('refresh').style.display = 'none';
 
+  // 図面の読み取り(GASがGeminiを呼ぶ)。画像1枚ずつ送る。通信・応答の失敗は {ok:false, error} で返す
+  async function askGas(kind, image) {
+    try {
+      var r = await fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'ocr', kind: kind, image: image }) });
+      return await r.json();
+    } catch (e) { return { ok: false, error: '通信に失敗しました: ' + e }; }
+  }
   function mapOpt() { return LINK_MODE === 'web' ? { mapUri: function (u) { return ShippingCore.toOpenUrl(OPEN_BASE, u); } } : null; }
   async function handle(file) {
     if (!file || modalOpen || working) return;
@@ -204,6 +211,11 @@
     try {
       var buf = await file.arrayBuffer(), isXlsx = /\.xls[xm]$/i.test(file.name);
       var r = isXlsx ? await ShippingXlsx.linkXlsx(JSZip, buf, links, mapOpt()) : await ShippingCore.linkPdf(pdfjsLib, PDFLib, buf, links, mapOpt());
+      // 文字データの無い詳細図(文字が線で描かれたCAD図面): 文字から図番らしい語が1つも見つからず、文字そのものも少ないときだけ、画像として読み取る
+      if (!isXlsx && GAS_URL && r.stats.linked === 0 && r.stats.ng === 0 && r.stats.rows <= 10 * r.stats.pages) {
+        $('msg').textContent = '図面を画像として読み取り中…(1枚あたり十数秒かかります)';
+        r = await ShippingDrawing.linkDrawing(pdfjsLib, PDFLib, buf, links, askGas);
+      }
       var s = r.stats;
       $('msg').textContent = '';
       if (s.linked > 0) {

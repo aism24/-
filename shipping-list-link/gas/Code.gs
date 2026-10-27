@@ -15,7 +15,7 @@ var SHEET_ID = '19l9P9C15wQ0jIcjIc_czZCiyDbnesQbq-Q88ttndMfs';
 var SHEET_NAME = '記録';
 var LINKS_FILE_NAME = '_リンク表.json';
 var STORE_FILE_NAME = '_リンク表_Excel別.json'; // Excelごとの抜き出し結果(ボタンの再生成で、変更の無いExcelを読み直さないため)
-var CODE_VERSION = '20261023a';                // コードを変えたら更新する(?action=ping で確認)
+var CODE_VERSION = '20261027a';                // コードを変えたら更新する(?action=ping で確認)
 var COL_ZUBAN = 'F', COL_NAME = 'G'; // 図番列 / 製品名(製品マーク)列
 
 /* ===== 純粋関数(GAS API非依存・Nodeでテスト可能) ===== */
@@ -271,6 +271,7 @@ function info_() {
 function doGet(e) {
   var a = (e && e.parameter && e.parameter.action) || 'links';
   if (a === 'ping') return json_({ ok: true, version: CODE_VERSION });
+  if (a === 'ocrcheck') return json_(ocrCheck_());   // 情報シートのGeminiモデル名・APIKEYが使えるかの確認(キーは返さない)
   if (a === 'info') return json_(info_());
   if (a === 'rebuild') {
     try { return json_(rebuildNow_()); } catch (err) { return json_({ ok: false, error: String(err) }); }
@@ -278,12 +279,85 @@ function doGet(e) {
   return json_(loadLinksJson_());
 }
 
-/** body(text/plain): JSON {name, pages, linked, ng, pdf(base64)} */
+/* ===== 図面PDF(文字データの無い詳細図)の読み取り: Gemini =====
+ * モデル名・APIKEYはスプレッドシート「情報」シート(A列=項目名、B列=値)から項目名で探して読む。空なら別モデルに切り替えずエラーにする。
+ * 画面からは kind(locate/number/table)と画像だけを受け取り、プロンプトはここで固定する(任意の質問に使われないように)。 */
+var OCR_DAILY_LIMIT = 400;   // 1日の呼び出し上限(誰でも呼べるdoPostの乱用でGeminiの無料枠を使い切られないように)
+var OCR_BOX = { type: 'ARRAY', items: { type: 'INTEGER' } };   // [ymin, xmin, ymax, xmax] を0〜1000で
+var OCR_KINDS = {
+  locate: {
+    prompt: 'これは建築鉄骨の詳細図(日本語のCAD図面)の全体です。次を返してください。\n' +
+      '1. drawingNumber: 右下の表題欄の「図面番号」欄に書かれた文字(例 EA1-2G-01)。読めなければ空文字。\n' +
+      '2. drawingNumberBox: その図面番号の文字の位置 [ymin,xmin,ymax,xmax](画像全体を0〜1000とした値)。\n' +
+      '3. tables: 図面内の「製品表」の位置の一覧。製品表とは、罫線で囲まれた横1行の表で、右端のセルが台数(例「1台」)になっているもの。' +
+      '梁は「製品名|設計符号|部材サイズ|台数」、柱は「設計符号|設計符号|製品名|図示|台数」の並び。キープランの中の文字、表題欄、注記の表は含めない。見つからなければ空配列。',
+    schema: { type: 'OBJECT', properties: { drawingNumber: { type: 'STRING' }, drawingNumberBox: OCR_BOX,
+      tables: { type: 'ARRAY', items: { type: 'OBJECT', properties: { box: OCR_BOX }, required: ['box'] } } }, required: ['drawingNumber', 'tables'] }
+  },
+  number: {
+    prompt: '画像は図面の表題欄の「図面番号」欄です。図面番号の文字だけを text に返してください(英大文字・数字・ハイフンのみ。例 EA1-2G-01)。読めなければ空文字。',
+    schema: { type: 'OBJECT', properties: { text: { type: 'STRING' } }, required: ['text'] }
+  },
+  table: {
+    prompt: '画像は図面の製品表(罫線で囲まれた横1行の表)です。左のセルから順に、各セルの文字を見えるとおりに cells に返してください。' +
+      '各セルは text(文字)と box(そのセルの文字の位置 [ymin,xmin,ymax,xmax]、画像全体を0〜1000とした値)。空のセルは text を空文字にする。',
+    schema: { type: 'OBJECT', properties: { cells: { type: 'ARRAY', items: { type: 'OBJECT',
+      properties: { text: { type: 'STRING' }, box: OCR_BOX }, required: ['text'] } } }, required: ['cells'] }
+  }
+};
+function infoValue_(name) {
+  var sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName('情報');
+  if (!sh) throw new Error('スプレッドシートに「情報」シートがありません');
+  var v = sh.getDataRange().getValues();
+  for (var i = 0; i < v.length; i++) if (String(v[i][0]).trim() === name) return String(v[i][1] || '').trim();
+  return '';
+}
+function ocrSettings_() {
+  var model = infoValue_('Geminiモデル名'), key = infoValue_('APIKEY');
+  if (!model) throw new Error('情報シートのGeminiモデル名が空です');
+  if (!key) throw new Error('情報シートのAPIKEYが空です');
+  return { model: model, key: key };
+}
+function geminiCall_(st, parts, schema) {
+  var res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(st.model) + ':generateContent', {
+    method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': st.key }, muteHttpExceptions: true,
+    payload: JSON.stringify({ contents: [{ parts: parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: schema } })
+  });
+  var code = res.getResponseCode(), body = res.getContentText();
+  if (code !== 200) throw new Error('Gemini応答エラー ' + code + ': ' + body.slice(0, 200));
+  var j = JSON.parse(body), t = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts && j.candidates[0].content.parts[0] && j.candidates[0].content.parts[0].text;
+  if (!t) throw new Error('Geminiの応答が空です');
+  return JSON.parse(t);
+}
+function ocrCheck_() {
+  try {
+    var st = ocrSettings_();
+    geminiCall_(st, [{ text: '{"ok":true} をそのままJSONで返してください。' }], { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' } } });
+    return { ok: true, model: st.model };
+  } catch (err) { return { ok: false, error: String(err) }; }
+}
+function ocrRead_(d) {
+  try {
+    var k = OCR_KINDS[d.kind];
+    if (!k) throw new Error('kind が不正です');
+    if (!d.image || String(d.image).length > 6000000) throw new Error('画像が無い、または大きすぎます');
+    var props = PropertiesService.getScriptProperties(), day = 'ocr_' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+    var n = Number(props.getProperty(day) || 0);
+    if (n >= OCR_DAILY_LIMIT) throw new Error('本日の読み取り上限(' + OCR_DAILY_LIMIT + '回)に達しました');
+    props.setProperty(day, String(n + 1));
+    return { ok: true, data: geminiCall_(ocrSettings_(), [{ text: k.prompt }, { inline_data: { mime_type: 'image/jpeg', data: d.image } }], k.schema) };
+  } catch (err) { return { ok: false, error: String(err) }; }
+}
+
+/** body(text/plain): JSON {name, pages, linked, ng, pdf(base64)}、または {action:'ocr', kind, image(JPEGのbase64)} */
 function doPost(e) {
+  var d0 = null;
+  try { d0 = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: String(err) }); }
+  if (d0 && d0.action === 'ocr') return json_(ocrRead_(d0));   // 読み取りはロック不要(並列で呼ばれる)
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(20000);
-    var d = JSON.parse(e.postData.contents), now = new Date();
+    var d = d0, now = new Date();
     var stamp = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd_HHmmss');
     var blob = Utilities.newBlob(Utilities.base64Decode(d.pdf), 'application/pdf', sanitizeName_(d.name) + '_' + stamp + '.pdf');
     var file = DriveApp.getFolderById(SAVE_FOLDER_ID).createFile(blob);
