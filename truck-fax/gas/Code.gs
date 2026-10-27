@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261028a';
+var CODE_VERSION = '20261028b';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_MERGED = '車両運転手情報'; // 1行=車と運転手の1組。シートの列は MERGED_HEADERS(見出し名で読み書きする)
@@ -656,8 +656,10 @@ function updateImport_(body) {
 }
 
 /** 取り込んだFAX(同じ原本=同じ「ファイルURL」の行すべて)を、取込一覧から削除し、Driveの原本をゴミ箱へ移す(2026-10-28、ユーザー指示。差し替えて取り込み直すため)。
- *  PDFで取り込んだ行を残すルールの、FAX単位の例外。範囲は新規のFAXだけ: 1行でも「追加変更」が入っている(変更前・変更後・中止)FAXは削除しない
- *  (変更・取消のFAXは、元の記録と組になっているため)。画面が見ている行(rows)と、シートの今の行が違えば、何も消さずに止める。
+ *  PDFで取り込んだ行を残すルールの、FAX単位の例外。**どのFAXも削除できる**(新規・変更・追加。取消でFAXの行を足したものも)。
+ *  変更前・変更後の組になっている相手の行は、「追加変更」を空欄に戻す(reset。変更前の赤字・取り消し線が消え、最初に取り込んだ状態に戻る)。
+ *  相手の行は、画面が組み合わせ(点数の推定)で決めて送る。ここでは、(1)削除する行ではない (2)画面が見ていた値と今の値が同じ (3)今の「追加変更」が変更前・変更後 を確かめてから書く。
+ *  画面が見ている行(rows)と、シートの今の行が違えば、何も変えずに止める。行は deleteRow で詰める(空欄の行は残さない)。
  *  車両運転手情報の行は消さない(他のFAXでも使う車・運転手の可能性があるため)。輸送回数は数え直す。原本のゴミ箱への移動に失敗しても、記録の削除は済ませて、fileWarn で知らせる。 */
 function deleteFax_(body) {
   var url = String(body.fileUrl || '').trim();
@@ -673,8 +675,18 @@ function deleteFax_(body) {
     var b = (body.rows || []).filter(function (x) { return Number(x.row) === r._row; })[0];
     var bad = sameRecord_(r, b && b.before);
     if (bad) throw new Error('取込一覧の行(' + r._row + ')が他の操作で変更されています(' + bad + ')。画面を再読み込みしてください。');
-    if (r.追加変更) throw new Error('変更・取消のFAX(追加変更=' + r.追加変更 + ')は削除できません。');
   });
+  var resets = (body.reset || []).map(function (x) { return { row: Number(x.row), before: x.before }; });
+  var byRow = {}; all.forEach(function (r) { byRow[r._row] = r; });
+  resets.forEach(function (x) {
+    var cur = byRow[x.row];
+    if (!cur) throw new Error('元に戻す行(' + x.row + ')が見つかりません。画面を再読み込みしてください。');
+    if (now.indexOf(x.row) >= 0) throw new Error('元に戻す行(' + x.row + ')が、削除する行に含まれています。');
+    var bad = sameRecord_(cur, x.before);
+    if (bad) throw new Error('元に戻す行(' + x.row + ')が他の操作で変更されています(' + bad + ')。画面を再読み込みしてください。');
+    if (cur.追加変更 !== '変更前' && cur.追加変更 !== '変更後') throw new Error('元に戻す行(' + x.row + ')の「追加変更」が、変更前・変更後ではありません。画面を再読み込みしてください。');
+  });
+  resets.forEach(function (x) { writeRow_(imp, IMPORT_HEADERS, x.row, { '追加変更': '' }); }); // 削除より先に書く(行番号が変わる前)
   now.sort(function (a, b) { return b - a; }).forEach(function (n) { imp.deleteRow(n); }); // 下の行から消す(行番号がずれないように)
   var fileWarn = '', m = /\/d\/([^\/?]+)/.exec(url);
   try {
@@ -682,7 +694,7 @@ function deleteFax_(body) {
     DriveApp.getFileById(m[1]).setTrashed(true);
   } catch (ex) { fileWarn = String(ex && ex.message || ex); }
   safeCounts_();
-  return { deleted: now.length, fileWarn: fileWarn };
+  return { deleted: now.length, reset: resets.length, fileWarn: fileWarn };
 }
 
 /** items: [{mode:'mark', row, label:'変更前'|'中止', before, note}, {mode:'add', data, label}]。
