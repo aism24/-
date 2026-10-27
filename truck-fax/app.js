@@ -369,10 +369,18 @@
     card.warnings.forEach(function (w) { el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'badge warn', text: '注意' }), h('span', { class: 'msg', text: w }))); });
     if (card.mode === 'change') { renderChangeBody(card); return; }
     card.footHost = h('div'); // 「記録する」「破棄する」は、見出しの行の右端に置く
-    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '読み取り結果(間違いがあれば表の中で直せます)', sugNote(card.rows)), h('span', { class: 'spacer' }), card.footHost));
+    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '読み取り結果(間違いがあれば表の中で直せます)', sugNote(card.rows)), h('span', { class: 'spacer' }), readExcelBtn(card, card.rows), card.footHost));
     card.rowsHost = h('div'); card.rowsHost.appendChild(rowsTable(card)); el.appendChild(card.rowsHost);
     card.findHost = h('div'); el.appendChild(card.findHost);
     renderFindings(card); renderFoot(card);
+  }
+  /** 読み取った内容(いま画面の表にある値。記録はしない)を、そのままExcelでダウンロードするボタン(2026-10-27、ユーザー指示)。列は取込一覧と同じ並びで、タイムスタンプ・追加変更・ファイルURLは付けない。 */
+  var READ_HEADERS = ['ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '備考'];
+  function readExcelBtn(card, rows) {
+    return h('button', { class: 'btn excel', type: 'button', text: '読み取り内容をExcelでダウンロード', disabled: !rows.length, onclick: function () {
+      var data = rows.map(function (r) { return READ_HEADERS.map(function (k) { return k === 'ファイル名' ? card.name : String((k === '手配業者' ? r.業者 : r[k]) || ''); }); });
+      downloadXlsx(card.name.replace(/\.[^.]*$/, '') + '_読み取り内容.xlsx', '読み取り内容', READ_HEADERS, data, { leftCols: ['ファイル名', '現場名', '備考'], centerHeads: ['ファイル名', '現場名', '備考'] });
+    } });
   }
   /** 記入か選択が必要な欄を、黄色にする(読み取り結果の表)。入力のたびに付け外しする。 */
   var NEED_BY = { 'missing-project': '工事番号', 'missing-plate': '車番', 'bad-date': '積日|卸日', 'missing-carrier': '運送業者', 'missing-name': '氏名', 'missing-phone': '携帯番号', 'phone-format': '携帯番号' };
@@ -648,7 +656,7 @@
     var el = card.el;
     if (card.res.memo) el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'badge info', text: 'FAXの連絡' }), h('span', { class: 'msg', text: card.res.memo })));
     card.footHost = h('div');
-    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '変更内容(現在の記録と、今回のFAXを並べています。違う項目は色が付きます)', sugNote(card.items.map(function (it) { return it.newRow; }).filter(Boolean))), h('span', { class: 'spacer' }), card.footHost));
+    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '変更内容(現在の記録と、今回のFAXを並べています。違う項目は色が付きます)', sugNote(card.items.map(function (it) { return it.newRow; }).filter(Boolean))), h('span', { class: 'spacer' }), readExcelBtn(card, card.items.map(function (it) { return it.newRow; }).filter(Boolean)), card.footHost));
     if (!card.items.length) el.appendChild(h('div', { class: 'empty', text: '変更・追加・取消の対象が見つかりませんでした。FAXの区分を選び直してください。' }));
     else el.appendChild(changeTable(card));
     card.findHost = h('div'); el.appendChild(card.findHost);
