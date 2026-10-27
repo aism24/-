@@ -1062,7 +1062,7 @@
     function delFaxBtn() {
       if (!r.ファイルURL) return null;
       var blocked = same.some(function (x) { return x.追加変更; });
-      return h('button', { class: 'btn sm del', type: 'button', text: 'このFAXを削除して取り込み直す', disabled: blocked, title: blocked ? '変更・取消のFAXは削除できません' : '', onclick: async function () {
+      return h('button', { class: 'btn sm del faxdel', type: 'button', text: 'このFAXを削除して取り込み直す', disabled: blocked, title: blocked ? '変更・取消のFAXは削除できません' : '', onclick: async function () {
         if (dirty() && !(await confirmDialog('編集内容は破棄されますが続けますか?', '保存していない編集内容は消えます。', 'OK'))) return;
         if (!(await confirmDialog('このFAXを削除しますか?', 'このFAXの記録' + drafts.length + '行と、保存済みの原本(PDF)を削除します。元に戻せません(原本はDriveのゴミ箱に入ります)。削除したあと、PDF取込の画面で取り込み直せます。', '削除する'))) return;
         var close = busyDialog('削除中');

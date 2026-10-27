@@ -247,3 +247,12 @@ button.btn.reset { background: #ffe600; border-color: #b8a400; color: #222; font
 .flt-pop .flt-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; white-space: nowrap; }
 .flt-pop .flt-item[hidden] { display: none; }
 .flt-pop .flt-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+/* 「このFAXを削除して取り込み直す」: 縁が、白ではなく光る金色でゆっくり点滅する(2026-10-28、ユーザー指示)。押せないとき・動きを減らす設定のときは、点滅せず金色の縁だけ */
+button.btn.del.faxdel { border-color: #b8860b; box-shadow: 0 0 0 2px #ffd700, 0 0 8px 2px rgba(255, 215, 0, .7); animation: faxdel-glow 2.6s ease-in-out infinite; }
+button.btn.del.faxdel:disabled { animation: none; box-shadow: 0 0 0 2px #d9c36a; }
+@keyframes faxdel-glow {
+  0%, 100% { box-shadow: 0 0 0 2px #c9a227, 0 0 3px 0 rgba(255, 215, 0, .25); }
+  50% { box-shadow: 0 0 0 2px #ffe27a, 0 0 14px 5px rgba(255, 215, 0, .95); }
+}
+@media (prefers-reduced-motion: reduce) { button.btn.del.faxdel { animation: none; } }
