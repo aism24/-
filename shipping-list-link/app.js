@@ -64,11 +64,17 @@
   }
   // 「マスタ更新分確認中」ポップアップ。取得中は流れるバー、終了時はバーを100%にしてから閉じる
   var busyTimer = null;
-  function busy(on) {
+  // text=表示文(省略時は「マスタ更新分確認中」)、ratio(0〜1)を渡すと流れるバーの代わりに進捗バーにする
+  function busy(on, text, ratio) {
     var m = $('busyModal'), bar = $('busyBar');
     clearTimeout(busyTimer);
-    if (on) { bar.classList.remove('full'); m.classList.add('show'); return; }
-    bar.classList.add('full');
+    if (on) {
+      $('busyText').textContent = text || 'マスタ更新分確認中';
+      bar.classList.remove('full'); bar.classList.toggle('det', typeof ratio === 'number');
+      if (typeof ratio === 'number') bar.style.setProperty('--p', Math.round(ratio * 100) + '%');
+      m.classList.add('show'); return;
+    }
+    bar.classList.remove('det'); bar.classList.add('full');
     busyTimer = setTimeout(function () { m.classList.remove('show'); bar.classList.remove('full'); }, 500);
   }
   // 開いたとき: このPCに保存したリンク表があれば、それを表示してすぐポップアップを閉じ、最新かどうかは裏で確認する
@@ -207,14 +213,17 @@
     if (/\.xls$/i.test(file.name)) { $('msg').textContent = '古い形式(.xls)は未対応です。Excelで「.xlsx」として保存し直してください。'; return; }
     if (!links) { $('msg').textContent = 'マスタが未取得です。少し待って再実行してください。'; return; }
     working = true;   // 処理中の追加ドロップは無視(二重処理・二重記録の防止)
-    $('msg').textContent = '処理中…'; $('stage').classList.add('busy');
+    $('msg').textContent = ''; $('stage').classList.add('busy');
+    busy(true, 'ファイルを処理中…');   // ダウンロードが終わるまで、画面を操作できないポップアップを出す
     try {
       var buf = await file.arrayBuffer(), isXlsx = /\.xls[xm]$/i.test(file.name);
       var r = isXlsx ? await ShippingXlsx.linkXlsx(JSZip, buf, links, mapOpt()) : await ShippingCore.linkPdf(pdfjsLib, PDFLib, buf, links, mapOpt());
       // 詳細図(図番・製品名が線で描かれたCAD図面。寸法などの文字データだけ入っていることもある): 文字から図番らしい語が1つも見つからないときだけ、画像として読み取る
       if (!isXlsx && GAS_URL && r.stats.linked === 0 && r.stats.ng === 0) {
-        $('msg').textContent = '図面を画像として読み取り中…(1枚あたり十数秒かかります)';
-        r = await ShippingDrawing.linkDrawing(pdfjsLib, PDFLib, buf, links, askGas, mapOpt());
+        var po = mapOpt() || {}, pt = '図面を画像として読み取り中…(1枚あたり十数秒かかります)';
+        busy(true, pt, 0);
+        po.onProgress = function (done, total) { busy(true, pt + ' ' + done + '/' + total + 'ページ', done / (total + 1)); };
+        r = await ShippingDrawing.linkDrawing(pdfjsLib, PDFLib, buf, links, askGas, po);
       }
       var s = r.stats;
       $('msg').textContent = '';
@@ -232,7 +241,7 @@
     } catch (e) {
       $('stage').classList.remove('busy');
       $('msg').textContent = '失敗しました: ' + e;
-    } finally { working = false; }
+    } finally { working = false; busy(false); }
   }
   async function save(name, s, buf, isXlsx) {
     try {

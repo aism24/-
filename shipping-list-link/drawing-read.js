@@ -89,7 +89,7 @@
     return { x0: cb.x0 - m, y0: cb.y0 - m, x1: cb.x1 + m, y1: cb.y1 + m, snapped: false };
   }
 
-  // links: { "図番\t製品名": url | [url,...] } / ask(kind, base64Jpeg) → Promise<{ok, data|error}> / opts.mapUri(url): PDFに入れるリンク先の変換(省略可)
+  // links: { "図番\t製品名": url | [url,...] } / ask(kind, base64Jpeg) → Promise<{ok, data|error}> / opts.mapUri(url): PDFに入れるリンク先の変換(省略可) / opts.onProgress(済ページ数, 全ページ数): 進捗(省略可)
   async function linkDrawing(pdfjsLib, PDFLib, data, links, ask, opts) {
     var mapUri = (opts && opts.mapUri) || function (u) { return u; };
     var doc = await pdfjsLib.getDocument({ data: new Uint8Array(data.slice(0)) }).promise;
@@ -245,8 +245,8 @@
       }
     }
     try {
-      var nextPage = 1;
-      var worker = async function () { while (nextPage <= doc.numPages) await pageJob(nextPage++); };
+      var nextPage = 1, donePages = 0;
+      var worker = async function () { while (nextPage <= doc.numPages) { await pageJob(nextPage++); if (opts && opts.onProgress) opts.onProgress(++donePages, doc.numPages); } };
       await Promise.all([worker(), worker(), worker()]);
       stats.partial.sort(function (a, b) { return a.page - b.page; });
       await markNumberCells(numCands);
