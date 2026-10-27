@@ -677,7 +677,7 @@
   return {
     alreadyImported: alreadyImported, sortImportRows: sortImportRows, pairBeforeAfter: pairBeforeAfter, dateKey: dateKey, sortPairs: sortPairs, senderRank: senderRank,
     closingOf: closingOf, rowClosing: rowClosing, closingNeighbor: closingNeighbor, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
-    fmtType: fmtType, canonCarrier: canonCarrier, diffPart: diffPart, companyKey: companyKey, effectiveKind: effectiveKind, guessKind: guessKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate,
+    fmtType: fmtType, canonCarrier: canonCarrier, diffPart: diffPart, guessKind: guessKind, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,
     buildDestMap: buildDestMap, suggestProject: suggestProject, projectName: projectName, sanitizeOcr: sanitizeOcr, evaluateBatch: evaluateBatch, resolveRow: resolveRow, mergeOps: mergeOps
   };

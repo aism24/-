@@ -12,8 +12,8 @@
  * APIキーはこのGAS内でだけ使い、画面には返さない。
  */
 
-// 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261028b';
+// 貼り替え・デプロイの確認用。ping と init がこの値を返す。コードを変えたら更新する(キャッシュのキーにも入るので、更新すると古い版のキャッシュは使われない)。
+var CODE_VERSION = '20261028c';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_MERGED = '車両運転手情報'; // 1行=車と運転手の1組。シートの列は MERGED_HEADERS(見出し名で読み書きする)
@@ -51,6 +51,7 @@ function setupSheets() {
     info.getRange(r, 1, 1, 2).setValues([d]);
     names[r - 1] = d[0];
   });
+  cacheBump_();
   return 'OK';
 }
 
@@ -329,9 +330,12 @@ function err_(message) { return jsonOut_({ status: 'error', message: String(mess
 function doGet(e) {
   try {
     var a = e.parameter.action;
-    if (a === 'init') return ok_(getInit_());
+    if (a === 'init') return ok_(cached_('init', getInit_));
     if (a === 'getFile') return ok_(getFile_(e.parameter.url));
-    if (a === 'listImports') return ok_(listImports_(Number(e.parameter.limit) || 300));
+    if (a === 'listImports') {
+      var lim = Number(e.parameter.limit) || 300;
+      return ok_(lim <= 3000 ? cached_('imports' + lim, function () { return listImports_(lim); }) : listImports_(lim)); // 全行(downloadの1000000)は、いつでも最新を読む
+    }
     if (a === 'logStart') return ok_(logStart_());
     if (a === 'logDownload') return ok_(logDownload_(e.parameter.file, e.parameter.start));
     if (a === 'ping') return ok_({ pong: true, version: CODE_VERSION });
@@ -343,13 +347,13 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
     if (body.action === 'ocr') return ok_(ocr_(body));
-    if (body.action === 'commit') return ok_(withLock_(function () { return commit_(body); }));
-    if (body.action === 'updateImport') return ok_(withLock_(function () { return updateImport_(body); }));
-    if (body.action === 'deleteFax') return ok_(withLock_(function () { return deleteFax_(body); }));
-    if (body.action === 'applyChanges') return ok_(withLock_(function () { return applyChanges_(body); }));
+    if (body.action === 'commit') return ok_(writeLocked_(function () { return commit_(body); }));
+    if (body.action === 'updateImport') return ok_(writeLocked_(function () { return updateImport_(body); }));
+    if (body.action === 'deleteFax') return ok_(writeLocked_(function () { return deleteFax_(body); }));
+    if (body.action === 'applyChanges') return ok_(writeLocked_(function () { return applyChanges_(body); }));
     if (body.action === 'changeRequest') return ok_(withLock_(function () { return changeRequest_(body); }));
     if (body.action === 'linkPreview') return ok_(linkPreview_(body));
-    if (body.action === 'masterSave') return ok_(withLock_(function () { return masterSave_(body); }));
+    if (body.action === 'masterSave') return ok_(writeLocked_(function () { return masterSave_(body); }));
     return err_('不明なaction: ' + body.action);
   } catch (ex) { return err_(ex.message); }
 }
@@ -478,6 +482,36 @@ function withLock_(fn) {
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
+// ---------- 読み込み(init・取込一覧)の短時間キャッシュ(2026-10-28、ユーザー指示。起動を速くするため) ----------
+// スプレッドシートを開いて読むだけで、データが少なくても毎回1.2〜1.5秒かかる(2026-10-28に実測)。そこで、init と listImports(最新3000件)の結果を、CacheService に最大120秒置く。
+// ・取込一覧・車両運転手情報を書く操作(記録・反映・編集・FAX削除・車両運転手情報の保存)のたびに、世代(ver)を進めて、置いたものを使えなくする(writeLocked_)。
+// ・読み始めたときの世代のキーに置くので、読んでいる間に書き込みがあっても、古い内容が新しい世代として残らない。
+// ・シートを手で直した内容は、最大120秒のあいだ反映されない(画面の「再読み込み」でも、キャッシュが残っていれば同じ)。
+// ・100KBを超える結果は置かない(置けないときも、失敗しても、普通に読む)。キーに CODE_VERSION を入れるので、コードを貼り替えると古いキャッシュは使われない。
+var CACHE_TTL_ = 120;
+var CACHE_MAX_CHARS_ = 90000;
+function cached_(name, build) {
+  var c = null, key = '';
+  try {
+    c = CacheService.getScriptCache();
+    key = name + ':' + CODE_VERSION + ':' + (c.get('ver') || '0');
+    var hit = c.get(key);
+    if (hit) return JSON.parse(hit);
+  } catch (e) { c = null; }
+  var v = build();
+  try {
+    if (c) { var str = JSON.stringify(v); if (str.length <= CACHE_MAX_CHARS_) c.put(key, str, CACHE_TTL_); }
+  } catch (e) { /* 置けなくても、結果は返す */ }
+  return v;
+}
+function cacheBump_() {
+  try { CacheService.getScriptCache().put('ver', String(Date.now()), 21600); } catch (e) { /* 失敗しても、キャッシュは最大120秒で切れる */ }
+}
+/** 書き込みの操作用: ロックの中で実行し、途中で失敗しても、終わったら必ずキャッシュの世代を進める */
+function writeLocked_(fn) {
+  return withLock_(function () { try { return fn(); } finally { cacheBump_(); } });
+}
+
 /** シート全体を1回の読み込みで、{見出し: 値} の配列にする(起動時用。読み込みの回数を減らして速くする)。map=見出し→列番号 */
 function readAll_(name, headers, optional) {
   var all = sheet_(name).getDataRange().getValues();
@@ -499,9 +533,7 @@ function getInit_() {
     importKeys: activeRows.map(function (r) { return { 積日: r.積日, 車番: r.車番 }; }), // 中止・変更前の行は、重複の判定に使わない
     pastDest: impRows.slice(-PAST_DEST_ROWS).map(function (r) { return { 行先: r.行先, 工事番号: r.工事番号, 現場名: r.現場名 }; }),
     version: CODE_VERSION,
-    senders: readSenders_(),
-    model: getInfo_('Geminiモデル名'),
-    keyOk: getInfo_('APIKEY') !== ''
+    senders: readSenders_()
   };
 }
 
