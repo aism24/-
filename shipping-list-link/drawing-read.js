@@ -6,6 +6,9 @@
 (function (root) {
   var LOCATE_SIDE = 2000;   // 場所を探すための全体画像の長辺(px)
   var READ_DPI = 300;       // 読み取り用の切り出し画像の解像度
+  var CORNER_SIDE = 2000;   // 右下(図面番号欄のあたり)だけを拡大して図面番号の位置を探すときの、その画像の横幅(px)
+  var MAX_CALLS_PER_MIN = 12;   // Geminiの無料枠は1分あたりの呼び出し回数に上限がある(429)ので、それを超えないよう間隔をあける
+  var RETRY_429 = 3;            // 429が返ったときの再試行の回数(そのつど少し待つ)
   var HALF_SIDE = 2400;     // 製品表を見落としたとき、上下に分けて探し直す画像の横幅(px)
 
   function fold(s) { return String(s).normalize('NFKC').replace(/\s+/g, '').toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1'); }
@@ -25,6 +28,15 @@
   function pdfRect(vp, ox, oy, r) {
     var a = vp.convertToPdfPoint(ox + r.x0, oy + r.y0), b = vp.convertToPdfPoint(ox + r.x1, oy + r.y1);
     return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
+  }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  // 図面番号欄のあたりの画像(box は 0〜1000 のページ全体の位置)。着色の範囲を求める・読み直し(遅い道)に使う
+  function renderAround(page, sH, PW, PH, box) {
+    var nb = boxPx(box, PW, PH);
+    if (!nb) return Promise.resolve(null);
+    var padx = (nb.x1 - nb.x0) * 0.6 + 40, pady = (nb.y1 - nb.y0) * 3 + 60;   // 欄の罫線(上は「図面番号」の文字の上)まで入る広さ
+    var rx0 = clamp(nb.x0 - padx, 0, PW), ry0 = clamp(nb.y0 - pady, 0, PH), rx1 = clamp(nb.x1 + padx, 0, PW), ry1 = clamp(nb.y1 + pady, 0, PH);
+    return renderRegion(page, sH, rx0, ry0, rx1 - rx0, ry1 - ry0).then(function (r) { return { r: r, nb: nb, rx0: rx0, ry0: ry0 }; });
   }
   function jpeg(canvas) { return canvas.toDataURL('image/jpeg', 0.9).replace(/^data:image\/jpeg;base64,/, ''); }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -89,11 +101,26 @@
       var p = k.split('\t'), z = fold(p[0]);
       (byZ[z] = byZ[z] || []).push({ zuban: p[0], name: p[1], f: fold(p[1]), v: links[k] });
     });
+    var sent = [];   // 直近1分に送った時刻
+    async function throttle() {   // 1分あたりの回数を超えないよう、空くまで待つ
+      for (;;) {
+        var now = Date.now();
+        sent = sent.filter(function (t) { return now - t < 60000; });
+        if (sent.length < MAX_CALLS_PER_MIN) { sent.push(now); return; }
+        await sleep(60000 - (now - sent[0]) + 200);
+      }
+    }
     async function call(kind, r, keep) {   // keep=true: 送ったあとも画像を使い続けるので手放さない
-      var res = await ask(kind, jpeg(r.canvas));
+      var img = jpeg(r.canvas);
       if (!keep) release(r);
-      if (!res || !res.ok) throw new Error((res && res.error) || '読み取りに失敗しました');
-      return res.data;
+      for (var attempt = 0; ; attempt++) {
+        await throttle();
+        var res = await ask(kind, img);
+        if (res && res.ok) return res.data;
+        var msg = (res && res.error) || '読み取りに失敗しました';
+        if (attempt < RETRY_429 && /429|quota/i.test(msg)) { await sleep(8000 * (attempt + 1)); continue; }   // 上限に当たったときは待って再試行
+        throw new Error(msg);
+      }
     }
     // 読み取ったセルの中から、図番 z の製品名(まだ使っていないもの)と一致する最初のセルを探す。seen には読み取った文字を集める
     function pick(cells, z, used, seen) {
@@ -107,6 +134,15 @@
       }
       return null;
     }
+    // リンク(クリックできる範囲)と、セル全体の薄い青の着色を、ページに付ける
+    function addLink(pdfPage, a) {
+      var ctx = out.context, act = ctx.obj({ S: 'URI', URI: PDFLib.PDFString.of(root.ShippingCore.encodeUri(a.uri)) });
+      pdfPage.node.addAnnot(ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Link', Rect: a.rect, Border: [0, 0, 0], A: act })));
+      // 図面は文字が細かく下線だと文字に重なるので、セル全体を薄い青で塗る(乗算なので文字はそのまま見える)
+      pdfPage.drawRectangle({ x: a.rect[0], y: a.rect[1], width: a.rect[2] - a.rect[0], height: a.rect[3] - a.rect[1],
+        color: PDFLib.rgb(0.62, 0.78, 1), blendMode: PDFLib.BlendMode.Multiply });
+    }
+    var numCands = [];   // 製品名にリンクを付けたページ(図面番号欄の着色の候補): { pn, fz(図番), uri }
     // ページごとの処理。ページは並行して読む(Geminiの待ち時間が重ならないように)。結果の順序は最後に頁順に整える
     async function pageJob(pn) {
       var page = await doc.getPage(pn), v1 = page.getViewport({ scale: 1 }), W = v1.width, H = v1.height;
@@ -128,16 +164,9 @@
       var tables = loc.tables || [];
       if (!tables.length) { stats.ng++; stats.partial.push({ page: pn, zuban: loc.drawingNumber || '', name: '', reason: '製品表が見つかりません' }); return; }
 
-      // 右下の図面番号欄の画像。読み直し(遅い道)と、図面番号欄の着色の範囲を求めるのに使う。必要になったときだけ描く
+      // 読み直し(遅い道)用の、図面番号欄のあたりの画像。必要になったときだけ描く
       var numMemo = null, numRead = null;
-      function numberImage() {
-        if (numMemo) return numMemo;
-        var nb = boxPx(loc.drawingNumberBox, PW, PH);
-        if (!nb) return (numMemo = Promise.resolve(null));
-        var padx = (nb.x1 - nb.x0) * 0.6 + 40, pady = (nb.y1 - nb.y0) * 3 + 60;   // 欄の罫線(上は「図面番号」の文字の上)まで入る広さ
-        var rx0 = clamp(nb.x0 - padx, 0, PW), ry0 = clamp(nb.y0 - pady, 0, PH), rx1 = clamp(nb.x1 + padx, 0, PW), ry1 = clamp(nb.y1 + pady, 0, PH);
-        return (numMemo = renderRegion(page, sH, rx0, ry0, rx1 - rx0, ry1 - ry0).then(function (r) { return { r: r, nb: nb, rx0: rx0, ry0: ry0 }; }));
-      }
+      function numberImage() { return numMemo || (numMemo = renderAround(page, sH, PW, PH, loc.drawingNumberBox)); }
       async function readNumber() {   // 図面番号を高解像度で読み直し、マスタにある方を採る(場所探しで読んだ値も候補)
         if (numRead) return numRead;
         var cs = [], im = await numberImage();
@@ -183,33 +212,44 @@
         if (hit) used[hit.k] = 1;
         if (ng) { stats.ng++; ng.page = pn; stats.partial.push(ng); release(tr); continue; }
         var cell = cellFromLines(tr.canvas, { x0: tb.x0 - cx0, y0: tb.y0 - cy0, x1: tb.x1 - cx0, y1: tb.y1 - cy0 }, tbx, cellOpt);
-        annots.push({ rect: pdfRect(tr.vp, cx0, cy0, cell), uri: mapUri(hit.e.v) });
+        annots.push({ rect: pdfRect(tr.vp, cx0, cy0, cell), uri: mapUri(hit.e.v), fz: fold(hit.e.zuban) });
         stats.linked++;
         release(tr);
       }
-      // 図面番号(右下)にも、製品名と同じリンクと着色を付ける(製品名にリンクが付いたページだけ。欄の罫線が見つかったときだけ)
-      if (annots.length) {
-        var im = await numberImage();
-        if (im) {
-          var nl = { x0: im.nb.x0 - im.rx0, y0: im.nb.y0 - im.ry0, x1: im.nb.x1 - im.rx0, y1: im.nb.y1 - im.ry0 }, nc = cellFromLines(im.r.canvas, nl, nl);
-          if (nc.snapped) annots.push({ rect: pdfRect(im.r.vp, im.rx0, im.ry0, nc), uri: annots[0].uri });
-        }
-      }
+      if (annots.length) numCands.push({ pn: pn, fz: annots[0].fz, uri: annots[0].uri });   // 図面番号欄の着色は、全ページ処理のあとでまとめて行う
       var imEnd = numMemo && await numMemo;
       if (imEnd) release(imEnd.r);
-      annots.forEach(function (a) {
-        var ctx = out.context, act = ctx.obj({ S: 'URI', URI: PDFLib.PDFString.of(root.ShippingCore.encodeUri(a.uri)) });
-        pdfPage.node.addAnnot(ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Link', Rect: a.rect, Border: [0, 0, 0], A: act })));
-        // 図面は文字が細かく下線だと文字に重なるので、セル全体を薄い青で塗る(乗算なので文字はそのまま見える)
-        pdfPage.drawRectangle({ x: a.rect[0], y: a.rect[1], width: a.rect[2] - a.rect[0], height: a.rect[3] - a.rect[1],
-          color: PDFLib.rgb(0.62, 0.78, 1), blendMode: PDFLib.BlendMode.Multiply });
-      });
+      annots.forEach(function (a) { addLink(pdfPage, a); });
+    }
+    // 図面番号(右下)にも、製品名と同じリンクと着色を付ける。全体画像では、Geminiが図面番号の位置を隣のセル(工事番号・図面名称など)と取り違えることがあるので、
+    // 右下だけを拡大して探し直し、読んだ図面番号が、製品名にリンクを付けた図番と一致したときだけ位置を採る。同じ図面セットなら表題欄の位置は全ページで同じなので、
+    // 探し直しはPDF全体で最大3回(1回で確定すれば1回)にして、Geminiの呼び出し回数を増やさない。一致しなければ、位置が違う疑いがあるので塗らない
+    async function markNumberCells(cands) {
+      cands.sort(function (a, b) { return a.pn - b.pn; });
+      var tpl = null;
+      for (var ci = 0; ci < Math.min(3, cands.length) && !tpl; ci++) {
+        var pg = await doc.getPage(cands[ci].pn), v = pg.getViewport({ scale: 1 }), sc = CORNER_SIDE / (v.width * 0.5);
+        try {
+          var cn = await call('locate', await renderRegion(pg, sc, v.width * sc * 0.5, v.height * sc * 0.8, v.width * sc * 0.5, v.height * sc * 0.2)), cb = cn.drawingNumberBox;
+          if (cn.drawingNumber && fold(cn.drawingNumber) === cands[ci].fz && cb && cb.length === 4) tpl = [800 + cb[0] * 0.2, 500 + cb[1] * 0.5, 800 + cb[2] * 0.2, 500 + cb[3] * 0.5];
+        } catch (e) { /* 探し直しに失敗しても、製品名のリンクはそのまま */ }
+      }
+      if (!tpl) return;
+      for (var k = 0; k < cands.length; k++) {
+        var page = await doc.getPage(cands[k].pn), vp1 = page.getViewport({ scale: 1 }), sH = READ_DPI / 72;
+        var im = await renderAround(page, sH, vp1.width * sH, vp1.height * sH, tpl);
+        if (!im) continue;
+        var nl = { x0: im.nb.x0 - im.rx0, y0: im.nb.y0 - im.ry0, x1: im.nb.x1 - im.rx0, y1: im.nb.y1 - im.ry0 }, nc = cellFromLines(im.r.canvas, nl, nl);
+        if (nc.snapped) addLink(out.getPage(cands[k].pn - 1), { rect: pdfRect(im.r.vp, im.rx0, im.ry0, nc), uri: cands[k].uri });
+        release(im.r);
+      }
     }
     try {
       var nextPage = 1;
       var worker = async function () { while (nextPage <= doc.numPages) await pageJob(nextPage++); };
       await Promise.all([worker(), worker(), worker()]);
       stats.partial.sort(function (a, b) { return a.page - b.page; });
+      await markNumberCells(numCands);
     } finally { doc.destroy(); }   // pdf.js のworker・ページ資源を解放
     return { bytes: await out.save(), stats: stats };
   }
