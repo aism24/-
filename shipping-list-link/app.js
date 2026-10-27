@@ -220,9 +220,9 @@
       var r = isXlsx ? await ShippingXlsx.linkXlsx(JSZip, buf, links, mapOpt()) : await ShippingCore.linkPdf(pdfjsLib, PDFLib, buf, links, mapOpt());
       // 詳細図(図番・製品名が線で描かれたCAD図面。寸法などの文字データだけ入っていることもある): 文字から図番らしい語が1つも見つからないときだけ、画像として読み取る
       if (!isXlsx && GAS_URL && r.stats.linked === 0 && r.stats.ng === 0) {
-        var po = mapOpt() || {}, pt = '図面を画像として読み取り中…(1枚あたり十数秒かかります)';
+        var po = mapOpt() || {}, pt = '図面を画像として読み取り中…';
         busy(true, pt, 0);
-        po.onProgress = function (done, total) { busy(true, pt + ' ' + done + '/' + total + 'ページ', done / (total + 1)); };
+        po.onProgress = function (done, total) { busy(true, pt + '\n' + done + '/' + total + 'ページ', done / (total + 1)); };
         r = await ShippingDrawing.linkDrawing(pdfjsLib, PDFLib, buf, links, askGas, po);
       }
       var s = r.stats;
