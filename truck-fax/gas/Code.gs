@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261026d';
+var CODE_VERSION = '20261027e';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_MERGED = '車両運転手情報'; // 1行=車と運転手の1組。シートの列は MERGED_HEADERS(見出し名で読み書きする)
@@ -25,6 +25,7 @@ var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号'
 var CHECK_FIELDS = ['手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '工事番号', '現場名', '追加変更'];
 // 取込一覧の任意の列(あれば読み書きする。無くても動く)。「追加変更」=中止/変更前/変更後、「備考」=アプリで入力したテキスト。
 var IMPORT_OPTIONAL = ['追加変更', '備考', 'ファイルURL']; // ファイルURL=取り込んだ原本(PDF・画像)のDriveのURL。画面のファイル名を押すと開く
+var COUNT_HEADER = '輸送回数'; // 車両運転手情報の任意の列。あれば GAS が数えて書く(2026-10-27、ユーザー指示)
 var INACTIVE_LABELS = ['変更前', '中止']; // これらの行は車両台数に数えない(行は消さない)
 
 var TEXT_COLS = ['着時間', '車種', '車番', '携帯番号', '工事番号', '備考']; // 備考も文字として書く(「10:30」が時刻(1899/12/30 10:30:00)にならないように。2026-10-23)
@@ -603,6 +604,7 @@ function commit_(body) {
   try { fileUrl = saveFax_(body, now); } catch (ex) { fileWarn = ex.message; } // 原本の保存に失敗しても、記録は止めない
   rows.forEach(function (r) { writeRow_(imp, IMPORT_HEADERS, null, importObj_(r, now, source, '', fileUrl)); });
   var pairInfo = safePairs_(rows);
+  safeCounts_();
   return { added: rows.length, ops: opCount, fileUrl: fileUrl, fileWarn: fileWarn, pairs: pairInfo };
 }
 
@@ -648,6 +650,7 @@ function updateImport_(body) {
   ['積日', '卸日'].forEach(function (k) { if (obj[k] && !/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(obj[k])) throw new Error(k + 'は 2026/10/20 の形で入力してください。'); });
   writeRow_(imp, IMPORT_HEADERS, row, obj);
   var linked = body.link === true ? applyLink_('import', row, body.before, data) : null;
+  safeCounts_();
   return { ok: true, row: row, linked: linked };
 }
 
@@ -690,6 +693,7 @@ function applyChanges_(body) {
     n.added++;
   });
   var pairInfo = safePairs_(items.filter(function (it) { return it.mode === 'add' && INACTIVE_LABELS.indexOf(it.label) < 0; }).map(function (it) { return it.data; })); // 「中止」の行は、組み合わせを追加しない
+  safeCounts_();
   return { marked: n.marked, added: n.added, ops: opCount, fileUrl: fileUrl, fileWarn: fileWarn, pairs: pairInfo };
 }
 
@@ -840,6 +844,44 @@ function addSenderNote_(row, r) {
   return true;
 }
 
+/** 車両運転手情報の「輸送回数」列を、取込一覧から数え直して書く(2026-10-27、ユーザー指示)。
+ *  数え方: 氏名ごとに合算(同じ運転手が複数の車・車種に乗っても、その行すべてに同じ合計)。「変更前」「中止」の行は数えない。
+ *  氏名が空の行は携帯番号で数える。毎回全体を数え直すので、取込・変更・編集・削除のどの操作のあとでも同じ結果になる(加算の取りこぼし・二重加算が起きない)。
+ *  見出し「輸送回数」の列が無ければ何もしない。値が変わった行だけ書く。 */
+function transportKey_(r) {
+  var n = compact_(r.氏名);
+  if (n) return 'n:' + n;
+  var p = phoneDigits_(r.携帯番号);
+  return p ? 'p:' + p : '';
+}
+function syncTransportCounts_() {
+  var sh = sheet_(SHEET_MERGED);
+  var col = headerMap_(sh, [])[COUNT_HEADER];
+  var last = sh.getLastRow();
+  if (!col || last < 2) return { updated: 0 };
+  var counts = {};
+  readRows_(sheet_(SHEET_IMPORT), IMPORT_HEADERS, 2, null, IMPORT_OPTIONAL).forEach(function (r) {
+    if (INACTIVE_LABELS.indexOf(r.追加変更) >= 0) return;
+    var k = transportKey_(r);
+    if (k) counts[k] = (counts[k] || 0) + 1;
+  });
+  var rows = readRows_(sh, MERGED_HEADERS, 2, last, []);
+  var rng = sh.getRange(2, col, last - 1, 1);
+  var cur = rng.getValues();
+  var next = cur.map(function (c) { return [c[0]]; });
+  var updated = 0;
+  rows.forEach(function (r) {
+    var k = transportKey_(r), n = k ? (counts[k] || 0) : 0, i = r._row - 2;
+    if (String(cur[i][0]) !== String(n)) { next[i][0] = n; updated++; }
+  });
+  if (updated) rng.setValues(next);
+  return { updated: updated };
+}
+/** 輸送回数の書き込みに失敗しても、記録・保存は済んでいるので止めない */
+function safeCounts_() {
+  try { return syncTransportCounts_(); } catch (e) { return { error: String(e && e.message || e) }; }
+}
+
 /** 取込一覧への記録は済んでいるので、組み合わせの追加に失敗しても、記録は取り消さない(失敗は結果に入れて、画面で知らせる) */
 function safePairs_(rowsData) {
   try { var r = ensurePairs_(rowsData); r.ok = true; return r; }
@@ -927,6 +969,7 @@ function masterSave_(body) {
   applyOp_({ kind: body.kind, mode: body.mode, row: body.row, before: body.before, data: body.data });
   var linked = body.kind === 'pair' && body.mode === 'update' && body.link === true ? applyLink_('pair', body.row, body.before, body.data) : null;
   if (body.kind === 'pair') { try { syncTypeNotes_(mergedRowsNow_()); } catch (e) { /* 失敗しても保存は済んでいる */ } }
+  safeCounts_();
   return { ok: true, linked: linked };
 }
 
