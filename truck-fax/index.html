@@ -5,6 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>車番連絡　管理</title>
 <link rel="stylesheet" href="style.css?v=20261028f">
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+<script>
+// 起動の高速化(2026-10-28): app.js などの読み込みを待たずに、GASへ init と取込一覧(最新3000件)を先に要求する。app.js が最初の1回だけ、この応答を使う(app.js の takeEarly)。
+// GASのURLは app.js の GAS_API_URL と同じにする(違うときは app.js が先出しの応答を使わず、普通に読み直す)。limit は app.js の IMPORTS_LIMIT と同じにする。
+(function () {
+  var url = window.__GAS_URL__ || 'https://script.google.com/macros/s/AKfycbyfyFEJn4alzJGmbWIhKwKeRvJ2OlkgyM4wZFk7ldUVCs5Yx-khi5FOWLen6cvvIYQ/exec';
+  var e = window.__early = { url: url, limit: 3000 };
+  try {
+    e.init = fetch(url + '?action=init');
+    e.listImports = fetch(url + '?action=listImports&limit=' + e.limit);
+    e.init.catch(function () {}); e.listImports.catch(function () {});
+  } catch (x) { window.__early = null; }
+})();
+</script>
 </head>
 <body>
 <header class="top">
@@ -37,7 +52,7 @@
 </main>
 <script src="xlsx.js?v=20261023y"></script>
 <script src="viewer.js?v=20261028a"></script>
-<script src="logic.js?v=20261023y"></script>
-<script src="app.js?v=20261028h"></script>
+<script src="logic.js?v=20261028a"></script>
+<script src="app.js?v=20261028i"></script>
 </body>
 </html>
