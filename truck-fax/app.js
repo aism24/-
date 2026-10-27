@@ -1078,7 +1078,7 @@
         var back = resetTargets();
         var backLines = back.slice(0, 5).map(function (x) { return '・「' + x.追加変更 + '」を空欄に戻す: ' + [x.積日, x.車番, x.氏名].filter(Boolean).join(' '); });
         if (back.length > 5) backLines.push('・ほか' + (back.length - 5) + '行も「追加変更」を空欄に戻す');
-        if (!(await confirmDialog('このFAXを削除しますか?', ['・車番連絡記録の' + drafts.length + '行の削除', '・取込PDFの削除'].concat(backLines, ['以上を実施します。', '戻すことは出来ませんが削除しますか？']).join('\n'), '削除する'))) return;
+        if (!(await confirmDialog('このFAXを削除しますか?', ['・車番連絡記録の' + drafts.length + '行の削除', '・取込PDFの削除'].concat(backLines, ['以上を実施します。', '戻すことは出来ませんが削除しますか？']).join('\n'), '削除する', true))) return;
         var close = busyDialog('削除中');
         try {
           var res = await apiPost('deleteFax', { fileUrl: r.ファイルURL, rows: same.map(function (x) { return { row: x._row, before: L.recFields(x) }; }), reset: back.map(function (x) { return { row: x._row, before: L.recFields(x) }; }) }, 120000);
@@ -1452,9 +1452,9 @@
   }
 
   /** 画面中央のポップアップで確認する(ブラウザ標準の確認ダイアログは使わない)。OKならtrue */
-  function confirmDialog(title, detail, okText) {
+  function confirmDialog(title, detail, okText, big) { // big=true: 文字・ボタン・幅を1.5倍にして、タイトルを中央揃えにする(FAX削除の確認。2026-10-28、ユーザー指示)
     return new Promise(function (resolve) {
-      var dlg = h('dialog', { class: 'dlg' },
+      var dlg = h('dialog', { class: 'dlg' + (big ? ' big' : '') },
         h('p', { class: 'dlg-title', text: title }),
         h('p', { class: 'dlg-detail', text: detail }),
         h('div', { class: 'dlg-btns' },

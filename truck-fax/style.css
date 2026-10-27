@@ -256,3 +256,10 @@ button.btn.del.faxdel:disabled { animation: none; box-shadow: 0 0 0 2px #d9c36a;
   50% { box-shadow: 0 0 0 2px #ffe27a, 0 0 14px 5px rgba(255, 215, 0, .95); }
 }
 @media (prefers-reduced-motion: reduce) { button.btn.del.faxdel { animation: none; } }
+
+/* FAX削除の確認ポップアップ: 文字・ボタン・幅・余白を1.5倍、タイトルは中央揃え(2026-10-28、ユーザー指示) */
+dialog.dlg.big { font-size: 150%; max-width: min(94vw, 690px); padding: 30px 36px; border-radius: 15px; }
+dialog.dlg.big .dlg-title { font-size: 24px; text-align: center; margin: 0 0 12px; }
+dialog.dlg.big .dlg-detail { margin: 0 0 24px; }
+dialog.dlg.big .dlg-btns { gap: 15px; }
+dialog.dlg.big button.btn { padding: 9px 21px; border-radius: 9px; }
