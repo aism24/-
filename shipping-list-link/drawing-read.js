@@ -27,32 +27,29 @@
     if (r.x1 <= r.x0 || r.y1 <= r.y0) return null;
     return r;
   }
-  // 画像の読み取りで得た文字の範囲を、周りの罫線(セルの枠)まで広げる。見つからない方向は文字の範囲に少し余白を足す
-  function snapCell(canvas, r) {
+  // 製品表の罫線からセルの範囲を求める(Geminiが返す文字の枠は上下にずれることがあるため、枠の大きさには頼らない)
+  // tbl: 製品表の範囲(canvas上のpx)/ cb: 読み取ったセルの文字の範囲。使うのは中心の位置だけ
+  // 1. 表の左右ほぼ全幅に渡る横線のうち、文字の中心から上下にいちばん近い線 → セルの上端・下端
+  // 2. 上端〜下端のほぼ全高に渡る縦線 → 列の区切り。文字の中心を挟む2本 → セルの左端・右端
+  function cellFromLines(canvas, tbl, cb) {
     var w = canvas.width, h = canvas.height, d = canvas.getContext('2d').getImageData(0, 0, w, h).data;
     function dark(x, y) { x = clamp(Math.round(x), 0, w - 1); y = clamp(Math.round(y), 0, h - 1); var i = (y * w + x) * 4; return (d[i] + d[i + 1] + d[i + 2]) / 3 < 170; }
-    var th = r.y1 - r.y0, tw = r.x1 - r.x0, yc = (r.y0 + r.y1) / 2, xc = (r.x0 + r.x1) / 2;
-    function vline(x) {   // 文字より背の高い縦線があるか(文字の縦画ではなく罫線だけを拾うため、文字高の±0.75倍を見る)
-      var n = 0, t = 0, y;
-      for (y = yc - th * 0.75; y <= yc + th * 0.75; y += 1) { t++; if (dark(x - 1, y) || dark(x, y) || dark(x + 1, y)) n++; }
-      return n / t >= 0.9;
+    var xc = (cb.x0 + cb.x1) / 2, yc = (cb.y0 + cb.y1) / 2, tw = tbl.x1 - tbl.x0;
+    var xa = tbl.x0 + tw * 0.1, xb = tbl.x1 - tw * 0.1;
+    function hFrac(y) { var n = 0, t = 0, x; for (x = xa; x <= xb; x += 2) { t++; if (dark(x, y - 1) || dark(x, y) || dark(x, y + 1)) n++; } return n / t; }
+    function vFrac(x, ya, yb) { var n = 0, t = 0, y; for (y = ya; y <= yb; y += 2) { t++; if (dark(x - 1, y) || dark(x, y) || dark(x + 1, y)) n++; } return n / t; }
+    var T = null, B = null, y;
+    for (y = yc; y >= Math.max(0, yc - h * 0.5); y--) if (hFrac(y) >= 0.85) { T = y; break; }
+    for (y = yc; y <= Math.min(h - 1, yc + h * 0.5); y++) if (hFrac(y) >= 0.85) { B = y; break; }
+    if (T !== null && B !== null && B - T >= 8) {
+      var lines = [], x, last = -99;
+      for (x = 0; x < w; x++) if (vFrac(x, T + 3, B - 3) >= 0.85) { if (x - last > 3) lines.push([x, x]); else lines[lines.length - 1][1] = x; last = x; }
+      var L = null, R = null;
+      lines.forEach(function (l) { var c = (l[0] + l[1]) / 2; if (c <= xc) L = c; else if (R === null) R = c; });
+      if (L !== null && R !== null && R - L >= 8) return { x0: L, y0: T, x1: R, y1: B, snapped: true };
     }
-    function hline(y, xa, xb) {
-      var n = 0, t = 0, x;
-      for (x = xa; x <= xb; x += 1) { t++; if (dark(x, y - 1) || dark(x, y) || dark(x, y + 1)) n++; }
-      return n / t >= 0.9;
-    }
-    var L = null, R = null, T = null, B = null, x, y;
-    for (x = r.x0 - 2; x >= Math.max(0, r.x0 - tw * 1.5 - 40); x--) if (vline(x)) { L = x; break; }
-    for (x = r.x1 + 2; x <= Math.min(w - 1, r.x1 + tw * 1.5 + 40); x++) if (vline(x)) { R = x; break; }
-    if (L !== null && R !== null) {
-      var xa = L + 2, xb = R - 2;
-      for (y = r.y0 - 2; y >= Math.max(0, r.y0 - th * 2); y--) if (hline(y, xa, xb)) { T = y; break; }
-      for (y = r.y1 + 2; y <= Math.min(h - 1, r.y1 + th * 2); y++) if (hline(y, xa, xb)) { B = y; break; }
-      if (T !== null && B !== null) return { x0: L, y0: T, x1: R, y1: B, snapped: true };
-    }
-    var m = th * 0.25;
-    return { x0: r.x0 - m, y0: r.y0 - m, x1: r.x1 + m, y1: r.y1 + m, snapped: false };
+    var m = (cb.y1 - cb.y0) * 0.5;
+    return { x0: cb.x0 - m, y0: cb.y0 - m, x1: cb.x1 + m, y1: cb.y1 + m, snapped: false };
   }
 
   // links: { "図番\t製品名": url | [url,...] } / ask(kind, base64Jpeg) → Promise<{ok, data|error}>
@@ -79,11 +76,11 @@
         var loc = await call('locate', full.canvas);
         // 図面番号: 右下の図面番号欄を高解像度で読み直し、マスタにある方を採る(場所探しで読んだ値も候補)
         var cands = [];
-        var nb = boxPx(loc.drawingNumberBox, W * sH, H * sH);
+        var nb = boxPx(loc.drawingNumberBox, W * sH, H * sH), nr = null, rx0 = 0, ry0 = 0;
         if (nb) {
-          var padx = (nb.x1 - nb.x0) * 0.4 + 20, pady = (nb.y1 - nb.y0) * 0.6 + 20;
-          var rx0 = clamp(nb.x0 - padx, 0, W * sH), ry0 = clamp(nb.y0 - pady, 0, H * sH), rx1 = clamp(nb.x1 + padx, 0, W * sH), ry1 = clamp(nb.y1 + pady, 0, H * sH);
-          var nr = await renderRegion(page, sH, rx0, ry0, rx1 - rx0, ry1 - ry0);
+          var padx = (nb.x1 - nb.x0) * 0.6 + 40, pady = (nb.y1 - nb.y0) * 3 + 60;   // 欄の罫線(上は「図面番号」の文字の上)まで入る広さ
+          rx0 = clamp(nb.x0 - padx, 0, W * sH); ry0 = clamp(nb.y0 - pady, 0, H * sH); var rx1 = clamp(nb.x1 + padx, 0, W * sH), ry1 = clamp(nb.y1 + pady, 0, H * sH);
+          nr = await renderRegion(page, sH, rx0, ry0, rx1 - rx0, ry1 - ry0);
           try { cands.push((await call('number', nr.canvas)).text); } catch (e) { /* 読み直しに失敗しても、場所探しの値で続ける */ }
         }
         if (loc.drawingNumber) cands.push(loc.drawingNumber);
@@ -110,23 +107,32 @@
           if (Array.isArray(hit.e.v)) { stats.dup++; stats.ng++; stats.partial.push({ page: pn, zuban: hit.e.zuban, name: hit.e.name, reason: '重複' }); continue; }
           var tbx = boxPx(hit.c.box, cw, ch);
           if (!tbx) { stats.ng++; stats.partial.push({ page: pn, zuban: zRead, name: hit.c.text, reason: 'セルの位置を読み取れません' }); continue; }
-          var cell = snapCell(tr.canvas, tbx);
+          var cell = cellFromLines(tr.canvas, { x0: tb.x0 - cx0, y0: tb.y0 - cy0, x1: tb.x1 - cx0, y1: tb.y1 - cy0 }, tbx);
           var A = tr.vp.convertToPdfPoint(cx0 + cell.x0, cy0 + cell.y0), B = tr.vp.convertToPdfPoint(cx0 + cell.x1, cy0 + cell.y1);
-          var U0 = tr.vp.convertToPdfPoint(cx0 + tbx.x0, cy0 + tbx.y1 + 2), U1 = tr.vp.convertToPdfPoint(cx0 + tbx.x1, cy0 + tbx.y1 + 2);
-          annots.push({ rect: [Math.min(A[0], B[0]), Math.min(A[1], B[1]), Math.max(A[0], B[0]), Math.max(A[1], B[1])], ul: [U0[0], U0[1], U1[0], U1[1]], uri: hit.e.v });
+          annots.push({ rect: [Math.min(A[0], B[0]), Math.min(A[1], B[1]), Math.max(A[0], B[0]), Math.max(A[1], B[1])], uri: hit.e.v });
           stats.linked++;
+        }
+        // 図面番号(右下)にも、製品名と同じリンクと着色を付ける(製品名にリンクが付いたページだけ。欄の罫線が見つかったときだけ)
+        if (annots.length && nr && nb) {
+          var nl = { x0: nb.x0 - rx0, y0: nb.y0 - ry0, x1: nb.x1 - rx0, y1: nb.y1 - ry0 }, nc = cellFromLines(nr.canvas, nl, nl);
+          if (nc.snapped) {
+            var NA = nr.vp.convertToPdfPoint(rx0 + nc.x0, ry0 + nc.y0), NB = nr.vp.convertToPdfPoint(rx0 + nc.x1, ry0 + nc.y1);
+            annots.push({ rect: [Math.min(NA[0], NB[0]), Math.min(NA[1], NB[1]), Math.max(NA[0], NB[0]), Math.max(NA[1], NB[1])], uri: annots[0].uri });
+          }
         }
         annots.forEach(function (a) {
           var ctx = out.context;
           var act = ctx.obj({ S: 'URI', URI: PDFLib.PDFString.of(root.ShippingCore.encodeUri(a.uri)) });
           pdfPage.node.addAnnot(ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Link', Rect: a.rect, Border: [0, 0, 0], A: act })));
-          pdfPage.drawLine({ start: { x: a.ul[0], y: a.ul[1] }, end: { x: a.ul[2], y: a.ul[3] }, thickness: 0.9, color: PDFLib.rgb(0, 0.2, 0.9) });
+          // 図面は文字が細かく下線だと文字に重なるので、セル全体を薄い青で塗る(乗算なので文字はそのまま見える)
+          pdfPage.drawRectangle({ x: a.rect[0], y: a.rect[1], width: a.rect[2] - a.rect[0], height: a.rect[3] - a.rect[1],
+            color: PDFLib.rgb(0.62, 0.78, 1), blendMode: PDFLib.BlendMode.Multiply });
         });
       }
     } finally { doc.destroy(); }
     return { bytes: await out.save(), stats: stats };
   }
 
-  var api = { linkDrawing: linkDrawing, fold: fold, snapCell: snapCell, boxPx: boxPx };
+  var api = { linkDrawing: linkDrawing, fold: fold, cellFromLines: cellFromLines, boxPx: boxPx };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.ShippingDrawing = api;
 })(typeof window !== 'undefined' ? window : this);
