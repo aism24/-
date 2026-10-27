@@ -53,6 +53,6 @@
 
 - **tdf-dim-count**: `tdf-dim-count/core.js` を変えたらコミット前に `node tests/tdf-dim-count/run.js` を実行し全件OKを確認。正解値(GEN=592本、TB=16本など)を変えるのはユーザーが正解を確認したときだけ(`--update`)。詳細は `tests/tdf-dim-count/README.md`。
 - **huguai**: PDFは固定幅1280px・A4縦1ページ、結果分析の期間仕様など → `docs/apps/huguai.md`
-- **truck-fax**: 取込一覧は削除しない(例外: 新規のFAXだけ、FAX単位の「このFAXを削除して取り込み直す」が可)・手配業者・備考の扱い・車種の表記など → `docs/apps/truck-fax.md`
+- **truck-fax**: 取込一覧は削除しない(例外: FAX単位の「このFAXを削除して取り込み直す」が可。変更前・変更後の相手の行は空欄に戻る)・手配業者・備考の扱い・車種の表記など → `docs/apps/truck-fax.md`
 - **共通ボタン to-launcher.js**(「← アプリ一覧へ」。正本 `docs/to-launcher/to-launcher.js`、各フォルダにコピーして使う) → `docs/to-launcher/README.md`
 - **運用停止・不要フォルダ**: `production-profit/`・`jikko-yosan/`(コストインサイト `cost-insight/` に統合済み)・`open_jissun/`(実際は `jissun-open`)は、削除せず残置。新規作業・デプロイ・ランチャー登録の対象にしない(依頼されたらコストインサイト側の対応かを確認)。旧リポジトリから統合した `dxf-launcher/`・`excel-drawing-link-tool/` を含め、詳細は `docs/misc-policies.md`。
