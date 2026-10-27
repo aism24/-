@@ -228,16 +228,16 @@
       } else {
         popup(['リンクが付与できず、ダウンロードしていません', 'マスタには無い図番と製品名の可能性あり'], false, s.partial, isXlsx ? 'シート!行' : '');
       }
-      if (GAS_URL && !isXlsx) save(file.name, s, buf);   // 元PDFの保存・記録はバックグラウンドで実施(Excelは保存しない)
+      if (GAS_URL) save(file.name, s, buf, isXlsx);   // 元ファイルの保存(PDFは記録も)はバックグラウンドで実施
     } catch (e) {
       $('stage').classList.remove('busy');
       $('msg').textContent = '失敗しました: ' + e;
     } finally { working = false; }
   }
-  async function save(name, s, buf) {
+  async function save(name, s, buf, isXlsx) {
     try {
       var r = await fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ name: name, pages: s.pages, linked: s.linked, ng: s.ng, pdf: b64(buf) }) });
+        body: JSON.stringify(isXlsx ? { name: name, xlsx: b64(buf) } : { name: name, pages: s.pages, linked: s.linked, ng: s.ng, pdf: b64(buf) }) });
       var j = await r.json();
       if (!j.ok) throw new Error(j.error);
     } catch (e) { /* 保存・記録の失敗は画面に出さない(利用者の作業には影響しない) */ }
