@@ -72,7 +72,7 @@ CLAUDE.md から分離(2026-10-21)。恒久ルールは CLAUDE.md、ここは詳
 
 **運用の原則**: 全アプリのGit連携を解除したままにする。連携が無ければpush・マージでデプロイは起きず、ユーザーが「デプロイして」と指示したアプリだけを `create_deployment` で1つずつデプロイする(連携は不要。Vercelプロジェクトの新規作成と連携の付け外しだけがユーザー操作)。連携が1件でも残っていたら、push・マージ前にユーザーへ解除を依頼する。
 
-**最新の確認**: 2026-10-26、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携。truck-fax の作成・解除後)。
+**最新の確認**: 2026-10-28、`list_projects`(repoUrl=aism24/-)は0件(全アプリ未連携。truck-fax の9回目デプロイの前後)。
 
 **`vercel.json` の `git.deploymentEnabled=false` が無いフォルダ**(2026-10-19時点。2026-10-21に production-management・unso-check へ追加済み): pdf-diff-app(functionsの設定だけ)・tdf-master-web・jissun-master-jidokinyu・kozai-toriai・weld-heat-management。連携は0件なので今は自動デプロイされないが、これらのVercelプロジェクトを `aism24/-` に連携し直す前に、必ずそのフォルダへ置くこと(特に pdf-diff-app は1デプロイごとにFunctions Storageを消費する)。
 
@@ -115,3 +115,4 @@ Previewデプロイが発生する)
 - 2026-10-27(7回目): truck-fax の「原本を閉じたとき、開いていた行が取込一覧の一番上に来る」(PR #953)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。project=truck-fax。コミット 1e37b28。dpl_5eA1YyqLqxvqT6b21pASo8z969RF=READY。直近24時間は7回→今回で8回。本番の index.html が app.js?v=20261027d であることを確認)。
 - 2026-10-27: app-launcher の最下行ホバーのちらつき修正(PR #950 scrollbar-gutter、PR #954 下余白320px+overflow-anchor:none。最下行のパネルでページが伸びて自動スクロール→ボタンがマウスから外れる繰り返しを防止。style.css?v=32)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。コミット 4f0c8dc。app-launcher=dpl_8uWdZqJ、READY。本番 https://app-launcher-ashy.vercel.app/ の `?v=32` と下余白を確認。デプロイ前の直近24時間(app-launcher)は0回、今回1回。`list_projects` 0件)。
 - 2026-10-27(8回目): truck-fax の「AIに変更指示」ダイアログの見た目(タイトル1.5倍・ピンク太字・中央、薄いピンク背景、説明文を1行・中央揃え、内容欄に書き方の例をプレースホルダー表示。PR #959〜#962。app.js?v=20261027h・style.css?v=20261027g)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。コミット b8e5ac4。dpl_GYQ7qWy、READY。本番 https://truck-fax.vercel.app/ の `?v=` と例文を確認。デプロイ前の直近24時間(truck-fax)は5回、今回6回目。`list_projects` 0件)。
+- 2026-10-28(9回目): truck-fax の「読み取り内容をExcelでダウンロード」ボタン(PDF取込の読み取り結果を、記録できるときだけ押せ、押すとExcelをダウンロードして記録して閉じる。PR #966・#967。app.js?v=20261027j)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。project=truck-fax。コミット 6e3e741。dpl_7x8w3U4CTVi8diHs92A17oA7No2R=READY、alias `truck-fax.vercel.app`)。デプロイ前の直近24時間(truck-fax)は6回、今回7回目(Hobby上限100)。`https://truck-fax.vercel.app/` が200で `app.js?v=20261027j` を返し、app.js に新しい処理(syncReadExcelBtn)が入っていることを確認。公開GASは `CODE_VERSION` 20261027e(輸送回数の自動集計。PR #965。コードと同じ)。`list_projects`(repoUrl=aism24/-)は0件を確認。
