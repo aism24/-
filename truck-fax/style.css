@@ -58,7 +58,7 @@ button.btn.del { background: #c62828; border-color: #8e1c1c; color: #fff; font-w
 dialog.dlg { border: 1px solid var(--line); border-radius: 10px; padding: 20px 24px; background: var(--card); color: var(--ink); max-width: min(92vw, 460px); box-shadow: 0 8px 30px rgba(0,0,0,.3); }
 dialog.dlg::backdrop { background: rgba(0,0,0,.4); }
 .dlg-title { margin: 0 0 8px; font-weight: 700; font-size: 16px; }
-.dlg-detail { margin: 0 0 16px; word-break: break-all; }
+.dlg-detail { margin: 0 0 16px; word-break: break-all; white-space: pre-line; } /* 文中の改行(\n)をそのまま改行にする */
 .dlg-btns { display: flex; justify-content: flex-end; gap: 10px; }
 button.btn:disabled { opacity: .45; cursor: not-allowed; }
 button.sm { padding: 2px 8px; font-size: 12px; }
