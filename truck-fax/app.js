@@ -978,7 +978,27 @@
     var holder = h('div', { class: 'faxview' }, h('div', { class: 'reading-note', text: r.ファイルURL ? '原本を読み込んでいます…' : 'この記録には原本がありません(PDFで取り込んだ記録ではありません)。' }));
     var tool = h('div', { class: 'tool' }, h('button', { class: 'btn sm back-list', type: 'button', text: 'すべての行に戻す', onclick: function () { tryClose(); } }),
       h('strong', { class: 'file-name', text: importCellText(r, 'ファイル名') }), h('span', { class: 'sub', text: 'この原本から記録した' + drafts.length + '行(押した行は水色)。表の中で直せます' }),
-      status, saveBtn);
+      status, saveBtn, delFaxBtn());
+    /** 「このFAXを削除して取り込み直す」(2026-10-28、ユーザー指示)。この原本から記録した行すべてと、Driveの原本を削除して、PDF取込の画面へ移る。
+     *  新規のFAXだけ(1行でも追加変更が入っている=変更・取消のFAXは削除できず、押せない)。原本が無い記録(ファイルURLなし)には出さない。 */
+    function delFaxBtn() {
+      if (!r.ファイルURL) return null;
+      var blocked = same.some(function (x) { return x.追加変更; });
+      return h('button', { class: 'btn sm del', type: 'button', text: 'このFAXを削除して取り込み直す', disabled: blocked, title: blocked ? '変更・取消のFAXは削除できません' : '', onclick: async function () {
+        if (dirty() && !(await confirmDialog('編集内容は破棄されますが続けますか?', '保存していない編集内容は消えます。', 'OK'))) return;
+        if (!(await confirmDialog('このFAXを削除しますか?', 'このFAXの記録' + drafts.length + '行と、保存済みの原本(PDF)を削除します。元に戻せません(原本はDriveのゴミ箱に入ります)。削除したあと、PDF取込の画面で取り込み直せます。', '削除する'))) return;
+        var close = busyDialog('削除中');
+        try {
+          var res = await apiPost('deleteFax', { fileUrl: r.ファイルURL, rows: same.map(function (x) { return { row: x._row, before: L.recFields(x) }; }) }, 120000);
+          if (url) URL.revokeObjectURL(url);
+          S.importsFile = null; S.imports = null; S.importsP = null;
+          reloadInit(); // 重複の判定(同じ内容の再取込の防止)は、削除したあとの記録で行う
+          showTab('import');
+          toast(res.deleted + '行を削除しました。' + (res.fileWarn ? ' ※原本をゴミ箱へ移せませんでした: ' + res.fileWarn : '') + ' 新しいPDFを取り込んでください。');
+        } catch (err) { status.textContent = '削除に失敗しました: ' + err.message; status.className = 'faxdlg-status err'; }
+        finally { close(); }
+      } });
+    }
     var paneHead = h('div', { class: 'faxpane-head' }, h('strong', { text: '原本: ' + importCellText(r, 'ファイル名') }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn sm back-list', type: 'button', text: '画像を閉じる', onclick: function () { tryClose(); } }));
     var url = '';

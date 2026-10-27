@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261027e';
+var CODE_VERSION = '20261028a';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_MERGED = '車両運転手情報'; // 1行=車と運転手の1組。シートの列は MERGED_HEADERS(見出し名で読み書きする)
@@ -345,6 +345,7 @@ function doPost(e) {
     if (body.action === 'ocr') return ok_(ocr_(body));
     if (body.action === 'commit') return ok_(withLock_(function () { return commit_(body); }));
     if (body.action === 'updateImport') return ok_(withLock_(function () { return updateImport_(body); }));
+    if (body.action === 'deleteFax') return ok_(withLock_(function () { return deleteFax_(body); }));
     if (body.action === 'applyChanges') return ok_(withLock_(function () { return applyChanges_(body); }));
     if (body.action === 'changeRequest') return ok_(withLock_(function () { return changeRequest_(body); }));
     if (body.action === 'linkPreview') return ok_(linkPreview_(body));
@@ -652,6 +653,36 @@ function updateImport_(body) {
   var linked = body.link === true ? applyLink_('import', row, body.before, data) : null;
   safeCounts_();
   return { ok: true, row: row, linked: linked };
+}
+
+/** 取り込んだFAX(同じ原本=同じ「ファイルURL」の行すべて)を、取込一覧から削除し、Driveの原本をゴミ箱へ移す(2026-10-28、ユーザー指示。差し替えて取り込み直すため)。
+ *  PDFで取り込んだ行を残すルールの、FAX単位の例外。範囲は新規のFAXだけ: 1行でも「追加変更」が入っている(変更前・変更後・中止)FAXは削除しない
+ *  (変更・取消のFAXは、元の記録と組になっているため)。画面が見ている行(rows)と、シートの今の行が違えば、何も消さずに止める。
+ *  車両運転手情報の行は消さない(他のFAXでも使う車・運転手の可能性があるため)。輸送回数は数え直す。原本のゴミ箱への移動に失敗しても、記録の削除は済ませて、fileWarn で知らせる。 */
+function deleteFax_(body) {
+  var url = String(body.fileUrl || '').trim();
+  if (!url) throw new Error('原本のURLがありません。この記録は、削除できません。');
+  var imp = sheet_(SHEET_IMPORT);
+  var all = readRows_(imp, IMPORT_HEADERS, 2, null, IMPORT_OPTIONAL);
+  var mine = all.filter(function (r) { return r.ファイルURL === url; });
+  if (!mine.length) throw new Error('取込一覧に、この原本の記録が見つかりません。画面を再読み込みしてください。');
+  var sent = (body.rows || []).map(function (x) { return Number(x.row); }).sort(function (a, b) { return a - b; });
+  var now = mine.map(function (r) { return r._row; }).sort(function (a, b) { return a - b; });
+  if (sent.join(',') !== now.join(',')) throw new Error('この原本の記録が他の操作で変更されています。画面を再読み込みしてください。');
+  mine.forEach(function (r) {
+    var b = (body.rows || []).filter(function (x) { return Number(x.row) === r._row; })[0];
+    var bad = sameRecord_(r, b && b.before);
+    if (bad) throw new Error('取込一覧の行(' + r._row + ')が他の操作で変更されています(' + bad + ')。画面を再読み込みしてください。');
+    if (r.追加変更) throw new Error('変更・取消のFAX(追加変更=' + r.追加変更 + ')は削除できません。');
+  });
+  now.sort(function (a, b) { return b - a; }).forEach(function (n) { imp.deleteRow(n); }); // 下の行から消す(行番号がずれないように)
+  var fileWarn = '', m = /\/d\/([^\/?]+)/.exec(url);
+  try {
+    if (!m) throw new Error('原本のURLからファイルを特定できませんでした');
+    DriveApp.getFileById(m[1]).setTrashed(true);
+  } catch (ex) { fileWarn = String(ex && ex.message || ex); }
+  safeCounts_();
+  return { deleted: now.length, fileWarn: fileWarn };
 }
 
 /** items: [{mode:'mark', row, label:'変更前'|'中止', before, note}, {mode:'add', data, label}]。
