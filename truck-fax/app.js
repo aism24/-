@@ -369,19 +369,30 @@
     card.warnings.forEach(function (w) { el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'badge warn', text: '注意' }), h('span', { class: 'msg', text: w }))); });
     if (card.mode === 'change') { renderChangeBody(card); return; }
     card.footHost = h('div'); // 「記録する」「破棄する」は、見出しの行の右端に置く
-    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '読み取り結果(間違いがあれば表の中で直せます)', sugNote(card.rows)), h('span', { class: 'spacer' }), readExcelBtn(card, card.rows), card.footHost));
+    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '読み取り結果(間違いがあれば表の中で直せます)', sugNote(card.rows)), h('span', { class: 'spacer' }), readExcelBtn(card), card.footHost));
     card.rowsHost = h('div'); card.rowsHost.appendChild(rowsTable(card)); el.appendChild(card.rowsHost);
     card.findHost = h('div'); el.appendChild(card.findHost);
     renderFindings(card); renderFoot(card);
   }
-  /** 読み取った内容(いま画面の表にある値。記録はしない)を、そのままExcelでダウンロードするボタン(2026-10-27、ユーザー指示)。列は取込一覧と同じ並びで、タイムスタンプ・追加変更・ファイルURLは付けない。 */
+  /** 「読み取り内容をExcelでダウンロード」ボタン(2026-10-27、ユーザー指示)。押すと、記録する内容(「記録する」「反映する」と同じ行。表の中で直した内容を含む)をExcelにダウンロードし、そのあと記録して閉じる。
+   *  「記録する」「反映する」が押せないとき(記入や選択が足りない・記録する行が無い)は、このボタンもグレーアウトする(renderFoot・renderChangeFoot)。列は取込一覧と同じ並びで、タイムスタンプ・追加変更・ファイルURLは付けない。 */
   var READ_HEADERS = ['ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '備考'];
-  function readExcelBtn(card, rows) {
-    return h('button', { class: 'btn excel', type: 'button', text: '読み取り内容をExcelでダウンロード', disabled: !rows.length, onclick: function () {
+  function exportRows(card) {
+    if (card.mode === 'change') return changeResults(card).filter(function (r) { return r.active && r.res; }).map(function (r) { return r.res.row; });
+    return results(card).filter(function (r) { return !r.skip; }).map(function (r) { return r.row; });
+  }
+  function readExcelBtn(card) {
+    card.xlBtn = h('button', { class: 'btn excel', type: 'button', text: '読み取り内容をExcelでダウンロード', disabled: true, onclick: async function () {
+      if (card.busy) return;
+      var rows = exportRows(card);
       var data = rows.map(function (r) { return READ_HEADERS.map(function (k) { return k === 'ファイル名' ? card.name : String((k === '手配業者' ? r.業者 : r[k]) || ''); }); });
       downloadXlsx(card.name.replace(/\.[^.]*$/, '') + '_読み取り内容.xlsx', '読み取り内容', READ_HEADERS, data, { leftCols: ['ファイル名', '現場名', '備考'], centerHeads: ['ファイル名', '現場名', '備考'] });
+      if (card.mode === 'change') await commitChange(card); else await commitCard(card); // ダウンロードのあと、内容を記録して閉じる
     } });
+    return card.xlBtn;
   }
+  function syncReadExcelBtn(card, disabled) { if (card.xlBtn) card.xlBtn.disabled = disabled || !exportRows(card).length; }
+
   /** 記入か選択が必要な欄を、黄色にする(読み取り結果の表)。入力のたびに付け外しする。 */
   var NEED_BY = { 'missing-project': '工事番号', 'missing-plate': '車番', 'bad-date': '積日|卸日', 'missing-carrier': '運送業者', 'missing-name': '氏名', 'missing-phone': '携帯番号', 'phone-format': '携帯番号' };
   function markNeeds(card) {
@@ -452,7 +463,7 @@
     });
     var msg = blockers > 0 ? '記録するには、あと ' + blockers + ' 件の対応が必要です → ' + todo.slice(0, 3).join(' / ') + (todo.length > 3 ? ' ほか' : '') : (keep === 0 ? '記録する行がありません。' : '準備OKです。内容を確認して「記録する」を押してください。');
     var f = footParts(card, '破棄する', function () { discardCard(card); });
-    f.btn.textContent = '記録する'; f.btn.disabled = blockers > 0 || keep === 0 || !!card.busy; f.btn.onclick = function () { commitCard(card); };
+    f.btn.textContent = '記録する'; f.btn.disabled = blockers > 0 || keep === 0 || !!card.busy; f.btn.onclick = function () { commitCard(card); }; syncReadExcelBtn(card, f.btn.disabled);
     f.msg.textContent = msg; f.hint();
   }
 
@@ -656,7 +667,7 @@
     var el = card.el;
     if (card.res.memo) el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'badge info', text: 'FAXの連絡' }), h('span', { class: 'msg', text: card.res.memo })));
     card.footHost = h('div');
-    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '変更内容(現在の記録と、今回のFAXを並べています。違う項目は色が付きます)', sugNote(card.items.map(function (it) { return it.newRow; }).filter(Boolean))), h('span', { class: 'spacer' }), readExcelBtn(card, card.items.map(function (it) { return it.newRow; }).filter(Boolean)), card.footHost));
+    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '変更内容(現在の記録と、今回のFAXを並べています。違う項目は色が付きます)', sugNote(card.items.map(function (it) { return it.newRow; }).filter(Boolean))), h('span', { class: 'spacer' }), readExcelBtn(card), card.footHost));
     if (!card.items.length) el.appendChild(h('div', { class: 'empty', text: '変更・追加・取消の対象が見つかりませんでした。FAXの区分を選び直してください。' }));
     else el.appendChild(changeTable(card));
     card.findHost = h('div'); el.appendChild(card.findHost);
@@ -668,7 +679,7 @@
     rs.forEach(function (r) { blockers += r.blockers.length; if (r.active) active++; r.blockers.forEach(function (b) { todo.push(r.no + '件目: ' + b); }); });
     var msg = blockers > 0 ? '反映するには、あと ' + blockers + ' 件の対応が必要です → ' + todo.slice(0, 3).join(' / ') + (todo.length > 3 ? ' ほか' : '') : (active === 0 ? (card.items.length && card.items.every(function (it) { return it.same && it.action === 'skip'; }) ? 'すべての行が、取込一覧の記録と同じです(変更なし)。「破棄する」で閉じてください。' : '反映する内容がありません。') : '準備OKです。内容を確認して「反映する」を押してください。');
     var f = footParts(card, '破棄する', function () { discardCard(card); });
-    f.btn.textContent = '反映する'; f.btn.disabled = blockers > 0 || active === 0 || !!card.busy; f.btn.onclick = function () { commitChange(card); };
+    f.btn.textContent = '反映する'; f.btn.disabled = blockers > 0 || active === 0 || !!card.busy; f.btn.onclick = function () { commitChange(card); }; syncReadExcelBtn(card, f.btn.disabled);
     f.msg.textContent = msg; f.hint();
   }
 
