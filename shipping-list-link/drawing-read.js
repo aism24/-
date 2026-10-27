@@ -8,6 +8,7 @@
   var READ_DPI = 300;       // 読み取り用の切り出し画像の解像度
   var CORNER_SIDE = 2000;   // 右下(図面番号欄のあたり)だけを拡大して図面番号の位置を探すときの、その画像の横幅(px)
   var MAX_CALLS_PER_MIN = 12;   // Geminiの無料枠は1分あたりの呼び出し回数に上限がある(429)ので、それを超えないよう間隔をあける
+  var TABLE_TRIES = 2;          // 製品表の読み取りで製品名が一致しなかったとき、同じ画像を読む回数の上限(最初の1回を含む)
   var RETRY_429 = 3;            // 429が返ったときの再試行の回数(そのつど少し待つ)
   var HALF_SIDE = 2400;     // 製品表を見落としたとき、上下に分けて探し直す画像の横幅(px)
 
@@ -181,7 +182,7 @@
       var used = {}, zMsg = false, zFast = loc.drawingNumber && byZ[fold(loc.drawingNumber)] ? loc.drawingNumber : null;
       for (var ti = 0; ti < tables.length; ti++) {
         var tb = boxPx(tables[ti].box, PW, PH);
-        if (!tb) { stats.ng++; continue; }
+        if (!tb) { stats.ng++; stats.partial.push({ page: pn, zuban: loc.drawingNumber || '', name: '', reason: '製品表の位置を読み取れません' }); continue; }
         var px = Math.max((tb.x1 - tb.x0) * 0.03 + 24, PW * 0.04), py = (tb.y1 - tb.y0) * 0.3 + 24;   // 横はGeminiの位置のずれ(最大でページ幅の数%)を見込んで広く
         var cx0 = clamp(tb.x0 - px, 0, PW), cy0 = clamp(tb.y0 - py, 0, PH), cx1 = clamp(tb.x1 + px, 0, PW), cy1 = clamp(tb.y1 + py, 0, PH);
         var tr = await renderRegion(page, sH, cx0, cy0, cx1 - cx0, cy1 - cy0);
@@ -201,9 +202,13 @@
             if (!zMsg) { zMsg = true; stats.partial.push({ page: pn, zuban: zn.show, name: '', reason: 'マスタに無い図番(読み取り: ' + (zn.show || '読めず') + ')' }); }
             continue;
           }
-          var tbl = await call('table', tr, true);
-          hit = pick(tbl.cells, zUse, used, seen);
-          if (hit) { tbx = boxPx(hit.c.box, tr.canvas.width, tr.canvas.height); cellOpt = { idx: tbl.cells.indexOf(hit.c) }; }
+          // 製品名が一致しなかったときだけ、同じ画像をもう1回読み直す(CADの小さな文字「外」などをGeminiが読み落とすことがあり、読み取りは毎回少し変わる)
+          for (var tryN = 0; tryN < TABLE_TRIES && !hit; tryN++) {
+            var tbl = await call('table', tr, true);
+            seen = [];
+            hit = pick(tbl.cells, zUse, used, seen);
+            if (hit) { tbx = boxPx(hit.c.box, tr.canvas.width, tr.canvas.height); cellOpt = { idx: tbl.cells.indexOf(hit.c) }; }
+          }
         }
         var ng = null;
         if (!hit) ng = { zuban: zUse, name: seen.join(' | '), reason: '製品名が不一致(読み取った表の文字を表示)' };
@@ -246,7 +251,15 @@
     }
     try {
       var nextPage = 1, donePages = 0;
-      var worker = async function () { while (nextPage <= doc.numPages) { await pageJob(nextPage++); if (opts && opts.onProgress) opts.onProgress(++donePages, doc.numPages); } };
+      var worker = async function () {
+        while (nextPage <= doc.numPages) {
+          var pn = nextPage++;
+          try { await pageJob(pn); } catch (e) {   // 1ページの読み取りが失敗しても、ほかのページは続け、そのページはNG一覧に理由を出す
+            stats.ng++; stats.partial.push({ page: pn, zuban: '', name: '', reason: '読み取りに失敗しました(' + String(e && e.message || e).slice(0, 80) + ')' });
+          }
+          if (opts && opts.onProgress) opts.onProgress(++donePages, doc.numPages);
+        }
+      };
       await Promise.all([worker(), worker(), worker()]);
       stats.partial.sort(function (a, b) { return a.page - b.page; });
       await markNumberCells(numCands);
