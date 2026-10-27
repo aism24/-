@@ -1282,9 +1282,10 @@
 
   // ---------- 追加変更依頼(ヘッダーのボタン→「AIに変更指示」。GASがシート・Drive・メールへ回す。画面には「記録した」等は出さない) ----------
   var REQ_KINDS = ['新規ボタンの追加', '既存ボタンの修正', '既存ボタンの削除'];
+  var REQ_KIND_LABEL = { '既存ボタンの削除': '既存ボタンの削除（削除したものはコードが残っているのでいつでも復活できます）' }; // 2026-10-28、ユーザー指示。画面の文言だけ(GASへ送る値は変えない)
   var REQ_BUTTONS = ['全件ダウンロード', '締め月ダウンロード', '積日指定でダウンロード', 'Excelでダウンロード(車両・運転手情報)']; // 変更するときは、GAS(Code.gs)の REQUEST_BUTTONS も同じにする
   function openChangeRequest() {
-    var kindBoxes = REQ_KINDS.map(function (k) { return h('label', { class: 'opt' }, h('input', { type: 'radio', name: 'reqKind', value: k }), ' ' + k); });
+    var kindBoxes = REQ_KINDS.map(function (k) { return h('label', { class: 'opt' }, h('input', { type: 'radio', name: 'reqKind', value: k }), ' ' + (REQ_KIND_LABEL[k] || k)); }); // 送る値(value)は REQ_KINDS のまま。画面の文言だけ REQ_KIND_LABEL で変える(GASの REQUEST_KINDS と一致させるため)
     var btnSel = h('select', null, h('option', { value: '', text: '選んでください' }), REQ_BUTTONS.map(function (b) { return h('option', { value: b, text: b }); }));
     var btnWrap = h('div', { hidden: true }, h('label', { class: 'f', text: '対象のボタン' }), btnSel);
     var content = h('textarea', { placeholder: 'どう変えたいか、今困っていることを書いてください\n＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿\n例）現場名別で表示してダウンロードしたい。\n・卸日の日付の新しいものが上に来るようにして。\n・変更前の表示は消して。\n\n↑↑このように書くと理解しやすいです。\n＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿' });
