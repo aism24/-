@@ -4,7 +4,22 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>車番連絡　管理</title>
-<link rel="stylesheet" href="style.css?v=20261026r">
+<link rel="stylesheet" href="style.css?v=20261028g">
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+<script>
+// 起動の高速化(2026-10-28): app.js などの読み込みを待たずに、GASへ init と取込一覧(最新3000件)を先に要求する。app.js が最初の1回だけ、この応答を使う(app.js の takeEarly)。
+// GASのURLは app.js の GAS_API_URL と同じにする(違うときは app.js が先出しの応答を使わず、普通に読み直す)。limit は app.js の IMPORTS_LIMIT と同じにする。
+(function () {
+  var url = window.__GAS_URL__ || 'https://script.google.com/macros/s/AKfycbyfyFEJn4alzJGmbWIhKwKeRvJ2OlkgyM4wZFk7ldUVCs5Yx-khi5FOWLen6cvvIYQ/exec';
+  var e = window.__early = { url: url, limit: 3000 };
+  try {
+    e.init = fetch(url + '?action=init');
+    e.listImports = fetch(url + '?action=listImports&limit=' + e.limit);
+    e.init.catch(function () {}); e.listImports.catch(function () {});
+  } catch (x) { window.__early = null; }
+})();
+</script>
 </head>
 <body>
 <header class="top">
@@ -36,8 +51,30 @@
   </section>
 </main>
 <script src="xlsx.js?v=20261023y"></script>
-<script src="viewer.js?v=20261023y"></script>
-<script src="logic.js?v=20261023y"></script>
-<script src="app.js?v=20261026u"></script>
+<script src="viewer.js?v=20261028a"></script>
+<script src="logic.js?v=20261028a"></script>
+<script src="app.js?v=20261028j"></script>
+<script>
+// 会社ロゴを5回続けて(1.5秒以内の間隔で)クリックすると、このPCだけ会社名の右側に「← アプリ一覧へ」が出る(ブラウザに記憶。2026-10-28、ユーザー指示。shipping-list-link と同じ仕組み)。もう一度5回で消える
+(function () {
+  var KEY = 'truck-fax:toLauncher', n = 0, last = 0;
+  function get() { try { return localStorage.getItem(KEY) === '1'; } catch (e) { return false; } }
+  function set(on) { try { if (on) localStorage.setItem(KEY, '1'); else localStorage.removeItem(KEY); } catch (e) {} }
+  function show() {
+    if (document.getElementById('toLauncherJs')) return;
+    var s = document.createElement('script');
+    s.id = 'toLauncherJs'; s.src = 'to-launcher.js?v=20261028a'; s.setAttribute('data-target', '.brand .company'); s.setAttribute('data-mode', 'after');
+    document.body.appendChild(s);
+  }
+  if (get()) show();
+  document.querySelector('.brand .logo').addEventListener('click', function () {
+    var now = Date.now();
+    n = now - last <= 1500 ? n + 1 : 1; last = now;
+    if (n < 5) return;
+    n = 0;
+    if (get()) { set(false); location.reload(); } else { set(true); show(); }
+  });
+})();
+</script>
 </body>
 </html>

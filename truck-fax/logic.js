@@ -599,18 +599,62 @@
     return { fy: f, cm: CLOSING_MONTH_ORDER[i] };
   }
 
+  /** 取込一覧の「変更前」の行と「変更後」の行を、1対1で組み合わせる(2026-10-27、ユーザー指示。表で変更前の下に変更後を並べ、変わった項目に矢印を付けるため)。
+   *  シートには組み合わせの印が無いので、同じ手配業者・同じ積日の中で、行先4・車番3・氏名2・車種1・卸日1 の点数が最大になるよう決める(3点未満は組み合わせない)。
+   *  戻り値: { 行番号(_row): {role:'before'|'after', partner:相手の行, changed:{項目名:true}(変更前の行にだけ。変更後の行にも同じ内容)} } */
+  var PAIR_FIELDS = ['手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号'];
+  function pairBeforeAfter(list) {
+    var lab = function (r) { return String(r.追加変更 == null ? '' : r.追加変更).trim(); };
+    var befores = list.filter(function (r) { return lab(r) === '変更前'; }), afters = list.filter(function (r) { return lab(r) === '変更後'; });
+    function score(b, a) {
+      if (!sameCo(b.手配業者, a.手配業者) || !dateKey(b.積日) || dateKey(b.積日) !== dateKey(a.積日)) return -1;
+      var sc = 0;
+      if (compact(b.行先) && destMatch(b.行先, a.行先)) sc += 4;
+      if (plateKey(b.車番) && plateKey(b.車番) === plateKey(a.車番)) sc += 3;
+      if (nameKey(b.氏名) && nameKey(b.氏名) === nameKey(a.氏名)) sc += 2;
+      if (typeKey(b.車種) && typeKey(b.車種) === typeKey(a.車種)) sc += 1;
+      if (dateKey(b.卸日) === dateKey(a.卸日)) sc += 1;
+      return sc;
+    }
+    var cands = [];
+    befores.forEach(function (b) { afters.forEach(function (a) { var sc = score(b, a); if (sc >= 3) cands.push({ b: b, a: a, sc: sc }); }); });
+    cands.sort(function (x, y) { return y.sc - x.sc || Math.abs(x.a._row - x.b._row) - Math.abs(y.a._row - y.b._row) || x.b._row - y.b._row; });
+    var out = {}, usedB = {}, usedA = {};
+    cands.forEach(function (c) {
+      if (usedB[c.b._row] || usedA[c.a._row]) return;
+      usedB[c.b._row] = usedA[c.a._row] = true;
+      var ch = {};
+      PAIR_FIELDS.forEach(function (f) {
+        ch[f] = (f === '積日' || f === '卸日') ? dateKey(c.b[f]) !== dateKey(c.a[f]) : fieldDiffers(f, c.b[f], c.a[f]);
+        if (!ch[f]) delete ch[f];
+      });
+      out[c.b._row] = { role: 'before', partner: c.a, changed: ch };
+      out[c.a._row] = { role: 'after', partner: c.b, changed: ch };
+    });
+    return out;
+  }
+
   /** 取込一覧の表の並び(2026-10-23、ユーザー指示): 同じファイル(原本)の行をまとめ、まとまり同士は卸日の早い順(まとまりの中で一番早い卸日。同じなら取込順)。
-   *  まとまりの中は、卸日の早い順→手配業者(大上→ナミツー→その他)→取込順(シートの行番号)。ファイルは ファイルURL(無ければファイル名)で見分ける */
+   *  まとまりの中は、卸日の早い順→手配業者(大上→ナミツー→その他)→取込順(シートの行番号)。ファイルは ファイルURL(無ければファイル名)で見分ける。
+   *  そのうえで(2026-10-27)、組み合わせが決まった「変更後」の行は、対応する「変更前」の行の真下に移す(変更前が上、変更後が下) */
   function sortImportRows(list) {
     function fileKey(r) { return String(r.ファイルURL || r.ファイル名 || ('row' + r._row)); }
     function dk(r) { return dateKey(r.卸日) || dateKey(r.積日) || '9999-99-99'; }
     var g = {};
     list.forEach(function (r) { var k = fileKey(r), x = g[k] || (g[k] = { day: '9999-99-99', row: Infinity }); if (dk(r) < x.day) x.day = dk(r); if (r._row < x.row) x.row = r._row; });
-    return list.slice().sort(function (a, b) {
+    var sorted = list.slice().sort(function (a, b) {
       var ka = fileKey(a), kb = fileKey(b), ga = g[ka], gb = g[kb];
       if (ka !== kb) return ga.day < gb.day ? -1 : ga.day > gb.day ? 1 : ga.row - gb.row;
       return (dk(a) < dk(b) ? -1 : dk(a) > dk(b) ? 1 : 0) || senderRank(a.手配業者) - senderRank(b.手配業者) || a._row - b._row;
     });
+    var pairs = pairBeforeAfter(sorted), out = [];
+    sorted.forEach(function (r) {
+      var p = pairs[r._row];
+      if (p && p.role === 'after') return; // 変更前の行の下に出す
+      out.push(r);
+      if (p && p.role === 'before') out.push(p.partner);
+    });
+    return out;
   }
 
   // 車両情報の並び順: 手配業者(大上→ナミツー→その他)→運送業者→車種(4t→10t→15t→TR→その他)→車番
@@ -631,9 +675,9 @@
   }
 
   return {
-    alreadyImported: alreadyImported, sortImportRows: sortImportRows, dateKey: dateKey, sortPairs: sortPairs, senderRank: senderRank,
+    alreadyImported: alreadyImported, sortImportRows: sortImportRows, pairBeforeAfter: pairBeforeAfter, dateKey: dateKey, sortPairs: sortPairs, senderRank: senderRank,
     closingOf: closingOf, rowClosing: rowClosing, closingNeighbor: closingNeighbor, CLOSING_MONTH_ORDER: CLOSING_MONTH_ORDER,
-    fmtType: fmtType, canonCarrier: canonCarrier, diffPart: diffPart, companyKey: companyKey, effectiveKind: effectiveKind, guessKind: guessKind, isChange: isChange, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate,
+    fmtType: fmtType, canonCarrier: canonCarrier, diffPart: diffPart, guessKind: guessKind, buildChangePlan: buildChangePlan, setPick: setPick, fieldDiffers: fieldDiffers, recFields: recFields, recToRow: recToRow, ROW_FIELDS: ROW_FIELDS, normDate: normDate, normTime: normTime, plateKey: plateKey, fmtPlate: fmtPlate,
     nameKey: nameKey, phoneDigits: phoneDigits, fmtPhone: fmtPhone, importKey: importKey,
     buildDestMap: buildDestMap, suggestProject: suggestProject, projectName: projectName, sanitizeOcr: sanitizeOcr, evaluateBatch: evaluateBatch, resolveRow: resolveRow, mergeOps: mergeOps
   };

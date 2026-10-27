@@ -160,19 +160,19 @@
   }
   // 結果ポップアップ。「OK」でアプリをリセット(開いたときの状態に戻す)
   var modalOpen = false;
-  function ngTable(partial) {
-    return '<table><tr><th>頁</th><th>図番</th><th>製品名</th><th>理由</th></tr>' + partial.map(function (p) {
+  function ngTable(partial, place) {
+    return '<table><tr><th>' + (place || '頁') + '</th><th>図番</th><th>製品名</th><th>理由</th></tr>' + partial.map(function (p) {
       return '<tr><td>' + esc(p.page) + '</td><td>' + esc(p.zuban) + '</td><td>' + esc(p.name || '-') + '</td><td>' +
         esc(p.reason === '重複' ? 'マスタに複数リンクあり(重複)' : p.reason) + '</td></tr>';
     }).join('') + '</table>';
   }
-  function popup(lines, ok, partial) {
+  function popup(lines, ok, partial, place) {
     modalOpen = true;
     $('modalText').innerHTML = lines.map(function (l) { return '<div>' + esc(l) + '</div>'; }).join('');
     var has = partial && partial.length;
     $('ngToggle').style.display = has ? '' : 'none';
     $('ngToggle').textContent = 'NG一覧を見る(' + (has ? partial.length : 0) + '件)';
-    $('ngList').innerHTML = has ? ngTable(partial) : '';
+    $('ngList').innerHTML = has ? ngTable(partial, place) : '';
     $('ngList').style.display = 'none'; $('mbox').classList.remove('wide');
     $('modal').className = 'show ' + (ok ? 'mok' : 'mng');
     $('modalOk').focus();
@@ -194,28 +194,41 @@
   };
   if (GAS_URL) $('refresh').onclick = refreshMaster; else $('refresh').style.display = 'none';
 
+  // 図面の読み取り(GASがGeminiを呼ぶ)。画像1枚ずつ送る。通信・応答の失敗は {ok:false, error} で返す
+  async function askGas(kind, image) {
+    try {
+      var r = await fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'ocr', kind: kind, image: image }) });
+      return await r.json();
+    } catch (e) { return { ok: false, error: '通信に失敗しました: ' + e }; }
+  }
+  function mapOpt() { return LINK_MODE === 'web' ? { mapUri: function (u) { return ShippingCore.toOpenUrl(OPEN_BASE, u); } } : null; }
   async function handle(file) {
     if (!file || modalOpen || working) return;
+    if (/\.xls$/i.test(file.name)) { $('msg').textContent = '古い形式(.xls)は未対応です。Excelで「.xlsx」として保存し直してください。'; return; }
     if (!links) { $('msg').textContent = 'マスタが未取得です。少し待って再実行してください。'; return; }
     working = true;   // 処理中の追加ドロップは無視(二重処理・二重記録の防止)
     $('msg').textContent = '処理中…'; $('stage').classList.add('busy');
     try {
-      var buf = await file.arrayBuffer();
-      var r = await ShippingCore.linkPdf(pdfjsLib, PDFLib, buf, links,
-        LINK_MODE === 'web' ? { mapUri: function (u) { return ShippingCore.toOpenUrl(OPEN_BASE, u); } } : null);
+      var buf = await file.arrayBuffer(), isXlsx = /\.xls[xm]$/i.test(file.name);
+      var r = isXlsx ? await ShippingXlsx.linkXlsx(JSZip, buf, links, mapOpt()) : await ShippingCore.linkPdf(pdfjsLib, PDFLib, buf, links, mapOpt());
+      // 詳細図(図番・製品名が線で描かれたCAD図面。寸法などの文字データだけ入っていることもある): 文字から図番らしい語が1つも見つからないときだけ、画像として読み取る
+      if (!isXlsx && GAS_URL && r.stats.linked === 0 && r.stats.ng === 0) {
+        $('msg').textContent = '図面を画像として読み取り中…(1枚あたり十数秒かかります)';
+        r = await ShippingDrawing.linkDrawing(pdfjsLib, PDFLib, buf, links, askGas, mapOpt());
+      }
       var s = r.stats;
       $('msg').textContent = '';
       if (s.linked > 0) {
-        var base = file.name.replace(/\.pdf$/i, '');
+        var base = file.name.replace(/\.(pdf|xls[xm])$/i, '');
         var a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([r.bytes], { type: 'application/pdf' }));
-        a.download = base + '_リンク付き.pdf'; a.style.display = 'none'; document.body.appendChild(a); a.click();
+        a.href = URL.createObjectURL(new Blob([r.bytes], { type: isXlsx ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf' }));
+        a.download = base + '_リンク付き.' + (isXlsx ? (/\.xlsm$/i.test(file.name) ? 'xlsm' : 'xlsx') : 'pdf'); a.style.display = 'none'; document.body.appendChild(a); a.click();
         setTimeout(function () { a.remove(); URL.revokeObjectURL(a.href); }, 10000);
-        popup(['ダウンロードしました', 'リンク付与できた図番' + s.linked + '件', '付与できなかった図番' + s.ng + '件'], true, s.partial);
+        popup(['ダウンロードしました', 'リンク付与できた図番' + s.linked + '件', '付与できなかった図番' + s.ng + '件'], true, s.partial, isXlsx ? 'シート!行' : '');
       } else {
-        popup(['リンクが付与できず、ダウンロードしていません', 'マスタには無い図番と製品名の可能性あり'], false, s.partial);
+        popup(['リンクが付与できず、ダウンロードしていません', 'マスタには無い図番と製品名の可能性あり'], false, s.partial, isXlsx ? 'シート!行' : '');
       }
-      if (GAS_URL) save(file.name, s, buf);   // 元PDFの保存・記録はバックグラウンドで実施
+      if (GAS_URL && !isXlsx) save(file.name, s, buf);   // 元PDFの保存・記録はバックグラウンドで実施(Excelは保存しない)
     } catch (e) {
       $('stage').classList.remove('busy');
       $('msg').textContent = '失敗しました: ' + e;

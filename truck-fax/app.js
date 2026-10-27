@@ -39,7 +39,7 @@
   var MAX_BYTES = 10 * 1024 * 1024;
 
   var S = { initSeq: 0, reloadP: null, senders: [], vehicles: [], drivers: [], pairs: [], projects: [], importKeyList: [], destMap: {}, cards: [], importsFile: null, tab: 'import',
-    imports: null, importsFy: null, importsCm: null, importsSite: 'all', editing: null };
+    imports: null, importsAt: 0, allP: null, allAt: 0, importsFy: null, importsCm: null, importsF: {}, editing: null };
   var seq = 0;
 
   // ---------- 小物 ----------
@@ -66,11 +66,24 @@
   function showBanner(msg) { var b = $('banner'); b.textContent = msg || ''; b.hidden = !msg; }
 
   // ---------- GAS通信 ----------
+  // 起動の高速化(2026-10-28): index.html の先頭で、app.js の読み込みを待たずに init・取込一覧(最新3000件)を先に要求している(window.__early)。最初の1回だけ、その応答を使う。
+  // 使えるのは、GASのURLと要求の中身が同じときだけ。先出しの要求が失敗したときは、普通に読み直す。
+  var EARLY = window.__early || null; window.__early = null;
+  function takeEarly(action, params) {
+    if (!EARLY || EARLY.url !== gasUrl() || !EARLY[action]) return null;
+    if (action === 'listImports' && !(params && params.limit === EARLY.limit)) return null;
+    var p = EARLY[action]; EARLY[action] = null;
+    return p;
+  }
   async function apiGet(action, params) {
-    var url = new URL(gasUrl());
-    url.searchParams.set('action', action);
-    Object.keys(params || {}).forEach(function (k) { url.searchParams.set(k, params[k]); });
-    var res = await fetch(url.toString(), { method: 'GET' });
+    var res = null, early = takeEarly(action, params);
+    if (early) { try { res = await early; } catch (e) { res = null; } }
+    if (!res) {
+      var url = new URL(gasUrl());
+      url.searchParams.set('action', action);
+      Object.keys(params || {}).forEach(function (k) { url.searchParams.set(k, params[k]); });
+      res = await fetch(url.toString(), { method: 'GET' });
+    }
     if (!res.ok) throw new Error('サーバーエラー(HTTP ' + res.status + ')');
     var json = await res.json();
     if (json.status !== 'success') throw new Error(json.message || '取得に失敗しました');
@@ -95,11 +108,25 @@
   /** 取込一覧(新しい順)を読み込む。同じ読み込みを、取込一覧タブ・再取込の判定・先読みで使い回す。force=true で必ず読み直す。 */
   function loadImports(force) {
     if (force || !S.importsP) {
-      var p = apiGet('listImports', { limit: IMPORTS_LIMIT }).then(function (d) { if (S.importsP === p) S.imports = d; return d; });
+      var p = apiGet('listImports', { limit: IMPORTS_LIMIT }).then(function (d) { if (S.importsP === p) { S.imports = d; S.importsAt = Date.now(); } return d; });
       p.catch(function () { if (S.importsP === p) S.importsP = null; });
       S.importsP = p;
     }
     return S.importsP;
+  }
+  /** 取込一覧の読み込み済みの内容を捨てる(記録・保存・削除のあと)。全件の使い回し(loadAllImports)も一緒に捨てる */
+  function invalidateImports() { S.imports = null; S.importsP = null; S.importsAt = 0; S.allP = null; }
+  /** シートの全行(新しい順)。ダウンロード(全件・締め月・積日指定)用。読み込み済みの最新3000件が全行そのもの(3000件未満)で、60秒以内に読んだものなら、それを使う。
+   *  そうでなければ全行を読み、60秒だけ使い回す。記録・保存・削除のあとは invalidateImports で捨てるので、自分の操作の結果は必ず入る(他の人の記録は、最大60秒遅れる)。 */
+  var ALL_TTL = 60000;
+  function loadAllImports() {
+    var now = Date.now();
+    if (S.imports && S.importsAt && now - S.importsAt < ALL_TTL && S.imports.length < IMPORTS_LIMIT) return Promise.resolve(S.imports);
+    if (S.allP && now - S.allAt < ALL_TTL) return S.allP;
+    var p = apiGet('listImports', { limit: 1000000 });
+    S.allP = p; S.allAt = now;
+    p.catch(function () { if (S.allP === p) S.allP = null; });
+    return p;
   }
 
   async function loadInit(keepImports) {
@@ -111,13 +138,14 @@
     S.projects = d.projects || []; S.senders = d.senders || [];
     S.importKeyList = (d.importKeys || []).map(function (r) { return L.importKey({ 積日: r.積日, 車番: r.車番 }); });
     S.destMap = L.buildDestMap(d.pastDest || []);
-    if (!keepImports) { S.imports = null; S.importsP = null; }
+    if (!keepImports) invalidateImports();
     renderTabs();
   }
 
   /** 保存・記録のあと、最新のデータ(照合用の一覧など)を、画面を止めずに裏で読み直す。読み直しの間に新しいFAXの照合が始まらないよう、S.reloadP で待てる */
   function reloadInit() {
-    var p = loadInit().then(function () {
+    invalidateImports(); loadImports(true).catch(function () {}); // 取込一覧も、init と同時に裏で読み直しておく(記録のあとに「取込一覧」を開いたとき、待たずに出す)。失敗したら、開いたときに読み直す
+    var p = loadInit(true).then(function () {
       refreshReadyCards();
       if (S.tab === 'pairs' && S.editing === null) renderPairs(); // 編集中の行は、入力が消えないよう、描き直さない
     }).catch(function (e) { showBanner('最新のデータを読み込めませんでした(保存は済んでいます): ' + e.message); });
@@ -369,11 +397,30 @@
     card.warnings.forEach(function (w) { el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'badge warn', text: '注意' }), h('span', { class: 'msg', text: w }))); });
     if (card.mode === 'change') { renderChangeBody(card); return; }
     card.footHost = h('div'); // 「記録する」「破棄する」は、見出しの行の右端に置く
-    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '読み取り結果(間違いがあれば表の中で直せます)', sugNote(card.rows)), h('span', { class: 'spacer' }), card.footHost));
+    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '読み取り結果(間違いがあれば表の中で直せます)', sugNote(card.rows)), h('span', { class: 'spacer' }), readExcelBtn(card), card.footHost));
     card.rowsHost = h('div'); card.rowsHost.appendChild(rowsTable(card)); el.appendChild(card.rowsHost);
     card.findHost = h('div'); el.appendChild(card.findHost);
     renderFindings(card); renderFoot(card);
   }
+  /** 「読み取り内容をExcelでダウンロード」ボタン(2026-10-27、ユーザー指示)。押すと、記録する内容(「記録する」「反映する」と同じ行。表の中で直した内容を含む)をExcelにダウンロードし、そのあと記録して閉じる。
+   *  「記録する」「反映する」が押せないとき(記入や選択が足りない・記録する行が無い)は、このボタンもグレーアウトする(renderFoot・renderChangeFoot)。列は取込一覧と同じ並びで、タイムスタンプ・追加変更・ファイルURLは付けない。 */
+  var READ_HEADERS = ['ファイル名', '工事番号', '現場名', '手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '備考'];
+  function exportRows(card) {
+    if (card.mode === 'change') return changeResults(card).filter(function (r) { return r.active && r.res; }).map(function (r) { return r.res.row; });
+    return results(card).filter(function (r) { return !r.skip; }).map(function (r) { return r.row; });
+  }
+  function readExcelBtn(card) {
+    card.xlBtn = h('button', { class: 'btn excel', type: 'button', text: '読み取り内容をExcelでダウンロード', disabled: true, onclick: async function () {
+      if (card.busy) return;
+      var rows = exportRows(card);
+      var data = rows.map(function (r) { return READ_HEADERS.map(function (k) { return k === 'ファイル名' ? card.name : String((k === '手配業者' ? r.業者 : r[k]) || ''); }); });
+      downloadXlsx(card.name.replace(/\.[^.]*$/, '') + '_読み取り内容.xlsx', '読み取り内容', READ_HEADERS, data, { leftCols: ['ファイル名', '現場名', '備考'], centerHeads: ['ファイル名', '現場名', '備考'] });
+      if (card.mode === 'change') await commitChange(card); else await commitCard(card); // ダウンロードのあと、内容を記録して閉じる
+    } });
+    return card.xlBtn;
+  }
+  function syncReadExcelBtn(card, disabled) { if (card.xlBtn) card.xlBtn.disabled = disabled || !exportRows(card).length; }
+
   /** 記入か選択が必要な欄を、黄色にする(読み取り結果の表)。入力のたびに付け外しする。 */
   var NEED_BY = { 'missing-project': '工事番号', 'missing-plate': '車番', 'bad-date': '積日|卸日', 'missing-carrier': '運送業者', 'missing-name': '氏名', 'missing-phone': '携帯番号', 'phone-format': '携帯番号' };
   function markNeeds(card) {
@@ -444,7 +491,7 @@
     });
     var msg = blockers > 0 ? '記録するには、あと ' + blockers + ' 件の対応が必要です → ' + todo.slice(0, 3).join(' / ') + (todo.length > 3 ? ' ほか' : '') : (keep === 0 ? '記録する行がありません。' : '準備OKです。内容を確認して「記録する」を押してください。');
     var f = footParts(card, '破棄する', function () { discardCard(card); });
-    f.btn.textContent = '記録する'; f.btn.disabled = blockers > 0 || keep === 0 || !!card.busy; f.btn.onclick = function () { commitCard(card); };
+    f.btn.textContent = '記録する'; f.btn.disabled = blockers > 0 || keep === 0 || !!card.busy; f.btn.onclick = function () { commitCard(card); }; syncReadExcelBtn(card, f.btn.disabled);
     f.msg.textContent = msg; f.hint();
   }
 
@@ -648,7 +695,7 @@
     var el = card.el;
     if (card.res.memo) el.appendChild(h('div', { class: 'foot' }, h('span', { class: 'badge info', text: 'FAXの連絡' }), h('span', { class: 'msg', text: card.res.memo })));
     card.footHost = h('div');
-    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '変更内容(現在の記録と、今回のFAXを並べています。違う項目は色が付きます)', sugNote(card.items.map(function (it) { return it.newRow; }).filter(Boolean))), h('span', { class: 'spacer' }), card.footHost));
+    el.appendChild(h('div', { class: 'sub-row' }, h('div', { class: 'sub-h' }, '変更内容(現在の記録と、今回のFAXを並べています。違う項目は色が付きます)', sugNote(card.items.map(function (it) { return it.newRow; }).filter(Boolean))), h('span', { class: 'spacer' }), readExcelBtn(card), card.footHost));
     if (!card.items.length) el.appendChild(h('div', { class: 'empty', text: '変更・追加・取消の対象が見つかりませんでした。FAXの区分を選び直してください。' }));
     else el.appendChild(changeTable(card));
     card.findHost = h('div'); el.appendChild(card.findHost);
@@ -660,7 +707,7 @@
     rs.forEach(function (r) { blockers += r.blockers.length; if (r.active) active++; r.blockers.forEach(function (b) { todo.push(r.no + '件目: ' + b); }); });
     var msg = blockers > 0 ? '反映するには、あと ' + blockers + ' 件の対応が必要です → ' + todo.slice(0, 3).join(' / ') + (todo.length > 3 ? ' ほか' : '') : (active === 0 ? (card.items.length && card.items.every(function (it) { return it.same && it.action === 'skip'; }) ? 'すべての行が、取込一覧の記録と同じです(変更なし)。「破棄する」で閉じてください。' : '反映する内容がありません。') : '準備OKです。内容を確認して「反映する」を押してください。');
     var f = footParts(card, '破棄する', function () { discardCard(card); });
-    f.btn.textContent = '反映する'; f.btn.disabled = blockers > 0 || active === 0 || !!card.busy; f.btn.onclick = function () { commitChange(card); };
+    f.btn.textContent = '反映する'; f.btn.disabled = blockers > 0 || active === 0 || !!card.busy; f.btn.onclick = function () { commitChange(card); }; syncReadExcelBtn(card, f.btn.disabled);
     f.msg.textContent = msg; f.hint();
   }
 
@@ -737,16 +784,12 @@
     var undated = cl.filter(function (c) { return !c; }).length;
     var fys = {}; cl.forEach(function (c) { if (c) fys[c.fy] = 1; }); if (S.importsFy !== 'all') fys[S.importsFy] = 1;
     var fyList = Object.keys(fys).sort(function (a, b) { return b - a; });
-    var rows = S.imports.filter(function (r, i) {
+    var baseRows = S.imports.filter(function (r, i) { // 年度・締め月で絞る
       var c = cl[i];
       if (S.importsFy !== 'all' && !(c && String(c.fy) === S.importsFy)) return false;
-      if (S.importsCm !== 'all' && !(c && String(c.cm) === S.importsCm)) return false;
-      return S.importsSite === 'all' || r.現場名 === S.importsSite;
+      return S.importsCm === 'all' || !!(c && String(c.cm) === S.importsCm);
     });
-    var sites = {}; sites[OTHER] = 1; // 現場名リスト: 「その他」、情報シートの工事名、取込一覧にある現場名
-    S.projects.forEach(function (p) { if (p.工事名) sites[p.工事名] = 1; });
-    S.imports.forEach(function (r) { if (r.現場名) sites[r.現場名] = 1; });
-    var siteList = Object.keys(sites).sort(function (a, b) { return a.localeCompare(b, 'ja'); });
+    var rows = colFiltered(baseRows, null); // 見出しのフィルタ(現場名・手配業者・運送業者・氏名)で絞る。変更前・変更後の組は、片方が合えば両方出す
     function sel(label, value, opts, onchange) {
       var s = h('select', { 'aria-label': label }, opts.map(function (o) { return h('option', { value: o[0], text: o[1] }); }));
       s.value = value; s.addEventListener('change', function () { onchange(s.value); renderImports(); });
@@ -768,21 +811,114 @@
     prevBtn.update(S.importsFy, S.importsCm, haveCl); nextBtn.update(S.importsFy, S.importsCm, haveCl);
     var cmNav = h('span', { class: 'cm-nav' }, prevBtn, cmSel, nextBtn);
     requestAnimationFrame(function () { fitSelect(fySel); fitSelect(cmSel); }); // 年度・締め月のリストの幅を、選んでいる文字に合わせる(左右の空白を同じに)
-    var siteSel = sel('現場名', S.importsSite, [['all', '全て(現場名)']].concat(siteList.map(function (n) { return [n, n]; })), function (v) { S.importsSite = v; });
     var shown = L.sortImportRows(rows.slice(0, IMPORTS_SHOW)); // 新しい100件を、ファイルごと・卸日の早い順に並べる
     var cnt = 'ファイルごと・卸日の早い順・該当' + rows.length + '件のうち最新' + shown.length + '件を表示(最大' + IMPORTS_SHOW + '件)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
+    var fsum = FILTER_COLS.filter(function (k) { return S.importsF[k]; }).map(function (k) { return k + ' ' + Object.keys(S.importsF[k]).length + '件選択'; });
+    if (fsum.length) cnt += ' ・ フィルタ: ' + fsum.join('、');
     var wrap = h('div', { class: 'imp-wrap' }); host.appendChild(wrap); // 上の絞り込み・ボタンの行と表を、表の幅に合わせて中央に置く
-    wrap.appendChild(h('div', { class: 'tool' }, fySel, cmNav, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; S.importsP = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
+    wrap.appendChild(h('div', { class: 'tool' }, fySel, cmNav, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { invalidateImports(); renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
+      h('button', { class: 'btn reset', type: 'button', text: 'リセット', title: '年度・締め月・見出しのフィルタを、開いた直後の状態に戻します', onclick: resetImportsView }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '全件ダウンロード', onclick: downloadAllImports }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '締め月ダウンロード', onclick: openClosingDownload }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '積日指定でダウンロード', onclick: openDateDownload })));
-    var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: 'c', text: k })); }); // 見出しは、どの列も中央揃え(2026-10-23、ユーザー指示)。「操作」の列は無い(行を押すと編集できる)
+    var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(filterHead(k, baseRows)); }); // 見出しは、どの列も中央揃え(2026-10-23、ユーザー指示)。「操作」の列は無い(行を押すと編集できる)
     var body = h('tbody');
-    shown.forEach(function (r) { body.appendChild(importRow(r)); });
+    var pairs = L.pairBeforeAfter(shown); // 変更前→変更後の組み合わせ(変わった項目に矢印・色を付ける)
+    shown.forEach(function (r) { body.appendChild(importRow(r, pairs[r._row])); });
     var tbox = shown.length ? h('div', { class: 'scroll fitcols listbox' }, h('table', { class: 't zebra' }, h('thead', null, head), body)) : h('div', { class: 'empty', text: '該当する記録はありません。' });
     wrap.appendChild(tbox);
-    if (shown.length) requestAnimationFrame(fitListHeight); // 上の行(絞り込み・ボタン)と表の見出しは動かさず、表の中だけをスクロールする
+    if (shown.length) requestAnimationFrame(function () { // 上の行(絞り込み・ボタン)と表の見出しは動かさず、表の中だけをスクロールする
+      fitListHeight();
+      var fr = S.importsFocusRow; S.importsFocusRow = null; // 原本を閉じて戻ったときは、開いていた行が表の一番上(見出しの下)に来るようにスクロールする(2026-10-27、ユーザー指示)
+      var box = document.querySelector('#tab-imports .listbox'), tr = fr && box && box.querySelector('tr[data-row="' + fr + '"]');
+      if (tr) {
+        var delta = tr.getBoundingClientRect().top - box.getBoundingClientRect().top - box.querySelector('thead').offsetHeight;
+        var room = box.scrollHeight - box.clientHeight - box.scrollTop; // 下にスクロールできる残り。足りないとき(下の方の行)は、下に余白を足して一番上まで動かせるようにする
+        if (delta > room) box.style.paddingBottom = Math.ceil(delta - room) + 'px';
+        box.scrollTop += delta;
+      }
+    });
     TruckViewer.preload(); prefetchFaxes(shown); // 原本をすぐ開けるよう、pdf.js と表の上の原本を先に読む
+  }
+
+  // ---------- 取込一覧の見出しのフィルタ(2026-10-28、ユーザー指示) ----------
+  // 現場名・手配業者・運送業者・氏名の見出しを左クリックすると、その列の値のリストが開き、チェックした値の行だけを出す。複数の列は「かつ」。
+  // 値のリストには、年度・締め月と「他の列のフィルタ」で絞った行にある値だけを出す(Excelと同じ)。上の現場名のリストは、この仕組みに統合して廃止した。
+  // 「リセット」で、年度・締め月・フィルタを開いた直後の状態に戻す。ダウンロード(全件・締め月・積日指定)は、フィルタの影響を受けない。
+  var FILTER_COLS = ['現場名', '手配業者', '運送業者', '氏名'];
+  var FILTER_EMPTY = '(空欄)';
+  function fval(r, k) { var v = String(r[k] == null ? '' : r[k]).trim(); return v || FILTER_EMPTY; }
+  /** rows を、見出しのフィルタで絞る(except の列は除く)。except===null のとき(表に出す行)は、変更前・変更後の組の相手も一緒に出す */
+  function colFiltered(rows, except) {
+    var act = FILTER_COLS.filter(function (k) { return k !== except && S.importsF[k]; });
+    if (!act.length) return rows;
+    function ok(r) { return act.every(function (k) { return S.importsF[k][fval(r, k)]; }); }
+    var hit = {};
+    rows.forEach(function (r) { if (ok(r)) hit[r._row] = true; });
+    if (except === null) {
+      var pairs = L.pairBeforeAfter(rows);
+      Object.keys(hit).forEach(function (row) { var p = pairs[row]; if (p && p.partner) hit[p.partner._row] = true; });
+    }
+    return rows.filter(function (r) { return hit[r._row]; });
+  }
+  function closeFilterPop() { var o = document.querySelector('.flt-pop'); if (o) o.remove(); }
+  document.addEventListener('mousedown', function (e) { if (!e.target.closest('.flt-pop') && !e.target.closest('th.flt')) closeFilterPop(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeFilterPop(); });
+  /** 見出し。フィルタの列は、押せる(▼。条件があるときは赤い▼+背景色) */
+  function filterHead(k, baseRows) {
+    if (FILTER_COLS.indexOf(k) < 0) return h('th', { class: 'c', text: k });
+    var on = !!S.importsF[k];
+    var th = h('th', { class: 'c flt' + (on ? ' on' : ''), title: on ? k + ': ' + Object.keys(S.importsF[k]).length + '件を選択中(クリックで変更)' : k + 'で絞り込む' }, k, h('span', { class: 'arr', text: '▼' }));
+    th.addEventListener('click', function (e) { e.stopPropagation(); var open = document.querySelector('.flt-pop'); var same = open && open.getAttribute('data-col') === k; closeFilterPop(); if (!same) openFilterPop(k, th, baseRows); });
+    return th;
+  }
+  function openFilterPop(k, th, baseRows) {
+    var avail = {}; // この列の値(他の列のフィルタで絞った行にあるもの)。選んでいる値は、無くても残す
+    colFiltered(baseRows, k).forEach(function (r) { avail[fval(r, k)] = 1; });
+    var cur = S.importsF[k];
+    if (cur) Object.keys(cur).forEach(function (v) { avail[v] = 1; });
+    var vals = Object.keys(avail).sort(function (a, b) {
+      if (a === FILTER_EMPTY || b === FILTER_EMPTY) return a === FILTER_EMPTY ? 1 : -1;
+      if (k === '手配業者') return L.senderRank(a) - L.senderRank(b) || a.localeCompare(b, 'ja');
+      return a.localeCompare(b, 'ja');
+    });
+    var checks = {}; vals.forEach(function (v) { checks[v] = cur ? !!cur[v] : true; });
+    var search = h('input', { type: 'search', placeholder: '検索', 'aria-label': k + 'の値を検索' });
+    var list = h('div', { class: 'flt-list' });
+    var items = vals.map(function (v) {
+      var cb = h('input', { type: 'checkbox' }); cb.checked = checks[v];
+      cb.addEventListener('change', function () { checks[v] = cb.checked; });
+      return { v: v, cb: cb, row: h('label', { class: 'flt-item' }, cb, h('span', { text: v })) };
+    });
+    items.forEach(function (it) { list.appendChild(it.row); });
+    function visible() { return items.filter(function (it) { return !it.row.hidden; }); }
+    search.addEventListener('input', function () { var q = L.nameKey(search.value); items.forEach(function (it) { it.row.hidden = !!q && L.nameKey(it.v).indexOf(q) < 0; }); });
+    function setVisible(on) { visible().forEach(function (it) { it.cb.checked = on; checks[it.v] = on; }); }
+    var pop = h('div', { class: 'flt-pop', 'data-col': k },
+      h('div', { class: 'flt-title', text: k + 'で絞り込む' }), search,
+      h('div', { class: 'flt-links' },
+        h('button', { class: 'btn sm', type: 'button', text: '表示中をすべて選択', onclick: function () { setVisible(true); } }),
+        h('button', { class: 'btn sm', type: 'button', text: '表示中をすべて解除', onclick: function () { setVisible(false); } })),
+      list,
+      h('div', { class: 'flt-btns' },
+        h('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: closeFilterPop }),
+        h('button', { class: 'btn primary', type: 'button', text: 'OK', onclick: function () {
+          var picked = {}; vals.forEach(function (v) { if (checks[v]) picked[v] = true; });
+          S.importsF[k] = Object.keys(picked).length === vals.length ? null : picked; // 全部選んだ=条件なし
+          closeFilterPop(); renderImports();
+        } })));
+    document.body.appendChild(pop);
+    var r = th.getBoundingClientRect();
+    pop.style.top = Math.min(r.bottom + 2, window.innerHeight - 120) + 'px';
+    pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+    var maxH = window.innerHeight - r.bottom - 150; list.style.maxHeight = Math.max(120, Math.min(300, maxH)) + 'px';
+    search.focus();
+  }
+  /** 「リセット」: 年度・締め月・見出しのフィルタを、取込一覧を開いた直後の状態に戻す */
+  function resetImportsView() {
+    closeFilterPop();
+    S.importsFy = null; S.importsCm = null; S.importsF = {}; // 年度・締め月は、renderImports が本日のものに戻す
+    renderImports();
   }
 
   /** リストの幅を、選んでいる項目の文字の幅+左右同じ余白+▼の幅にする(長い項目「すべての締め月」に引っぱられて、広くなりすぎないように) */
@@ -830,8 +966,10 @@
   function struckOf(list) { return { struck: list.map(isBeforeRow), leftCols: LEFT_COLS.concat(['ファイルURL']), centerHeads: LEFT_COLS.concat(['ファイルURL']) }; } // Excelも、ファイル名・現場名・備考(とファイルURL)の中身は左揃え、他は中央揃え。見出しはすべて中央揃え
   /** 取込一覧の表の高さを、画面の下端までにする(表の中だけがスクロールし、見出しの行は上に残る) */
   function fitListHeight() {
-    var box = document.querySelector('#tab-imports .listbox'); if (!box || !box.isConnected) return;
-    box.style.maxHeight = Math.max(240, window.innerHeight - box.getBoundingClientRect().top - 16) + 'px';
+    Array.prototype.forEach.call(document.querySelectorAll('#tab-imports .listbox, #tab-pairs .listbox'), function (box) { // 取込一覧と、車両・運転手情報(2026-10-28)。見えている方だけ
+      if (!box.isConnected || box.closest('[hidden]')) return;
+      box.style.maxHeight = Math.max(240, window.innerHeight - box.getBoundingClientRect().top - 16) + 'px';
+    });
   }
   window.addEventListener('resize', fitListHeight);
 
@@ -948,7 +1086,39 @@
     var holder = h('div', { class: 'faxview' }, h('div', { class: 'reading-note', text: r.ファイルURL ? '原本を読み込んでいます…' : 'この記録には原本がありません(PDFで取り込んだ記録ではありません)。' }));
     var tool = h('div', { class: 'tool' }, h('button', { class: 'btn sm back-list', type: 'button', text: 'すべての行に戻す', onclick: function () { tryClose(); } }),
       h('strong', { class: 'file-name', text: importCellText(r, 'ファイル名') }), h('span', { class: 'sub', text: 'この原本から記録した' + drafts.length + '行(押した行は水色)。表の中で直せます' }),
-      status, saveBtn);
+      status, saveBtn, delFaxBtn());
+    /** 「このFAXを削除して取り込み直す」(2026-10-28、ユーザー指示)。この原本から記録した行すべてと、Driveの原本を削除して、PDF取込の画面へ移る。
+     *  どのFAXも削除できる。変更前・変更後の組になっている相手の行は、「追加変更」を空欄に戻す(変更前の赤字・取り消し線が消え、最初に取り込んだ状態に戻る)。
+     *  相手の行は、取込一覧の全体から、画面と同じ点数の推定(L.pairBeforeAfter)で決め、確認のダイアログに出す。原本が無い記録(ファイルURLなし)には、ボタンを出さない。 */
+    function resetTargets() {
+      var inFax = {}; same.forEach(function (x) { inFax[x._row] = true; });
+      var pairs = L.pairBeforeAfter(S.imports || []), out = [], seen = {};
+      same.forEach(function (x) {
+        var p = pairs[x._row];
+        if (p && p.partner && !inFax[p.partner._row] && !seen[p.partner._row]) { seen[p.partner._row] = true; out.push(p.partner); }
+      });
+      return out;
+    }
+    function delFaxBtn() {
+      if (!r.ファイルURL) return null;
+      return h('button', { class: 'btn sm del faxdel', type: 'button', text: 'このFAXを削除して取り込み直す', onclick: async function () {
+        if (dirty() && !(await confirmDialog('編集内容は破棄されますが続けますか?', '保存していない編集内容は消えます。', 'OK'))) return;
+        var back = resetTargets();
+        var backLines = back.slice(0, 5).map(function (x) { return '・「' + x.追加変更 + '」を空欄に戻す: ' + [x.積日, x.車番, x.氏名].filter(Boolean).join(' '); });
+        if (back.length > 5) backLines.push('・ほか' + (back.length - 5) + '行も「追加変更」を空欄に戻す');
+        if (!(await confirmDialog('このFAXを削除しますか?', ['・車番連絡記録の' + drafts.length + '行の削除', '・取込PDFの削除'].concat(backLines, ['以上を実施します。', '戻すことは出来ませんが削除しますか？']).join('\n'), '削除する', true))) return;
+        var close = busyDialog('削除中');
+        try {
+          var res = await apiPost('deleteFax', { fileUrl: r.ファイルURL, rows: same.map(function (x) { return { row: x._row, before: L.recFields(x) }; }), reset: back.map(function (x) { return { row: x._row, before: L.recFields(x) }; }) }, 120000);
+          if (url) URL.revokeObjectURL(url);
+          S.importsFile = null;
+          reloadInit(); // 重複の判定(同じ内容の再取込の防止)は、削除したあとの記録で行う
+          showTab('import');
+          toast(res.deleted + '行を削除しました。' + (res.reset ? res.reset + '行の「追加変更」を空欄に戻しました。' : '') + (res.fileWarn ? ' ※原本をゴミ箱へ移せませんでした: ' + res.fileWarn : '') + ' 新しいPDFを取り込んでください。');
+        } catch (err) { status.textContent = '削除に失敗しました: ' + err.message; status.className = 'faxdlg-status err'; }
+        finally { close(); }
+      } });
+    }
     var paneHead = h('div', { class: 'faxpane-head' }, h('strong', { text: '原本: ' + importCellText(r, 'ファイル名') }), h('span', { class: 'spacer' }),
       h('button', { class: 'btn sm back-list', type: 'button', text: '画像を閉じる', onclick: function () { tryClose(); } }));
     var url = '';
@@ -967,6 +1137,7 @@
       if (dirty() && !(await confirmDialog('編集内容は破棄されますが閉じますか?', '保存していない編集内容は消えます。', 'OK'))) return;
       if (url) URL.revokeObjectURL(url);
       if (S.importsFile === me) S.importsFile = null;
+      S.importsFocusRow = r._row; // 戻ったとき、開いていた行を一番上にする
       renderImports();
     }
     async function saveEdits() {
@@ -989,7 +1160,7 @@
           e.orig = JSON.stringify(e.d);
         }
         status.textContent = '保存しました(' + todo.length + '行)。' + linkedAll; status.className = 'faxdlg-status ok';
-        if (link === 'all') loadImports(true).catch(function () {});
+        invalidateImports(); loadImports(true).catch(function () {}); // 編集した内容で読み直す(全件の使い回しも捨てる)
         saveBtn.style.display = 'none';
         loadInit(true).catch(function () {}); // 重複の判定などに使う最新の記録を読み直す(一覧の表は、戻したときに描き直す)
       } catch (err) { status.textContent = '保存に失敗しました: ' + err.message; status.className = 'faxdlg-status err'; }
@@ -1010,9 +1181,18 @@
 
   window.addEventListener('resize', function () { if (S.importsFile) S.importsFile.fit(); });
 
-  function importRow(r) {
-    var tr = h('tr', { class: 'pick' + (isBeforeRow(r) ? ' before' : '') }); // 行を押すと、その原本の行だけに絞り、下に原本を出す(ファイル名はリンクにしない)
-    TABLE_HEADERS.forEach(function (k) { tr.appendChild(h('td', { class: 'nowrap' + (LEFT_COLS.indexOf(k) >= 0 ? '' : ' c') }, importCellText(r, k))); });
+  function importRow(r, pair) {
+    var tr = h('tr', { 'data-row': String(r._row), class: 'pick' + (isBeforeRow(r) ? ' before' : '') + (pair && pair.role === 'after' ? ' after-row' : '') }); // 行を押すと、その原本の行だけに絞り、下に原本を出す(ファイル名はリンクにしない)
+    TABLE_HEADERS.forEach(function (k) {
+      var chg = pair && pair.changed[k]; // 変更前の行の変わった項目には、変更後へ向かう矢印「⤵」。変更後の行の同じ項目は色を付ける
+      var td = h('td', { class: 'nowrap' + (LEFT_COLS.indexOf(k) >= 0 ? '' : ' c') + (chg && pair.role === 'after' ? ' chg' : '') }, importCellText(r, k));
+      if (chg && pair.role === 'before') { // 矢印は文字「⤵」ではなく図(SVG)にする: 文字だと、フォントによっては太字にならないため(2026-10-27、ユーザー指示=紫の太字)
+        var ar = h('span', { class: 'chg-arrow', title: '下の行(変更後)で変わりました' });
+        ar.innerHTML = '<svg viewBox="0 0 20 18" width="1.15em" height="1em" aria-hidden="true"><path d="M2 3 H11 Q16 3 16 8 V14 M11.5 10 L16 14.5 L20.5 10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        td.appendChild(document.createTextNode(' ')); td.appendChild(ar);
+      }
+      tr.appendChild(td);
+    });
     tr.addEventListener('click', function () { openImportFile(r); });
     if (r.ファイルURL) { // マウスを0.15秒止めたら、押す前に原本を読み始める(表の上を通り過ぎただけの行は読まない)
       var hoverT = 0;
@@ -1026,7 +1206,7 @@
   async function downloadAllImports() {
     var close = busyDialog('全件を読み込み中');
     try {
-      var all = await apiGet('listImports', { limit: 1000000 }); // 新しい順で、シートの全行
+      var all = await loadAllImports(); // 新しい順で、シートの全行(読み込み済みなら使い回す)
       var heads = IMPORT_HEADERS.concat(['ファイルURL']);
       var ordered = L.sortImportRows(all); // 取込一覧の「すべての締め月」と同じ並び(ファイルごと→卸日の早い順→大上→ナミツー→取込順。2026-10-26、ユーザー指示)
       var rows = ordered.map(function (r) { return heads.map(function (k) { return r[k] || ''; }); });
@@ -1088,7 +1268,7 @@
     document.body.appendChild(dlg);
     dlg.showModal();
     try {
-      all = (await apiGet('listImports', { limit: 1000000 })).slice().reverse(); // シートの全行を、記録した順に
+      all = (await loadAllImports()).slice().reverse(); // シートの全行を、記録した順に
       if (!open) return;
       var fys = {}; fys[cur.fy] = 1; fys[fy0] = 1;
       all.forEach(function (r) { var c = L.rowClosing(r); if (c) { fys[c.fy] = 1; haveCl[c.fy + '-' + c.cm] = 1; } });
@@ -1102,12 +1282,13 @@
 
   // ---------- 追加変更依頼(ヘッダーのボタン→「AIに変更指示」。GASがシート・Drive・メールへ回す。画面には「記録した」等は出さない) ----------
   var REQ_KINDS = ['新規ボタンの追加', '既存ボタンの修正', '既存ボタンの削除'];
+  var REQ_KIND_LABEL = { '既存ボタンの削除': '既存ボタンの削除（削除したものはコードが残っているのでいつでも復活できます）' }; // 2026-10-28、ユーザー指示。画面の文言だけ(GASへ送る値は変えない)
   var REQ_BUTTONS = ['全件ダウンロード', '締め月ダウンロード', '積日指定でダウンロード', 'Excelでダウンロード(車両・運転手情報)']; // 変更するときは、GAS(Code.gs)の REQUEST_BUTTONS も同じにする
   function openChangeRequest() {
-    var kindBoxes = REQ_KINDS.map(function (k) { return h('label', { class: 'opt' }, h('input', { type: 'radio', name: 'reqKind', value: k }), ' ' + k); });
+    var kindBoxes = REQ_KINDS.map(function (k) { return h('label', { class: 'opt' }, h('input', { type: 'radio', name: 'reqKind', value: k }), ' ' + (REQ_KIND_LABEL[k] || k)); }); // 送る値(value)は REQ_KINDS のまま。画面の文言だけ REQ_KIND_LABEL で変える(GASの REQUEST_KINDS と一致させるため)
     var btnSel = h('select', null, h('option', { value: '', text: '選んでください' }), REQ_BUTTONS.map(function (b) { return h('option', { value: b, text: b }); }));
     var btnWrap = h('div', { hidden: true }, h('label', { class: 'f', text: '対象のボタン' }), btnSel);
-    var content = h('textarea', { placeholder: 'どう変えたいか、今困っていることを書いてください' });
+    var content = h('textarea', { placeholder: 'どう変えたいか、今困っていることを書いてください\n＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿\n例）現場名別で表示してダウンロードしたい。\n・卸日の日付の新しいものが上に来るようにして。\n・変更前の表示は消して。\n\n↑↑このように書くと理解しやすいです。\n＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿' });
     var file = h('input', { type: 'file' });
     var nameIn = h('input', { type: 'text', maxlength: '50' });
     var anonNote = h('p', { class: 'note', style: 'color:#c62828;font-weight:700', text: '※匿名の場合は、内容を細かく設定してください。' }); // 名前が入ったら消す
@@ -1115,9 +1296,9 @@
     var msg = h('p', { class: 'bad', hidden: true });
     var cancel = h('button', { class: 'btn', type: 'button', text: 'キャンセル' });
     var send = h('button', { class: 'btn primary', type: 'button', text: 'AIに変更指示' });
-    var dlg = h('dialog', { class: 'dlg req-form', style: 'width:min(92vw,520px)' },
+    var dlg = h('dialog', { class: 'dlg req-form' },
       h('p', { class: 'dlg-title', text: 'AIに変更指示' }),
-      h('p', { class: 'dlg-detail', text: '④のExcelダウンロードなど、アプリの追加・変更したい点を教えてください。' }),
+      h('p', { class: 'dlg-detail', text: '追加変更したい項目を選び、必要なデータを添付して「AIに変更指示」ボタンを押してください。' }),
       h('label', { class: 'f', text: '依頼の種類' }), kindBoxes, btnWrap,
       h('label', { class: 'f', text: '内容' }), content,
       h('label', { class: 'f', text: '集計したExcelなどの資料(あれば1ファイル・10MBまで)' }), file,
@@ -1205,7 +1386,7 @@
     document.body.appendChild(dlg);
     refresh();
     dlg.showModal();
-    apiGet('listImports', { limit: 1000000 }).then(function (d) { all = d.slice().reverse(); loaded = true; if (dlg.isConnected) refresh(); }) // シートの全行から選ぶ(古い積日も出る)
+    loadAllImports().then(function (d) { all = d.slice().reverse(); loaded = true; if (dlg.isConnected) refresh(); }) // シートの全行から選ぶ(古い積日も出る)
       .catch(function (e) { if (dlg.isConnected) info.textContent = '読み込めませんでした: ' + e.message; });
   }
 
@@ -1235,7 +1416,8 @@
     }
     try {
       var res = await apiPost('masterSave', { kind: 'pair', mode: mode, row: row, before: before, data: data, link: link === 'all' }, 120000);
-      if (res && res.linked) { toast(linkedText(res.linked)); loadImports(true).catch(function () {}); }
+      invalidateImports(); // 連動で、取込一覧の行が変わることがある
+      if (res && res.linked) toast(linkedText(res.linked));
       if (mode === 'update') { var r = S.pairs.filter(function (x) { return x._row === row; })[0]; if (r) Object.keys(data).forEach(function (k) { r[k] = data[k]; }); }
       else { S.pairs = S.pairs.filter(function (x) { return x._row !== row; }); S.pairs.forEach(function (x) { if (x._row > row) x._row--; }); } // 行を削除すると、下の行の番号が1つ上がる
       S.editing = null; renderPairs(); showBanner(''); // 保存した内容は、その場で表に反映し、照合用の一覧などは裏で読み直す
@@ -1300,9 +1482,9 @@
   }
 
   /** 画面中央のポップアップで確認する(ブラウザ標準の確認ダイアログは使わない)。OKならtrue */
-  function confirmDialog(title, detail, okText) {
+  function confirmDialog(title, detail, okText, big) { // big=true: 文字・ボタン・幅を1.5倍にして、タイトルを中央揃えにする(FAX削除の確認。2026-10-28、ユーザー指示)
     return new Promise(function (resolve) {
-      var dlg = h('dialog', { class: 'dlg' },
+      var dlg = h('dialog', { class: 'dlg' + (big ? ' big' : '') },
         h('p', { class: 'dlg-title', text: title }),
         h('p', { class: 'dlg-detail', text: detail }),
         h('div', { class: 'dlg-btns' },
@@ -1322,6 +1504,7 @@
 
   function renderPairs() {
     var host = $('tab-pairs');
+    var prevBox = host.querySelector('.listbox'), prevTop = prevBox ? prevBox.scrollTop : 0; // 編集・保存で描き直しても、表のスクロール位置を保つ
     host.textContent = '';
     var cols = PAIR_COLS;
     var rows = L.sortPairs(S.pairs); // 手配業者(大上→ナミツー→その他)→運送業者→車種(4t→10t→15t→TR→その他)→車番→氏名の順(表示だけで、シートの行順は変えない)
@@ -1360,7 +1543,10 @@
       }
       body.appendChild(tr);
     });
-    wrap.appendChild(h('div', { class: 'scroll' }, h('table', { class: 't pairs' }, h('thead', null, head), body)));
+    // 表の中だけをスクロールする(2026-10-28、ユーザー指示): 上の行(件数・Excelでダウンロード)と、表の見出しは動かない。高さは fitListHeight(取込一覧と同じ)
+    var pbox = h('div', { class: 'scroll listbox' }, h('table', { class: 't pairs' }, h('thead', null, head), body));
+    wrap.appendChild(pbox);
+    if (rows.length) requestAnimationFrame(function () { fitListHeight(); pbox.scrollTop = prevTop; });
     if (!rows.length) wrap.appendChild(h('div', { class: 'empty', text: 'まだ登録がありません。FAXを取り込むと、車と運転手の組み合わせが自動で登録されます。' }));
   }
 

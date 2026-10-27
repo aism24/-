@@ -12,8 +12,8 @@
  * APIキーはこのGAS内でだけ使い、画面には返さない。
  */
 
-// 貼り替え・デプロイの確認用。ping と init がこの値を返す(画面上部にも表示)。コードを変えたら更新する。
-var CODE_VERSION = '20261026d';
+// 貼り替え・デプロイの確認用。ping と init がこの値を返す。コードを変えたら更新する(キャッシュのキーにも入るので、更新すると古い版のキャッシュは使われない)。
+var CODE_VERSION = '20261028c';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_MERGED = '車両運転手情報'; // 1行=車と運転手の1組。シートの列は MERGED_HEADERS(見出し名で読み書きする)
@@ -25,6 +25,7 @@ var IMPORT_HEADERS = ['タイムスタンプ', 'ファイル名', '工事番号'
 var CHECK_FIELDS = ['手配業者', '積日', '卸日', '行先', '着時間', '運送業者', '車種', '車番', '氏名', '携帯番号', '工事番号', '現場名', '追加変更'];
 // 取込一覧の任意の列(あれば読み書きする。無くても動く)。「追加変更」=中止/変更前/変更後、「備考」=アプリで入力したテキスト。
 var IMPORT_OPTIONAL = ['追加変更', '備考', 'ファイルURL']; // ファイルURL=取り込んだ原本(PDF・画像)のDriveのURL。画面のファイル名を押すと開く
+var COUNT_HEADER = '輸送回数'; // 車両運転手情報の任意の列。あれば GAS が数えて書く(2026-10-27、ユーザー指示)
 var INACTIVE_LABELS = ['変更前', '中止']; // これらの行は車両台数に数えない(行は消さない)
 
 var TEXT_COLS = ['着時間', '車種', '車番', '携帯番号', '工事番号', '備考']; // 備考も文字として書く(「10:30」が時刻(1899/12/30 10:30:00)にならないように。2026-10-23)
@@ -50,6 +51,7 @@ function setupSheets() {
     info.getRange(r, 1, 1, 2).setValues([d]);
     names[r - 1] = d[0];
   });
+  cacheBump_();
   return 'OK';
 }
 
@@ -328,9 +330,12 @@ function err_(message) { return jsonOut_({ status: 'error', message: String(mess
 function doGet(e) {
   try {
     var a = e.parameter.action;
-    if (a === 'init') return ok_(getInit_());
+    if (a === 'init') return ok_(cached_('init', getInit_));
     if (a === 'getFile') return ok_(getFile_(e.parameter.url));
-    if (a === 'listImports') return ok_(listImports_(Number(e.parameter.limit) || 300));
+    if (a === 'listImports') {
+      var lim = Number(e.parameter.limit) || 300;
+      return ok_(lim <= 3000 ? cached_('imports' + lim, function () { return listImports_(lim); }) : listImports_(lim)); // 全行(downloadの1000000)は、いつでも最新を読む
+    }
     if (a === 'logStart') return ok_(logStart_());
     if (a === 'logDownload') return ok_(logDownload_(e.parameter.file, e.parameter.start));
     if (a === 'ping') return ok_({ pong: true, version: CODE_VERSION });
@@ -342,12 +347,13 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
     if (body.action === 'ocr') return ok_(ocr_(body));
-    if (body.action === 'commit') return ok_(withLock_(function () { return commit_(body); }));
-    if (body.action === 'updateImport') return ok_(withLock_(function () { return updateImport_(body); }));
-    if (body.action === 'applyChanges') return ok_(withLock_(function () { return applyChanges_(body); }));
+    if (body.action === 'commit') return ok_(writeLocked_(function () { return commit_(body); }));
+    if (body.action === 'updateImport') return ok_(writeLocked_(function () { return updateImport_(body); }));
+    if (body.action === 'deleteFax') return ok_(writeLocked_(function () { return deleteFax_(body); }));
+    if (body.action === 'applyChanges') return ok_(writeLocked_(function () { return applyChanges_(body); }));
     if (body.action === 'changeRequest') return ok_(withLock_(function () { return changeRequest_(body); }));
     if (body.action === 'linkPreview') return ok_(linkPreview_(body));
-    if (body.action === 'masterSave') return ok_(withLock_(function () { return masterSave_(body); }));
+    if (body.action === 'masterSave') return ok_(writeLocked_(function () { return masterSave_(body); }));
     return err_('不明なaction: ' + body.action);
   } catch (ex) { return err_(ex.message); }
 }
@@ -476,6 +482,36 @@ function withLock_(fn) {
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
+// ---------- 読み込み(init・取込一覧)の短時間キャッシュ(2026-10-28、ユーザー指示。起動を速くするため) ----------
+// スプレッドシートを開いて読むだけで、データが少なくても毎回1.2〜1.5秒かかる(2026-10-28に実測)。そこで、init と listImports(最新3000件)の結果を、CacheService に最大120秒置く。
+// ・取込一覧・車両運転手情報を書く操作(記録・反映・編集・FAX削除・車両運転手情報の保存)のたびに、世代(ver)を進めて、置いたものを使えなくする(writeLocked_)。
+// ・読み始めたときの世代のキーに置くので、読んでいる間に書き込みがあっても、古い内容が新しい世代として残らない。
+// ・シートを手で直した内容は、最大120秒のあいだ反映されない(画面の「再読み込み」でも、キャッシュが残っていれば同じ)。
+// ・100KBを超える結果は置かない(置けないときも、失敗しても、普通に読む)。キーに CODE_VERSION を入れるので、コードを貼り替えると古いキャッシュは使われない。
+var CACHE_TTL_ = 120;
+var CACHE_MAX_CHARS_ = 90000;
+function cached_(name, build) {
+  var c = null, key = '';
+  try {
+    c = CacheService.getScriptCache();
+    key = name + ':' + CODE_VERSION + ':' + (c.get('ver') || '0');
+    var hit = c.get(key);
+    if (hit) return JSON.parse(hit);
+  } catch (e) { c = null; }
+  var v = build();
+  try {
+    if (c) { var str = JSON.stringify(v); if (str.length <= CACHE_MAX_CHARS_) c.put(key, str, CACHE_TTL_); }
+  } catch (e) { /* 置けなくても、結果は返す */ }
+  return v;
+}
+function cacheBump_() {
+  try { CacheService.getScriptCache().put('ver', String(Date.now()), 21600); } catch (e) { /* 失敗しても、キャッシュは最大120秒で切れる */ }
+}
+/** 書き込みの操作用: ロックの中で実行し、途中で失敗しても、終わったら必ずキャッシュの世代を進める */
+function writeLocked_(fn) {
+  return withLock_(function () { try { return fn(); } finally { cacheBump_(); } });
+}
+
 /** シート全体を1回の読み込みで、{見出し: 値} の配列にする(起動時用。読み込みの回数を減らして速くする)。map=見出し→列番号 */
 function readAll_(name, headers, optional) {
   var all = sheet_(name).getDataRange().getValues();
@@ -497,9 +533,7 @@ function getInit_() {
     importKeys: activeRows.map(function (r) { return { 積日: r.積日, 車番: r.車番 }; }), // 中止・変更前の行は、重複の判定に使わない
     pastDest: impRows.slice(-PAST_DEST_ROWS).map(function (r) { return { 行先: r.行先, 工事番号: r.工事番号, 現場名: r.現場名 }; }),
     version: CODE_VERSION,
-    senders: readSenders_(),
-    model: getInfo_('Geminiモデル名'),
-    keyOk: getInfo_('APIKEY') !== ''
+    senders: readSenders_()
   };
 }
 
@@ -603,6 +637,7 @@ function commit_(body) {
   try { fileUrl = saveFax_(body, now); } catch (ex) { fileWarn = ex.message; } // 原本の保存に失敗しても、記録は止めない
   rows.forEach(function (r) { writeRow_(imp, IMPORT_HEADERS, null, importObj_(r, now, source, '', fileUrl)); });
   var pairInfo = safePairs_(rows);
+  safeCounts_();
   return { added: rows.length, ops: opCount, fileUrl: fileUrl, fileWarn: fileWarn, pairs: pairInfo };
 }
 
@@ -648,7 +683,50 @@ function updateImport_(body) {
   ['積日', '卸日'].forEach(function (k) { if (obj[k] && !/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(obj[k])) throw new Error(k + 'は 2026/10/20 の形で入力してください。'); });
   writeRow_(imp, IMPORT_HEADERS, row, obj);
   var linked = body.link === true ? applyLink_('import', row, body.before, data) : null;
+  safeCounts_();
   return { ok: true, row: row, linked: linked };
+}
+
+/** 取り込んだFAX(同じ原本=同じ「ファイルURL」の行すべて)を、取込一覧から削除し、Driveの原本をゴミ箱へ移す(2026-10-28、ユーザー指示。差し替えて取り込み直すため)。
+ *  PDFで取り込んだ行を残すルールの、FAX単位の例外。**どのFAXも削除できる**(新規・変更・追加。取消でFAXの行を足したものも)。
+ *  変更前・変更後の組になっている相手の行は、「追加変更」を空欄に戻す(reset。変更前の赤字・取り消し線が消え、最初に取り込んだ状態に戻る)。
+ *  相手の行は、画面が組み合わせ(点数の推定)で決めて送る。ここでは、(1)削除する行ではない (2)画面が見ていた値と今の値が同じ (3)今の「追加変更」が変更前・変更後 を確かめてから書く。
+ *  画面が見ている行(rows)と、シートの今の行が違えば、何も変えずに止める。行は deleteRow で詰める(空欄の行は残さない)。
+ *  車両運転手情報の行は消さない(他のFAXでも使う車・運転手の可能性があるため)。輸送回数は数え直す。原本のゴミ箱への移動に失敗しても、記録の削除は済ませて、fileWarn で知らせる。 */
+function deleteFax_(body) {
+  var url = String(body.fileUrl || '').trim();
+  if (!url) throw new Error('原本のURLがありません。この記録は、削除できません。');
+  var imp = sheet_(SHEET_IMPORT);
+  var all = readRows_(imp, IMPORT_HEADERS, 2, null, IMPORT_OPTIONAL);
+  var mine = all.filter(function (r) { return r.ファイルURL === url; });
+  if (!mine.length) throw new Error('取込一覧に、この原本の記録が見つかりません。画面を再読み込みしてください。');
+  var sent = (body.rows || []).map(function (x) { return Number(x.row); }).sort(function (a, b) { return a - b; });
+  var now = mine.map(function (r) { return r._row; }).sort(function (a, b) { return a - b; });
+  if (sent.join(',') !== now.join(',')) throw new Error('この原本の記録が他の操作で変更されています。画面を再読み込みしてください。');
+  mine.forEach(function (r) {
+    var b = (body.rows || []).filter(function (x) { return Number(x.row) === r._row; })[0];
+    var bad = sameRecord_(r, b && b.before);
+    if (bad) throw new Error('取込一覧の行(' + r._row + ')が他の操作で変更されています(' + bad + ')。画面を再読み込みしてください。');
+  });
+  var resets = (body.reset || []).map(function (x) { return { row: Number(x.row), before: x.before }; });
+  var byRow = {}; all.forEach(function (r) { byRow[r._row] = r; });
+  resets.forEach(function (x) {
+    var cur = byRow[x.row];
+    if (!cur) throw new Error('元に戻す行(' + x.row + ')が見つかりません。画面を再読み込みしてください。');
+    if (now.indexOf(x.row) >= 0) throw new Error('元に戻す行(' + x.row + ')が、削除する行に含まれています。');
+    var bad = sameRecord_(cur, x.before);
+    if (bad) throw new Error('元に戻す行(' + x.row + ')が他の操作で変更されています(' + bad + ')。画面を再読み込みしてください。');
+    if (cur.追加変更 !== '変更前' && cur.追加変更 !== '変更後') throw new Error('元に戻す行(' + x.row + ')の「追加変更」が、変更前・変更後ではありません。画面を再読み込みしてください。');
+  });
+  resets.forEach(function (x) { writeRow_(imp, IMPORT_HEADERS, x.row, { '追加変更': '' }); }); // 削除より先に書く(行番号が変わる前)
+  now.sort(function (a, b) { return b - a; }).forEach(function (n) { imp.deleteRow(n); }); // 下の行から消す(行番号がずれないように)
+  var fileWarn = '', m = /\/d\/([^\/?]+)/.exec(url);
+  try {
+    if (!m) throw new Error('原本のURLからファイルを特定できませんでした');
+    DriveApp.getFileById(m[1]).setTrashed(true);
+  } catch (ex) { fileWarn = String(ex && ex.message || ex); }
+  safeCounts_();
+  return { deleted: now.length, reset: resets.length, fileWarn: fileWarn };
 }
 
 /** items: [{mode:'mark', row, label:'変更前'|'中止', before, note}, {mode:'add', data, label}]。
@@ -690,6 +768,7 @@ function applyChanges_(body) {
     n.added++;
   });
   var pairInfo = safePairs_(items.filter(function (it) { return it.mode === 'add' && INACTIVE_LABELS.indexOf(it.label) < 0; }).map(function (it) { return it.data; })); // 「中止」の行は、組み合わせを追加しない
+  safeCounts_();
   return { marked: n.marked, added: n.added, ops: opCount, fileUrl: fileUrl, fileWarn: fileWarn, pairs: pairInfo };
 }
 
@@ -840,6 +919,44 @@ function addSenderNote_(row, r) {
   return true;
 }
 
+/** 車両運転手情報の「輸送回数」列を、取込一覧から数え直して書く(2026-10-27、ユーザー指示)。
+ *  数え方: 氏名ごとに合算(同じ運転手が複数の車・車種に乗っても、その行すべてに同じ合計)。「変更前」「中止」の行は数えない。
+ *  氏名が空の行は携帯番号で数える。毎回全体を数え直すので、取込・変更・編集・削除のどの操作のあとでも同じ結果になる(加算の取りこぼし・二重加算が起きない)。
+ *  見出し「輸送回数」の列が無ければ何もしない。値が変わった行だけ書く。 */
+function transportKey_(r) {
+  var n = compact_(r.氏名);
+  if (n) return 'n:' + n;
+  var p = phoneDigits_(r.携帯番号);
+  return p ? 'p:' + p : '';
+}
+function syncTransportCounts_() {
+  var sh = sheet_(SHEET_MERGED);
+  var col = headerMap_(sh, [])[COUNT_HEADER];
+  var last = sh.getLastRow();
+  if (!col || last < 2) return { updated: 0 };
+  var counts = {};
+  readRows_(sheet_(SHEET_IMPORT), IMPORT_HEADERS, 2, null, IMPORT_OPTIONAL).forEach(function (r) {
+    if (INACTIVE_LABELS.indexOf(r.追加変更) >= 0) return;
+    var k = transportKey_(r);
+    if (k) counts[k] = (counts[k] || 0) + 1;
+  });
+  var rows = readRows_(sh, MERGED_HEADERS, 2, last, []);
+  var rng = sh.getRange(2, col, last - 1, 1);
+  var cur = rng.getValues();
+  var next = cur.map(function (c) { return [c[0]]; });
+  var updated = 0;
+  rows.forEach(function (r) {
+    var k = transportKey_(r), n = k ? (counts[k] || 0) : 0, i = r._row - 2;
+    if (String(cur[i][0]) !== String(n)) { next[i][0] = n; updated++; }
+  });
+  if (updated) rng.setValues(next);
+  return { updated: updated };
+}
+/** 輸送回数の書き込みに失敗しても、記録・保存は済んでいるので止めない */
+function safeCounts_() {
+  try { return syncTransportCounts_(); } catch (e) { return { error: String(e && e.message || e) }; }
+}
+
 /** 取込一覧への記録は済んでいるので、組み合わせの追加に失敗しても、記録は取り消さない(失敗は結果に入れて、画面で知らせる) */
 function safePairs_(rowsData) {
   try { var r = ensurePairs_(rowsData); r.ok = true; return r; }
@@ -927,6 +1044,7 @@ function masterSave_(body) {
   applyOp_({ kind: body.kind, mode: body.mode, row: body.row, before: body.before, data: body.data });
   var linked = body.kind === 'pair' && body.mode === 'update' && body.link === true ? applyLink_('pair', body.row, body.before, body.data) : null;
   if (body.kind === 'pair') { try { syncTypeNotes_(mergedRowsNow_()); } catch (e) { /* 失敗しても保存は済んでいる */ } }
+  safeCounts_();
   return { ok: true, linked: linked };
 }
 

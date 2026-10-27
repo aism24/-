@@ -1,4 +1,4 @@
-// 取り込んだFAX(PDF・画像)を、画面の下に大きく表示する。ホイールでズーム、ドラッグで上下左右に移動。
+// 取り込んだFAX(PDF・画像)を、画面の下に大きく表示する。最初は原本の全体が見える大きさ(100%)。そこからホイールでズーム、ドラッグで上下左右に移動。
 // PDFの描画には pdf.js(無料。CDNから必要になったときだけ読み込む)を使う。読み込めないときは、ブラウザ標準のPDF表示に切り替える。
 (function (root) {
   'use strict';
@@ -29,25 +29,29 @@
     var msg = el('div', 'viewer-msg', '原本を読み込んでいます…');
     box.appendChild(stage); box.appendChild(msg); box.appendChild(bar);
     stage.style.width = STAGE_W + 'px';
-    var scale = 1, tx = 0, ty = 0, fitScale = 1;
+    var scale = 1, tx = 0, ty = 0, fitScale = 1, zoomed = false; // zoomed: ユーザーが拡大・縮小・移動したか(していなければ、表示の大きさが変わったとき、全体表示に合わせ直す)
 
     function apply() {
       stage.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')';
       label.textContent = Math.round(scale / fitScale * 100) + '%';
     }
+    /** 全体表示(=100%): 原本の1ページ目が、横も縦も枠に収まる大きさにして、横は中央・縦は上にそろえる(2026-10-28、ユーザー指示。旧: 幅に合わせるだけで、縦長の原本は下が切れた)。そこからホイールで拡大・縮小する。 */
     function fit() {
-      fitScale = scale = Math.max(0.1, (box.clientWidth || STAGE_W) / STAGE_W);
-      tx = 0; ty = 0; apply();
+      var bw = box.clientWidth || STAGE_W, bh = box.clientHeight || 0;
+      var first = stage.firstElementChild, ph = first ? (first.offsetHeight || 0) : 0; // 複数ページのPDFは、1ページ目が収まる大きさ(2ページ目以降は、下へ移動して見る)
+      var sw = bw / STAGE_W, sh = bh && ph ? bh / ph : sw;
+      fitScale = scale = Math.max(0.1, Math.min(sw, sh));
+      tx = Math.max(0, (bw - STAGE_W * scale) / 2); ty = 0; zoomed = false; apply();
     }
     function zoomAt(factor, cx, cy) {
       var ns = Math.min(fitScale * 8, Math.max(fitScale * 0.3, scale * factor)), r = ns / scale;
-      tx = cx - (cx - tx) * r; ty = cy - (cy - ty) * r; scale = ns; apply();
+      tx = cx - (cx - tx) * r; ty = cy - (cy - ty) * r; scale = ns; zoomed = true; apply();
     }
     function btn(text, title, fn) { var b = el('button', 'btn sm', text); b.type = 'button'; b.title = title; b.addEventListener('click', fn); return b; }
     bar.appendChild(btn('−', '縮小', function () { zoomAt(1 / 1.3, box.clientWidth / 2, box.clientHeight / 2); }));
     bar.appendChild(label);
     bar.appendChild(btn('＋', '拡大', function () { zoomAt(1.3, box.clientWidth / 2, box.clientHeight / 2); }));
-    bar.appendChild(btn('全体表示', '幅に合わせる', fit));
+    bar.appendChild(btn('全体表示', '原本の全体が見える大きさに戻す(100%)', fit));
     if (opts && opts.onRotate) {
       bar.appendChild(btn('↺ 左に90°', '原本を左に90°回す(保存する原本も回る)', function () { opts.onRotate(-90); }));
       bar.appendChild(btn('↻ 右に90°', '原本を右に90°回す(保存する原本も回る)', function () { opts.onRotate(90); }));
@@ -64,12 +68,15 @@
       drag = { x: e.clientX, y: e.clientY, tx: tx, ty: ty };
       box.setPointerCapture(e.pointerId); box.classList.add('grabbing');
     });
-    box.addEventListener('pointermove', function (e) { if (!drag) return; tx = drag.tx + e.clientX - drag.x; ty = drag.ty + e.clientY - drag.y; apply(); });
+    box.addEventListener('pointermove', function (e) { if (!drag) return; tx = drag.tx + e.clientX - drag.x; ty = drag.ty + e.clientY - drag.y; zoomed = true; apply(); });
     function end() { drag = null; box.classList.remove('grabbing'); }
     box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
     box.addEventListener('dblclick', function (e) { if (!e.target.closest('.viewer-bar')) fit(); });
 
-    function done() { msg.remove(); fit(); }
+    function done() {
+      msg.remove(); fit();
+      if (typeof ResizeObserver === 'function') new ResizeObserver(function () { if (!zoomed && stage.firstElementChild) fit(); }).observe(box); // 枠の大きさが変わった(画面の大きさの変更・表に出した)とき、まだ拡大・移動していなければ、全体表示に合わせ直す
+    }
     function fallback(why) {
       stage.textContent = ''; bar.remove();
       msg.textContent = '原本を拡大表示できないため、ブラウザの表示に切り替えました(' + why + ')';

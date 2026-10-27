@@ -58,7 +58,7 @@ button.btn.del { background: #c62828; border-color: #8e1c1c; color: #fff; font-w
 dialog.dlg { border: 1px solid var(--line); border-radius: 10px; padding: 20px 24px; background: var(--card); color: var(--ink); max-width: min(92vw, 460px); box-shadow: 0 8px 30px rgba(0,0,0,.3); }
 dialog.dlg::backdrop { background: rgba(0,0,0,.4); }
 .dlg-title { margin: 0 0 8px; font-weight: 700; font-size: 16px; }
-.dlg-detail { margin: 0 0 16px; word-break: break-all; }
+.dlg-detail { margin: 0 0 16px; word-break: break-all; white-space: pre-line; } /* 文中の改行(\n)をそのまま改行にする */
 .dlg-btns { display: flex; justify-content: flex-end; gap: 10px; }
 button.btn:disabled { opacity: .45; cursor: not-allowed; }
 button.sm { padding: 2px 8px; font-size: 12px; }
@@ -74,6 +74,7 @@ code { background: var(--th); padding: 1px 5px; border-radius: 4px; }
   .top { grid-template-columns: 1fr; justify-items: center; gap: 6px; }
   .top h1, .brand, .tabs { grid-column: 1; grid-row: auto; justify-self: center; text-align: center; }
   .top h1 { order: 1; } .brand { order: 2; } .tabs { order: 3; justify-self: center; }
+  .brand { flex-wrap: wrap; justify-content: center; } /* 狭い画面で、会社名の右の「← アプリ一覧へ」が出ても、横にはみ出さず折り返す(2026-10-28) */
 }
 @media (max-width: 600px) { main { padding: 10px; } }
 @media print { .tabs, .drop, .foot { display: none; } }
@@ -81,10 +82,13 @@ code { background: var(--th); padding: 1px 5px; border-radius: 4px; }
 
 .req-btn { font: inherit; font-weight: 700; padding: 6px 12px; margin-right: 6px; border-radius: 6px; border: 2px solid #ff4da6; background: #ffd9ea; color: #7a0f45; cursor: pointer; white-space: nowrap; box-shadow: 0 0 6px 2px rgba(255,77,166,.85), 0 0 14px 4px rgba(255,77,166,.45); } /* 追加変更依頼: 背景ピンク・縁が光りっぱなし(2026-10-26、ユーザー指示) */
 .req-btn:hover { background: #ffc4e0; }
+dialog.dlg.req-form { background: #ffe6f1; max-width: min(96vw, 760px); width: min(96vw, 760px); } /* AIに変更指示: 薄いピンク背景・説明が1行に入る幅(2026-10-27、ユーザー指示) */
+.req-form .dlg-title { text-align: center; font-size: 24px; color: #e0157f; font-weight: 700; }
+.req-form .dlg-detail { word-break: normal; text-align: center; }
 .req-form label.f { display: block; margin: 10px 0 2px; font-weight: 600; font-size: 13px; }
 .req-form .opt { display: block; margin: 4px 0; }
 .req-form select, .req-form textarea, .req-form input[type=text] { width: 100%; box-sizing: border-box; font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
-.req-form textarea { min-height: 120px; resize: vertical; }
+.req-form textarea { min-height: 200px; resize: vertical; }
 .req-form .note { font-size: 12px; color: var(--sub); margin: 2px 0 0; }
 .req-form .bad { color: var(--err); font-weight: 600; margin: 8px 0 0; }
 .kindbox { font-size: 12px; color: var(--sub); display: inline-flex; align-items: center; gap: 4px; }
@@ -181,6 +185,8 @@ table.t th.fit, table.t td.fit { width: 1%; }
 .scroll.fitcols table.t th, .scroll.fitcols table.t td { padding: 3px 8px; }
 .scroll.fitcols table.t th.c, .scroll.fitcols table.t td.c { text-align: center; }
 tr.before td { color: #d32f2f; text-decoration: line-through; } /* 取込一覧の「変更前」の行 */
+tr.before td .chg-arrow { display: inline-block; text-decoration: none; vertical-align: -0.1em; color: #7b1fa2; } tr.before td .chg-arrow svg { overflow: visible; } /* 変更前の行で、変更後に変わった項目の矢印 */
+tr.after-row td.chg { background: #ffe4e4; color: #b71c1c; font-weight: 800; } /* 変更後の行で、変わった項目 */
 .faxview .viewer { margin-top: 8px; height: calc(100vh - 280px); min-height: 340px; }
 .faxrows { max-height: 28vh; }
 table.t tbody tr.hit td { background: #d6ecff; }
@@ -200,8 +206,8 @@ table.t tbody tr.hit td { background: #d6ecff; }
 .impfile .faxrows td.c select { text-align: center; text-align-last: center; }
 .faxpane { margin-top: 10px; padding: 10px 12px 12px; background: var(--card); border-radius: 8px; }
 .faxpane-head { display: flex; align-items: center; gap: 10px; }
-button.btn.back-list { background: #c62828; border-color: #8e1c1c; color: #fff; font-weight: 700; } /* 「すべての行に戻す」「画像を閉じる」(同じ働き)は、背景赤・白の太字 */
-button.btn.back-list:hover { background: #a31f1f; }
+button.btn.back-list { background: #ffe600; border-color: #b8a400; color: #c62828; font-weight: 800; } /* 「すべての行に戻す」「画像を閉じる」(同じ働き)は、背景黄色・赤太文字(2026-10-28、ユーザー指示。旧: 背景赤・白文字) */
+button.btn.back-list:hover { background: #ffd400; }
 .faxdlg-status.ok { color: #1a7a2e; }
 .faxdlg-status.err { color: #c0281c; }
 
@@ -226,3 +232,35 @@ table.t.pairs td.dual { color: #c00000; font-weight: 800; } /* 備考に手配�
 /* 取込一覧: 表の中だけをスクロール(上の絞り込み・ボタンの行と、表の見出しは動かない。高さは fitListHeight) */
 .scroll.listbox { overflow: auto; }
 .scroll.listbox table.t thead th { z-index: 1; box-shadow: inset 0 -1px 0 var(--line); }
+
+/* 取込一覧の見出しのフィルタ(2026-10-28) */
+table.t thead th.flt { cursor: pointer; user-select: none; }
+table.t thead th.flt:hover { background: #e8eefc; }
+table.t thead th.flt .arr { margin-left: 4px; font-size: 10px; color: var(--sub); }
+table.t thead th.flt.on { background: #ffe0e0; color: #c62828; }
+table.t thead th.flt.on .arr { color: #c62828; }
+button.btn.reset { background: #ffe600; border-color: #b8a400; color: #222; font-weight: 700; }
+.flt-pop { position: fixed; z-index: 1000; width: 270px; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.25); padding: 10px; }
+.flt-pop .flt-title { font-weight: 700; margin-bottom: 6px; }
+.flt-pop input[type=search] { width: 100%; box-sizing: border-box; font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
+.flt-pop .flt-links { display: flex; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+.flt-pop .flt-list { overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.flt-pop .flt-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; white-space: nowrap; }
+.flt-pop .flt-item[hidden] { display: none; }
+.flt-pop .flt-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+/* 「このFAXを削除して取り込み直す」: 縁が、白ではなく光る金色でゆっくり点滅する(2026-10-28、ユーザー指示)。押せないとき・動きを減らす設定のときは、点滅せず金色の縁だけ */
+button.btn.del.faxdel { border-color: #b8860b; box-shadow: 0 0 0 2px #ffd700, 0 0 8px 2px rgba(255, 215, 0, .7); animation: faxdel-glow 2.6s ease-in-out infinite; }
+button.btn.del.faxdel:disabled { animation: none; box-shadow: 0 0 0 2px #d9c36a; }
+@keyframes faxdel-glow {
+  0%, 100% { box-shadow: 0 0 0 2px #c9a227, 0 0 3px 0 rgba(255, 215, 0, .25); }
+  50% { box-shadow: 0 0 0 2px #ffe27a, 0 0 14px 5px rgba(255, 215, 0, .95); }
+}
+@media (prefers-reduced-motion: reduce) { button.btn.del.faxdel { animation: none; } }
+
+/* FAX削除の確認ポップアップ: 文字・ボタン・幅・余白を1.5倍、タイトルは中央揃え(2026-10-28、ユーザー指示) */
+dialog.dlg.big { font-size: 150%; max-width: min(94vw, 690px); padding: 30px 36px; border-radius: 15px; }
+dialog.dlg.big .dlg-title { font-size: 24px; text-align: center; margin: 0 0 12px; }
+dialog.dlg.big .dlg-detail { margin: 0 0 24px; }
+dialog.dlg.big .dlg-btns { gap: 15px; }
+dialog.dlg.big button.btn { padding: 9px 21px; border-radius: 9px; }

@@ -3,6 +3,7 @@
  *   in         … target要素の先頭にボタンを入れる
  *   before     … target要素の直前に入れる
  *   beforePrev … target要素の直前の兄弟がロゴ(img/svg/小さいdiv)ならその前、違えばtargetの直前に入れる
+ *   after      … target要素の直後(右側)に入れる(truck-fax。会社名の右側。2026-10-28)
  * 正本は docs/to-launcher/to-launcher.js。各アプリのフォルダへ同じファイルをコピーして使う(Vercelはフォルダ単位で配信するため)。
  * - 背景が暗いアプリ: 明るいボタン+濃い文字+金色の光 / 明るいアプリ: 暗いボタン+明るい文字+濃い赤・ピンクの光
  * - 背景色(7秒周期)と文字色(3秒周期)は別のリズムで変化。どの組み合わせもコントラスト比6.7以上
@@ -24,6 +25,7 @@
     'animation:to-launcher-bg 7s linear infinite,to-launcher-fg-dark 3s linear infinite,to-launcher-glow 1.8s ease-in-out infinite}',
     '.to-launcher.on-light{--glow:220,20,90;--glow-edge:#e0145a;--bg0:#8f0c2b;--bg1:#163a8a;--bg2:#085233;--bg3:#4d1d85;--bg4:#7a3800;color:#fff;background:#8f0c2b;',
     'animation-name:to-launcher-bg,to-launcher-fg,to-launcher-glow}',
+    '.to-launcher.after{margin:0 0 0 4px!important}',
     '.to-launcher:hover{filter:brightness(1.15)}',
     '.to-launcher:focus-visible{outline:3px solid #fff;outline-offset:2px}',
     '@keyframes to-launcher-bg{0%,100%{background-color:var(--bg0,#ffd54a)}20%{background-color:var(--bg1,#8fe3ff)}40%{background-color:var(--bg2,#ffb3d1)}60%{background-color:var(--bg3,#b8f5c0)}80%{background-color:var(--bg4,#d9c2ff)}}',
@@ -98,7 +100,8 @@
       var pv = el.previousElementSibling;
       var logo = pv && /^(img|svg|div)$/i.test(pv.tagName) && pv.getBoundingClientRect().width < 250;
       el.parentNode.insertBefore(a, logo ? pv : el);
-    } else el.parentNode.insertBefore(a, el);
+    } else if (MODE === 'after') { a.classList.add('after'); el.parentNode.insertBefore(a, el.nextSibling); }
+    else el.parentNode.insertBefore(a, el);
     colorize(a);
     return true;
   }
