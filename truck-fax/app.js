@@ -39,7 +39,7 @@
   var MAX_BYTES = 10 * 1024 * 1024;
 
   var S = { initSeq: 0, reloadP: null, senders: [], vehicles: [], drivers: [], pairs: [], projects: [], importKeyList: [], destMap: {}, cards: [], importsFile: null, tab: 'import',
-    imports: null, importsFy: null, importsCm: null, importsSite: 'all', editing: null };
+    imports: null, importsFy: null, importsCm: null, importsF: {}, editing: null };
   var seq = 0;
 
   // ---------- 小物 ----------
@@ -756,16 +756,12 @@
     var undated = cl.filter(function (c) { return !c; }).length;
     var fys = {}; cl.forEach(function (c) { if (c) fys[c.fy] = 1; }); if (S.importsFy !== 'all') fys[S.importsFy] = 1;
     var fyList = Object.keys(fys).sort(function (a, b) { return b - a; });
-    var rows = S.imports.filter(function (r, i) {
+    var baseRows = S.imports.filter(function (r, i) { // 年度・締め月で絞る
       var c = cl[i];
       if (S.importsFy !== 'all' && !(c && String(c.fy) === S.importsFy)) return false;
-      if (S.importsCm !== 'all' && !(c && String(c.cm) === S.importsCm)) return false;
-      return S.importsSite === 'all' || r.現場名 === S.importsSite;
+      return S.importsCm === 'all' || !!(c && String(c.cm) === S.importsCm);
     });
-    var sites = {}; sites[OTHER] = 1; // 現場名リスト: 「その他」、情報シートの工事名、取込一覧にある現場名
-    S.projects.forEach(function (p) { if (p.工事名) sites[p.工事名] = 1; });
-    S.imports.forEach(function (r) { if (r.現場名) sites[r.現場名] = 1; });
-    var siteList = Object.keys(sites).sort(function (a, b) { return a.localeCompare(b, 'ja'); });
+    var rows = colFiltered(baseRows, null); // 見出しのフィルタ(現場名・手配業者・運送業者・氏名)で絞る。変更前・変更後の組は、片方が合えば両方出す
     function sel(label, value, opts, onchange) {
       var s = h('select', { 'aria-label': label }, opts.map(function (o) { return h('option', { value: o[0], text: o[1] }); }));
       s.value = value; s.addEventListener('change', function () { onchange(s.value); renderImports(); });
@@ -787,15 +783,17 @@
     prevBtn.update(S.importsFy, S.importsCm, haveCl); nextBtn.update(S.importsFy, S.importsCm, haveCl);
     var cmNav = h('span', { class: 'cm-nav' }, prevBtn, cmSel, nextBtn);
     requestAnimationFrame(function () { fitSelect(fySel); fitSelect(cmSel); }); // 年度・締め月のリストの幅を、選んでいる文字に合わせる(左右の空白を同じに)
-    var siteSel = sel('現場名', S.importsSite, [['all', '全て(現場名)']].concat(siteList.map(function (n) { return [n, n]; })), function (v) { S.importsSite = v; });
     var shown = L.sortImportRows(rows.slice(0, IMPORTS_SHOW)); // 新しい100件を、ファイルごと・卸日の早い順に並べる
     var cnt = 'ファイルごと・卸日の早い順・該当' + rows.length + '件のうち最新' + shown.length + '件を表示(最大' + IMPORTS_SHOW + '件)' + (undated && (S.importsFy !== 'all' || S.importsCm !== 'all') ? ' ・ 日付のない' + undated + '件は「すべて」で表示' : '');
+    var fsum = FILTER_COLS.filter(function (k) { return S.importsF[k]; }).map(function (k) { return k + ' ' + Object.keys(S.importsF[k]).length + '件選択'; });
+    if (fsum.length) cnt += ' ・ フィルタ: ' + fsum.join('、');
     var wrap = h('div', { class: 'imp-wrap' }); host.appendChild(wrap); // 上の絞り込み・ボタンの行と表を、表の幅に合わせて中央に置く
-    wrap.appendChild(h('div', { class: 'tool' }, fySel, cmNav, siteSel, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; S.importsP = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
+    wrap.appendChild(h('div', { class: 'tool' }, fySel, cmNav, h('button', { class: 'btn sm', type: 'button', text: '再読み込み', onclick: function () { S.imports = null; S.importsP = null; renderImports(); } }), h('span', { class: 'sub', text: cnt }), h('span', { class: 'spacer' }),
+      h('button', { class: 'btn reset', type: 'button', text: 'リセット', title: '年度・締め月・見出しのフィルタを、開いた直後の状態に戻します', onclick: resetImportsView }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '全件ダウンロード', onclick: downloadAllImports }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '締め月ダウンロード', onclick: openClosingDownload }), ' ',
       h('button', { class: 'btn excel', type: 'button', text: '積日指定でダウンロード', onclick: openDateDownload })));
-    var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(h('th', { class: 'c', text: k })); }); // 見出しは、どの列も中央揃え(2026-10-23、ユーザー指示)。「操作」の列は無い(行を押すと編集できる)
+    var head = h('tr'); TABLE_HEADERS.forEach(function (k) { head.appendChild(filterHead(k, baseRows)); }); // 見出しは、どの列も中央揃え(2026-10-23、ユーザー指示)。「操作」の列は無い(行を押すと編集できる)
     var body = h('tbody');
     var pairs = L.pairBeforeAfter(shown); // 変更前→変更後の組み合わせ(変わった項目に矢印・色を付ける)
     shown.forEach(function (r) { body.appendChild(importRow(r, pairs[r._row])); });
@@ -813,6 +811,86 @@
       }
     });
     TruckViewer.preload(); prefetchFaxes(shown); // 原本をすぐ開けるよう、pdf.js と表の上の原本を先に読む
+  }
+
+  // ---------- 取込一覧の見出しのフィルタ(2026-10-28、ユーザー指示) ----------
+  // 現場名・手配業者・運送業者・氏名の見出しを左クリックすると、その列の値のリストが開き、チェックした値の行だけを出す。複数の列は「かつ」。
+  // 値のリストには、年度・締め月と「他の列のフィルタ」で絞った行にある値だけを出す(Excelと同じ)。上の現場名のリストは、この仕組みに統合して廃止した。
+  // 「リセット」で、年度・締め月・フィルタを開いた直後の状態に戻す。ダウンロード(全件・締め月・積日指定)は、フィルタの影響を受けない。
+  var FILTER_COLS = ['現場名', '手配業者', '運送業者', '氏名'];
+  var FILTER_EMPTY = '(空欄)';
+  function fval(r, k) { var v = String(r[k] == null ? '' : r[k]).trim(); return v || FILTER_EMPTY; }
+  /** rows を、見出しのフィルタで絞る(except の列は除く)。except===null のとき(表に出す行)は、変更前・変更後の組の相手も一緒に出す */
+  function colFiltered(rows, except) {
+    var act = FILTER_COLS.filter(function (k) { return k !== except && S.importsF[k]; });
+    if (!act.length) return rows;
+    function ok(r) { return act.every(function (k) { return S.importsF[k][fval(r, k)]; }); }
+    var hit = {};
+    rows.forEach(function (r) { if (ok(r)) hit[r._row] = true; });
+    if (except === null) {
+      var pairs = L.pairBeforeAfter(rows);
+      Object.keys(hit).forEach(function (row) { var p = pairs[row]; if (p && p.partner) hit[p.partner._row] = true; });
+    }
+    return rows.filter(function (r) { return hit[r._row]; });
+  }
+  function closeFilterPop() { var o = document.querySelector('.flt-pop'); if (o) o.remove(); }
+  document.addEventListener('mousedown', function (e) { if (!e.target.closest('.flt-pop') && !e.target.closest('th.flt')) closeFilterPop(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeFilterPop(); });
+  /** 見出し。フィルタの列は、押せる(▼。条件があるときは赤い▼+背景色) */
+  function filterHead(k, baseRows) {
+    if (FILTER_COLS.indexOf(k) < 0) return h('th', { class: 'c', text: k });
+    var on = !!S.importsF[k];
+    var th = h('th', { class: 'c flt' + (on ? ' on' : ''), title: on ? k + ': ' + Object.keys(S.importsF[k]).length + '件を選択中(クリックで変更)' : k + 'で絞り込む' }, k, h('span', { class: 'arr', text: '▼' }));
+    th.addEventListener('click', function (e) { e.stopPropagation(); var open = document.querySelector('.flt-pop'); var same = open && open.getAttribute('data-col') === k; closeFilterPop(); if (!same) openFilterPop(k, th, baseRows); });
+    return th;
+  }
+  function openFilterPop(k, th, baseRows) {
+    var avail = {}; // この列の値(他の列のフィルタで絞った行にあるもの)。選んでいる値は、無くても残す
+    colFiltered(baseRows, k).forEach(function (r) { avail[fval(r, k)] = 1; });
+    var cur = S.importsF[k];
+    if (cur) Object.keys(cur).forEach(function (v) { avail[v] = 1; });
+    var vals = Object.keys(avail).sort(function (a, b) {
+      if (a === FILTER_EMPTY || b === FILTER_EMPTY) return a === FILTER_EMPTY ? 1 : -1;
+      if (k === '手配業者') return L.senderRank(a) - L.senderRank(b) || a.localeCompare(b, 'ja');
+      return a.localeCompare(b, 'ja');
+    });
+    var checks = {}; vals.forEach(function (v) { checks[v] = cur ? !!cur[v] : true; });
+    var search = h('input', { type: 'search', placeholder: '検索', 'aria-label': k + 'の値を検索' });
+    var list = h('div', { class: 'flt-list' });
+    var items = vals.map(function (v) {
+      var cb = h('input', { type: 'checkbox' }); cb.checked = checks[v];
+      cb.addEventListener('change', function () { checks[v] = cb.checked; });
+      return { v: v, cb: cb, row: h('label', { class: 'flt-item' }, cb, h('span', { text: v })) };
+    });
+    items.forEach(function (it) { list.appendChild(it.row); });
+    function visible() { return items.filter(function (it) { return !it.row.hidden; }); }
+    search.addEventListener('input', function () { var q = L.nameKey(search.value); items.forEach(function (it) { it.row.hidden = !!q && L.nameKey(it.v).indexOf(q) < 0; }); });
+    function setVisible(on) { visible().forEach(function (it) { it.cb.checked = on; checks[it.v] = on; }); }
+    var pop = h('div', { class: 'flt-pop', 'data-col': k },
+      h('div', { class: 'flt-title', text: k + 'で絞り込む' }), search,
+      h('div', { class: 'flt-links' },
+        h('button', { class: 'btn sm', type: 'button', text: '表示中をすべて選択', onclick: function () { setVisible(true); } }),
+        h('button', { class: 'btn sm', type: 'button', text: '表示中をすべて解除', onclick: function () { setVisible(false); } })),
+      list,
+      h('div', { class: 'flt-btns' },
+        h('button', { class: 'btn', type: 'button', text: 'キャンセル', onclick: closeFilterPop }),
+        h('button', { class: 'btn primary', type: 'button', text: 'OK', onclick: function () {
+          var picked = {}; vals.forEach(function (v) { if (checks[v]) picked[v] = true; });
+          S.importsF[k] = Object.keys(picked).length === vals.length ? null : picked; // 全部選んだ=条件なし
+          closeFilterPop(); renderImports();
+        } })));
+    document.body.appendChild(pop);
+    var r = th.getBoundingClientRect();
+    pop.style.top = Math.min(r.bottom + 2, window.innerHeight - 120) + 'px';
+    pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+    var maxH = window.innerHeight - r.bottom - 150; list.style.maxHeight = Math.max(120, Math.min(300, maxH)) + 'px';
+    search.focus();
+  }
+  /** 「リセット」: 年度・締め月・見出しのフィルタを、取込一覧を開いた直後の状態に戻す */
+  function resetImportsView() {
+    closeFilterPop();
+    S.importsFy = null; S.importsCm = null; S.importsF = {}; // 年度・締め月は、renderImports が本日のものに戻す
+    renderImports();
   }
 
   /** リストの幅を、選んでいる項目の文字の幅+左右同じ余白+▼の幅にする(長い項目「すべての締め月」に引っぱられて、広くなりすぎないように) */

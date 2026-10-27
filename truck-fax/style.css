@@ -231,3 +231,19 @@ table.t.pairs td.dual { color: #c00000; font-weight: 800; } /* 備考に手配�
 /* 取込一覧: 表の中だけをスクロール(上の絞り込み・ボタンの行と、表の見出しは動かない。高さは fitListHeight) */
 .scroll.listbox { overflow: auto; }
 .scroll.listbox table.t thead th { z-index: 1; box-shadow: inset 0 -1px 0 var(--line); }
+
+/* 取込一覧の見出しのフィルタ(2026-10-28) */
+table.t thead th.flt { cursor: pointer; user-select: none; }
+table.t thead th.flt:hover { background: #e8eefc; }
+table.t thead th.flt .arr { margin-left: 4px; font-size: 10px; color: var(--sub); }
+table.t thead th.flt.on { background: #ffe0e0; color: #c62828; }
+table.t thead th.flt.on .arr { color: #c62828; }
+button.btn.reset { background: #ffe600; border-color: #b8a400; color: #222; font-weight: 700; }
+.flt-pop { position: fixed; z-index: 1000; width: 270px; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.25); padding: 10px; }
+.flt-pop .flt-title { font-weight: 700; margin-bottom: 6px; }
+.flt-pop input[type=search] { width: 100%; box-sizing: border-box; font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); }
+.flt-pop .flt-links { display: flex; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+.flt-pop .flt-list { overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.flt-pop .flt-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; white-space: nowrap; }
+.flt-pop .flt-item[hidden] { display: none; }
+.flt-pop .flt-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
