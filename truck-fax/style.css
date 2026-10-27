@@ -74,6 +74,7 @@ code { background: var(--th); padding: 1px 5px; border-radius: 4px; }
   .top { grid-template-columns: 1fr; justify-items: center; gap: 6px; }
   .top h1, .brand, .tabs { grid-column: 1; grid-row: auto; justify-self: center; text-align: center; }
   .top h1 { order: 1; } .brand { order: 2; } .tabs { order: 3; justify-self: center; }
+  .brand { flex-wrap: wrap; justify-content: center; } /* 狭い画面で、会社名の右の「← アプリ一覧へ」が出ても、横にはみ出さず折り返す(2026-10-28) */
 }
 @media (max-width: 600px) { main { padding: 10px; } }
 @media print { .tabs, .drop, .foot { display: none; } }
