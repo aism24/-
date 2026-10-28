@@ -173,8 +173,16 @@
         var cs = [], im = await numberImage();
         if (im) { try { cs.push((await call('number', im.r, true)).text); } catch (e) { /* 読み直しに失敗しても、場所探しの値で続ける */ } }
         if (loc.drawingNumber) cs.push(loc.drawingNumber);
-        cs = cs.filter(Boolean);
-        return (numRead = { z: cs.filter(function (t) { return byZ[fold(t)]; })[0], show: cs[0] || '' });
+        // どれもマスタに無いときだけ、右下の隅を広めに切り出して読み直す(図面番号が「WR」だけなど途中までしか読めないことがあるため)
+        if (!cs.some(function (t) { return byZ[fold(t)]; })) {
+          try {
+            var v = page.getViewport({ scale: 1 }), sc = CORNER_SIDE / (v.width * 0.5);
+            var cn = await call('locate', await renderRegion(page, sc, v.width * sc * 0.5, v.height * sc * 0.8, v.width * sc * 0.5, v.height * sc * 0.2));
+            if (cn.drawingNumber) cs.push(cn.drawingNumber);
+          } catch (e) { /* 読み直しに失敗しても、ここまでの値で続ける */ }
+        }
+        cs = cs.filter(function (t, i) { return t && cs.indexOf(t) === i; });
+        return (numRead = { z: cs.filter(function (t) { return byZ[fold(t)]; })[0], show: cs.join(' / ') });
       }
 
       // 速い道: 全体画像の1回の読み取りで、図面番号がマスタにあり、製品表のセルがその図番の製品名と一致すればそこで確定する(Geminiの呼び出し1回)。
