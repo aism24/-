@@ -1,7 +1,7 @@
 // 血液検査記録: スプレッドシートにバインドしたGAS
 //  setup()  … シート整備(記録・項目マスタ)と、PDF(R6〜R8)の結果の記録。エディタから1回だけ実行する
 //  doGet/doPost … 記録の追加・一覧(撮影アプリ用)
-var CODE_VERSION = '2026-10-27-2';
+var CODE_VERSION = '2026-10-28-1';
 var SHEET_RECORD = '記録';
 var SHEET_MASTER = '項目マスタ';
 var HEADERS = ['検査日', '到着時間', '区分', '項目名', '値', '定性', '単位', '基準下限', '基準上限', '判定', '備考', '元ファイル', 'ページ', '登録日時'];
@@ -158,6 +158,7 @@ function doPost(e) {
     if (req.action === 'ping') return json_({ ok: true, version: CODE_VERSION });
     if (req.action === 'append') return json_(append_(req.rows || []));
     if (req.action === 'list') return json_({ ok: true, rows: list_() });
+    if (req.action === 'all') return json_({ ok: true, rows: list_(), master: master_() });
     return json_({ ok: false, error: 'unknown action: ' + req.action });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
@@ -297,6 +298,17 @@ function list_() {
   return sh.getRange(2, 1, last - 1, HEADERS.length).getValues().map(function (r) {
     var o = {};
     HEADERS.forEach(function (h, i) { o[h] = r[i]; });
+    return o;
+  });
+}
+
+function master_() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_MASTER);
+  var last = sh.getLastRow();
+  if (last < 2) return [];
+  return sh.getRange(2, 1, last - 1, MASTER_HEADERS.length).getValues().map(function (r) {
+    var o = {};
+    MASTER_HEADERS.forEach(function (h, i) { o[h] = r[i]; });
     return o;
   });
 }
