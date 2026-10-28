@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>血液検査記録</title>
+<link rel="stylesheet" href="style.css?v=20261028a">
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>血液検査記録</h1>
+    <div id="sub" class="sub">読み込み中…</div>
+  </div>
+  <button id="reload" class="btn" type="button">更新</button>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="summary" class="on" type="button">サマリー</button>
+  <button data-tab="graph" type="button">グラフ</button>
+  <button data-tab="urine" type="button">検尿</button>
+  <button data-tab="list" type="button">一覧</button>
+</nav>
+
+<main>
+  <div id="msg" class="msg" hidden></div>
+
+  <section id="tab-summary" class="panel"></section>
+
+  <section id="tab-graph" class="panel" hidden>
+    <div class="row">
+      <label>項目
+        <select id="selA"></select>
+      </label>
+      <label>重ねて比較(右軸)
+        <select id="selB"></select>
+      </label>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="row">
+      <div class="seg" id="period">
+        <button data-p="all" class="on" type="button">全期間</button>
+        <button data-p="365" type="button">1年</button>
+        <button data-p="180" type="button">半年</button>
+        <button data-p="90" type="button">3か月</button>
+      </div>
+    </div>
+    <div class="chartbox"><canvas id="chart"></canvas></div>
+    <div id="chartNote" class="note"></div>
+  </section>
+
+  <section id="tab-urine" class="panel" hidden></section>
+
+  <section id="tab-list" class="panel" hidden>
+    <div class="row">
+      <label>検査日
+        <select id="selDate"></select>
+      </label>
+    </div>
+    <div id="listBody"></div>
+  </section>
+</main>
+
+<footer class="foot">判定の「良くなった・悪くなった」は目安です。診断や治療の判断は主治医に確認してください。</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="config.js?v=20261028a"></script>
+<script src="app.js?v=20261028a"></script>
+</body>
+</html>
