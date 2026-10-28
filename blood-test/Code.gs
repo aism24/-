@@ -1,7 +1,7 @@
 // 血液検査記録: スプレッドシートにバインドしたGAS
 //  setup()  … シート整備(記録・項目マスタ)と、PDF(R6〜R8)の結果の記録。エディタから1回だけ実行する
 //  doGet/doPost … 記録の追加・一覧(撮影アプリ用)
-var CODE_VERSION = '2026-10-28-1';
+var CODE_VERSION = '2026-10-28-2';
 var SHEET_RECORD = '記録';
 var SHEET_MASTER = '項目マスタ';
 var HEADERS = ['検査日', '到着時間', '区分', '項目名', '値', '定性', '単位', '基準下限', '基準上限', '判定', '備考', '元ファイル', 'ページ', '登録日時'];
@@ -132,7 +132,7 @@ var DATA = [
   "2025-04-08 08:13 R7.pdf 8 | TP=6.9 Alb=3.7 AG=1.16 CRP=0.07 TBil=0.7 AST=13 ALT=8 ALP=83 GGT=20 LD=141 CK=56 TC=188 HDL=30.4 LDL=129 TG=143 BUN=14.3 Cre=1.32 eGFR=47.14 UA=5.5 Ca=9.2 cCa=9.5 IP=3.4 Mg=2.1 Na=141 K=4.0 Cl=104 sHem=(-) sChy=(+-) sYel=(-) Glu=114 WBC=4.42 RBC=5.44 Hb=15.3 Ht=46.0 MCV=84.6 MCH=28.1 MCHC=33.3 RDWSD=41.1 RDWCV=13.4 PLT=301 PDW=9.7 MPV=8.8 PLCR=15.8 Nn=2.65 Ln=1.27 Mn=0.27 En=0.19 Bn=0.04 Np=60.0 Lp=28.7 Mp=6.1 Ep=4.3 Bp=0.9 uCol=淡黄色 uTurb=(-) SG=1.027 pH=6.5 uPro=15(+-) uGlu=2000(4+) uKet=(-) uOB=(-) uUro=NORMAL uBil=(-) uNit=(-) uLeu=(-) sRBC=<1.0 RBCHPF=<0.2 sWBC=1.5 WBCHPF=0.3 CellN=1.3 CellF=0.2 CastN=<1.00 CastF=<2.90 BactN=<5.0 BactF=<0.9 RBCm=判定なし UTP=20.4 UUN=384.1 UCre=82.37 UUa=31.7 UIP=38.4 UNa=52 UK=25.3 UCl=42 PCR=0.25",
   "2025-03-04 08:37 R7.pdf 9 | TP=6.8 Alb=3.5 AG=1.06 CRP=0.37 TBil=0.5 AST=14 ALT=11 ALP=97 GGT=24 LD=146 CK=47 TC=173 HDL=10.8 LDL=115 TG=236 BUN=18.3 Cre=1.35 eGFR=45.99 UA=5.7 Ca=9.0 cCa=9.2 IP=3.3 Mg=2.1 Na=139 K=4.6 Cl=103 sHem=(-) sChy=(+-) sYel=(-) Glu=109 WBC=5.82 RBC=5.38 Hb=14.6 Ht=45.4 MCV=84.4 MCH=27.1 MCHC=32.2 RDWSD=38.3 RDWCV=12.6 PLT=337 PDW=9.7 MPV=8.6 PLCR=15.1 Nn=3.75 Ln=1.31 Mn=0.51 En=0.22 Bn=0.03 Np=64.4 Lp=22.5 Mp=8.8 Ep=3.8 Bp=0.5 uCol=淡黄色 uTurb=(-) SG=1.027 pH=7.0 uPro=15(+-) uGlu=2000(4+) uKet=(-) uOB=(-) uUro=NORMAL uBil=(-) uNit=(-) uLeu=(-) sRBC=1.9 RBCHPF=0.3 sWBC=<1.0 WBCHPF=<0.2 CellN=<1.0 CellF=<0.2 CastN=<1.00 CastF=<2.90 BactN=<5.0 BactF=<0.9 RBCm=判定なし UTP=29.9 UUN=497.5 UCre=88.91 UUa=46.0 UIP=33.6 UNa=50 UK=40.5 UCl=46 PCR=0.34",
   "2025-02-04 08:23 R7.pdf 10 | TP=7.3 Alb=3.8 AG=1.09 CRP=6.51 TBil=1.0 AST=18 ALT=9 ALP=93 GGT=20 LD=158 CK=66 TC=188 HDL=39.4 LDL=127 TG=108 BUN=14.4 Cre=1.79 eGFR=33.78 UA=5.0 Ca=9.1 cCa=9.3 IP=2.9 Mg=2.3 Na=137 K=4.2 Cl=100 sHem=(-) sChy=(-) sYel=(-) Glu=111 WBC=6.09 RBC=5.28 Hb=14.9 Ht=45.3 MCV=85.8 MCH=28.2 MCHC=32.9 RDWSD=39.3 RDWCV=12.5 PLT=256 PDW=9.7 MPV=9.2 PLCR=18.0 Nn=4.60 Ln=0.93 Mn=0.50 En=0.03 Bn=0.03 Np=75.5 Lp=15.3 Mp=8.2 Ep=0.5 Bp=0.5 uCol=淡黄色 uTurb=(-) SG=1.012 pH=6.5 uPro=15(+-) uGlu=2000(4+) uKet=(-) uOB=(-) uUro=NORMAL uBil=(-) uNit=(-) uLeu=(-) sRBC=3.6 RBCHPF=0.6 sWBC=1.3 WBCHPF=0.2 CellN=1.0 CellF=0.2 CastN=<1.00 CastF=<2.90 BactN=8.1 BactF=1.5 RBCm=判定なし RBCvis=<1/HPF WBCvis=<1/HPF FlatVis=<1/HPF UTP=14.1 UUN=139.4 UCre=42.16 UUa=8.4 UIP=3.7 UNa=<10 UK=8.9 UCl=10 PCR=0.33",
-  "2025-01-07 08:14 R7.pdf 11 | TP=7.1 Alb=4.0 AG=1.29 CRP=0.17 TBil=0.9 AST=14 ALT=9 ALP=82 GGT=22 LD=149 CK=76 BUN=13.8 Cre=1.67 eGFR=36.44 UA=6.4 Ca=9.5 cCa=9.5 IP=3.2 Mg=2.3 Na=140 K=4.2 Cl=102 sHem=(-) sChy=(-) sYel=(-) Glu=115 WBC=5.19 RBC=5.21 Hb=14.5 Ht=44.6 MCV=85.6 MCH=27.8 MCHC=32.5 RDWSD=39.0 RDWCV=12.7 PLT=316 PDW=9.6 MPV=9.0 PLCR=16.3 Nn=3.49 Ln=1.20 Mn=0.32 En=0.14 Bn=0.04 Np=67.2 Lp=23.1 Mp=6.2 Ep=2.7 Bp=0.8 uCol=淡黄色 uTurb=(-) SG=1.017 pH=5.5 uPro=15(+-) uGlu=2000(4+) uKet=(-) uOB=(-) uUro=NORMAL uBil=(-) uNit=(-) uLeu=(-) sRBC=1.5 RBCHPF=0.3 sWBC=1.0 WBCHPF=0.2 CellN=<1.0 CellF=0.2 CastN=<1.00 CastF=<2.90 BactN=<5.0 BactF=<0.9 RBCm=判定なし UTP=22.6 UUN=255.1 UCre=61.34 UUa=27.7 UIP=21.1 UNa=40 UK=18.3 UCl=39 PCR=0.37",
+  "2025-01-07 08:14 R7.pdf 11 | TP=7.1 Alb=4.0 AG=1.29 CRP=0.17 TBil=0.9 AST=14 ALT=9 ALP=82 GGT=22 LD=149 CK=76 BUN=13.8 Cre=1.67 eGFR=36.44 UA=6.4 Ca=9.5 cCa=9.5 IP=3.2 Mg=2.3 Na=140 K=4.2 Cl=102 sHem=(-) sChy=(-) sYel=(-) Glu=115 WBC=5.19 RBC=5.21 Hb=14.5 Ht=44.6 MCV=85.6 MCH=27.8 MCHC=32.5 RDWSD=39.0 RDWCV=12.7 PLT=316 PDW=9.6 MPV=9.0 PLCR=16.3 Nn=3.49 Ln=1.20 Mn=0.32 En=0.14 Bn=0.04 Np=67.2 Lp=23.1 Mp=6.2 Ep=2.7 Bp=0.8 uCol=淡黄色 uTurb=(-) SG=1.017 pH=5.5 uPro=15(+-) uGlu=2000(4+) uKet=(-) uOB=(-) uUro=NORMAL uBil=(-) uNit=(-) uLeu=(-) sRBC=1.5 RBCHPF=0.3 sWBC=1.0 WBCHPF=0.2 CellN=<1.0 CellF=<0.2 CastN=<1.00 CastF=<2.90 BactN=<5.0 BactF=<0.9 RBCm=判定なし UTP=22.6 UUN=255.1 UCre=61.34 UUa=27.7 UIP=21.1 UNa=40 UK=18.3 UCl=39 PCR=0.37",
   "2024-12-17 08:17 R6.pdf 1 | Alb=4.0 BUN=17.5 Cre=1.62 eGFR=37.68 UA=5.7 Ca=9.1 cCa=9.1 IP=3.1 Na=142 K=4.1 Cl=105 sHem=(-) sChy=(+) sYel=(-) uCol=淡黄色 uTurb=(-) SG=1.020 pH=6.0 uPro=15(+-) uGlu=2000(4+) uKet=(-) uOB=(-) uUro=NORMAL uBil=(-) uNit=(-) uLeu=(-) sRBC=2.9 RBCHPF=0.5 sWBC=1.8 WBCHPF=0.3 CellN=<1.0 CellF=<0.2 CastN=<1.00 CastF=<2.90 BactN=<5.0 BactF=<0.9 RBCm=判定なし UTP=25.7 UUN=339.5 UCre=66.21 UUa=24.7 UIP=26.7 UNa=50 UK=19.2 UCl=41 PCR=0.39",
   "2024-12-03 08:17 R6.pdf 2 | TP=6.3 Alb=3.4 AG=1.17 CRP=0.04 TBil=0.4 AST=16 ALT=13 ALP=68 GGT=22 LD=135 CK=57 BUN=15.4 Cre=1.65 eGFR=36.93 UA=6.0 Ca=8.9 cCa=9.2 IP=3.3 Mg=2.0 Na=141 K=4.3 Cl=106 sHem=(-) sChy=(+-) sYel=(-) Glu=122 WBC=4.54 RBC=4.29 Hb=12.0 Ht=37.3 MCV=86.9 MCH=28.0 MCHC=32.2 RDWSD=39.5 RDWCV=12.4 PLT=266 PDW=9.0 MPV=8.6 PLCR=14.2 Nn=2.79 Ln=1.20 Mn=0.36 En=0.17 Bn=0.02 Np=61.6 Lp=26.4 Mp=7.9 Ep=3.7 Bp=0.4 uCol=淡黄色 uTurb=(-) SG=1.007 pH=6.0 uPro=15(+-) uGlu=(-) uKet=(-) uOB=(-) uUro=NORMAL uBil=(-) uNit=(-) uLeu=(-) sRBC=1.4 RBCHPF=0.3 sWBC=<1.0 WBCHPF=<0.2 CellN=<1.0 CellF=<0.2 CastN=<1.00 CastF=<2.90 BactN=<5.0 BactF=<0.9 RBCm=判定なし UTP=13.5 UUN=278.4 UCre=56.36 UUa=25.7 UIP=23.7 UNa=74 UK=28.9 UCl=77 PCR=0.24",
   "2024-11-27 08:11 R6.pdf 3 | Alb=3.5 BUN=17.8 Cre=1.81 eGFR=33.37 UA=6.7 Ca=8.8 cCa=9.0 IP=3.1 Na=142 K=4.0 Cl=107 sHem=(-) sChy=(-) sYel=(-) uCol=黄色 uTurb=(-) SG=1.015 pH=6.0 uPro=30(1+) uGlu=50(+-) uKet=(-) uOB=(-) uUro=NORMAL uBil=(-) uNit=(-) uLeu=(-) sRBC=2.2 RBCHPF=0.4 sWBC=4.3 WBCHPF=0.8 CellN=3.1 CellF=0.6 CastN=1.26 CastF=3.65 BactN=9.2 BactF=1.7 RBCm=判定なし UTP=36.9 UUN=641.4 UCre=142.32 UUa=52.7 UIP=67.4 UNa=62 UK=30.8 UCl=56 PCR=0.26",
@@ -183,6 +183,34 @@ function setup() {
   ss.setActiveSheet(rec);
   SpreadsheetApp.flush();
   return '記録 ' + n + '行、項目マスタ ' + MASTER.length + '項目を書き込みました';
+}
+
+// 記録の訂正(原本と突き合わせて見つかった誤り)。エディタから fixCorrections を1回実行する。何回実行しても同じ結果
+var CORRECTIONS = [
+  // [検査日, 到着時間, 項目名, 正しい値(原本の印字)]
+  ['2025-01-07', '08:14', 'サイボウ/F', '<0.2']
+];
+
+function fixCorrections() {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_RECORD);
+  var last = sh.getLastRow();
+  var data = sh.getRange(2, 1, last - 1, HEADERS.length).getValues();
+  var master = {};
+  MASTER.forEach(function (m) { master[m[2]] = m; });
+  var done = [];
+  CORRECTIONS.forEach(function (c) {
+    for (var i = 0; i < data.length; i++) {
+      if (data[i][0] === c[0] && data[i][1] === c[1] && data[i][3] === c[2]) {
+        var v = parseValue_(c[3]), m = master[c[2]];
+        sh.getRange(i + 2, 5, 1, 2).setValues([[v.num, v.qual]]);
+        sh.getRange(i + 2, 10).setValue(flag_(v.num, m[4], m[5]));
+        done.push(c[0] + ' ' + c[2] + ' → ' + c[3]);
+        return;
+      }
+    }
+    done.push('見つかりません: ' + c.join(' '));
+  });
+  return done.join(' / ');
 }
 
 function writeMaster_(sh) {
