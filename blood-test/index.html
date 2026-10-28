@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>血液検査記録</title>
-<link rel="stylesheet" href="style.css?v=20261028j">
+<link rel="stylesheet" href="style.css?v=20261028k">
 </head>
 <body>
 <header class="top">
@@ -56,7 +56,11 @@
   <section id="tab-list" class="panel" hidden>
     <div class="row">
       <label>検査日
-        <select id="selDate"></select>
+        <span class="datenav">
+          <button id="datePrev" type="button" aria-label="前回の検査へ">◀</button>
+          <select id="selDate"></select>
+          <button id="dateNext" type="button" aria-label="次回の検査へ">▶</button>
+        </span>
       </label>
     </div>
     <div id="listBody"></div>
@@ -81,9 +85,9 @@
 <footer class="foot">判定の「良くなった・悪くなった」は目安です。診断や治療の判断は主治医に確認してください。</footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="config.js?v=20261028j"></script>
-<script src="glossary.js?v=20261028j"></script>
-<script src="app.js?v=20261028j"></script>
-<script src="import.js?v=20261028j"></script>
+<script src="config.js?v=20261028k"></script>
+<script src="glossary.js?v=20261028k"></script>
+<script src="app.js?v=20261028k"></script>
+<script src="import.js?v=20261028k"></script>
 </body>
 </html>
