@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>血液検査記録</title>
-<link rel="stylesheet" href="style.css?v=20261028f">
+<link rel="stylesheet" href="style.css?v=20261028i">
 </head>
 <body>
 <header class="top">
@@ -20,6 +20,7 @@
   <button data-tab="graph" type="button">グラフ</button>
   <button data-tab="urine" type="button">検尿</button>
   <button data-tab="list" type="button">一覧</button>
+  <button data-tab="import" type="button">取り込み</button>
 </nav>
 
 <main>
@@ -60,13 +61,29 @@
     </div>
     <div id="listBody"></div>
   </section>
+
+  <section id="tab-import" class="panel" hidden>
+    <div class="imp-actions">
+      <label class="btn big">📷 カメラで撮影<input id="fCam" type="file" accept="image/*" capture="environment" hidden></label>
+      <label class="btn big">🖼 画像・PDFを選ぶ<input id="fPick" type="file" accept="image/*,application/pdf" multiple hidden></label>
+    </div>
+    <div class="note">検査結果照会の紙(またはPDF)を、1ページずつ撮影してください。PDFは自動でページごとに分けます。読み取り結果は、確認して直してから記録に追加します。</div>
+    <div id="impList" class="imp-list"></div>
+    <div class="imp-actions">
+      <button id="impRun" class="btn primary" type="button" hidden>読み取る</button>
+      <button id="impClear" class="btn" type="button" hidden>クリア</button>
+    </div>
+    <div id="impMsg" class="msg" hidden></div>
+    <div id="impReview"></div>
+  </section>
 </main>
 
 <footer class="foot">判定の「良くなった・悪くなった」は目安です。診断や治療の判断は主治医に確認してください。</footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="config.js?v=20261028f"></script>
-<script src="glossary.js?v=20261028f"></script>
-<script src="app.js?v=20261028f"></script>
+<script src="config.js?v=20261028i"></script>
+<script src="glossary.js?v=20261028i"></script>
+<script src="app.js?v=20261028i"></script>
+<script src="import.js?v=20261028i"></script>
 </body>
 </html>
