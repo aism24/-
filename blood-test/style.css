@@ -43,7 +43,7 @@ body {
   line-height: 1.5;
 }
 .top {
-  display: flex; align-items: center; justify-content: space-between;
+  text-align: center;
   padding: 14px 16px 6px; max-width: 920px; margin: 0 auto;
 }
 h1 { font-size: 19px; margin: 0; }
@@ -194,3 +194,12 @@ th small { font-weight: 400; }
 .datenav { display: flex; gap: 6px; align-items: center; }
 .datenav button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); font-size: 14px; cursor: pointer; }
 .datenav button:disabled { opacity: .35; cursor: default; }
+
+.backbar { max-width: 920px; margin: 0 auto; padding: 4px 16px 0; }
+.backbar[hidden], .tabs[hidden], .menu[hidden] { display: none; }
+.menu { display: flex; flex-direction: column; gap: 16px; padding: 24px 0; }
+.menubtn {
+  border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 12px;
+  padding: 28px 16px; font-size: 20px; font-weight: 600; cursor: pointer;
+}
+.menubtn small { display: block; font-size: 14px; font-weight: 400; margin-top: 4px; }

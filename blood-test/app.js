@@ -48,12 +48,8 @@
     m.hidden = !text;
   }
 
-  function loadCache() {
-    try { return JSON.parse(localStorage.getItem(CACHE_KEY)); } catch (e) { return null; }
-  }
-  function saveCache(d) {
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch (e) { /* 保存できなくても動く */ }
-  }
+  // 以前の版が残した保存データは使わない(毎回、記録を取得し直す)
+  try { localStorage.removeItem(CACHE_KEY); } catch (e) { /* 使えなくても動く */ }
 
   // GASへの問い合わせ。合言葉が設定されているときは入力を求めて、このブラウザに覚える
   function post(payload) {
@@ -84,18 +80,16 @@
       $('sub').textContent = '未設定';
       return;
     }
-    var cached = loadCache();
-    if (cached && !S.rows.length) { apply(cached); $('sub').textContent = '保存済みデータを表示中。更新しています…'; }
-    else $('sub').textContent = '更新しています…';
+    // 毎回、記録を取得し直す(古い保存データは表示しない)
+    $('sub').textContent = '読み込み中…';
     post({ action: 'all' })
       .then(function (d) {
         if (!d.ok) throw new Error(d.error || '読み込みに失敗しました');
-        saveCache(d);
         apply(d);
         showMsg('');
       })
       .catch(function (e) {
-        showMsg('読み込みに失敗しました: ' + e.message + '\n「更新」を押して再試行してください。');
+        showMsg('読み込みに失敗しました: ' + e.message + '\nアプリを開き直してください。');
         if (!S.rows.length) $('sub').textContent = '読み込めませんでした';
       });
   }
@@ -216,7 +210,9 @@
     });
     var dates = {};
     S.rows.forEach(function (r) { dates[r['検査日']] = 1; });
-    $('sub').textContent = '検査 ' + Object.keys(dates).length + '日分 / 最新 ' + (latestDate || '-');
+    var ld = Object.keys(dates).sort().pop() || '';
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ld);
+    $('sub').textContent = '最新検査日=' + (m ? m[1] + '年' + (+m[2]) + '月' + (+m[3]) + '日' : '-');
   }
 
   // ---- グラフ ---------------------------------------------------------
@@ -466,7 +462,8 @@
     Array.prototype.forEach.call($('tabs').querySelectorAll('button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-tab') === name);
     });
-    ['summary', 'graph', 'urine', 'list', 'import'].forEach(function (t) { $('tab-' + t).hidden = t !== name; });
+    ['summary', 'graph', 'urine', 'list'].forEach(function (t) { $('tab-' + t).hidden = t !== name; });
+    $('tab-import').hidden = true;
     if (name === 'graph') { renderGraphControls(); renderChart(); }
   }
 
@@ -476,7 +473,19 @@
     renderListControls();
     renderGraphControls();
     var on = $('tabs').querySelector('button.on');
-    if (on && on.getAttribute('data-tab') === 'graph') renderChart();
+    if (on && on.getAttribute('data-tab') === 'graph' && !$('tab-graph').hidden) renderChart();
+  }
+
+  // ---- 画面(メニュー / 検査結果分析 / 新規記録) ---------------------------------
+  function showView(v) {
+    $('menu').hidden = v !== 'menu';
+    $('backbar').hidden = v === 'menu';
+    $('tabs').hidden = v !== 'analysis';
+    if (v === 'analysis') showTab($('tabs').querySelector('button.on').getAttribute('data-tab'));
+    else ['summary', 'graph', 'urine', 'list'].forEach(function (t) { $('tab-' + t).hidden = true; });
+    $('tab-import').hidden = v !== 'import';
+    // 開くたびに最新の記録を取得する(新規記録の画面でも、登録済みの項目・日付を最新にする)
+    if (v !== 'menu') load();
   }
 
   // ---- 項目の説明(ポップアップ) ------------------------------------------
@@ -539,7 +548,9 @@
     var t = e.target.getAttribute && e.target.getAttribute('data-tab');
     if (t) showTab(t);
   });
-  $('reload').addEventListener('click', load);
+  $('goAnalysis').addEventListener('click', function () { showView('analysis'); });
+  $('goImport').addEventListener('click', function () { showView('import'); });
+  $('toMenu').addEventListener('click', function () { showView('menu'); });
   $('selA').addEventListener('change', function () { S.selA = this.value; renderGraphControls(); renderChart(); });
   $('selB').addEventListener('change', function () { S.selB = this.value; renderChart(); });
   $('chips').addEventListener('click', function (e) {
