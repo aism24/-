@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>血液検査記録</title>
-<link rel="stylesheet" href="style.css?v=20261028m">
+<link rel="stylesheet" href="style.css?v=20261028n">
 </head>
 <body>
 <header class="top">
@@ -89,10 +89,18 @@
 
 <footer class="foot">判定の「良くなった・悪くなった」は目安です。診断や治療の判断は主治医に確認してください。</footer>
 
+<div id="busy" class="busy" role="alertdialog" aria-live="polite" aria-label="処理中" hidden>
+  <div class="busybox">
+    <div id="busyText" class="busytext">データ取得中</div>
+    <div id="busyBar" class="bar indet"><div id="busyFill"></div></div>
+    <div id="busyPct" class="busypct"></div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="config.js?v=20261028m"></script>
-<script src="glossary.js?v=20261028m"></script>
-<script src="app.js?v=20261028m"></script>
-<script src="import.js?v=20261028m"></script>
+<script src="config.js?v=20261028n"></script>
+<script src="glossary.js?v=20261028n"></script>
+<script src="app.js?v=20261028n"></script>
+<script src="import.js?v=20261028n"></script>
 </body>
 </html>
