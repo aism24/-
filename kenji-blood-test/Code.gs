@@ -1,7 +1,7 @@
 // 血液検査記録: スプレッドシートにバインドしたGAS
 //  setup()  … シート整備(記録・項目マスタ)と、PDF(R6〜R8)の結果の記録。エディタから1回だけ実行する
 //  doGet/doPost … 記録の取得・追加、画像の読み取り(Gemini)。画面(kenji-blood-test)から呼ぶ個人用アプリ
-var CODE_VERSION = '2026-10-29-1';
+var CODE_VERSION = '2026-10-29-2';
 var SHEET_RECORD = '記録';
 var SHEET_MASTER = '項目マスタ';
 var HEADERS = ['検査日', '到着時間', '区分', '項目名', '値', '定性', '単位', '基準下限', '基準上限', '判定', '備考', '元ファイル', 'ページ', '登録日時'];
@@ -163,7 +163,7 @@ function doPost(e) {
     if (req.action === 'append') return json_(append_(req.rows || []));
     if (req.action === 'list') return json_({ ok: true, rows: list_() });
     // 列名を1回だけ送り、画面が使う列(検査日〜判定)だけを返す(転送量を減らす)。画面は header+data / mheader+mdata を表に戻して使う
-    if (req.action === 'all') return json_({ ok: true, header: VIEW_HEADERS, data: sheetValues_(SHEET_RECORD, VIEW_HEADERS.length), mheader: MASTER_HEADERS, mdata: sheetValues_(SHEET_MASTER, MASTER_HEADERS.length) });
+    if (req.action === 'all') return ContentService.createTextOutput(allJson_()).setMimeType(ContentService.MimeType.JSON);
     return json_({ ok: false, error: 'unknown action: ' + req.action });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
@@ -187,6 +187,7 @@ function setup() {
   var n = writeRecords_(rec);
   ss.setActiveSheet(rec);
   SpreadsheetApp.flush();
+  clearAllCache_();
   return '記録 ' + n + '行、項目マスタ ' + MASTER.length + '項目を書き込みました';
 }
 
@@ -215,6 +216,7 @@ function fixCorrections() {
     }
     done.push('見つかりません: ' + c.join(' '));
   });
+  clearAllCache_();
   return done.join(' / ');
 }
 
@@ -318,11 +320,39 @@ function append_(rows) {
       sh.getRange(last + 1, 1, out.length, 2).setNumberFormat('@');
       sh.getRange(last + 1, 1, out.length, HEADERS.length).setValues(out);
     }
+    clearAllCache_();
     return { ok: true, added: out.length, skipped: skipped };
   } finally {
     lock.releaseLock();
   }
 }
+
+// 取得結果(all)は圧縮してキャッシュに覚え、2回目以降はシートを読まずに返す。
+// 記録の追加・訂正・シートの手編集(onEdit)でキャッシュを消す。キャッシュが使えないときは毎回シートを読む
+var CACHE_KEY_ALL = 'all_v2';
+var CACHE_SECONDS = 21600;
+
+function allJson_() {
+  var cache = null;
+  try {
+    cache = CacheService.getScriptCache();
+    var hit = cache.get(CACHE_KEY_ALL);
+    if (hit) return Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(hit), 'application/x-gzip')).getDataAsString();
+  } catch (err) { cache = null; }
+  var json = JSON.stringify({ ok: true, header: VIEW_HEADERS, data: sheetValues_(SHEET_RECORD, VIEW_HEADERS.length), mheader: MASTER_HEADERS, mdata: sheetValues_(SHEET_MASTER, MASTER_HEADERS.length) });
+  try {
+    var packed = Utilities.base64Encode(Utilities.gzip(Utilities.newBlob(json, 'application/json')).getBytes());
+    if (cache && packed.length < 95000) cache.put(CACHE_KEY_ALL, packed, CACHE_SECONDS);
+  } catch (err) { /* 覚えられなくても、取得はできる */ }
+  return json;
+}
+
+function clearAllCache_() {
+  try { CacheService.getScriptCache().remove(CACHE_KEY_ALL); } catch (err) { /* 消せなくても動く */ }
+}
+
+// シートを手で編集したとき(単純トリガー)にキャッシュを消す
+function onEdit() { clearAllCache_(); }
 
 function sheetValues_(sheetName, cols) {
   var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
