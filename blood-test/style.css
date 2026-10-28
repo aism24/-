@@ -115,3 +115,7 @@ td.L { color: var(--lo); font-weight: 700; }
 td.neg { color: var(--muted); }
 h2 { font-size: 15px; margin: 14px 0 6px; }
 .foot { max-width: 920px; margin: 0 auto; padding: 0 16px 28px; color: var(--muted); font-size: 12px; }
+.warn { color: var(--bad); font-weight: 700; font-size: 12px; }
+.card > .warn { margin: -2px 0 6px; }
+.headline > .warn { margin-top: 6px; font-size: 13px; }
+td .warn { font-size: 11px; }
