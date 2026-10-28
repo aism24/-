@@ -1,22 +1,24 @@
 /**
- * 出荷リスト図番リンク付与アプリ用 GAS(ms-tottori アカウントで実行)
+ * 実寸法師ハイパーリンク付与(旧 出荷リスト図番リンク付与)アプリ用 GAS(デプロイは mst アカウントで行う。ms-tottori だと外部通信の権限エラーになった)
  *  - 毎朝: マスタExcelのハイパーリンクを抜き出し「リンク表(JSON)」をDriveに保存
  *  - doGet : リンク表JSONを返す(?action=links) / 軽い状態確認(?action=info) / 今すぐ再生成(?action=rebuild。Excelに変更がなければ省略、連打は1分で制限、件数が旧の90%未満なら上書きしない)
  *            ?action=rebuild は前回の再生成後に更新されたExcelだけを読み直す(他は「Excelごとの抜き出し結果」を流用)。毎朝は全件読み直す
  *            / 版の確認(?action=ping → {ok, version})
- *  - doPost: 取り込んだ元PDFを保存フォルダへ保存し、スプレッドシート「記録」の2行目に日時/ページ数/URLを挿入(最新が上)
+ *  - doPost: 取り込んだ元PDF・Excelを PENDING_FOLDER_ID へ保存し、スプレッドシート「記録」の2行目に日時/枚数(Excelはシート数)/URL/リンク付与/NGを挿入(最新が上)。作成から KEEP_DAYS 日超は trashOldFiles(毎日3時。setupTrash で作る)でゴミ箱へ
  *            / {action:'ocr', kind, image}: 詳細図PDFの切り出し画像をGeminiで読む(モデル名・APIKEYは「情報」シートから。1日400回まで)。?action=ocrcheck で設定の確認
  *
  * 【初回セットアップ】 ①このコードを貼り付け ②setupDaily を1回実行(権限を承認) ③buildMaster を1回実行
  *  ④デプロイ → ウェブアプリ(実行ユーザー=自分 / アクセス=全員)→ URLを app.js の GAS_URL に設定
  */
 var MASTER_FOLDER_ID = '1HuBr3qZnO4N6BA6Zm_aU8BkVM45Q1K5q'; // マスタのままExcel置き場
-var SAVE_FOLDER_ID = '1vekpzwfn-W0MqRyWWYzWdS4A6jp2bEt3';   // 取込PDF保存先(記録シートと同じ)
+var SAVE_FOLDER_ID = '1vekpzwfn-W0MqRyWWYzWdS4A6jp2bEt3';   // リンク表・記録シートの置き場
+var PENDING_FOLDER_ID = '13RuLGCMh6LK0j3iP2xtTo2_mT7HTytm7'; // 取込んだ元ファイル(PDF・Excel)の保存先「リンク付与前ファイル保存」。作成から KEEP_DAYS 日を超えたらゴミ箱へ
+var KEEP_DAYS = 10;
 var SHEET_ID = '19l9P9C15wQ0jIcjIc_czZCiyDbnesQbq-Q88ttndMfs';
 var SHEET_NAME = '記録';
 var LINKS_FILE_NAME = '_リンク表.json';
 var STORE_FILE_NAME = '_リンク表_Excel別.json'; // Excelごとの抜き出し結果(ボタンの再生成で、変更の無いExcelを読み直さないため)
-var CODE_VERSION = '20261027c';                // コードを変えたら更新する(?action=ping で確認)
+var CODE_VERSION = '20261028b';                // コードを変えたら更新する(?action=ping で確認)
 var COL_ZUBAN = 'F', COL_NAME = 'G'; // 図番列 / 製品名(製品マーク)列
 
 /* ===== 純粋関数(GAS API非依存・Nodeでテスト可能) ===== */
@@ -103,7 +105,7 @@ function maxModified_(sources) {
   return (sources || []).reduce(function (m, s) { return s.modified > m ? s.modified : m; }, '');
 }
 function sanitizeName_(s) {
-  return String(s || 'shipping').replace(/\.pdf$/i, '').replace(/[\\\/:*?"<>|]/g, '_').slice(0, 80);
+  return String(s || 'shipping').replace(/\.(pdf|xlsx|xlsm)$/i, '').replace(/[\\\/:*?"<>|]/g, '_').slice(0, 80);
 }
 
 /* ===== GAS依存部 ===== */
@@ -187,6 +189,17 @@ function build_(force, incremental) {
 function buildMaster() { return build_(false); }
 /** 件数が正当に10%以上減ったときだけ、Apps Scriptから手動実行する(安全弁を無視して作り直す) */
 function buildMasterForce() { return build_(true); }
+/** 保存先フォルダ(PENDING_FOLDER_ID)のうち、作成から KEEP_DAYS 日を超えたファイルをゴミ箱へ移す(完全削除はしない)。毎日のトリガー用 */
+function trashOldFiles() {
+  var limit = Date.now() - KEEP_DAYS * 24 * 3600 * 1000, it = DriveApp.getFolderById(PENDING_FOLDER_ID).getFiles(), n = 0;
+  while (it.hasNext()) { var f = it.next(); if (f.getDateCreated().getTime() < limit) { f.setTrashed(true); n++; } }
+  return n;
+}
+/** Apps Scriptから1回だけ手動実行する: 毎日3時に trashOldFiles を動かすトリガーを作る */
+function setupTrash() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'trashOldFiles') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('trashOldFiles').timeBased().everyDays(1).atHour(3).inTimezone('Asia/Tokyo').create();
+}
 function setupDaily() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'buildMaster') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('buildMaster').timeBased().everyDays(1).atHour(6).inTimezone('Asia/Tokyo').create();
@@ -357,7 +370,7 @@ function ocrRead_(d) {
   } catch (err) { return { ok: false, error: String(err) }; }
 }
 
-/** body(text/plain): JSON {name, pages, linked, ng, pdf(base64)}、または {action:'ocr', kind, image(JPEGのbase64)} */
+/** body(text/plain): JSON {name, pages, linked, ng, pdf(base64)} または {name, pages(シート数), linked, ng, xlsx(base64)}、または {action:'ocr', kind, image(JPEGのbase64)} */
 function doPost(e) {
   var d0 = null;
   try { d0 = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: String(err) }); }
@@ -367,8 +380,14 @@ function doPost(e) {
     lock.waitLock(20000);
     var d = d0, now = new Date();
     var stamp = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd_HHmmss');
-    var blob = Utilities.newBlob(Utilities.base64Decode(d.pdf), 'application/pdf', sanitizeName_(d.name) + '_' + stamp + '.pdf');
-    var file = DriveApp.getFolderById(SAVE_FOLDER_ID).createFile(blob);
+    var blob;
+    if (d.xlsx) {   // Excel(枚数の列にはシート数、URLの列にはExcelのURLを入れる)
+      var ext = /\.xlsm$/i.test(d.name) ? 'xlsm' : 'xlsx';
+      blob = Utilities.newBlob(Utilities.base64Decode(d.xlsx), ext === 'xlsm' ? 'application/vnd.ms-excel.sheet.macroEnabled.12' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', sanitizeName_(d.name) + '_' + stamp + '.' + ext);
+    } else {
+      blob = Utilities.newBlob(Utilities.base64Decode(d.pdf), 'application/pdf', sanitizeName_(d.name) + '_' + stamp + '.pdf');
+    }
+    var file = DriveApp.getFolderById(PENDING_FOLDER_ID).createFile(blob);
     // 2行目に挿入(最新が常に2行目、古い記録ほど下へ)。列: 日時 / 枚数 / PDFのURL / リンク付与 / NG
     var sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
     sh.insertRowAfter(1);

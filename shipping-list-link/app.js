@@ -64,11 +64,17 @@
   }
   // 「マスタ更新分確認中」ポップアップ。取得中は流れるバー、終了時はバーを100%にしてから閉じる
   var busyTimer = null;
-  function busy(on) {
+  // text=表示文(省略時は「マスタ更新分確認中」)、ratio(0〜1)を渡すと流れるバーの代わりに進捗バーにする
+  function busy(on, text, ratio) {
     var m = $('busyModal'), bar = $('busyBar');
     clearTimeout(busyTimer);
-    if (on) { bar.classList.remove('full'); m.classList.add('show'); return; }
-    bar.classList.add('full');
+    if (on) {
+      $('busyText').textContent = text || 'マスタ更新分確認中';
+      bar.classList.remove('full'); bar.classList.toggle('det', typeof ratio === 'number');
+      if (typeof ratio === 'number') bar.style.setProperty('--p', Math.round(ratio * 100) + '%');
+      m.classList.add('show'); return;
+    }
+    bar.classList.remove('det'); bar.classList.add('full');
     busyTimer = setTimeout(function () { m.classList.remove('show'); bar.classList.remove('full'); }, 500);
   }
   // 開いたとき: このPCに保存したリンク表があれば、それを表示してすぐポップアップを閉じ、最新かどうかは裏で確認する
@@ -76,10 +82,9 @@
     busy(true);
     var t0 = Date.now(), raw = await localGet();
     if (raw) {
-      var s0 = sec(t0);
-      showMaster(ShippingCore.expandMaster(raw), 'このPCの保存分 ' + s0 + '・最新か確認中');
+      showMaster(ShippingCore.expandMaster(raw), '');
       busy(false);
-      if (GAS_URL) checkLatest(s0);
+      if (GAS_URL) checkLatest();
       return;
     }
     try {
@@ -90,16 +95,16 @@
     finally { busy(false); }
   }
   // 裏で最新か確認: GASの軽い状態確認(action=info)の更新日時が、表示中のリンク表と違えば取り直して差し替え・保存する
-  async function checkLatest(s0) {
-    var mine = cur, base = 'このPCの保存分 ' + s0;
+  async function checkLatest() {
+    var mine = cur;
     try {
       var j = await (await fetch(GAS_URL + '?action=info', { cache: 'no-store', signal: AbortSignal.timeout(30000) })).json();
-      if (!j.updated || j.updated === mine.updated) { if (cur === mine) showMaster(mine, base + '・最新を確認済み'); return; }
+      if (!j.updated || j.updated === mine.updated) { if (cur === mine) showMaster(mine, ''); return; }
       var t0 = Date.now(), got = await fetchMaster({ ver: j.updated, wait: 20000 });
       if (cur !== mine) return;   // 確認中に「最新を取得」ボタンで差し替わっていたら、そちらを優先
       showMaster(got.m, got.via + ' ' + sec(t0) + '・新しいマスタに更新');
       localPut(got.raw);
-    } catch (e) { if (cur === mine) showMaster(mine, base + '・最新か確認できませんでした'); }
+    } catch (e) { if (cur === mine) showMaster(mine, '最新か確認できませんでした'); }
   }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   // 「最新のリンク付きマスタを取得」: GASにマスタExcel→リンク表JSONの再生成を依頼し、画面のマスタを読み直す。
@@ -207,14 +212,17 @@
     if (/\.xls$/i.test(file.name)) { $('msg').textContent = '古い形式(.xls)は未対応です。Excelで「.xlsx」として保存し直してください。'; return; }
     if (!links) { $('msg').textContent = 'マスタが未取得です。少し待って再実行してください。'; return; }
     working = true;   // 処理中の追加ドロップは無視(二重処理・二重記録の防止)
-    $('msg').textContent = '処理中…'; $('stage').classList.add('busy');
+    $('msg').textContent = ''; $('stage').classList.add('busy');
+    busy(true, 'ファイルを処理中…');   // ダウンロードが終わるまで、画面を操作できないポップアップを出す
     try {
       var buf = await file.arrayBuffer(), isXlsx = /\.xls[xm]$/i.test(file.name);
       var r = isXlsx ? await ShippingXlsx.linkXlsx(JSZip, buf, links, mapOpt()) : await ShippingCore.linkPdf(pdfjsLib, PDFLib, buf, links, mapOpt());
       // 詳細図(図番・製品名が線で描かれたCAD図面。寸法などの文字データだけ入っていることもある): 文字から図番らしい語が1つも見つからないときだけ、画像として読み取る
       if (!isXlsx && GAS_URL && r.stats.linked === 0 && r.stats.ng === 0) {
-        $('msg').textContent = '図面を画像として読み取り中…(1枚あたり十数秒かかります)';
-        r = await ShippingDrawing.linkDrawing(pdfjsLib, PDFLib, buf, links, askGas, mapOpt());
+        var po = mapOpt() || {}, pt = '図面を画像として読み取り中…';
+        busy(true, pt, 0);
+        po.onProgress = function (done, total) { busy(true, pt + '\n' + done + '/' + total + 'ページ', done / (total + 1)); };
+        r = await ShippingDrawing.linkDrawing(pdfjsLib, PDFLib, buf, links, askGas, po);
       }
       var s = r.stats;
       $('msg').textContent = '';
@@ -228,16 +236,16 @@
       } else {
         popup(['リンクが付与できず、ダウンロードしていません', 'マスタには無い図番と製品名の可能性あり'], false, s.partial, isXlsx ? 'シート!行' : '');
       }
-      if (GAS_URL && !isXlsx) save(file.name, s, buf);   // 元PDFの保存・記録はバックグラウンドで実施(Excelは保存しない)
+      if (GAS_URL) save(file.name, s, buf, isXlsx);   // 元ファイルの保存と記録(PDF・Excelとも)はバックグラウンドで実施
     } catch (e) {
       $('stage').classList.remove('busy');
       $('msg').textContent = '失敗しました: ' + e;
-    } finally { working = false; }
+    } finally { working = false; busy(false); }
   }
-  async function save(name, s, buf) {
+  async function save(name, s, buf, isXlsx) {
     try {
       var r = await fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ name: name, pages: s.pages, linked: s.linked, ng: s.ng, pdf: b64(buf) }) });
+        body: JSON.stringify(isXlsx ? { name: name, pages: s.sheets, linked: s.linked, ng: s.ng, xlsx: b64(buf) } : { name: name, pages: s.pages, linked: s.linked, ng: s.ng, pdf: b64(buf) }) });
       var j = await r.json();
       if (!j.ok) throw new Error(j.error);
     } catch (e) { /* 保存・記録の失敗は画面に出さない(利用者の作業には影響しない) */ }

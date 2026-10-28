@@ -165,12 +165,13 @@
       // 既存のハイパーリンク(同じセルは置き換え。範囲リンクの中のセルは触らない)
       var existing = [], hre = /<hyperlink\b[^>]*?\/>/g, hm;
       while ((hm = hre.exec(xml))) existing.push({ tag: hm[0], a: attrs(hm[0]) });
+      var rangeRefs = existing.filter(function (e) { return e.a.ref && e.a.ref.indexOf(':') >= 0; }).map(function (e) { return e.a.ref; });   // 範囲リンクだけ(単一セルのリンクは inRange が常に false)
       readRows(xml, sst).forEach(function (row) {
         stats.rows++;
         var pairs = pairRow(row.cells, idx, lookup), linkedHere = 0, loc = sa.name + '!' + row.row;
         pairs.forEach(function (c) {
           if (Array.isArray(c.v)) { stats.dup++; stats.partial.push({ page: loc, zuban: c.z.text, name: c.n.text, reason: '重複' }); return; }
-          if (existing.some(function (e) { return e.a.ref && inRange(c.n.ref, e.a.ref); })) {
+          if (rangeRefs.some(function (rg) { return inRange(c.n.ref, rg); })) {
             stats.partial.push({ page: loc, zuban: c.z.text, name: c.n.text, reason: '既存のリンク範囲内のため付けず' }); return;
           }
           adds.push({ ref: c.n.ref, uri: mapUri(c.v), s: c.n.s });
