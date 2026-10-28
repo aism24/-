@@ -136,7 +136,8 @@
     if (!jobs.length) return;
     $('impRun').disabled = true;
     msg('読み取っています。1ページあたり数秒〜十数秒かかります…', 'info');
-    var idx = 0;
+    var idx = 0, finished = 0;
+    BT.busyBegin('画像を読み取り中', 0, jobs.length);
     var worker = function () {
       if (idx >= jobs.length) return Promise.resolve();
       var it = jobs[idx++];
@@ -149,9 +150,10 @@
       }).catch(function (e) {
         it.status = 'error';
         it.error = e.message || '通信に失敗しました';
-      }).then(function () { renderQueue(); return worker(); });
+      }).then(function () { finished++; BT.busyUpdate('画像を読み取り中', finished, jobs.length); renderQueue(); return worker(); });
     };
     Promise.all([worker(), worker()]).then(function () {
+      BT.busyEnd();
       $('impRun').disabled = false;
       var errs = Q.filter(function (it) { return it.status === 'error'; }).length;
       if (errs) msg(errs + 'ページ読み取れませんでした。「エラーのページを再読み取り」を押すか、×で外してください。読み取れたページは下で確認できます。');
@@ -367,21 +369,27 @@
     if (!rows.length) { msg('追加する項目がありません。'); return; }
     $('impAdd').disabled = true;
     msg(rows.length + '件を追加しています…', 'info');
+    BT.busyBegin('記録に追加中');
     BT.post({ action: 'append', rows: rows }).then(function (d) {
       if (!d || !d.ok) throw new Error((d && d.error) || '追加に失敗しました');
       Q = []; REVIEW = null;
       renderQueue(); renderReview();
       msg(d.added + '件を記録に追加しました' + (d.skipped ? '(登録済みのため ' + d.skipped + '件はスキップ)' : '') + '。サマリー・グラフ・一覧に反映しています。', 'ok');
-      BT.load();
+      return BT.load();
     }).catch(function (e) {
       msg('追加できませんでした: ' + e.message);
       $('impAdd').disabled = false;
-    });
+    }).then(BT.busyEnd);
   }
 
   // ---- 画面の操作 -----------------------------------------------------------
-  $('fCam').addEventListener('change', function () { var f = this.files; addFiles(f).then(function () { $('fCam').value = ''; }); });
-  $('fPick').addEventListener('change', function () { var f = this.files; addFiles(f).then(function () { $('fPick').value = ''; }); });
+  function prepare(input) {
+    var f = input.files;
+    BT.busyBegin('画像を準備中');
+    addFiles(f).then(function () { input.value = ''; BT.busyEnd(); });
+  }
+  $('fCam').addEventListener('change', function () { prepare(this); });
+  $('fPick').addEventListener('change', function () { prepare(this); });
   $('impRun').addEventListener('click', runAll);
   $('impClear').addEventListener('click', function () {
     if ((Q.length || REVIEW) && !window.confirm('読み取り待ちのページと、確認中の内容を消します。よろしいですか?')) return;

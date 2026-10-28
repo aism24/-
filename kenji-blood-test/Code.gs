@@ -1,10 +1,12 @@
 // 血液検査記録: スプレッドシートにバインドしたGAS
 //  setup()  … シート整備(記録・項目マスタ)と、PDF(R6〜R8)の結果の記録。エディタから1回だけ実行する
-//  doGet/doPost … 記録の追加・一覧(撮影アプリ用)
-var CODE_VERSION = '2026-10-28-3';
+//  doGet/doPost … 記録の取得・追加、画像の読み取り(Gemini)。画面(kenji-blood-test)から呼ぶ個人用アプリ
+var CODE_VERSION = '2026-10-29-1';
 var SHEET_RECORD = '記録';
 var SHEET_MASTER = '項目マスタ';
 var HEADERS = ['検査日', '到着時間', '区分', '項目名', '値', '定性', '単位', '基準下限', '基準上限', '判定', '備考', '元ファイル', 'ページ', '登録日時'];
+// 画面が読む列(備考・元ファイル・ページ・登録日時は、書き込み専用なので取得では送らない)
+var VIEW_HEADERS = HEADERS.slice(0, 10);
 var MASTER_HEADERS = ['表示順', '区分', '項目名', '単位', '基準下限', '基準上限', '良い方向', '腎臓重点', 'キー'];
 
 // [キー, 区分, 項目名, 単位, 基準下限, 基準上限, 良い方向, 腎臓重点]
@@ -160,7 +162,8 @@ function doPost(e) {
     if (req.action === 'extract') return json_(extract_(req));
     if (req.action === 'append') return json_(append_(req.rows || []));
     if (req.action === 'list') return json_({ ok: true, rows: list_() });
-    if (req.action === 'all') return json_({ ok: true, rows: list_(), master: master_() });
+    // 列名を1回だけ送り、画面が使う列(検査日〜判定)だけを返す(転送量を減らす)。画面は header+data / mheader+mdata を表に戻して使う
+    if (req.action === 'all') return json_({ ok: true, header: VIEW_HEADERS, data: sheetValues_(SHEET_RECORD, VIEW_HEADERS.length), mheader: MASTER_HEADERS, mdata: sheetValues_(SHEET_MASTER, MASTER_HEADERS.length) });
     return json_({ ok: false, error: 'unknown action: ' + req.action });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
@@ -321,40 +324,38 @@ function append_(rows) {
   }
 }
 
-function list_() {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_RECORD);
+function sheetValues_(sheetName, cols) {
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   var last = sh.getLastRow();
-  if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, HEADERS.length).getValues().map(function (r) {
+  return last < 2 ? [] : sh.getRange(2, 1, last - 1, cols).getValues();
+}
+
+function toObjects_(headers, values) {
+  return values.map(function (r) {
     var o = {};
-    HEADERS.forEach(function (h, i) { o[h] = r[i]; });
+    headers.forEach(function (h, i) { o[h] = r[i]; });
     return o;
   });
 }
 
-function master_() {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_MASTER);
-  var last = sh.getLastRow();
-  if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, MASTER_HEADERS.length).getValues().map(function (r) {
-    var o = {};
-    MASTER_HEADERS.forEach(function (h, i) { o[h] = r[i]; });
-    return o;
-  });
-}
+function list_() { return toObjects_(HEADERS, sheetValues_(SHEET_RECORD, HEADERS.length)); }
+
+function master_() { return toObjects_(MASTER_HEADERS, sheetValues_(SHEET_MASTER, MASTER_HEADERS.length)); }
 
 
 // ---- 画像・PDFの読み取り(Gemini) ----------------------------------------
 
 var GEMINI_PROMPT_HEAD = "あなたは病院の「検査結果照会」(血液・尿検査)の画像から、検査値を正確に書き起こす係です。\n画像に印字されている表の結果欄の値を、次のルールで JSON にしてください。\n\nルール:\n- records は検査ごとの配列。1ページ=通常1件。\n- 表の上に「到着日」が複数並んでいて、日付ごとに列が分かれているときは、列(日付)ごとに1件ずつ records を作り、すべての列を出力する。最初の列だけで終わらせない。値が入っている列だけでよい。\n- date は「到着日」を YYYY-MM-DD で。time は「到着時間」を HH:MM で。読めないときは空文字。\n- items は { name, value } の配列。name は下の項目名リストの名前をそのまま使う。リストに無い項目は、印字された名前をそのまま name に入れる。\n- value は画像に印字された結果の文字列そのまま。小数点以下の0も残す(例 1.20)。H・L の記号、基準値、単位は value に入れない。\n- 定性の結果はそのまま書く。例: (-)  (+-)  NORMAL  判定なし  淡黄色  <1.0  <2.90  15(+-)  2000(4+)  照会不可\n- 画像に無い項目・空欄の項目は items に入れない。読めない値は \"?\" と書く。推測や計算で埋めない。\n- 手書きの文字、患者名、患者ID、年齢、医療機関名は出力しない。\n- 左右2列の表の、両方の列を読む。ページの下に回り込んだ項目も読む。\n\n";
 
-// 情報シートのA列の項目名で値を探す。無ければ ''(任意項目用)
+// 情報シートのA列の項目名で値を探す。1回の実行で1度だけシートを読む
+var INFO_VALS_ = null;
 function infoOpt_(name) {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('情報');
-  if (!sh) return '';
-  var vals = sh.getDataRange().getValues();
-  for (var i = 0; i < vals.length; i++) {
-    if (String(vals[i][0]).trim() === name) return String(vals[i][1] === undefined ? '' : vals[i][1]).trim();
+  if (INFO_VALS_ === null) {
+    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('情報');
+    INFO_VALS_ = sh ? sh.getDataRange().getValues() : [];
+  }
+  for (var i = 0; i < INFO_VALS_.length; i++) {
+    if (String(INFO_VALS_[i][0]).trim() === name) return String(INFO_VALS_[i][1] === undefined ? '' : INFO_VALS_[i][1]).trim();
   }
   return '';
 }
@@ -436,15 +437,9 @@ function testGemini() {
   return 'モデル ' + r.model + ' → ' + (c && c.content && c.content.parts && c.content.parts[0].text);
 }
 
-// 「情報」シートのA列の項目名で値を探す(APIKEY・モデル等。アプリ側の読み取り機能で使う)
+// 必須の項目(APIKEY等)。項目が無い・空のときはエラーにする
 function info_(name) {
-  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('情報');
-  var vals = sh.getDataRange().getValues();
-  for (var i = 0; i < vals.length; i++) {
-    if (String(vals[i][0]).trim() === name) {
-      if (!vals[i][1]) throw new Error('情報シートの' + name + 'が空です');
-      return String(vals[i][1]).trim();
-    }
-  }
-  throw new Error('情報シートに' + name + 'がありません');
+  var v = infoOpt_(name);
+  if (!v) throw new Error('情報シートの' + name + 'が空か、ありません');
+  return v;
 }

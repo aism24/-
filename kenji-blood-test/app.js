@@ -23,12 +23,17 @@
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function cssv(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  // 基準範囲の表示文字列(下限・上限のどちらかだけでも可。無ければ none)
+  function rangeText(lo, hi, none) {
+    var a = isNum(lo), b = isNum(hi);
+    return a && b ? lo + '〜' + hi : a ? lo + '以上' : b ? hi + '以下' : (none || '');
+  }
   function noteOf(date) { return NOTES[date] || ''; }
   function warn(text, small) { return '<span class="warn"' + (small ? ' style="font-weight:600"' : '') + '>' + esc(text) + '</span>'; }
   function glossBody(name) {
     var g = (window.GLOSSARY || {})[name];
     var mi = S.minfo[name] || {};
-    var rng = mi.lo != null && mi.hi != null ? mi.lo + '〜' + mi.hi : mi.lo != null ? mi.lo + '以上' : mi.hi != null ? mi.hi + '以下' : '';
+    var rng = rangeText(mi.lo, mi.hi);
     if (!g) return '<div>この項目の説明は、まだ登録されていません。</div>';
     return '<dl><dt>何の数値か</dt><dd>' + esc(g.w) + '</dd>' +
       '<dt>何のための検査か</dt><dd>' + esc(g.y) + '</dd>' +
@@ -39,6 +44,34 @@
     return esc(name) + (g && g.a && g.a !== name ? '<small>(' + esc(g.a) + ')</small>' : '');
   }
   function isNum(v) { return typeof v === 'number' && isFinite(v); }
+
+  // ---- 処理中ポップアップ(データバー付き。処理中は他の操作ができない) ----------------
+  var busyN = 0;
+  function busyUpdate(text, done, total) {
+    $('busyText').textContent = text || 'データ取得中';
+    var bar = $('busyBar');
+    if (total > 0) {
+      bar.className = 'bar';
+      $('busyFill').style.width = Math.min(100, Math.round(done / total * 100)) + '%';
+      $('busyPct').textContent = done + ' / ' + total;
+    } else {
+      bar.className = 'bar indet';
+      $('busyFill').style.width = '';
+      $('busyPct').textContent = '';
+    }
+  }
+  function busyBegin(text, done, total) {
+    busyN++;
+    busyUpdate(text, done, total);
+    $('busy').hidden = false;
+    Array.prototype.forEach.call(document.querySelectorAll('header, .backbar, nav, main'), function (el) { el.inert = true; });
+  }
+  function busyEnd() {
+    busyN = Math.max(0, busyN - 1);
+    if (busyN) return;
+    $('busy').hidden = true;
+    Array.prototype.forEach.call(document.querySelectorAll('header, .backbar, nav, main'), function (el) { el.inert = false; });
+  }
 
   // ---- 読み込み -------------------------------------------------------
   function showMsg(text, info) {
@@ -80,9 +113,10 @@
       $('sub').textContent = '未設定';
       return;
     }
-    // 毎回、記録を取得し直す(古い保存データは表示しない)
+    // 起動時と記録追加の後に、記録を取得し直す(古い保存データは表示しない)
     $('sub').textContent = '読み込み中…';
-    post({ action: 'all' })
+    busyBegin('データ取得中');
+    return post({ action: 'all' })
       .then(function (d) {
         if (!d.ok) throw new Error(d.error || '読み込みに失敗しました');
         apply(d);
@@ -91,12 +125,22 @@
       .catch(function (e) {
         showMsg('読み込みに失敗しました: ' + e.message + '\nアプリを開き直してください。');
         if (!S.rows.length) $('sub').textContent = '読み込めませんでした';
-      });
+      })
+      .then(busyEnd);
+  }
+
+  // GASは列名を1回だけ送る形(header+data)で返す。古い版(rows+master)も読める
+  function toObjects(header, data) {
+    return data.map(function (r) {
+      var o = {};
+      for (var i = 0; i < header.length; i++) o[header[i]] = r[i];
+      return o;
+    });
   }
 
   function apply(d) {
-    S.rows = d.rows || [];
-    S.master = d.master || [];
+    S.rows = d.data ? toObjects(d.header, d.data) : (d.rows || []);
+    S.master = d.mdata ? toObjects(d.mheader, d.mdata) : (d.master || []);
     build();
     renderAll();
   }
@@ -193,7 +237,7 @@
         var priorNote = arr.slice(Math.max(0, n - 4), n - 1).some(function (p) { return noteOf(p.date); });
         h += '<div class="cmp"><span class="k">直近' + prior.length + '回平均 ' + fmt(avg, dec) + (nt && priorNote ? ' ' + warn('(大腸検査日を含む)', true) : '') + '</span><span class="j-' + ja.cls + '">' + ja.label + ' (' + (ja.d > 0 ? '+' : '') + fmt(ja.d, dec) + ')</span></div>';
       }
-      var rng = mi.lo != null && mi.hi != null ? mi.lo + '〜' + mi.hi : mi.lo != null ? mi.lo + '以上' : mi.hi != null ? mi.hi + '以下' : '';
+      var rng = rangeText(mi.lo, mi.hi);
       if (rng) h += '<div class="rng">基準 ' + esc(rng) + (mi.dir ? '　/　' + esc(mi.dir) : '') + '</div>';
       cards.push(h + '</div>');
     });
@@ -343,7 +387,7 @@
         }
       }
     });
-    var mi = S.minfo[a], rng = mi.lo != null && mi.hi != null ? mi.lo + '〜' + mi.hi : mi.lo != null ? mi.lo + '以上' : mi.hi != null ? mi.hi + '以下' : 'なし';
+    var mi = S.minfo[a], rng = rangeText(mi.lo, mi.hi, 'なし');
     $('graphTip').innerHTML = [a, b].filter(function (n) { return n && S.series[n]; }).map(function (n) {
       return '<div class="gl"><h4>' + glossTitle(n) + '</h4>' + glossBody(n) + '</div>';
     }).join('');
@@ -435,7 +479,7 @@
       var name = r['項目名'];
       if (r['区分'] !== lastCat) { lastCat = r['区分']; h += '<tr><td colspan="4" style="text-align:left;font-weight:700;background:var(--bg)">' + esc(lastCat) + '</td></tr>'; }
       var lo = r['基準下限'], hi = r['基準上限'];
-      var rng = isNum(lo) && isNum(hi) ? lo + '〜' + hi : isNum(lo) ? lo + '以上' : isNum(hi) ? hi + '以下' : '';
+      var rng = rangeText(lo, hi);
       var pr = prevRecord(k, name);
       var pcell = '', diff = '';
       if (pr) {
@@ -484,8 +528,8 @@
     if (v === 'analysis') showTab($('tabs').querySelector('button.on').getAttribute('data-tab'));
     else ['summary', 'graph', 'urine', 'list'].forEach(function (t) { $('tab-' + t).hidden = true; });
     $('tab-import').hidden = v !== 'import';
-    // 開くたびに最新の記録を取得する(新規記録の画面でも、登録済みの項目・日付を最新にする)
-    if (v !== 'menu') load();
+    // 起動時の取得が失敗していたときだけ、開くときに取り直す
+    if (v !== 'menu' && !S.master.length) load();
   }
 
   // ---- 項目の説明(ポップアップ) ------------------------------------------
@@ -567,6 +611,6 @@
   $('selDate').addEventListener('change', renderList);
   $('datePrev').addEventListener('click', function () { moveDate(1); });
   $('dateNext').addEventListener('click', function () { moveDate(-1); });
-  window.BT = { S: S, post: post, load: load, esc: esc, decimals: decimals, noteOf: noteOf, isNum: isNum, ZERO_NEG: ZERO_NEG };
+  window.BT = { S: S, post: post, load: load, busyBegin: busyBegin, busyUpdate: busyUpdate, busyEnd: busyEnd, esc: esc, decimals: decimals, noteOf: noteOf, isNum: isNum, ZERO_NEG: ZERO_NEG };
   load();
 })();
