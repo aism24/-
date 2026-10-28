@@ -11,6 +11,8 @@
   --hi: #b91c1c;
   --lo: #1d4ed8;
   --band: rgba(34, 160, 90, 0.13);
+  --prevbg: rgba(224, 138, 0, 0.14);
+  --prevtx: #9a5b00;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -26,6 +28,8 @@
     --hi: #f87171;
     --lo: #7aa7ff;
     --band: rgba(74, 222, 128, 0.14);
+    --prevbg: rgba(245, 170, 50, 0.16);
+    --prevtx: #f0b45a;
   }
 }
 * { box-sizing: border-box; }
@@ -119,3 +123,7 @@ h2 { font-size: 15px; margin: 14px 0 6px; }
 .card > .warn { margin: -2px 0 6px; }
 .headline > .warn { margin-top: 6px; font-size: 13px; }
 td .warn { font-size: 11px; }
+.pc { background: var(--prevbg); }
+thead th.pc { color: var(--prevtx); background: var(--prevbg); }
+.pd { font-size: 10px; color: var(--muted); }
+th small { font-weight: 400; }
