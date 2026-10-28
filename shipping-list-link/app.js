@@ -82,10 +82,9 @@
     busy(true);
     var t0 = Date.now(), raw = await localGet();
     if (raw) {
-      var s0 = sec(t0);
-      showMaster(ShippingCore.expandMaster(raw), 'このPCの保存分 ' + s0 + '・最新か確認中');
+      showMaster(ShippingCore.expandMaster(raw), '');
       busy(false);
-      if (GAS_URL) checkLatest(s0);
+      if (GAS_URL) checkLatest();
       return;
     }
     try {
@@ -96,16 +95,16 @@
     finally { busy(false); }
   }
   // 裏で最新か確認: GASの軽い状態確認(action=info)の更新日時が、表示中のリンク表と違えば取り直して差し替え・保存する
-  async function checkLatest(s0) {
-    var mine = cur, base = 'このPCの保存分 ' + s0;
+  async function checkLatest() {
+    var mine = cur;
     try {
       var j = await (await fetch(GAS_URL + '?action=info', { cache: 'no-store', signal: AbortSignal.timeout(30000) })).json();
-      if (!j.updated || j.updated === mine.updated) { if (cur === mine) showMaster(mine, base + '・最新を確認済み'); return; }
+      if (!j.updated || j.updated === mine.updated) { if (cur === mine) showMaster(mine, ''); return; }
       var t0 = Date.now(), got = await fetchMaster({ ver: j.updated, wait: 20000 });
       if (cur !== mine) return;   // 確認中に「最新を取得」ボタンで差し替わっていたら、そちらを優先
       showMaster(got.m, got.via + ' ' + sec(t0) + '・新しいマスタに更新');
       localPut(got.raw);
-    } catch (e) { if (cur === mine) showMaster(mine, base + '・最新か確認できませんでした'); }
+    } catch (e) { if (cur === mine) showMaster(mine, '最新か確認できませんでした'); }
   }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   // 「最新のリンク付きマスタを取得」: GASにマスタExcel→リンク表JSONの再生成を依頼し、画面のマスタを読み直す。
