@@ -1,7 +1,7 @@
 // 血液検査記録: スプレッドシートにバインドしたGAS
 //  setup()  … シート整備(記録・項目マスタ)と、PDF(R6〜R8)の結果の記録。エディタから1回だけ実行する
 //  doGet/doPost … 記録の取得・追加、画像の読み取り(Gemini)。画面(kenji-blood-test)から呼ぶ個人用アプリ
-var CODE_VERSION = '2026-10-29-2';
+var CODE_VERSION = '2026-10-29-3';
 var SHEET_RECORD = '記録';
 var SHEET_MASTER = '項目マスタ';
 var HEADERS = ['検査日', '到着時間', '区分', '項目名', '値', '定性', '単位', '基準下限', '基準上限', '判定', '備考', '元ファイル', 'ページ', '登録日時'];
@@ -330,6 +330,7 @@ function append_(rows) {
 // 取得結果(all)は圧縮してキャッシュに覚え、2回目以降はシートを読まずに返す。
 // 記録の追加・訂正・シートの手編集(onEdit)でキャッシュを消す。キャッシュが使えないときは毎回シートを読む
 var CACHE_KEY_ALL = 'all_v2';
+var CACHE_KEY_PASS = 'pass_v1';
 var CACHE_SECONDS = 21600;
 
 function allJson_() {
@@ -348,7 +349,7 @@ function allJson_() {
 }
 
 function clearAllCache_() {
-  try { CacheService.getScriptCache().remove(CACHE_KEY_ALL); } catch (err) { /* 消せなくても動く */ }
+  try { CacheService.getScriptCache().removeAll([CACHE_KEY_ALL, CACHE_KEY_PASS]); } catch (err) { /* 消せなくても動く */ }
 }
 
 // シートを手で編集したとき(単純トリガー)にキャッシュを消す
@@ -391,8 +392,21 @@ function infoOpt_(name) {
 }
 
 // 合言葉: 情報シートに「合言葉」の行があって値が入っているときだけ、画面からの操作に合言葉を求める
-function auth_(req) {
+// 合言葉もキャッシュに覚える(毎回スプレッドシートを開かずに済ませる。「情報」シートを手で編集すると消える)
+function passphrase_() {
+  var cache = null;
+  try {
+    cache = CacheService.getScriptCache();
+    var hit = cache.get(CACHE_KEY_PASS);
+    if (hit !== null) return hit === 'N' ? '' : hit.slice(1);
+  } catch (err) { cache = null; }
   var p = infoOpt_('合言葉');
+  try { if (cache) cache.put(CACHE_KEY_PASS, p ? 'P' + p : 'N', CACHE_SECONDS); } catch (err) { /* 覚えられなくても動く */ }
+  return p;
+}
+
+function auth_(req) {
+  var p = passphrase_();
   return !p || String(req.pass || '') === p;
 }
 
