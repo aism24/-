@@ -3,6 +3,7 @@
 
   var CFG = window.APP_CONFIG || {};
   var CACHE_KEY = 'bt_cache_v1';
+  var NOTES = CFG.DATE_NOTES || {};
 
   // サマリーに出す項目(項目名)。グラフ・サマリーの「良い方向」は項目マスタの列を使う
   var FOCUS = ['eGFR', 'クレアチニン', '尿素窒素', 'カリウム', '尿酸', '無機リン', 'カルシウム',
@@ -22,6 +23,8 @@
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function cssv(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function noteOf(date) { return NOTES[date] || ''; }
+  function warn(text, small) { return '<span class="warn"' + (small ? ' style="font-weight:600"' : '') + '>' + esc(text) + '</span>'; }
   function isNum(v) { return typeof v === 'number' && isFinite(v); }
 
   // ---- 読み込み -------------------------------------------------------
@@ -143,26 +146,29 @@
       var n = arr.length, cur = arr[n - 1];
       if (cur.date > latestDate) latestDate = cur.date;
       var dec = decimals(name), mi = S.minfo[name] || {};
-      var h = '<div class="card" data-item="' + esc(name) + '"><h3><span>' + esc(name) + '</span><span>' + esc(cur.date) + '</span></h3>';
+      var h = '<div class="card" data-item="' + esc(name) + '" title="' + esc(noteOf(cur.date)) + '"><h3><span>' + esc(name) + '</span><span>' + esc(cur.date) + '</span></h3>';
       var valText = cur.qual && cur.v === 0 ? cur.qual : fmt(cur.v, dec) + (cur.qual && cur.v !== 0 ? '<small>(' + esc(cur.qual) + ')</small>' : '');
       h += '<div class="val">' + valText + '<small>' + esc(mi.unit || '') + '</small>' +
         (cur.flag ? '<span class="badge ' + cur.flag + '">' + cur.flag + '</span>' : '') + '</div>';
+      if (noteOf(cur.date)) h += '<div class="warn">' + esc(noteOf(cur.date)) + '</div>';
       if (n >= 2) {
         var prev = arr[n - 2], jp = judge(name, cur.v, prev.v);
         cnt[jp.cls]++;
-        h += '<div class="cmp"><span class="k">前回 ' + fmt(prev.v, dec) + '</span><span class="j-' + jp.cls + '">' + jp.label + ' (' + (jp.d > 0 ? '+' : '') + fmt(jp.d, dec) + ')</span></div>';
+        h += '<div class="cmp"><span class="k">前回 ' + fmt(prev.v, dec) + (noteOf(prev.date) ? ' ' + warn('(' + noteOf(prev.date) + ')', true) : '') + '</span><span class="j-' + jp.cls + '">' + jp.label + ' (' + (jp.d > 0 ? '+' : '') + fmt(jp.d, dec) + ')</span></div>';
       }
       if (n >= 3) {
         var prior = arr.slice(Math.max(0, n - 4), n - 1).map(function (p) { return p.v; });
         var avg = mean(prior), ja = judge(name, cur.v, avg);
         cntAvg[ja.cls]++;
-        h += '<div class="cmp"><span class="k">直近' + prior.length + '回平均 ' + fmt(avg, dec) + '</span><span class="j-' + ja.cls + '">' + ja.label + ' (' + (ja.d > 0 ? '+' : '') + fmt(ja.d, dec) + ')</span></div>';
+        var priorNote = arr.slice(Math.max(0, n - 4), n - 1).some(function (p) { return noteOf(p.date); });
+        h += '<div class="cmp"><span class="k">直近' + prior.length + '回平均 ' + fmt(avg, dec) + (priorNote ? ' ' + warn('(大腸検査日を含む)', true) : '') + '</span><span class="j-' + ja.cls + '">' + ja.label + ' (' + (ja.d > 0 ? '+' : '') + fmt(ja.d, dec) + ')</span></div>';
       }
       var rng = mi.lo != null && mi.hi != null ? mi.lo + '〜' + mi.hi : mi.lo != null ? mi.lo + '以上' : mi.hi != null ? mi.hi + '以下' : '';
       if (rng) h += '<div class="rng">基準 ' + esc(rng) + (mi.dir ? '　/　' + esc(mi.dir) : '') + '</div>';
       cards.push(h + '</div>');
     });
     var head = '<div class="headline"><div class="d">' + (latestDate ? esc(latestDate) + ' の結果' : '結果なし') + '</div>' +
+      (noteOf(latestDate) ? '<div class="warn">' + esc(noteOf(latestDate)) + '(この日の数値は参考。比較は注意して見てください)</div>' : '') +
       '<div class="counts"><span class="pill">前回と比べて</span><span class="pill good">▲改善 ' + cnt.good + '</span><span class="pill bad">▼悪化 ' + cnt.bad + '</span><span class="pill flat">―横ばい ' + cnt.flat + '</span></div>' +
       '<div class="counts"><span class="pill">直近3回平均と比べて</span><span class="pill good">▲改善 ' + cntAvg.good + '</span><span class="pill bad">▼悪化 ' + cntAvg.bad + '</span><span class="pill flat">―横ばい ' + cntAvg.flat + '</span></div></div>';
     box.innerHTML = head + '<div class="cards">' + cards.join('') + '</div>';
@@ -225,7 +231,7 @@
       var from = S.latestT - Number(S.period) * 86400000;
       arr = arr.filter(function (p) { return p.t >= from; });
     }
-    return arr.map(function (p) { return { x: p.t, y: p.v, date: p.date, flag: p.flag, qual: p.qual }; });
+    return arr.map(function (p) { return { x: p.t, y: p.v, date: p.date, flag: p.flag, qual: p.qual, note: noteOf(p.date) }; });
   }
 
   function pad2(n) { return n < 10 ? '0' + n : '' + n; }
@@ -239,9 +245,12 @@
       var f = ctx.raw && ctx.raw.flag;
       return f === 'H' ? cssv('--hi') : f === 'L' ? cssv('--lo') : accent;
     };
+    var noteColor = function (ctx) { return ctx.raw && ctx.raw.note ? cssv('--bad') : flagColor(ctx); };
+    var noteWidth = function (ctx) { return ctx.raw && ctx.raw.note ? 3 : 1; };
+    var noteRadius = function (ctx) { return ctx.raw && ctx.raw.note ? 7 : 4; };
     var ds = [{
       label: a + (S.minfo[a].unit ? ' (' + S.minfo[a].unit + ')' : ''), data: pts(a), yAxisID: 'y', borderColor: accent,
-      backgroundColor: accent, pointBackgroundColor: flagColor, pointBorderColor: flagColor, pointRadius: 4, borderWidth: 2, tension: 0.15
+      backgroundColor: accent, pointBackgroundColor: flagColor, pointBorderColor: noteColor, pointBorderWidth: noteWidth, pointRadius: noteRadius, borderWidth: 2, tension: 0.15
     }];
     var scales = {
       x: { type: 'linear', ticks: { color: muted, callback: tickLabel, maxTicksLimit: 8 }, grid: { color: line } },
@@ -251,7 +260,8 @@
       var c2 = '#e08a00';
       ds.push({
         label: b + (S.minfo[b].unit ? ' (' + S.minfo[b].unit + ')' : ''), data: pts(b), yAxisID: 'y1', borderColor: c2, backgroundColor: c2,
-        pointRadius: 3.5, borderWidth: 2, borderDash: [5, 3], tension: 0.15
+        pointBorderColor: function (ctx) { return ctx.raw && ctx.raw.note ? cssv('--bad') : c2; }, pointBorderWidth: noteWidth,
+        pointRadius: function (ctx) { return ctx.raw && ctx.raw.note ? 6 : 3.5; }, borderWidth: 2, borderDash: [5, 3], tension: 0.15
       });
       scales.y1 = { position: 'right', ticks: { color: muted }, grid: { drawOnChartArea: false }, title: { display: true, text: b, color: muted } };
     }
@@ -273,7 +283,12 @@
           legend: { labels: { color: text } },
           refband: { lo: S.minfo[a].lo, hi: S.minfo[a].hi },
           tooltip: {
+            footerColor: '#ff7b7b',
             callbacks: {
+              footer: function (items) {
+                var n = items.map(function (i) { return i.raw.note; }).filter(Boolean)[0];
+                return n || '';
+              },
               title: function (items) { return items[0].raw.date; },
               label: function (c) {
                 var r = c.raw;
@@ -285,7 +300,11 @@
       }
     });
     var mi = S.minfo[a], rng = mi.lo != null && mi.hi != null ? mi.lo + '〜' + mi.hi : mi.lo != null ? mi.lo + '以上' : mi.hi != null ? mi.hi + '以下' : 'なし';
-    $('chartNote').textContent = '緑の帯 = 基準範囲(' + rng + ')。赤=基準より高い(H)、青=基準より低い(L)。良い方向: ' + (mi.dir || '設定なし') + '。';
+    var noted = {};
+    ds.forEach(function (d) { d.data.forEach(function (p) { if (p.note) noted[p.date] = p.note; }); });
+    var nd = Object.keys(noted).sort();
+    $('chartNote').innerHTML = esc('緑の帯 = 基準範囲(' + rng + ')。赤=基準より高い(H)、青=基準より低い(L)。良い方向: ' + (mi.dir || '設定なし') + '。') +
+      (nd.length ? '<div class="warn">赤い輪の点 = ' + esc(noted[nd[0]]) + '(' + esc(nd.join('、')) + ')。点に触れる/タップすると表示されます。</div>' : '');
   }
 
   // ---- 検尿 -----------------------------------------------------------
@@ -305,7 +324,8 @@
     var h = '<h2>検尿・尿の検査(新しい順)</h2><div class="tablewrap"><table><thead><tr><th>検査日</th>' +
       URINE_COLS.map(function (c) { return '<th>' + esc(c.replace('U-TPテイリョ', '尿蛋白(定量)')) + '</th>'; }).join('') + '</tr></thead><tbody>';
     keys.forEach(function (k) {
-      h += '<tr><td>' + esc(k.split(' ')[0]) + '</td>' + URINE_COLS.map(function (c) {
+      var kd = k.split(' ')[0];
+      h += '<tr><td title="' + esc(noteOf(kd)) + '">' + esc(kd) + (noteOf(kd) ? '<div class="warn">' + esc(noteOf(kd)) + '</div>' : '') + '</td>' + URINE_COLS.map(function (c) {
         var r = byKey[k][c];
         if (!r) return '<td></td>';
         var cls = r['判定'] || (r['定性'] === '(-)' ? 'neg' : '');
@@ -331,7 +351,7 @@
     var parts = k.split(' ');
     var rows = S.rows.filter(function (r) { return r['検査日'] === parts[0] && r['到着時間'] === parts[1]; });
     rows.sort(function (a, b) { return ((S.minfo[a['項目名']] || {}).idx || 0) - ((S.minfo[b['項目名']] || {}).idx || 0); });
-    var h = '<div class="tablewrap"><table><thead><tr><th>項目</th><th>値</th><th>単位</th><th>基準</th><th>判定</th></tr></thead><tbody>';
+    var h = (noteOf(parts[0]) ? '<div class="warn" style="margin:6px 0">' + esc(noteOf(parts[0])) + '</div>' : '') + '<div class="tablewrap"><table><thead><tr><th>項目</th><th>値</th><th>単位</th><th>基準</th><th>判定</th></tr></thead><tbody>';
     var lastCat = '';
     rows.forEach(function (r) {
       if (r['区分'] !== lastCat) { lastCat = r['区分']; h += '<tr><td colspan="5" style="text-align:left;font-weight:700;background:var(--bg)">' + esc(lastCat) + '</td></tr>'; }
