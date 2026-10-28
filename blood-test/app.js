@@ -338,12 +338,25 @@
   // ---- 一覧 -----------------------------------------------------------
   function renderListControls() {
     var keys = {};
-    S.rows.forEach(function (r) { keys[r['検査日'] + ' ' + r['到着時間']] = 1; });
-    var arr = Object.keys(keys).sort().reverse();
+    S.recMap = {};
+    S.rows.forEach(function (r) {
+      var k = r['検査日'] + ' ' + r['到着時間'];
+      keys[k] = 1;
+      S.recMap[k + '|' + r['項目名']] = r;
+    });
+    S.listKeys = Object.keys(keys).sort().reverse();
     var cur = $('selDate').value;
-    $('selDate').innerHTML = arr.map(function (k) { return '<option>' + esc(k) + '</option>'; }).join('');
-    if (cur && arr.indexOf(cur) >= 0) $('selDate').value = cur;
+    $('selDate').innerHTML = S.listKeys.map(function (k) { return '<option>' + esc(k) + '</option>'; }).join('');
+    if (cur && S.listKeys.indexOf(cur) >= 0) $('selDate').value = cur;
     renderList();
+  }
+  // 前回の検査: 選んだ検査より前で、その項目がある一番近い検査
+  function prevRecord(k, name) {
+    for (var i = S.listKeys.indexOf(k) + 1; i < S.listKeys.length; i++) {
+      var r = S.recMap[S.listKeys[i] + '|' + name];
+      if (r) return r;
+    }
+    return null;
   }
   function renderList() {
     var k = $('selDate').value;
@@ -351,15 +364,37 @@
     var parts = k.split(' ');
     var rows = S.rows.filter(function (r) { return r['検査日'] === parts[0] && r['到着時間'] === parts[1]; });
     rows.sort(function (a, b) { return ((S.minfo[a['項目名']] || {}).idx || 0) - ((S.minfo[b['項目名']] || {}).idx || 0); });
-    var h = (noteOf(parts[0]) ? '<div class="warn" style="margin:6px 0">' + esc(noteOf(parts[0])) + '</div>' : '') + '<div class="tablewrap"><table><thead><tr><th>項目</th><th>値</th><th>単位</th><th>基準</th><th>判定</th></tr></thead><tbody>';
+    var pk = S.listKeys[S.listKeys.indexOf(k) + 1] || '';
+    var pdate = pk.split(' ')[0];
+    var h = (noteOf(parts[0]) ? '<div class="warn" style="margin:6px 0">' + esc(noteOf(parts[0])) + '</div>' : '') +
+      '<div class="tablewrap"><table><thead><tr><th>項目</th><th>今回<br><small>' + esc(parts[0]) + '</small></th>' +
+      '<th class="pc">前回検査分<br><small>' + esc(pdate || 'なし') + '</small>' + (pdate && noteOf(pdate) ? '<div class="warn">' + esc(noteOf(pdate)) + '</div>' : '') + '</th>' +
+      '<th>前回との差</th></tr></thead><tbody>';
     var lastCat = '';
     rows.forEach(function (r) {
-      if (r['区分'] !== lastCat) { lastCat = r['区分']; h += '<tr><td colspan="5" style="text-align:left;font-weight:700;background:var(--bg)">' + esc(lastCat) + '</td></tr>'; }
+      var name = r['項目名'];
+      if (r['区分'] !== lastCat) { lastCat = r['区分']; h += '<tr><td colspan="4" style="text-align:left;font-weight:700;background:var(--bg)">' + esc(lastCat) + '</td></tr>'; }
       var lo = r['基準下限'], hi = r['基準上限'];
       var rng = isNum(lo) && isNum(hi) ? lo + '〜' + hi : isNum(lo) ? lo + '以上' : isNum(hi) ? hi + '以下' : '';
-      h += '<tr><td>' + esc(r['項目名']) + '</td><td class="' + (r['判定'] || '') + '">' + esc(cellText(r)) + '</td><td>' + esc(r['単位']) + '</td><td>' + esc(rng) + '</td><td class="' + (r['判定'] || '') + '">' + esc(r['判定']) + '</td></tr>';
+      var pr = prevRecord(k, name);
+      var pcell = '', diff = '';
+      if (pr) {
+        var pcls = pr['判定'] || (pr['定性'] === '(-)' ? 'neg' : '');
+        pcell = esc(cellText(pr)) + (pr['検査日'] !== pdate ? '<div class="pd">' + esc(pr['検査日']) + '</div>' : '');
+        pcell = '<td class="pc ' + pcls + '">' + pcell + '</td>';
+        var cv = isNum(r['値']) ? r['値'] : (ZERO_NEG[name] && r['定性'] === '(-)' ? 0 : null);
+        var pv = isNum(pr['値']) ? pr['値'] : (ZERO_NEG[name] && pr['定性'] === '(-)' ? 0 : null);
+        if (cv !== null && pv !== null) {
+          var j = judge(name, cv, pv), dec = decimals(name);
+          diff = '<span class="j-' + j.cls + '">' + j.label + ' (' + (j.d > 0 ? '+' : '') + fmt(j.d, dec) + ')</span>';
+        } else if (cellText(r) !== cellText(pr)) diff = '<span class="j-flat">変化あり</span>';
+        else diff = '<span class="j-flat">―同じ</span>';
+      } else pcell = '<td class="pc"></td>';
+      h += '<tr><td>' + esc(name) + '<div class="pd">' + esc(r['単位'] || '') + (rng ? '　基準 ' + esc(rng) : '') + '</div></td><td class="' + (r['判定'] || (r['定性'] === '(-)' ? 'neg' : '')) + '">' + esc(cellText(r)) + (r['判定'] ? ' ' + esc(r['判定']) : '') + '</td>' +
+        pcell + '<td>' + diff + '</td></tr>';
     });
-    $('listBody').innerHTML = h + '</tbody></table></div>';
+    $('listBody').innerHTML = h + '</tbody></table></div>' +
+      '<div class="note">色つきの列が「前回検査分」です。差の判定は、その項目の「良い方向」と基準範囲から出した目安です。</div>';
   }
 
   // ---- 画面切り替え -----------------------------------------------------
