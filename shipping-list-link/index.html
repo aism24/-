@@ -37,9 +37,8 @@ body.dragging::after{content:"ここにドロップ";position:fixed;inset:0;z-in
 #modal.mok #modalText div:first-child{color:var(--ok)}#modal.mng #modalText div:first-child{color:var(--warn)}
 #modalOk{margin-top:16px;min-width:120px;padding:8px 18px;font-size:16px;border:0;border-radius:8px;background:var(--acc);color:#000;font-weight:bold;cursor:pointer}
 .manualWrap{text-align:center;margin:10px 0 20px}
-.manual{display:inline-block;background:#ffd400;color:#000;font-weight:bold;font-size:15px;text-decoration:none;padding:10px 26px;border-radius:999px;border:2px solid #fff3a0;white-space:nowrap;animation:manualGlow 2s ease-in-out infinite}
+.manual{display:inline-block;background:#ffd400;color:#000;font-weight:bold;font-size:15px;text-decoration:none;padding:10px 26px;border-radius:999px;border:2px solid #fff3a0;white-space:nowrap}
 .manual:hover{background:#ffe34d}
-@keyframes manualGlow{0%,100%{box-shadow:0 0 6px #ffd400,0 0 14px rgba(255,212,0,.55)}50%{box-shadow:0 0 14px #ffe66d,0 0 32px rgba(255,212,0,.9)}}
 main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
 .sub{color:#8a94a6;font-size:13px;margin-bottom:16px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;text-align:center}
 .sub #master{grid-column:2}.sub #refresh{grid-column:3;justify-self:end}
@@ -79,7 +78,6 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
 <div id="msg"></div>
 <div id="busyModal" class="show"><div class="mbox" role="status" aria-live="polite"><span id="busyText">マスタ更新分確認中</span><div class="bar" id="busyBar"></div></div></div>
 <div id="modal"><div class="mbox" id="mbox"><div id="modalText"></div><button id="ngToggle" type="button" style="display:none"></button><div id="ngList" style="display:none"></div><button id="modalOk" type="button">OK</button></div></div>
-<p class="small" style="text-align:center">図番と製品名が完全一致した行の製品名にリンクを付け、PDF(またはExcel)を自動でダウンロードします。リンクは社内ネットワーク内でのみ開けます。</p>
 <div class="manualWrap"><a class="manual" href="manual/after-download.pdf" target="_blank" rel="noopener">ダウンロード後の説明書</a></div>
 </main>
 <script src="vendor/pdf.min.js?v=20261015a"></script>
