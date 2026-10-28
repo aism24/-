@@ -55,6 +55,29 @@
     try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch (e) { /* 保存できなくても動く */ }
   }
 
+  // GASへの問い合わせ。合言葉が設定されているときは入力を求めて、このブラウザに覚える
+  function post(payload) {
+    var send = function (pass) {
+      payload.pass = pass;
+      return fetch(CFG.GAS_URL, { method: 'POST', body: JSON.stringify(payload) }).then(function (r) { return r.json(); });
+    };
+    var saved = '';
+    try { saved = localStorage.getItem('bt_pass') || ''; } catch (e) { /* 使えなくても動く */ }
+    return send(saved).then(function (d) {
+      if (!d || d.error !== 'AUTH') return d;
+      var p = window.prompt('合言葉を入力してください');
+      if (p == null) throw new Error('合言葉が必要です');
+      return send(p).then(function (d2) {
+        if (d2 && d2.error === 'AUTH') {
+          try { localStorage.removeItem('bt_pass'); } catch (e) { /* 使えなくても動く */ }
+          throw new Error('合言葉が違います');
+        }
+        try { localStorage.setItem('bt_pass', p); } catch (e) { /* 使えなくても動く */ }
+        return d2;
+      });
+    });
+  }
+
   function load() {
     if (!CFG.GAS_URL) {
       showMsg('config.js の GAS_URL が空です。GASのウェブアプリURLを設定してください。', true);
@@ -64,8 +87,7 @@
     var cached = loadCache();
     if (cached && !S.rows.length) { apply(cached); $('sub').textContent = '保存済みデータを表示中。更新しています…'; }
     else $('sub').textContent = '更新しています…';
-    fetch(CFG.GAS_URL, { method: 'POST', body: JSON.stringify({ action: 'all' }) })
-      .then(function (r) { return r.json(); })
+    post({ action: 'all' })
       .then(function (d) {
         if (!d.ok) throw new Error(d.error || '読み込みに失敗しました');
         saveCache(d);
@@ -421,7 +443,7 @@
     Array.prototype.forEach.call($('tabs').querySelectorAll('button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-tab') === name);
     });
-    ['summary', 'graph', 'urine', 'list'].forEach(function (t) { $('tab-' + t).hidden = t !== name; });
+    ['summary', 'graph', 'urine', 'list', 'import'].forEach(function (t) { $('tab-' + t).hidden = t !== name; });
     if (name === 'graph') { renderGraphControls(); renderChart(); }
   }
 
@@ -509,5 +531,6 @@
     renderChart();
   });
   $('selDate').addEventListener('change', renderList);
+  window.BT = { S: S, post: post, load: load, esc: esc, decimals: decimals, noteOf: noteOf, isNum: isNum, ZERO_NEG: ZERO_NEG };
   load();
 })();

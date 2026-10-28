@@ -147,3 +147,46 @@ th small { font-weight: 400; }
 @media (max-width: 640px) {
   .tip { left: 8px; right: 8px; bottom: 8px; top: auto; width: auto; max-height: 70vh; overflow-y: auto; }
 }
+
+/* 取り込み */
+.imp-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+.btn.big { padding: 12px 18px; font-size: 16px; cursor: pointer; display: inline-flex; align-items: center; }
+.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.msg.ok { border-left-color: var(--good); }
+.imp-list { display: grid; gap: 8px; margin: 8px 0; }
+.qi { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.qi img { height: 56px; width: 42px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
+.qi .qt { flex: 1; min-width: 0; }
+.qi .qn { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qi .qs { font-size: 12px; color: var(--muted); }
+.qi.error .qs { color: var(--bad); }
+.qi.done .qs { color: var(--good); }
+.qi .x { border: 0; background: none; color: var(--muted); font-size: 22px; cursor: pointer; }
+.rec { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 12px 0; }
+.rec h3 { margin: 0 0 6px; font-size: 15px; }
+.rec h3 small { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
+.rec input[type=date], .rec input[type=time] { font-size: 15px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+.checks { background: rgba(224, 138, 0, 0.12); border: 1px solid #e08a00; border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 13px; }
+.checks ul { margin: 4px 0 0 18px; padding: 0; }
+.rec th.c, .rec td.c { text-align: center; width: 44px; }
+.rec td { vertical-align: top; white-space: normal; }
+.rec td:nth-child(3), .rec td:nth-child(4) { text-align: left; }
+.vin { width: 9em; font-size: 15px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); }
+.vin.H { color: var(--hi); font-weight: 700; }
+.vin.L { color: var(--lo); font-weight: 700; }
+.fl { font-weight: 700; margin-left: 6px; font-size: 12px; }
+.fl.H { color: var(--hi); } .fl.L { color: var(--lo); }
+.why { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.rec tr.warn td { background: rgba(224, 138, 0, 0.13); }
+.rec tr.bad td { background: rgba(185, 28, 28, 0.12); }
+.rec tr.off td { color: var(--muted); }
+.rec td.pv { color: var(--muted); }
+
+.thumbs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.thumbs img { height: 90px; border: 1px solid var(--line); border-radius: 6px; cursor: zoom-in; }
+.zoom { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, 0.88); overflow: auto; cursor: zoom-out; }
+.zoom img { display: block; width: 200vw; max-width: none; margin: 0 auto; }
+@media (min-width: 900px) { .zoom img { width: 100%; max-width: 1400px; } }
+.zoom .x { position: fixed; right: 12px; top: 8px; border: 0; background: rgba(0,0,0,0.6); color: #fff; font-size: 28px; width: 44px; height: 44px; border-radius: 22px; cursor: pointer; }
+.rec th:nth-child(2), .rec td:nth-child(2) { text-align: left; }
