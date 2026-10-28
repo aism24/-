@@ -236,7 +236,7 @@
       } else {
         popup(['リンクが付与できず、ダウンロードしていません', 'マスタには無い図番と製品名の可能性あり'], false, s.partial, isXlsx ? 'シート!行' : '');
       }
-      if (GAS_URL) save(file.name, s, buf, isXlsx);   // 元ファイルの保存(PDFは記録も)はバックグラウンドで実施
+      if (GAS_URL) save(file.name, s, buf, isXlsx);   // 元ファイルの保存と記録(PDF・Excelとも)はバックグラウンドで実施
     } catch (e) {
       $('stage').classList.remove('busy');
       $('msg').textContent = '失敗しました: ' + e;
