@@ -695,3 +695,14 @@
 - 注意点: 16並列で13回成功・3回429。AI Studioの画面で上限を確認(Gemini 3.5 Flash Lite、無料枠): RPM=1分あたり15回、TPM=1分あたり入力25万トークン、RPD=1日500回(試験で1分17回・1日210回に達した)。GASの `OCR_DAILY_LIMIT`(1日400回)は独自の安全弁。ほかの利用者・ほかのセッション・ほかのアプリの呼び出しも同じ枠を使う
 - 使ったアプリ: shipping-list-link
 
+
+### Gemini呼び出しの試験は「模擬のask」で行い、実機の試験は1ページ・回数上限つきにする(shipping-list-link、2026-10-28)
+- 効果: 実PDFで続けて試したら1分17回(上限15)に達した → 判定ロジックはask(kind)を差し替えた模擬で確認(送信0回)、実機は1ページだけ・送信を最大6〜14回で打ち切る(結果の測定は1回)
+- やり方: Playwrightで `ShippingDrawing.linkDrawing(pdfjsLib, PDFLib, buf, links, ask, null)` を直接呼び、askが返す図番・セルを場合分け。実機は `page.route` でPOST数を数えて上限超えは abort。別プロセスの試験が重なると1分の枠を共有するので、並列で走らせない
+- 注意点: 「別の図番に登録された製品名は読み直さない」は呼び出し 3〜4回→1回(模擬)。マスタ側で原因が分かる失敗(登録が別の図番)は、読み直しでなくマスタ照合で理由を出す
+- 使ったアプリ: shipping-list-link
+
+### 作業ブランチがマージ済みの古い履歴とずれてpushできないとき(強制pushが拒否される環境)
+- 効果: pushが non-fast-forward で拒否される/停止フックが「未push」を出す → `git merge -s ours origin/<作業ブランチ>` で履歴だけ取り込み、通常のpushで解消(強制push不要)
+- やり方: `git fetch origin <ブランチ>` → `git merge -s ours origin/<ブランチ>` → `git push -u origin <ブランチ>`。内容は手元の版のまま。squashマージ後に同じブランチ名で続ける場合に使う
+- 使ったアプリ: shipping-list-link(全アプリ共通)
