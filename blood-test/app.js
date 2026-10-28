@@ -25,6 +25,19 @@
   function cssv(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
   function noteOf(date) { return NOTES[date] || ''; }
   function warn(text, small) { return '<span class="warn"' + (small ? ' style="font-weight:600"' : '') + '>' + esc(text) + '</span>'; }
+  function glossBody(name) {
+    var g = (window.GLOSSARY || {})[name];
+    var mi = S.minfo[name] || {};
+    var rng = mi.lo != null && mi.hi != null ? mi.lo + '〜' + mi.hi : mi.lo != null ? mi.lo + '以上' : mi.hi != null ? mi.hi + '以下' : '';
+    if (!g) return '<div>この項目の説明は、まだ登録されていません。</div>';
+    return '<dl><dt>何の数値か</dt><dd>' + esc(g.w) + '</dd>' +
+      '<dt>何のための検査か</dt><dd>' + esc(g.y) + '</dd>' +
+      '<dt>どうなれば正常か</dt><dd>' + (rng ? '<b>基準範囲 ' + esc(rng) + (mi.unit ? ' ' + esc(mi.unit) : '') + '</b><br>' : '') + esc(g.o) + '</dd></dl>';
+  }
+  function glossTitle(name) {
+    var g = (window.GLOSSARY || {})[name];
+    return esc(name) + (g && g.a && g.a !== name ? '<small>(' + esc(g.a) + ')</small>' : '');
+  }
   function isNum(v) { return typeof v === 'number' && isFinite(v); }
 
   // ---- 読み込み -------------------------------------------------------
@@ -146,7 +159,7 @@
       var n = arr.length, cur = arr[n - 1];
       if (cur.date > latestDate) latestDate = cur.date;
       var dec = decimals(name), mi = S.minfo[name] || {};
-      var h = '<div class="card" data-item="' + esc(name) + '" title="' + esc(noteOf(cur.date)) + '"><h3><span>' + esc(name) + '</span><span>' + esc(cur.date) + '</span></h3>';
+      var h = '<div class="card" data-item="' + esc(name) + '" title="' + esc(noteOf(cur.date)) + '"><h3><span class="tipn" data-tip="' + esc(name) + '">' + esc(name) + '</span><span>' + esc(cur.date) + '</span></h3>';
       var valText = cur.qual && cur.v === 0 ? cur.qual : fmt(cur.v, dec) + (cur.qual && cur.v !== 0 ? '<small>(' + esc(cur.qual) + ')</small>' : '');
       h += '<div class="val">' + valText + '<small>' + esc(mi.unit || '') + '</small>' +
         (cur.flag ? '<span class="badge ' + cur.flag + '">' + cur.flag + '</span>' : '') + '</div>';
@@ -173,7 +186,10 @@
       '<div class="counts"><span class="pill">直近3回平均と比べて</span><span class="pill good">▲改善 ' + cntAvg.good + '</span><span class="pill bad">▼悪化 ' + cntAvg.bad + '</span><span class="pill flat">―横ばい ' + cntAvg.flat + '</span></div></div>';
     box.innerHTML = head + '<div class="cards">' + cards.join('') + '</div>';
     Array.prototype.forEach.call(box.querySelectorAll('.card'), function (el) {
-      el.addEventListener('click', function () { S.selA = el.getAttribute('data-item'); showTab('graph'); });
+      el.addEventListener('click', function (e) {
+        if (e.target.closest && e.target.closest('.tipn')) return;
+        S.selA = el.getAttribute('data-item'); showTab('graph');
+      });
     });
     var dates = {};
     S.rows.forEach(function (r) { dates[r['検査日']] = 1; });
@@ -300,6 +316,9 @@
       }
     });
     var mi = S.minfo[a], rng = mi.lo != null && mi.hi != null ? mi.lo + '〜' + mi.hi : mi.lo != null ? mi.lo + '以上' : mi.hi != null ? mi.hi + '以下' : 'なし';
+    $('graphTip').innerHTML = [a, b].filter(function (n) { return n && S.series[n]; }).map(function (n) {
+      return '<div class="gl"><h4>' + glossTitle(n) + '</h4>' + glossBody(n) + '</div>';
+    }).join('');
     var noted = {};
     ds.forEach(function (d) { d.data.forEach(function (p) { if (p.note) noted[p.date] = p.note; }); });
     var nd = Object.keys(noted).sort();
@@ -322,7 +341,7 @@
     });
     var keys = Object.keys(byKey).sort().reverse();
     var h = '<h2>検尿・尿の検査(新しい順)</h2><div class="tablewrap"><table><thead><tr><th>検査日</th>' +
-      URINE_COLS.map(function (c) { return '<th>' + esc(c.replace('U-TPテイリョ', '尿蛋白(定量)')) + '</th>'; }).join('') + '</tr></thead><tbody>';
+      URINE_COLS.map(function (c) { return '<th><span class="tipn" data-tip="' + esc(c) + '">' + esc(c.replace('U-TPテイリョ', '尿蛋白(定量)')) + '</span></th>'; }).join('') + '</tr></thead><tbody>';
     keys.forEach(function (k) {
       var kd = k.split(' ')[0];
       h += '<tr><td title="' + esc(noteOf(kd)) + '">' + esc(kd) + (noteOf(kd) ? '<div class="warn">' + esc(noteOf(kd)) + '</div>' : '') + '</td>' + URINE_COLS.map(function (c) {
@@ -390,11 +409,11 @@
         } else if (cellText(r) !== cellText(pr)) diff = '<span class="j-flat">変化あり</span>';
         else diff = '<span class="j-flat">―同じ</span>';
       } else pcell = '<td class="pc"></td>';
-      h += '<tr><td>' + esc(name) + '<div class="pd">' + esc(r['単位'] || '') + (rng ? '　基準 ' + esc(rng) : '') + '</div></td><td class="' + (r['判定'] || (r['定性'] === '(-)' ? 'neg' : '')) + '">' + esc(cellText(r)) + (r['判定'] ? ' ' + esc(r['判定']) : '') + '</td>' +
+      h += '<tr><td><span class="tipn" data-tip="' + esc(name) + '" tabindex="0">' + esc(name) + '</span><div class="pd">' + esc(r['単位'] || '') + (rng ? '　基準 ' + esc(rng) : '') + '</div></td><td class="' + (r['判定'] || (r['定性'] === '(-)' ? 'neg' : '')) + '">' + esc(cellText(r)) + (r['判定'] ? ' ' + esc(r['判定']) : '') + '</td>' +
         pcell + '<td>' + diff + '</td></tr>';
     });
     $('listBody').innerHTML = h + '</tbody></table></div>' +
-      '<div class="note">色つきの列が「前回検査分」です。差の判定は、その項目の「良い方向」と基準範囲から出した目安です。</div>';
+      '<div class="note">項目名を押す(パソコンはマウスを合わせる)と、その項目の説明が出ます。色つきの列が「前回検査分」です。差の判定は、その項目の「良い方向」と基準範囲から出した目安です。</div>';
   }
 
   // ---- 画面切り替え -----------------------------------------------------
@@ -413,6 +432,61 @@
     renderGraphControls();
     var on = $('tabs').querySelector('button.on');
     if (on && on.getAttribute('data-tab') === 'graph') renderChart();
+  }
+
+  // ---- 項目の説明(ポップアップ) ------------------------------------------
+  var tipEl = null, tipFor = null, tipTimer = null;
+  var canHover = window.matchMedia && window.matchMedia('(hover: hover)').matches;
+  function hideTip() {
+    clearTimeout(tipTimer);
+    if (tipEl) tipEl.hidden = true;
+    tipFor = null;
+  }
+  function showTip(anchor) {
+    var name = anchor.getAttribute('data-tip');
+    if (!tipEl) {
+      tipEl = document.createElement('div');
+      tipEl.className = 'tip';
+      tipEl.setAttribute('role', 'tooltip');
+      document.body.appendChild(tipEl);
+      tipEl.addEventListener('mouseenter', function () { clearTimeout(tipTimer); });
+      tipEl.addEventListener('mouseleave', function () { tipTimer = setTimeout(hideTip, 200); });
+      tipEl.addEventListener('click', function (e) { if (e.target.className === 'x') hideTip(); });
+    }
+    clearTimeout(tipTimer);
+    tipFor = anchor;
+    tipEl.innerHTML = '<button class="x" type="button" aria-label="閉じる">×</button><h4>' + glossTitle(name) + '</h4>' + glossBody(name) +
+      '<div class="tipfoot">一般的な説明です。数値の判断は主治医に確認してください。</div>';
+    tipEl.hidden = false;
+    tipEl.style.left = tipEl.style.top = '';
+    if (window.innerWidth > 640) {
+      var r = anchor.getBoundingClientRect(), w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+      var left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+      var top = r.bottom + 6;
+      if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+      tipEl.style.left = left + 'px';
+      tipEl.style.top = top + 'px';
+    }
+  }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('.tipn');
+    if (a) { if (tipFor === a && !tipEl.hidden) hideTip(); else showTip(a); return; }
+    if (tipEl && !tipEl.hidden && !(e.target.closest && e.target.closest('.tip'))) hideTip();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') hideTip();
+    else if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('tipn')) showTip(e.target);
+  });
+  window.addEventListener('scroll', function () { if (window.innerWidth > 640) hideTip(); }, true);
+  if (canHover) {
+    document.addEventListener('mouseover', function (e) {
+      var a = e.target.closest && e.target.closest('.tipn');
+      if (a && a !== tipFor) showTip(a); else if (a) clearTimeout(tipTimer);
+    });
+    document.addEventListener('mouseout', function (e) {
+      var a = e.target.closest && e.target.closest('.tipn');
+      if (a) { clearTimeout(tipTimer); tipTimer = setTimeout(hideTip, 250); }
+    });
   }
 
   // ---- 起動 -----------------------------------------------------------

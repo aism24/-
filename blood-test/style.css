@@ -127,3 +127,23 @@ td .warn { font-size: 11px; }
 thead th.pc { color: var(--prevtx); background: var(--prevbg); }
 .pd { font-size: 10px; color: var(--muted); }
 th small { font-weight: 400; }
+
+.tipn { border-bottom: 1px dotted var(--muted); cursor: help; }
+.tip {
+  position: fixed; z-index: 50; width: 380px; max-width: calc(100vw - 16px);
+  background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25); padding: 12px 14px; font-size: 13px; line-height: 1.55;
+}
+.tip[hidden] { display: none; }
+.tip h4, .gl h4 { margin: 0 24px 6px 0; font-size: 15px; }
+.tip h4 small, .gl h4 small { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 4px; }
+.tip dl, .gl dl { margin: 0; }
+.tip dt, .gl dt { font-weight: 700; color: var(--accent); margin-top: 6px; font-size: 12px; }
+.tip dd, .gl dd { margin: 1px 0 0; }
+.tip .x { position: absolute; right: 8px; top: 6px; border: 0; background: none; color: var(--muted); font-size: 20px; cursor: pointer; line-height: 1; }
+.tipfoot { margin-top: 8px; font-size: 11px; color: var(--muted); }
+.gloss { margin-top: 10px; display: grid; gap: 10px; }
+.gl { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; line-height: 1.55; }
+@media (max-width: 640px) {
+  .tip { left: 8px; right: 8px; bottom: 8px; top: auto; width: auto; max-height: 70vh; overflow-y: auto; }
+}
