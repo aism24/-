@@ -712,3 +712,9 @@
 - やり方: `git show HEAD:<file>` を作業メモ領域に取り出し、pdf-lib・JSZipと模擬のpdfjs・canvas・askで新旧を同じ入力で実行して `cmp`。eslint(no-unused-vars・no-undef)も併用
 - 注意点: 絞り込みは順序も同じになる形(外側=図番候補、内側=製品名候補)にする。コメントだけ変えたCode.gsは貼り替え不要(CODE_VERSIONも据え置き)
 - 使ったアプリ: shipping-list-link
+
+### GASを使うアプリは、Workspace管理者の mst アカウントで作成・デプロイする(2026-10-28)
+- 効果: ms-tottori でデプロイ → 外部通信(Gemini)で権限エラーが4回続いた / mst でデプロイ → 1回で解消(shipping-list-link)。悩む時間をなくせる
+- 理由: GASは「デプロイした人」の権限で動き、外部通信(`script.external_request`)など新しい権限は、デプロイしたアカウントごとに承認が要る。ms-tottori は承認画面が出ず通らなかった(原因は未確定。mst の管理コンソール「OAuthログインイベント」で確認できる)。外部通信を足す前の版は ms-tottori でも動いていた
+- 注意点: ms-tottori のフォルダ・シートを使うときは mst を「編集者」で共有する。保存ファイルの持ち主は mst になる。引き継ぎ書は従来どおり会社アカウントの指定フォルダに保存
+- 使ったアプリ: shipping-list-link(GASを使う全アプリ共通)
