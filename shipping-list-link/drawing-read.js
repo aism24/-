@@ -97,10 +97,11 @@
     var out = await PDFLib.PDFDocument.load(data, { ignoreEncryption: true });
     var stats = { pages: doc.numPages, linked: 0, dup: 0, ng: 0, partial: [] };
     // 図番 → その図番の製品名の一覧(比較用にそろえた形)
-    var byZ = {};
+    var byZ = {}, byName = {};   // byName: 製品名(比較用の形) → その製品名が登録されている図番の一覧
     Object.keys(links).forEach(function (k) {
-      var p = k.split('\t'), z = fold(p[0]);
-      (byZ[z] = byZ[z] || []).push({ zuban: p[0], name: p[1], f: fold(p[1]), v: links[k] });
+      var p = k.split('\t'), z = fold(p[0]), fn = fold(p[1]);
+      (byZ[z] = byZ[z] || []).push({ zuban: p[0], name: p[1], f: fn, v: links[k] });
+      (byName[fn] = byName[fn] || []).push(p[0]);
     });
     var sent = [];   // 直近1分に送った時刻
     async function throttle() {   // 1分あたりの回数を超えないよう、空くまで待つ
@@ -135,6 +136,16 @@
       }
       return null;
     }
+    // 読み取ったセルの中に、マスタにある製品名で、ページの図番(fz)ではなく別の図番に登録されているものがあれば返す。
+    // 読み違いではなく「この図番の製品名ではない」ことが分かるので、読み直し(Geminiの呼び出し)をしない
+    function otherZuban(cells, fz) {
+      for (var ci = 0; ci < (cells || []).length; ci++) {
+        var t = cells[ci].text, zs = t && byName[fold(t)];
+        if (zs && !zs.some(function (z) { return fold(z) === fz; })) return { text: t, zubans: zs.filter(function (z, i) { return zs.indexOf(z) === i; }).slice(0, 3) };
+      }
+      return null;
+    }
+    function otherNg(pn, z, o) { return { page: pn, zuban: z, name: o.text, reason: '製品名はマスタの別の図番(' + o.zubans.join('・') + ')に登録されています' }; }
     // リンク(クリックできる範囲)と、セル全体の薄い青の着色を、ページに付ける
     function addLink(pdfPage, a) {
       var ctx = out.context, act = ctx.obj({ S: 'URI', URI: PDFLib.PDFString.of(root.ShippingCore.encodeUri(a.uri)) });
@@ -200,6 +211,8 @@
           var fb = hit && boxPx(hit.c.box, PW, PH);
           if (fb) { tbx = { x0: fb.x0 - cx0, y0: fb.y0 - cy0, x1: fb.x1 - cx0, y1: fb.y1 - cy0 }; cellOpt = { idx: tables[ti].cells.indexOf(hit.c) }; }
           else hit = null;
+          var oz = !hit && otherZuban(tables[ti].cells, fold(zFast));
+          if (oz) { stats.ng++; stats.partial.push(otherNg(pn, zFast, oz)); release(tr); continue; }   // 別の図番の製品名: 遅い道(読み直し)に進まない
         }
         if (!hit) {
           seen = [];
@@ -211,15 +224,18 @@
             continue;
           }
           // 製品名が一致しなかったときだけ、同じ画像をもう1回読み直す(CADの小さな文字「外」などをGeminiが読み落とすことがあり、読み取りは毎回少し変わる)
-          for (var tryN = 0; tryN < TABLE_TRIES && !hit; tryN++) {
+          var other = null;
+          for (var tryN = 0; tryN < TABLE_TRIES && !hit && !other; tryN++) {
             var tbl = await call('table', tr, true);
             seen = [];
             hit = pick(tbl.cells, zUse, used, seen);
             if (hit) { tbx = boxPx(hit.c.box, tr.canvas.width, tr.canvas.height); cellOpt = { idx: tbl.cells.indexOf(hit.c) }; }
+            else other = otherZuban(tbl.cells, fold(zUse));   // 別の図番の製品名なら、読み直さない
           }
         }
         var ng = null;
-        if (!hit) ng = { zuban: zUse, name: seen.join(' | '), reason: '製品名が不一致(読み取った表の文字を表示)' };
+        if (!hit && other) ng = otherNg(pn, zUse, other);
+        else if (!hit) ng = { zuban: zUse, name: seen.join(' | '), reason: '製品名が不一致(読み取った表の文字を表示)' };
         else if (Array.isArray(hit.e.v)) { stats.dup++; ng = { zuban: hit.e.zuban, name: hit.e.name, reason: '重複' }; }
         else if (!tbx) ng = { zuban: zUse, name: hit.c.text, reason: 'セルの位置を読み取れません' };
         if (hit) used[hit.k] = 1;
