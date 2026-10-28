@@ -181,22 +181,23 @@
       var n = arr.length, cur = arr[n - 1];
       if (cur.date > latestDate) latestDate = cur.date;
       var dec = decimals(name), mi = S.minfo[name] || {};
-      var h = '<div class="card" data-item="' + esc(name) + '" title="' + esc(noteOf(cur.date)) + '"><h3><span class="tipn" data-tip="' + esc(name) + '">' + esc(name) + '</span><span>' + esc(cur.date) + '</span></h3>';
+      var nt = cur.flag ? noteOf(cur.date) : '';  // 異常値(H・L)の項目だけ注意書きを出す
+      var h = '<div class="card" data-item="' + esc(name) + '" title="' + esc(nt) + '"><h3><span class="tipn" data-tip="' + esc(name) + '">' + esc(name) + '</span><span>' + esc(cur.date) + '</span></h3>';
       var valText = cur.qual && cur.v === 0 ? cur.qual : fmt(cur.v, dec) + (cur.qual && cur.v !== 0 ? '<small>(' + esc(cur.qual) + ')</small>' : '');
       h += '<div class="val">' + valText + '<small>' + esc(mi.unit || '') + '</small>' +
         (cur.flag ? '<span class="badge ' + cur.flag + '">' + cur.flag + '</span>' : '') + '</div>';
-      if (noteOf(cur.date)) h += '<div class="warn">' + esc(noteOf(cur.date)) + '</div>';
+      if (nt) h += '<div class="warn">' + esc(nt) + '</div>';
       if (n >= 2) {
         var prev = arr[n - 2], jp = judge(name, cur.v, prev.v);
         cnt[jp.cls]++;
-        h += '<div class="cmp"><span class="k">前回 ' + fmt(prev.v, dec) + (noteOf(prev.date) ? ' ' + warn('(' + noteOf(prev.date) + ')', true) : '') + '</span><span class="j-' + jp.cls + '">' + jp.label + ' (' + (jp.d > 0 ? '+' : '') + fmt(jp.d, dec) + ')</span></div>';
+        h += '<div class="cmp"><span class="k">前回 ' + fmt(prev.v, dec) + (nt && noteOf(prev.date) ? ' ' + warn('(' + noteOf(prev.date) + ')', true) : '') + '</span><span class="j-' + jp.cls + '">' + jp.label + ' (' + (jp.d > 0 ? '+' : '') + fmt(jp.d, dec) + ')</span></div>';
       }
       if (n >= 3) {
         var prior = arr.slice(Math.max(0, n - 4), n - 1).map(function (p) { return p.v; });
         var avg = mean(prior), ja = judge(name, cur.v, avg);
         cntAvg[ja.cls]++;
         var priorNote = arr.slice(Math.max(0, n - 4), n - 1).some(function (p) { return noteOf(p.date); });
-        h += '<div class="cmp"><span class="k">直近' + prior.length + '回平均 ' + fmt(avg, dec) + (priorNote ? ' ' + warn('(大腸検査日を含む)', true) : '') + '</span><span class="j-' + ja.cls + '">' + ja.label + ' (' + (ja.d > 0 ? '+' : '') + fmt(ja.d, dec) + ')</span></div>';
+        h += '<div class="cmp"><span class="k">直近' + prior.length + '回平均 ' + fmt(avg, dec) + (nt && priorNote ? ' ' + warn('(大腸検査日を含む)', true) : '') + '</span><span class="j-' + ja.cls + '">' + ja.label + ' (' + (ja.d > 0 ? '+' : '') + fmt(ja.d, dec) + ')</span></div>';
       }
       var rng = mi.lo != null && mi.hi != null ? mi.lo + '〜' + mi.hi : mi.lo != null ? mi.lo + '以上' : mi.hi != null ? mi.hi + '以下' : '';
       if (rng) h += '<div class="rng">基準 ' + esc(rng) + (mi.dir ? '　/　' + esc(mi.dir) : '') + '</div>';
