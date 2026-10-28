@@ -4,7 +4,7 @@
 <style>
 :root{--bg:#000;--fg:#e6eaf2;--card:#0b0f16;--line:#2a3342;--acc:#58a6ff;--ok:#3fb68b;--warn:#e0a458;color-scheme:dark}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,"Hiragino Sans","Yu Gothic",sans-serif}
-.hdr{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;margin-bottom:4px}.appicon{vertical-align:middle;margin-right:8px;image-rendering:pixelated}@media(max-width:480px){.appicon{width:32px;height:32px;margin-right:4px}.hdr h1{font-size:16px}}.hdr h1{margin:0;grid-column:2;grid-row:1;text-align:center}.brand{grid-column:3;grid-row:1;justify-self:end;display:flex;align-items:center;gap:8px}.logo{height:34px;width:auto}.logo-mark{fill:#e60012}.logo-text{fill:#fff}.company{color:#fff;font-size:17px;white-space:nowrap;font-family:"Yu Gothic","游ゴシック","Meiryo","メイリオ","Hiragino Kaku Gothic ProN",sans-serif;font-weight:800}
+.hdr{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;margin-bottom:4px}.appicon{flex:none;image-rendering:pixelated}@media(max-width:480px){.appicon{width:32px;height:32px}.hdr h1{font-size:16px;gap:4px}}.hdr h1{display:flex;align-items:center;justify-content:center;gap:8px;line-height:1.2;margin:0;grid-column:2;grid-row:1;text-align:center}.brand{grid-column:3;grid-row:1;justify-self:end;display:flex;align-items:center;gap:8px}.logo{height:34px;width:auto}.logo-mark{fill:#e60012}.logo-text{fill:#fff}.company{color:#fff;font-size:17px;white-space:nowrap;font-family:"Yu Gothic","游ゴシック","Meiryo","メイリオ","Hiragino Kaku Gothic ProN",sans-serif;font-weight:800}
 @media(max-width:520px){.company{display:none}}
 
 #drop{position:relative;overflow:hidden;animation:glowPulse 3s ease-in-out infinite}
