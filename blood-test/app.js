@@ -304,6 +304,15 @@
       });
       scales.y1 = { position: 'right', ticks: { color: muted }, grid: { drawOnChartArea: false }, title: { display: true, text: b, color: muted } };
     }
+    // 基準範囲の帯が軸の範囲外で見えなくならないよう、基準値までを軸に含める(片側だけの基準は、その外側にも少し余白)
+    var mia = S.minfo[a], ys = pts(a).map(function (p) { return p.y; }).filter(isNum);
+    if (ys.length && (mia.lo != null || mia.hi != null)) {
+      var ymin = Math.min.apply(null, ys), ymax = Math.max.apply(null, ys);
+      [mia.lo, mia.hi].forEach(function (e) { if (e != null) { ymin = Math.min(ymin, e); ymax = Math.max(ymax, e); } });
+      var ySpan = (ymax - ymin) || Math.abs(ymax) || 1;
+      scales.y.suggestedMin = ymin - ySpan * 0.05;
+      scales.y.suggestedMax = ymax + ySpan * (mia.hi == null ? 0.3 : 0.05);
+    }
     var xs = [];
     ds.forEach(function (d) { d.data.forEach(function (p) { xs.push(p.x); }); });
     if (xs.length) {
@@ -400,8 +409,21 @@
     }
     return null;
   }
+  // ◀=前回(一つ古い検査) ▶=次回(一つ新しい検査)。該当がなければ押せない(グレーアウト)
+  function updateDateNav() {
+    var i = S.listKeys.indexOf($('selDate').value);
+    $('datePrev').disabled = i < 0 || i >= S.listKeys.length - 1;
+    $('dateNext').disabled = i <= 0;
+  }
+  function moveDate(step) {
+    var i = S.listKeys.indexOf($('selDate').value) + step;
+    if (i < 0 || i >= S.listKeys.length) return;
+    $('selDate').value = S.listKeys[i];
+    renderList();
+  }
   function renderList() {
     var k = $('selDate').value;
+    updateDateNav();
     if (!k) { $('listBody').innerHTML = ''; return; }
     var parts = k.split(' ');
     var rows = S.rows.filter(function (r) { return r['検査日'] === parts[0] && r['到着時間'] === parts[1]; });
@@ -532,6 +554,8 @@
     renderChart();
   });
   $('selDate').addEventListener('change', renderList);
+  $('datePrev').addEventListener('click', function () { moveDate(1); });
+  $('dateNext').addEventListener('click', function () { moveDate(-1); });
   window.BT = { S: S, post: post, load: load, esc: esc, decimals: decimals, noteOf: noteOf, isNum: isNum, ZERO_NEG: ZERO_NEG };
   load();
 })();
