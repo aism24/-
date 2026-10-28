@@ -18,7 +18,7 @@ var SHEET_ID = '19l9P9C15wQ0jIcjIc_czZCiyDbnesQbq-Q88ttndMfs';
 var SHEET_NAME = '記録';
 var LINKS_FILE_NAME = '_リンク表.json';
 var STORE_FILE_NAME = '_リンク表_Excel別.json'; // Excelごとの抜き出し結果(ボタンの再生成で、変更の無いExcelを読み直さないため)
-var CODE_VERSION = '20261028a';                // コードを変えたら更新する(?action=ping で確認)
+var CODE_VERSION = '20261028b';                // コードを変えたら更新する(?action=ping で確認)
 var COL_ZUBAN = 'F', COL_NAME = 'G'; // 図番列 / 製品名(製品マーク)列
 
 /* ===== 純粋関数(GAS API非依存・Nodeでテスト可能) ===== */
@@ -370,7 +370,7 @@ function ocrRead_(d) {
   } catch (err) { return { ok: false, error: String(err) }; }
 }
 
-/** body(text/plain): JSON {name, pages, linked, ng, pdf(base64)} または {name, xlsx(base64)}、または {action:'ocr', kind, image(JPEGのbase64)} */
+/** body(text/plain): JSON {name, pages, linked, ng, pdf(base64)} または {name, pages(シート数), linked, ng, xlsx(base64)}、または {action:'ocr', kind, image(JPEGのbase64)} */
 function doPost(e) {
   var d0 = null;
   try { d0 = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: String(err) }); }
@@ -380,12 +380,13 @@ function doPost(e) {
     lock.waitLock(20000);
     var d = d0, now = new Date();
     var stamp = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd_HHmmss');
-    if (d.xlsx) {   // Excelは保存のみ(記録シートには書かない)
+    var blob;
+    if (d.xlsx) {   // Excel(枚数の列にはシート数、URLの列にはExcelのURLを入れる)
       var ext = /\.xlsm$/i.test(d.name) ? 'xlsm' : 'xlsx';
-      var xb = Utilities.newBlob(Utilities.base64Decode(d.xlsx), ext === 'xlsm' ? 'application/vnd.ms-excel.sheet.macroEnabled.12' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', sanitizeName_(d.name) + '_' + stamp + '.' + ext);
-      return json_({ ok: true, url: DriveApp.getFolderById(PENDING_FOLDER_ID).createFile(xb).getUrl() });
+      blob = Utilities.newBlob(Utilities.base64Decode(d.xlsx), ext === 'xlsm' ? 'application/vnd.ms-excel.sheet.macroEnabled.12' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', sanitizeName_(d.name) + '_' + stamp + '.' + ext);
+    } else {
+      blob = Utilities.newBlob(Utilities.base64Decode(d.pdf), 'application/pdf', sanitizeName_(d.name) + '_' + stamp + '.pdf');
     }
-    var blob = Utilities.newBlob(Utilities.base64Decode(d.pdf), 'application/pdf', sanitizeName_(d.name) + '_' + stamp + '.pdf');
     var file = DriveApp.getFolderById(PENDING_FOLDER_ID).createFile(blob);
     // 2行目に挿入(最新が常に2行目、古い記録ほど下へ)。列: 日時 / 枚数 / PDFのURL / リンク付与 / NG
     var sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
