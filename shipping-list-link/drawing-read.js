@@ -145,6 +145,11 @@
       }
       return null;
     }
+    // 右下の隅(ページの右半分・下から2割)だけを拡大して locate で読む。図面番号の読み直しと、図面番号欄の位置探しに使う
+    async function cornerLocate(pg) {
+      var v = pg.getViewport({ scale: 1 }), sc = CORNER_SIDE / (v.width * 0.5);
+      return call('locate', await renderRegion(pg, sc, v.width * sc * 0.5, v.height * sc * 0.8, v.width * sc * 0.5, v.height * sc * 0.2));
+    }
     function otherNg(pn, z, o) { return { page: pn, zuban: z, name: o.text, reason: '製品名はマスタの別の図番(' + o.zubans.join('・') + ')に登録されています' }; }
     // リンク(クリックできる範囲)と、セル全体の薄い青の着色を、ページに付ける
     function addLink(pdfPage, a) {
@@ -187,8 +192,7 @@
         // どれもマスタに無いときだけ、右下の隅を広めに切り出して読み直す(図面番号が「WR」だけなど途中までしか読めないことがあるため)
         if (!cs.some(function (t) { return byZ[fold(t)]; })) {
           try {
-            var v = page.getViewport({ scale: 1 }), sc = CORNER_SIDE / (v.width * 0.5);
-            var cn = await call('locate', await renderRegion(page, sc, v.width * sc * 0.5, v.height * sc * 0.8, v.width * sc * 0.5, v.height * sc * 0.2));
+            var cn = await cornerLocate(page);
             if (cn.drawingNumber) cs.push(cn.drawingNumber);
           } catch (e) { /* 読み直しに失敗しても、ここまでの値で続ける */ }
         }
@@ -257,9 +261,9 @@
       cands.sort(function (a, b) { return a.pn - b.pn; });
       var tpl = null;
       for (var ci = 0; ci < Math.min(3, cands.length) && !tpl; ci++) {
-        var pg = await doc.getPage(cands[ci].pn), v = pg.getViewport({ scale: 1 }), sc = CORNER_SIDE / (v.width * 0.5);
+        var pg = await doc.getPage(cands[ci].pn);
         try {
-          var cn = await call('locate', await renderRegion(pg, sc, v.width * sc * 0.5, v.height * sc * 0.8, v.width * sc * 0.5, v.height * sc * 0.2)), cb = cn.drawingNumberBox;
+          var cn = await cornerLocate(pg), cb = cn.drawingNumberBox;
           if (cn.drawingNumber && fold(cn.drawingNumber) === cands[ci].fz && cb && cb.length === 4) tpl = [800 + cb[0] * 0.2, 500 + cb[1] * 0.5, 800 + cb[2] * 0.2, 500 + cb[3] * 0.5];
         } catch (e) { /* 探し直しに失敗しても、製品名のリンクはそのまま */ }
       }

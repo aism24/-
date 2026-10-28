@@ -120,8 +120,8 @@
     var mapUri = (opts && opts.mapUri) || function (u) { return u; };
     var doc = await pdfjsLib.getDocument({ data: new Uint8Array(data.slice(0)) }).promise;
     var out = await PDFLib.PDFDocument.load(data, { ignoreEncryption: true });
-    var zset = {}, shapes = {};
-    Object.keys(links).forEach(function (k) { var z = k.split('\t')[0]; zset[z] = 1; shapes[shape(z)] = 1; });
+    var zset = {}, nset = {}, shapes = {};
+    Object.keys(links).forEach(function (k) { var p = k.split('\t'); zset[p[0]] = 1; nset[p[1]] = 1; shapes[shape(p[0])] = 1; });
     var stats = { pages: doc.numPages, linked: 0, dup: 0, ng: 0, partial: [], rows: 0 };
     var tcs = [], vps = [], sched = [], anySched = false;
     try {
@@ -142,7 +142,11 @@
         var toks = rowTokens(rows[r]), done = {}, hasAny = false;
         stats.rows++;
         var rowStartLinked = stats.linked;
-        for (var i = 0; i < toks.length; i++) for (var j = 0; j < toks.length; j++) {
+        // マスタに図番として在る語(zi)と製品名として在る語(nj)の組だけを調べる(全トークンの総当たりをしない。順序・結果は同じ)
+        var zi = [], nj = [];
+        toks.forEach(function (t, k) { if (zset[t.text]) zi.push(k); if (nset[t.text]) nj.push(k); });
+        for (var a = 0; a < zi.length; a++) for (var b = 0; b < nj.length; b++) {
+          var i = zi[a], j = nj[b];
           if (i === j || toks[i].text === toks[j].text) continue;
           var key = toks[i].text + '\t' + toks[j].text, v = links[key];
           if (!v) continue;

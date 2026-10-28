@@ -1,10 +1,10 @@
 /**
- * 出荷リスト図番リンク付与アプリ用 GAS(ms-tottori アカウントで実行)
+ * 実寸法師ハイパーリンク付与(旧 出荷リスト図番リンク付与)アプリ用 GAS(デプロイは mst アカウントで行う。ms-tottori だと外部通信の権限エラーになった)
  *  - 毎朝: マスタExcelのハイパーリンクを抜き出し「リンク表(JSON)」をDriveに保存
  *  - doGet : リンク表JSONを返す(?action=links) / 軽い状態確認(?action=info) / 今すぐ再生成(?action=rebuild。Excelに変更がなければ省略、連打は1分で制限、件数が旧の90%未満なら上書きしない)
  *            ?action=rebuild は前回の再生成後に更新されたExcelだけを読み直す(他は「Excelごとの抜き出し結果」を流用)。毎朝は全件読み直す
  *            / 版の確認(?action=ping → {ok, version})
- *  - doPost: 取り込んだ元PDFを保存フォルダへ保存し、スプレッドシート「記録」の2行目に日時/ページ数/URLを挿入(最新が上)
+ *  - doPost: 取り込んだ元PDF・Excelを PENDING_FOLDER_ID へ保存し、スプレッドシート「記録」の2行目に日時/枚数(Excelはシート数)/URL/リンク付与/NGを挿入(最新が上)。作成から KEEP_DAYS 日超は trashOldFiles(毎日3時。setupTrash で作る)でゴミ箱へ
  *            / {action:'ocr', kind, image}: 詳細図PDFの切り出し画像をGeminiで読む(モデル名・APIKEYは「情報」シートから。1日400回まで)。?action=ocrcheck で設定の確認
  *
  * 【初回セットアップ】 ①このコードを貼り付け ②setupDaily を1回実行(権限を承認) ③buildMaster を1回実行

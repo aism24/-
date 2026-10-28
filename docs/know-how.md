@@ -706,3 +706,9 @@
 - 効果: pushが non-fast-forward で拒否される/停止フックが「未push」を出す → `git merge -s ours origin/<作業ブランチ>` で履歴だけ取り込み、通常のpushで解消(強制push不要)
 - やり方: `git fetch origin <ブランチ>` → `git merge -s ours origin/<ブランチ>` → `git push -u origin <ブランチ>`。内容は手元の版のまま。squashマージ後に同じブランチ名で続ける場合に使う
 - 使ったアプリ: shipping-list-link(全アプリ共通)
+
+### コードの再点検は「旧版を取り出して、模擬入力の出力をJSONで比べる」(shipping-list-link、2026-10-28)
+- 効果: 行ごとのトークン総当たり(全部×全部)を「マスタに図番/製品名として在る語どうし」に絞った → 1行60語の模擬で 507ms→115ms。通常PDF・加工予定表・Excel・詳細図7場合の出力JSONは旧版と完全一致(sha1同一)
+- やり方: `git show HEAD:<file>` を作業メモ領域に取り出し、pdf-lib・JSZipと模擬のpdfjs・canvas・askで新旧を同じ入力で実行して `cmp`。eslint(no-unused-vars・no-undef)も併用
+- 注意点: 絞り込みは順序も同じになる形(外側=図番候補、内側=製品名候補)にする。コメントだけ変えたCode.gsは貼り替え不要(CODE_VERSIONも据え置き)
+- 使ったアプリ: shipping-list-link
