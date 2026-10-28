@@ -23,6 +23,7 @@
 .fi .c-green{background:#c8efd4;color:#1f6b3a;box-shadow:0 0 10px rgba(160,230,185,.45)}
 .fi .c-white{background:#fff;color:#222;box-shadow:0 0 10px rgba(255,255,255,.45)}
 .fi .c-excel{background:linear-gradient(135deg,#17803d,#2fb260);color:#fff;box-shadow:0 0 10px rgba(47,178,96,.5)}
+.fi .pi{position:absolute;top:50%;transform:translateY(calc(-50% - 3px));image-rendering:pixelated}.fi .pi-l{left:-60px}.fi .pi-r{right:-60px}@media(max-width:480px){.fi .pi{width:32px;height:32px;transform:translateY(calc(-50% - 2px))}.fi .pi-l{left:-38px}.fi .pi-r{right:-38px}}
 .fi .b-pink::after{content:"🔗";position:absolute;right:-16px;bottom:-16px;font-size:36px}
 @keyframes move{0%{left:-240px;opacity:1}33.6%,56.4%{left:calc(50% - 120px);opacity:1}84%{opacity:1}91.2%{left:100%;opacity:1}100%{left:100%;opacity:0}}
 @keyframes toRed{0%,36%{opacity:1}43.2%,100%{opacity:0}}
@@ -69,7 +70,7 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
 <div class="notice"><div>最新図とマスタが完全一致したリンクが付与されます</div><div>※古い状態で図番と製品名が食い違えば反映できません。</div></div>
 <div id="drop">
   <div class="stage" id="stage">
-    <div class="fi"><div class="box"><div class="two"><div class="c c-white">詳細図PDF</div><div class="c c-red">出荷リスト</div><div class="c c-excel">Excelファイル</div><div class="c c-green">その他PDF</div></div><div class="b b-pink">リンク<br>付き</div></div></div>
+    <div class="fi"><div class="box"><div class="two"><div class="c c-white">詳細図PDF</div><div class="c c-red">出荷リスト</div><div class="c c-excel">Excelファイル</div><div class="c c-green">その他PDF</div></div><div class="b b-pink"><img class="pi pi-l" src="icon.png" width="48" height="48" alt="">リンク<br>付き<img class="pi pi-r" src="icon.png" width="48" height="48" alt=""></div></div></div>
   </div>
   <b>PDF / Excel を画面のどこにでもドロップ</b>またはクリックして選択
   <input id="file" type="file" accept="application/pdf,.xlsx,.xlsm" hidden>
