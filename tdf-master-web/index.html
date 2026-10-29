@@ -2354,6 +2354,7 @@ tdf_binary.py / tdf_master_extractor.py / tdf_master_extractor_multi.py は
 from __future__ import annotations
 
 import math
+import re
 
 import tdf_binary as tb
 import tdf_master_extractor as ex
@@ -2450,38 +2451,52 @@ def _compute_tier_info_small(rows: list) -> dict:
 
 
 
-def _dim_rows(tdf, x_min, x_max, y_ref, y_max, main_axis_deg, tol=40.0):
-    """図面上部の水平な寸法値を、Y(行)ごとにまとめて上から順に返す。"""
-    items = []
-    for r in tdf.texts:
-        v = ex._try_float(tdf.resolve_text(r))
-        if v is None or v <= 0:
-            continue
-        if not (x_min <= r.x <= x_max and r.y > y_ref and (y_max is None or r.y < y_max)):
-            continue
-        if abs(round(math.degrees(tdf.resolve_rot(r)), 1) - (main_axis_deg or 0.0)) > 1.0:
-            continue
-        items.append((r.y, v))
-    rows = []
-    for y, v in sorted(items, reverse=True):
-        if rows and abs(rows[-1][0] - y) <= tol:
-            rows[-1][1].append(v)
-        else:
-            rows.append([y, [v]])
-    return rows
+def _flange_thickness(size):
+    """サイズ表記の最後の数値をフランジ厚として返す(H-346x174x6x9 なら 9)。"""
+    if not size or "x" not in size:
+        return None
+    nums = re.findall(r"[0-9]+(?:\.[0-9]+)?", size.split("x", 1)[1])
+    return float(nums[-1]) if nums else None
 
 
-def _second_row_correction(tdf, x_min, x_max, y_ref, y_max, main_axis_deg, current):
-    """選ばれた長さが「上から2段目の寸法行」の値でないときだけ、その行の最大値に差し替える。
-    (1段目=全長、2段目=梁本体の長さ、という図面で、取付ピッチ等の別の寸法や
-    全長が選ばれてしまうのを直す。すでに2段目の値ならそのまま。)"""
-    rows = _dim_rows(tdf, x_min, x_max, y_ref, y_max, main_axis_deg)
-    if current is None or len(rows) < 2:
-        return current
-    second = rows[1][1]
-    if any(abs(v - current) < 0.5 for v in second):
-        return current
-    return max(second)
+def _flange_length(tdf, x_min, x_max, y_ref, y_max, tf):
+    """梁本体の端から端の長さを、フランジの形から求める。
+
+    フランジは「板厚tfだけ離れて向かい合う平行な2本の線」として描かれる
+    (寸法線・基準線にはこの性質がない)。2本の端のずれは開先の分としてtf以内まで
+    認め、2本を合わせた端から端をそのフランジの長さとする。ハンチ等で短い
+    フランジもあるため、見つかったうち最も長いものを梁本体の長さとして返す。
+    向きは線どうしで判定するので、斜めに描かれた梁にもそのまま使える。
+    見つからなければNone(呼び出し側は従来のdetermine_lengthの値を使う)。
+    """
+    if not tf:
+        return None
+    segs = []
+    for ln in tdf.lines:
+        if ln.length < 100:
+            continue
+        if not (x_min <= (ln.x1 + ln.x2) / 2 <= x_max and min(ln.y1, ln.y2) > y_ref
+                and (y_max is None or max(ln.y1, ln.y2) < y_max)):
+            continue
+        segs.append((math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1) % math.pi, ln))
+    best = None
+    for i, (ta, a) in enumerate(segs):
+        ux, uy = math.cos(ta), math.sin(ta)
+        pa = sorted((a.x1 * ux + a.y1 * uy, a.x2 * ux + a.y2 * uy))
+        da = -a.x1 * uy + a.y1 * ux
+        for tb_, b in segs[i + 1:]:
+            d = abs(ta - tb_)
+            if min(d, math.pi - d) > math.radians(0.05):
+                continue
+            if abs(abs(da - (-b.x1 * uy + b.y1 * ux)) - tf) >= 0.6:
+                continue
+            pb = sorted((b.x1 * ux + b.y1 * uy, b.x2 * ux + b.y2 * uy))
+            if abs(pa[0] - pb[0]) > tf + 0.6 or abs(pa[1] - pb[1]) > tf + 0.6:
+                continue
+            length = round(max(pa[1], pb[1]) - min(pa[0], pb[0]), 1)
+            if best is None or length > best:
+                best = length
+    return best
 
 def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
     drawing_number = ex.find_drawing_number(tdf)
@@ -2518,7 +2533,9 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
             x_min = row.x_mark
             x_max = row.x_next
         length_value, debug = ex.determine_length(tdf, x_min, x_max, row.y, y_max=tier_y_max)
-        length_value = _second_row_correction(tdf, x_min, x_max, row.y, tier_y_max, debug.get("main_axis_deg"), length_value)
+        flange_length = _flange_length(tdf, x_min, x_max, row.y, tier_y_max, _flange_thickness(row.size))
+        if flange_length is not None:
+            length_value = flange_length
         lengths[id(row)] = length_value
         beam_types[id(row)] = classify_beam_type(
             debug.get("main_axis_deg") if length_value is not None else None
