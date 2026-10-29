@@ -47,8 +47,10 @@ def _try_float(s: str | None) -> float | None:
 # ため)が、可読性のため長い接頭辞を先に並べている。
 # 2026-09-16、KIX01現場`S-1 R1G-07`で`MHY-1200x500x22x40`という表記
 # (`M`+H系統)が実データで初めて確認されたため追加。
+# 2026-10-29、N2B-36〜42の間柱`2L-75x75x9`(L形鋼2枚)を追加。サイズと
+# 認識されず「マーク|設計符号|本数」の3項目の表として1列ずれて読まれていた。
 SIZE_PATTERN = re.compile(
-    r"^(BBOX|BCP|BCR|BOX|BH|BT|CT|C|MHY|HFT|HYT|HF|HY|H|I|LH|L|P|SH|TH|[0-9]+φ|\[|角)[\-‐]?\s*[0-9]"
+    r"^(2L|BBOX|BCP|BCR|BOX|BH|BT|CT|C|MHY|HFT|HYT|HF|HY|H|I|LH|L|P|SH|TH|[0-9]+φ|\[|角)[\-‐]?\s*[0-9]"
 )
 
 # 「同じ行」とみなすY座標の許容誤差。当初1.0(ほぼ完全一致)だったが、

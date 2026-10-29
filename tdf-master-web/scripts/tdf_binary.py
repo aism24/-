@@ -36,6 +36,12 @@ _SIZE_ARC_ANGLE = -2147483616   # 0x80000020 = 32
 
 DAI_PATTERN = re.compile(r"^[0-9]+台$")
 
+# 直線・円弧の座標として読む値の上限(壊れた値を除くため)。当初1,000,000だったが、
+# N2B-40〜42等(26-14 N棟の小梁、23ファイル)はx=1,000,000を超える位置に描かれており、
+# 線と長丸がほぼすべて捨てられていた(2026-10-29)。上げても1,000,000以下の図面の
+# 読み取り結果は変わらないことを確認済み。
+_COORD_LIMIT = 10_000_000
+
 
 @dataclass
 class TextRecord:
@@ -155,7 +161,7 @@ def _parse_lines(data: bytes) -> list[LineRecord]:
                 except struct.error:
                     i += 1
                     continue
-                if all(v == v and abs(v) < 1_000_000 for v in (x1, y1, x2, y2)):
+                if all(v == v and abs(v) < _COORD_LIMIT for v in (x1, y1, x2, y2)):
                     lines.append(LineRecord(i, ref0, x1, y1, x2, y2))
         i += 1
     return lines
@@ -175,7 +181,7 @@ def _parse_arcs(data: bytes) -> list[ArcRecord]:
                 except struct.error:
                     i += 1
                     continue
-                if cx == cx and cy == cy and r == r and 0 < r < 1000 and abs(cx) < 1_000_000 and abs(cy) < 1_000_000:
+                if cx == cx and cy == cy and r == r and 0 < r < 1000 and abs(cx) < _COORD_LIMIT and abs(cy) < _COORD_LIMIT:
                     a1 = None
                     angle_off = i + 48
                     if angle_off + 32 <= n:

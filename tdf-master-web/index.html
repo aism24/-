@@ -189,6 +189,12 @@ _SIZE_ARC_ANGLE = -2147483616   # 0x80000020 = 32
 
 DAI_PATTERN = re.compile(r"^[0-9]+台$")
 
+# 直線・円弧の座標として読む値の上限(壊れた値を除くため)。当初1,000,000だったが、
+# N2B-40〜42等(26-14 N棟の小梁、23ファイル)はx=1,000,000を超える位置に描かれており、
+# 線と長丸がほぼすべて捨てられていた(2026-10-29)。上げても1,000,000以下の図面の
+# 読み取り結果は変わらないことを確認済み。
+_COORD_LIMIT = 10_000_000
+
 
 @dataclass
 class TextRecord:
@@ -308,7 +314,7 @@ def _parse_lines(data: bytes) -> list[LineRecord]:
                 except struct.error:
                     i += 1
                     continue
-                if all(v == v and abs(v) < 1_000_000 for v in (x1, y1, x2, y2)):
+                if all(v == v and abs(v) < _COORD_LIMIT for v in (x1, y1, x2, y2)):
                     lines.append(LineRecord(i, ref0, x1, y1, x2, y2))
         i += 1
     return lines
@@ -328,7 +334,7 @@ def _parse_arcs(data: bytes) -> list[ArcRecord]:
                 except struct.error:
                     i += 1
                     continue
-                if cx == cx and cy == cy and r == r and 0 < r < 1000 and abs(cx) < 1_000_000 and abs(cy) < 1_000_000:
+                if cx == cx and cy == cy and r == r and 0 < r < 1000 and abs(cx) < _COORD_LIMIT and abs(cy) < _COORD_LIMIT:
                     a1 = None
                     angle_off = i + 48
                     if angle_off + 32 <= n:
@@ -422,8 +428,10 @@ def _try_float(s: str | None) -> float | None:
 # ため)が、可読性のため長い接頭辞を先に並べている。
 # 2026-09-16、KIX01現場`S-1 R1G-07`で`MHY-1200x500x22x40`という表記
 # (`M`+H系統)が実データで初めて確認されたため追加。
+# 2026-10-29、N2B-36〜42の間柱`2L-75x75x9`(L形鋼2枚)を追加。サイズと
+# 認識されず「マーク|設計符号|本数」の3項目の表として1列ずれて読まれていた。
 SIZE_PATTERN = re.compile(
-    r"^(BBOX|BCP|BCR|BOX|BH|BT|CT|C|MHY|HFT|HYT|HF|HY|H|I|LH|L|P|SH|TH|[0-9]+φ|\[|角)[\-‐]?\s*[0-9]"
+    r"^(2L|BBOX|BCP|BCR|BOX|BH|BT|CT|C|MHY|HFT|HYT|HF|HY|H|I|LH|L|P|SH|TH|[0-9]+φ|\[|角)[\-‐]?\s*[0-9]"
 )
 
 # 「同じ行」とみなすY座標の許容誤差。当初1.0(ほぼ完全一致)だったが、
@@ -2527,7 +2535,8 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
 
     ハンチ等で短いフランジもあるため、最も長いものを梁本体とする。向きは線どうしで
     判定するので、斜めに描かれた梁にもそのまま使える。
-    戻り値は (長さ, (左端, 右端)) で、端は梁せいの中央の座標。見つからなければNone。
+    戻り値は (長さ, (左端, 右端), フランジの線の向き[度]) で、端は梁せいの中央の座標。
+    見つからなければNone。
     """
     if not tf:
         return None
@@ -2711,7 +2720,7 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
         c = (lo + hi) / 2
         ends.append((pos * ux - c * uy, pos * uy + c * ux))
     ends.sort()
-    return (round(end - start, 1), (ends[0], ends[1]))
+    return (round(end - start, 1), (ends[0], ends[1]), math.degrees(th))
 
 _NUMERIC_TEXT = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
 
@@ -2773,14 +2782,16 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
                                 depth=_beam_depth(row.size))
         # 図面に寸法として書かれていない数値は長さにしない(ユーザー指示。フランジの
         # 形から求めた値が寸法の文字に無ければ、従来の寸法から選ぶ方式の値を使う)
+        axis = debug.get("main_axis_deg")
         if member is not None and _in_drawing(dim_values, member[0]):
-            length_value, member_ends[id(row)] = member
+            length_value, member_ends[id(row)], axis = member
         lengths[id(row)] = length_value
-        beam_types[id(row)] = classify_beam_type(
-            debug.get("main_axis_deg") if length_value is not None else None
-        )
+        # 梁の向きは、フランジから求めたときはフランジの線の向きで判定する。寸法線は
+        # 斜めの部材でも水平・垂直に引かれることがある(2026-10-29、N2B-36〜39の
+        # 間柱2V11。部材は約25〜30°だが寸法線は垂直で、普通梁と判定されていた)
+        beam_types[id(row)] = classify_beam_type(axis if length_value is not None else None)
         if beam_types[id(row)] == "斜め梁":
-            joint_axes[id(row)] = debug["main_axis_deg"] % 180.0
+            joint_axes[id(row)] = axis % 180.0
 
     # 3項目パターンの行同士で同じY(行)を共有するもの(1枚の図面に2製品の
     # 寸法チェーンが連結して描かれているケース)は、隣接製品の確定した長さと

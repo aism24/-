@@ -151,7 +151,8 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
 
     ハンチ等で短いフランジもあるため、最も長いものを梁本体とする。向きは線どうしで
     判定するので、斜めに描かれた梁にもそのまま使える。
-    戻り値は (長さ, (左端, 右端)) で、端は梁せいの中央の座標。見つからなければNone。
+    戻り値は (長さ, (左端, 右端), フランジの線の向き[度]) で、端は梁せいの中央の座標。
+    見つからなければNone。
     """
     if not tf:
         return None
@@ -335,7 +336,7 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
         c = (lo + hi) / 2
         ends.append((pos * ux - c * uy, pos * uy + c * ux))
     ends.sort()
-    return (round(end - start, 1), (ends[0], ends[1]))
+    return (round(end - start, 1), (ends[0], ends[1]), math.degrees(th))
 
 _NUMERIC_TEXT = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
 
@@ -397,14 +398,16 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
                                 depth=_beam_depth(row.size))
         # 図面に寸法として書かれていない数値は長さにしない(ユーザー指示。フランジの
         # 形から求めた値が寸法の文字に無ければ、従来の寸法から選ぶ方式の値を使う)
+        axis = debug.get("main_axis_deg")
         if member is not None and _in_drawing(dim_values, member[0]):
-            length_value, member_ends[id(row)] = member
+            length_value, member_ends[id(row)], axis = member
         lengths[id(row)] = length_value
-        beam_types[id(row)] = classify_beam_type(
-            debug.get("main_axis_deg") if length_value is not None else None
-        )
+        # 梁の向きは、フランジから求めたときはフランジの線の向きで判定する。寸法線は
+        # 斜めの部材でも水平・垂直に引かれることがある(2026-10-29、N2B-36〜39の
+        # 間柱2V11。部材は約25〜30°だが寸法線は垂直で、普通梁と判定されていた)
+        beam_types[id(row)] = classify_beam_type(axis if length_value is not None else None)
         if beam_types[id(row)] == "斜め梁":
-            joint_axes[id(row)] = debug["main_axis_deg"] % 180.0
+            joint_axes[id(row)] = axis % 180.0
 
     # 3項目パターンの行同士で同じY(行)を共有するもの(1枚の図面に2製品の
     # 寸法チェーンが連結して描かれているケース)は、隣接製品の確定した長さと
