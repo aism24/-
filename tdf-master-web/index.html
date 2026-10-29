@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>実寸法師データよりマスタ情報抽出</title>
-<link rel="stylesheet" href="style.css?v=20261029g">
+<link rel="stylesheet" href="style.css?v=20261029h">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
@@ -2462,17 +2462,33 @@ def _flange_thickness(size):
     return float(nums[-1]) if nums else None
 
 
-def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf):
+def _beam_depth(size):
+    """サイズ表記の梁せいを返す(HY-1000x250x19x25 なら 1000)。
+    BH-1523.3-1400x… のように梁せいが変わるもの・読めないものは None。"""
+    m = re.match(r"^[^-0-9]*-([0-9]+(?:\.[0-9]+)?)x", size or "")
+    return float(m.group(1)) if m else None
+
+
+def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
     """梁本体の端から端を、フランジの形から求める。
 
     フランジは「板厚tfだけ離れて向かい合う平行な2本の線」として描かれる
     (寸法線・基準線にはこの性質がない)。2本の端のずれは開先の分としてtf以内まで
-    認め、2本を合わせた端から端をそのフランジの長さとする。
+    認め、2本を合わせた端から端をそのフランジの長さとする。ずれがtfを超えても、
+    一方の端からもう一方の線へ斜めの線(開先の線)が引かれていれば同じフランジとする。
 
     同じ高さに並ぶフランジの間に隙間があり、隙間の両端の線が梁全体(上下の
     フランジの外側)より外まで伸びている(=梁を横切る板。通しダイアフラム等)
-    ときは、板を含めて一続きの梁とみなす。重なっているもの(継手の先の別の部材)
-    はつながない。
+    ときは、板を含めて一続きの梁とみなす。隙間の中に梁せいの中央を横切る線
+    (取り付く部材の板)があり、隙間の両端に梁せいの中央を横切る線(梁の端の
+    切断線)が無く、隙間の両端で上下のフランジの外側どうしがサイズの梁せい
+    (depth)だけ離れているとき(=柱や小梁が取り付く位置でフランジの線が
+    途切れている)も一続きとみなす。重なっているもの(継手の先の別の部材)は
+    つながない。他のフランジの内側に収まる線(添え板・重ね描き)は使わない。
+
+    梁本体は x_min..x_max に中点があるフランジから選び、その両端から同じ条件で
+    つながるフランジがあれば範囲の外まで伸ばす(1枚の図面に製品が2つあると、
+    梁の一部が次の製品マークより先まで描かれるため)。
 
     ハンチ等で短いフランジもあるため、最も長いものを梁本体とする。向きは線どうしで
     判定するので、斜めに描かれた梁にもそのまま使える。
@@ -2480,15 +2496,48 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf):
     """
     if not tf:
         return None
-    segs = []
+    near = []
     for ln in tdf.lines:
-        if ln.length < 20:
-            continue
-        if not (x_min <= (ln.x1 + ln.x2) / 2 <= x_max and min(ln.y1, ln.y2) > y_ref
+        if not (min(ln.y1, ln.y2) > y_ref
                 and (y_max is None or max(ln.y1, ln.y2) < y_max)):
             continue
-        segs.append((math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1) % math.pi, ln))
+        near.append((math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1) % math.pi, ln))
+    segs = [(t, ln) for t, ln in near if ln.length >= 20]
     long_segs = [(t, ln) for t, ln in segs if ln.length >= 100]
+
+    def end_point(ln, p, ux, uy):
+        # 軸方向の位置がpの側の端点
+        return (ln.x1, ln.y1) if abs(ln.x1 * ux + ln.y1 * uy - p) <= abs(ln.x2 * ux + ln.y2 * uy - p) else (ln.x2, ln.y2)
+
+    by_end = {}  # 端点(1mm単位に丸めた座標) → (向き, 線, その端点, 反対側の端点)
+    for t, s in near:
+        for p, o in (((s.x1, s.y1), (s.x2, s.y2)), ((s.x2, s.y2), (s.x1, s.y1))):
+            by_end.setdefault((round(p[0]), round(p[1])), []).append((t, p, o))
+
+    def bevel(a, b, pa_end, pb_end, ux, uy):
+        # 一方の線の端点から、もう一方の線の上で、その線の端から板厚以内の点へ
+        # 斜めの線が引かれているか
+        th = math.atan2(uy, ux) % math.pi
+        for outer, p_end, inner, q_end in ((a, pa_end, b, pb_end), (b, pb_end, a, pa_end)):
+            ex_, ey_ = end_point(outer, p_end, ux, uy)
+            di = -inner.x1 * uy + inner.y1 * ux
+            pi_ = sorted((inner.x1 * ux + inner.y1 * uy, inner.x2 * ux + inner.y2 * uy))
+            pi_ = [max(pi_[0], q_end - tf - 0.6), min(pi_[1], q_end + tf + 0.6)]
+            kx, ky = round(ex_), round(ey_)
+            for gx in (kx - 1, kx, kx + 1):
+                for gy in (ky - 1, ky, ky + 1):
+                    for t, (sx, sy), (ox, oy) in by_end.get((gx, gy), ()):
+                        d = abs(t - th)
+                        d = min(d, math.pi - d)
+                        if d < math.radians(1) or abs(d - math.pi / 2) < math.radians(1):
+                            continue
+                        if math.hypot(sx - ex_, sy - ey_) > 0.6:
+                            continue
+                        if (abs(-ox * uy + oy * ux - di) <= 0.6
+                                and pi_[0] - 0.6 <= ox * ux + oy * uy <= pi_[1] + 0.6):
+                            return True
+        return False
+
     flanges = []  # (向き, 直交方向の位置lo, hi, 軸方向の始点, 終点)
     for i, (ta, a) in enumerate(long_segs):
         ux, uy = math.cos(ta), math.sin(ta)
@@ -2502,7 +2551,8 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf):
             if abs(abs(da - db) - tf) >= 0.6:
                 continue
             pb = sorted((b.x1 * ux + b.y1 * uy, b.x2 * ux + b.y2 * uy))
-            if abs(pa[0] - pb[0]) > tf + 0.6 or abs(pa[1] - pb[1]) > tf + 0.6:
+            if ((abs(pa[0] - pb[0]) > tf + 0.6 and not bevel(a, b, pa[0], pb[0], ux, uy))
+                    or (abs(pa[1] - pb[1]) > tf + 0.6 and not bevel(a, b, pa[1], pb[1], ux, uy))):
                 continue
             flanges.append((ta, min(da, db), max(da, db), min(pa[0], pb[0]), max(pa[1], pb[1])))
 
@@ -2520,7 +2570,36 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf):
                 return True
         return False
 
-    best = None
+    def mid_lines(th, p0, p1, lo, hi):
+        # 主軸に直交し、主軸方向の位置がp0..p1にあり、梁せいの中央を横切る線があるか
+        ux, uy = math.cos(th), math.sin(th)
+        mid = (lo + hi) / 2
+        for t, ln in segs:
+            d = abs(t - th)
+            if abs(min(d, math.pi - d) - math.pi / 2) > math.radians(0.05):
+                continue
+            if not p0 <= (ln.x1 + ln.x2) / 2 * ux + (ln.y1 + ln.y2) / 2 * uy <= p1:
+                continue
+            o = sorted((-ln.x1 * uy + ln.y1 * ux, -ln.x2 * uy + ln.y2 * ux))
+            if o[0] < mid < o[1]:
+                return True
+        return False
+
+    def joinable(th, fs, depth_at, end, s1):
+        # 同じ高さのフランジの隙間(end..s1)をはさんで、一続きの梁とみなせるか
+        dl, dr = depth_at(end), depth_at(s1)
+        if not dl or not dr:
+            return False
+        lo, hi = min(dl[0], dr[0]), max(dl[1], dr[1])
+        if crossing_line(th, end, lo, hi) and crossing_line(th, s1, lo, hi):
+            return True  # 梁を横切る板
+        return (depth is not None and abs((hi - lo) - depth) <= 0.6
+                and abs((dl[1] - dl[0]) - depth) <= 0.6 and abs((dr[1] - dr[0]) - depth) <= 0.6
+                and mid_lines(th, end + 0.6, s1 - 0.6, lo, hi)
+                and not mid_lines(th, end - 0.6, end + 0.6, lo, hi)
+                and not mid_lines(th, s1 - 0.6, s1 + 0.6, lo, hi))
+
+    best = None  # (長さ, 向き, その向きのフランジ, 高さ, 始点, 終点)
     by_theta = {}
     for f in flanges:
         by_theta.setdefault(round(f[0], 4), []).append(f)
@@ -2535,30 +2614,59 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf):
         levels = {}
         for f in fs:
             levels.setdefault((round(f[1]), round(f[2])), {})[(round(f[3], 1), round(f[4], 1))] = (f[3], f[4])
-        for ivs in levels.values():
+        for (lv_lo, lv_hi), ivs in levels.items():
             ivs = sorted(ivs.values())
+            # 他のフランジの内側に収まる線(添え板・重ね描き)は梁の切れ端として扱わない
+            ivs = [(s, e) for s, e in ivs
+                   if not any(s2 <= s + 0.6 and e - 0.6 <= e2 and (s2, e2) != (s, e) for s2, e2 in ivs)]
+            c_lv = (lv_lo + lv_hi) / 2
+            # 梁本体は、中点がこの製品の範囲(x_min..x_max)にある切れ端だけから選ぶ
+            ivs = [(s, e) for s, e in ivs if x_min <= (s + e) / 2 * ux - c_lv * uy <= x_max]
             for i, (start, end) in enumerate(ivs):
                 for s1, e1 in ivs[i + 1:]:
-                    if s1 <= end + 0.6:
+                    if s1 <= end + 0.6 or not joinable(th, fs, depth_at, end, s1):
                         break
-                    dl, dr = depth_at(end), depth_at(s1)
-                    if not dl or not dr:
-                        break
-                    lo, hi = min(dl[0], dr[0]), max(dl[1], dr[1])
-                    if crossing_line(th, end, lo, hi) and crossing_line(th, s1, lo, hi):
-                        end = e1
-                    else:
-                        break
+                    end = e1
                 length = round(end - start, 1)
                 if best is None or length > best[0]:
-                    ends = []
-                    for pos in (start, end):
-                        lo, hi = depth_at(pos)
-                        c = (lo + hi) / 2
-                        ends.append((pos * ux - c * uy, pos * uy + c * ux))
-                    ends.sort()
-                    best = (length, (ends[0], ends[1]))
-    return best
+                    best = (length, th, fs, (lv_lo, lv_hi), start, end)
+    if best is None:
+        return None
+
+    # 選んだ梁の両端から、同じ高さの切れ端へ同じ条件でつながるときは、製品の範囲の
+    # 外まで伸ばす(1枚の図面に製品が2つあると、梁の一部が次の製品マークより先まで
+    # 描かれるため)。
+    _length, th, fs, level, start, end = best
+    ux, uy = math.cos(th), math.sin(th)
+
+    def depth_at(pos):
+        near = [f for f in fs if f[3] - 0.6 <= pos <= f[4] + 0.6]
+        return (min(f[1] for f in near), max(f[2] for f in near)) if near else None
+
+    ivs = sorted({(round(f[3], 1), round(f[4], 1)): (f[3], f[4]) for f in fs
+                  if (round(f[1]), round(f[2])) == level}.values())
+    ivs = [(s, e) for s, e in ivs
+           if not any(s2 <= s + 0.6 and e - 0.6 <= e2 and (s2, e2) != (s, e) for s2, e2 in ivs)]
+    for s1, e1 in ivs:
+        if e1 <= end + 0.6:
+            continue
+        if s1 <= end + 0.6 or not joinable(th, fs, depth_at, end, s1):
+            break
+        end = e1
+    for s0, e0 in reversed(ivs):
+        if s0 >= start - 0.6:
+            continue
+        if e0 >= start - 0.6 or not joinable(th, fs, depth_at, e0, start):
+            break
+        start = s0
+
+    ends = []
+    for pos in (start, end):
+        lo, hi = depth_at(pos)
+        c = (lo + hi) / 2
+        ends.append((pos * ux - c * uy, pos * uy + c * ux))
+    ends.sort()
+    return (round(end - start, 1), (ends[0], ends[1]))
 
 def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
     drawing_number = ex.find_drawing_number(tdf)
@@ -2596,7 +2704,8 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
             x_min = row.x_mark
             x_max = row.x_next
         length_value, debug = ex.determine_length(tdf, x_min, x_max, row.y, y_max=tier_y_max)
-        member = _flange_member(tdf, x_min, x_max, row.y, tier_y_max, _flange_thickness(row.size))
+        member = _flange_member(tdf, x_min, x_max, row.y, tier_y_max, _flange_thickness(row.size),
+                                depth=_beam_depth(row.size))
         if member is not None:
             length_value, member_ends[id(row)] = member
         lengths[id(row)] = length_value
