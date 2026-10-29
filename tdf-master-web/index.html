@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>実寸法師データよりマスタ情報抽出</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261029b">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
@@ -46,12 +46,14 @@
   </div>
   <div id="header-right">
     <span id="beam-type-label" style="font-size:12px;font-weight:bold;color:#1a73e8;"></span>
+    <button class="header-action-btn merge" id="btn-merge" onclick="openMerge()">🔗 複数のダウンロードファイルの結合</button>
     <button class="header-action-btn danger" id="btn-reset" onclick="resetApp()" disabled>リセット</button>
     <button class="header-action-btn orange" id="btn-excel" onclick="downloadExcel()" disabled>📥 Excelダウンロード</button>
   </div>
 </header>
 
 <input type="file" id="file-input" accept=".tdf" multiple style="display:none">
+<input type="file" id="merge-file-input" accept=".xlsx" multiple style="display:none">
 
 <main>
   <div id="empty-state">
@@ -68,6 +70,27 @@
           <img src="assets/address-copy-guide.jpg" alt="アドレスバーのアドレスをコピーする例">
         </div>
       </div>
+    </div>
+  </div>
+
+  <div id="merge-area">
+    <div id="merge-top">
+      <button type="button" class="header-btn" onclick="closeMerge()">← 抽出画面へ戻る</button>
+      <strong>複数のダウンロードファイルの結合</strong>
+    </div>
+    <div class="upload-bar" onclick="document.getElementById('merge-file-input').click()">📂 ダウンロードしたExcelをここにドロップ(画面のどこでも可)/ クリックして選択(複数可・何回でも追加できます)</div>
+    <div id="merge-empty">Excelを追加すると、ファイルごとの製品行数が下に表示されます。</div>
+    <div id="merge-table-wrap">
+      <table id="merge-table">
+        <thead>
+          <tr><th>集計</th><th>ファイル名</th><th>工事番号</th><th>製品行数</th><th>図番</th><th>確認</th><th></th></tr>
+        </thead>
+        <tbody id="merge-tbody"></tbody>
+      </table>
+    </div>
+    <div id="merge-footer">
+      <span id="merge-summary"></span>
+      <button type="button" class="header-action-btn orange" id="merge-excel-btn" onclick="downloadMergedExcel()" disabled>📥 集計リストをExcelでダウンロード</button>
     </div>
   </div>
 
@@ -2548,7 +2571,7 @@ def extract_file(path: str) -> list[dict]:
     return _extract_small_beam(tdf)
 </script>
 
-<script src="app.js"></script>
+<script src="app.js?v=20261029b"></script>
 <script src="to-launcher.js?v=20261019" data-target="header h1" data-mode="beforePrev"></script>
 </body>
 </html>
