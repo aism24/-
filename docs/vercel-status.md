@@ -86,6 +86,7 @@ CLAUDE.md から分離(2026-10-21)。恒久ルールは CLAUDE.md、ここは詳
 - 2026-10-29: ユーザーの「デプロイして」で、-tdf-master-web(長さをフランジの形から求める修正#1058。コミットfd0f19b)を `create_deployment` で本番デプロイ(READY、tdf-master-web.vercel.app で反映確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め6回(上限100)。
 - 2026-10-29: ユーザーの「デプロイして」で、-tdf-master-web(結果表の列幅・長さ表示#1062、梁を横切る板をはさんだフランジと継手の基準#1063。コミットd13f78c)を `create_deployment` で本番デプロイ(READY、tdf-master-web.vercel.app で反映確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め6回(上限100。24時間より前の分が外れたため)。
 - 2026-10-29: ユーザーの「デプロイして」で、-tdf-master-web(部材の取り付きで切れたフランジを一続きとみなす・開先・1図面2製品の長さ、結果表の中央寄せ#1067。コミット9928f15)を `create_deployment` で本番デプロイ(dpl_GvYuJHq、READY。本番の index.html・style.css・app.js がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め7回(上限100)。
+- 2026-10-29: ユーザーの「デプロイして」で、-tdf-master-web(継手の長丸は梁と同じ向きのものだけ使う#1070。コミットad557d6)を `create_deployment` で本番デプロイ(dpl_75EsKFn、READY。本番の index.html・style.css・app.js がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め8回(上限100)。
 
 【反省・厳守】2026-09-24、daily-reportの修正時にpdf-diff-pythonappの連携が残っているのを
 確認しながら「Skip deploymentsが有効だから大丈夫」と自己判断してpush・マージし、
