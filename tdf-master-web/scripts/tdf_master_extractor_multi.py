@@ -74,6 +74,18 @@ JOINT_MIN_THRESHOLD = 3000.0
 # (2026-09-15、ユーザー指摘)。
 SHORT_PRODUCT_THRESHOLD = 2000.0
 
+# 継手の長丸の向き(2つの円弧中心を結ぶ角度)と梁の向きの許容差。梁が斜めで
+# なければ継手は必ず水平、斜めなら必ず梁と同じ角度に描かれる(2026-10-29、
+# ユーザー指示)。縦の柱材の継手(S3G-13のPD175WA、90°)やブレースの継手
+# (NRG-18のBRJ65、約59°)を除外する。
+JOINT_ANGLE_TOL_DEG = 1.0
+
+
+def _angle_diff(a: float, b: float) -> float:
+    """向き(0〜180°)どうしの差。"""
+    d = abs(a - b) % 180.0
+    return min(d, 180.0 - d)
+
 
 def _is_axis_aligned(ln: tb.LineRecord) -> bool:
     ang = math.degrees(math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1)) % 180
@@ -378,7 +390,7 @@ def _has_nearby_duplicate(tdf: tb.TdfData, mx: float, my: float, text: str,
 
 
 def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: dict,
-                        member_ends: dict | None = None) -> dict:
+                        member_ends: dict | None = None, joint_axes: dict | None = None) -> dict:
     """長丸(スタジアム形状)に囲まれたテキストは全て継手マークの一種である、
     という前提に立つ(2026-09-14、ユーザー確認: 大梁の`GJ`のような専用の
     文字列プレフィックスは無く、小梁では`TB441`や`TB489`等、設計符号と
@@ -405,7 +417,8 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
     横展開に備えた予防的措置)。
 
     `tier_info`(id(row) -> (段ラベル, y_max))・`lengths`(id(row) -> 長さ)は
-    呼び出し側で計算済みのものを渡すこと。戻り値は id(row) -> (left, right)。
+    呼び出し側で計算済みのものを渡すこと。`joint_axes`(id(row) -> 斜め梁の
+    角度)に無い行は普通梁(継手は水平)とみなす。戻り値は id(row) -> (left, right)。
     """
     raw_groups: dict[tuple, list] = {}
     for r in rows:
@@ -432,14 +445,28 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
         for i, cluster in enumerate(clusters):
             groups[(key, i)] = cluster
 
-    centers = ex.find_stadium_centers(tdf)
     candidates_raw = []
-    for mx, my, _r in centers:
+    cand_angle: dict[tuple, float] = {}
+    for ax, ay, bx, by, _r in ex._find_stadium_capsules_no_size(tdf):
+        mx, my = (ax + bx) / 2, (ay + by) / 2
         near = [rec for rec in tdf.texts if abs(rec.x - mx) < 3 and abs(rec.y - my) < 3]
         for rec in near:
             t = tdf.resolve_text(rec)
             if t:
                 candidates_raw.append((mx, my, t))
+                cand_angle[(mx, my, t)] = math.degrees(math.atan2(by - ay, bx - ax)) % 180.0
+
+    # 梁の端を回して描いた詳細図の上の継手は、梁が水平でもその詳細図の角度で
+    # 傾く(2026-10-29、N2G-22・N3G-24・NRG-20のNGW80、約13〜19°)。その詳細図
+    # には梁のサイズの文字が同じ角度で書かれているため、長丸と同じ角度の
+    # サイズの文字があれば、その角度も梁の向きとして認める(製品マークの文字は
+    # N3G-24で「2CG3W-N5ND-L」と書き間違えられており根拠にできない)。
+    sizes = {r.size for r in rows if r.size}
+    size_angles: dict[str, list[float]] = {}
+    for rec in tdf.texts:
+        t = tdf.resolve_text(rec)
+        if t in sizes:
+            size_angles.setdefault(t, []).append(math.degrees(rec.rot or 0.0) % 180.0)
     # 柱マーク除外(_has_nearby_duplicate)は製品長さがSHORT_PRODUCT_THRESHOLD
     # 以上の場合にのみ適用する。製品が短いと、自己参照する左右の継手候補
     # (同じテキストが左右の長丸に描かれるケース)同士が1000mm以内に収まり、
@@ -501,10 +528,15 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
                 x_next_r, _ = rotate(r.x_next, r.y)
                 left_ref, right_ref = (x_mark_r, None), (x_next_r, None)
                 use_2d = False
+            allowed_angles = [(joint_axes or {}).get(id(r), 0.0)] + size_angles.get(r.size, [])
+
             def scan(two_d):
                 found = False
                 for mx, my, t in candidates_raw:
                     if my <= r.y or (y_max is not None and my >= y_max):
+                        continue
+                    if all(_angle_diff(cand_angle[(mx, my, t)], a) > JOINT_ANGLE_TOL_DEG
+                           for a in allowed_angles):
                         continue
                     if apply_dup_exclusion and dup_flags[(mx, my, t)]:
                         continue
