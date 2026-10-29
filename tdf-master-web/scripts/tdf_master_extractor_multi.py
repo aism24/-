@@ -519,16 +519,29 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
     # 1つのグループが複数の候補で「勝利」することがある(グループ側で他に
     # 競合が無ければ、距離に関係なく全部勝ってしまうため)。各グループ・
     # 各サイドにつき、実際に採用するのは距離が最小の1つだけにする。
-    best_per_group_side: dict[tuple, tuple] = {}
-    for (_mx, _my, t, side), (dist, key) in claims.items():
-        cur = best_per_group_side.get((key, side))
-        if cur is None or dist < cur[0]:
-            best_per_group_side[(key, side)] = (dist, t)
+    # ただし1つの長丸(位置)を同じグループの左右の両方に使うことはしない
+    # (2026-10-29、N2G-22の2CG3W/2CG4/2CG5Kで確認。短い製品は最低保証の
+    # 閾値[JOINT_MIN_THRESHOLD]が長さより大きく、片側にしか無い継手が
+    # 反対側にも届いてしまっていた)。近い側にだけ割り当て、遠い側は次点の
+    # 別の長丸を使う(無ければ空欄)。
+    per_group_side: dict[tuple, list] = {}
+    for (mx, my, t, side), (dist, key) in claims.items():
+        per_group_side.setdefault((key, side), []).append((dist, t, (mx, my)))
+    for lst in per_group_side.values():
+        lst.sort(key=lambda c: c[0])
 
     group_result: dict[tuple, list] = {}
-    for (key, side), (_dist, t) in best_per_group_side.items():
-        left_right = group_result.setdefault(key, [None, None])
-        left_right[0 if side == "left" else 1] = t
+    for key in {k for (k, _s) in per_group_side}:
+        left_list = per_group_side.get((key, "left"), [])
+        right_list = per_group_side.get((key, "right"), [])
+        left = left_list[0] if left_list else None
+        right = right_list[0] if right_list else None
+        if left is not None and right is not None and left[2] == right[2]:
+            if left[0] <= right[0]:
+                right = next((c for c in right_list if c[2] != left[2]), None)
+            else:
+                left = next((c for c in left_list if c[2] != right[2]), None)
+        group_result[key] = [left[1] if left else None, right[1] if right else None]
 
     row_result = {}
     for key, members in groups.items():
