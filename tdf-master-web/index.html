@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>実寸法師データよりマスタ情報抽出</title>
-<link rel="stylesheet" href="style.css?v=20261029c">
+<link rel="stylesheet" href="style.css?v=20261029d">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
@@ -57,7 +57,7 @@
 <main>
   <div id="empty-state">
     <div>
-      <button type="button" class="merge-top-btn" id="btn-merge" onclick="openMerge()">🔗 複数のダウンロードファイルの結合</button>
+      <button type="button" class="merge-top-btn" id="btn-merge" onclick="openMerge()">🔗 複数のダウンロードファイルの結合モードへ</button>
       <p style="margin-bottom:14px;">TDFファイルを選択、またはこの画面にドラッグ&amp;ドロップしてください</p>
       <div class="folder-path-warn-wrap">
         <div class="upload-bar" onclick="document.getElementById('file-input').click()">📂 クリックしてTDFファイルを選択(複数可)</div>
@@ -77,6 +77,7 @@
     <div id="merge-top">
       <button type="button" class="header-btn" onclick="closeMerge()">← 抽出画面へ戻る</button>
       <strong>複数のダウンロードファイルの結合</strong>
+      <span id="merge-summary"></span>
     </div>
     <div class="upload-bar" onclick="document.getElementById('merge-file-input').click()">📂 ダウンロードしたExcelをここにドロップ(画面のどこでも可)/ クリックして選択(複数可・何回でも追加できます)</div>
     <div id="merge-empty">Excelを追加すると、ファイルごとの製品行数が下に表示されます。</div>
@@ -87,10 +88,6 @@
         </thead>
         <tbody id="merge-tbody"></tbody>
       </table>
-    </div>
-    <div id="merge-footer">
-      <span id="merge-summary"></span>
-      <button type="button" class="header-action-btn orange" id="merge-excel-btn" onclick="downloadMergedExcel()" disabled>📥 集計リストをExcelでダウンロード</button>
     </div>
   </div>
 
@@ -2571,7 +2568,7 @@ def extract_file(path: str) -> list[dict]:
     return _extract_small_beam(tdf)
 </script>
 
-<script src="app.js?v=20261029c"></script>
+<script src="app.js?v=20261029d"></script>
 <script src="to-launcher.js?v=20261019" data-target="header h1" data-mode="beforePrev"></script>
 </body>
 </html>
