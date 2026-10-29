@@ -12,6 +12,8 @@ tdf_binary.py / tdf_master_extractor.py / tdf_master_extractor_multi.py は
 """
 from __future__ import annotations
 
+import math
+
 import tdf_binary as tb
 import tdf_master_extractor as ex
 import tdf_master_extractor_multi as exm
@@ -106,6 +108,40 @@ def _compute_tier_info_small(rows: list) -> dict:
     return info
 
 
+
+def _dim_rows(tdf, x_min, x_max, y_ref, y_max, main_axis_deg, tol=40.0):
+    """図面上部の水平な寸法値を、Y(行)ごとにまとめて上から順に返す。"""
+    items = []
+    for r in tdf.texts:
+        v = ex._try_float(tdf.resolve_text(r))
+        if v is None or v <= 0:
+            continue
+        if not (x_min <= r.x <= x_max and r.y > y_ref and (y_max is None or r.y < y_max)):
+            continue
+        if abs(round(math.degrees(tdf.resolve_rot(r)), 1) - (main_axis_deg or 0.0)) > 1.0:
+            continue
+        items.append((r.y, v))
+    rows = []
+    for y, v in sorted(items, reverse=True):
+        if rows and abs(rows[-1][0] - y) <= tol:
+            rows[-1][1].append(v)
+        else:
+            rows.append([y, [v]])
+    return rows
+
+
+def _second_row_correction(tdf, x_min, x_max, y_ref, y_max, main_axis_deg, current):
+    """選ばれた長さが「上から2段目の寸法行」の値でないときだけ、その行の最大値に差し替える。
+    (1段目=全長、2段目=梁本体の長さ、という図面で、取付ピッチ等の別の寸法や
+    全長が選ばれてしまうのを直す。すでに2段目の値ならそのまま。)"""
+    rows = _dim_rows(tdf, x_min, x_max, y_ref, y_max, main_axis_deg)
+    if current is None or len(rows) < 2:
+        return current
+    second = rows[1][1]
+    if any(abs(v - current) < 0.5 for v in second):
+        return current
+    return max(second)
+
 def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
     drawing_number = ex.find_drawing_number(tdf)
     rows = _get_rows_small(tdf)
@@ -141,6 +177,7 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
             x_min = row.x_mark
             x_max = row.x_next
         length_value, debug = ex.determine_length(tdf, x_min, x_max, row.y, y_max=tier_y_max)
+        length_value = _second_row_correction(tdf, x_min, x_max, row.y, tier_y_max, debug.get("main_axis_deg"), length_value)
         lengths[id(row)] = length_value
         beam_types[id(row)] = classify_beam_type(
             debug.get("main_axis_deg") if length_value is not None else None
