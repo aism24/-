@@ -589,10 +589,45 @@ function mergeRowKey(r) {
   return String(r.zuban).trim() + '\u0000' + String(r.mark).trim();
 }
 
+// 先頭シートのハイパーリンク(セル位置→リンク先)を、xlsx(zip)から直接読む。
+// SheetJSの cell.l.Target はリンク先の日本語(UTF-8)が文字化けして返るため使わない。
+async function readSheetLinks(arrayBuf) {
+  const links = {};
+  const zip = await JSZip.loadAsync(arrayBuf);
+  const attr = (tag, name) => { const m = tag.match(new RegExp('\\s' + name + '="([^"]*)"')); return m ? m[1] : ''; };
+  const unesc = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  // 先頭シートのパス(workbook.xml + そのrels)。分からなければ sheet1.xml。
+  let sheetPath = 'xl/worksheets/sheet1.xml';
+  try {
+    const wbXml = await zip.file('xl/workbook.xml').async('string');
+    const wbRels = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+    const firstSheet = (wbXml.match(/<sheet\b[^>]*>/) || [''])[0];
+    const rid = attr(firstSheet, 'r:id');
+    const rel = (wbRels.match(/<Relationship\b[^>]*>/g) || []).find(t => attr(t, 'Id') === rid);
+    if (rel) { const t = attr(rel, 'Target'); sheetPath = t.startsWith('/') ? t.slice(1) : 'xl/' + t; }
+  } catch (_) {}
+  const sheetXml = await zip.file(sheetPath).async('string');
+  const relsPath = sheetPath.replace(/([^/]+)$/, '_rels/$1.rels');
+  const relsFile = zip.file(relsPath);
+  if (!relsFile) return links;
+  const targets = {};
+  ((await relsFile.async('string')).match(/<Relationship\b[^>]*>/g) || []).forEach(t => { targets[attr(t, 'Id')] = unesc(attr(t, 'Target')); });
+  (sheetXml.match(/<hyperlink\b[^>]*>/g) || []).forEach(t => {
+    const target = targets[attr(t, 'r:id')];
+    if (!target) return;
+    const rng = XLSX.utils.decode_range(attr(t, 'ref'));
+    for (let r = rng.s.r; r <= rng.e.r; r++) for (let c = rng.s.c; c <= rng.e.c; c++) links[XLSX.utils.encode_cell({ r, c })] = target;
+  });
+  return links;
+}
+
 // ダウンロード済みExcel(downloadExcelの出力と同じ列)を読み、行データにする。
 // 列は見出し文字で探す(列順が変わっても読める)。図番セルのハイパーリンクも保持する。
 async function readDownloadedExcel(file) {
-  const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+  let links = {};
+  try { links = await readSheetLinks(buf); } catch (e) { console.error('ハイパーリンクの読み取りに失敗しました', e); }
   const ws = wb.Sheets[wb.SheetNames[0]];
   if (!ws || !ws['!ref']) throw new Error('シートが空です');
   const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
@@ -611,12 +646,11 @@ async function readDownloadedExcel(file) {
     const row = aoa[r];
     const zuban = get(row, ci.zuban), mark = get(row, ci.mark);
     if (String(zuban).trim() === '' && String(mark).trim() === '') continue;
-    const cell = ws[XLSX.utils.encode_cell({ r: r, c: ci.zuban })];
     rows.push({
       kojiNo: String(get(row, ci.kojiNo)).trim(), zuban, mark, design: get(row, ci.design),
       size: get(row, ci.size), honsu: get(row, ci.honsu), len: get(row, ci.len),
       weight: get(row, ci.weight), left: get(row, ci.left), right: get(row, ci.right),
-      link: (cell && cell.l && cell.l.Target) ? cell.l.Target : '',
+      link: links[XLSX.utils.encode_cell({ r: r, c: ci.zuban })] || '',
     });
   }
   if (rows.length === 0) throw new Error('製品行がありません');
@@ -678,7 +712,11 @@ function renderMerge() {
   const { checked, info, baseKoji, total, dupFiles, kojiMix } = analyzeMerge();
   const tbody = document.getElementById('merge-tbody');
   tbody.innerHTML = '';
-  mergeFiles.forEach(f => {
+  // 表は、ファイル内の先頭の図番(昇順)→ファイル名の順に並べる(集計Excelの並びと揃える)。
+  const cmp = (p, q) => String(p ?? '').localeCompare(String(q ?? ''), 'ja', { numeric: true });
+  const firstZuban = f => f.rows.map(r => String(r.zuban).trim()).sort(cmp)[0] || '';
+  const shown = mergeFiles.map(f => ({ f, z: firstZuban(f) })).sort((p, q) => cmp(p.z, q.z) || cmp(p.f.name, q.f.name)).map(o => o.f);
+  shown.forEach(f => {
     const inf = info.get(f.id);
     const tr = document.createElement('tr');
     if (!f.checked) tr.classList.add('merge-off');
@@ -694,7 +732,7 @@ function renderMerge() {
     const tdKoji = document.createElement('td'); tdKoji.textContent = f.kojiNo;
     const tdCnt = document.createElement('td'); tdCnt.textContent = f.rows.length;
     const tdZ = document.createElement('td');
-    const zubans = [...new Set(f.rows.map(r => String(r.zuban).trim()))];
+    const zubans = [...new Set(f.rows.map(r => String(r.zuban).trim()))].sort(cmp);
     tdZ.textContent = zubans.length > 2 ? zubans.slice(0, 2).join(' / ') + ' ほか' + (zubans.length - 2) : zubans.join(' / ');
 
     const tdWarn = document.createElement('td'); tdWarn.className = 'merge-msg';
