@@ -84,6 +84,7 @@ CLAUDE.md から分離(2026-10-21)。恒久ルールは CLAUDE.md、ここは詳
 - 2026-10-19: 15プロジェクト(pdf-diff-pythonapp・daily-report・jissun-open・tori-huguai・shipping-list-link・tdf-dim-count・excel-drawing-link-tool・dxf-launcher・company-ai・cost-insight・-tori-robo・jissun-master-jidokinyu・unso-check・-tdf-master-web・production-management)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(ボタン追加の反映。コミット96e4414)。連携は0件のまま。直近24時間のデプロイ回数は計20回(上限100)。
 - 2026-10-29: ユーザーの「デプロイして」で、-tdf-master-web(結合モード・長さの補正・継手の修正。コミットed9e717)を `create_deployment` で本番デプロイ(READY、tdf-master-web.vercel.app で反映確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め5回(上限100)。
 - 2026-10-29: ユーザーの「デプロイして」で、-tdf-master-web(長さをフランジの形から求める修正#1058。コミットfd0f19b)を `create_deployment` で本番デプロイ(READY、tdf-master-web.vercel.app で反映確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め6回(上限100)。
+- 2026-10-29: ユーザーの「デプロイして」で、-tdf-master-web(結果表の列幅・長さ表示#1062、梁を横切る板をはさんだフランジと継手の基準#1063。コミットd13f78c)を `create_deployment` で本番デプロイ(READY、tdf-master-web.vercel.app で反映確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め6回(上限100。24時間より前の分が外れたため)。
 
 【反省・厳守】2026-09-24、daily-reportの修正時にpdf-diff-pythonappの連携が残っているのを
 確認しながら「Skip deploymentsが有効だから大丈夫」と自己判断してpush・マージし、
