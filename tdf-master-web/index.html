@@ -2533,6 +2533,9 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
     梁せいが分かるときは、もう1組のフランジが外側どうしで梁せいだけ離れた位置に
     あるものだけを使う(1組しか無い平行線は板であって梁ではない)。
 
+    端が向きの違う別の候補のフランジの外側の線の上に載っているもの(梁に取り付く
+    部材)は梁本体にしない。
+
     ハンチ等で短いフランジもあるため、最も長いものを梁本体とする。向きは線どうしで
     判定するので、斜めに描かれた梁にもそのまま使える。
     戻り値は (長さ, (左端, 右端), フランジの線の向き[度]) で、端は梁せいの中央の座標。
@@ -2643,7 +2646,7 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
                 and not mid_lines(th, end - 0.6, end + 0.6, lo, hi)
                 and not mid_lines(th, s1 - 0.6, s1 + 0.6, lo, hi))
 
-    best = None  # (長さ, 向き, その向きのフランジ, 高さ, 始点, 終点)
+    cands = []  # (長さ, 向き, その向きのフランジ, 高さ, 始点, 終点)
     by_theta = {}
     for f in flanges:
         by_theta.setdefault(round(f[0], 4), []).append(f)
@@ -2682,10 +2685,44 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
                         and abs(max(f[2], lv_hi) - min(f[1], lv_lo) - depth) <= 0.6
                         for f in fs):
                     continue
-                if best is None or length > best[0]:
-                    best = (length, th, fs, (lv_lo, lv_hi), start, end)
-    if best is None:
+                cands.append((length, th, fs, (lv_lo, lv_hi), start, end))
+
+    def outer(c, pos):
+        # 候補cの、軸方向の位置posでの梁全体の外側(lo, hi)
+        near = [f for f in c[2] if f[3] - 0.6 <= pos <= f[4] + 0.6]
+        return (min(f[1] for f in near), max(f[2] for f in near)) if near else None
+
+    def rests_on(c, o):
+        # 候補cの端が、向きの違う候補oのフランジの外側の線の上に載っているか
+        _l, th_c, _fs, _lv, s_c, e_c = c
+        _l2, th_o, _fs2, _lv2, s_o, e_o = o
+        d = abs(th_c - th_o)
+        if min(d, math.pi - d) < math.radians(1):
+            return False
+        ux, uy = math.cos(th_c), math.sin(th_c)
+        vx, vy = math.cos(th_o), math.sin(th_o)
+        for pos in (s_c, e_c):
+            lh = outer(c, pos)
+            if not lh:
+                continue
+            m = (lh[0] + lh[1]) / 2
+            px, py = pos * ux - m * uy, pos * uy + m * ux
+            a = px * vx + py * vy
+            if not s_o - 0.6 <= a <= e_o + 0.6:
+                continue
+            face = outer(o, a)
+            d_o = -px * vy + py * vx
+            if face and min(abs(d_o - face[0]), abs(d_o - face[1])) <= 0.6:
+                return True
+        return False
+
+    # 端が別の候補(同じサイズ)のフランジの外側の線の上に載っているものは、梁に
+    # 取り付く部材であって梁本体ではない(2026-10-30、NRB-43のRSB150WK-N1。梁[650]の
+    # 上に同じH-150の縦の部材[1155]が立っており、長いほうが梁と誤認された)。
+    keep = [c for c in cands if not any(rests_on(c, o) for o in cands if o is not c)]
+    if not keep:
         return None
+    best = max(keep, key=lambda c: c[0])
 
     # 選んだ梁の両端から、同じ高さの切れ端へ同じ条件でつながるときは、製品の範囲の
     # 外まで伸ばす(1枚の図面に製品が2つあると、梁の一部が次の製品マークより先まで
