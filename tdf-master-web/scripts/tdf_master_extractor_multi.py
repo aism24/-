@@ -377,7 +377,8 @@ def _has_nearby_duplicate(tdf: tb.TdfData, mx: float, my: float, text: str,
     return False
 
 
-def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: dict) -> dict:
+def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: dict,
+                        member_ends: dict | None = None) -> dict:
     """長丸(スタジアム形状)に囲まれたテキストは全て継手マークの一種である、
     という前提に立つ(2026-09-14、ユーザー確認: 大梁の`GJ`のような専用の
     文字列プレフィックスは無く、小梁では`TB441`や`TB489`等、設計符号と
@@ -479,8 +480,10 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
         for r in members:
             _tier_label, y_max = tier_info.get(id(r), (None, None))
             row_length = lengths.get(id(r))
-            line_endpoints = None
-            if row_length is not None:
+            # フランジから求めた梁の実際の両端(梁せいの中央。tdf_app._flange_member)が
+            # あればそれを基準にする。無ければ長さと同じ長さの線の端点を探す。
+            line_endpoints = (member_ends or {}).get(id(r))
+            if line_endpoints is None and row_length is not None:
                 line_endpoints = _find_reference_line_endpoints(
                     tdf, r.x_mark, r.x_next, r.y, y_max, row_length,
                 )

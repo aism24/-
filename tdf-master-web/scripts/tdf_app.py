@@ -118,43 +118,102 @@ def _flange_thickness(size):
     return float(nums[-1]) if nums else None
 
 
-def _flange_length(tdf, x_min, x_max, y_ref, y_max, tf):
-    """梁本体の端から端の長さを、フランジの形から求める。
+def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf):
+    """梁本体の端から端を、フランジの形から求める。
 
     フランジは「板厚tfだけ離れて向かい合う平行な2本の線」として描かれる
     (寸法線・基準線にはこの性質がない)。2本の端のずれは開先の分としてtf以内まで
-    認め、2本を合わせた端から端をそのフランジの長さとする。ハンチ等で短い
-    フランジもあるため、見つかったうち最も長いものを梁本体の長さとして返す。
-    向きは線どうしで判定するので、斜めに描かれた梁にもそのまま使える。
-    見つからなければNone(呼び出し側は従来のdetermine_lengthの値を使う)。
+    認め、2本を合わせた端から端をそのフランジの長さとする。
+
+    同じ高さに並ぶフランジの間に隙間があり、隙間の両端の線が梁全体(上下の
+    フランジの外側)より外まで伸びている(=梁を横切る板。通しダイアフラム等)
+    ときは、板を含めて一続きの梁とみなす。重なっているもの(継手の先の別の部材)
+    はつながない。
+
+    ハンチ等で短いフランジもあるため、最も長いものを梁本体とする。向きは線どうしで
+    判定するので、斜めに描かれた梁にもそのまま使える。
+    戻り値は (長さ, (左端, 右端)) で、端は梁せいの中央の座標。見つからなければNone。
     """
     if not tf:
         return None
     segs = []
     for ln in tdf.lines:
-        if ln.length < 100:
+        if ln.length < 20:
             continue
         if not (x_min <= (ln.x1 + ln.x2) / 2 <= x_max and min(ln.y1, ln.y2) > y_ref
                 and (y_max is None or max(ln.y1, ln.y2) < y_max)):
             continue
         segs.append((math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1) % math.pi, ln))
-    best = None
-    for i, (ta, a) in enumerate(segs):
+    long_segs = [(t, ln) for t, ln in segs if ln.length >= 100]
+    flanges = []  # (向き, 直交方向の位置lo, hi, 軸方向の始点, 終点)
+    for i, (ta, a) in enumerate(long_segs):
         ux, uy = math.cos(ta), math.sin(ta)
         pa = sorted((a.x1 * ux + a.y1 * uy, a.x2 * ux + a.y2 * uy))
         da = -a.x1 * uy + a.y1 * ux
-        for tb_, b in segs[i + 1:]:
+        for tb_, b in long_segs[i + 1:]:
             d = abs(ta - tb_)
             if min(d, math.pi - d) > math.radians(0.05):
                 continue
-            if abs(abs(da - (-b.x1 * uy + b.y1 * ux)) - tf) >= 0.6:
+            db = -b.x1 * uy + b.y1 * ux
+            if abs(abs(da - db) - tf) >= 0.6:
                 continue
             pb = sorted((b.x1 * ux + b.y1 * uy, b.x2 * ux + b.y2 * uy))
             if abs(pa[0] - pb[0]) > tf + 0.6 or abs(pa[1] - pb[1]) > tf + 0.6:
                 continue
-            length = round(max(pa[1], pb[1]) - min(pa[0], pb[0]), 1)
-            if best is None or length > best:
-                best = length
+            flanges.append((ta, min(da, db), max(da, db), min(pa[0], pb[0]), max(pa[1], pb[1])))
+
+    def crossing_line(th, pos, lo, hi):
+        # 主軸に直交し、主軸方向の位置がposで、梁全体(lo..hi)より外まで伸びる線があるか
+        ux, uy = math.cos(th), math.sin(th)
+        for t, ln in segs:
+            d = abs(t - th)
+            if abs(min(d, math.pi - d) - math.pi / 2) > math.radians(0.05):
+                continue
+            if abs((ln.x1 + ln.x2) / 2 * ux + (ln.y1 + ln.y2) / 2 * uy - pos) > 0.6:
+                continue
+            o = sorted((-ln.x1 * uy + ln.y1 * ux, -ln.x2 * uy + ln.y2 * ux))
+            if o[0] < lo - 0.6 and o[1] > hi + 0.6:
+                return True
+        return False
+
+    best = None
+    by_theta = {}
+    for f in flanges:
+        by_theta.setdefault(round(f[0], 4), []).append(f)
+    for fs in by_theta.values():
+        th = fs[0][0]
+        ux, uy = math.cos(th), math.sin(th)
+
+        def depth_at(pos):
+            near = [f for f in fs if f[3] - 0.6 <= pos <= f[4] + 0.6]
+            return (min(f[1] for f in near), max(f[2] for f in near)) if near else None
+
+        levels = {}
+        for f in fs:
+            levels.setdefault((round(f[1]), round(f[2])), {})[(round(f[3], 1), round(f[4], 1))] = (f[3], f[4])
+        for ivs in levels.values():
+            ivs = sorted(ivs.values())
+            for i, (start, end) in enumerate(ivs):
+                for s1, e1 in ivs[i + 1:]:
+                    if s1 <= end + 0.6:
+                        break
+                    dl, dr = depth_at(end), depth_at(s1)
+                    if not dl or not dr:
+                        break
+                    lo, hi = min(dl[0], dr[0]), max(dl[1], dr[1])
+                    if crossing_line(th, end, lo, hi) and crossing_line(th, s1, lo, hi):
+                        end = e1
+                    else:
+                        break
+                length = round(end - start, 1)
+                if best is None or length > best[0]:
+                    ends = []
+                    for pos in (start, end):
+                        lo, hi = depth_at(pos)
+                        c = (lo + hi) / 2
+                        ends.append((pos * ux - c * uy, pos * uy + c * ux))
+                    ends.sort()
+                    best = (length, (ends[0], ends[1]))
     return best
 
 def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
@@ -170,6 +229,7 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
     beam_types: dict[int, str | None] = {}
     joints_no_size: dict[int, tuple] = {}
     size_missing_debug: dict[int, dict] = {}
+    member_ends: dict[int, tuple] = {}
     for row in rows:
         _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
         if row.size_missing:
@@ -192,9 +252,9 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
             x_min = row.x_mark
             x_max = row.x_next
         length_value, debug = ex.determine_length(tdf, x_min, x_max, row.y, y_max=tier_y_max)
-        flange_length = _flange_length(tdf, x_min, x_max, row.y, tier_y_max, _flange_thickness(row.size))
-        if flange_length is not None:
-            length_value = flange_length
+        member = _flange_member(tdf, x_min, x_max, row.y, tier_y_max, _flange_thickness(row.size))
+        if member is not None:
+            length_value, member_ends[id(row)] = member
         lengths[id(row)] = length_value
         beam_types[id(row)] = classify_beam_type(
             debug.get("main_axis_deg") if length_value is not None else None
@@ -276,7 +336,7 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
     # 3項目パターンの行はassign_joints_batch(既存の4項目パターン専用の
     # グルーピングロジック)には一切渡さない。
     joints = exm.assign_joints_batch(
-        tdf, [r for r in rows if not r.size_missing], tier_info, lengths
+        tdf, [r for r in rows if not r.size_missing], tier_info, lengths, member_ends
     )
     joints.update(joints_no_size)
 
