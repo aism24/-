@@ -265,7 +265,8 @@ table#result-table tbody tr:hover { background: #f7fbff; }
 }
 .upload-bar:hover { border-color: #1a73e8; color: #1a73e8; }
 /* 複数のダウンロードファイルの結合 */
-.header-action-btn.merge { white-space: nowrap; color: #1a73e8; border-color: #9bbcf0; background: #f3f8ff; font-weight: bold; }
+.merge-top-btn { display: block; margin: 0 auto 36px; padding: 10px 22px; font-size: 15px; font-weight: bold; color: #1a73e8; background: #f3f8ff; border: 1px solid #9bbcf0; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.merge-top-btn:hover { background: #e3eeff; }
 #merge-area { display: none; flex-direction: column; gap: 10px; }
 #merge-area.open { display: flex; }
 #merge-top { display: flex; align-items: center; gap: 12px; }
