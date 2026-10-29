@@ -338,6 +338,7 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
     joints_no_size: dict[int, tuple] = {}
     size_missing_debug: dict[int, dict] = {}
     member_ends: dict[int, tuple] = {}
+    joint_axes: dict[int, float] = {}  # 斜め梁の角度(継手の長丸の向きの判定用)
     for row in rows:
         _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
         if row.size_missing:
@@ -368,6 +369,8 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
         beam_types[id(row)] = classify_beam_type(
             debug.get("main_axis_deg") if length_value is not None else None
         )
+        if beam_types[id(row)] == "斜め梁":
+            joint_axes[id(row)] = debug["main_axis_deg"] % 180.0
 
     # 3項目パターンの行同士で同じY(行)を共有するもの(1枚の図面に2製品の
     # 寸法チェーンが連結して描かれているケース)は、隣接製品の確定した長さと
@@ -445,7 +448,7 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
     # 3項目パターンの行はassign_joints_batch(既存の4項目パターン専用の
     # グルーピングロジック)には一切渡さない。
     joints = exm.assign_joints_batch(
-        tdf, [r for r in rows if not r.size_missing], tier_info, lengths, member_ends
+        tdf, [r for r in rows if not r.size_missing], tier_info, lengths, member_ends, joint_axes
     )
     joints.update(joints_no_size)
 
