@@ -34,9 +34,15 @@ const SHEET_USAGE = "利用記録";
 function onExcelDownload(kojiNo, productCount, rows) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // 記録シートに追記(A=タイムスタンプ, B=工事番号, C=工事名(式), D=製品数, E=シート名, F=図番頭)
+  // 記録シートの2行目に挿入(A=タイムスタンプ, B=工事番号, C=工事名(式), D=製品数, E=シート名, F=図番頭)
+  // 利用記録と同じく、見出し行の直下(2行目)に挿入し、既存の記録は下にずらす(=2行目が常に最新)。
   const recSheet = sheet_(SHEET_RECORD);
-  const recRow = recSheet.getLastRow() + 1;
+  const hadRecords = recSheet.getLastRow() >= 2;
+  if (recSheet.getMaxRows() < 2) recSheet.insertRowAfter(1);
+  recSheet.insertRowBefore(2);
+  const recRow = 2;
+  // 挿入行は見出し行の書式を引き継ぐことがあるため、直前の最新行(今は3行目)の書式に揃える。
+  if (hadRecords) recSheet.getRange(3, 1, 1, 6).copyTo(recSheet.getRange(2, 1, 1, 6), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
   const kojiFormula = `=IFERROR(INDEX('${SHEET_SETTING}'!E:E,MATCH(B${recRow},'${SHEET_SETTING}'!D:D,0)),"")`;
   recSheet.getRange(recRow, 1, 1, 4).setValues([[new Date(), kojiNo, kojiFormula, productCount]]);
 
