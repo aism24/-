@@ -158,7 +158,7 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 main { flex: 1; display: flex; flex-direction: column; padding: 16px 20px 40px; }
 #result-area { display: none; flex-direction: column; gap: 10px; }
 #result-area.visible { display: flex; }
-#result-table-wrap { overflow: auto; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); max-height: 70vh; width: fit-content; max-width: 100%; }
+#result-table-wrap { align-self: center; overflow: auto; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); max-height: 70vh; width: fit-content; max-width: 100%; }
 /* 外枠は二重線、横線(行の区切り)は細い実線、縦線(列の区切り)は細い破線。
    border-collapseの競合解決(二重線 > 実線 > 破線の優先順位)により、
    セル側に一律で実線・破線を指定するだけで、テーブル外周は自動的に
@@ -171,8 +171,8 @@ table#result-table th, table#result-table td {
 }
 table#result-table th:first-child, table#result-table td:first-child { border-left: 1px dashed #ccc; }
 table#result-table th { background: #e3f5e6; position: sticky; top: 0; font-weight: bold; z-index: 2; }
-/* 長さ(7列目)・重量(8列目)は右揃え(小数点の位置が揃って見やすいため)。余白は左側だけ。他は中央揃え。 */
-table#result-table td:nth-child(7), table#result-table td:nth-child(8) { text-align: right; padding-right: 0; }
+/* 長さ(7列目)・重量(8列目)は右揃え(小数点の位置が揃って見やすいため)。右の余白は左(15px)の半分程度(8px)。他は中央揃え。 */
+table#result-table td:nth-child(7), table#result-table td:nth-child(8) { text-align: right; padding-right: 8px; }
 table#result-table tbody tr:nth-child(even) { background: #fff6d9; }
 table#result-table tbody tr:nth-child(odd) { background: #fffdf3; }
 table#result-table tbody tr:hover { background: #f7fbff; }
