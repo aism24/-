@@ -481,6 +481,7 @@ function downloadBlob(blob, filename) {
 }
 
 async function downloadExcel() {
+  if (mergeMode) return downloadMergedExcel();
   if (extractedResults.length === 0) return;
   const basePath = await askBasePath();
 
@@ -556,6 +557,13 @@ async function downloadExcel() {
 }
 
 function resetApp() {
+  if (mergeMode) {
+    if (mergeFiles.length && confirm('取り込んだ ' + mergeFiles.length + ' ファイルをすべて一覧から外しますか?(Excelファイル自体は消えません)')) {
+      mergeFiles = [];
+      renderMerge();
+    }
+    return;
+  }
   extractedResults = [];
   document.getElementById('result-area').classList.remove('visible');
   document.getElementById('empty-state').style.display = 'flex';
@@ -716,14 +724,24 @@ function renderMerge() {
   document.getElementById('merge-table-wrap').style.display = mergeFiles.length ? 'block' : 'none';
 
   let sum = '対象 ' + checked.length + ' ファイル / 合計 ' + total + ' 行';
-  if (baseKoji) sum += ' / 工事番号 ' + baseKoji;
-  if (dupFiles) sum += ' / ⚠ 重複あり(' + dupFiles + ' ファイル)';
-  if (kojiMix) sum += ' / ⚠ 工事番号が混在';
+  if (dupFiles) sum += ' ⚠重複あり';
+  if (kojiMix) sum += ' ⚠工事番号が混在';
   const sumEl = document.getElementById('merge-summary');
   sumEl.textContent = sum;
   sumEl.classList.toggle('warn', !!(dupFiles || kojiMix));
-  document.getElementById('merge-excel-btn').disabled = checked.length === 0;
+  // 結合モード中は、ヘッダーのExcelダウンロード=集計リストの出力、リセット=取り込み一覧のクリア。
+  document.getElementById('btn-excel').disabled = checked.length === 0;
+  document.getElementById('btn-reset').disabled = mergeFiles.length === 0;
 }
+
+// 結合ボタンの横幅を、下の点線枠(ファイル選択+注意書き)に揃える。
+function syncMergeTopBtnWidth() {
+  const wrap = document.querySelector('.folder-path-warn-wrap');
+  const btn = document.getElementById('btn-merge');
+  if (wrap && btn && wrap.offsetWidth > 0) btn.style.width = wrap.offsetWidth + 'px';
+}
+window.addEventListener('load', syncMergeTopBtnWidth);
+window.addEventListener('resize', syncMergeTopBtnWidth);
 
 function openMerge() {
   mergeMode = true;
@@ -738,6 +756,8 @@ function closeMerge() {
   mergeMode = false;
   document.getElementById('merge-area').classList.remove('open');
   document.getElementById('drop-overlay').textContent = 'TDFファイルをここにドロップ';
+  document.getElementById('btn-excel').disabled = extractedResults.length === 0;
+  document.getElementById('btn-reset').disabled = extractedResults.length === 0;
   if (extractedResults.length > 0) {
     document.getElementById('result-area').classList.add('visible');
   } else {
