@@ -565,6 +565,256 @@ function resetApp() {
   document.getElementById('file-input').value = '';
 }
 
+// ---------- 複数のダウンロードファイルの結合 ----------
+// フォルダごとにダウンロードしたExcel(ハイパーリンクのフォルダパスがファイルごとに
+// 異なる)を取り込み、1つの集計リストExcelにまとめる。ドラッグ&ドロップは画面のどこでも、
+// 何回でも追加できる。追加のたびに、(図番+製品マーク)が完全一致する行を持つ別ファイル・
+// 工事番号の食い違いを警告する(警告のみで、外すかどうかは利用者が決める)。
+
+let mergeMode = false;
+let mergeFiles = []; // { id, name, kojiNo, rows: [{...列, link}], checked }
+let mergeSeq = 0;
+
+const MERGE_COLS = ['工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ', '重量', '左継手', '右継手'];
+
+function mergeRowKey(r) {
+  return String(r.zuban).trim() + '\u0000' + String(r.mark).trim();
+}
+
+// ダウンロード済みExcel(downloadExcelの出力と同じ列)を読み、行データにする。
+// 列は見出し文字で探す(列順が変わっても読める)。図番セルのハイパーリンクも保持する。
+async function readDownloadedExcel(file) {
+  const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws || !ws['!ref']) throw new Error('シートが空です');
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+  const hIdx = aoa.findIndex(row => row.includes('図番') && row.includes('製品マーク'));
+  if (hIdx < 0) throw new Error('このアプリでダウンロードしたExcelではありません(見出し「図番」「製品マーク」が見つかりません)');
+  const head = aoa[hIdx].map(v => String(v).trim());
+  const col = (prefix) => head.findIndex(h => h === prefix || h.startsWith(prefix + '(') || h.startsWith(prefix + '\uff08'));
+  const ci = {
+    kojiNo: col('工事番号'), zuban: col('図番'), mark: col('製品マーク'), design: col('設計符号'),
+    size: col('サイズ'), honsu: col('本数'), len: col('長さ'), weight: col('重量'),
+    left: col('左継手'), right: col('右継手'),
+  };
+  const get = (row, i) => (i < 0 || row[i] === undefined || row[i] === null) ? '' : row[i];
+  const rows = [];
+  for (let r = hIdx + 1; r < aoa.length; r++) {
+    const row = aoa[r];
+    const zuban = get(row, ci.zuban), mark = get(row, ci.mark);
+    if (String(zuban).trim() === '' && String(mark).trim() === '') continue;
+    const cell = ws[XLSX.utils.encode_cell({ r: r, c: ci.zuban })];
+    rows.push({
+      kojiNo: String(get(row, ci.kojiNo)).trim(), zuban, mark, design: get(row, ci.design),
+      size: get(row, ci.size), honsu: get(row, ci.honsu), len: get(row, ci.len),
+      weight: get(row, ci.weight), left: get(row, ci.left), right: get(row, ci.right),
+      link: (cell && cell.l && cell.l.Target) ? cell.l.Target : '',
+    });
+  }
+  if (rows.length === 0) throw new Error('製品行がありません');
+  const kojis = rows.map(r => r.kojiNo).filter(Boolean);
+  return { kojiNo: kojis[0] || '', rows };
+}
+
+async function processMergeFiles(files) {
+  const list = Array.from(files).filter(f => /\.xlsx$/i.test(f.name));
+  const skipped = Array.from(files).length - list.length;
+  if (skipped > 0) showToast('Excel(.xlsx)以外の ' + skipped + ' ファイルは取り込みませんでした', 'error');
+  if (list.length === 0) return;
+  const errors = [];
+  for (const file of list) {
+    try {
+      const { kojiNo: k, rows } = await readDownloadedExcel(file);
+      mergeFiles.push({ id: ++mergeSeq, name: file.name, kojiNo: k, rows, checked: true });
+    } catch (e) {
+      errors.push(file.name + ': ' + e.message);
+      console.error(e);
+    }
+  }
+  const added = list.length - errors.length;
+  if (added > 0) showToast(added + ' ファイルを取り込みました', 'success');
+  if (errors.length) showToast('取り込めなかったファイル: ' + errors.join(' / '), 'error');
+  document.getElementById('merge-file-input').value = '';
+  renderMerge();
+}
+
+// 対象(チェック済み)ファイルについて、工事番号の食い違い・他ファイルとの重複を求める。
+function analyzeMerge() {
+  const checked = mergeFiles.filter(f => f.checked);
+  const kojiCount = {};
+  checked.forEach(f => { if (f.kojiNo) kojiCount[f.kojiNo] = (kojiCount[f.kojiNo] || 0) + 1; });
+  let baseKoji = '';
+  checked.forEach(f => { if (f.kojiNo && (!baseKoji || kojiCount[f.kojiNo] > kojiCount[baseKoji])) baseKoji = f.kojiNo; });
+
+  const keySets = new Map(checked.map(f => [f.id, new Set(f.rows.map(mergeRowKey))]));
+  const info = new Map();
+  mergeFiles.forEach(f => info.set(f.id, { kojiMismatch: false, dups: [] }));
+  checked.forEach(f => {
+    const entry = info.get(f.id);
+    entry.kojiMismatch = !!(baseKoji && f.kojiNo && f.kojiNo !== baseKoji);
+    checked.forEach(o => {
+      if (o.id === f.id) return;
+      const a = keySets.get(f.id), b = keySets.get(o.id);
+      let n = 0;
+      a.forEach(k => { if (b.has(k)) n++; });
+      if (n > 0) entry.dups.push({ name: o.name, count: n, same: n === a.size && a.size === b.size });
+    });
+  });
+  const total = checked.reduce((s, f) => s + f.rows.length, 0);
+  const dupFiles = checked.filter(f => info.get(f.id).dups.length > 0).length;
+  const kojiMix = checked.some(f => info.get(f.id).kojiMismatch);
+  return { checked, info, baseKoji, total, dupFiles, kojiMix };
+}
+
+function renderMerge() {
+  const { checked, info, baseKoji, total, dupFiles, kojiMix } = analyzeMerge();
+  const tbody = document.getElementById('merge-tbody');
+  tbody.innerHTML = '';
+  mergeFiles.forEach(f => {
+    const inf = info.get(f.id);
+    const tr = document.createElement('tr');
+    if (!f.checked) tr.classList.add('merge-off');
+    if (f.checked && (inf.dups.length || inf.kojiMismatch)) tr.classList.add('merge-warn');
+
+    const tdChk = document.createElement('td');
+    const chk = document.createElement('input');
+    chk.type = 'checkbox'; chk.checked = f.checked; chk.title = '集計に含める';
+    chk.addEventListener('change', () => { f.checked = chk.checked; renderMerge(); });
+    tdChk.appendChild(chk);
+
+    const tdName = document.createElement('td'); tdName.textContent = f.name; tdName.className = 'merge-name';
+    const tdKoji = document.createElement('td'); tdKoji.textContent = f.kojiNo;
+    const tdCnt = document.createElement('td'); tdCnt.textContent = f.rows.length;
+    const tdZ = document.createElement('td');
+    const zubans = [...new Set(f.rows.map(r => String(r.zuban).trim()))];
+    tdZ.textContent = zubans.length > 2 ? zubans.slice(0, 2).join(' / ') + ' ほか' + (zubans.length - 2) : zubans.join(' / ');
+
+    const tdWarn = document.createElement('td'); tdWarn.className = 'merge-msg';
+    if (!f.checked) {
+      tdWarn.textContent = '(集計に含めません)';
+    } else {
+      const msgs = [];
+      if (inf.kojiMismatch) msgs.push('⚠ 工事番号が他と異なります(' + f.kojiNo + ' ≠ ' + baseKoji + ')');
+      inf.dups.forEach(d => msgs.push(d.same
+        ? '⚠ 「' + d.name + '」と内容が同じです(' + d.count + '件すべて重複)'
+        : '⚠ 「' + d.name + '」と ' + d.count + ' 件重複(図番+製品マーク一致)'));
+      if (msgs.length === 0) msgs.push('OK');
+      msgs.forEach(m => { const d = document.createElement('div'); d.textContent = m; tdWarn.appendChild(d); });
+    }
+
+    const tdDel = document.createElement('td');
+    const del = document.createElement('button');
+    del.type = 'button'; del.textContent = '外す'; del.className = 'header-btn';
+    del.addEventListener('click', () => { mergeFiles = mergeFiles.filter(x => x.id !== f.id); renderMerge(); });
+    tdDel.appendChild(del);
+
+    [tdChk, tdName, tdKoji, tdCnt, tdZ, tdWarn, tdDel].forEach(td => tr.appendChild(td));
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('merge-empty').style.display = mergeFiles.length ? 'none' : 'block';
+  document.getElementById('merge-table-wrap').style.display = mergeFiles.length ? 'block' : 'none';
+
+  let sum = '対象 ' + checked.length + ' ファイル / 合計 ' + total + ' 行';
+  if (baseKoji) sum += ' / 工事番号 ' + baseKoji;
+  if (dupFiles) sum += ' / ⚠ 重複あり(' + dupFiles + ' ファイル)';
+  if (kojiMix) sum += ' / ⚠ 工事番号が混在';
+  const sumEl = document.getElementById('merge-summary');
+  sumEl.textContent = sum;
+  sumEl.classList.toggle('warn', !!(dupFiles || kojiMix));
+  document.getElementById('merge-excel-btn').disabled = checked.length === 0;
+}
+
+function openMerge() {
+  mergeMode = true;
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('result-area').classList.remove('visible');
+  document.getElementById('merge-area').classList.add('open');
+  document.getElementById('drop-overlay').textContent = 'Excelファイルをここにドロップ';
+  renderMerge();
+}
+
+function closeMerge() {
+  mergeMode = false;
+  document.getElementById('merge-area').classList.remove('open');
+  document.getElementById('drop-overlay').textContent = 'TDFファイルをここにドロップ';
+  if (extractedResults.length > 0) {
+    document.getElementById('result-area').classList.add('visible');
+  } else {
+    document.getElementById('empty-state').style.display = 'flex';
+  }
+}
+
+async function downloadMergedExcel() {
+  const { checked, info, baseKoji, total } = analyzeMerge();
+  if (checked.length === 0) return;
+  const warnings = [];
+  if (checked.some(f => info.get(f.id).dups.length)) warnings.push('図番+製品マークが重複しているファイルがあります。');
+  if (checked.some(f => info.get(f.id).kojiMismatch)) warnings.push('工事番号が異なるファイルが混ざっています。');
+  if (warnings.length && !confirm(warnings.join('\n') + '\nこのまま ' + total + ' 行を集計リストにしますか?')) return;
+
+  // 図番→製品マークの順に並べてIDを1から振り直す(通常のダウンロードと同じ並び・ID形式)。
+  // 工事番号が混在していても、IDは行の工事番号ごとに1から振る。
+  const all = [];
+  checked.forEach(f => f.rows.forEach(r => all.push(r)));
+  all.sort((a, b) => {
+    const cmp = (x, y) => String(x ?? '').localeCompare(String(y ?? ''), 'ja', { numeric: true });
+    return cmp(a.zuban, b.zuban) || cmp(a.mark, b.mark);
+  });
+  const counters = {};
+  const rows = all.map(r => {
+    const koji = r.kojiNo || baseKoji;
+    counters[koji] = (counters[koji] || 0) + 1;
+    return [
+      koji.replace(/-/g, '') + String(counters[koji]).padStart(4, '0'), koji, r.zuban, r.mark, r.design,
+      r.size, r.honsu, r.len, r.weight, r.left, r.right,
+    ];
+  });
+
+  const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(t)', '左継手', '右継手'];
+  const ZUBAN_COL = 2, WEIGHT_COL = 8;
+  const excelRows = [headers, ...rows];
+  const ws = XLSX.utils.aoa_to_sheet(excelRows);
+  ws['!cols'] = computeColWidths(excelRows);
+  const hyperlinkRefs = [];
+  all.forEach((r, i) => {
+    const wCell = ws[XLSX.utils.encode_cell({ r: i + 1, c: WEIGHT_COL })];
+    if (wCell && typeof wCell.v === 'number') wCell.z = '0.00';
+    if (r.link) {
+      const ref = XLSX.utils.encode_cell({ r: i + 1, c: ZUBAN_COL });
+      if (ws[ref]) { ws[ref].l = { Target: r.link }; hyperlinkRefs.push(ref); }
+    }
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '製品情報');
+  const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  const filename = (baseKoji || 'TDF') + '_' + ts + '.xlsx';
+
+  if (hyperlinkRefs.length > 0) {
+    try {
+      downloadBlob(await applyHyperlinkStyle(wb, hyperlinkRefs), filename);
+    } catch (e) {
+      console.error('ハイパーリンク書式の適用に失敗しました', e);
+      XLSX.writeFile(wb, filename);
+    }
+  } else {
+    XLSX.writeFile(wb, filename);
+  }
+
+  // 通常のダウンロードと同じ形式でスプレッドシートへ記録する(梁判別・段は、
+  // ダウンロード済みExcelに無いため空欄)。失敗してもダウンロードは完了させる。
+  try {
+    const recordRows = [[...headers, '梁判別', '段'], ...rows.map(r => [...r, '', ''])];
+    await apiPost('onExcelDownload', { kojiNo: baseKoji, productCount: rows.length, rows: recordRows });
+  } catch (e) {
+    console.error('GAS記録エラー', e);
+  }
+}
+
+document.getElementById('merge-file-input').addEventListener('change', e => {
+  if (e.target.files.length) processMergeFiles(e.target.files);
+});
+
 function showStatus(msg, sub) {
   document.getElementById('status-msg').textContent = msg;
   document.getElementById('status-sub').textContent = sub || '';
@@ -587,7 +837,7 @@ document.getElementById('file-input').addEventListener('change', e => {
 ['dragenter', 'dragover'].forEach(ev => {
   document.body.addEventListener(ev, e => {
     e.preventDefault();
-    if (pyodide) document.getElementById('drop-overlay').classList.add('active');
+    if (pyodide || mergeMode) document.getElementById('drop-overlay').classList.add('active');
   });
 });
 ['dragleave', 'drop'].forEach(ev => {
@@ -597,6 +847,10 @@ document.getElementById('file-input').addEventListener('change', e => {
   });
 });
 document.body.addEventListener('drop', e => {
+  if (mergeMode) {
+    if (e.dataTransfer.files.length) processMergeFiles(e.dataTransfer.files);
+    return;
+  }
   if (pyodide && e.dataTransfer.files.length) processFiles(e.dataTransfer.files);
 });
 

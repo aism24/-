@@ -264,3 +264,21 @@ table#result-table tbody tr:hover { background: #f7fbff; }
   text-align: center; color: #555; font-size: 14px; cursor: pointer;
 }
 .upload-bar:hover { border-color: #1a73e8; color: #1a73e8; }
+/* 複数のダウンロードファイルの結合 */
+.header-action-btn.merge { white-space: nowrap; color: #1a73e8; border-color: #9bbcf0; background: #f3f8ff; font-weight: bold; }
+#merge-area { display: none; flex-direction: column; gap: 10px; }
+#merge-area.open { display: flex; }
+#merge-top { display: flex; align-items: center; gap: 12px; }
+#merge-empty { color: #888; text-align: center; padding: 20px; }
+#merge-table-wrap { display: none; overflow: auto; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); max-height: 60vh; }
+table#merge-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+table#merge-table th, table#merge-table td { padding: 6px 8px; border-bottom: 1px solid #e3e3e3; text-align: left; vertical-align: top; }
+table#merge-table th { background: #e3f5e6; position: sticky; top: 0; z-index: 2; }
+table#merge-table td.merge-name { word-break: break-all; }
+table#merge-table td.merge-msg { font-size: 12px; }
+table#merge-table tr.merge-warn { background: #fff0d6; }
+table#merge-table tr.merge-warn td.merge-msg { color: #b03a00; font-weight: bold; }
+table#merge-table tr.merge-off { opacity: .5; }
+#merge-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+#merge-summary { font-weight: bold; }
+#merge-summary.warn { color: #b03a00; }
