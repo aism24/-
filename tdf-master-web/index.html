@@ -2522,6 +2522,9 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
     つながるフランジがあれば範囲の外まで伸ばす(1枚の図面に製品が2つあると、
     梁の一部が次の製品マークより先まで描かれるため)。
 
+    梁せいが分かるときは、もう1組のフランジが外側どうしで梁せいだけ離れた位置に
+    あるものだけを使う(1組しか無い平行線は板であって梁ではない)。
+
     ハンチ等で短いフランジもあるため、最も長いものを梁本体とする。向きは線どうしで
     判定するので、斜めに描かれた梁にもそのまま使える。
     戻り値は (長さ, (左端, 右端)) で、端は梁せいの中央の座標。見つからなければNone。
@@ -2660,6 +2663,16 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
                         break
                     end = e1
                 length = round(end - start, 1)
+                # H形鋼のフランジは上下2組ある。もう1組が外側どうしで梁せい(depth)
+                # だけ離れた位置に無いものは梁ではない(2026-10-29、N2B-31の
+                # 2SB200W-N2。梁の上下のファスナー板[PL-12、tfと同じ12離れた2本線]が
+                # 梁を横切る板の条件で一続きになり、4120の縦の梁と誤認された)。
+                if depth is not None and not any(
+                        (round(f[1]), round(f[2])) != (lv_lo, lv_hi)
+                        and f[3] < end - 0.6 and f[4] > start + 0.6
+                        and abs(max(f[2], lv_hi) - min(f[1], lv_lo) - depth) <= 0.6
+                        for f in fs):
+                    continue
                 if best is None or length > best[0]:
                     best = (length, th, fs, (lv_lo, lv_hi), start, end)
     if best is None:
@@ -2700,6 +2713,24 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
     ends.sort()
     return (round(end - start, 1), (ends[0], ends[1]))
 
+_NUMERIC_TEXT = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
+
+
+def _numeric_texts(tdf):
+    """図面に書かれている数値だけの文字(寸法値)の一覧。"""
+    vals = []
+    for rec in tdf.texts:
+        s = (tdf.resolve_text(rec) or "").strip().replace(",", "")
+        if _NUMERIC_TEXT.match(s):
+            vals.append(float(s))
+    return vals
+
+
+def _in_drawing(dim_values, length):
+    """長さ(mm)が図面の寸法の文字として実在するか。"""
+    return length is not None and any(abs(v - length) < 0.05 for v in dim_values)
+
+
 def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
     drawing_number = ex.find_drawing_number(tdf)
     rows = _get_rows_small(tdf)
@@ -2715,6 +2746,7 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
     size_missing_debug: dict[int, dict] = {}
     member_ends: dict[int, tuple] = {}
     joint_axes: dict[int, float] = {}  # 斜め梁の角度(継手の長丸の向きの判定用)
+    dim_values = _numeric_texts(tdf)
     for row in rows:
         _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
         if row.size_missing:
@@ -2739,7 +2771,9 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
         length_value, debug = ex.determine_length(tdf, x_min, x_max, row.y, y_max=tier_y_max)
         member = _flange_member(tdf, x_min, x_max, row.y, tier_y_max, _flange_thickness(row.size),
                                 depth=_beam_depth(row.size))
-        if member is not None:
+        # 図面に寸法として書かれていない数値は長さにしない(ユーザー指示。フランジの
+        # 形から求めた値が寸法の文字に無ければ、従来の寸法から選ぶ方式の値を使う)
+        if member is not None and _in_drawing(dim_values, member[0]):
             length_value, member_ends[id(row)] = member
         lengths[id(row)] = length_value
         beam_types[id(row)] = classify_beam_type(
@@ -2832,6 +2866,8 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
     for row in rows:
         tier_label, _y_max = tier_info.get(id(row), (None, None))
         length_value = lengths[id(row)]
+        if not _in_drawing(dim_values, length_value):
+            length_value = None  # 寸法の文字に無い数値は出さない(空欄にする)
         left, right = joints.get(id(row), (None, None))
         if length_value is None:
             left = right = None
