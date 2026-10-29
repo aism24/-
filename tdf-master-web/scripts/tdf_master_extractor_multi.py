@@ -498,23 +498,35 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
                 x_next_r, _ = rotate(r.x_next, r.y)
                 left_ref, right_ref = (x_mark_r, None), (x_next_r, None)
                 use_2d = False
-            for mx, my, t in candidates_raw:
-                if my <= r.y or (y_max is not None and my >= y_max):
-                    continue
-                if apply_dup_exclusion and dup_flags[(mx, my, t)]:
-                    continue
-                xr, yr = rotate(mx, my)
-                for side, ref in (("left", left_ref), ("right", right_ref)):
-                    if use_2d:
-                        dist = math.hypot(mx - ref[0], my - ref[1])
-                    else:
-                        dist = abs(xr - ref[0])
-                    if dist > threshold:
+            def scan(two_d):
+                found = False
+                for mx, my, t in candidates_raw:
+                    if my <= r.y or (y_max is not None and my >= y_max):
                         continue
-                    cand_key = (round(mx, 2), round(my, 2), t, side)
-                    cur = claims.get(cand_key)
-                    if cur is None or dist < cur[0]:
-                        claims[cand_key] = (dist, key)
+                    if apply_dup_exclusion and dup_flags[(mx, my, t)]:
+                        continue
+                    xr, yr = rotate(mx, my)
+                    for side, ref in (("left", left_ref), ("right", right_ref)):
+                        if two_d:
+                            dist = math.hypot(mx - ref[0], my - ref[1])
+                        elif use_2d:
+                            dist = abs(mx - ref[0])
+                        else:
+                            dist = abs(xr - ref[0])
+                        if dist > threshold:
+                            continue
+                        found = True
+                        cand_key = (round(mx, 2), round(my, 2), t, side)
+                        cur = claims.get(cand_key)
+                        if cur is None or dist < cur[0]:
+                            claims[cand_key] = (dist, key)
+                return found
+
+            # 部材線の端点が見つかっても、その線が図の上部の寸法線だけで継手の
+            # 位置から遠い場合(2次元距離では1つも届かない)に限り、X方向だけの
+            # 距離で再度探す。
+            if not scan(use_2d) and use_2d:
+                scan(False)
 
     # 1つのグループが複数の候補で「勝利」することがある(グループ側で他に
     # 競合が無ければ、距離に関係なく全部勝ってしまうため)。各グループ・
