@@ -329,7 +329,8 @@ function renderTable(results) {
     const size = r['サイズ'] ?? '';
     const honsuRaw = r['本数'] ?? '';
     const lenRaw = r['長さ'];
-    const lenStr = (lenRaw === null || lenRaw === undefined) ? '' : lenRaw;
+    // 表示は ##.####(小数4桁まで、末尾の0は出さない)。Excelには元の値を書く。
+    const lenStr = (lenRaw === null || lenRaw === undefined || lenRaw === '') ? '' : String(Number(Number(lenRaw).toFixed(4)));
     const weightT = computeWeightT(r);
     const weightStr = weightT == null ? '' : weightT.toFixed(2);
 
