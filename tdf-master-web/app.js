@@ -51,7 +51,9 @@ const KOJI_STORAGE_KEY = 'tdf_master_web_last_koji';
 
 function updateStartBtn() {
   kojiNo = document.getElementById('koji-select').value;
-  document.getElementById('beam-start-btn').disabled = !(selectedFactory && kojiNo);
+  const ready = !!(selectedFactory && kojiNo);
+  document.getElementById('mode-btn-beam').disabled = !ready;
+  document.getElementById('mode-btn-merge').disabled = !ready;
   if (kojiNo) {
     try { localStorage.setItem(KOJI_STORAGE_KEY, kojiNo); } catch (_) {}
   }
@@ -94,14 +96,46 @@ async function loadMasterData() {
   }
 }
 
-async function startApp() {
-  // 利用記録シートへ日時・工場のみ記録する(失敗してもアプリ利用は継続させる)。
-  apiPost('logUsageStart', { factory: FACTORY_NAMES[selectedFactory] || selectedFactory }).catch(() => {});
+// ---------- モード選択 ----------
+// 工場・工事名を選んだ画面で、モードボタン(梁/柱/結合)を押して開始する。柱モードは準備中。
+// 開始後はヘッダーの「モード切替」で同じ画面を開き直す(工場・工事名は選んだまま残し、
+// 梁モードの抽出結果・結合モードの取り込みも消さない)。
+
+const MODE_NAMES = { beam: '梁モード', merge: '結合モード' };
+let currentMode = null;
+let appliedFactory = null; // 最後にモードボタンを押したときの工場・工事名(キャンセルで戻す)
+let appliedKoji = '';
+
+async function startApp(mode) {
+  // 利用記録シートへ日時・工場・モードを記録する(失敗してもアプリ利用は継続させる)。
+  apiPost('logUsageStart', { factory: FACTORY_NAMES[selectedFactory] || selectedFactory, mode: MODE_NAMES[mode] }).catch(() => {});
   moveManualButtonToHeader();
   document.getElementById('beam-modal').classList.add('hidden');
+  currentMode = mode;
+  appliedFactory = selectedFactory;
+  appliedKoji = kojiNo;
   const kojiName = document.getElementById('koji-select').selectedOptions[0]?.textContent || kojiNo;
   document.getElementById('beam-type-label').textContent = kojiNo + '＿' + kojiName;
-  await initPyodide();
+  document.getElementById('mode-label').textContent = MODE_NAMES[mode];
+  document.body.classList.add('app-started');
+  if (mode === 'merge') {
+    if (!mergeMode) openMerge();
+    return;
+  }
+  if (mergeMode) closeMerge();
+  // Pyodideは梁モードを初めて選んだときだけ読み込む(結合モードでは使わない)。
+  if (!pyodide) await initPyodide();
+}
+
+function openModeSelect() {
+  document.getElementById('beam-modal').classList.remove('hidden');
+}
+
+function closeModeSelect() {
+  if (appliedFactory) selectFactory(appliedFactory);
+  document.getElementById('koji-select').value = appliedKoji;
+  updateStartBtn();
+  document.getElementById('beam-modal').classList.add('hidden');
 }
 
 // ---------- 操作マニュアル(説明書) ----------
@@ -167,7 +201,7 @@ function manualNext() {
   if (manualPage < MANUAL_PAGE_COUNT) { manualPage++; renderManualPage(); }
 }
 
-// 「開始」ボタン押下時、説明書ボタンを工場・工事名選択モーダル内から
+// 最初にモードボタンを押したとき、説明書ボタンを工場・工事名選択モーダル内から
 // ヘッダーの会社ロゴ左側へ移動させる。FLIP(First-Last-Invert-Play)手法:
 // 先に実際の移動先(ヘッダー)へ要素を配置してしまい、旧位置・旧サイズとの
 // 差分から逆算したtransformを一旦適用して見た目上は元の位置に留めておき、
@@ -177,6 +211,7 @@ function moveManualButtonToHeader() {
   const btn = document.getElementById('manual-btn');
   const headerBrand = document.getElementById('header-brand');
   if (!btn || !headerBrand) return;
+  if (btn.classList.contains('manual-btn-header')) return; // モード切替で2回目以降に呼ばれたとき
 
   const firstRect = btn.getBoundingClientRect();
 
@@ -772,15 +807,6 @@ function renderMerge() {
   document.getElementById('btn-excel').disabled = checked.length === 0;
   document.getElementById('btn-reset').disabled = mergeFiles.length === 0;
 }
-
-// 結合ボタンの横幅を、下の点線枠(ファイル選択+注意書き)に揃える。
-function syncMergeTopBtnWidth() {
-  const wrap = document.querySelector('.folder-path-warn-wrap');
-  const btn = document.getElementById('btn-merge');
-  if (wrap && btn && wrap.offsetWidth > 0) btn.style.width = wrap.offsetWidth + 'px';
-}
-window.addEventListener('load', syncMergeTopBtnWidth);
-window.addEventListener('resize', syncMergeTopBtnWidth);
 
 function openMerge() {
   mergeMode = true;

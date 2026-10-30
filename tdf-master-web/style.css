@@ -103,7 +103,7 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 }
 .manual-btn:hover { background: #ff6fb5; transform: translateY(-1px); }
 
-/* 「開始」押下後、説明書ボタンはヘッダーの会社ロゴ左側へ移動する
+/* 最初にモードボタンを押した後、説明書ボタンはヘッダーの会社ロゴ左側へ移動する
    (app.jsのmoveManualButtonToHeader、FLIPアニメーションで実装)。
    移動後はこのスタイルに切り替わる。 */
 .manual-btn-header {
@@ -129,11 +129,25 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
   width: 100%; padding: 9px 10px; font-size: 14px; border: 1px solid #bbb; border-radius: 6px;
   background: #fff; cursor: pointer;
 }
-#beam-start-btn {
-  margin-top: 20px; width: 100%; padding: 12px; font-size: 15px; font-weight: bold;
+/* モード選択(梁/柱/結合)。押したモードでそのまま開始する */
+#mode-field { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+.mode-title { font-size: 13px; color: #555; }
+.mode-btn {
+  display: flex; align-items: baseline; justify-content: center; gap: 10px;
+  width: 100%; padding: 12px; font-size: 15px; font-weight: bold;
   border: none; border-radius: 8px; background: #27ae60; color: #fff; cursor: pointer;
 }
-#beam-start-btn:disabled { background: #bbb; cursor: not-allowed; }
+.mode-btn:hover:not(:disabled) { filter: brightness(1.08); }
+#mode-btn-merge { background: #1a73e8; }
+.mode-btn:disabled, #mode-btn-merge:disabled { background: #bbb; cursor: not-allowed; }
+.mode-sub { font-size: 12px; font-weight: normal; }
+/* モード切替で開き直したときだけ、キャンセル(元のモードに戻る)を出す */
+#mode-cancel-btn { display: none; margin-top: 14px; }
+body.app-started #mode-cancel-btn { display: inline-block; }
+/* ヘッダーのモード名・モード切替は、最初にモードを選んだ後だけ出す */
+#mode-label { font-size: 12px; font-weight: bold; color: #fff; background: #27ae60; border-radius: 10px; padding: 3px 10px; white-space: nowrap; }
+#mode-label:empty, #btn-mode { display: none; }
+body.app-started #btn-mode { display: inline-block; }
 
 #empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 15px; text-align: center; padding: 40px; }
 .folder-path-warn-wrap { position: relative; display: inline-block; margin-top: 18px; cursor: help; }
@@ -263,8 +277,6 @@ table#result-table tbody tr:hover { background: #f7fbff; }
 }
 .upload-bar:hover { border-color: #1a73e8; color: #1a73e8; }
 /* 複数のダウンロードファイルの結合 */
-.merge-top-btn { display: block; margin: 0 auto 36px; width: 402px; max-width: 100%; box-sizing: border-box; padding: 26px; font-size: 14px; font-weight: bold; color: #1a73e8; background: #f3f8ff; border: 2px solid #9bbcf0; border-radius: 10px; cursor: pointer; white-space: nowrap; }
-.merge-top-btn:hover { background: #e3eeff; }
 #merge-area { display: none; flex-direction: column; align-items: center; gap: 10px; }
 #merge-area.open { display: flex; }
 #merge-top { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
