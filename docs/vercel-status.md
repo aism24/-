@@ -93,6 +93,7 @@ CLAUDE.md から分離(2026-10-21)。恒久ルールは CLAUDE.md、ここは詳
 - 2026-10-30: ユーザーの「デプロイして」で、-tdf-master-web(起動画面のモード選択・利用記録のモード列#1082、柱モード#1083、柱モードの継手と長さの判定#1084、柱モードのコード整理#1085。コミットa0ccaab)を `create_deployment` で本番デプロイ(dpl_EmouggTZ、READY。本番の index.html・style.css・app.js がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め6回(上限100)。
 - 2026-10-30: ユーザーの「マージしてデプロイ」で、-tdf-master-web(モードボタンのモード名と説明を左でそろえる#1087、Excelダウンロードのボタンを緑に#1088。コミット2db7abd)を `create_deployment` で本番デプロイ(dpl_7Z8sNzYC、READY。本番の index.html・style.css・app.js がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め7回(上限100)。
 - 2026-10-30: ユーザーの「デプロイして」で、-tdf-master-web(説明書をモード選択・柱モードに合わせて11ページに差し替え、「← アプリ一覧へ」を会社ロゴ5回クリックで出る隠しボタンに #1091。コミット1a43b8d)を `create_deployment` で本番デプロイ(dpl_3cLtWq7Q、READY。本番の index.html・app.js・style.css・to-launcher.js・説明書画像がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め6回(上限100)。
+- 2026-10-30: ユーザーの「デプロイして」で、-tdf-master-web(製品マークを含む注記を柱マークの判定に使わない #1094。コミットc7cc9ca)を `create_deployment` で本番デプロイ(dpl_4DbkERCx、READY。本番の index.html・app.js・style.css がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め6回(上限100)。
 
 【反省・厳守】2026-09-24、daily-reportの修正時にpdf-diff-pythonappの連携が残っているのを
 確認しながら「Skip deploymentsが有効だから大丈夫」と自己判断してpush・マージし、
