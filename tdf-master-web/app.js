@@ -648,8 +648,6 @@ let mergeMode = false;
 let mergeFiles = []; // { id, name, kojiNo, rows: [{...列, link}], checked }
 let mergeSeq = 0;
 
-const MERGE_COLS = ['工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ', '重量', '左継手', '右継手'];
-
 function mergeRowKey(r) {
   return String(r.zuban).trim() + '\u0000' + String(r.mark).trim();
 }
