@@ -130,17 +130,19 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
   background: #fff; cursor: pointer;
 }
 /* モード選択(梁/柱/結合)。押したモードでそのまま開始する */
-#mode-field { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+#mode-field { margin-top: 20px; display: flex; flex-direction: column; gap: 12px; }
 .mode-title { font-size: 13px; color: #555; }
+/* 文字は3つとも黒。梁=薄いオレンジ、柱=緑、結合=青 */
 .mode-btn {
-  display: flex; align-items: baseline; justify-content: center; gap: 10px;
-  width: 100%; padding: 12px; font-size: 15px; font-weight: bold;
-  border: none; border-radius: 8px; background: #27ae60; color: #fff; cursor: pointer;
+  display: flex; align-items: baseline; justify-content: center; gap: 12px;
+  width: 100%; padding: 16px 12px; font-size: 19px; font-weight: bold;
+  border: none; border-radius: 8px; background: #27ae60; color: #000; cursor: pointer;
 }
 .mode-btn:hover:not(:disabled) { filter: brightness(1.08); }
+#mode-btn-beam { background: #ffd8a8; }
 #mode-btn-merge { background: #1a73e8; }
-.mode-btn:disabled, #mode-btn-merge:disabled { background: #bbb; cursor: not-allowed; }
-.mode-sub { font-size: 12px; font-weight: normal; }
+.mode-btn:disabled, #mode-btn-beam:disabled, #mode-btn-merge:disabled { background: #bbb; color: #555; cursor: not-allowed; }
+.mode-sub { font-size: 14px; font-weight: normal; }
 /* モード切替で開き直したときだけ、キャンセル(元のモードに戻る)を出す */
 #mode-cancel-btn { display: none; margin-top: 14px; }
 body.app-started #mode-cancel-btn { display: inline-block; }
