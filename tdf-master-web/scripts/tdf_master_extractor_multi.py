@@ -395,6 +395,11 @@ def _has_nearby_duplicate(tdf: tb.TdfData, mx: float, my: float, text: str,
             # 空欄になっていた。柱マーク[P441等]は`rows`のマーク一覧には
             # 現れないため、この除外を加えても柱マーク除外の効果は失われない)。
             continue
+        if any(m in other_s for m in own_marks):
+            # 製品マークを含む注記(例: "（EB32-RTB441-4梁取付）")も同じ理由で
+            # 比較対象外(2026-10-30、26-16 EB3-RB-11・RB-04で確認: 継手の長丸の
+            # 近くにこの注記があり、柱マークと誤認して継手が空欄になっていた)。
+            continue
         if other == text or text in other or other in text:
             return True
         # 継手候補側に「J」が挿入されただけで、それ以外の文字は並び替えても
