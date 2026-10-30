@@ -89,6 +89,7 @@ CLAUDE.md から分離(2026-10-21)。恒久ルールは CLAUDE.md、ここは詳
 - 2026-10-29: ユーザーの「デプロイして」で、-tdf-master-web(継手の長丸は梁と同じ向きのものだけ使う#1070。コミットad557d6)を `create_deployment` で本番デプロイ(dpl_75EsKFn、READY。本番の index.html・style.css・app.js がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め8回(上限100)。
 - 2026-10-29: ユーザーの「デプロイして」で、-tdf-master-web(フランジは上下2組・図面に無い数値は長さにしない#1072、サイズ2L・座標1,000,000超・種別はフランジの向き#1073。コミットf7077e4)を `create_deployment` で本番デプロイ(dpl_Yoq9eud、READY。本番の index.html・style.css・app.js がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め8回(上限100。24時間より前の分が外れたため)。
 - 2026-10-30: ユーザーの「デプロイして」で、-tdf-master-web(梁に端が載っている部材は梁本体にしない#1076。コミットee5dc0e)を `create_deployment` で本番デプロイ(dpl_FGyFs9X、READY。本番の index.html・style.css・app.js がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め7回(上限100)。
+- 2026-10-30: ユーザーの「マージしてデプロイして」で、-tdf-master-web(梁の端に取り付く部材の継手を除く・梁の端の高さの修正#1079。コミット6e2546b)を `create_deployment` で本番デプロイ(dpl_DPK8pTV5、READY。本番の index.html・style.css・app.js がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め8回(上限100)。
 
 【反省・厳守】2026-09-24、daily-reportの修正時にpdf-diff-pythonappの連携が残っているのを
 確認しながら「Skip deploymentsが有効だから大丈夫」と自己判断してpush・マージし、
