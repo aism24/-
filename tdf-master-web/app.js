@@ -53,6 +53,7 @@ function updateStartBtn() {
   kojiNo = document.getElementById('koji-select').value;
   const ready = !!(selectedFactory && kojiNo);
   document.getElementById('mode-btn-beam').disabled = !ready;
+  document.getElementById('mode-btn-column').disabled = !ready;
   document.getElementById('mode-btn-merge').disabled = !ready;
   if (kojiNo) {
     try { localStorage.setItem(KOJI_STORAGE_KEY, kojiNo); } catch (_) {}
@@ -97,14 +98,35 @@ async function loadMasterData() {
 }
 
 // ---------- モード選択 ----------
-// 工場・工事名を選んだ画面で、モードボタン(梁/柱/結合)を押して開始する。柱モードは準備中。
+// 工場・工事名を選んだ画面で、モードボタン(梁/柱/結合)を押して開始する。
 // 開始後はヘッダーの「モード切替」で同じ画面を開き直す(工場・工事名は選んだまま残し、
-// 梁モードの抽出結果・結合モードの取り込みも消さない)。
+// 梁モード・柱モードの抽出結果と結合モードの取り込みも消さない)。
+// 梁モードと柱モードは抽出のPythonと継手の列(左右/下上)が違うので、抽出結果を
+// モードごとに分けて持ち、切り替えたときに入れ替える。
 
-const MODE_NAMES = { beam: '梁モード', merge: '結合モード' };
+const MODE_NAMES = { beam: '梁モード', column: '柱モード', merge: '結合モード' };
+const JOINT_HEADERS = { beam: ['左継手', '右継手'], column: ['下継手', '上継手'] };
 let currentMode = null;
+let resultsMode = 'beam'; // extractedResults がどちらのモードの結果か
+const savedResults = { beam: { rows: [], info: '' }, column: { rows: [], info: '' } };
 let appliedFactory = null; // 最後にモードボタンを押したときの工場・工事名(キャンセルで戻す)
 let appliedKoji = '';
+
+function jointKeys() { return JOINT_HEADERS[resultsMode]; }
+
+// 梁モード⇔柱モードの切り替えで、抽出結果・件数表示・表の継手の見出しを入れ替える。
+function switchResults(mode) {
+  if (mode === resultsMode) return;
+  savedResults[resultsMode] = { rows: extractedResults, info: document.getElementById('file-info').textContent };
+  resultsMode = mode;
+  extractedResults = savedResults[mode].rows;
+  document.getElementById('file-info').textContent = savedResults[mode].info;
+  const [a, b] = jointKeys();
+  document.getElementById('th-joint-a').textContent = a;
+  document.getElementById('th-joint-b').textContent = b;
+  document.getElementById('file-input').value = '';
+  if (extractedResults.length > 0) renderTable(extractedResults);
+}
 
 async function startApp(mode) {
   // 利用記録シートへ日時・工場・モードを記録する(失敗してもアプリ利用は継続させる)。
@@ -122,8 +144,10 @@ async function startApp(mode) {
     if (!mergeMode) openMerge();
     return;
   }
+  switchResults(mode);
   if (mergeMode) closeMerge();
-  // Pyodideは梁モードを初めて選んだときだけ読み込む(結合モードでは使わない)。
+  else showExtractView();
+  // Pyodideは梁モード・柱モードを初めて選んだときだけ読み込む(結合モードでは使わない)。
   if (!pyodide) await initPyodide();
 }
 
@@ -257,11 +281,12 @@ async function initPyodide() {
       '/scripts/tdf_master_extractor.py': 'py-tdf-master-extractor',
       '/scripts/tdf_master_extractor_multi.py': 'py-tdf-master-extractor-multi',
       '/scripts/tdf_app.py': 'py-tdf-app',
+      '/scripts/tdf_column.py': 'py-tdf-column',
     };
     for (const [path, elId] of Object.entries(files)) {
       pyodide.FS.writeFile(path, document.getElementById(elId).textContent);
     }
-    await pyodide.runPythonAsync("import sys\nsys.path.insert(0, '/scripts')\nimport tdf_app");
+    await pyodide.runPythonAsync("import sys\nsys.path.insert(0, '/scripts')\nimport tdf_app\nimport tdf_column");
 
     hideStatus();
     showToast('準備完了 — TDFファイルを選択してください', 'success');
@@ -287,7 +312,9 @@ async function processFiles(files) {
     try {
       const uint8 = new Uint8Array(await file.arrayBuffer());
       pyodide.FS.writeFile('/input.tdf', uint8);
-      const pyResult = await pyodide.runPythonAsync(`tdf_app.extract_file('/input.tdf')`);
+      // 柱モードは柱・間柱用の別のPython(tdf_column.py)で抽出する
+      const pyModule = resultsMode === 'column' ? 'tdf_column' : 'tdf_app';
+      const pyResult = await pyodide.runPythonAsync(`${pyModule}.extract_file('/input.tdf')`);
       const rows = pyResult.toJs({ dict_converter: Object.fromEntries });
       pyResult.destroy();
       if (rows.length === 0) {
@@ -356,6 +383,7 @@ function computeWeightT(r) {
 function renderTable(results) {
   const tbody = document.getElementById('result-tbody');
   tbody.innerHTML = '';
+  const [ja, jb] = jointKeys(); // 梁モードは左継手・右継手、柱モードは下継手・上継手
 
   const markCounts = {};
   results.forEach(r => { if (r['製品マーク']) markCounts[r['製品マーク']] = (markCounts[r['製品マーク']] || 0) + 1; });
@@ -375,9 +403,9 @@ function renderTable(results) {
 
     const cols = [
       r._id, r['図番'] ?? '', r['製品マーク'] ?? '', r['設計符号'] ?? '', size,
-      honsuRaw, lenStr, weightStr, r['左継手'] ?? '', r['右継手'] ?? '',
+      honsuRaw, lenStr, weightStr, r[ja] ?? '', r[jb] ?? '',
     ];
-    const missingIdx = new Set([6, 8, 9]); // 長さ・左継手・右継手が空なら強調
+    const missingIdx = new Set([6, 8, 9]); // 長さ・継手が空なら強調
     cols.forEach((v, ci) => {
       const td = document.createElement('td');
       td.textContent = v === null || v === undefined ? '' : v;
@@ -521,14 +549,15 @@ async function downloadExcel() {
   if (extractedResults.length === 0) return;
   const basePath = await askBasePath();
 
-  const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(t)', '左継手', '右継手'];
+  const [ja, jb] = jointKeys(); // 梁モードは左継手・右継手、柱モードは下継手・上継手
+  const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(t)', ja, jb];
   const ZUBAN_COL = 2; // headers配列内の「図番」の列インデックス(0始まり)
   const WEIGHT_COL = 8; // headers配列内の「重量(t)」の列インデックス(0始まり)
   const rows = extractedResults.map(r => {
     const weightT = computeWeightT(r);
     return [
       r._id, kojiNo, r['図番'], r['製品マーク'], r['設計符号'], r['サイズ'], r['本数'],
-      r['長さ'], weightT == null ? '' : weightT, r['左継手'], r['右継手'],
+      r['長さ'], weightT == null ? '' : weightT, r[ja], r[jb],
     ];
   });
   const excelRows = [headers, ...rows];
@@ -676,6 +705,9 @@ async function readDownloadedExcel(file) {
     size: col('サイズ'), honsu: col('本数'), len: col('長さ'), weight: col('重量'),
     left: col('左継手'), right: col('右継手'),
   };
+  // 柱モードでダウンロードしたExcelは継手が「下継手」「上継手」
+  const isColumn = ci.left < 0 && col('下継手') >= 0;
+  if (isColumn) { ci.left = col('下継手'); ci.right = col('上継手'); }
   const get = (row, i) => (i < 0 || row[i] === undefined || row[i] === null) ? '' : row[i];
   const rows = [];
   for (let r = hIdx + 1; r < aoa.length; r++) {
@@ -691,7 +723,7 @@ async function readDownloadedExcel(file) {
   }
   if (rows.length === 0) throw new Error('製品行がありません');
   const kojis = rows.map(r => r.kojiNo).filter(Boolean);
-  return { kojiNo: kojis[0] || '', rows };
+  return { kojiNo: kojis[0] || '', rows, isColumn };
 }
 
 async function processMergeFiles(files) {
@@ -702,8 +734,8 @@ async function processMergeFiles(files) {
   const errors = [];
   for (const file of list) {
     try {
-      const { kojiNo: k, rows } = await readDownloadedExcel(file);
-      mergeFiles.push({ id: ++mergeSeq, name: file.name, kojiNo: k, rows, checked: true });
+      const { kojiNo: k, rows, isColumn } = await readDownloadedExcel(file);
+      mergeFiles.push({ id: ++mergeSeq, name: file.name, kojiNo: k, rows, isColumn, checked: true });
     } catch (e) {
       errors.push(file.name + ': ' + e.message);
       console.error(e);
@@ -821,13 +853,16 @@ function closeMerge() {
   mergeMode = false;
   document.getElementById('merge-area').classList.remove('open');
   document.getElementById('drop-overlay').textContent = 'TDFファイルをここにドロップ';
-  document.getElementById('btn-excel').disabled = extractedResults.length === 0;
-  document.getElementById('btn-reset').disabled = extractedResults.length === 0;
-  if (extractedResults.length > 0) {
-    document.getElementById('result-area').classList.add('visible');
-  } else {
-    document.getElementById('empty-state').style.display = 'flex';
-  }
+  showExtractView();
+}
+
+// 抽出画面(梁モード・柱モード)を、今の抽出結果の有無に合わせて表示する。
+function showExtractView() {
+  const has = extractedResults.length > 0;
+  document.getElementById('btn-excel').disabled = !has;
+  document.getElementById('btn-reset').disabled = !has;
+  document.getElementById('result-area').classList.toggle('visible', has);
+  document.getElementById('empty-state').style.display = has ? 'none' : 'flex';
 }
 
 async function downloadMergedExcel() {
@@ -856,7 +891,10 @@ async function downloadMergedExcel() {
     ];
   });
 
-  const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(t)', '左継手', '右継手'];
+  // 柱モードのExcelだけを結合したときは継手の見出しを下継手・上継手にする
+  // (梁と柱が混ざるときは左継手・右継手のまま。柱の行は左=下、右=上)
+  const [ja, jb] = JOINT_HEADERS[checked.every(f => f.isColumn) ? 'column' : 'beam'];
+  const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(t)', ja, jb];
   const ZUBAN_COL = 2, WEIGHT_COL = 8;
   const excelRows = [headers, ...rows];
   const ws = XLSX.utils.aoa_to_sheet(excelRows);
