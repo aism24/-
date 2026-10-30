@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>実寸法師データよりマスタ情報抽出</title>
-<link rel="stylesheet" href="style.css?v=20261029h">
+<link rel="stylesheet" href="style.css?v=20261030a">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
@@ -32,7 +32,13 @@
         <option value="" disabled selected>選択してください</option>
       </select>
     </div>
-    <button id="beam-start-btn" onclick="startApp()" disabled>開始</button>
+    <div id="mode-field">
+      <div class="mode-title">モードを選んで開始</div>
+      <button type="button" class="mode-btn" id="mode-btn-beam" onclick="startApp('beam')" disabled>梁モード<span class="mode-sub">製品が横向き・斜め向き</span></button>
+      <button type="button" class="mode-btn" id="mode-btn-column" disabled>柱モード<span class="mode-sub">製品が縦向き(準備中)</span></button>
+      <button type="button" class="mode-btn" id="mode-btn-merge" onclick="startApp('merge')" disabled>結合モード<span class="mode-sub">ダウンロード済みのExcelの集計</span></button>
+    </div>
+    <button type="button" id="mode-cancel-btn" class="header-btn" onclick="closeModeSelect()">キャンセル</button>
   </div>
 </div>
 
@@ -46,6 +52,8 @@
   </div>
   <div id="header-right">
     <span id="beam-type-label" style="font-size:12px;font-weight:bold;color:#1a73e8;"></span>
+    <span id="mode-label"></span>
+    <button type="button" class="header-btn" id="btn-mode" onclick="openModeSelect()">モード切替</button>
     <button class="header-action-btn danger" id="btn-reset" onclick="resetApp()" disabled>リセット</button>
     <button class="header-action-btn orange" id="btn-excel" onclick="downloadExcel()" disabled>📥 Excelダウンロード</button>
   </div>
@@ -57,7 +65,6 @@
 <main>
   <div id="empty-state">
     <div>
-      <button type="button" class="merge-top-btn" id="btn-merge" onclick="openMerge()">🔗 複数のダウンロードファイルの結合モードへ</button>
       <p style="margin-bottom:14px;">TDFファイルを選択、またはこの画面にドラッグ&amp;ドロップしてください</p>
       <div class="folder-path-warn-wrap">
         <div class="upload-bar" onclick="document.getElementById('file-input').click()">📂 クリックしてTDFファイルを選択(複数可)</div>
@@ -75,7 +82,6 @@
 
   <div id="merge-area">
     <div id="merge-top">
-      <button type="button" class="header-btn" onclick="closeMerge()">← 抽出画面へ戻る</button>
       <strong>複数のダウンロードファイルの結合</strong>
       <span id="merge-summary"></span>
     </div>
@@ -3006,7 +3012,7 @@ def extract_file(path: str) -> list[dict]:
     return _extract_small_beam(tdf)
 </script>
 
-<script src="app.js?v=20261029g"></script>
+<script src="app.js?v=20261030a"></script>
 <script src="to-launcher.js?v=20261019" data-target="header h1" data-mode="beforePrev"></script>
 </body>
 </html>
