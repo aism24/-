@@ -164,7 +164,7 @@ function closeModeSelect() {
 
 // ---------- 操作マニュアル(説明書) ----------
 
-const MANUAL_PAGE_COUNT = 8;
+const MANUAL_PAGE_COUNT = 11;
 let manualPage = 1;
 
 // 1ページ目のPDF埋め込みリンク(「実際のアプリを開く」)の矩形を、PDFページ
@@ -199,7 +199,7 @@ window.addEventListener('resize', () => {
 });
 
 function renderManualPage() {
-  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png`;
+  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png?v=20261030`;
   document.getElementById('manual-page-indicator').textContent = `${manualPage} / ${MANUAL_PAGE_COUNT}`;
   document.getElementById('manual-prev').disabled = manualPage <= 1;
   document.getElementById('manual-next').disabled = manualPage >= MANUAL_PAGE_COUNT;
