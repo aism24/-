@@ -3034,6 +3034,7 @@ import unicodedata
 
 import tdf_binary as tb
 import tdf_master_extractor as ex
+import tdf_master_extractor_multi as exm
 
 HEADERS = [
     "ID", "図番", "製品マーク", "設計符号", "サイズ", "本数",
@@ -3391,6 +3392,7 @@ def _bodies(tdf: tb.TdfData, widths: list[float]):
             ends.update(_center_ys(tdf, cx, hi, min(hi + END_PLATE_REACH, hi_b)))
             cand = {
                 "x1": x1, "x2": x2, "ends": sorted(ends), "cover": cover, "main_cover": p["cover"],
+                "segs": part,
                 "bottom_cap": next((c for c in inside if (c[1] + c[3]) / 2 == lo_b), None),
                 "top_cap": next((c for c in inside if (c[1] + c[3]) / 2 == hi_b), None),
             }
@@ -3421,47 +3423,75 @@ def _in_drawing(vals, length):
     return length is not None and any(abs(v - length) < 0.6 for v in vals)
 
 
-MIN_LENGTH_RATIO = 0.8  # 長さは本体の外形線の長さの8割以上
+MIN_COVER_SHARE = 0.5  # 長さの範囲に、本体の外形線の半分以上が入ること
 
 
 def determine_length(tdf: tb.TdfData, body):
-    """柱の長さ: 端の候補2つの差のうち、図面に寸法の文字として書かれていて、本体の
-    外形線の長さの8割以上あるものの中で一番長いもの(ベースプレート等の板を含む)。
-    戻り値: (長さ, 下端Y, 上端Y)。どれも書かれていなければ None。
+    """柱の長さ: 端の候補2つの差のうち図面に寸法の文字として書かれているものから、
+    その範囲に入る外形線が一番多いもの(同じなら長い方。ベースプレート等の板を含む)。
+
+    範囲に入る外形線が本体の外形線の半分未満なら使わない(部材の詳細図に描かれた外形線
+    の大半はその部材自身なので、半分も覆わない寸法は部分の寸法)。以前は「本体の外形線の
+    長さの8割以上」としていたが、継手の先や梁の線の向こうに同じ幅の別の部分が描かれると
+    外形線が長くなり、正しい長さが外れた(N2P-15のH-100の間柱 1190: 下に幅100の別の
+    部分420が描かれ、外形線は1810)。
+    戻り値: (長さ, 下端Y, 上端Y)。どれも無ければ None。
     """
     vals = _numeric_values(tdf)
     ends = body["ends"]
-    floor = body["cover"] * MIN_LENGTH_RATIO
-    cands = sorted(((round(h - l, 1), l, h) for i, l in enumerate(ends) for h in ends[i + 1:]),
-                   key=lambda c: -c[0])
-    for c in cands:
-        if c[0] >= floor and _in_drawing(vals, c[0]):
-            return c
-    return None
+    segs = body["segs"]
+    best = None
+    for i, l in enumerate(ends):
+        for h in ends[i + 1:]:
+            length = round(h - l, 1)
+            if not _in_drawing(vals, length):
+                continue
+            inside = sum(min(hi, h) - max(lo, l) for lo, hi in segs if min(hi, h) > max(lo, l))
+            if inside < body["cover"] * MIN_COVER_SHARE:
+                continue
+            key = (round(inside, 1), length)
+            if best is None or key > best[0]:
+                best = (key, (length, l, h))
+    return best[1] if best else None
 
 
-JOINT_DY = 700.0      # 端から長丸の中心までの上下の距離(外側)
+JOINT_DY = 700.0      # 端から長丸の中心までの上下の距離
 JOINT_DX = 1000.0     # 柱の外形から長丸の中心までの横の距離
-JOINT_INSIDE = 250.0  # 端より内側(柱の途中側)に入ってよい距離
 
 
-def _joint_near(caps, x1: float, x2: float, y_end: float, direction: int) -> str | None:
+def _bolts_on_member(bolts, x1: float, x2: float, y_end: float, direction: int) -> bool:
+    """部材の幅の中、端より内側800以内にボルトの記号があるか(800は梁の継手の条件と
+    同じBOLT_REACH。ボルトの記号は短い線2本以上が中点で交わるもの)。
+
+    ボルトで継ぐ間柱は、ボルトが間柱の上の端より内側にある(上端の40下等)。屋上の柱の
+    上端の外側(53〜103上)にもボルトの記号があるが、継手のボルトではないので数えない。
+    """
+    return any(x1 - WIDTH_TOL <= bx <= x2 + WIDTH_TOL
+               and 0.0 < (y_end - by) * direction <= exm.BOLT_REACH
+               for bx, by in bolts)
+
+
+def _joint_near(caps, bolts, x1: float, x2: float, y_end: float, direction: int) -> str | None:
     """柱の端(direction=-1 下端、+1 上端)の近くにある継手の長丸。
 
     長丸は柱の幅の中か、端の横に描かれる(N1C-1のCJ1は幅の中、N1P-1のPJ200W・
-    N4C-1のCJ350Kは横)。外形から横1000以内で、端の外側へ700以内・内側へ250以内の
-    うち一番近いもの。柱の継手の長丸は端の外側にある(上端の上に360、下端の下に
-    600〜670等)か、内側でも216まで(N1P-1のPJ200Wが100、N1P-10のESPJ200が216)。
-    柱の頭の近くに取り付く梁の継手(NGW60等)は端より300以上内側にある(26-14の柱・
-    間柱で確認)。
+    N4C-1のCJ350Kは横)。外形から横1000以内、端から上下700以内で一番近いもの。
+    - 端の外側の長丸は使う(柱の継手。上端の上に360、下端の下に600〜670等。
+      現場溶接でボルトは描かれない)。
+    - 端より内側の長丸は、部材の幅の中で端より内側にボルトがあるときだけ使う
+      (間柱の継手 PJ200W・ESPJ200 等は端より100〜304内側にあり、ボルトが間柱の
+      上にある)。柱の頭の近くに取り付く梁の継手(NGW60等、端より300〜570内側)は、
+      ボルトが梁の先(柱の外)にしか無いので使わない。距離だけでは両者を分けられない
+      (ESPJ200の304とNGW60の300)ため、ボルトの位置で分ける(26-14の柱・間柱で確認)。
     """
+    inward_ok = _bolts_on_member(bolts, x1, x2, y_end, direction)
     best = None
     for c in caps:
         cx, cy = (c[0] + c[2]) / 2, (c[1] + c[3]) / 2
         dy = abs(cy - y_end)
         dx = max(x1 - cx, 0.0, cx - x2)
         inward = (y_end - cy) * direction  # 端より柱の途中側へ入っている距離
-        if -JOINT_DY <= inward <= JOINT_INSIDE and dx <= JOINT_DX:
+        if -JOINT_DY <= inward <= (JOINT_DY if inward_ok else 0.0) and dx <= JOINT_DX:
             d = math.hypot(dx, dy)
             if best is None or d < best[0]:
                 best = (d, c[5])
@@ -3483,6 +3513,7 @@ def extract_column(tdf: tb.TdfData, debug: dict | None = None) -> list[dict]:
             size, widths = row["size"], _widths_from_size(row["size"])
         bodies = _bodies(tdf, widths) if widths else []
         caps = _capsules(tdf)
+        bolts = exm._bolt_marks(tdf)
         length = bottom = top = None
         # 長さは外形線の一番長い立面図で求める。継手の長丸は立面図の片方にだけ
         # 描かれることがある(N1P-1のPJ200W)ので、同じ長さになる立面図から順に探す
@@ -3494,8 +3525,8 @@ def extract_column(tdf: tb.TdfData, debug: dict | None = None) -> list[dict]:
                 length = got[0]
             elif abs(got[0] - length) > 0.6:
                 continue
-            bottom = bottom or _joint_near(caps, b["x1"], b["x2"], got[1], -1)
-            top = top or _joint_near(caps, b["x1"], b["x2"], got[2], +1)
+            bottom = bottom or _joint_near(caps, bolts, b["x1"], b["x2"], got[1], -1)
+            top = top or _joint_near(caps, bolts, b["x1"], b["x2"], got[2], +1)
         body = bodies[0] if bodies else None
         if debug is not None:
             debug[row["mark"]] = {"widths": widths, "body": body}
@@ -3514,7 +3545,7 @@ def extract_file(path: str) -> list[dict]:
     return extract_column(tb.load(path))
 </script>
 
-<script src="app.js?v=20261030d"></script>
+<script src="app.js?v=20261030e"></script>
 <script src="to-launcher.js?v=20261019" data-target="header h1" data-mode="beforePrev"></script>
 </body>
 </html>
