@@ -52,6 +52,8 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 }
 .header-action-btn.danger { color: #c0392b; border-color: #e0a0a0; }
 .header-action-btn.orange { background: #f39c12; color: #fff; border-color: #f39c12; }
+/* Excelダウンロードは緑(Excel=緑) */
+.header-action-btn.excel { background: #217346; color: #fff; border-color: #217346; }
 .header-action-btn:disabled, .header-btn:disabled { opacity: .45; cursor: not-allowed; }
 
 #beam-modal, #beam-box {}
