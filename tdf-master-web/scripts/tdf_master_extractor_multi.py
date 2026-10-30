@@ -87,6 +87,23 @@ def _angle_diff(a: float, b: float) -> float:
     return min(d, 180.0 - d)
 
 
+# 継手のある梁の端には、継手のボルトが梁せいの範囲内に描かれる。端からこの距離
+# 以内(梁の内側・外側とも)にボルトの記号があるかを見る(2026-10-30、S4B-26)。
+BOLT_REACH = 800.0
+
+
+def _bolt_marks(tdf: tb.TdfData) -> list[tuple[float, float]]:
+    """ボルトの記号(短い線2本以上が互いの中点で交わるもの。十字・×・*)の位置。
+    梁が傾いて描かれると記号も傾くため、線の向きは問わない。"""
+    mids: dict[tuple, list] = {}
+    for ln in tdf.lines:
+        if 3.0 <= ln.length <= 50.0:
+            key = (round((ln.x1 + ln.x2) / 2), round((ln.y1 + ln.y2) / 2))
+            mids.setdefault(key, []).append(math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1) % math.pi)
+    return [k for k, angs in mids.items()
+            if any(0.3 < abs(a - b) < math.pi - 0.3 for a in angs for b in angs)]
+
+
 def _is_axis_aligned(ln: tb.LineRecord) -> bool:
     ang = math.degrees(math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1)) % 180
     return ang < _AXIS_ALIGN_TOL_DEG or ang > 180 - _AXIS_ALIGN_TOL_DEG or abs(ang - 90) < _AXIS_ALIGN_TOL_DEG
@@ -390,7 +407,8 @@ def _has_nearby_duplicate(tdf: tb.TdfData, mx: float, my: float, text: str,
 
 
 def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: dict,
-                        member_ends: dict | None = None, joint_axes: dict | None = None) -> dict:
+                        member_ends: dict | None = None, joint_axes: dict | None = None,
+                        member_depths: dict | None = None) -> dict:
     """長丸(スタジアム形状)に囲まれたテキストは全て継手マークの一種である、
     という前提に立つ(2026-09-14、ユーザー確認: 大梁の`GJ`のような専用の
     文字列プレフィックスは無く、小梁では`TB441`や`TB489`等、設計符号と
@@ -418,7 +436,9 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
 
     `tier_info`(id(row) -> (段ラベル, y_max))・`lengths`(id(row) -> 長さ)は
     呼び出し側で計算済みのものを渡すこと。`joint_axes`(id(row) -> 斜め梁の
-    角度)に無い行は普通梁(継手は水平)とみなす。戻り値は id(row) -> (left, right)。
+    角度)に無い行は普通梁(継手は水平)とみなす。`member_depths`(id(row) -> 梁せい)
+    がある行は、梁と同じ向きの長丸を、その端にボルトがあるときだけ継手にする。
+    戻り値は id(row) -> (left, right)。
     """
     raw_groups: dict[tuple, list] = {}
     for r in rows:
@@ -474,6 +494,7 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
     # (2026-09-15、ユーザー指摘)。事前に候補ごとの判定結果をキャッシュし、
     # 短い製品の場合はこのキャッシュを参照しない(=除外条件を適用しない)。
     own_marks = frozenset(r.mark for r in rows)
+    bolt_marks = _bolt_marks(tdf) if member_depths else []
     dup_flags = {
         (mx, my, t): _has_nearby_duplicate(tdf, mx, my, t, own_marks)
         for mx, my, t in candidates_raw
@@ -530,6 +551,28 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
                 use_2d = False
             allowed_angles = [(joint_axes or {}).get(id(r), 0.0)] + size_angles.get(r.size, [])
 
+            # 梁の端に別の部材が取り付き、その部材の継手が梁と同じ向きの長丸で近くに
+            # 描かれることがある(2026-10-30、S4B-26の4CSB700A-S3。梁の左端の下に吊り
+            # 下がる部材T175WMXPGの継手TPG175WMが左継手になっていた。ユーザー確認:
+            # 左継手は無し)。梁の継手なら、その端の梁せいの範囲内にボルトが描かれる
+            # ため、ボルトの無い端には梁と同じ向きの長丸を使わない。梁の端を回して
+            # 描いた詳細図の上の継手(N2G-22等のNGW80)は、ボルトも詳細図の側に描かれる
+            # ため、この判定は梁と向きが違う長丸にはかけない。梁の端はフランジから求めたもの
+            # (member_ends)で、梁せいが分かるときだけ判定する。
+            bolt_ok = {"left": True, "right": True}
+            r_depth = (member_depths or {}).get(id(r))
+            r_ends = (member_ends or {}).get(id(r))
+            if r_depth and r_ends is not None:
+                (lx, ly), (rx, ry) = r_ends
+                span = math.hypot(rx - lx, ry - ly)
+                if span > 0:
+                    vx, vy = (rx - lx) / span, (ry - ly) / span
+                    for side, (ex_, ey_) in (("left", (lx, ly)), ("right", (rx, ry))):
+                        bolt_ok[side] = any(
+                            abs((qx - ex_) * vx + (qy - ey_) * vy) <= BOLT_REACH
+                            and abs(-(qx - ex_) * vy + (qy - ey_) * vx) <= r_depth / 2
+                            for qx, qy in bolt_marks)
+
             def scan(two_d):
                 found = False
                 for mx, my, t in candidates_raw:
@@ -541,7 +584,10 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
                     if apply_dup_exclusion and dup_flags[(mx, my, t)]:
                         continue
                     xr, yr = rotate(mx, my)
+                    parallel = _angle_diff(cand_angle[(mx, my, t)], allowed_angles[0]) <= JOINT_ANGLE_TOL_DEG
                     for side, ref in (("left", left_ref), ("right", right_ref)):
+                        if parallel and not bolt_ok[side]:
+                            continue
                         if two_d:
                             dist = math.hypot(mx - ref[0], my - ref[1])
                         elif use_2d:

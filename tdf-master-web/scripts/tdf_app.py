@@ -367,9 +367,26 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
             break
         start = s0
 
+    # 端の高さ(梁せいの中央)は、梁自身のフランジと、それと外側どうしで梁せいだけ
+    # 離れたもう1組のフランジから求める。同じ位置にある別の図(平面図等)の同じ向きの
+    # フランジまで含めると、端が梁の外へずれる(2026-10-30、WA1-1G-05のGJ140Fで
+    # 1784、N2B-01の右端で2328。継手のボルトを端で探すために直した)。梁せいが
+    # 分からない・組が見つからないとき(テーパー梁、2L等)は従来どおり。
+    def own_depth(pos):
+        near = [f for f in fs if f[3] - 0.6 <= pos <= f[4] + 0.6]
+        bands = {(round(f[1]), round(f[2])): (f[1], f[2]) for f in near}
+        mine = bands.get(level)
+        if mine is None or depth is None:
+            return depth_at(pos)
+        pair = [v for k, v in bands.items()
+                if k != level and abs(max(v[1], mine[1]) - min(v[0], mine[0]) - depth) <= 0.6]
+        if not pair:
+            return depth_at(pos)
+        return (min(mine[0], pair[0][0]), max(mine[1], pair[0][1]))
+
     ends = []
     for pos in (start, end):
-        lo, hi = depth_at(pos)
+        lo, hi = own_depth(pos)
         c = (lo + hi) / 2
         ends.append((pos * ux - c * uy, pos * uy + c * ux))
     ends.sort()
@@ -521,8 +538,11 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
 
     # 3項目パターンの行はassign_joints_batch(既存の4項目パターン専用の
     # グルーピングロジック)には一切渡さない。
+    member_depths = {id(r): _beam_depth(r.size) for r in rows
+                     if id(r) in member_ends and _beam_depth(r.size)}
     joints = exm.assign_joints_batch(
-        tdf, [r for r in rows if not r.size_missing], tier_info, lengths, member_ends, joint_axes
+        tdf, [r for r in rows if not r.size_missing], tier_info, lengths, member_ends, joint_axes,
+        member_depths,
     )
     joints.update(joints_no_size)
 
