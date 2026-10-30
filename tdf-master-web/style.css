@@ -132,10 +132,11 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 /* モード選択(梁/柱/結合)。押したモードでそのまま開始する */
 #mode-field { margin-top: 20px; display: flex; flex-direction: column; gap: 12px; }
 .mode-title { font-size: 13px; color: #555; }
-/* 文字は3つとも黒。梁=薄いオレンジ、柱=緑、結合=青 */
+/* 文字は3つとも黒。梁=薄いオレンジ、柱=緑、結合=青。
+   モード名と説明の頭を3つのボタンでそろえる(モード名の列は一番長い「結合モード」の幅) */
 .mode-btn {
-  display: flex; align-items: baseline; justify-content: center; gap: 12px;
-  width: 100%; padding: 16px 12px; font-size: 19px; font-weight: bold;
+  display: grid; grid-template-columns: 6em 1fr; align-items: baseline; column-gap: 12px;
+  text-align: left; width: 100%; padding: 16px 12px 16px 32px; font-size: 19px; font-weight: bold;
   border: none; border-radius: 8px; background: #27ae60; color: #000; cursor: pointer;
 }
 .mode-btn:hover:not(:disabled) { filter: brightness(1.08); }
