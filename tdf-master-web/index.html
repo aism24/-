@@ -3275,8 +3275,10 @@ def _body(tdf: tb.TdfData, widths: list[float]):
 
     - 外形線の組: 外形の幅だけ離れた垂直線の組で、内側に板厚の線か中心線があるもの。
       外形が途中で変わる柱は、内側に収まる細い方の組の線もまとめる。
-    - 幅の内側にある長丸(継手)で区切り、外形線が一番長く残る区間を本体とする
-      (継手の先に描かれた隣の部材を除く)。
+    - 幅の内側か、幅の外へ幅の半分までにある長丸(継手)で区切り、外形線が一番長く
+      残る区間を本体とする(継手の先に描かれた隣の部材を除く)。柱の継手の長丸は
+      幅の中(N3C-5のCJ2)か、少し横(N3C-11のCJ2は151、N3C-5のCJ5は185)に描かれる。
+      柱の途中に取り付く梁の継手は外形から770以上横にあるので区切りにしない。
     - 端の候補: 区間の中の外形線の切れ目と、幅を覆う水平線(ダイアフラム・
       ベースプレート等。外形線の端から200の外側まで)。
     戻り値: dict(x1, x2, ends[Y一覧], cover, top_cap, bottom_cap) または None
@@ -3303,7 +3305,8 @@ def _bodies(tdf: tb.TdfData, widths: list[float]):
             if q["w"] < p["w"] and q["x1"] >= x1 - WIDTH_TOL and q["x2"] <= x2 + WIDTH_TOL:
                 segs += [list(s) for s in q["segs"]]
         segs = _merge(segs)
-        inside = [c for c in caps if x1 - WIDTH_TOL <= (c[0] + c[2]) / 2 <= x2 + WIDTH_TOL]
+        reach = (x2 - x1) / 2 + WIDTH_TOL
+        inside = [c for c in caps if x1 - reach <= (c[0] + c[2]) / 2 <= x2 + reach]
         cuts = sorted((c[1] + c[3]) / 2 for c in inside)
         bounds = [-1e18] + cuts + [1e18]
         for k in range(len(bounds) - 1):
@@ -3434,7 +3437,7 @@ def extract_file(path: str) -> list[dict]:
     return extract_column(tb.load(path))
 </script>
 
-<script src="app.js?v=20261030b"></script>
+<script src="app.js?v=20261030c"></script>
 <script src="to-launcher.js?v=20261019" data-target="header h1" data-mode="beforePrev"></script>
 </body>
 </html>
