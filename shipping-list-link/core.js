@@ -114,15 +114,54 @@
     });
   }
 
+  // 文字化けの読み戻し: 文字コードの対応表(ToUnicode・cmap)が無いフォントで出力されたPDF(例: 仮想プリンタ「PDF reDirect」)は、
+  // 英数字が一定の幅だけずれた別の文字(「1G-37」→「㻝㻳㻙㻟㻣」)として取り出される。フォントごとに、英数字を1つも含まない文字列だけを対象に、
+  // ずれ幅の候補(よく出る文字 − 数字・ハイフン)を試し、読み戻した語がマスタの図番・製品名に最も多く一致する幅を採る。
+  // 図番と製品名が1つずつ以上一致したフォントだけを直す(英数字以外の文字=漢字などは戻せないので、そのまま残す)。直したら true
+  function shiftBack(s, k) {
+    var o = '';
+    for (var i = 0; i < s.length; i++) { var d = s.charCodeAt(i) - k; o += d >= 0x20 && d <= 0x7e ? String.fromCharCode(d) : s[i]; }
+    return o;
+  }
+  function repairGarbled(tcs, zset, nset) {
+    var fonts = {};
+    tcs.forEach(function (tc) { if (tc) tc.items.forEach(function (it) { if (it.str) (fonts[it.fontName] = fonts[it.fontName] || []).push(it); }); });
+    var fixed = false;
+    Object.keys(fonts).forEach(function (fn) {
+      var items = fonts[fn], raw = items.map(function (it) { return it.str; }).join(' ');
+      if (/[A-Za-z0-9]/.test(raw)) return;   // 英数字が読めているフォントは対象外(正常なPDFは変えない)
+      var freq = {};
+      for (var i = 0; i < raw.length; i++) { var c = raw.charCodeAt(i); if (c >= 0x100) freq[c] = (freq[c] || 0) + 1; }
+      var top = Object.keys(freq).sort(function (a, b) { return freq[b] - freq[a] || a - b; }).slice(0, 15), seen = {}, best = null;
+      top.forEach(function (c) {
+        '0123456789-'.split('').forEach(function (t) {
+          var k = +c - t.charCodeAt(0);
+          if (seen[k]) return;
+          seen[k] = 1;
+          var zh = 0, nh = 0;
+          items.forEach(function (it) {
+            var m, d = shiftBack(it.str, k);
+            TOKEN_RE.lastIndex = 0;
+            while ((m = TOKEN_RE.exec(d))) { if (zset[m[0]]) zh++; if (nset[m[0]]) nh++; }
+          });
+          if (zh && nh && (!best || zh + nh > best.n)) best = { k: k, n: zh + nh };
+        });
+      });
+      if (!best || best.n < 2) return;
+      items.forEach(function (it) { it.str = shiftBack(it.str, best.k); });
+      fixed = true;
+    });
+    return fixed;
+  }
+
   // links: { "図番\t製品名": url | [url,...](重複) }
   // opts.mapUri(url): PDFに埋め込むリンク先の変換(省略時はマスタのURLそのまま)
   async function linkPdf(pdfjsLib, PDFLib, data, links, opts) {
     var mapUri = (opts && opts.mapUri) || function (u) { return u; };
     var doc = await pdfjsLib.getDocument({ data: new Uint8Array(data.slice(0)) }).promise;
-    var out = await PDFLib.PDFDocument.load(data, { ignoreEncryption: true });
+    var out, stats;
     var zset = {}, nset = {}, shapes = {};
     Object.keys(links).forEach(function (k) { var p = k.split('\t'); zset[p[0]] = 1; nset[p[1]] = 1; shapes[shape(p[0])] = 1; });
-    var stats = { pages: doc.numPages, linked: 0, dup: 0, ng: 0, partial: [], rows: 0 };
     var tcs = [], vps = [], sched = [], anySched = false;
     try {
     var qs = [];
@@ -132,6 +171,15 @@
       sched[q] = tcs[q].items.map(function (it) { return it.str; }).join('').replace(/\s/g, '').indexOf('加工予定表') >= 0;   // タイトルは1文字ずつ分かれている場合がある
     }));
     for (var q1 = 1; q1 <= doc.numPages; q1++) if (sched[q1]) anySched = true;
+    await pass();
+    // 図番らしい語が1つも無かったときだけ、文字化けを読み戻してもう一度照合する(読み戻せなければ結果はそのまま=詳細図の読み取りへ)
+    if (stats.linked === 0 && stats.ng === 0 && repairGarbled(tcs, zset, nset)) await pass();
+    } finally { doc.destroy(); }   // pdf.js のworker・ページ資源を解放(処理のたびに残らないように)
+    return { bytes: await out.save(), stats: stats };
+
+    async function pass() {
+    out = await PDFLib.PDFDocument.load(data, { ignoreEncryption: true });
+    stats = { pages: doc.numPages, linked: 0, dup: 0, ng: 0, partial: [], rows: 0 };
     for (var pn = 1; pn <= doc.numPages; pn++) {
       if (anySched && !sched[pn]) continue;   // 「加工予定表」のタイトルがあるPDFは、そのページだけを対象にする
       var tc = tcs[pn];
@@ -178,8 +226,7 @@
           thickness: 0.9, color: PDFLib.rgb(0, 0.2, 0.9) });
       });
     }
-    } finally { doc.destroy(); }   // pdf.js のworker・ページ資源を解放(処理のたびに残らないように)
-    return { bytes: await out.save(), stats: stats };
+    }
   }
 
   // マスタのリンク(file://192.168.1.2/share/….tdf)を、Webページ経由の起動リンク(open.html?p=…)に変換する
