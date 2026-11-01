@@ -162,7 +162,7 @@
     var out, stats;
     var zset = {}, nset = {}, shapes = {};
     Object.keys(links).forEach(function (k) { var p = k.split('\t'); zset[p[0]] = 1; nset[p[1]] = 1; shapes[shape(p[0])] = 1; });
-    var tcs = [], vps = [], sched = [], anySched = false;
+    var tcs = [], vps = [], sched = [];
     try {
     var qs = [];
     for (var q0 = 1; q0 <= doc.numPages; q0++) qs.push(q0);
@@ -170,7 +170,6 @@
       var pj = await doc.getPage(q); vps[q] = pj.getViewport({ scale: 1 }); tcs[q] = await pj.getTextContent();
       sched[q] = tcs[q].items.map(function (it) { return it.str; }).join('').replace(/\s/g, '').indexOf('加工予定表') >= 0;   // タイトルは1文字ずつ分かれている場合がある
     }));
-    for (var q1 = 1; q1 <= doc.numPages; q1++) if (sched[q1]) anySched = true;
     await pass();
     // 図番らしい語が1つも無かったときだけ、文字化けを読み戻してもう一度照合する(読み戻せなければ結果はそのまま=詳細図の読み取りへ)
     if (stats.linked === 0 && stats.ng === 0 && repairGarbled(tcs, zset, nset)) await pass();
@@ -181,7 +180,7 @@
     out = await PDFLib.PDFDocument.load(data, { ignoreEncryption: true });
     stats = { pages: doc.numPages, linked: 0, dup: 0, ng: 0, partial: [], rows: 0 };
     for (var pn = 1; pn <= doc.numPages; pn++) {
-      if (anySched && !sched[pn]) continue;   // 「加工予定表」のタイトルがあるPDFは、そのページだけを対象にする
+      // 「加工予定表」のタイトルがあるページは列単位、ほかのページ(同じPDFに綴じた出荷リストなど)は行単位で照合する(2026-11-02〜。以前は加工予定表のページだけを対象にしていた)
       var tc = tcs[pn];
       var page = out.getPage(pn - 1), annots = [];
       var rows = sched[pn] ? [] : clusterRows(tc.items);
