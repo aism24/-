@@ -803,3 +803,9 @@
 - やり方: createImageBitmap(blob,{imageOrientation:"from-image"}) で写真の向き(EXIF)を反映 → canvas で長辺4000pxに縮めJPEG → pdf-lib で1ページのPDF。HEIC は heic2any(MIT、1.35MB)を vendor に置き HEIC のときだけ動的に読み込む / app.js imageToPdf / PR #1107
 - 注意点: 試験用の HEIC・回転JPG は pillow-heif と PIL(Exif 0x0112=6)で作れる。新旧のアプリ全体を git archive で並べて同じファイルを入れ、ポップアップ・NG一覧・OCR呼び出し・保存値を比べるとリグレッションを確かめやすい
 - 使ったアプリ: shipping-list-link
+
+### Gemini の文字の位置(box)は細かい表だと縦に数行ずれる → 画像の行に順番で合わせる(shipping-list-link、2026-11-02)
+- 効果: 横倒しの出荷リスト1頁 リンク30・NG19(横倒しのまま読む)→ 50・3。補正なしでは下線が2〜4行ずれていた → 正しい行に
+- やり方: 読む前に小さな画像で向きを聞いて(orient)回す。位置は、同じ列のインクの帯を画像から探し、行間隔の比で縮尺→上下のずれ量を全体で最適化して上から順に対応(DP、行は飛ばせる)/ drawing-read.js snapRows / PR #1111
+- 注意点: 縦長画像で box は倍率約1.08・下ほどずれる。正方形に余白・上下分割・濃さの相関では直らなかった(行が等間隔で補正量が決まらない)。元の位置が合っているとき(手書き)は変えない
+- 使ったアプリ: shipping-list-link
