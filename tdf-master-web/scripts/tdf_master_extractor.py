@@ -264,8 +264,46 @@ def _find_zumenbango_label_pos(tdf: tb.TdfData) -> tuple[float, float] | None:
     return None
 
 
-def find_drawing_number(tdf: tb.TdfData) -> str | None:
+_FILENAME_SEPARATORS = (" ", "　", "_", "(", "（")
+
+
+def _drawing_number_from_filename(tdf: tb.TdfData, filename: str) -> str | None:
+    """ファイル名の先頭と一致する図面の文字を図番として返す。
+
+    ファイル名が「1C-01　261023.tdf」のように図番で始まるとき、図面の文字の中から
+    ファイル名の先頭(全体、または区切り文字の直前まで)と一致するものを探す。
+    返すのは図面に書かれた文字で、ファイル名そのものは図番にしない。
+    一致する文字が複数あれば長いものを優先し、同じ長さなら右下(表題欄の側)に
+    近いものを採る。一致が無ければNoneを返し、従来の判定に任せる。
+
+    2026-11-02、26-12 C棟の柱詳細図1C-01で、表題欄に「図面番号」ラベルが無く、
+    図番「1C-01」が数字で始まるため候補にならず、階の名前「CB1FL」を図番として
+    いた問題を受けて追加。"""
+    stem = filename.replace("\\", "/").rsplit("/", 1)[-1]
+    if stem.lower().endswith(".tdf"):
+        stem = stem[:-4]
+    stem = stem.strip()
+    matches = []
+    for r in tdf.texts:
+        if r.text is None or r.rot != 0:
+            continue
+        t = r.text.strip()
+        if not t or t.isdigit() or not stem.startswith(t):
+            continue
+        if len(stem) > len(t) and not stem[len(t)].startswith(_FILENAME_SEPARATORS):
+            continue
+        matches.append(r)
+    if not matches:
+        return None
+    matches.sort(key=lambda r: (-len(r.text.strip()), -r.x, r.y))
+    return matches[0].text.strip()
+
+
+def find_drawing_number(tdf: tb.TdfData, filename: str | None = None) -> str | None:
     """タイトル欄の図番らしきテキストを推定する。
+
+    ファイル名が渡されたときは、ファイル名の先頭と一致する図面の文字を最優先する
+    (_drawing_number_from_filename)。
 
     まず「図面番号」ラベル(4文字が連続して並ぶ箇所)を探し、その近く
     (Y座標の差が500mm以内)にある英数字+ハイフンの候補の中で、ラベルに
@@ -277,6 +315,11 @@ def find_drawing_number(tdf: tb.TdfData) -> str | None:
     たまたまタイトル欄の図番と同じ文字高さだったため誤って設計符号の方を
     採用してしまう問題が発覚し、位置情報(ラベルとの近さ)を優先する方式に
     改訂した。"""
+    if filename:
+        from_name = _drawing_number_from_filename(tdf, filename)
+        if from_name is not None:
+            return from_name
+
     candidates = []
     for r in tdf.texts:
         if r.text is None or r.rot != 0:

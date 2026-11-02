@@ -410,8 +410,8 @@ def _in_drawing(dim_values, length):
     return length is not None and any(abs(v - length) < 0.05 for v in dim_values)
 
 
-def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
-    drawing_number = ex.find_drawing_number(tdf)
+def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
+    drawing_number = ex.find_drawing_number(tdf, filename)
     rows = _get_rows_small(tdf)
     if not rows:
         return []
@@ -570,7 +570,10 @@ def _extract_small_beam(tdf: tb.TdfData) -> list[dict]:
 # JS側から呼び出すエントリポイント
 # ---------------------------------------------------------------------------
 
-def extract_file(path: str) -> list[dict]:
-    """1つの.tdfファイルを解析して製品情報のリスト(dict)を返す。"""
+def extract_file(path: str, filename: str | None = None) -> list[dict]:
+    """1つの.tdfファイルを解析して製品情報のリスト(dict)を返す。
+
+    filename は元のファイル名(ブラウザでは /input.tdf に書き込むため別に渡す)。
+    省略時は path のファイル名を使う。"""
     tdf = tb.load(path)
-    return _extract_small_beam(tdf)
+    return _extract_small_beam(tdf, filename or path)
