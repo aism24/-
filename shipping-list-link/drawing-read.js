@@ -4,7 +4,8 @@
  * 梁詳細図(製品名|設計符号|部材サイズ|台数)・柱詳細図(設計符号|設計符号|製品名|図示|台数)のどちらも、セルの位置は決め打ちしない。
  * 読み取りの誤りでリンクを付けないよう、マスタとの一致だけを根拠にする(CADの文字ではOと0・Iと1の見分けがつかないので、比較時だけ同一視)。
  * 製品表が見つからないページ(手書き・スキャンの一覧表など)は、書かれた英数字の語を行ごとに読み(kind=list)、同じ行の(図番, 製品名)がマスタと一致したら製品名に下線とリンクを付ける(2026-11-02〜)。
- * list の読み取りに失敗したとき・マスタの語が1つも無いときは、従来どおり「製品表が見つかりません」にする。 */
+ * list の読み取りに失敗したとき・マスタの語が1つも無いときは、従来どおり「製品表が見つかりません」にする。
+ * 一覧表を読む前に、文字が正しく読める向きを小さな画像で聞き(kind=orient)、横倒し・逆さなら回してから読む(2026-11-02〜)。聞けないとき(旧GAS等)・回転不要のときは従来どおり。 */
 (function (root) {
   var LOCATE_SIDE = 2000;   // 場所を探すための全体画像の長辺(px)
   var READ_DPI = 300;       // 読み取り用の切り出し画像の解像度
@@ -13,12 +14,13 @@
   var TABLE_TRIES = 2;          // 製品表の読み取りで製品名が一致しなかったとき、同じ画像を読む回数の上限(最初の1回を含む)
   var RETRY_429 = 3;            // 429が返ったときの再試行の回数(そのつど少し待つ)
   var HALF_SIDE = 2400;     // 製品表を見落としたとき、上下に分けて探し直す画像の横幅(px)
+  var ORIENT_SIDE = 1000;   // 一覧表の向きを聞くための画像の長辺(px)。文字の向きが分かれば足りるので小さくする
 
   function fold(s) { return String(s).normalize('NFKC').replace(/\s+/g, '').toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1'); }
 
-  // ページの一部を描いた canvas を返す。(x0,y0,w,h)はそのscaleでのページ画像上の範囲(px)
-  async function renderRegion(page, scale, x0, y0, w, h) {
-    var vp = page.getViewport({ scale: scale }), c = document.createElement('canvas');
+  // ページの一部を描いた canvas を返す。(x0,y0,w,h)はそのscaleでのページ画像上の範囲(px)。rotation(省略可)を渡すと、その向きで描く(省略時はページの向きのまま)
+  async function renderRegion(page, scale, x0, y0, w, h, rotation) {
+    var vp = rotation === undefined ? page.getViewport({ scale: scale }) : page.getViewport({ scale: scale, rotation: rotation }), c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h));
     var ctx = c.getContext('2d');
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
@@ -92,6 +94,63 @@
     return { x0: cb.x0 - m, y0: cb.y0 - m, x1: cb.x1 + m, y1: cb.y1 + m, snapped: false };
   }
 
+  // 一覧表のリンク位置の補正(2026-11-02〜)。細かい表では Gemini が返す文字の縦の位置が1〜数行ずれることがある(下の行ほど大きくずれる)ので、
+  // 画像から同じ列の実際の文字の行(インクのある帯)を探し、読んだ語を上から順に対応させる(行の間隔の比で縮尺を合わせ、上下のずれ量は全体で一番合うものを選ぶ)。
+  // 対応させた行と元の位置のずれが、行の高さの半分を超えるときだけ置き換える(手書きのように元から合っているものは変えない)。boxes: [{x0,y0,x1,y1}](canvas上のpx)。書き換えたら true
+  function snapRows(canvas, boxes) {
+    var w = canvas.width, h = canvas.height, d = canvas.getContext('2d').getImageData(0, 0, w, h).data, changed = false;
+    function med(a) { a = a.slice().sort(function (p, q) { return p - q; }); return a.length ? a[a.length >> 1] : 0; }
+    // 列ごと(横の範囲が半分以上重なるもの)に分ける
+    var groups = [];
+    boxes.slice().sort(function (p, q) { return p.x0 - q.x0; }).forEach(function (b) {
+      var g = groups.filter(function (g) { var ov = Math.min(g.x1, b.x1) - Math.max(g.x0, b.x0); return ov >= 0.5 * Math.min(g.x1 - g.x0, b.x1 - b.x0); })[0];
+      if (g) { g.items.push(b); g.x0 = Math.min(g.x0, b.x0); g.x1 = Math.max(g.x1, b.x1); } else groups.push({ x0: b.x0, x1: b.x1, items: [b] });
+    });
+    groups.forEach(function (g) {
+      var it = g.items, n = it.length;
+      var xa = clamp(Math.round(med(it.map(function (b) { return b.x0; }))), 0, w - 1), xb = clamp(Math.round(med(it.map(function (b) { return b.x1; }))), xa + 1, w);
+      // その列の行ごとのインクの割合(罫線のようにほぼ全幅が黒い行は除く)→ インクのある帯
+      var bands = [], cur = -1, last = -9, y, x;
+      for (y = 0; y < h; y++) {
+        var dk = 0;
+        for (x = xa; x < xb; x++) { var i = (y * w + x) * 4; if ((d[i] + d[i + 1] + d[i + 2]) / 3 < 150) dk++; }
+        var f = dk / (xb - xa), on = f > 0.02 && f <= 0.6;
+        if (on) { if (cur < 0) cur = y; last = y; }
+        else if (cur >= 0 && y - last > 2) { if (last - cur + 1 >= 3) bands.push([cur, last + 1]); cur = -1; }
+      }
+      if (cur >= 0 && last - cur + 1 >= 3) bands.push([cur, last + 1]);
+      var m = bands.length;
+      if (m < n) return;
+      var bc = bands.map(function (b) { return (b[0] + b[1]) / 2; }), bhs = bands.map(function (b) { return b[1] - b[0]; });
+      var ord = it.slice().sort(function (p, q) { return (p.y0 + p.y1) - (q.y0 + q.y1); }), c = ord.map(function (b) { return (b.y0 + b.y1) / 2; });
+      var dif = function (a) { var r = []; for (var k = 1; k < a.length; k++) r.push(a[k] - a[k - 1]); return r; };
+      var spb = m > 1 ? med(dif(bc)) : 20, spp = n > 2 ? med(dif(c)) : spb, sc = spp > 0 ? spb / spp : 1;
+      var cs = c.map(function (v) { return v * sc; }), O = Math.round(h * 0.3), bestO = 0, bestC = Infinity, j, i2, o;
+      var prev = new Float64Array(m + 1), curA = new Float64Array(m + 1);
+      for (o = -O; o <= O; o++) {   // 上下のずれ量ごとに、上から順の対応(行は飛ばしてよい)の合計の外れを最小にする
+        prev.fill(0);
+        for (i2 = 0; i2 < n; i2++) {
+          curA[0] = Infinity;
+          for (j = 1; j <= m; j++) { var cst = Math.min(Math.abs(cs[i2] + o - bc[j - 1]), spb); curA[j] = Math.min(curA[j - 1], prev[j - 1] + cst); }
+          var t = prev; prev = curA; curA = t;
+        }
+        if (prev[m] < bestC) { bestC = prev[m]; bestO = o; }
+      }
+      if (bestC / n > 0.35 * spb) return;   // 対応がはっきりしないときは変えない
+      // 対応を取り出す
+      var dp = [], a2, b2;
+      for (a2 = 0; a2 <= n; a2++) { dp.push(new Float64Array(m + 1)); if (a2) dp[a2][0] = Infinity; }
+      for (a2 = 1; a2 <= n; a2++) for (b2 = 1; b2 <= m; b2++) dp[a2][b2] = Math.min(dp[a2][b2 - 1], dp[a2 - 1][b2 - 1] + Math.min(Math.abs(cs[a2 - 1] + bestO - bc[b2 - 1]), spb));
+      var asg = new Array(n); a2 = n; b2 = m;
+      while (a2 > 0) { if (dp[a2][b2] === dp[a2][b2 - 1]) b2--; else { asg[a2 - 1] = b2 - 1; a2--; b2--; } }
+      var off = 0; for (a2 = 0; a2 < n; a2++) off += Math.abs(c[a2] - bc[asg[a2]]);
+      if (off / n <= 0.5 * med(bhs)) return;   // 元の位置がほぼ合っている(手書きなど)ときは変えない
+      for (a2 = 0; a2 < n; a2++) { ord[a2].y0 = bands[asg[a2]][0]; ord[a2].y1 = bands[asg[a2]][1]; }
+      changed = true;
+    });
+    return changed;
+  }
+
   // links: { "図番\t製品名": url | [url,...] } / ask(kind, base64Jpeg) → Promise<{ok, data|error}> / opts.mapUri(url): PDFに入れるリンク先の変換(省略可) / opts.onProgress(済ページ数, 全ページ数): 進捗(省略可)
   async function linkDrawing(pdfjsLib, PDFLib, data, links, ask, opts) {
     var mapUri = (opts && opts.mapUri) || function (u) { return u; };
@@ -163,9 +222,16 @@
     }
     // 一覧表(手書き・スキャン)の読み取り。製品表が見つからないページだけで使う。扱えたら true(リンクまたはNGを付けた)、扱えなければ false
     async function listPage(page, pn, pdfPage, W, H, s0) {
-      var res;
-      try { res = await call('list', await renderRegion(page, s0, 0, 0, W * s0, H * s0)); } catch (e) { return false; }   // 旧GAS(kind=list を知らない)・通信エラーなど
-      var v1 = page.getViewport({ scale: 1 }), any = false, annots = [];
+      var res, rot = 0;
+      // 向きの確認: 文字が正しく読める向きにするには時計回りに何度回すか(0/90/180/270)。聞けなければ回さない(従来どおり)
+      try {
+        var so = ORIENT_SIDE / Math.max(W, H), o = await call('orient', await renderRegion(page, so, 0, 0, W * so, H * so));
+        if (o && [90, 180, 270].indexOf(o.rotate) >= 0) rot = o.rotate;
+      } catch (e) { rot = 0; }
+      var R = ((page.rotate || 0) + rot) % 360, v1 = page.getViewport({ scale: 1, rotation: R });   // rot=0 のときはページの向きのまま(従来と同じ)
+      var lr = await renderRegion(page, s0, 0, 0, v1.width * s0, v1.height * s0, R);
+      try { res = await call('list', lr, true); } catch (e) { release(lr); return false; }   // 旧GAS(kind=list を知らない)・通信エラーなど
+      var any = false, annots = [], hitsAll = [];
       ((res && res.lines) || []).forEach(function (line) {
         var it = ((line && line.items) || []).filter(function (x) { return x && x.text; });
         var zs = it.filter(function (x) { return byZ[fold(x.text)]; }), ns = it.filter(function (x) { return byName[fold(x.text)]; });
@@ -182,8 +248,7 @@
             if (Array.isArray(e.v)) { stats.dup++; stats.ng++; stats.partial.push({ page: pn, zuban: e.zuban, name: e.name, reason: '重複' }); return; }
             var b = boxPx(n.box, v1.width, v1.height);
             if (!b) { stats.ng++; stats.partial.push({ page: pn, zuban: e.zuban, name: n.text, reason: 'セルの位置を読み取れません' }); return; }
-            var m = (b.y1 - b.y0) * 0.15;
-            annots.push({ rect: pdfRect(v1, 0, 0, { x0: b.x0 - m, y0: b.y0 - m, x1: b.x1 + m, y1: b.y1 + m }), uri: mapUri(e.v) });
+            hitsAll.push({ b: b, uri: mapUri(e.v) });
             stats.linked++;
           });
         });
@@ -192,11 +257,23 @@
         if (zs.length) stats.partial.push({ page: pn, zuban: zs[0].text, name: show, reason: '製品名が不一致(読み取った行の文字を表示)' });
         else stats.partial.push({ page: pn, zuban: '', name: show, reason: '図番が見つかりません(読み取った行の文字を表示)' });
       });
+      // 位置の補正(細かい表で Gemini の縦の位置がずれるとき)。補正は読み取り画像(scale s0)の上で行い、ページの座標(scale 1)に戻す
+      if (hitsAll.length) {
+        var px = hitsAll.map(function (h) { return { x0: h.b.x0 * s0, y0: h.b.y0 * s0, x1: h.b.x1 * s0, y1: h.b.y1 * s0 }; });
+        if (snapRows(lr.canvas, px)) px.forEach(function (q, k) { hitsAll[k].b = { x0: q.x0 / s0, y0: q.y0 / s0, x1: q.x1 / s0, y1: q.y1 / s0 }; });
+      }
+      release(lr);
+      hitsAll.forEach(function (h) {
+        var b = h.b, m = (b.y1 - b.y0) * 0.15;
+        // 下線は、読んだ向きでの文字の下辺(回した画像でも文字の下になるよう、両端をPDFの座標に直す)
+        annots.push({ rect: pdfRect(v1, 0, 0, { x0: b.x0 - m, y0: b.y0 - m, x1: b.x1 + m, y1: b.y1 + m }), uri: h.uri,
+          ul: [v1.convertToPdfPoint(b.x0 - m, b.y1 + m), v1.convertToPdfPoint(b.x1 + m, b.y1 + m)], th: Math.max(0.9, (b.y1 - b.y0 + 2 * m) * 0.06) });
+      });
       // 一覧表のリンクは、出荷リストと同じく製品名の下に青い下線を引く(着色はしない)
       annots.forEach(function (a) {
         var ctx = out.context, act = ctx.obj({ S: 'URI', URI: PDFLib.PDFString.of(root.ShippingCore.encodeUri(a.uri)) }), r = a.rect;
         pdfPage.node.addAnnot(ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Link', Rect: r, Border: [0, 0, 0], A: act })));
-        pdfPage.drawLine({ start: { x: r[0], y: r[1] }, end: { x: r[2], y: r[1] }, thickness: Math.max(0.9, (r[3] - r[1]) * 0.06), color: PDFLib.rgb(0, 0.2, 0.9) });
+        pdfPage.drawLine({ start: { x: a.ul[0][0], y: a.ul[0][1] }, end: { x: a.ul[1][0], y: a.ul[1][1] }, thickness: a.th, color: PDFLib.rgb(0, 0.2, 0.9) });
       });
       return any;
     }
