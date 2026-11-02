@@ -410,6 +410,62 @@ def _in_drawing(dim_values, length):
     return length is not None and any(abs(v - length) < 0.05 for v in dim_values)
 
 
+MEMBER_DIM_TOL = 0.1  # フランジから求めた長さと寸法の文字の差の許容
+
+
+def _drawn_value(dim_values, length):
+    """フランジから求めた長さに一致する寸法の文字の値(差0.1以内で一番近いもの)。
+
+    寸法の文字は小数1桁に丸めて書かれ、寸法の端がフランジの端とわずかにずれることも
+    ある(2026-11-02、26-12 の 2G-13。フランジから 8154.33、寸法の文字は 8154.4)。
+    長さには図面に書かれた寸法の値を使う(ユーザー指示)。無ければ None。
+    """
+    near = [v for v in dim_values if abs(v - length) <= MEMBER_DIM_TOL + 1e-9]
+    return min(near, key=lambda v: abs(v - length)) if near else None
+
+
+def _web_member(tdf, member, tf, depth):
+    """フランジから求めた梁の両端を、ウェブの端の線まで伸ばしたもの。
+
+    フランジの端が切欠き等でウェブの端より内側に描かれることがある(2026-11-02、
+    26-12 の 4G-15。図面の長さは「5618(WEB寸法)」で、フランジは左端で2短く 5616)。
+    梁の端から外側へ板厚(tf)以内にある、主軸に直交する線のうち、梁せいの中央を
+    横切り、上下のフランジの内側に収まるもの(ウェブの端の線)の一番外側を端とする。
+    戻り値は _flange_member と同じ形。梁せい・板厚が分からなければ None。
+    """
+    if not tf or not depth:
+        return None
+    _length, (pa, pb), th_deg = member
+    th = math.radians(th_deg)
+    ux, uy = math.cos(th), math.sin(th)
+    m = -pa[0] * uy + pa[1] * ux  # 梁せいの中央(主軸に直交する方向の位置)
+    web_lo, web_hi = m - depth / 2 + tf, m + depth / 2 - tf
+    a, b = pa[0] * ux + pa[1] * uy, pb[0] * ux + pb[1] * uy
+    start, end = min(a, b), max(a, b)
+
+    def web_end(p, outward):
+        best = None
+        for ln in tdf.lines:
+            if ln.length < 20:
+                continue
+            t = math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1) % math.pi
+            d = abs(t - th % math.pi)
+            if abs(min(d, math.pi - d) - math.pi / 2) > math.radians(0.05):
+                continue
+            q = (ln.x1 + ln.x2) / 2 * ux + (ln.y1 + ln.y2) / 2 * uy
+            o = sorted((-ln.x1 * uy + ln.y1 * ux, -ln.x2 * uy + ln.y2 * ux))
+            if not (o[0] < m < o[1]) or o[0] < web_lo - 0.6 or o[1] > web_hi + 0.6:
+                continue
+            out = (q - p) * outward
+            if -0.6 <= out <= tf + 0.6 and (best is None or out > best):
+                best = out
+        return p if best is None else p + best * outward
+
+    start, end = web_end(start, -1), web_end(end, +1)
+    ends = sorted(((start * ux - m * uy, start * uy + m * ux), (end * ux - m * uy, end * uy + m * ux)))
+    return (round(end - start, 1), (ends[0], ends[1]), th_deg)
+
+
 def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
     drawing_number = ex.find_drawing_number(tdf, filename)
     rows = _get_rows_small(tdf)
@@ -453,8 +509,17 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
         # 図面に寸法として書かれていない数値は長さにしない(ユーザー指示。フランジの
         # 形から求めた値が寸法の文字に無ければ、従来の寸法から選ぶ方式の値を使う)
         axis = debug.get("main_axis_deg")
-        if member is not None and _in_drawing(dim_values, member[0]):
-            length_value, member_ends[id(row)], axis = member
+        drawn = _drawn_value(dim_values, member[0]) if member is not None else None
+        if member is not None and drawn is None:
+            # フランジの長さに合う寸法が無ければ、ウェブの端まで伸ばした長さで探す
+            web = _web_member(tdf, member, _flange_thickness(row.size), _beam_depth(row.size))
+            if web is not None and web[0] != member[0]:
+                drawn = _drawn_value(dim_values, web[0])
+                if drawn is not None:
+                    member = web
+        if drawn is not None:
+            _member_length, member_ends[id(row)], axis = member
+            length_value = drawn
         lengths[id(row)] = length_value
         # 梁の向きは、フランジから求めたときはフランジの線の向きで判定する。寸法線は
         # 斜めの部材でも水平・垂直に引かれることがある(2026-10-29、N2B-36〜39の
