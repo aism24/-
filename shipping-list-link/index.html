@@ -12,7 +12,7 @@
 #drop b{display:block;margin-top:14px}
 .stage{position:relative;height:150px;overflow:hidden;pointer-events:none}
 .stage.busy{opacity:.3}
-/* 7秒周期(2026-10-27に5秒から遅くした。4つのアニメは同じ秒数にして動きをそろえる。右へ消えて0.5秒後に次が左から出る): 左から4枚のカード(左列=詳細図PDF白・Excel緑、右列=出荷リスト赤・その他PDF薄緑)→中央で発光しピンクの「リンク付き」へ→右へ移動して消える→1秒の間→繰り返し */
+/* 7秒周期(2026-10-27に5秒から遅くした。4つのアニメは同じ秒数にして動きをそろえる。右へ消えて0.5秒後に次が左から出る): 左から4枚のカード(左列=詳細図PDF白・Excel緑、右列=出荷リスト赤・写真(手書き可)=風景写真風(2026-11-02 その他PDF薄緑から変更))→中央で発光しピンクの「リンク付き」へ→右へ移動して消える→1秒の間→繰り返し */
 .fi{position:absolute;top:50%;left:-240px;margin-top:-60px;display:flex;flex-direction:column;align-items:center;gap:8px;opacity:0;animation:move 7s ease-in-out infinite}
 .fi .box{width:240px;height:120px;border-radius:10px;position:relative;animation:glow 7s ease-in-out infinite}
 .fi .b{position:absolute;inset:0;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:24px;line-height:1.3;text-align:center;font-weight:bold;letter-spacing:1px;color:#fff}
@@ -20,7 +20,7 @@
 .fi .two{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px;animation:toRed 7s ease-in-out infinite}
 .fi .c{border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:bold;white-space:nowrap}
 .fi .c-red{background:linear-gradient(135deg,#c0392b,#e74c3c);color:#fff;box-shadow:0 0 10px rgba(231,76,60,.5)}
-.fi .c-green{background:#c8efd4;color:#1f6b3a;box-shadow:0 0 10px rgba(160,230,185,.45)}
+.fi .c-photo{background:radial-gradient(circle at 91% 16%,#fff6c8 0 6%,rgba(255,246,200,0) 7%),radial-gradient(ellipse 70% 45% at 25% 100%,#3f8f4f 0 98%,rgba(63,143,79,0) 100%),radial-gradient(ellipse 80% 40% at 80% 100%,#5aa864 0 98%,rgba(90,168,100,0) 100%),linear-gradient(180deg,#5aa9e6,#bfe3f7);border:3px solid #fff;color:#fff;font-size:13px;text-shadow:0 1px 2px rgba(0,0,0,.75),0 0 4px rgba(0,0,0,.5);box-shadow:0 0 10px rgba(255,255,255,.35)}  /* 写真カード: 空・太陽・丘の風景+白い縁 */
 .fi .c-white{background:#fff;color:#222;box-shadow:0 0 10px rgba(255,255,255,.45)}
 .fi .c-excel{background:linear-gradient(135deg,#17803d,#2fb260);color:#fff;box-shadow:0 0 10px rgba(47,178,96,.5)}
 .fi .pi{position:absolute;top:50%;transform:translateY(calc(-50% - 3px));image-rendering:pixelated}.fi .pi-l{left:16px}.fi .pi-r{right:16px}
@@ -70,9 +70,9 @@ main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px}
 <div class="safe"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#1b9e4b" d="M12 1 3 5v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V5z"/><path fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="m7.5 12.5 3 3 6-6.5"/></svg><div>取込ファイルをコピーしてハイパーリンクを付与します。<br>新しいファイルはダウンロードフォルダに保存されます。</div></div>
 <div id="drop">
   <div class="stage" id="stage">
-    <div class="fi"><div class="box"><div class="two"><div class="c c-white">詳細図PDF</div><div class="c c-red">出荷リスト</div><div class="c c-excel">Excelファイル</div><div class="c c-green">その他PDF</div></div><div class="b b-pink"><img class="pi pi-l" src="icon.png" width="48" height="48" alt="">リンク<br>付き<img class="pi pi-r" src="icon.png" width="48" height="48" alt=""></div></div></div>
+    <div class="fi"><div class="box"><div class="two"><div class="c c-white">詳細図PDF</div><div class="c c-red">出荷リスト</div><div class="c c-excel">Excelファイル</div><div class="c c-photo">写真(手書き可)</div></div><div class="b b-pink"><img class="pi pi-l" src="icon.png" width="48" height="48" alt="">リンク<br>付き<img class="pi pi-r" src="icon.png" width="48" height="48" alt=""></div></div></div>
   </div>
-  <b>PDF / Excel を画面のどこにでもドロップ</b>またはクリックして選択
+  <b>PDF / Excel / 写真を<span style="display:inline-block">画面のどこにでもドロップ</span></b>またはクリックして選択
   <input id="file" type="file" accept="application/pdf,.xlsx,.xlsm,.jpg,.jpeg,.png,.heic,.heif,image/jpeg,image/png,image/heic,image/heif" hidden>
 </div>
 <div id="msg"></div>
