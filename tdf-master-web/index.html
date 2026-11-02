@@ -3203,6 +3203,7 @@ def find_rows(tdf: tb.TdfData) -> list[dict]:
         if len(cells) < 3:
             continue
         a, b, c = (_norm(tdf.resolve_text(r)) for r in cells)
+        pos = (cells[0].x, dai.x, dai.y)  # 行の左端X・右端X・高さ(本体を行に割り当てるため)
         if _is_zushi(c):
             labels = _size_code_labels(tdf)
             if a in labels or b not in labels:
@@ -3210,10 +3211,10 @@ def find_rows(tdf: tb.TdfData) -> list[dict]:
             else:
                 code, mark = b, a
             rows.append({"mark": mark, "code": code, "size": None, "zushi": True,
-                         "count": _norm(tdf.resolve_text(dai))})
+                         "count": _norm(tdf.resolve_text(dai)), "pos": pos})
         elif _is_size(c):
             rows.append({"mark": a, "code": b, "size": c, "zushi": False,
-                         "count": _norm(tdf.resolve_text(dai))})
+                         "count": _norm(tdf.resolve_text(dai)), "pos": pos})
     return rows
 
 
@@ -3386,7 +3387,7 @@ def _numeric_values(tdf: tb.TdfData) -> list[float]:
 # 柱本体(立面図の外形線)
 # ---------------------------------------------------------------------------
 
-def _outline_pairs(by_x, widths: list[float]):
+def _outline_pairs(by_x, widths: list[float], min_body: float = MIN_BODY):
     """幅が外形と同じだけ離れた垂直線の組。両方の線が重なる区間を持つ。"""
     xs = sorted(by_x)
     pairs = []
@@ -3398,7 +3399,7 @@ def _outline_pairs(by_x, widths: list[float]):
                 if abs(x2 - x1 - w) <= WIDTH_TOL:
                     segs = _intersect(by_x[x1], by_x[x2])
                     cover = sum(hi - lo for lo, hi in segs)
-                    if cover >= MIN_BODY:
+                    if cover >= min_body:
                         pairs.append({"x1": x1, "x2": x2, "w": w, "segs": segs, "cover": cover})
     return pairs
 
@@ -3478,7 +3479,8 @@ def _center_ys(tdf: tb.TdfData, cx: float, lo: float, hi: float):
     return [y for y, a, b in _hlines(tdf, lo, hi) if a <= cx - 1.0 and b >= cx + 1.0]
 
 
-def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None = None):
+def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None = None,
+            min_body: float = MIN_BODY):
     """柱本体の候補(立面図が2つあれば2つ以上)と、その上下の端の候補のY。
 
     - 外形線の組: 外形の幅だけ離れた垂直線の組で、内側に板厚の線か中心線があるもの。
@@ -3489,12 +3491,12 @@ def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None =
       柱の途中に取り付く梁の継手は外形から770以上横にあるので区切りにしない。
     - 端の候補: 区間の中の外形線の切れ目と、幅を覆う水平線(ダイアフラム・
       ベースプレート等。外形線の端から200の外側まで)、本体の外側で柱の中心を覆う水平線。
-    - 順番: 外形線の組そのものが一番長い組の半分に満たないものを除き、本体の外形線の
-      長い順。
+    - 順番: 本体の外形線の長い順。外形線の組が短いものを除くのは _drop_minor(1図面に
+      製品が複数あるときは、製品ごとに分けてから除く)。
     戻り値: [dict(x1, x2, ends[Y一覧], cover, main_cover, segs), ...]
     """
     found = []
-    for p in _outline_pairs(by_x, widths):
+    for p in _outline_pairs(by_x, widths, min_body):
         if p["w"] != widths[0] or not _has_inner_lines(by_x, p["x1"], p["x2"], p["segs"]):
             continue
         x1, x2 = p["x1"], p["x2"]
@@ -3514,7 +3516,7 @@ def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None =
                      if (s[0] < lo_b or s[1] > hi_b) and min(s[1], hi_b) > max(s[0], lo_b)
                      and not _intersect([list(s)], [list(m) for m in p["segs"]])]
             cover = sum(s[1] - s[0] for s in part)
-            if not part or cover < MIN_BODY:
+            if not part or cover < min_body:
                 continue
             lo, hi = min(s[0] for s in part), max(s[1] for s in part)
             ends = {y for s in part for y in s}
@@ -3541,14 +3543,37 @@ def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None =
                 best = cand
         if best is not None:
             found.append(best)
-    # 外形線の組そのものが、一番長い組の半分に満たないものは除く(たまたま外形の幅だけ
-    # 離れた別の線の組が、内側にある本物の柱の線を足して長くなることがある: N3C-8)。
-    # 残りは本体の長さの順(立面図の片方が取り付く梁の長丸で区切られることがある: S3C-06)
-    if found:
-        top_main = max(b["main_cover"] for b in found)
-        found = [b for b in found if b["main_cover"] >= top_main * 0.5]
+    # 本体の長さの順(立面図の片方が取り付く梁の長丸で区切られることがある: S3C-06)
     found.sort(key=lambda b: -b["cover"])
     return found
+
+
+def _drop_minor(bodies):
+    """外形線の組そのものが、一番長い組の半分に満たないものは除く(たまたま外形の幅だけ
+    離れた別の線の組が、内側にある本物の柱の線を足して長くなることがある: N3C-8)。"""
+    if not bodies:
+        return bodies
+    top_main = max(b["main_cover"] for b in bodies)
+    return [b for b in bodies if b["main_cover"] >= top_main * 0.5]
+
+
+def _owner_row(body, rows):
+    """1図面に製品が複数あるとき、本体を割り当てる製品の行: 本体の上端より下にある行の
+    うち、本体の上端の中央から行(左端〜右端)までの横と縦の距離の和が一番小さいもの。
+    製品ごとに図がまとまって描かれ、その真下に製品の行が書かれる(26-12 の 1P-09 等。
+    1図面に最大5製品)。立面図の線が行より下の断面図まで続くことがある(1P-11)ので、
+    下端ではなく上端で比べる。下に行が無ければ None。"""
+    top = max(s[1] for s in body["segs"])
+    cx = (body["x1"] + body["x2"]) / 2
+    best = None
+    for row in rows:
+        x_lo, x_hi, y = row["pos"]
+        if y >= top:
+            continue
+        d = max(x_lo - cx, 0.0, cx - x_hi) + (top - y)
+        if best is None or d < best[0]:
+            best = (d, id(row))
+    return best[1] if best else None
 
 
 def _in_drawing(vals, length):
@@ -3691,7 +3716,8 @@ def _bolts_on_member(bolts, x1: float, x2: float, y_end: float, direction: int) 
     ボルトで継ぐ間柱は、ボルトが間柱の上の端より内側にある(上端の40下等)。屋上の柱の
     上端の外側(53〜103上)にもボルトの記号があるが、継手のボルトではないので数えない。
     """
-    return any(x1 - WIDTH_TOL <= bx <= x2 + WIDTH_TOL
+    reach = (x2 - x1) / 2 + WIDTH_TOL
+    return any(x1 - reach <= bx <= x2 + reach
                and 0.0 < (y_end - by) * direction <= exm.BOLT_REACH
                for bx, by in bolts)
 
@@ -3716,11 +3742,52 @@ def _joint_near(caps, bolts, x1: float, x2: float, y_end: float, direction: int)
         dy = abs(cy - y_end)
         dx = max(x1 - cx, 0.0, cx - x2)
         inward = (y_end - cy) * direction  # 端より柱の途中側へ入っている距離
-        if -JOINT_DY <= inward <= (JOINT_DY if inward_ok else 0.0) and dx <= JOINT_DX:
+        if -JOINT_DY <= inward <= (exm.BOLT_REACH if inward_ok else 0.0) and dx <= JOINT_DX:
             d = math.hypot(dx, dy)
             if best is None or d < best[0]:
                 best = (d, c[5])
     return best[1] if best else None
+
+
+def _in_side_member(tdf: tb.TdfData, cap, x1: float, x2: float, bottom: float, top: float) -> bool:
+    """水平の長丸が、柱の横に取り付く梁の外形線の内側にあるか: 長丸を上下からはさみ、
+    どちらも柱を横切らずに柱の片側にだけある2本の水平線(長丸を覆う)で、柱に近い側の
+    端がそろっているもの(梁の上下の線)がある。26-12 の 2P-03 の BJ29MX-3 は間柱の横の小梁
+    Sb29M の上下の線のあいだ、26-14 の N3C-9 の NGW100B 等は柱の頭に取り付く梁の線の
+    あいだにある。床の高さの線や寸法線は柱を横切るので、これには当たらない。
+    2本の線がそれぞれ柱の上端・下端(bottom・top)から板の範囲(200)以内にあるときは、
+    上下の梁のあいだに立つ間柱で、長丸は間柱自身の継手なので除かない(26-16 の
+    EB2-1P-03 の T1。線は上端の20下と下端の85上)。"""
+    ax, ay, bx, by, r = cap[:5]
+    if abs(ay - by) > AXIS_TOL:
+        return False
+    cy = (ay + by) / 2
+    lo_x, hi_x = min(ax, bx), max(ax, bx)
+
+    left = hi_x < x1  # 長丸が柱の左にあるか
+
+    def side(lines, join):
+        # 柱を横切らず長丸と同じ側にある線。join のときは、同じ高さで途切れが長丸の
+        # 半径以内の線をつなぐ(梁の線は破断記号のところで少し途切れて描かれる: 1P-23 の
+        # Sb30Ng。つなぐと別の線とつながって端がそろわなくなる図面もあるので両方調べる)
+        by_y: dict[float, list[list[float]]] = {}
+        for y, a, b in lines:
+            if (b <= x1 + WIDTH_TOL) if left else (a >= x2 - WIDTH_TOL):
+                by_y.setdefault(round(y * 2) / 2, []).append([a, b])
+        segs = [(y, a, b) for y, iv in by_y.items() for a, b in (_merge(iv, r) if join else iv)]
+        # 長丸を両端の丸まで覆う線(近くの別の長丸の直線部分を数えないため: EB2-1P-03)
+        return [(y, a, b) for y, a, b in segs
+                if abs(y - cy) > r + WIDTH_TOL and a <= lo_x - r and b >= hi_x + r]
+
+    for join in (False, True):
+        above = side(_hlines(tdf, cy, cy + JOINT_DX), join)
+        below = side(_hlines(tdf, cy - JOINT_DX, cy), join)
+        # 柱に近い側の端がそろっていること(遠い側は寸法の補助線とつながることがある)
+        if any(abs((b1 - b2) if left else (a1 - a2)) <= WIDTH_TOL
+               and not (abs(top - y1) <= END_PLATE_REACH and abs(y2 - bottom) <= END_PLATE_REACH)
+               for y1, a1, b1 in above for y2, a2, b2 in below):
+            return True
+    return False
 
 
 def _joint_on_next_member(caps, by_x, x1: float, x2: float, y_end: float, direction: int) -> str | None:
@@ -3765,9 +3832,29 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
     vals = _numeric_values(tdf)
     chains = _dim_chains(tdf)
 
-    def measure(size, widths, h_in_drawing):
+    found = {}  # 外形の幅ごとの本体の候補(製品ごとに分ける前)
+    joint_caps = {}  # 本体ごとの継手の候補(横に取り付く梁の継手を除いた長丸)
+
+    def jcaps(b, got):
+        key = (id(b), got[1], got[2])
+        if key not in joint_caps:
+            joint_caps[key] = [c for c in caps if not _in_side_member(tdf, c, b["x1"], b["x2"], got[1], got[2])]
+        return joint_caps[key]
+
+    def measure(size, widths, h_in_drawing, owner):
         tf = _flange_thickness(size)
-        bodies = _bodies(tdf, widths, by_x, caps, tf) if widths else []
+        if (tuple(widths), tf) not in found:
+            got = _bodies(tdf, widths, by_x, caps, tf) if widths else []
+            if widths and not got:
+                # 柱本体が1つも無いときだけ、外形の幅以上・長さ1000未満の外形線の組も
+                # 本体の候補にする(長さ470の間柱: 26-12 の 1P-08)
+                got = _bodies(tdf, widths, by_x, caps, tf, min_body=widths[0])
+            found[(tuple(widths), tf)] = got
+        bodies = found[(tuple(widths), tf)]
+        if owner is not None:
+            # 1図面に製品が複数あるときは、その製品の行に割り当てた本体だけで求める
+            bodies = [b for b in bodies if _owner_row(b, rows) == owner]
+        bodies = _drop_minor(bodies)
         length = bottom = top = None
         # 長さは外形線の一番長い立面図で求める。継手の長丸は立面図の片方にだけ
         # 描かれることがある(N1P-1のPJ200W)ので、同じ長さになる立面図から順に探す
@@ -3782,8 +3869,8 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
             gots = [(b, got) for b, got in gots
                     if got is not None and (_is_flange_end(tdf, b["x1"], b["x2"], got[1], tf)
                                             or _is_flange_end(tdf, b["x1"], b["x2"], got[2], tf)
-                                            or (_joint_near(caps, bolts, b["x1"], b["x2"], got[1], -1)
-                                                and _joint_near(caps, bolts, b["x1"], b["x2"], got[2], +1)))]
+                                            or (_joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[1], -1)
+                                                and _joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[2], +1)))]
         for b, got in gots:
             if got is None:
                 continue
@@ -3791,8 +3878,8 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
                 length = got[0]
             elif abs(got[0] - length) > 0.6:
                 continue
-            bottom = bottom or _joint_near(caps, bolts, b["x1"], b["x2"], got[1], -1)
-            top = top or _joint_near(caps, bolts, b["x1"], b["x2"], got[2], +1)
+            bottom = bottom or _joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[1], -1)
+            top = top or _joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[2], +1)
         for b, got in gots:
             if got is None or length is None or abs(got[0] - length) > 0.6:
                 continue
@@ -3800,7 +3887,10 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
             top = top or _joint_on_next_member(caps, by_x, b["x1"], b["x2"], got[2], +1)
         return length, bottom, top
 
-    # 同じサイズの行は結果も同じなので1回だけ求める(1枚に78行ある図面: 26-14 の4階間柱)
+    # 同じサイズの行は結果も同じなので1回だけ求める(1枚に78行ある図面: 26-14 の4階間柱)。
+    # 製品が複数の図面は、製品ごとに描かれた図から長さを求める(長さの違う製品が並ぶ:
+    # 26-12 の 1P-09 の 1278 と 4220)
+    multi = len(rows) >= 2
     measured = {}
     out = []
     for row in rows:
@@ -3813,9 +3903,10 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
                 h_in_drawing = size is not None
         else:
             size, widths = row["size"], _widths_from_size(row["size"])
-        key = (size, tuple(widths), h_in_drawing)
+        owner = id(row) if multi else None
+        key = (size, tuple(widths), h_in_drawing, owner)
         if key not in measured:
-            measured[key] = measure(size, widths, h_in_drawing)
+            measured[key] = measure(size, widths, h_in_drawing, owner)
         length, bottom, top = measured[key]
         out.append({
             "図番": drawing_number, "製品マーク": row["mark"], "設計符号": row["code"],
