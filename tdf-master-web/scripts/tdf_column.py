@@ -467,8 +467,8 @@ def _joint_near(caps, bolts, x1: float, x2: float, y_end: float, direction: int)
 # 1ファイル分
 # ---------------------------------------------------------------------------
 
-def extract_column(tdf: tb.TdfData) -> list[dict]:
-    drawing_number = ex.find_drawing_number(tdf)
+def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
+    drawing_number = ex.find_drawing_number(tdf, filename)
     rows = find_rows(tdf)
     if not rows:
         return []
@@ -506,6 +506,9 @@ def extract_column(tdf: tb.TdfData) -> list[dict]:
     return out
 
 
-def extract_file(path: str) -> list[dict]:
-    """1つの.tdfファイル(柱・間柱の詳細図)を解析して製品情報のリスト(dict)を返す。"""
-    return extract_column(tb.load(path))
+def extract_file(path: str, filename: str | None = None) -> list[dict]:
+    """1つの.tdfファイル(柱・間柱の詳細図)を解析して製品情報のリスト(dict)を返す。
+
+    filename は元のファイル名(ブラウザでは /input.tdf に書き込むため別に渡す)。
+    省略時は path のファイル名を使う。"""
+    return extract_column(tb.load(path), filename or path)

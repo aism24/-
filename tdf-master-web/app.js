@@ -314,7 +314,9 @@ async function processFiles(files) {
       pyodide.FS.writeFile('/input.tdf', uint8);
       // 柱モードは柱・間柱用の別のPython(tdf_column.py)で抽出する
       const pyModule = resultsMode === 'column' ? 'tdf_column' : 'tdf_app';
-      const pyResult = await pyodide.runPythonAsync(`${pyModule}.extract_file('/input.tdf')`);
+      // 図番はファイル名の先頭と一致する図面の文字を優先するので、元のファイル名も渡す
+      pyodide.globals.set('tdf_filename', file.name);
+      const pyResult = await pyodide.runPythonAsync(`${pyModule}.extract_file('/input.tdf', tdf_filename)`);
       const rows = pyResult.toJs({ dict_converter: Object.fromEntries });
       pyResult.destroy();
       if (rows.length === 0) {
