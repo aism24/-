@@ -95,6 +95,7 @@ CLAUDE.md から分離(2026-10-21)。恒久ルールは CLAUDE.md、ここは詳
 - 2026-10-30: ユーザーの「デプロイして」で、-tdf-master-web(説明書をモード選択・柱モードに合わせて11ページに差し替え、「← アプリ一覧へ」を会社ロゴ5回クリックで出る隠しボタンに #1091。コミット1a43b8d)を `create_deployment` で本番デプロイ(dpl_3cLtWq7Q、READY。本番の index.html・app.js・style.css・to-launcher.js・説明書画像がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め6回(上限100)。
 - 2026-10-30: ユーザーの「デプロイして」で、-tdf-master-web(製品マークを含む注記を柱マークの判定に使わない #1094。コミットc7cc9ca)を `create_deployment` で本番デプロイ(dpl_4DbkERCx、READY。本番の index.html・app.js・style.css がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数は今回を含め6回(上限100)。
 - 2026-11-02: ユーザーの「デプロイして」で、-tdf-master-web(図番はファイル名の先頭と一致する図面の文字を優先する #1113。表題欄に「図面番号」の文字が無く図番が数字で始まる図面で、階や通り芯の名前を図番にしていた。app.js?v=20261102a。コミット7247191)を `create_deployment` で本番デプロイ(dpl_2PzLN4ZdV685BDQAF3xeJGGJTdzd、READY。本番の index.html・style.css・app.js がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数はデプロイ前5回(全アプリ合計)、今回を含め6回(上限100)。gas/Code.gs は変更なし。
+- 2026-11-02(2回目): ユーザーの「デプロイして」で、-tdf-master-web(柱モードのH形の柱・細くなる柱・継手、梁の長さを寸法の値で出す #1116。gas/Code.gs・app.js は変更なし。コミット7063c24)を `create_deployment` で本番デプロイ(dpl_DiJBr185uYVpUXUJvWyq7maoNAxS、READY。本番の index.html・style.css・app.js がmainと一致を確認)。連携は0件のまま。直近24時間のデプロイ回数はデプロイ前6回(全アプリ合計)、今回を含め7回(上限100)。
 
 【反省・厳守】2026-09-24、daily-reportの修正時にpdf-diff-pythonappの連携が残っているのを
 確認しながら「Skip deploymentsが有効だから大丈夫」と自己判断してpush・マージし、
