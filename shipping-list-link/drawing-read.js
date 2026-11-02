@@ -2,7 +2,9 @@
  * 画像にして Gemini(GAS経由)で「右下の図面番号」と「製品表のセル」を読み、
  * 読んだ図番のマスタ上の製品名と、製品表のいずれかのセルが一致したら、そのセルにリンクを付ける。
  * 梁詳細図(製品名|設計符号|部材サイズ|台数)・柱詳細図(設計符号|設計符号|製品名|図示|台数)のどちらも、セルの位置は決め打ちしない。
- * 読み取りの誤りでリンクを付けないよう、マスタとの一致だけを根拠にする(CADの文字ではOと0・Iと1の見分けがつかないので、比較時だけ同一視)。 */
+ * 読み取りの誤りでリンクを付けないよう、マスタとの一致だけを根拠にする(CADの文字ではOと0・Iと1の見分けがつかないので、比較時だけ同一視)。
+ * 製品表が見つからないページ(手書き・スキャンの一覧表など)は、書かれた英数字の語を行ごとに読み(kind=list)、同じ行の(図番, 製品名)がマスタと一致したら製品名に下線とリンクを付ける(2026-11-02〜)。
+ * list の読み取りに失敗したとき・マスタの語が1つも無いときは、従来どおり「製品表が見つかりません」にする。 */
 (function (root) {
   var LOCATE_SIDE = 2000;   // 場所を探すための全体画像の長辺(px)
   var READ_DPI = 300;       // 読み取り用の切り出し画像の解像度
@@ -159,6 +161,45 @@
       pdfPage.drawRectangle({ x: a.rect[0], y: a.rect[1], width: a.rect[2] - a.rect[0], height: a.rect[3] - a.rect[1],
         color: PDFLib.rgb(0.62, 0.78, 1), blendMode: PDFLib.BlendMode.Multiply });
     }
+    // 一覧表(手書き・スキャン)の読み取り。製品表が見つからないページだけで使う。扱えたら true(リンクまたはNGを付けた)、扱えなければ false
+    async function listPage(page, pn, pdfPage, W, H, s0) {
+      var res;
+      try { res = await call('list', await renderRegion(page, s0, 0, 0, W * s0, H * s0)); } catch (e) { return false; }   // 旧GAS(kind=list を知らない)・通信エラーなど
+      var v1 = page.getViewport({ scale: 1 }), any = false, annots = [];
+      ((res && res.lines) || []).forEach(function (line) {
+        var it = ((line && line.items) || []).filter(function (x) { return x && x.text; });
+        var zs = it.filter(function (x) { return byZ[fold(x.text)]; }), ns = it.filter(function (x) { return byName[fold(x.text)]; });
+        if (!zs.length && !ns.length) return;   // マスタの語が無い行(見出し・メモなど)は数えない
+        any = true;
+        var usedItem = [], hits = 0, show = it.map(function (x) { return x.text; }).join(' ');
+        zs.forEach(function (z) {
+          var es = byZ[fold(z.text)];
+          it.forEach(function (n, ni) {
+            if (n === z || usedItem[ni]) return;
+            var fn = fold(n.text), e = es.filter(function (x) { return x.f === fn; })[0];
+            if (!e) return;
+            usedItem[ni] = 1; hits++;
+            if (Array.isArray(e.v)) { stats.dup++; stats.ng++; stats.partial.push({ page: pn, zuban: e.zuban, name: e.name, reason: '重複' }); return; }
+            var b = boxPx(n.box, v1.width, v1.height);
+            if (!b) { stats.ng++; stats.partial.push({ page: pn, zuban: e.zuban, name: n.text, reason: 'セルの位置を読み取れません' }); return; }
+            var m = (b.y1 - b.y0) * 0.15;
+            annots.push({ rect: pdfRect(v1, 0, 0, { x0: b.x0 - m, y0: b.y0 - m, x1: b.x1 + m, y1: b.y1 + m }), uri: mapUri(e.v) });
+            stats.linked++;
+          });
+        });
+        if (hits) return;
+        stats.ng++;
+        if (zs.length) stats.partial.push({ page: pn, zuban: zs[0].text, name: show, reason: '製品名が不一致(読み取った行の文字を表示)' });
+        else stats.partial.push({ page: pn, zuban: '', name: show, reason: '図番が見つかりません(読み取った行の文字を表示)' });
+      });
+      // 一覧表のリンクは、出荷リストと同じく製品名の下に青い下線を引く(着色はしない)
+      annots.forEach(function (a) {
+        var ctx = out.context, act = ctx.obj({ S: 'URI', URI: PDFLib.PDFString.of(root.ShippingCore.encodeUri(a.uri)) }), r = a.rect;
+        pdfPage.node.addAnnot(ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Link', Rect: r, Border: [0, 0, 0], A: act })));
+        pdfPage.drawLine({ start: { x: r[0], y: r[1] }, end: { x: r[2], y: r[1] }, thickness: Math.max(0.9, (r[3] - r[1]) * 0.06), color: PDFLib.rgb(0, 0.2, 0.9) });
+      });
+      return any;
+    }
     var numCands = [];   // 製品名にリンクを付けたページ(図面番号欄の着色の候補): { pn, fz(図番), uri }
     // ページごとの処理。ページは並行して読む(Geminiの待ち時間が重ならないように)。結果の順序は最後に頁順に整える
     async function pageJob(pn) {
@@ -179,7 +220,10 @@
         loc.tables = [].concat.apply([], found);
       }
       var tables = loc.tables || [];
-      if (!tables.length) { stats.ng++; stats.partial.push({ page: pn, zuban: loc.drawingNumber || '', name: '', reason: '製品表が見つかりません' }); return; }
+      if (!tables.length) {
+        if (await listPage(page, pn, pdfPage, W, H, s0)) return;   // 手書き・スキャンの一覧表として読めたら、そちらの結果にする
+        stats.ng++; stats.partial.push({ page: pn, zuban: loc.drawingNumber || '', name: '', reason: '製品表が見つかりません' }); return;
+      }
 
       // 読み直し(遅い道)用の、図面番号欄のあたりの画像。必要になったときだけ描く
       var numMemo = null, numRead = null;
