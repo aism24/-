@@ -5,7 +5,8 @@
  * 読み取りの誤りでリンクを付けないよう、マスタとの一致だけを根拠にする(CADの文字ではOと0・Iと1の見分けがつかないので、比較時だけ同一視)。
  * 製品表が見つからないページ(手書き・スキャンの一覧表など)は、書かれた英数字の語を行ごとに読み(kind=list)、同じ行の(図番, 製品名)がマスタと一致したら製品名に下線とリンクを付ける(2026-11-02〜)。
  * list の読み取りに失敗したとき・マスタの語が1つも無いときは、従来どおり「製品表が見つかりません」にする。
- * 一覧表を読む前に、文字が正しく読める向きを小さな画像で聞き(kind=orient)、横倒し・逆さなら回してから読む(2026-11-02〜)。聞けないとき(旧GAS等)・回転不要のときは従来どおり。 */
+ * 一覧表を読む前に、文字が正しく読める向きを小さな画像で聞き(kind=orient)、横倒し・逆さなら回してから読む(2026-11-02〜)。聞けないとき(旧GAS等)・回転不要のときは従来どおり。
+ * 向きは、ページを 0/90/180/270 度に回した4枚を1枚に並べて「正しい向きはどれか」を聞く(kind=orient4、2026-11-02〜。回転量を答えさせるより安定する)。旧GAS(orient4 を知らない)・答えが不正なときは orient で聞く。 */
 (function (root) {
   var LOCATE_SIDE = 2000;   // 場所を探すための全体画像の長辺(px)
   var READ_DPI = 300;       // 読み取り用の切り出し画像の解像度
@@ -15,6 +16,7 @@
   var RETRY_429 = 3;            // 429が返ったときの再試行の回数(そのつど少し待つ)
   var HALF_SIDE = 2400;     // 製品表を見落としたとき、上下に分けて探し直す画像の横幅(px)
   var ORIENT_SIDE = 1000;   // 一覧表の向きを聞くための画像の長辺(px)。文字の向きが分かれば足りるので小さくする
+  var ORIENT4_CELL = 800, ORIENT4_LABEL = 70, ORIENT4_GAP = 20;   // 4つの向きを並べた画像: 1枚の枠(正方形、px)・番号を書く帯の高さ・すき間
   // 細かい一覧表(1枚で読むと文字が小さい)は、重なりのある数枚に分けて高い解像度で読み直す(2026-11-02〜)
   var DENSE_MIN_ITEMS = 15, DENSE_BOX_PX = 30, TILE_BOX_PX = 36;   // 語が15個以上で、語の高さ(中央値)が30px未満なら細かいとみなし、語の高さが約36pxになる解像度で読む
   var TILE_W = 2000, TILE_H = 1600, TILE_OVX = 0.09, TILE_OVY = 0.04, TILE_PAR = 3;   // 1枚の大きさの目安・重なり(ページ幅・高さに対する割合、片側)・同時に読む枚数
@@ -32,6 +34,25 @@
   }
   // canvas の画素を手放す(複数ページを並行して読むとき、メモリを使い続けないように)
   function release(c) { if (c && c.canvas) { c.canvas.width = 0; c.canvas.height = 0; } }
+  // 向きの確認用: ページを時計回りに 0/90/180/270 度回した4枚を、番号 1〜4 を付けて 2×2 に並べた画像。W,H はページの向きのままの大きさ(scale 1)
+  async function orientSheet(page, W, H) {
+    var C = ORIENT4_CELL, L = ORIENT4_LABEL, g = ORIENT4_GAP, c = document.createElement('canvas');
+    c.width = 2 * C + 3 * g; c.height = 2 * (C + L) + 3 * g;
+    var ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    for (var k = 0; k < 4; k++) {
+      var r = k * 90, w = r % 180 ? H : W, h = r % 180 ? W : H, s = C / Math.max(w, h);
+      var im = await renderRegion(page, s, 0, 0, w * s, h * s, ((page.rotate || 0) + r) % 360);
+      var x = g + (k % 2) * (C + g), y = g + Math.floor(k / 2) * (C + L + g);
+      ctx.fillStyle = '#d00'; ctx.font = 'bold ' + Math.round(L * 0.8) + 'px sans-serif'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(k + 1), x, y + L / 2);
+      var ix = x + (C - im.canvas.width) / 2, iy = y + L + (C - im.canvas.height) / 2;
+      ctx.drawImage(im.canvas, ix, iy);
+      ctx.strokeStyle = '#888'; ctx.lineWidth = 2; ctx.strokeRect(ix, iy, im.canvas.width, im.canvas.height);
+      release(im);
+    }
+    return { canvas: c };
+  }
   // 切り出し画像上の範囲({x0,y0,x1,y1}。切り出し画像の左上が (ox,oy))→ PDFのページ座標の矩形 [x0,y0,x1,y1]
   function pdfRect(vp, ox, oy, r) {
     var a = vp.convertToPdfPoint(ox + r.x0, oy + r.y0), b = vp.convertToPdfPoint(ox + r.x1, oy + r.y1);
@@ -295,7 +316,13 @@
     async function listPage(page, pn, pdfPage, W, H, s0) {
       var res, rot = 0;
       // 向きの確認: 文字が正しく読める向きにするには時計回りに何度回すか(0/90/180/270)。聞けなければ回さない(従来どおり)
+      // まず4つの向きを並べて「正しい向きはどれか」を聞く(orient4)。旧GAS・通信エラー・答えが 1〜4 でないときは、従来の orient で聞く
+      var got = false;
       try {
+        var o4 = await call('orient4', await orientSheet(page, W, H));
+        if (o4 && [1, 2, 3, 4].indexOf(o4.panel) >= 0) { rot = (o4.panel - 1) * 90; got = true; }
+      } catch (e) { got = false; }
+      if (!got) try {
         var so = ORIENT_SIDE / Math.max(W, H), o = await call('orient', await renderRegion(page, so, 0, 0, W * so, H * so));
         if (o && [90, 180, 270].indexOf(o.rotate) >= 0) rot = o.rotate;
       } catch (e) { rot = 0; }

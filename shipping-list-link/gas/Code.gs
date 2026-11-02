@@ -5,7 +5,7 @@
  *            ?action=rebuild は前回の再生成後に更新されたExcelだけを読み直す(他は「Excelごとの抜き出し結果」を流用)。毎朝は全件読み直す
  *            / 版の確認(?action=ping → {ok, version})
  *  - doPost: 取り込んだ元PDF・Excelを PENDING_FOLDER_ID へ保存し、スプレッドシート「記録」の2行目に日時/枚数(Excelはシート数)/URL/リンク付与/NGを挿入(最新が上)。作成から KEEP_DAYS 日超は trashOldFiles(毎日3時。setupTrash で作る)でゴミ箱へ
- *            / {action:'ocr', kind, image}: 詳細図PDFの切り出し画像、または手書き・スキャンの一覧表(kind=list。読む前の向きの確認は kind=orient)をGeminiで読む(モデル名・APIKEYは「情報」シートから。1日400回まで)。?action=ocrcheck で設定の確認
+ *            / {action:'ocr', kind, image}: 詳細図PDFの切り出し画像、または手書き・スキャンの一覧表(kind=list。読む前の向きの確認は kind=orient4、旧は orient)をGeminiで読む(モデル名・APIKEYは「情報」シートから。1日400回まで)。?action=ocrcheck で設定の確認
  *
  * 【初回セットアップ】 ①このコードを貼り付け ②setupDaily を1回実行(権限を承認) ③buildMaster を1回実行
  *  ④デプロイ → ウェブアプリ(実行ユーザー=自分 / アクセス=全員)→ URLを app.js の GAS_URL に設定
@@ -18,7 +18,7 @@ var SHEET_ID = '19l9P9C15wQ0jIcjIc_czZCiyDbnesQbq-Q88ttndMfs';
 var SHEET_NAME = '記録';
 var LINKS_FILE_NAME = '_リンク表.json';
 var STORE_FILE_NAME = '_リンク表_Excel別.json'; // Excelごとの抜き出し結果(ボタンの再生成で、変更の無いExcelを読み直さないため)
-var CODE_VERSION = '20261102b';                // コードを変えたら更新する(?action=ping で確認)
+var CODE_VERSION = '20261102c';                // コードを変えたら更新する(?action=ping で確認)
 var COL_ZUBAN = 'F', COL_NAME = 'G'; // 図番列 / 製品名(製品マーク)列
 
 /* ===== 純粋関数(GAS API非依存・Nodeでテスト可能) ===== */
@@ -318,6 +318,12 @@ var OCR_KINDS = {
     prompt: '画像は書類・図面・手書きのメモなどを写したものです。書かれている文字(英数字・日本語)が正しい向き(上下が正しく、横書きの行が左から右へ読める向き)になるには、' +
       'この画像を時計回りに何度回転させる必要がありますか。0、90、180、270 のいずれかを rotate に返してください。すでに正しい向きなら 0。',
     schema: { type: 'OBJECT', properties: { rotate: { type: 'INTEGER' } }, required: ['rotate'] }
+  },
+  orient4: {   // 一覧表を読む前の向きの確認。同じページを 0/90/180/270 度に回した4枚を並べた画像で、正しい向きの1枚を選ばせる。2026-11-02〜
+    prompt: '画像には、同じ書類(図面・表・手書きのメモなど)を4通りの向きに回したものが、赤い番号 1〜4 を付けて並んでいます。' +
+      'このうち、書かれている文字(英数字・日本語)が正しい向き(上下が正しく、横書きの行が左から右へ読める向き)になっているのはどれですか。' +
+      '赤い番号の文字は判断に使わず、書類の中の文字で判断してください。まず reason に判断の根拠を短く書き、その番号(1〜4)を panel に返してください。',
+    schema: { type: 'OBJECT', properties: { reason: { type: 'STRING' }, panel: { type: 'INTEGER' } }, required: ['reason', 'panel'], propertyOrdering: ['reason', 'panel'] }
   },
   list: {   // 製品表が見つからないページ(手書き・スキャンの一覧表など)用。2026-11-02〜
     prompt: '画像は、建築鉄骨の図番と製品名(英数字とハイフンの語。例 EA1-1C-05、1C-X19Y3、EA22-2TB888-2)を、手書きまたは印刷で並べた紙です。' +
