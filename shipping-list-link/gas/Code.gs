@@ -5,7 +5,7 @@
  *            ?action=rebuild は前回の再生成後に更新されたExcelだけを読み直す(他は「Excelごとの抜き出し結果」を流用)。毎朝は全件読み直す
  *            / 版の確認(?action=ping → {ok, version})
  *  - doPost: 取り込んだ元PDF・Excelを PENDING_FOLDER_ID へ保存し、スプレッドシート「記録」の2行目に日時/枚数(Excelはシート数)/URL/リンク付与/NGを挿入(最新が上)。作成から KEEP_DAYS 日超は trashOldFiles(毎日3時。setupTrash で作る)でゴミ箱へ
- *            / {action:'ocr', kind, image}: 詳細図PDFの切り出し画像をGeminiで読む(モデル名・APIKEYは「情報」シートから。1日400回まで)。?action=ocrcheck で設定の確認
+ *            / {action:'ocr', kind, image}: 詳細図PDFの切り出し画像、または手書き・スキャンの一覧表(kind=list)をGeminiで読む(モデル名・APIKEYは「情報」シートから。1日400回まで)。?action=ocrcheck で設定の確認
  *
  * 【初回セットアップ】 ①このコードを貼り付け ②setupDaily を1回実行(権限を承認) ③buildMaster を1回実行
  *  ④デプロイ → ウェブアプリ(実行ユーザー=自分 / アクセス=全員)→ URLを app.js の GAS_URL に設定
@@ -18,7 +18,7 @@ var SHEET_ID = '19l9P9C15wQ0jIcjIc_czZCiyDbnesQbq-Q88ttndMfs';
 var SHEET_NAME = '記録';
 var LINKS_FILE_NAME = '_リンク表.json';
 var STORE_FILE_NAME = '_リンク表_Excel別.json'; // Excelごとの抜き出し結果(ボタンの再生成で、変更の無いExcelを読み直さないため)
-var CODE_VERSION = '20261028b';                // コードを変えたら更新する(?action=ping で確認)
+var CODE_VERSION = '20261102a';                // コードを変えたら更新する(?action=ping で確認)
 var COL_ZUBAN = 'F', COL_NAME = 'G'; // 図番列 / 製品名(製品マーク)列
 
 /* ===== 純粋関数(GAS API非依存・Nodeでテスト可能) ===== */
@@ -313,6 +313,13 @@ var OCR_KINDS = {
   number: {
     prompt: '画像は図面の表題欄の「図面番号」欄です。図面番号の文字だけを text に返してください(英大文字・数字・ハイフンのみ。例 EA1-2G-01)。読めなければ空文字。',
     schema: { type: 'OBJECT', properties: { text: { type: 'STRING' } }, required: ['text'] }
+  },
+  list: {   // 製品表が見つからないページ(手書き・スキャンの一覧表など)用。2026-11-02〜
+    prompt: '画像は、建築鉄骨の図番と製品名(英数字とハイフンの語。例 EA1-1C-05、1C-X19Y3、EA22-2TB888-2)を、手書きまたは印刷で並べた紙です。' +
+      '書かれている英数字の語を、横1行ずつ上から順に lines に返してください。各行の items は左から順に、語の文字 text と、その文字の位置 box([ymin,xmin,ymax,xmax]、画像全体を0〜1000とした値)。' +
+      '語は空白で区切られたまとまりごとに分け、ハイフンでは分けない。text は英大文字・数字・ハイフンだけで、見えるとおりに返す(読めない文字を推測で補わない)。日本語の文字・罫線・記号だけのものは含めない。語が無ければ空配列。',
+    schema: { type: 'OBJECT', properties: { lines: { type: 'ARRAY', items: { type: 'OBJECT', properties: { items: { type: 'ARRAY', items: { type: 'OBJECT',
+      properties: { text: { type: 'STRING' }, box: OCR_BOX }, required: ['text'] } } }, required: ['items'] } } }, required: ['lines'] }
   },
   table: {
     prompt: '画像は図面の製品表(罫線で囲まれた横1行の表)です。左のセルから順に、各セルの文字を見えるとおりに cells に返してください。' +
