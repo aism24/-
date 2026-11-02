@@ -797,3 +797,9 @@
 - やり方: 既存の画像読み取りで製品表が無いページだけ、GAS に新しい kind=list(語と位置を行ごとに返す)を足して読み、同じ行の(図番,製品名)をマスタと完全一致で照合 / drawing-read.js listPage / PR #1103
 - 注意点: 新しい kind が失敗(GAS貼り替え前=「kind が不正」はGeminiを呼ばない)・マスタの語が無いときは従来の結果に戻すと、GAS更新前でもリグレッションが出ない。模擬 ask で旧GAS・通信エラーも再現して新旧比較する
 - 使ったアプリ: shipping-list-link
+
+### 写真画像(JPG・PNG・HEIC)をブラウザだけでPDFにして既存の処理に流す(shipping-list-link、2026-11-02)
+- 効果: 画像を入れると InvalidPDFException で停止 → リンク2・NG0(JPG 2.6秒、HEIC 9.6秒うち変換約7秒。読み取りは模擬で計測)
+- やり方: createImageBitmap(blob,{imageOrientation:"from-image"}) で写真の向き(EXIF)を反映 → canvas で長辺4000pxに縮めJPEG → pdf-lib で1ページのPDF。HEIC は heic2any(MIT、1.35MB)を vendor に置き HEIC のときだけ動的に読み込む / app.js imageToPdf / PR #1107
+- 注意点: 試験用の HEIC・回転JPG は pillow-heif と PIL(Exif 0x0112=6)で作れる。新旧のアプリ全体を git archive で並べて同じファイルを入れ、ポップアップ・NG一覧・OCR呼び出し・保存値を比べるとリグレッションを確かめやすい
+- 使ったアプリ: shipping-list-link
