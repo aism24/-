@@ -15,6 +15,9 @@
   var RETRY_429 = 3;            // 429が返ったときの再試行の回数(そのつど少し待つ)
   var HALF_SIDE = 2400;     // 製品表を見落としたとき、上下に分けて探し直す画像の横幅(px)
   var ORIENT_SIDE = 1000;   // 一覧表の向きを聞くための画像の長辺(px)。文字の向きが分かれば足りるので小さくする
+  // 細かい一覧表(1枚で読むと文字が小さい)は、重なりのある数枚に分けて高い解像度で読み直す(2026-11-02〜)
+  var DENSE_MIN_ITEMS = 15, DENSE_BOX_PX = 30, TILE_BOX_PX = 36;   // 語が15個以上で、語の高さ(中央値)が30px未満なら細かいとみなし、語の高さが約36pxになる解像度で読む
+  var TILE_W = 2000, TILE_H = 1600, TILE_OVX = 0.09, TILE_OVY = 0.04, TILE_PAR = 3;   // 1枚の大きさの目安・重なり(ページ幅・高さに対する割合、片側)・同時に読む枚数
 
   function fold(s) { return String(s).normalize('NFKC').replace(/\s+/g, '').toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1'); }
 
@@ -96,7 +99,7 @@
 
   // 一覧表のリンク位置の補正(2026-11-02〜)。細かい表では Gemini が返す文字の縦の位置が1〜数行ずれることがある(下の行ほど大きくずれる)ので、
   // 画像から同じ列の実際の文字の行(インクのある帯)を探し、読んだ語を上から順に対応させる(行の間隔の比で縮尺を合わせ、上下のずれ量は全体で一番合うものを選ぶ)。
-  // 対応させた行と元の位置のずれが、行の高さの半分を超えるときだけ置き換える(手書きのように元から合っているものは変えない)。boxes: [{x0,y0,x1,y1}](canvas上のpx)。書き換えたら true
+  // 罫線のある表だけが対象(手書き・写真は変えない)。boxes: [{x0,y0,x1,y1}](canvas上のpx)。書き換えたら true
   function snapRows(canvas, boxes) {
     var w = canvas.width, h = canvas.height, d = canvas.getContext('2d').getImageData(0, 0, w, h).data, changed = false;
     function med(a) { a = a.slice().sort(function (p, q) { return p - q; }); return a.length ? a[a.length >> 1] : 0; }
@@ -111,41 +114,76 @@
       var xa = clamp(Math.round(med(it.map(function (b) { return b.x0; }))), 0, w - 1), xb = clamp(Math.round(med(it.map(function (b) { return b.x1; }))), xa + 1, w);
       // その列の行ごとのインクの割合(罫線のようにほぼ全幅が黒い行は除く)→ インクのある帯
       var bands = [], cur = -1, last = -9, y, x;
+      // 縦の罫線(上から下までほぼ黒い列)は除く(残すと、文字の無い空き行まで「文字の行」になってしまう)
+      var colOk = [], nOk = 0;
+      for (x = xa; x < xb; x++) {
+        var dc = 0;
+        for (y = 0; y < h; y += 2) { var i0 = (y * w + x) * 4; if ((d[i0] + d[i0 + 1] + d[i0 + 2]) / 3 < 150) dc++; }
+        colOk[x - xa] = dc / Math.ceil(h / 2) < 0.5;
+        if (colOk[x - xa]) nOk++;
+      }
+      if (!nOk) return;
       for (y = 0; y < h; y++) {
         var dk = 0;
-        for (x = xa; x < xb; x++) { var i = (y * w + x) * 4; if ((d[i] + d[i + 1] + d[i + 2]) / 3 < 150) dk++; }
-        var f = dk / (xb - xa), on = f > 0.02 && f <= 0.6;
+        for (x = xa; x < xb; x++) { if (!colOk[x - xa]) continue; var i = (y * w + x) * 4; if ((d[i] + d[i + 1] + d[i + 2]) / 3 < 150) dk++; }
+        var f = dk / nOk, on = f > 0.02 && f <= 0.6;
         if (on) { if (cur < 0) cur = y; last = y; }
         else if (cur >= 0 && y - last > 2) { if (last - cur + 1 >= 3) bands.push([cur, last + 1]); cur = -1; }
       }
       if (cur >= 0 && last - cur + 1 >= 3) bands.push([cur, last + 1]);
+      // 罫線の表だけを補正する(写真・手書きの紙は行の帯がはっきりしないので、Gemini の位置のまま)
+      var rules = 0, inR = false;
+      for (y = 0; y < h; y++) {
+        var dk2 = 0;
+        for (x = xa; x < xb; x += 2) { var i3 = (y * w + x) * 4; if ((d[i3] + d[i3 + 1] + d[i3 + 2]) / 3 < 150) dk2++; }
+        var full = dk2 / Math.ceil((xb - xa) / 2) > 0.6;
+        if (full && !inR) rules++;
+        inR = full;
+      }
+      if (rules < 3) return;
       var m = bands.length;
       if (m < n) return;
-      var bc = bands.map(function (b) { return (b[0] + b[1]) / 2; }), bhs = bands.map(function (b) { return b[1] - b[0]; });
+      var bc = bands.map(function (b) { return (b[0] + b[1]) / 2; });
+      // 各行の文字の横幅(インクの左端〜右端)。読んだ語の幅と比べ、見出し(「製品名」など短い文字)や別の行に対応させにくくする
+      var bw = bands.map(function (b) {
+        var mn = Infinity, mx = -Infinity, yy, xx;
+        for (yy = b[0]; yy < b[1]; yy++) for (xx = xa; xx < xb; xx++) { if (!colOk[xx - xa]) continue; var i4 = (yy * w + xx) * 4; if ((d[i4] + d[i4 + 1] + d[i4 + 2]) / 3 < 150) { if (xx < mn) mn = xx; if (xx > mx) mx = xx; } }
+        return mx >= mn ? mx - mn : 0;
+      });
       var ord = it.slice().sort(function (p, q) { return (p.y0 + p.y1) - (q.y0 + q.y1); }), c = ord.map(function (b) { return (b.y0 + b.y1) / 2; });
       var dif = function (a) { var r = []; for (var k = 1; k < a.length; k++) r.push(a[k] - a[k - 1]); return r; };
       var spb = m > 1 ? med(dif(bc)) : 20, spp = n > 2 ? med(dif(c)) : spb, sc = spp > 0 ? spb / spp : 1;
-      var cs = c.map(function (v) { return v * sc; }), O = Math.round(h * 0.3), bestO = 0, bestC = Infinity, j, i2, o;
+      var cs = null, O = Math.round(h * 0.3), bestO = 0, bestS = sc, bestC = Infinity, j, i2, o, CAP = 3 * spb;   // 外れの上限は3行分(遠い行ほど外れを大きく数える)
+      // 幅の食い違いの重み。Gemini の語の幅は実際の文字の幅と一定の比になるので、その比(中央値どうし)でそろえてから比べる。文字数が1つ違えば約1割の差になる
+      var iws = ord.map(function (b) { return Math.max(1, b.x1 - b.x0); }), kx = med(bw.filter(function (v) { return v > 0; })) / Math.max(1, med(iws));
+      var wc = iws.map(function (iw) { var ew = kx * iw; return bw.map(function (v) { return 2 * spb * Math.min(1, Math.abs(v - ew) / ew); }); });
       var prev = new Float64Array(m + 1), curA = new Float64Array(m + 1);
-      for (o = -O; o <= O; o++) {   // 上下のずれ量ごとに、上から順の対応(行は飛ばしてよい)の合計の外れを最小にする
-        prev.fill(0);
-        for (i2 = 0; i2 < n; i2++) {
-          curA[0] = Infinity;
-          for (j = 1; j <= m; j++) { var cst = Math.min(Math.abs(cs[i2] + o - bc[j - 1]), spb); curA[j] = Math.min(curA[j - 1], prev[j - 1] + cst); }
-          var t = prev; prev = curA; curA = t;
+      for (var sk = -6; sk <= 6; sk++) {   // 縦の縮尺は、行の間隔の比を中心に ±6% の範囲でも探す
+        var scs = sc * (1 + sk / 100), cv2 = c.map(function (v) { return v * scs; });
+        for (o = -O; o <= O; o++) {   // 上下のずれ量ごとに、上から順の対応(行は飛ばしてよい)の合計の外れを最小にする
+          prev.fill(0);
+          for (i2 = 0; i2 < n; i2++) {
+            curA[0] = Infinity;
+            for (j = 1; j <= m; j++) { var cst = Math.min(Math.abs(cv2[i2] + o - bc[j - 1]), CAP) + wc[i2][j - 1]; curA[j] = Math.min(curA[j - 1], prev[j - 1] + cst); }
+            var t = prev; prev = curA; curA = t;
+          }
+          if (prev[m] < bestC) { bestC = prev[m]; bestO = o; bestS = scs; }
         }
-        if (prev[m] < bestC) { bestC = prev[m]; bestO = o; }
       }
-      if (bestC / n > 0.35 * spb) return;   // 対応がはっきりしないときは変えない
+      cs = c.map(function (v) { return v * bestS; });
       // 対応を取り出す
       var dp = [], a2, b2;
       for (a2 = 0; a2 <= n; a2++) { dp.push(new Float64Array(m + 1)); if (a2) dp[a2][0] = Infinity; }
-      for (a2 = 1; a2 <= n; a2++) for (b2 = 1; b2 <= m; b2++) dp[a2][b2] = Math.min(dp[a2][b2 - 1], dp[a2 - 1][b2 - 1] + Math.min(Math.abs(cs[a2 - 1] + bestO - bc[b2 - 1]), spb));
+      for (a2 = 1; a2 <= n; a2++) for (b2 = 1; b2 <= m; b2++) dp[a2][b2] = Math.min(dp[a2][b2 - 1], dp[a2 - 1][b2 - 1] + Math.min(Math.abs(cs[a2 - 1] + bestO - bc[b2 - 1]), CAP) + wc[a2 - 1][b2 - 1]);
       var asg = new Array(n); a2 = n; b2 = m;
       while (a2 > 0) { if (dp[a2][b2] === dp[a2][b2 - 1]) b2--; else { asg[a2 - 1] = b2 - 1; a2--; b2--; } }
-      var off = 0; for (a2 = 0; a2 < n; a2++) off += Math.abs(c[a2] - bc[asg[a2]]);
-      if (off / n <= 0.5 * med(bhs)) return;   // 元の位置がほぼ合っている(手書きなど)ときは変えない
-      for (a2 = 0; a2 < n; a2++) { ord[a2].y0 = bands[asg[a2]][0]; ord[a2].y1 = bands[asg[a2]][1]; }
+      var pc2 = 0; for (a2 = 0; a2 < n; a2++) pc2 += Math.min(Math.abs(cs[a2] + bestO - bc[asg[a2]]), spb);
+      if (pc2 / n > 0.35 * spb) return;   // 位置の対応がはっきりしないときは変えない
+      for (a2 = 0; a2 < n; a2++) {
+        ord[a2].y0 = bands[asg[a2]][0]; ord[a2].y1 = bands[asg[a2]][1]; ord[a2].snapped = true;
+        // 横幅が列の範囲(この列の語の左端・右端の中央値)から大きくはみ出す語は、列の範囲に収める(隣の欄まで下線が伸びないように)
+        if (ord[a2].x1 - ord[a2].x0 > 1.4 * (xb - xa)) { ord[a2].x0 = Math.max(ord[a2].x0, xa); ord[a2].x1 = Math.min(ord[a2].x1, xb); }
+      }
       changed = true;
     });
     return changed;
@@ -220,6 +258,39 @@
       pdfPage.drawRectangle({ x: a.rect[0], y: a.rect[1], width: a.rect[2] - a.rect[0], height: a.rect[3] - a.rect[1],
         color: PDFLib.rgb(0.62, 0.78, 1), blendMode: PDFLib.BlendMode.Multiply });
     }
+    // 1枚で読んだ結果が細かい表か(語が多く、語の高さが小さい)。細かければ、読み直す解像度の倍率を返す(そうでなければ 0)
+    function denseFactor(lines, ch) {
+      var hs = [];
+      lines.forEach(function (l) { ((l && l.items) || []).forEach(function (x) { if (x && x.box && x.box.length === 4) hs.push((x.box[2] - x.box[0]) / 1000 * ch); }); });
+      if (hs.length < DENSE_MIN_ITEMS) return 0;
+      hs.sort(function (p, q) { return p - q; });
+      var mh = hs[hs.length >> 1];
+      return mh > 0 && mh < DENSE_BOX_PX ? clamp(TILE_BOX_PX / mh, 1.5, 3) : 0;
+    }
+    // 細かいページを、重なりのある数枚(1枚 約2000×1600px)に分けて高い解像度(scale sc、向き R)で読む。1枚でも読めなければ null(1枚で読んだ結果を使う)
+    async function readTiles(page, R, v1, sc) {
+      var Wt = v1.width * sc, Ht = v1.height * sc, cols = Math.ceil(Wt / TILE_W), rows = Math.ceil(Ht / TILE_H), cw = Wt / cols, chh = Ht / rows;
+      var ox = cols > 1 ? TILE_OVX * Wt : 0, oy = rows > 1 ? TILE_OVY * Ht : 0, specs = [], r, c;
+      for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) {
+        var x0 = Math.max(0, c * cw - ox), y0 = Math.max(0, r * chh - oy), x1 = Math.min(Wt, (c + 1) * cw + ox), y1 = Math.min(Ht, (r + 1) * chh + oy);
+        specs.push({ x0: x0, y0: y0, x1: x1, y1: y1, core: { x0: c * cw / sc, y0: r * chh / sc, x1: (c + 1) * cw / sc, y1: (r + 1) * chh / sc } });
+      }
+      var out3 = new Array(specs.length), next = 0, failed = false;
+      async function worker() {
+        while (next < specs.length && !failed) {
+          var k = next++, sp = specs[k], cv = await renderRegion(page, sc, sp.x0, sp.y0, sp.x1 - sp.x0, sp.y1 - sp.y0, R), rr;
+          try { rr = await call('list', cv, true); } catch (e) { release(cv); failed = true; return; }
+          (function (sp, cv) {
+            out3[k] = { lines: (rr && rr.lines) || [], cv: cv, sc: sc, ox: sp.x0, oy: sp.y0, core: sp.core,
+              toPage: function (bx) { var b = boxPx(bx, cv.canvas.width, cv.canvas.height); return b && { x0: (b.x0 + sp.x0) / sc, y0: (b.y0 + sp.y0) / sc, x1: (b.x1 + sp.x0) / sc, y1: (b.y1 + sp.y0) / sc }; } };
+          })(sp, cv);
+        }
+      }
+      var ws = []; for (var q = 0; q < Math.min(TILE_PAR, specs.length); q++) ws.push(worker());
+      await Promise.all(ws);
+      if (failed) { out3.forEach(function (p) { if (p) release(p.cv); }); return null; }
+      return out3;
+    }
     // 一覧表(手書き・スキャン)の読み取り。製品表が見つからないページだけで使う。扱えたら true(リンクまたはNGを付けた)、扱えなければ false
     async function listPage(page, pn, pdfPage, W, H, s0) {
       var res, rot = 0;
@@ -231,38 +302,118 @@
       var R = ((page.rotate || 0) + rot) % 360, v1 = page.getViewport({ scale: 1, rotation: R });   // rot=0 のときはページの向きのまま(従来と同じ)
       var lr = await renderRegion(page, s0, 0, 0, v1.width * s0, v1.height * s0, R);
       try { res = await call('list', lr, true); } catch (e) { release(lr); return false; }   // 旧GAS(kind=list を知らない)・通信エラーなど
-      var any = false, annots = [], hitsAll = [];
-      ((res && res.lines) || []).forEach(function (line) {
-        var it = ((line && line.items) || []).filter(function (x) { return x && x.text; });
-        var zs = it.filter(function (x) { return byZ[fold(x.text)]; }), ns = it.filter(function (x) { return byName[fold(x.text)]; });
-        if (!zs.length && !ns.length) return;   // マスタの語が無い行(見出し・メモなど)は数えない
+      var any = false, annots = [], hitsAll = [], ngs = [];
+      // 読み取りの単位(piece)。ふつうはページ全体の1枚。細かいときは分けた数枚(tiled)。toPage: 読んだ位置(0〜1000)→ ページの座標(scale 1)
+      var pieces = [{ lines: (res && res.lines) || [], cv: lr, sc: s0, ox: 0, oy: 0, core: null,
+        toPage: function (bx) { return boxPx(bx, v1.width, v1.height); } }];
+      var dense = denseFactor(pieces[0].lines, lr.canvas.height);
+      if (dense) {
+        var tiles = await readTiles(page, R, v1, s0 * dense);
+        if (tiles) { release(lr); pieces = tiles; }
+      }
+      pieces.forEach(function (pc, pi) {
+        if (pc.core) { pairNear(pc, pi); return; }   // 分けて読んだ1枚は、行ではなく位置の近さで組を作る
+        pc.lines.forEach(function (line) {
+          var it = ((line && line.items) || []).filter(function (x) { return x && x.text; });
+          var zs = it.filter(function (x) { return byZ[fold(x.text)]; }), ns = it.filter(function (x) { return byName[fold(x.text)]; });
+          if (!zs.length && !ns.length) return;   // マスタの語が無い行(見出し・メモなど)は数えない
+          any = true;
+          var usedItem = [], hits = 0, show = it.map(function (x) { return x.text; }).join(' '), rep0 = pc.toPage((zs[0] || ns[0]).box);
+          zs.forEach(function (z) {
+            var es = byZ[fold(z.text)];
+            it.forEach(function (n, ni) {
+              if (n === z || usedItem[ni]) return;
+              var fn = fold(n.text), e = es.filter(function (x) { return x.f === fn; })[0];
+              if (!e) return;
+              usedItem[ni] = 1; hits++;
+              var b = pc.toPage(n.box);
+              if (Array.isArray(e.v)) { ngs.push({ pi: pi, at: b, ng: { page: pn, zuban: e.zuban, name: e.name, reason: '重複' }, dup: true }); return; }
+              if (!b) { ngs.push({ pi: pi, at: rep0, ng: { page: pn, zuban: e.zuban, name: n.text, reason: 'セルの位置を読み取れません' } }); return; }
+              hitsAll.push({ b: b, uri: mapUri(e.v), pi: pi, name: e.name });
+            });
+          });
+          if (hits) return;
+          if (zs.length) ngs.push({ pi: pi, at: rep0, z: zs[0].text, ng: { page: pn, zuban: zs[0].text, name: show, reason: '製品名が不一致(読み取った行の文字を表示)' } });
+          else ngs.push({ pi: pi, at: rep0, ng: { page: pn, zuban: '', name: show, reason: '図番が見つかりません(読み取った行の文字を表示)' } });
+        });
+      });
+      // 分けて読んだ1枚の組の作り方: 各図番に、縦の位置が近く(語の高さの1.2倍以内)、マスタでその図番の製品名になっている語を、近い順に1対1で選ぶ
+      // (細かい表では Gemini の縦の位置が列ごとに少しずつ違い、行にまとめると同じ行が分かれてしまうため)
+      function pairNear(pc, pi) {
+        var it = [];
+        pc.lines.forEach(function (l) { ((l && l.items) || []).forEach(function (x) { if (x && x.text && x.box && x.box.length === 4) it.push(x); }); });
+        if (!it.length) return;
+        pc.items = it;
+        var cy = function (x) { return (x.box[0] + x.box[2]) / 2; }, cx = function (x) { return (x.box[1] + x.box[3]) / 2; };
+        var hs2 = it.map(function (x) { return x.box[2] - x.box[0]; }).sort(function (p, q) { return p - q; }), mh = Math.max(1, hs2[hs2.length >> 1]);
+        var Zs = it.filter(function (x) { return byZ[fold(x.text)]; }), Ns = it.filter(function (x) { return byName[fold(x.text)]; });
+        if (!Zs.length && !Ns.length) return;
         any = true;
-        var usedItem = [], hits = 0, show = it.map(function (x) { return x.text; }).join(' ');
-        zs.forEach(function (z) {
+        var cands = [];
+        Zs.forEach(function (z) {
           var es = byZ[fold(z.text)];
-          it.forEach(function (n, ni) {
-            if (n === z || usedItem[ni]) return;
-            var fn = fold(n.text), e = es.filter(function (x) { return x.f === fn; })[0];
-            if (!e) return;
-            usedItem[ni] = 1; hits++;
-            if (Array.isArray(e.v)) { stats.dup++; stats.ng++; stats.partial.push({ page: pn, zuban: e.zuban, name: e.name, reason: '重複' }); return; }
-            var b = boxPx(n.box, v1.width, v1.height);
-            if (!b) { stats.ng++; stats.partial.push({ page: pn, zuban: e.zuban, name: n.text, reason: 'セルの位置を読み取れません' }); return; }
-            hitsAll.push({ b: b, uri: mapUri(e.v) });
-            stats.linked++;
+          Ns.forEach(function (n) {
+            if (n === z) return;
+            var fn = fold(n.text), e = es.filter(function (x) { return x.f === fn; })[0], dy = Math.abs(cy(n) - cy(z));
+            if (e && dy <= 1.2 * mh) cands.push({ z: z, n: n, e: e, cost: dy / mh + Math.abs(cx(n) - cx(z)) / 1000 });
           });
         });
-        if (hits) return;
-        stats.ng++;
-        if (zs.length) stats.partial.push({ page: pn, zuban: zs[0].text, name: show, reason: '製品名が不一致(読み取った行の文字を表示)' });
-        else stats.partial.push({ page: pn, zuban: '', name: show, reason: '図番が見つかりません(読み取った行の文字を表示)' });
-      });
-      // 位置の補正(細かい表で Gemini の縦の位置がずれるとき)。補正は読み取り画像(scale s0)の上で行い、ページの座標(scale 1)に戻す
-      if (hitsAll.length) {
-        var px = hitsAll.map(function (h) { return { x0: h.b.x0 * s0, y0: h.b.y0 * s0, x1: h.b.x1 * s0, y1: h.b.y1 * s0 }; });
-        if (snapRows(lr.canvas, px)) px.forEach(function (q, k) { hitsAll[k].b = { x0: q.x0 / s0, y0: q.y0 / s0, x1: q.x1 / s0, y1: q.y1 / s0 }; });
+        cands.sort(function (p, q) { return p.cost - q.cost; });
+        var usedZ = [], usedN = [];
+        cands.forEach(function (c) {
+          if (usedZ.indexOf(c.z) >= 0 || usedN.indexOf(c.n) >= 0) return;
+          usedZ.push(c.z); usedN.push(c.n);
+          var b = pc.toPage(c.n.box);
+          if (Array.isArray(c.e.v)) { ngs.push({ pi: pi, at: b, ng: { page: pn, zuban: c.e.zuban, name: c.e.name, reason: '重複' }, dup: true }); return; }
+          hitsAll.push({ b: b, item: c.n, uri: mapUri(c.e.v), pi: pi, name: c.e.name });
+        });
+        // 組にならなかった図番・製品名は NG(近くの語を「読み取った文字」として出す)
+        var near = function (x) { return it.filter(function (y) { return Math.abs(cy(y) - cy(x)) <= 0.6 * mh && Math.abs(cx(y) - cx(x)) <= 300; })
+          .sort(function (p, q) { return p.box[1] - q.box[1]; }).map(function (y) { return y.text; }).join(' '); };
+        Zs.forEach(function (z) { if (usedZ.indexOf(z) < 0 && usedN.indexOf(z) < 0) ngs.push({ pi: pi, at: pc.toPage(z.box), ng: { page: pn, zuban: z.text, name: near(z), reason: '製品名が不一致(読み取った行の文字を表示)' } }); });
+        Ns.forEach(function (n) { if (usedN.indexOf(n) < 0 && usedZ.indexOf(n) < 0) ngs.push({ pi: pi, at: pc.toPage(n.box), ng: { page: pn, zuban: '', name: near(n), reason: '図番が見つかりません(読み取った行の文字を表示)' } }); });
       }
-      release(lr);
+      // 位置の補正(細かい表で Gemini の縦の位置がずれるとき)。補正は読み取り画像の上で行い、ページの座標(scale 1)に戻す
+      pieces.forEach(function (pc, pi) {
+        var hs = hitsAll.filter(function (h) { return h.pi === pi; });
+        if (hs.length) {
+          var toPx = function (b) { return { x0: b.x0 * pc.sc - pc.ox, y0: b.y0 * pc.sc - pc.oy, x1: b.x1 * pc.sc - pc.ox, y1: b.y1 * pc.sc - pc.oy }; };
+          var toPt = function (q) { return { x0: (q.x0 + pc.ox) / pc.sc, y0: (q.y0 + pc.oy) / pc.sc, x1: (q.x1 + pc.ox) / pc.sc, y1: (q.y1 + pc.oy) / pc.sc }; };
+          var px = hs.map(function (h) { return toPx(h.b); });
+          // 分けて読んだ1枚では、リンクを付けない語(マスタに無い品名・数字など)も一緒に行へ対応させる。各行がその語自身の行に収まるので、リンクが隣の行へずれにくい
+          var others = !pc.core ? [] : (pc.items || []).filter(function (x) { return !hs.some(function (h) { return h.item === x; }); })
+            .map(function (x) { var b = pc.toPage(x.box); return b && toPx(b); }).filter(function (q) { return q; });
+          if (snapRows(pc.cv.canvas, px.concat(others))) px.forEach(function (q, k) { if (q.snapped) hs[k].snapped = true; hs[k].b = toPt(q); });
+          if (pc.core && hs.length >= 3) {   // 横幅がほかの製品名(中央値)の1.4倍を超える語は、中央値の幅に縮める(隣の欄まで下線が伸びないように)
+            var ws = hs.map(function (h) { return h.b.x1 - h.b.x0; }).sort(function (p, q) { return p - q; }), mw = ws[ws.length >> 1];
+            hs.forEach(function (h) { if (h.b.x1 - h.b.x0 > 1.4 * mw) h.b = { x0: h.b.x0, y0: h.b.y0, x1: h.b.x0 + mw, y1: h.b.y1 }; });
+          }
+        }
+        release(pc.cv);
+      });
+      // 分けて読んだときは、重なった部分で同じ製品名が2回読めることがあるので1つにまとめる(別の1枚で、同じ製品名が約2.5行以内にあれば同じものとみなし、
+      // 位置の補正ができた方、その中では読んだ1枚の中心に近い方を残す。同じ1枚の中で同じ製品名が続く行はまとめない)。
+      // NG は、その行が読んだ1枚の担当範囲(重なりを除いた範囲)にあり、同じ行にリンクが無いものだけを残す
+      if (pieces.length > 1) {
+        var center = function (h) { var c = pieces[h.pi].core, x = (h.b.x0 + h.b.x1) / 2, y = (h.b.y0 + h.b.y1) / 2;
+          return Math.min((x - c.x0) / (c.x1 - c.x0), (c.x1 - x) / (c.x1 - c.x0), (y - c.y0) / (c.y1 - c.y0), (c.y1 - y) / (c.y1 - c.y0)); };
+        var keep = [];
+        hitsAll.slice().sort(function (p, q) { return (q.snapped ? 1 : 0) - (p.snapped ? 1 : 0) || center(q) - center(p); }).forEach(function (h) {
+          var hh = h.b.y1 - h.b.y0;   // 文字の高さ(行の間隔の約半分)
+          var same = keep.some(function (k) { return k.pi !== h.pi && k.uri === h.uri && k.name === h.name && Math.abs((k.b.y0 + k.b.y1) - (h.b.y0 + h.b.y1)) / 2 < 4 * hh && Math.min(k.b.x1, h.b.x1) > Math.max(k.b.x0, h.b.x0); });
+          if (!same) keep.push(h);
+        });
+        hitsAll = hitsAll.filter(function (h) { return keep.indexOf(h) >= 0; });
+        ngs = ngs.filter(function (g) {
+          var c = pieces[g.pi].core, a = g.at;
+          if (!a) return true;
+          var x = (a.x0 + a.x1) / 2, y = (a.y0 + a.y1) / 2;
+          if (x < c.x0 || x >= c.x1 || y < c.y0 || y >= c.y1) return false;
+          return !hitsAll.some(function (h) { return Math.abs((h.b.y0 + h.b.y1) / 2 - y) < 0.8 * (h.b.y1 - h.b.y0) && Math.abs((h.b.x0 + h.b.x1) / 2 - x) < 0.15 * v1.width; });   // 同じ行・近くの列にリンクがあれば NG にしない
+        });
+      }
+      ngs.forEach(function (g) { if (g.dup) stats.dup++; stats.ng++; stats.partial.push(g.ng); });
+      stats.linked += hitsAll.length;
       hitsAll.forEach(function (h) {
         var b = h.b, m = (b.y1 - b.y0) * 0.15;
         // 下線は、読んだ向きでの文字の下辺(回した画像でも文字の下になるよう、両端をPDFの座標に直す)
