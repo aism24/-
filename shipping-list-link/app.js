@@ -206,6 +206,33 @@
       return await r.json();
     } catch (e) { return { ok: false, error: '通信に失敗しました: ' + e }; }
   }
+  // 写真画像(JPG・PNG・HEIC)は、画面の中で1ページのPDFにしてから、PDFと同じ流れ(文字が無いので画像読み取り)に回す(2026-11-02〜)
+  // HEIC はブラウザが読めないことが多いので、そのときだけ同梱の heic2any(vendor/heic2any.min.js、MIT。libheif を含む)を読み込んでJPEGに変える
+  function isHeic(f) { return /\.(heic|heif)$/i.test(f.name) || /^image\/hei[cf]/i.test(f.type || ''); }
+  function isImage(f) { return /\.(jpe?g|png|heic|heif)$/i.test(f.name) || /^image\/(jpeg|png|heic|heif)/i.test(f.type || ''); }
+  var heicLib = null;
+  function loadHeic() {
+    return heicLib || (heicLib = new Promise(function (ok, ng) {
+      var sc = document.createElement('script'); sc.src = 'vendor/heic2any.min.js?v=0.0.4';
+      sc.onload = function () { ok(window.heic2any); }; sc.onerror = function () { heicLib = null; ng(new Error('HEICの変換部品を読み込めませんでした')); };
+      document.head.appendChild(sc);
+    }));
+  }
+  async function imageToPdf(file) {
+    var blob = file;
+    if (isHeic(file)) { var h2a = await loadHeic(), cv = await h2a({ blob: file, toType: 'image/jpeg', quality: 0.92 }); blob = Array.isArray(cv) ? cv[0] : cv; }
+    var bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' });   // 写真の向き(EXIF)を反映する
+    var k = Math.min(1, 4000 / Math.max(bmp.width, bmp.height)), c = document.createElement('canvas');   // 長辺4000pxまでに縮める(ファイルを大きくしすぎない)
+    c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k));
+    var ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    if (bmp.close) bmp.close();
+    var jb = await new Promise(function (ok) { c.toBlob(ok, 'image/jpeg', 0.9); });
+    c.width = 0; c.height = 0;
+    var pdf = await PDFLib.PDFDocument.create(), img = await pdf.embedJpg(new Uint8Array(await jb.arrayBuffer()));
+    var w = img.width * 0.5, hh = img.height * 0.5, pg = pdf.addPage([w, hh]);   // 1px = 0.5pt(144dpi 相当)
+    pg.drawImage(img, { x: 0, y: 0, width: w, height: hh });
+    return (await pdf.save()).buffer;
+  }
   function mapOpt() { return LINK_MODE === 'web' ? { mapUri: function (u) { return ShippingCore.toOpenUrl(OPEN_BASE, u); } } : null; }
   async function handle(file) {
     if (!file || modalOpen || working) return;
@@ -215,7 +242,8 @@
     $('msg').textContent = ''; $('stage').classList.add('busy');
     busy(true, 'ファイルを処理中…');   // ダウンロードが終わるまで、画面を操作できないポップアップを出す
     try {
-      var buf = await file.arrayBuffer(), isXlsx = /\.xls[xm]$/i.test(file.name);
+      var isXlsx = /\.xls[xm]$/i.test(file.name), isImg = !isXlsx && isImage(file);
+      var buf = isImg ? await imageToPdf(file) : await file.arrayBuffer();
       var r = isXlsx ? await ShippingXlsx.linkXlsx(JSZip, buf, links, mapOpt()) : await ShippingCore.linkPdf(pdfjsLib, PDFLib, buf, links, mapOpt());
       // 詳細図(図番・製品名が線で描かれたCAD図面。寸法などの文字データだけ入っていることもある): 文字から図番らしい語が1つも見つからないときだけ、画像として読み取る
       if (!isXlsx && GAS_URL && r.stats.linked === 0 && r.stats.ng === 0) {
@@ -227,7 +255,7 @@
       var s = r.stats;
       $('msg').textContent = '';
       if (s.linked > 0) {
-        var base = file.name.replace(/\.(pdf|xls[xm])$/i, '');
+        var base = file.name.replace(isImg ? /\.(jpe?g|png|heic|heif)$/i : /\.(pdf|xls[xm])$/i, '');
         var a = document.createElement('a');
         a.href = URL.createObjectURL(new Blob([r.bytes], { type: isXlsx ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/pdf' }));
         a.download = base + '_リンク付き.' + (isXlsx ? (/\.xlsm$/i.test(file.name) ? 'xlsm' : 'xlsx') : 'pdf'); a.style.display = 'none'; document.body.appendChild(a); a.click();
