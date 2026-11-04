@@ -2312,14 +2312,23 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
 
     candidates_raw = []
     cand_angle: dict[tuple, float] = {}
-    for ax, ay, bx, by, _r in ex._find_stadium_capsules_no_size(tdf):
+    cand_text_pos: dict[tuple, tuple] = {}  # 近傍重複の判定で自分自身を除くための文字の位置
+    for cap in ex._find_stadium_capsules_no_size(tdf):
+        ax, ay, bx, by, _r = cap
         mx, my = (ax + bx) / 2, (ay + by) / 2
         near = [rec for rec in tdf.texts if abs(rec.x - mx) < 3 and abs(rec.y - my) < 3]
+        if not near:
+            # 継手名が長丸の中心から少しずれて書かれていることがある(2026-11-04、
+            # 26-12 の 1B-47。左の長丸の VJNV3ｇ が中心から8ずれていて、左継手が
+            # 空欄になっていた)。中心に文字が無いときだけ、長丸の中に入っている文字を使う。
+            near = [rec for rec in tdf.texts if ex._text_enclosed_by_capsule_no_size(tdf, rec, cap)]
         for rec in near:
             t = tdf.resolve_text(rec)
             if t:
                 candidates_raw.append((mx, my, t))
                 cand_angle[(mx, my, t)] = math.degrees(math.atan2(by - ay, bx - ax)) % 180.0
+                if abs(rec.x - mx) >= 3 or abs(rec.y - my) >= 3:
+                    cand_text_pos[(mx, my, t)] = (rec.x, rec.y)
 
     # 梁の端を回して描いた詳細図の上の継手は、梁が水平でもその詳細図の角度で
     # 傾く(2026-10-29、N2G-22・N3G-24・NRG-20のNGW80、約13〜19°)。その詳細図
@@ -2341,7 +2350,7 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
     own_marks = frozenset(r.mark for r in rows)
     bolt_marks = _bolt_marks(tdf) if member_depths else []
     dup_flags = {
-        (mx, my, t): _has_nearby_duplicate(tdf, mx, my, t, own_marks)
+        (mx, my, t): _has_nearby_duplicate(tdf, *cand_text_pos.get((mx, my, t), (mx, my)), t, own_marks)
         for mx, my, t in candidates_raw
     }
 
