@@ -820,3 +820,8 @@
 - 効果: Before 回転量(0/90/180/270)を答えさせると同じ頁でも 180・270 に割れ、加工予定表のリンクが 0〜64件 → After 4枚並べて選ばせると20回中20回正解(正解の位置を1〜4に入れ替えても)、同じ頁 123件。Gemini は1頁1回のまま
 - やり方: 頁を4つの向きで描き、赤い番号1〜4を付けて2×2に並べた1枚(1枠800px)を送る。プロンプトで「番号の文字は判断に使わない」、スキーマは reason→panel の順(propertyOrdering)/ drawing-read.js orientSheet・GAS kind=orient4。旧GASでは従来の orient
 - 使ったアプリ: shipping-list-link
+
+### Gemini の位置(box)は上下が逆・幅0のことがある → 使う前に必ず確かめる(shipping-list-link、2026-11-04)
+- 効果: Before 分けて読んだ加工予定表で1語でも逆の位置があるとページ全体が失敗(本番 52/1・54/12)→ After その語だけNG、同じ応答の再生で 58/1 → 200/1
+- やり方: [ymin,xmin,ymax,xmax] で ymax<=ymin・xmax<=xmin なら位置なしとして扱う(画像の下の端で [1030,574,1000,662] など。1回の読み取りで7語)/ drawing-read.js pairNear / 試験の自動ブラウザ(Playwright setInputFiles)は日本語のファイル名だとアプリに届かないことがあったので英字名で
+- 使ったアプリ: shipping-list-link
