@@ -315,7 +315,7 @@
         var res = await ask(kind, img);
         if (res && res.ok) return res.data;
         var msg = (res && res.error) || '読み取りに失敗しました';
-        if (attempt < RETRY_429 && /429|quota/i.test(msg)) { await sleep(8000 * (attempt + 1)); continue; }   // 上限に当たったときは待って再試行
+        if (attempt < RETRY_429 && /429|quota|503|UNAVAILABLE|high demand|overloaded/i.test(msg)) { await sleep(8000 * (attempt + 1)); continue; }   // 上限に当たったときは待って再試行
         throw new Error(msg);
       }
     }
@@ -578,6 +578,13 @@
           return !hitsAll.some(function (h) { return Math.abs((h.b.y0 + h.b.y1) / 2 - y) < 0.8 * (h.b.y1 - h.b.y0) && Math.abs((h.b.x0 + h.b.x1) / 2 - x) < 0.15 * v1.width; });   // 同じ行・近くの列にリンクがあれば NG にしない
         });
       }
+      // 分けて読んだときは、行の位置を画像で確かめられなかったリンク(位置の補正ができなかったもの)は付けずに NG にする(2026-11-04〜)。
+      // 細かい表では Gemini の位置が数行ずれることがあり、別の行の製品名にリンクが付くおそれがあるため
+      if (pieces.length > 1) hitsAll = hitsAll.filter(function (h) {
+        if (h.snapped) return true;
+        ngs.push({ pi: h.pi, at: h.b, ng: { page: pn, zuban: '', name: h.name, reason: '行の位置を確かめられません' } });
+        return false;
+      });
       ngs.forEach(function (g) { if (g.dup) stats.dup++; stats.ng++; stats.partial.push(g.ng); });
       stats.linked += hitsAll.length;
       hitsAll.forEach(function (h) {
