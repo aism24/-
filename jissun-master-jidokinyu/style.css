@@ -33,7 +33,22 @@ body {
    結果として文字部分は白抜きになる)。 */
 .brand-logo { width: 40px; height: 44px; flex: none; color: var(--text); }
 
-h1 { font-size: 1.3rem; margin: 0; text-align: center; }
+/* アプリ名の左右の実寸法師アイコン(48pxのドット絵。原寸で表示してぼやけさせない) */
+.side-icon { flex: none; image-rendering: pixelated; }
+.side-icon-flip { transform: scaleX(-1); }
+
+/* 「← アプリ一覧へ」の行。ボタンには右側の余白(12px、幅480px以下は8px)が
+   付くので、同じ分を左に足して中央に見せる */
+.launcher-row { margin: 0 0 16px; padding-left: 12px; text-align: center; }
+@media (max-width: 480px) { .launcher-row { padding-left: 8px; } }
+
+h1 { font-size: 1.3rem; margin: 0; text-align: center; white-space: nowrap; }
+/* スマホ幅ではアイコンを小さくし、アプリ名は2行まで折り返す */
+@media (max-width: 480px) {
+  .brand { gap: 8px; }
+  .side-icon { width: 32px; height: 32px; }
+  h1 { white-space: normal; font-size: 1.1rem; }
+}
 
 .empty { color: var(--muted); text-align: center; padding: 20px; }
 

@@ -37,6 +37,9 @@ header {
 }
 header h1 { font-size: 18px; margin: 0; white-space: nowrap; color: #222; }
 #header-brand { display: flex; align-items: center; gap: 10px; justify-content: center; }
+/* ロゴ+アプリ名の左右の実寸法師アイコン(48pxのドット絵。原寸で表示してぼやけさせない)。右は左右反転 */
+.side-icon { flex: none; display: block; image-rendering: pixelated; }
+.side-icon-flip { transform: scaleX(-1); }
 header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: block; }
 .logo-frame { display: flex; flex-direction: column; align-items: stretch; flex-shrink: 0; }
 .logo-inner { display: flex; align-items: center; gap: 8px; }
@@ -91,7 +94,8 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
   background: #fff; border-radius: 14px; padding: 36px 40px; width: 92%; max-width: 480px;
   box-shadow: 0 12px 40px rgba(0,0,0,.35); text-align: center;
 }
-#beam-box .logo-frame { margin: 0 auto 18px; width: fit-content; }
+#beam-box .logo-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 0 0 18px; }
+#beam-box .logo-frame { margin: 0; width: fit-content; }
 #beam-box .logo-frame img { width: 56px; height: 56px; }
 #beam-box .company-name { font-size: 20px; line-height: 56px; }
 #beam-box h2 { font-size: 17px; margin: 6px 0 18px; }
