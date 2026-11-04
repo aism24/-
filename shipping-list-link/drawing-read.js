@@ -391,6 +391,7 @@
           if (usedZ.indexOf(c.z) >= 0 || usedN.indexOf(c.n) >= 0) return;
           usedZ.push(c.z); usedN.push(c.n);
           var b = pc.toPage(c.n.box);
+          if (!b) { ngs.push({ pi: pi, at: pc.toPage(c.z.box), ng: { page: pn, zuban: c.e.zuban, name: c.n.text, reason: 'セルの位置を読み取れません' } }); return; }   // 幅・高さが0などの位置はリンクにしない(1枚で読むときと同じ。2026-11-04〜)
           if (Array.isArray(c.e.v)) { ngs.push({ pi: pi, at: b, ng: { page: pn, zuban: c.e.zuban, name: c.e.name, reason: '重複' }, dup: true }); return; }
           hitsAll.push({ b: b, item: c.n, uri: mapUri(c.e.v), pi: pi, name: c.e.name });
         });
