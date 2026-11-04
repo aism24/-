@@ -239,6 +239,11 @@
 - 注意: 確認用URLで押すと本物のシートに記録される。Playwrightの `download.suggestedFilename()` はblob URLだと「download」になる(a要素の download 属性は正しい名前)。
 - 使ったアプリ: truck-fax
 
+### 新旧2版の出力PDFをGemini 0回で比べる(shipping-list-link、2026-11-04)
+- 効果: ユーザーが本番で出した新旧のPDFを受け取り、pypdf で各ページの /Link 注釈(位置 /Rect と /URI)を数えて突き合わせた。Gemini 0回・数秒で「1頁 52件 vs 32件、同じ位置で別のリンク先11か所」まで出せた(Before: 確かめるには本番GASで約50回・5〜7分)。
+- 本番を1つ前に戻すときは request_rollback でなく revert の PR → create_deployment(Vercel の instant rollback は以後の本番デプロイの自動切り替えを止めるため)。
+- 使ったアプリ: shipping-list-link
+
 ## ユーザーがよく出す指示(繰り返し・訂正が多いもの)
 - アプリは完全無料で実装し、URLで配布する(常に最新版)。
 - Geminiを使うときのモデル名は `gemini-3.5-flash-lite` に固定。
