@@ -426,6 +426,76 @@ def _numeric_texts(tdf):
     return vals
 
 
+def _dim_sums(tdf):
+    """同じ寸法線の上に並ぶ寸法の文字(同じ向き・同じ高さ)の、隣り合う2〜8個の合計の一覧。
+
+    梁の全長の寸法が書かれておらず、部分の寸法だけが並んでいる図面で、長さを
+    推測するのに使う(2026-11-04、26-12 の 1B-01 の 1Sb70MA-2。全長 2992.5 の
+    寸法が無く、2458+534.5・530+650+1812.5 だけが書かれていた)。
+    """
+    lines = {}
+    for rec in tdf.texts:
+        s = (tdf.resolve_text(rec) or "").strip().replace(",", "")
+        if not _NUMERIC_TEXT.match(s):
+            continue
+        rot = tdf.resolve_rot(rec) or 0.0
+        c, sn = math.cos(rot), math.sin(rot)
+        key = (round(rot, 2), round(-rec.x * sn + rec.y * c))
+        lines.setdefault(key, []).append((rec.x * c + rec.y * sn, float(s)))
+    sums = set()
+    for vals in lines.values():
+        vals.sort()
+        v = [x for _, x in vals]
+        for i in range(len(v)):
+            acc = v[i]
+            for j in range(i + 1, min(len(v), i + 8)):
+                acc += v[j]
+                sums.add(round(acc, 1))
+    return sums
+
+
+def _member_length_options(tdf, member, tf, depth):
+    """フランジから求めた梁の長さと、両端をウェブの端の線まで伸ばした長さの候補(短い順)。
+
+    _web_member は板厚(tf)までしか伸ばさないが、フランジが端の手前で切られ、ウェブだけが
+    先まで描かれていることがある(26-12 の 1B-01。フランジは 2942.5、ウェブの端の線は
+    右へ50先で 2992.5)。寸法の合計で長さを推測するときだけ、梁せい(depth)まで探す。
+    """
+    length, (pa, pb), th_deg = member
+    opts = {round(length, 1)}
+    if not tf or not depth:
+        return sorted(opts)
+    th = math.radians(th_deg)
+    ux, uy = math.cos(th), math.sin(th)
+    m = -pa[0] * uy + pa[1] * ux
+    web_lo, web_hi = m - depth / 2 + tf, m + depth / 2 - tf
+    a, b = pa[0] * ux + pa[1] * uy, pb[0] * ux + pb[1] * uy
+    start, end = min(a, b), max(a, b)
+
+    def web_ends(p, outward):
+        found = [0.0]
+        for ln in tdf.lines:
+            if ln.length < 20:
+                continue
+            t = math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1) % math.pi
+            d = abs(t - th % math.pi)
+            if abs(min(d, math.pi - d) - math.pi / 2) > math.radians(0.05):
+                continue
+            q = (ln.x1 + ln.x2) / 2 * ux + (ln.y1 + ln.y2) / 2 * uy
+            o = sorted((-ln.x1 * uy + ln.y1 * ux, -ln.x2 * uy + ln.y2 * ux))
+            if not (o[0] < m < o[1]) or o[0] < web_lo - 0.6 or o[1] > web_hi + 0.6:
+                continue
+            out = (q - p) * outward
+            if 0.6 < out <= depth + 0.6:
+                found.append(out)
+        return found
+
+    for el in web_ends(start, -1):
+        for er in web_ends(end, +1):
+            opts.add(round(end - start + el + er, 1))
+    return sorted(opts)
+
+
 def _in_drawing(dim_values, length):
     """長さ(mm)が図面の寸法の文字として実在するか。"""
     return length is not None and any(abs(v - length) < 0.05 for v in dim_values)
@@ -503,6 +573,8 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
     member_ends: dict[int, tuple] = {}
     joint_axes: dict[int, float] = {}  # 斜め梁の角度(継手の長丸の向きの判定用)
     dim_values = _numeric_texts(tdf)
+    dim_sums = None  # 寸法の合計(必要になったときだけ求める)
+    length_checks: dict[int, str] = {}  # id(row) -> "推測" / "要確認"
     for row in rows:
         _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
         if row.size_missing:
@@ -541,6 +613,31 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
         if drawn is not None:
             _member_length, member_ends[id(row)], axis = member
             length_value = drawn
+        elif member is not None:
+            # 梁の線の長さに合う寸法の文字が図面に無い(寸法線の不足等)。同じ寸法線の
+            # 上の隣り合う寸法の合計が梁の長さに合えば、その合計を長さとし「推測」の
+            # 印を付ける。合わなければ従来の寸法から選ぶ方式の値のまま「要確認」の
+            # 印を付ける(2026-11-04、ユーザー指示。取り込み後に画面で知らせる)。
+            # ただし従来の方式の値が図面の寸法の文字で、梁の線との差が板厚以内なら、
+            # 端の切り方の違い等とみなしてその値を残す(26-16 の EA1-RB-02 等の
+            # RTB587A。上フランジの寸法 5382.3 が書かれ、梁の線は 5390.5 で、隙間の
+            # 寸法との合計 8.2+5382.3 が梁の線に一致してしまう)。
+            tf = _flange_thickness(row.size)
+            est = None
+            if not (length_value is not None and tf and _in_drawing(dim_values, length_value)
+                    and abs(length_value - member[0]) <= tf + 1e-9):
+                if dim_sums is None:
+                    dim_sums = _dim_sums(tdf)
+                for cand in _member_length_options(tdf, member, tf, _beam_depth(row.size)):
+                    near = [s for s in dim_sums if abs(s - cand) <= MEMBER_DIM_TOL + 1e-9]
+                    if near:
+                        est = min(near, key=lambda s: abs(s - cand))
+                        break
+            if est is not None:
+                length_value = est
+                length_checks[id(row)] = "推測"
+            else:
+                length_checks[id(row)] = "要確認"
         lengths[id(row)] = length_value
         # 梁の向きは、フランジから求めたときはフランジの線の向きで判定する。寸法線は
         # 斜めの部材でも水平・垂直に引かれることがある(2026-10-29、N2B-36〜39の
@@ -636,7 +733,8 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
     for row in rows:
         tier_label, _y_max = tier_info.get(id(row), (None, None))
         length_value = lengths[id(row)]
-        if not _in_drawing(dim_values, length_value):
+        check = length_checks.get(id(row))
+        if check != "推測" and not _in_drawing(dim_values, length_value):
             length_value = None  # 寸法の文字に無い数値は出さない(空欄にする)
         left, right = joints.get(id(row), (None, None))
         if length_value is None:
@@ -648,6 +746,7 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
             "図番": drawing_number, "製品マーク": row.mark, "設計符号": row.design_code,
             "サイズ": row.size, "本数": row.count, "長さ": length_value_m, "重量": row.weight,
             "左継手": left, "右継手": right, "種別": beam_types[id(row)], "製品段": tier_label,
+            "長さの確認": check,
         })
     return out
 
