@@ -121,7 +121,6 @@
   // 一覧表のリンク位置の補正(2026-11-02〜)。細かい表では Gemini が返す文字の縦の位置が1〜数行ずれることがある(下の行ほど大きくずれる)ので、
   // 画像から同じ列の実際の文字の行(インクのある帯)を探し、読んだ語を上から順に対応させる(行の間隔の比で縮尺を合わせ、上下のずれ量は全体で一番合うものを選ぶ)。
   // 罫線のある表だけが対象(手書き・写真は変えない)。boxes: [{x0,y0,x1,y1}](canvas上のpx)。書き換えたら true
-  var snapSeq = 0;   // あいまいな段に付ける番号(同じ段の語をまとめて動かすため)
   function snapRows(canvas, boxes) {
     var w = canvas.width, h = canvas.height, d = canvas.getContext('2d').getImageData(0, 0, w, h).data, changed = false;
     function med(a) { a = a.slice().sort(function (p, q) { return p - q; }); return a.length ? a[a.length >> 1] : 0; }
@@ -169,34 +168,18 @@
       // 各行の文字の横幅(インクの左端〜右端)。読んだ語の幅と比べ、見出し(「製品名」など短い文字)や別の行に対応させにくくする
       var bw = bands.map(function (b) {
         var mn = Infinity, mx = -Infinity, yy, xx;
-        // 文字は、その行の背景(いちばん多い色)と大きく違う濃い画素だけ(2026-11-04〜)。セルの塗り(青・水色など)を文字として数えると、その行の幅が列の幅いっぱいになり、別の行に対応してしまう。赤字・青字は数える
-        var hist = {}, bgk = null, bgn = 0, bg = [255, 255, 255];
-        for (yy = b[0]; yy < b[1]; yy++) for (xx = xa; xx < xb; xx += 2) { if (!colOk[xx - xa]) continue; var i5 = (yy * w + xx) * 4, key = (d[i5] >> 5) + ',' + (d[i5 + 1] >> 5) + ',' + (d[i5 + 2] >> 5); hist[key] = (hist[key] || 0) + 1; if (hist[key] > bgn) { bgn = hist[key]; bgk = key; } }
-        if (bgk) bg = bgk.split(',').map(function (v) { return (+v << 5) + 16; });
-        // 線のように横いっぱい(半分超)に濃い画素が並ぶ高さ(帯の端にかかった罫線)も除く
-        var lineY = {};
-        for (yy = b[0]; yy < b[1]; yy++) { var nl = 0; for (xx = xa; xx < xb; xx++) { if (!colOk[xx - xa]) continue; var i6 = (yy * w + xx) * 4; if ((d[i6] + d[i6 + 1] + d[i6 + 2]) / 3 < 150) nl++; } if (nl > 0.5 * nOk) lineY[yy] = 1; }
-        // 黒・灰色の文字の幅を使う(色の付いた塗りのセルを数えない)。黒・灰色の文字が無い行(赤字だけ等)は、背景と大きく違う濃い画素で測る
-        var gmn = Infinity, gmx = -Infinity;
-        for (yy = b[0]; yy < b[1]; yy++) for (xx = xa; xx < xb; xx++) {
-          if (!colOk[xx - xa] || lineY[yy]) continue;
-          var i4 = (yy * w + xx) * 4, r4 = d[i4], g4 = d[i4 + 1], b4 = d[i4 + 2];
-          if ((r4 + g4 + b4) / 3 >= 150) continue;
-          if (Math.max(r4, g4, b4) - Math.min(r4, g4, b4) < 80) { if (xx < gmn) gmn = xx; if (xx > gmx) gmx = xx; }
-          if (Math.abs(r4 - bg[0]) + Math.abs(g4 - bg[1]) + Math.abs(b4 - bg[2]) > 150) { if (xx < mn) mn = xx; if (xx > mx) mx = xx; }
-        }
-        if (gmx >= gmn) { mn = gmn; mx = gmx; }
+        for (yy = b[0]; yy < b[1]; yy++) for (xx = xa; xx < xb; xx++) { if (!colOk[xx - xa]) continue; var i4 = (yy * w + xx) * 4; if ((d[i4] + d[i4 + 1] + d[i4 + 2]) / 3 < 150) { if (xx < mn) mn = xx; if (xx > mx) mx = xx; } }
         return mx >= mn ? mx - mn : 0;
       });
       var ord = it.slice().sort(function (p, q) { return (p.y0 + p.y1) - (q.y0 + q.y1); }), c = ord.map(function (b) { return (b.y0 + b.y1) / 2; });
       var dif = function (a) { var r = []; for (var k = 1; k < a.length; k++) r.push(a[k] - a[k - 1]); return r; };
       var spb = m > 1 ? med(dif(bc)) : 20, spp = n > 2 ? med(dif(c)) : spb, sc = spp > 0 ? spb / spp : 1;
-      var cs = null, O = n <= 2 ? Math.round(0.6 * spb) : Math.round(h * 0.3), bestO = 0, bestS = sc, bestC = Infinity, j, i2, o, CAP = 3 * spb;   // 外れの上限は3行分(遠い行ほど外れを大きく数える)
+      var cs = null, O = Math.round(h * 0.3), bestO = 0, bestS = sc, bestC = Infinity, j, i2, o, CAP = 3 * spb;   // 外れの上限は3行分(遠い行ほど外れを大きく数える)
       // 幅の食い違いの重み。Gemini の語の幅は実際の文字の幅と一定の比になるので、その比(中央値どうし)でそろえてから比べる。文字数が1つ違えば約1割の差になる
       var iws = ord.map(function (b) { return Math.max(1, b.x1 - b.x0); }), kx = med(bw.filter(function (v) { return v > 0; })) / Math.max(1, med(iws));
       var wc = iws.map(function (iw) { var ew = kx * iw; return bw.map(function (v) { return 2 * spb * Math.min(1, Math.abs(v - ew) / ew); }); });
       var prev = new Float64Array(m + 1), curA = new Float64Array(m + 1);
-      for (var sk = n <= 2 ? 0 : -6; sk <= (n <= 2 ? 0 : 6); sk++) {   // 縦の縮尺は、行の間隔の比を中心に ±6% の範囲でも探す。語が2つ以下の列は、ずれを0.6行分まで・縮尺は変えない(語が少ないと、どこへでも合ってしまうため。2026-11-04〜)
+      for (var sk = -6; sk <= 6; sk++) {   // 縦の縮尺は、行の間隔の比を中心に ±6% の範囲でも探す
         var scs = sc * (1 + sk / 100), cv2 = c.map(function (v) { return v * scs; });
         for (o = -O; o <= O; o++) {   // 上下のずれ量ごとに、上から順の対応(行は飛ばしてよい)の合計の外れを最小にする
           prev.fill(0);
@@ -213,70 +196,12 @@
       var dp = [], a2, b2;
       for (a2 = 0; a2 <= n; a2++) { dp.push(new Float64Array(m + 1)); if (a2) dp[a2][0] = Infinity; }
       for (a2 = 1; a2 <= n; a2++) for (b2 = 1; b2 <= m; b2++) dp[a2][b2] = Math.min(dp[a2][b2 - 1], dp[a2 - 1][b2 - 1] + Math.min(Math.abs(cs[a2 - 1] + bestO - bc[b2 - 1]), CAP) + wc[a2 - 1][b2 - 1]);
-      // 段ごとの対応(表が空き行・見出しで段に分かれ、Gemini が段と段のすき間を実際と違う大きさで返すとき用)。
-      // Gemini の行の間が大きく空いた所(行の間隔の中央値の1.8倍超)で段に分け、段の中では「行の間隔」と「文字の横幅」が合うように、
-      // 段どうしは上から順(位置は自由)に、実際の行(インクの帯)へ対応させる。段の中の間隔の外れの平均が行間隔の0.25倍以下のときだけ使う
-      function segAlign() {
-        var g0 = dif(c), sp = med(g0), brk = g0.map(function (g) { return g > 1.8 * sp; });
-        if (!brk.some(function (b) { return b; }) || sp <= 0) return null;
-        var s0 = spb / sp, F = [], P = [], a, b, q;
-        for (a = 0; a < n; a++) { F.push(new Float64Array(m).fill(Infinity)); P.push(new Int32Array(m).fill(-1)); }
-        // 位置そのものの外れはごく弱く数える(同じ形の並びが2か所に合うときに、近い方を選ぶため)
-        var near = function (a, b) { return 0.02 * Math.min(Math.abs(c[a] * bestS + bestO - bc[b]), 10 * spb); };
-        for (b = 0; b < m; b++) F[0][b] = wc[0][b] + near(0, b);
-        for (a = 1; a < n; a++) for (b = 1; b < m; b++) {
-          var best = Infinity, arg = -1;
-          for (q = 0; q < b; q++) {
-            if (F[a - 1][q] === Infinity) continue;
-            var t = brk[a - 1] ? 0 : Math.min(Math.abs(g0[a - 1] * s0 - (bc[b] - bc[q])), CAP);
-            if (F[a - 1][q] + t < best) { best = F[a - 1][q] + t; arg = q; }
-          }
-          if (arg >= 0) { F[a][b] = best + wc[a][b] + near(a, b); P[a][b] = arg; }
-        }
-        var bb = -1, bv = Infinity;
-        for (b = 0; b < m; b++) if (F[n - 1][b] < bv) { bv = F[n - 1][b]; bb = b; }
-        if (bb < 0) return null;
-        var res = new Array(n); for (a = n - 1; a >= 0; a--) { res[a] = bb; bb = P[a][bb]; }
-        var e = 0, k = 0;
-        for (a = 1; a < n; a++) if (!brk[a - 1]) { e += Math.min(Math.abs(g0[a - 1] * s0 - (bc[res[a]] - bc[res[a - 1]])), spb); k++; }
-        if (!k || e / k > 0.25 * spb) return null;
-        return res;
-      }
       var asg = new Array(n); a2 = n; b2 = m;
       while (a2 > 0) { if (dp[a2][b2] === dp[a2][b2 - 1]) b2--; else { asg[a2 - 1] = b2 - 1; a2--; b2--; } }
       var pc2 = 0; for (a2 = 0; a2 < n; a2++) pc2 += Math.min(Math.abs(cs[a2] + bestO - bc[asg[a2]]), spb);
-      // Gemini の行の間が大きく空いた所がある(表が段に分かれている)ときは、段ごとに合わせた対応を使う(2026-11-04〜)。
-      // 全体を1つの縮尺・ずれで合わせると、行の少ない段が隣の行(合計の行など)へずれることがあるため。段ごとに合わせられないときは従来どおり
-      var sa = segAlign();
-      if (sa) asg = sa;
-      else if (pc2 / n > 0.35 * spb) return;   // 位置の対応がはっきりしないときは変えない
-      // 位置があいまいな語の印(2026-11-04〜): Gemini の行の間が大きく空いた所で分けたまとまりごとに、まとめて1行上か下にずらしても
-      // 「行の間隔」と「文字の横幅」の合い方がほとんど変わらない(差が行間隔の0.5倍未満)、またはまとまりの中に対応しない行がはさまるときは、
-      // 語が1行ずれて対応しているおそれがある。重なった部分を別の1枚でも読んでいれば、そちらで決める(listPage)
-      var gid = ++snapSeq, gg = dif(c), gsp = med(gg), cl = [0], amb = {};
-      for (j = 1; j < n; j++) cl.push(cl[j - 1] + (gg[j - 1] > 1.8 * gsp ? 1 : 0));
-      var s1 = gsp > 0 ? spb / gsp : 1, ncl = cl[n - 1] + 1;
-      var costOf = function (ids, bs) {
-        var t = 0, k2;
-        for (k2 = 0; k2 < ids.length; k2++) { t += wc[ids[k2]][bs[k2]]; if (k2) t += Math.min(Math.abs(gg[ids[k2] - 1] * s1 - (bc[bs[k2]] - bc[bs[k2 - 1]])), spb); }
-        return t;
-      };
-      for (var ci = 0; ci < ncl; ci++) {
-        var ids = [], bs0 = [];
-        for (a2 = 0; a2 < n; a2++) if (cl[a2] === ci) { ids.push(a2); bs0.push(asg[a2]); }
-        var lo = bs0[0], hi = bs0[bs0.length - 1];
-        var prevHi = -1, nextLo = m;
-        for (a2 = 0; a2 < n; a2++) { if (cl[a2] < ci) prevHi = Math.max(prevHi, asg[a2]); if (cl[a2] > ci) nextLo = Math.min(nextLo, asg[a2]); }
-        if (hi - lo + 1 > ids.length) { amb[ci] = true; continue; }
-        var base = costOf(ids, bs0);
-        [-1, 1].forEach(function (dl) {
-          if (lo + dl <= prevHi || hi + dl >= nextLo || lo + dl < 0 || hi + dl >= m) return;
-          if (costOf(ids, bs0.map(function (v) { return v + dl; })) - base < 0.5 * spb) amb[ci] = true;
-        });
-      }
+      if (pc2 / n > 0.35 * spb) return;   // 位置の対応がはっきりしないときは変えない
       for (a2 = 0; a2 < n; a2++) {
         ord[a2].y0 = bands[asg[a2]][0]; ord[a2].y1 = bands[asg[a2]][1]; ord[a2].snapped = true;
-        if (amb[cl[a2]]) { ord[a2].amb = true; ord[a2].ambG = gid + ':' + cl[a2]; }
         // 横幅が列の範囲(この列の語の左端・右端の中央値)から大きくはみ出す語は、列の範囲に収める(隣の欄まで下線が伸びないように)
         if (ord[a2].x1 - ord[a2].x0 > 1.4 * (xb - xa)) { ord[a2].x0 = Math.max(ord[a2].x0, xa); ord[a2].x1 = Math.min(ord[a2].x1, xb); }
       }
@@ -315,7 +240,7 @@
         var res = await ask(kind, img);
         if (res && res.ok) return res.data;
         var msg = (res && res.error) || '読み取りに失敗しました';
-        if (attempt < RETRY_429 && /429|quota|503|UNAVAILABLE|high demand|overloaded/i.test(msg)) { await sleep(8000 * (attempt + 1)); continue; }   // 上限に当たったときは待って再試行
+        if (attempt < RETRY_429 && /429|quota/i.test(msg)) { await sleep(8000 * (attempt + 1)); continue; }   // 上限に当たったときは待って再試行
         throw new Error(msg);
       }
     }
@@ -364,15 +289,12 @@
       return mh > 0 && mh < DENSE_BOX_PX ? clamp(TILE_BOX_PX / mh, 1.5, 3) : 0;
     }
     // 細かいページを、重なりのある数枚(1枚 約2000×1600px)に分けて高い解像度(scale sc、向き R)で読む。1枚でも読めなければ null(1枚で読んだ結果を使う)
-    // shiftY=true: 縦の区切り位置を半分ずらす(上下の端は半分の高さの1枚。確かめのためにもう1回読むとき用)
-    async function readTiles(page, R, v1, sc, shiftY) {
+    async function readTiles(page, R, v1, sc) {
       var Wt = v1.width * sc, Ht = v1.height * sc, cols = Math.ceil(Wt / TILE_W), rows = Math.ceil(Ht / TILE_H), cw = Wt / cols, chh = Ht / rows;
-      var ox = cols > 1 ? TILE_OVX * Wt : 0, oy = (rows > 1 || shiftY) ? TILE_OVY * Ht : 0, specs = [], r, c, ey = [];
-      for (r = 0; r <= rows; r++) ey.push(shiftY ? clamp(r * chh - chh / 2, 0, Ht) : r * chh);
-      if (shiftY) ey.push(Ht);
-      for (r = 0; r + 1 < ey.length; r++) for (c = 0; c < cols; c++) {
-        var x0 = Math.max(0, c * cw - ox), y0 = Math.max(0, ey[r] - oy), x1 = Math.min(Wt, (c + 1) * cw + ox), y1 = Math.min(Ht, ey[r + 1] + oy);
-        specs.push({ x0: x0, y0: y0, x1: x1, y1: y1, core: { x0: c * cw / sc, y0: ey[r] / sc, x1: (c + 1) * cw / sc, y1: ey[r + 1] / sc } });
+      var ox = cols > 1 ? TILE_OVX * Wt : 0, oy = rows > 1 ? TILE_OVY * Ht : 0, specs = [], r, c;
+      for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) {
+        var x0 = Math.max(0, c * cw - ox), y0 = Math.max(0, r * chh - oy), x1 = Math.min(Wt, (c + 1) * cw + ox), y1 = Math.min(Ht, (r + 1) * chh + oy);
+        specs.push({ x0: x0, y0: y0, x1: x1, y1: y1, core: { x0: c * cw / sc, y0: r * chh / sc, x1: (c + 1) * cw / sc, y1: (r + 1) * chh / sc } });
       }
       var out3 = new Array(specs.length), next = 0, failed = false;
       async function worker() {
@@ -389,13 +311,6 @@
       await Promise.all(ws);
       if (failed) { out3.forEach(function (p) { if (p) release(p.cv); }); return null; }
       return out3;
-    }
-    // 一覧表の製品名の比べる形。漢字などが続く語(「2CSb582-2付BT」)は、マスタに無ければ漢字の手前の英数字で比べる(文字データのあるPDFの照合と同じ。2026-11-04〜)
-    function fname(t) {
-      var f = fold(t);
-      if (byName[f]) return f;
-      var m = String(t).match(/^[A-Za-z0-9][A-Za-z0-9\-_.\/]*(?=[^\x00-\x7f])/);
-      return m ? fold(m[0]) : f;
     }
     // 一覧表(手書き・スキャン)の読み取り。製品表が見つからないページだけで使う。扱えたら true(リンクまたはNGを付けた)、扱えなければ false
     async function listPage(page, pn, pdfPage, W, H, s0) {
@@ -414,24 +329,20 @@
       var R = ((page.rotate || 0) + rot) % 360, v1 = page.getViewport({ scale: 1, rotation: R });   // rot=0 のときはページの向きのまま(従来と同じ)
       var lr = await renderRegion(page, s0, 0, 0, v1.width * s0, v1.height * s0, R);
       try { res = await call('list', lr, true); } catch (e) { release(lr); return false; }   // 旧GAS(kind=list を知らない)・通信エラーなど
-      var annots = [];
+      var any = false, annots = [], hitsAll = [], ngs = [];
       // 読み取りの単位(piece)。ふつうはページ全体の1枚。細かいときは分けた数枚(tiled)。toPage: 読んだ位置(0〜1000)→ ページの座標(scale 1)
       var pieces = [{ lines: (res && res.lines) || [], cv: lr, sc: s0, ox: 0, oy: 0, core: null,
         toPage: function (bx) { return boxPx(bx, v1.width, v1.height); } }];
-      var whole = pieces[0];   // ページ全体を1枚で読んだ結果(分けて読んだとき、1枚の境目をまたぐ組を探すのに使う)
       var dense = denseFactor(pieces[0].lines, lr.canvas.height);
       if (dense) {
         var tiles = await readTiles(page, R, v1, s0 * dense);
         if (tiles) { release(lr); pieces = tiles; }
       }
-      // 読み取った数枚(pieces)からリンク(hitsAll)と NG(ngs)を作る。同じ表を区切り方を変えてもう1回読んだときにも使う
-      function evalPieces(pieces) {
-      var any = false, hitsAll = [], ngs = [];
       pieces.forEach(function (pc, pi) {
         if (pc.core) { pairNear(pc, pi); return; }   // 分けて読んだ1枚は、行ではなく位置の近さで組を作る
         pc.lines.forEach(function (line) {
           var it = ((line && line.items) || []).filter(function (x) { return x && x.text; });
-          var zs = it.filter(function (x) { return byZ[fold(x.text)]; }), ns = it.filter(function (x) { return byName[fname(x.text)]; });
+          var zs = it.filter(function (x) { return byZ[fold(x.text)]; }), ns = it.filter(function (x) { return byName[fold(x.text)]; });
           if (!zs.length && !ns.length) return;   // マスタの語が無い行(見出し・メモなど)は数えない
           any = true;
           var usedItem = [], hits = 0, show = it.map(function (x) { return x.text; }).join(' '), rep0 = pc.toPage((zs[0] || ns[0]).box);
@@ -439,7 +350,7 @@
             var es = byZ[fold(z.text)];
             it.forEach(function (n, ni) {
               if (n === z || usedItem[ni]) return;
-              var fn = fname(n.text), e = es.filter(function (x) { return x.f === fn; })[0];
+              var fn = fold(n.text), e = es.filter(function (x) { return x.f === fn; })[0];
               if (!e) return;
               usedItem[ni] = 1; hits++;
               var b = pc.toPage(n.box);
@@ -462,7 +373,7 @@
         pc.items = it;
         var cy = function (x) { return (x.box[0] + x.box[2]) / 2; }, cx = function (x) { return (x.box[1] + x.box[3]) / 2; };
         var hs2 = it.map(function (x) { return x.box[2] - x.box[0]; }).sort(function (p, q) { return p - q; }), mh = Math.max(1, hs2[hs2.length >> 1]);
-        var Zs = it.filter(function (x) { return byZ[fold(x.text)]; }), Ns = it.filter(function (x) { return byName[fname(x.text)]; });
+        var Zs = it.filter(function (x) { return byZ[fold(x.text)]; }), Ns = it.filter(function (x) { return byName[fold(x.text)]; });
         if (!Zs.length && !Ns.length) return;
         any = true;
         var cands = [];
@@ -470,7 +381,7 @@
           var es = byZ[fold(z.text)];
           Ns.forEach(function (n) {
             if (n === z) return;
-            var fn = fname(n.text), e = es.filter(function (x) { return x.f === fn; })[0], dy = Math.abs(cy(n) - cy(z));
+            var fn = fold(n.text), e = es.filter(function (x) { return x.f === fn; })[0], dy = Math.abs(cy(n) - cy(z));
             if (e && dy <= 1.2 * mh) cands.push({ z: z, n: n, e: e, cost: dy / mh + Math.abs(cx(n) - cx(z)) / 1000 });
           });
         });
@@ -491,7 +402,6 @@
         Ns.forEach(function (n) { if (usedN.indexOf(n) < 0 && usedZ.indexOf(n) < 0) ngs.push({ pi: pi, at: pc.toPage(n.box), ng: { page: pn, zuban: '', name: near(n), reason: '図番が見つかりません(読み取った行の文字を表示)' } }); });
       }
       // 位置の補正(細かい表で Gemini の縦の位置がずれるとき)。補正は読み取り画像の上で行い、ページの座標(scale 1)に戻す
-      var snapAll = [];   // 位置の補正ができ、あいまいでない語(別の1枚の語も含む): { pi, f(比べる形の文字), b(ページの座標) }
       pieces.forEach(function (pc, pi) {
         var hs = hitsAll.filter(function (h) { return h.pi === pi; });
         if (hs.length) {
@@ -499,14 +409,9 @@
           var toPt = function (q) { return { x0: (q.x0 + pc.ox) / pc.sc, y0: (q.y0 + pc.oy) / pc.sc, x1: (q.x1 + pc.ox) / pc.sc, y1: (q.y1 + pc.oy) / pc.sc }; };
           var px = hs.map(function (h) { return toPx(h.b); });
           // 分けて読んだ1枚では、リンクを付けない語(マスタに無い品名・数字など)も一緒に行へ対応させる。各行がその語自身の行に収まるので、リンクが隣の行へずれにくい
-          var oIt = !pc.core ? [] : (pc.items || []).filter(function (x) { return !hs.some(function (h) { return h.item === x; }) && pc.toPage(x.box); });
-          var others = oIt.map(function (x) { return toPx(pc.toPage(x.box)); });
-          if (snapRows(pc.cv.canvas, px.concat(others))) {
-            px.forEach(function (q, k) { if (q.snapped) hs[k].snapped = true; if (q.amb) { hs[k].amb = true; hs[k].ambG = q.ambG; } hs[k].b = toPt(q); });
-            // リンクにしない語も、位置の補正ができたものは残す(別の1枚で位置があいまいになったリンクの位置を決めるのに使う)
-            others.forEach(function (q, k) { if (q.snapped && !q.amb) snapAll.push({ pi: pi, f: fname(oIt[k].text), b: toPt(q) }); });
-          }
-          hs.forEach(function (h) { if (h.snapped && !h.amb && h.item) snapAll.push({ pi: pi, f: fname(h.item.text), b: h.b }); });
+          var others = !pc.core ? [] : (pc.items || []).filter(function (x) { return !hs.some(function (h) { return h.item === x; }); })
+            .map(function (x) { var b = pc.toPage(x.box); return b && toPx(b); }).filter(function (q) { return q; });
+          if (snapRows(pc.cv.canvas, px.concat(others))) px.forEach(function (q, k) { if (q.snapped) hs[k].snapped = true; hs[k].b = toPt(q); });
           if (pc.core && hs.length >= 3) {   // 横幅がほかの製品名(中央値)の1.4倍を超える語は、中央値の幅に縮める(隣の欄まで下線が伸びないように)
             var ws = hs.map(function (h) { return h.b.x1 - h.b.x0; }).sort(function (p, q) { return p - q; }), mw = ws[ws.length >> 1];
             hs.forEach(function (h) { if (h.b.x1 - h.b.x0 > 1.4 * mw) h.b = { x0: h.b.x0, y0: h.b.y0, x1: h.b.x0 + mw, y1: h.b.y1 }; });
@@ -518,96 +423,22 @@
       // 位置の補正ができた方、その中では読んだ1枚の中心に近い方を残す。同じ1枚の中で同じ製品名が続く行はまとめない)。
       // NG は、その行が読んだ1枚の担当範囲(重なりを除いた範囲)にあり、同じ行にリンクが無いものだけを残す
       if (pieces.length > 1) {
-        // 位置があいまいなリンクは、別の1枚で同じ文字が近く(約2.5行以内・横が重なる)にあいまいでなく補正できていれば、その位置にする(2026-11-04〜)
-        hitsAll.forEach(function (h) {
-          if (!h.amb || !h.item) return;
-          var f = fname(h.item.text), hh = h.b.y1 - h.b.y0, cy0 = (h.b.y0 + h.b.y1) / 2, best = null, bd = Infinity;
-          snapAll.forEach(function (s2) {
-            if (s2.pi === h.pi || s2.f !== f || Math.min(s2.b.x1, h.b.x1) <= Math.max(s2.b.x0, h.b.x0)) return;
-            var dy = Math.abs((s2.b.y0 + s2.b.y1) / 2 - cy0);
-            if (dy < 4 * hh && dy < bd) { bd = dy; best = s2; }
-          });
-          if (best) { h.fixDy = best.b.y0 - h.b.y0; h.b = { x0: h.b.x0, y0: best.b.y0, x1: h.b.x1, y1: best.b.y1 }; h.amb = false; }
-        });
-        // 1枚の境目をまたいで、どの1枚でも組にならなかった製品名(図番と製品名が別々の1枚に入った)は、ページ全体を1枚で読んだ結果の同じ行の組で補う。
-        // 位置は、その製品名を位置の補正ができた1枚の位置(全体の読み取りの位置から約6行以内・横が重なる、いちばん近いもの)。見つからなければ付けない(2026-11-04〜)
-        var hh0 = (function () { var a = hitsAll.map(function (h) { return h.b.y1 - h.b.y0; }).sort(function (p, q) { return p - q; }); return a.length ? a[a.length >> 1] : 0; })();
-        if (hh0 > 0) (whole.lines || []).forEach(function (line) {
-          var it = ((line && line.items) || []).filter(function (x) { return x && x.text; });
-          it.forEach(function (z) {
-            var es = byZ[fold(z.text)];
-            if (!es) return;
-            it.forEach(function (n) {
-              if (n === z) return;
-              var fn = fname(n.text), e = es.filter(function (x) { return x.f === fn; })[0];
-              if (!e || Array.isArray(e.v)) return;
-              var wb = whole.toPage(n.box);
-              if (!wb) return;
-              var wy = (wb.y0 + wb.y1) / 2, uri = mapUri(e.v);
-              if (hitsAll.some(function (h) { return h.uri === uri && h.name === e.name && Math.abs((h.b.y0 + h.b.y1) / 2 - wy) < 12 * hh0 && Math.min(h.b.x1, wb.x1) > Math.max(h.b.x0, wb.x0); })) return;
-              var best = null, bd = Infinity;
-              snapAll.forEach(function (s2) {
-                if (s2.f !== fn || Math.min(s2.b.x1, wb.x1) <= Math.max(s2.b.x0, wb.x0)) return;
-                var dy = Math.abs((s2.b.y0 + s2.b.y1) / 2 - wy);
-                if (dy < 12 * hh0 && dy < bd) { bd = dy; best = s2; }
-              });
-              if (best) hitsAll.push({ b: best.b, uri: uri, pi: best.pi, name: e.name, snapped: true });
-            });
-          });
-        });
-        // 同じ段のほかの語も、照らし合わせられた語がそろって同じだけずれていれば(差が0.3行分以内)、同じだけ動かす
-        var byG = {};
-        hitsAll.forEach(function (h) { if (h.ambG) (byG[h.ambG] = byG[h.ambG] || []).push(h); });
-        Object.keys(byG).forEach(function (k) {
-          var g = byG[k], ds = g.filter(function (h) { return h.fixDy !== undefined; }).map(function (h) { return h.fixDy; }).sort(function (p, q) { return p - q; });
-          if (!ds.length) return;
-          var md = ds[ds.length >> 1], hh = g[0].b.y1 - g[0].b.y0;
-          if (ds[ds.length - 1] - ds[0] > 0.6 * hh) return;
-          g.forEach(function (h) { if (h.fixDy === undefined && h.amb) { h.b = { x0: h.b.x0, y0: h.b.y0 + md, x1: h.b.x1, y1: h.b.y1 + md }; h.amb = false; } });
-        });
         var center = function (h) { var c = pieces[h.pi].core, x = (h.b.x0 + h.b.x1) / 2, y = (h.b.y0 + h.b.y1) / 2;
           return Math.min((x - c.x0) / (c.x1 - c.x0), (c.x1 - x) / (c.x1 - c.x0), (y - c.y0) / (c.y1 - c.y0), (c.y1 - y) / (c.y1 - c.y0)); };
         var keep = [];
-        hitsAll.slice().sort(function (p, q) { return (q.snapped && !q.amb ? 1 : 0) - (p.snapped && !p.amb ? 1 : 0) || (q.snapped ? 1 : 0) - (p.snapped ? 1 : 0) || center(q) - center(p); }).forEach(function (h) {
+        hitsAll.slice().sort(function (p, q) { return (q.snapped ? 1 : 0) - (p.snapped ? 1 : 0) || center(q) - center(p); }).forEach(function (h) {
           var hh = h.b.y1 - h.b.y0;   // 文字の高さ(行の間隔の約半分)
           var same = keep.some(function (k) { return k.pi !== h.pi && k.uri === h.uri && k.name === h.name && Math.abs((k.b.y0 + k.b.y1) - (h.b.y0 + h.b.y1)) / 2 < 4 * hh && Math.min(k.b.x1, h.b.x1) > Math.max(k.b.x0, h.b.x0); });
           if (!same) keep.push(h);
         });
         hitsAll = hitsAll.filter(function (h) { return keep.indexOf(h) >= 0; });
         ngs = ngs.filter(function (g) {
-          // 位置を読み取れなかった語は、同じ製品名に(別の1枚で)リンクが付いていれば NG にしない(2026-11-04〜)
-          if (g.ng.reason === 'セルの位置を読み取れません' && hitsAll.some(function (h) { return h.name === g.ng.name || h.name === g.ng.name.replace(/[^\x00-\x7f].*$/, ''); })) return false;
           var c = pieces[g.pi].core, a = g.at;
           if (!a) return true;
           var x = (a.x0 + a.x1) / 2, y = (a.y0 + a.y1) / 2;
           if (x < c.x0 || x >= c.x1 || y < c.y0 || y >= c.y1) return false;
           return !hitsAll.some(function (h) { return Math.abs((h.b.y0 + h.b.y1) / 2 - y) < 0.8 * (h.b.y1 - h.b.y0) && Math.abs((h.b.x0 + h.b.x1) / 2 - x) < 0.15 * v1.width; });   // 同じ行・近くの列にリンクがあれば NG にしない
         });
-      }
-      // 分けて読んだときは、行の位置を画像で確かめられなかったリンク(位置の補正ができなかったもの)は付けずに NG にする(2026-11-04〜)。
-      // 細かい表では Gemini の位置が数行ずれることがあり、別の行の製品名にリンクが付くおそれがあるため
-      if (pieces.length > 1) hitsAll = hitsAll.filter(function (h) {
-        if (h.snapped) return true;
-        ngs.push({ pi: h.pi, at: h.b, ng: { page: pn, zuban: '', name: h.name, reason: '行の位置を確かめられません' } });
-        return false;
-      });
-      return { any: any, hitsAll: hitsAll, ngs: ngs };
-      }
-      var A = evalPieces(pieces), any = A.any, hitsAll = A.hitsAll, ngs = A.ngs;
-      // 罫線の表で位置を補正したリンクは、縦の区切り位置を半分ずらしてもう1回読み、同じ行に同じリンクが付いたものだけを残す(2026-11-04〜)。
-      // 細かい表では Gemini の位置が回ごと・区切り方ごとに数行ずれることがあり、1回の読み取りだけでは別の行の製品名に付くことがあるため。
-      // 食い違ったもの・位置を補正できなかったものは NG にする。もう1回の読み取りができなかったとき(通信エラーなど)は従来どおり
-      if (hitsAll.some(function (h) { return h.snapped; })) {
-        var tB = await readTiles(page, R, v1, s0 * (dense || 1.6), true);
-        if (tB) {
-          var B = evalPieces(tB);
-          hitsAll = hitsAll.filter(function (h) {
-            var hh = h.b.y1 - h.b.y0, cy = (h.b.y0 + h.b.y1) / 2;
-            if (h.snapped && B.hitsAll.some(function (k) { return k.snapped && k.uri === h.uri && k.name === h.name && Math.abs((k.b.y0 + k.b.y1) / 2 - cy) < 0.5 * hh && Math.min(k.b.x1, h.b.x1) > Math.max(k.b.x0, h.b.x0); })) return true;
-            ngs.push({ pi: h.pi, at: h.b, ng: { page: pn, zuban: '', name: h.name, reason: '行の位置を確かめられません' } });
-            return false;
-          });
-        }
       }
       ngs.forEach(function (g) { if (g.dup) stats.dup++; stats.ng++; stats.partial.push(g.ng); });
       stats.linked += hitsAll.length;
