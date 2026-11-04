@@ -197,6 +197,9 @@ table#result-table tbody tr:nth-child(odd) { background: #fffdf3; }
 table#result-table tbody tr:hover { background: #f7fbff; }
 .dup-mark-row { background: #ffe4a3 !important; }
 .cell-missing { color: #c0392b; font-weight: bold; }
+/* 寸法線の不足で長さを推測した(橙)・確かめられなかった(赤)セル */
+.cell-len-estimated { background: #ffd8a8 !important; font-weight: bold; }
+.cell-len-check { background: #ffb3b3 !important; font-weight: bold; }
 
 #status-overlay {
   display: none; position: fixed; inset: 0; z-index: 5000;
@@ -285,6 +288,12 @@ table#result-table tbody tr:hover { background: #f7fbff; }
 .error-dialog-title { font-weight: bold; white-space: nowrap; }
 .error-dialog-list { margin: 6px 0 0; padding-left: 1.4em; }
 .error-dialog-list li { white-space: nowrap; line-height: 1.6; }
+.error-dialog-note { font-size: 13px; margin-top: 4px; opacity: .9; white-space: nowrap; }
+.error-dialog-table { margin-top: 8px; border-collapse: collapse; }
+.error-dialog-table th, .error-dialog-table td {
+  border: 1px solid rgba(255,255,255,.6); padding: 4px 12px; white-space: nowrap; text-align: center;
+}
+.error-dialog-table th { background: rgba(255,255,255,.15); }
 #error-dialog-close {
   align-self: center; padding: 8px 32px; border-radius: 7.5px; border: none;
   background: #fff; color: #c0392b; font-size: 16.25px; font-weight: bold; cursor: pointer;
