@@ -164,12 +164,12 @@ function closeModeSelect() {
 
 // ---------- 操作マニュアル(説明書) ----------
 
-const MANUAL_PAGE_COUNT = 11;
+const MANUAL_PAGE_COUNT = 12;
 let manualPage = 1;
 
-// 1ページ目のPDF埋め込みリンク(「実際のアプリを開く」)の矩形を、PDFページ
-// 全体に対する割合で表したもの(page.get_links()の座標から算出)。
-const MANUAL_LINK_RECT_PCT = { left: 0.0671875, top: 0.8736111111111111, width: 0.2125, height: 0.07916666666666666 };
+// 1ページ目の「実際のアプリを開く」ボタンの矩形を、ページ全体に対する割合で
+// 表したもの(説明書のページを画像にしたときのボタンの位置から算出)。
+const MANUAL_LINK_RECT_PCT = { left: 0.06770833333333333, top: 0.8638310185185185, width: 0.21396484375, height: 0.07777777777777778 };
 
 // 説明書を画面いっぱいに表示する都合上、画像はmax-width/max-height:100%で
 // アスペクト比を保って収められるため、表示領域(#manual-image-wrap)より
@@ -199,7 +199,7 @@ window.addEventListener('resize', () => {
 });
 
 function renderManualPage() {
-  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png?v=20261030`;
+  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png?v=20261104`;
   document.getElementById('manual-page-indicator').textContent = `${manualPage} / ${MANUAL_PAGE_COUNT}`;
   document.getElementById('manual-prev').disabled = manualPage <= 1;
   document.getElementById('manual-next').disabled = manualPage >= MANUAL_PAGE_COUNT;
@@ -361,6 +361,8 @@ async function processFiles(files) {
   if (noTableFiles.length > 0) {
     showErrorDialog('製品情報が見つからなかったファイル', noTableFiles);
   }
+  const lengthChecks = extractedResults.filter(r => r['長さの確認']);
+  if (lengthChecks.length > 0) showLengthCheckDialog(lengthChecks);
 }
 
 // 重量(t)を求める。TDFファイル自身に重量セル(kg)があればそれをt換算して使い
@@ -412,6 +414,8 @@ function renderTable(results) {
       const td = document.createElement('td');
       td.textContent = v === null || v === undefined ? '' : v;
       if (missingIdx.has(ci) && !v) td.classList.add('cell-missing');
+      // 寸法線の不足で長さを推測した・確かめられなかった行の長さ(ポップアップと同じ印)
+      if (ci === 6 && r['長さの確認']) td.classList.add(r['長さの確認'] === '推測' ? 'cell-len-estimated' : 'cell-len-check');
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
@@ -972,6 +976,45 @@ function showErrorDialog(title, items) {
     ul.appendChild(li);
   });
   if (items.length) sec.appendChild(ul);
+  body.appendChild(sec);
+  document.getElementById('error-dialog-overlay').classList.add('open');
+  document.getElementById('error-dialog-close').focus();
+}
+// 梁の線の長さに合う寸法が図面に無かった行(寸法線の不足の可能性)を、図番・製品マーク・
+// 長さ・状態の表で知らせる。推測=同じ寸法線の上の寸法の合計から求めた長さ、
+// 要確認=合う寸法が無く、今までの方法で選んだ長さ。結果の表の長さのセルにも同じ色を付ける。
+function showLengthCheckDialog(rows) {
+  const body = document.getElementById('error-dialog-body');
+  const sec = document.createElement('div');
+  sec.className = 'error-dialog-section';
+  const h = document.createElement('div');
+  h.className = 'error-dialog-title';
+  h.textContent = '寸法線が不足している可能性があります(' + rows.length + ' 件)';
+  sec.appendChild(h);
+  const note = document.createElement('div');
+  note.className = 'error-dialog-note';
+  note.textContent = '推測: 寸法の合計から求めた長さ / 要確認: 合う寸法が無く、確かめられなかった長さ';
+  sec.appendChild(note);
+  const table = document.createElement('table');
+  table.className = 'error-dialog-table';
+  const head = document.createElement('tr');
+  ['図番', '製品マーク', '長さ(m)', '状態'].forEach(t => {
+    const th = document.createElement('th');
+    th.textContent = t;
+    head.appendChild(th);
+  });
+  table.appendChild(head);
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    const len = r['長さ'] == null ? '' : String(Number(Number(r['長さ']).toFixed(4)));
+    [r['図番'] ?? '', r['製品マーク'] ?? '', len, r['長さの確認']].forEach(v => {
+      const td = document.createElement('td');
+      td.textContent = v;
+      tr.appendChild(td);
+    });
+    table.appendChild(tr);
+  });
+  sec.appendChild(table);
   body.appendChild(sec);
   document.getElementById('error-dialog-overlay').classList.add('open');
   document.getElementById('error-dialog-close').focus();
