@@ -118,6 +118,93 @@
     return { x0: cb.x0 - m, y0: cb.y0 - m, x1: cb.x1 + m, y1: cb.y1 + m, snapped: false };
   }
 
+  // 製品名のセルを塗る位置を決める(2026-11-05〜)。Gemini の位置は全体画像(長辺2000px)で読むため1行(約17px)ほどずれることがあり、
+  // 従来の cellFromLines だけでは、寸法線の区切り・隣の欄・表の外の何も無い所を塗ることがあった。そこで、
+  // 1. 従来の方法で見つけたセルが「製品表の1行」(上下の横線が同じ左端・右端で、両端に縦線があり、3つ以上の欄に分かれる、高さが1行分の枠)の中にあるか確かめる
+  // 2. 中に無ければ、切り出し画像の中から製品表の行を探し、Gemini の位置にいちばん近い行を使う
+  // 3. 行の中の欄は、Gemini が返した順番・横位置の欄を基本に、文字の長さと欄の文字の幅(インクの幅)の比が大きく食い違うときは、比がいちばん合う欄にする
+  // 製品表の行が見つからなければ null(塗らずに、リンクだけを Gemini の位置に付ける)。
+  // ppt: canvas の 1pt あたりの px / texts: Gemini が読んだその表のセルの文字 / hitText: マスタと一致したセルの文字
+  function placeCell(canvas, tbl, cb, opt, ppt, texts, hitText) {
+    var w = canvas.width, h = canvas.height, d = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+    function dark(x, y) { x = clamp(Math.round(x), 0, w - 1); y = clamp(Math.round(y), 0, h - 1); var i = (y * w + x) * 4; return (d[i] + d[i + 1] + d[i + 2]) / 3 < 170; }
+    function hDark(x, y) { return dark(x, y - 1) || dark(x, y) || dark(x, y + 1); }
+    function vFrac(x, ya, yb) { var n = 0, t = 0, y; for (y = ya; y <= yb; y += 2) { t++; if (dark(x - 1, y) || dark(x, y) || dark(x + 1, y)) n++; } return t ? n / t : 0; }
+    var RMIN = 5 * ppt, RMAX = 30 * ppt;   // 1行の高さ(5〜30pt)
+    // 横線 y を x から左右にたどった端(すき間4pxまで)
+    function trace(x, y) {
+      var L = null, R = null, gp, xx;
+      for (xx = clamp(Math.round(x), 0, w - 1), gp = 0; xx >= 0; xx--) { if (hDark(xx, y)) { gp = 0; L = xx; } else if (++gp > 4 && L !== null) break; else if (gp > 40) break; }
+      for (xx = clamp(Math.round(x), 0, w - 1), gp = 0; xx < w; xx++) { if (hDark(xx, y)) { gp = 0; R = xx; } else if (++gp > 4 && R !== null) break; else if (gp > 40) break; }
+      return L !== null && R !== null ? [L, R] : null;
+    }
+    // y=T と y=B の横線の間が製品表の1行か。そうなら { T, B, cols(欄の区切りのx、左端・右端を含む) }
+    function rowAt(T, B, x) {
+      if (B - T < RMIN || B - T > RMAX) return null;
+      var t = trace(x, T), b = trace(x, B);
+      if (!t || !b || Math.abs(t[0] - b[0]) > 8 || Math.abs(t[1] - b[1]) > 8) return null;
+      var L = Math.max(t[0], b[0]), R = Math.min(t[1], b[1]);
+      if (R - L < 4 * (B - T)) return null;
+      var cols = [], last = -99, xx;
+      for (xx = L - 3; xx <= R + 3; xx++) if (vFrac(xx, T + 3, B - 3) >= 0.85) { if (xx - last > 3) cols.push([xx, xx]); else cols[cols.length - 1][1] = xx; last = xx; }
+      cols = cols.map(function (c) { return (c[0] + c[1]) / 2; });
+      if (cols.length < 4 || Math.abs(cols[0] - L) > 6 || Math.abs(cols[cols.length - 1] - R) > 6) return null;   // 両端に縦線、3欄以上
+      return { T: T, B: B, cols: cols };
+    }
+    // 欄を選ぶ。基本は Gemini の順番(opt.idx)、なければ横位置。文字の長さの比とインクの幅の比が大きく食い違うときだけ、いちばん合う欄にする
+    function chooseCol(row, xc) {
+      var n = row.cols.length - 1, k, base = -1;
+      if (opt && opt.idx >= 0 && opt.idx < n) base = opt.idx;
+      else for (k = 0; k < n; k++) if (xc >= row.cols[k] && xc <= row.cols[k + 1]) base = k;
+      if (base < 0) { var bd = Infinity; for (k = 0; k < n; k++) { var dd = Math.abs((row.cols[k] + row.cols[k + 1]) / 2 - xc); if (dd < bd) { bd = dd; base = k; } } }
+      var lens = (texts || []).map(function (t) { return String(t || '').replace(/\s+/g, '').length; }), mx = Math.max.apply(null, lens.concat([1]));
+      var hl = String(hitText || '').replace(/\s+/g, '').length;
+      if (hl) {
+        var ink = [];
+        for (k = 0; k < n; k++) {
+          var a = row.cols[k] + 5, b2 = row.cols[k + 1] - 5, mn = Infinity, mxx = -Infinity, yy, x2;
+          for (yy = row.T + 5; yy <= row.B - 5; yy += 1) for (x2 = a; x2 <= b2; x2 += 1) if (dark(x2, yy)) { if (x2 < mn) mn = x2; if (x2 > mxx) mxx = x2; }
+          ink.push(mxx >= mn ? mxx - mn : 0);
+        }
+        var im = Math.max.apply(null, ink.concat([1])), want = hl / mx, sc = ink.map(function (v) { return Math.abs(v / im - want); });
+        var best = 0; for (k = 1; k < n; k++) if (sc[k] < sc[best]) best = k;
+        if (sc[base] - sc[best] > 0.25) base = best;
+      }
+      return { x0: row.cols[base], y0: row.T, x1: row.cols[base + 1], y1: row.B, snapped: true };
+    }
+    var xc = (cb.x0 + cb.x1) / 2, yc = (cb.y0 + cb.y1) / 2;
+    // 1. 従来の方法で見つけたセルが製品表の行の中にあれば、その行を使う
+    var c0 = cellFromLines(canvas, tbl, cb, opt);
+    if (c0.snapped) {
+      var r0 = rowAt(Math.round(c0.y0), Math.round(c0.y1), (c0.x0 + c0.x1) / 2);
+      if (r0) return chooseCol(r0, xc);
+    }
+    // 2. 切り出し画像の中の横線を集め、製品表の行を探す。Gemini の位置(縦)にいちばん近い行を使う
+    var minLen = Math.max(40 * ppt, 0.2 * w), hl2 = [], y, x, run, gap, best2 = null, bd2 = Infinity;
+    for (y = 1; y < h - 1; y++) {
+      var longest = 0, s0 = -1, ls = 0; run = 0; gap = 0;
+      for (x = 0; x < w; x++) {
+        if (dark(x, y)) { if (s0 < 0) s0 = x; run = x - s0; gap = 0; }
+        else if (s0 >= 0 && ++gap > 4) { if (run > longest) { longest = run; ls = s0; } s0 = -1; gap = 0; }
+      }
+      if (s0 >= 0 && run > longest) { longest = run; ls = s0; }
+      if (longest >= minLen) {
+        var mid = ls + longest / 2;
+        if (hl2.length && y - hl2[hl2.length - 1][1] <= 2) hl2[hl2.length - 1][1] = y; else hl2.push([y, y, mid]);
+      }
+    }
+    var ys = hl2.map(function (l) { return Math.round((l[0] + l[1]) / 2); });
+    for (var i = 0; i + 1 < ys.length; i++) {
+      var T = ys[i], B = ys[i + 1], xm = clamp(xc, 0, w - 1);
+      var r = rowAt(T, B, xm);
+      if (!r) r = rowAt(T, B, hl2[i][2]);   // Gemini の横位置が表の外のときは、その横線の中ほどからたどる
+      if (!r) continue;
+      var dist = Math.abs((T + B) / 2 - yc) + (xc < r.cols[0] ? r.cols[0] - xc : xc > r.cols[r.cols.length - 1] ? xc - r.cols[r.cols.length - 1] : 0) * 0.2;
+      if (dist < bd2) { bd2 = dist; best2 = r; }
+    }
+    return best2 ? chooseCol(best2, xc) : null;
+  }
+
   // 一覧表のリンク位置の補正(2026-11-02〜)。細かい表では Gemini が返す文字の縦の位置が1〜数行ずれることがある(下の行ほど大きくずれる)ので、
   // 画像から同じ列の実際の文字の行(インクのある帯)を探し、読んだ語を上から順に対応させる(行の間隔の比で縮尺を合わせ、上下のずれ量は全体で一番合うものを選ぶ)。
   // 罫線のある表だけが対象(手書き・写真は変えない)。boxes: [{x0,y0,x1,y1}](canvas上のpx)。書き換えたら true
@@ -276,6 +363,7 @@
       var ctx = out.context, act = ctx.obj({ S: 'URI', URI: PDFLib.PDFString.of(root.ShippingCore.encodeUri(a.uri)) });
       pdfPage.node.addAnnot(ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Link', Rect: a.rect, Border: [0, 0, 0], A: act })));
       // 図面は文字が細かく下線だと文字に重なるので、セル全体を薄い青で塗る(乗算なので文字はそのまま見える)
+      if (a.noFill) return;   // 製品表の行が見つからなかったリンクは塗らない(間違った所を塗らないように。2026-11-05〜)
       pdfPage.drawRectangle({ x: a.rect[0], y: a.rect[1], width: a.rect[2] - a.rect[0], height: a.rect[3] - a.rect[1],
         color: PDFLib.rgb(0.62, 0.78, 1), blendMode: PDFLib.BlendMode.Multiply });
     }
@@ -503,17 +591,23 @@
       // 速い道: 全体画像の1回の読み取りで、図面番号がマスタにあり、製品表のセルがその図番の製品名と一致すればそこで確定する(Geminiの呼び出し1回)。
       // 遅い道(確定できなかったときだけ): 図面番号欄と製品表を高解像度で切り出して読み直す(最大2回追加)
       var used = {}, zMsg = false, zFast = loc.drawingNumber && byZ[fold(loc.drawingNumber)] ? loc.drawingNumber : null;
+      var pendNg = [];   // 「製品名が不一致」のNG。同じページで、その図番の製品名がすべてリンク済みなら、表でない所を表と読んだものとして出さない(2026-11-05〜)
+      // 製品表のあたりの切り出し。横はGeminiの位置のずれ(最大でページ幅の数%)を見込んで広く。縦は表の位置が数行ずれても表が入るように、
+      // ページの高さの5%(読み直しの2回目は10%)以上あける(2026-11-05〜。表の下の注記の行を表と取り違えたとき、表が切り出しから外れていた)
+      var cropOf = function (tb, wide) {
+        var px = Math.max((tb.x1 - tb.x0) * 0.03 + 24, PW * 0.04), py = Math.max((tb.y1 - tb.y0) * 0.3 + 24, PH * (wide ? 0.10 : 0.05));
+        var cx0 = clamp(tb.x0 - px, 0, PW), cy0 = clamp(tb.y0 - py, 0, PH), cx1 = clamp(tb.x1 + px, 0, PW), cy1 = clamp(tb.y1 + py, 0, PH);
+        return renderRegion(page, sH, cx0, cy0, cx1 - cx0, cy1 - cy0).then(function (r) { return { r: r, cx0: cx0, cy0: cy0 }; });
+      };
       for (var ti = 0; ti < tables.length; ti++) {
         var tb = boxPx(tables[ti].box, PW, PH);
         if (!tb) { stats.ng++; stats.partial.push({ page: pn, zuban: loc.drawingNumber || '', name: '', reason: '製品表の位置を読み取れません' }); continue; }
-        var px = Math.max((tb.x1 - tb.x0) * 0.03 + 24, PW * 0.04), py = (tb.y1 - tb.y0) * 0.3 + 24;   // 横はGeminiの位置のずれ(最大でページ幅の数%)を見込んで広く
-        var cx0 = clamp(tb.x0 - px, 0, PW), cy0 = clamp(tb.y0 - py, 0, PH), cx1 = clamp(tb.x1 + px, 0, PW), cy1 = clamp(tb.y1 + py, 0, PH);
-        var tr = await renderRegion(page, sH, cx0, cy0, cx1 - cx0, cy1 - cy0);
-        var hit = null, seen = [], zUse = zFast, tbx = null, cellOpt = null;
+        var cr = await cropOf(tb, false), tr = cr.r, cx0 = cr.cx0, cy0 = cr.cy0;
+        var hit = null, seen = [], zUse = zFast, tbx = null, cellOpt = null, texts = [];
         if (zFast && tables[ti].cells) {
           hit = pick(tables[ti].cells, zFast, used, seen);
           var fb = hit && boxPx(hit.c.box, PW, PH);
-          if (fb) { tbx = { x0: fb.x0 - cx0, y0: fb.y0 - cy0, x1: fb.x1 - cx0, y1: fb.y1 - cy0 }; cellOpt = { idx: tables[ti].cells.indexOf(hit.c) }; }
+          if (fb) { tbx = { x0: fb.x0 - cx0, y0: fb.y0 - cy0, x1: fb.x1 - cx0, y1: fb.y1 - cy0 }; cellOpt = { idx: tables[ti].cells.indexOf(hit.c) }; texts = tables[ti].cells.map(function (c) { return c.text; }); }
           else hit = null;
           var oz = !hit && otherZuban(tables[ti].cells, fold(zFast));
           if (oz) { stats.ng++; stats.partial.push(otherNg(pn, zFast, oz)); release(tr); continue; }   // 別の図番の製品名: 遅い道(読み直し)に進まない
@@ -527,28 +621,48 @@
             if (!zMsg) { zMsg = true; stats.partial.push({ page: pn, zuban: zn.show, name: '', reason: 'マスタに無い図番(読み取り: ' + (zn.show || '読めず') + ')' }); }
             continue;
           }
-          // 製品名が一致しなかったときだけ、同じ画像をもう1回読み直す(CADの小さな文字「外」などをGeminiが読み落とすことがあり、読み取りは毎回少し変わる)
+          // 製品名が一致しなかったときだけ、読み直す(CADの小さな文字「外」などをGeminiが読み落とすことがあり、読み取りは毎回少し変わる)。
+          // 2回目は切り出しを上下に広げる(表の位置が大きくずれていて、1回目の切り出しに表が入っていないことがあるため)
           var other = null;
           for (var tryN = 0; tryN < TABLE_TRIES && !hit && !other; tryN++) {
+            if (tryN > 0) { release(tr); cr = await cropOf(tb, true); tr = cr.r; cx0 = cr.cx0; cy0 = cr.cy0; }
             var tbl = await call('table', tr, true);
             seen = [];
             hit = pick(tbl.cells, zUse, used, seen);
-            if (hit) { tbx = boxPx(hit.c.box, tr.canvas.width, tr.canvas.height); cellOpt = { idx: tbl.cells.indexOf(hit.c) }; }
+            if (hit) { tbx = boxPx(hit.c.box, tr.canvas.width, tr.canvas.height); cellOpt = { idx: tbl.cells.indexOf(hit.c) }; texts = tbl.cells.map(function (c) { return c.text; }); }
             else other = otherZuban(tbl.cells, fold(zUse));   // 別の図番の製品名なら、読み直さない
           }
         }
         var ng = null;
         if (!hit && other) ng = otherNg(pn, zUse, other);
-        else if (!hit) ng = { zuban: zUse, name: seen.join(' | '), reason: '製品名が不一致(読み取った表の文字を表示)' };
+        else if (!hit) ng = { zuban: zUse, name: seen.join(' | '), reason: '製品名が不一致(読み取った表の文字を表示)', pend: true };
         else if (Array.isArray(hit.e.v)) { stats.dup++; ng = { zuban: hit.e.zuban, name: hit.e.name, reason: '重複' }; }
         else if (!tbx) ng = { zuban: zUse, name: hit.c.text, reason: 'セルの位置を読み取れません' };
         if (hit) used[hit.k] = 1;
-        if (ng) { stats.ng++; ng.page = pn; stats.partial.push(ng); release(tr); continue; }
-        var cell = cellFromLines(tr.canvas, { x0: tb.x0 - cx0, y0: tb.y0 - cy0, x1: tb.x1 - cx0, y1: tb.y1 - cy0 }, tbx, cellOpt);
-        annots.push({ rect: pdfRect(tr.vp, cx0, cy0, cell), uri: mapUri(hit.e.v), fz: fold(hit.e.zuban) });
+        if (ng) { ng.page = pn; if (ng.pend) { delete ng.pend; pendNg.push(ng); } else { stats.ng++; stats.partial.push(ng); } release(tr); continue; }
+        // 塗る位置: 製品表の行の中の製品名の欄(placeCell)。製品表の行が見つからないときは、塗らずにリンクだけを Gemini の位置に付ける(2026-11-05〜)
+        var tbl0 = { x0: tb.x0 - cx0, y0: tb.y0 - cy0, x1: tb.x1 - cx0, y1: tb.y1 - cy0 };
+        var cell = placeCell(tr.canvas, tbl0, tbx, cellOpt, sH, texts, hit.c.text), noFill = false;
+        if (!cell) {
+          // 見つからなければ、横にも縦にも広く切り出して探し直す(Gemini の横位置が1欄以上ずれ、表の一部が切り出しの外にあることがある。Gemini は呼ばない)
+          var gx = PW * 0.25, gy = PH * 0.10, wx0 = clamp(Math.min(tb.x0, tbx.x0 + cx0) - gx, 0, PW), wy0 = clamp(Math.min(tb.y0, tbx.y0 + cy0) - gy, 0, PH);
+          var wx1 = clamp(Math.max(tb.x1, tbx.x1 + cx0) + gx, 0, PW), wy1 = clamp(Math.max(tb.y1, tbx.y1 + cy0) + gy, 0, PH);
+          var wr = await renderRegion(page, sH, wx0, wy0, wx1 - wx0, wy1 - wy0), dx = cx0 - wx0, dy = cy0 - wy0;
+          var c2 = placeCell(wr.canvas, { x0: tbl0.x0 + dx, y0: tbl0.y0 + dy, x1: tbl0.x1 + dx, y1: tbl0.y1 + dy }, { x0: tbx.x0 + dx, y0: tbx.y0 + dy, x1: tbx.x1 + dx, y1: tbx.y1 + dy }, cellOpt, sH, texts, hit.c.text);
+          if (c2) cell = { x0: c2.x0 - dx, y0: c2.y0 - dy, x1: c2.x1 - dx, y1: c2.y1 - dy };
+          release(wr);
+        }
+        if (!cell) { var m0 = (tbx.y1 - tbx.y0) * 0.5; cell = { x0: tbx.x0 - m0, y0: tbx.y0 - m0, x1: tbx.x1 + m0, y1: tbx.y1 + m0 }; noFill = true; }
+        annots.push({ rect: pdfRect(tr.vp, cx0, cy0, cell), uri: mapUri(hit.e.v), fz: fold(hit.e.zuban), noFill: noFill });
         stats.linked++;
         release(tr);
       }
+      // 「製品名が不一致」は、その図番のマスタの製品名がこのページですべてリンク済みなら出さない(Gemini が同じ表を2つと答えた・表でない所を表と答えたとき)
+      pendNg.forEach(function (g) {
+        var fz = fold(g.zuban), es = byZ[fz] || [];
+        if (es.length && es.every(function (e, i) { return used[fz + '#' + i]; })) return;
+        stats.ng++; stats.partial.push(g);
+      });
       if (annots.length) numCands.push({ pn: pn, fz: annots[0].fz, uri: annots[0].uri });   // 図面番号欄の着色は、全ページ処理のあとでまとめて行う
       var imEnd = numMemo && await numMemo;
       if (imEnd) release(imEnd.r);
