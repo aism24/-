@@ -334,7 +334,7 @@ async function processFiles(files) {
   hideStatus();
 
   if (extractedResults.length === 0) {
-    showToast('製品情報が見つかりませんでした' + (errors.length ? '（エラー: ' + errors.join(' / ') + '）' : ''), 'error');
+    showErrorDialog('製品情報が見つかりませんでした' + (errors.length ? '。エラーになったファイル' : ''), errors);
     return;
   }
 
@@ -359,7 +359,7 @@ async function processFiles(files) {
   showToast(msg, errors.length ? '' : 'success');
 
   if (noTableFiles.length > 0) {
-    showToast('製品情報が見つからなかったファイル: ' + noTableFiles.join(', '), 'error');
+    showErrorDialog('製品情報が見つからなかったファイル', noTableFiles);
   }
 }
 
@@ -743,7 +743,7 @@ async function processMergeFiles(files) {
   }
   const added = list.length - errors.length;
   if (added > 0) showToast(added + ' ファイルを取り込みました', 'success');
-  if (errors.length) showToast('取り込めなかったファイル: ' + errors.join(' / '), 'error');
+  if (errors.length) showErrorDialog('取り込めなかったファイル', errors);
   document.getElementById('merge-file-input').value = '';
   renderMerge();
 }
@@ -953,6 +953,42 @@ function showToast(msg, type) {
   setTimeout(() => el.remove(), 4500);
 }
 
+// 読み込めなかったファイルの一覧は、件数が多いと4.5秒のトーストでは読み切れないため、
+// 画面中央のダイアログで出し、「閉じる」を押すまで閉じない(その間は後ろの画面を操作させない)。
+// 1項目1行で並べ、項目の途中では改行しない。開いている間に別の一覧が来たら下に足す。
+function showErrorDialog(title, items) {
+  const body = document.getElementById('error-dialog-body');
+  const sec = document.createElement('div');
+  sec.className = 'error-dialog-section';
+  const h = document.createElement('div');
+  h.className = 'error-dialog-title';
+  h.textContent = title + (items.length ? '(' + items.length + ' 件)' : '');
+  sec.appendChild(h);
+  const ul = document.createElement('ul');
+  ul.className = 'error-dialog-list';
+  items.forEach(s => {
+    const li = document.createElement('li');
+    li.textContent = s;
+    ul.appendChild(li);
+  });
+  if (items.length) sec.appendChild(ul);
+  body.appendChild(sec);
+  document.getElementById('error-dialog-overlay').classList.add('open');
+  document.getElementById('error-dialog-close').focus();
+}
+function closeErrorDialog() {
+  document.getElementById('error-dialog-overlay').classList.remove('open');
+  document.getElementById('error-dialog-body').innerHTML = '';
+}
+function errorDialogOpen() {
+  return document.getElementById('error-dialog-overlay').classList.contains('open');
+}
+document.getElementById('error-dialog-close').addEventListener('click', closeErrorDialog);
+// 開いている間はTabで後ろのボタン等へ移れないようにし、フォーカスを「閉じる」に留める
+document.addEventListener('keydown', e => {
+  if (e.key === 'Tab' && errorDialogOpen()) { e.preventDefault(); document.getElementById('error-dialog-close').focus(); }
+});
+
 document.getElementById('file-input').addEventListener('change', e => {
   if (e.target.files.length) processFiles(e.target.files);
 });
@@ -960,7 +996,7 @@ document.getElementById('file-input').addEventListener('change', e => {
 ['dragenter', 'dragover'].forEach(ev => {
   document.body.addEventListener(ev, e => {
     e.preventDefault();
-    if (pyodide || mergeMode) document.getElementById('drop-overlay').classList.add('active');
+    if ((pyodide || mergeMode) && !errorDialogOpen()) document.getElementById('drop-overlay').classList.add('active');
   });
 });
 ['dragleave', 'drop'].forEach(ev => {
@@ -970,6 +1006,7 @@ document.getElementById('file-input').addEventListener('change', e => {
   });
 });
 document.body.addEventListener('drop', e => {
+  if (errorDialogOpen()) return;
   if (mergeMode) {
     if (e.dataTransfer.files.length) processMergeFiles(e.dataTransfer.files);
     return;
