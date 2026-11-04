@@ -364,12 +364,15 @@
       return mh > 0 && mh < DENSE_BOX_PX ? clamp(TILE_BOX_PX / mh, 1.5, 3) : 0;
     }
     // 細かいページを、重なりのある数枚(1枚 約2000×1600px)に分けて高い解像度(scale sc、向き R)で読む。1枚でも読めなければ null(1枚で読んだ結果を使う)
-    async function readTiles(page, R, v1, sc) {
+    // shiftY=true: 縦の区切り位置を半分ずらす(上下の端は半分の高さの1枚。確かめのためにもう1回読むとき用)
+    async function readTiles(page, R, v1, sc, shiftY) {
       var Wt = v1.width * sc, Ht = v1.height * sc, cols = Math.ceil(Wt / TILE_W), rows = Math.ceil(Ht / TILE_H), cw = Wt / cols, chh = Ht / rows;
-      var ox = cols > 1 ? TILE_OVX * Wt : 0, oy = rows > 1 ? TILE_OVY * Ht : 0, specs = [], r, c;
-      for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) {
-        var x0 = Math.max(0, c * cw - ox), y0 = Math.max(0, r * chh - oy), x1 = Math.min(Wt, (c + 1) * cw + ox), y1 = Math.min(Ht, (r + 1) * chh + oy);
-        specs.push({ x0: x0, y0: y0, x1: x1, y1: y1, core: { x0: c * cw / sc, y0: r * chh / sc, x1: (c + 1) * cw / sc, y1: (r + 1) * chh / sc } });
+      var ox = cols > 1 ? TILE_OVX * Wt : 0, oy = (rows > 1 || shiftY) ? TILE_OVY * Ht : 0, specs = [], r, c, ey = [];
+      for (r = 0; r <= rows; r++) ey.push(shiftY ? clamp(r * chh - chh / 2, 0, Ht) : r * chh);
+      if (shiftY) ey.push(Ht);
+      for (r = 0; r + 1 < ey.length; r++) for (c = 0; c < cols; c++) {
+        var x0 = Math.max(0, c * cw - ox), y0 = Math.max(0, ey[r] - oy), x1 = Math.min(Wt, (c + 1) * cw + ox), y1 = Math.min(Ht, ey[r + 1] + oy);
+        specs.push({ x0: x0, y0: y0, x1: x1, y1: y1, core: { x0: c * cw / sc, y0: ey[r] / sc, x1: (c + 1) * cw / sc, y1: ey[r + 1] / sc } });
       }
       var out3 = new Array(specs.length), next = 0, failed = false;
       async function worker() {
@@ -411,7 +414,7 @@
       var R = ((page.rotate || 0) + rot) % 360, v1 = page.getViewport({ scale: 1, rotation: R });   // rot=0 のときはページの向きのまま(従来と同じ)
       var lr = await renderRegion(page, s0, 0, 0, v1.width * s0, v1.height * s0, R);
       try { res = await call('list', lr, true); } catch (e) { release(lr); return false; }   // 旧GAS(kind=list を知らない)・通信エラーなど
-      var any = false, annots = [], hitsAll = [], ngs = [];
+      var annots = [];
       // 読み取りの単位(piece)。ふつうはページ全体の1枚。細かいときは分けた数枚(tiled)。toPage: 読んだ位置(0〜1000)→ ページの座標(scale 1)
       var pieces = [{ lines: (res && res.lines) || [], cv: lr, sc: s0, ox: 0, oy: 0, core: null,
         toPage: function (bx) { return boxPx(bx, v1.width, v1.height); } }];
@@ -421,6 +424,9 @@
         var tiles = await readTiles(page, R, v1, s0 * dense);
         if (tiles) { release(lr); pieces = tiles; }
       }
+      // 読み取った数枚(pieces)からリンク(hitsAll)と NG(ngs)を作る。同じ表を区切り方を変えてもう1回読んだときにも使う
+      function evalPieces(pieces) {
+      var any = false, hitsAll = [], ngs = [];
       pieces.forEach(function (pc, pi) {
         if (pc.core) { pairNear(pc, pi); return; }   // 分けて読んだ1枚は、行ではなく位置の近さで組を作る
         pc.lines.forEach(function (line) {
@@ -585,6 +591,24 @@
         ngs.push({ pi: h.pi, at: h.b, ng: { page: pn, zuban: '', name: h.name, reason: '行の位置を確かめられません' } });
         return false;
       });
+      return { any: any, hitsAll: hitsAll, ngs: ngs };
+      }
+      var A = evalPieces(pieces), any = A.any, hitsAll = A.hitsAll, ngs = A.ngs;
+      // 罫線の表で位置を補正したリンクは、縦の区切り位置を半分ずらしてもう1回読み、同じ行に同じリンクが付いたものだけを残す(2026-11-04〜)。
+      // 細かい表では Gemini の位置が回ごと・区切り方ごとに数行ずれることがあり、1回の読み取りだけでは別の行の製品名に付くことがあるため。
+      // 食い違ったもの・位置を補正できなかったものは NG にする。もう1回の読み取りができなかったとき(通信エラーなど)は従来どおり
+      if (hitsAll.some(function (h) { return h.snapped; })) {
+        var tB = await readTiles(page, R, v1, s0 * (dense || 1.6), true);
+        if (tB) {
+          var B = evalPieces(tB);
+          hitsAll = hitsAll.filter(function (h) {
+            var hh = h.b.y1 - h.b.y0, cy = (h.b.y0 + h.b.y1) / 2;
+            if (h.snapped && B.hitsAll.some(function (k) { return k.snapped && k.uri === h.uri && k.name === h.name && Math.abs((k.b.y0 + k.b.y1) / 2 - cy) < 0.5 * hh && Math.min(k.b.x1, h.b.x1) > Math.max(k.b.x0, h.b.x0); })) return true;
+            ngs.push({ pi: h.pi, at: h.b, ng: { page: pn, zuban: '', name: h.name, reason: '行の位置を確かめられません' } });
+            return false;
+          });
+        }
+      }
       ngs.forEach(function (g) { if (g.dup) stats.dup++; stats.ng++; stats.partial.push(g.ng); });
       stats.linked += hitsAll.length;
       hitsAll.forEach(function (h) {
