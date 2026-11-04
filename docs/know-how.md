@@ -825,3 +825,11 @@
 - 効果: Before 分けて読んだ加工予定表で1語でも逆の位置があるとページ全体が失敗(本番 52/1・54/12)→ After その語だけNG、同じ応答の再生で 58/1 → 200/1
 - やり方: [ymin,xmin,ymax,xmax] で ymax<=ymin・xmax<=xmin なら位置なしとして扱う(画像の下の端で [1030,574,1000,662] など。1回の読み取りで7語)/ drawing-read.js pairNear / 試験の自動ブラウザ(Playwright setInputFiles)は日本語のファイル名だとアプリに届かないことがあったので英字名で
 - 使ったアプリ: shipping-list-link
+
+### 文書だけのPRが、別アプリのコードを古い版で上書きしていた(tdf-master-web、2026-11-04、#1126→#1135)
+
+- 起きたこと: shipping-list-link の引き継ぎ書を drive-folders.md に記録する文書のPR #1126 が、tdf-master-web の `scripts/tdf_column.py` と `index.html` の埋め込みを #1120 の版で上書きしていた(#1122 の変更が消えた)。同じPRで vercel-status.md・drive-folders.md の tdf-master-web の行も古い内容に戻っていた。気づかないまま次のデプロイで本番に出た。
+- 原因の見当: 古いクローン(または古いブランチ)の作業ツリーから、ファイルを丸ごと書き直してコミットした。
+- 見つけ方: 正解データのある図面を全部、最新のmainで照合したら、前回は全部一致していた行が合わなかった。`git diff <前回確認したコミット> origin/main -- <アプリのフォルダ>` で、触っていないはずのファイルが変わっていた。`git log -- <ファイル>` で上書きしたPRが分かる。
+- 防ぎ方: **文書だけのPRでも、マージ前に `gh pr view <番号> --json files` で差分のファイル一覧を確かめる**。触るつもりのないファイル(特にアプリのコード)が入っていたらマージしない。デプロイ前は、前回デプロイしたコミットとの差分のファイル一覧を見る。
+- 戻し方: 消えた版のコミットから `git cat-file blob <コミット>:<パス>` でバイト列を取り出し、`git hash-object -w --no-filters` と `git update-index --cacheinfo` で直接ステージする(Windowsの core.autocrlf=true の作業ツリーや git archive を通すとCRLFになる)。埋め込みがある場合は scripts と一致することも確かめる。
