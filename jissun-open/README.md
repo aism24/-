@@ -22,6 +22,7 @@ jissun-open/
                     ボタン(自動遷移がブロックされた場合の確実なフォールバック)
                     + 末尾に利用記録の送信スクリプト(GAS_URL へPOST)
   style.css       … スタイル(他のjissun系アプリと同じ配色)
+  icon.png        … アプリ名の左右に出す実寸法師のアイコン(shipping-list-link/icon.png と同じ画像。右側はCSSで左右反転)
   to-launcher.js  … 「← アプリ一覧へ」ボタン(正本 docs/to-launcher/to-launcher.js のコピー)
   vercel.json     … {"git":{"deploymentEnabled":false}}(push・マージで自動デプロイしない)
   gas/Code.gs     … 利用記録用のGAS(スプレッドシートにコンテナバインド)
