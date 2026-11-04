@@ -164,12 +164,12 @@ function closeModeSelect() {
 
 // ---------- 操作マニュアル(説明書) ----------
 
-const MANUAL_PAGE_COUNT = 11;
+const MANUAL_PAGE_COUNT = 12;
 let manualPage = 1;
 
-// 1ページ目のPDF埋め込みリンク(「実際のアプリを開く」)の矩形を、PDFページ
-// 全体に対する割合で表したもの(page.get_links()の座標から算出)。
-const MANUAL_LINK_RECT_PCT = { left: 0.0671875, top: 0.8736111111111111, width: 0.2125, height: 0.07916666666666666 };
+// 1ページ目の「実際のアプリを開く」ボタンの矩形を、ページ全体に対する割合で
+// 表したもの(説明書のページを画像にしたときのボタンの位置から算出)。
+const MANUAL_LINK_RECT_PCT = { left: 0.06770833333333333, top: 0.8638310185185185, width: 0.21396484375, height: 0.07777777777777778 };
 
 // 説明書を画面いっぱいに表示する都合上、画像はmax-width/max-height:100%で
 // アスペクト比を保って収められるため、表示領域(#manual-image-wrap)より
@@ -199,7 +199,7 @@ window.addEventListener('resize', () => {
 });
 
 function renderManualPage() {
-  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png?v=20261030`;
+  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png?v=20261104`;
   document.getElementById('manual-page-indicator').textContent = `${manualPage} / ${MANUAL_PAGE_COUNT}`;
   document.getElementById('manual-prev').disabled = manualPage <= 1;
   document.getElementById('manual-next').disabled = manualPage >= MANUAL_PAGE_COUNT;
