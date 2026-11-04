@@ -139,8 +139,9 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
     (取り付く部材の板)があり、隙間の両端に梁せいの中央を横切る線(梁の端の
     切断線)が無く、隙間の両端で上下のフランジの外側どうしがサイズの梁せい
     (depth)だけ離れているとき(=柱や小梁が取り付く位置でフランジの線が
-    途切れている)も一続きとみなす。重なっているもの(継手の先の別の部材)は
-    つながない。他のフランジの内側に収まる線(添え板・重ね描き)は使わない。
+    途切れている)も一続きとみなす。隙間なく接するものは、接する位置に梁せい
+    全体をまたぐ線(取り付く部材の境界)があるときだけつなぐ。重なっているもの
+    (継手の先の別の部材)はつながない。他のフランジの内側に収まる線(添え板・重ね描き)は使わない。
 
     梁本体は x_min..x_max に中点があるフランジから選び、その両端から同じ条件で
     つながるフランジがあれば範囲の外まで伸ばす(1枚の図面に製品が2つあると、
@@ -248,12 +249,32 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
                 return True
         return False
 
+    def spanning_line(th, pos, lo, hi):
+        # 主軸に直交し、主軸方向の位置がposで、梁せい全体(lo..hi)をまたぐ線があるか
+        ux, uy = math.cos(th), math.sin(th)
+        for t, ln in segs:
+            d = abs(t - th)
+            if abs(min(d, math.pi - d) - math.pi / 2) > math.radians(0.05):
+                continue
+            if abs((ln.x1 + ln.x2) / 2 * ux + (ln.y1 + ln.y2) / 2 * uy - pos) > 0.6:
+                continue
+            o = sorted((-ln.x1 * uy + ln.y1 * ux, -ln.x2 * uy + ln.y2 * ux))
+            if o[0] <= lo + 0.6 and o[1] >= hi - 0.6:
+                return True
+        return False
+
     def joinable(th, fs, depth_at, end, s1):
         # 同じ高さのフランジの隙間(end..s1)をはさんで、一続きの梁とみなせるか
         dl, dr = depth_at(end), depth_at(s1)
         if not dl or not dr:
             return False
         lo, hi = min(dl[0], dr[0]), max(dl[1], dr[1])
+        if abs(s1 - end) <= 0.6:
+            # 隙間なく接するフランジは、接する位置に梁せい全体をまたぐ線(取り付く
+            # 部材の境界)があるときだけ一続きとみなす(2026-11-04、26-12 の 2G-08。
+            # 下に H350W が取り付く区間でフランジの線が 220・280・6545 に分かれて
+            # 描かれ、6545 だけが梁本体になっていた。図面の長さは 7045)。
+            return spanning_line(th, end, lo, hi)
         if crossing_line(th, end, lo, hi) and crossing_line(th, s1, lo, hi):
             return True  # 梁を横切る板
         return (depth is not None and abs((hi - lo) - depth) <= 0.6
@@ -287,7 +308,7 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
             ivs = [(s, e) for s, e in ivs if x_min <= (s + e) / 2 * ux - c_lv * uy <= x_max]
             for i, (start, end) in enumerate(ivs):
                 for s1, e1 in ivs[i + 1:]:
-                    if s1 <= end + 0.6 or not joinable(th, fs, depth_at, end, s1):
+                    if s1 < end - 0.6 or not joinable(th, fs, depth_at, end, s1):
                         break
                     end = e1
                 length = round(end - start, 1)
@@ -357,13 +378,13 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
     for s1, e1 in ivs:
         if e1 <= end + 0.6:
             continue
-        if s1 <= end + 0.6 or not joinable(th, fs, depth_at, end, s1):
+        if s1 < end - 0.6 or not joinable(th, fs, depth_at, end, s1):
             break
         end = e1
     for s0, e0 in reversed(ivs):
         if s0 >= start - 0.6:
             continue
-        if e0 >= start - 0.6 or not joinable(th, fs, depth_at, e0, start):
+        if e0 > start + 0.6 or not joinable(th, fs, depth_at, e0, start):
             break
         start = s0
 
