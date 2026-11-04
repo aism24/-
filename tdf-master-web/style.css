@@ -268,6 +268,28 @@ table#result-table tbody tr:hover { background: #f7fbff; }
 #manual-actions button:disabled { opacity: .4; cursor: not-allowed; }
 #manual-actions button#manual-close { background: #333; color: #fff; border-color: #333; }
 
+/* 読み込めなかったファイルの一覧(閉じるを押すまで閉じない)。トーストの1.25倍の大きさ。
+   1項目1行で、項目の途中では改行しない(長い項目は一覧の中で横にスクロール)。 */
+#error-dialog-overlay {
+  display: none; position: fixed; inset: 0; z-index: 8000;
+  background: rgba(0,0,0,0.5); align-items: center; justify-content: center; padding: 16px;
+}
+#error-dialog-overlay.open { display: flex; }
+#error-dialog {
+  background: #c0392b; color: #fff; border-radius: 7.5px; padding: 15px 25px;
+  font-size: 16.25px; box-shadow: 0 5px 18px rgba(0,0,0,.35);
+  max-width: 100%; max-height: 100%; display: flex; flex-direction: column; gap: 12px;
+}
+#error-dialog-body { overflow: auto; min-height: 0; }
+.error-dialog-section + .error-dialog-section { margin-top: 12px; }
+.error-dialog-title { font-weight: bold; white-space: nowrap; }
+.error-dialog-list { margin: 6px 0 0; padding-left: 1.4em; }
+.error-dialog-list li { white-space: nowrap; line-height: 1.6; }
+#error-dialog-close {
+  align-self: center; padding: 8px 32px; border-radius: 7.5px; border: none;
+  background: #fff; color: #c0392b; font-size: 16.25px; font-weight: bold; cursor: pointer;
+}
+
 #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 6000; }
 .toast-item {
   background: #333; color: #fff; padding: 10px 20px; border-radius: 6px; font-size: 13px;
