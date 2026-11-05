@@ -24,16 +24,17 @@
  *   - 「締め状態」シートも開くたびに自動で並び替わる(締め月→業者の優先順、最新が上)。onOpen()参照
  *   - 「データ記録」シートに取込み・確定の履歴を残す(2行目が最新)。logImport_・logConfirm_参照
  *   - 確定済みの(業者+締め月)を丸ごとやり直したい場合は、フロントの隠しコマンド(ロゴ5回タップ)
- *     経由でdeleteConfirmedMonthを呼び、「配車データ」「締め状態」両シートの該当行を削除できる
+ *     経由でdeleteConfirmedMonthを呼び、「配車データ」「締め状態」両シートの該当行を削除できる。
+ *     削除には削除用パスワードが必要(スクリプトプロパティ DELETE_PASSWORD。未設定なら削除できない)
  *   - 毎月1日、スプレッドシートを丸ごとコピーしてGoogle Driveの「保存用バックアップ」
- *     フォルダへ保存する(backupSpreadsheetToDrive。createBackupTriggerで設定した
- *     月次トリガーから呼ばれる)
+ *     フォルダ(スプレッドシートと同じフォルダ内)へ保存する(backupSpreadsheetToDrive。
+ *     createBackupTriggerで設定した月次トリガーから呼ばれる)
  *
  * コードを直したら CODE_VERSION を更新し、新しいバージョンでデプロイした後に
  * 「/exec?action=ping」をGETで開いて version が一致することを確認する。
  */
 
-const CODE_VERSION = "2026-10-23-unso3";
+const CODE_VERSION = "2026-11-05-unso4";
 
 const SHEET_HAULING = "配車データ";
 const SHEET_STATUS = "締め状態";
@@ -80,18 +81,6 @@ function setupSheets() {
   forceTextColumns_(haulingSheet, DATE_LIKE_HAULING_COLS);
   forceTextColumns_(statusSheet, DATE_LIKE_STATUS_COLS);
   Logger.log("セットアップ完了");
-}
-
-// 動作確認中に日付型として誤って保存されてしまったテスト・過去データを全て削除し、
-// 配車データ・締め状態を空の状態に戻す(見出し行は残す)。Apps Scriptエディタから
-// 手動で1回だけ実行する想定の関数(doGet/doPostからは呼ばない)。
-function resetAllData() {
-  [SHEET_HAULING, SHEET_STATUS].forEach(name => {
-    const sh = sheet_(name);
-    const lastRow = sh.getLastRow();
-    if (lastRow > 1) sh.deleteRows(2, lastRow - 1);
-  });
-  Logger.log("配車データ・締め状態をリセットしました");
 }
 
 // スプレッドシートを開くたびにGoogle Sheetsが自動的に呼び出す特殊関数(手動実行は不要)。
@@ -215,15 +204,26 @@ function recalculateFeeTypes() {
 
 // ---------- 月次バックアップ(毎月1日、Google Driveへスプレッドシートを丸ごとコピー保存) ----------
 
-// バックアップの保存先フォルダ(Google Drive「保存用バックアップ」フォルダ)
-const BACKUP_FOLDER_ID = "1-tqGWDV7wg4mQc8PmeNgF3mLvFKKQROc";
+// バックアップの保存先フォルダ名。スプレッドシートと同じフォルダの中にある、この名前のフォルダへ保存する
+// (フォルダIDは公開リポジトリに書かないため、名前で探す)
+const BACKUP_FOLDER_NAME = "保存用バックアップ";
+
+function backupFolder_() {
+  const parents = DriveApp.getFileById(ss_().getId()).getParents();
+  if (!parents.hasNext()) throw new Error("スプレッドシートの保存先フォルダが見つかりません");
+  const found = parents.next().getFoldersByName(BACKUP_FOLDER_NAME);
+  if (!found.hasNext()) throw new Error("スプレッドシートと同じフォルダに「" + BACKUP_FOLDER_NAME + "」フォルダがありません");
+  const folder = found.next();
+  if (found.hasNext()) throw new Error("「" + BACKUP_FOLDER_NAME + "」フォルダが2つ以上あります。1つにしてください");
+  return folder;
+}
 
 // スプレッドシート「鳥取運送アプリ」を丸ごとコピーし、Google Driveの指定フォルダへ
 // 「鳥取スプレッドシートYYYY.MM.DD保存」という名前で保存する。createBackupTriggerで設定した
 // 毎月1日のトリガーから自動的に呼ばれるほか、Apps Scriptエディタから手動実行してその場で
 // バックアップを取ることもできる。
 function backupSpreadsheetToDrive() {
-  const folder = DriveApp.getFolderById(BACKUP_FOLDER_ID);
+  const folder = backupFolder_();
   const dateStr = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy.MM.dd");
   const fileName = "鳥取スプレッドシート" + dateStr + "保存";
   const copy = DriveApp.getFileById(ss_().getId()).makeCopy(fileName, folder);
@@ -297,8 +297,10 @@ function doPost(e) {
     const body = JSON.parse(e.postData.contents);
     if (body.action === "importHaulingFile") return ok_(importHaulingFile(body));
     if (body.action === "confirmClosing") return ok_(confirmClosing(body.company, body.closingMonth));
-    if (body.action === "bulkImportLegacy") return ok_(bulkImportLegacy(body));
-    if (body.action === "deleteConfirmedMonth") return ok_(deleteConfirmedMonth(body.companies, body.closingMonth));
+    if (body.action === "deleteConfirmedMonth") {
+      checkDeletePassword_(body.password);
+      return ok_(deleteConfirmedMonth(body.companies, body.closingMonth));
+    }
     return errRes_("不明なaction: " + body.action);
   } catch (err) {
     return errRes_(err.message);
@@ -522,6 +524,19 @@ function logConfirm_(company, closingMonth, statusImportedAt) {
     if (hit && hit[map["取込日時"] - 1] !== "") importedAt = String(hit[map["取込日時"] - 1]);
   }
   writeLogRows_({ 取込日時: importedAt, 取込業者: company, 確定日時: nowStr_(), 締め月: closingMonth }, company, closingMonth);
+}
+
+// 確定済みデータの削除に必要なパスワードの確認。パスワードはApps Scriptの
+// 「プロジェクトの設定 → スクリプト プロパティ」に DELETE_PASSWORD として登録する
+// (公開リポジトリに書かないため、コードには持たない)。未登録のときは誰も削除できない。
+function checkDeletePassword_(password) {
+  const expected = PropertiesService.getScriptProperties().getProperty("DELETE_PASSWORD");
+  if (!expected) throw new Error("削除用パスワードが未設定のため削除できません(Apps Scriptのスクリプトプロパティ DELETE_PASSWORD を登録してください)");
+  if (typeof password !== "string" || password === "") throw new Error("削除用パスワードを入力してください");
+  if (password !== expected) {
+    Utilities.sleep(2000); // 総当たりを遅くする
+    throw new Error("削除用パスワードが違います");
+  }
 }
 
 // 「一意の月を全てやり直したい」場合の管理者向け復旧手段。指定した(業者+締め月)のうち
@@ -1265,56 +1280,4 @@ function getHaulingRawData() {
     companies: listCompanies(),
     currentFiscalYearEnd: currentFiscalYearEnd_(),
   };
-}
-
-// ---------- 過去データ移行(運送QUERY2026等からの一括インポート。確定済みとして取り込む) ----------
-/**
- * payload: {
- *   company: "山陰運送",
- *   rows: [{ 物件名, 降日:"YYYY-MM-DD", ブロック, 車種, 総重量, 費用区分, 費用額 }, ...]
- * }
- * 過去の運送QUERY2026の各業者タブのデータを、締め月ごとに自動判定して確定済みとして書き込む。
- * (積日・節・積荷・現場待機・最大長さ・通常単価・エキストラは移行元データに無いため空欄になる。
- *  重複判定は、これらの列が空欄の行同士でも11項目中7項目以上一致すれば機能する想定だが、
- *  過去データ同士(移行データ)を対象に重複判定を行うことは無い(移行は1回のみ・確定済み扱いのため)。)
- */
-function bulkImportLegacy(payload) {
-  const company = payload.company;
-  const rowsIn = payload.rows || [];
-  if (!company) throw new Error("業者を指定してください");
-
-  return withLock_(() => {
-    const sh = sheet_(SHEET_HAULING);
-    const map = headerMap_(sh);
-    const idCol = map["ID"];
-    let nextId = nextHaulingId_(sh, idCol);
-    const now = nowStr_();
-    const byClosing = {};
-
-    const outRows = rowsIn.map(row => {
-      const closingMonth = closingMonthFromDateStr_(row["降日"]);
-      byClosing[closingMonth] = true;
-      const out = new Array(HAULING_HEADERS.length).fill("");
-      out[map["ID"] - 1] = nextId++;
-      out[map["業者"] - 1] = company;
-      out[map["締め月"] - 1] = closingMonth;
-      out[map["物件名"] - 1] = row["物件名"] || "";
-      out[map["降日"] - 1] = row["降日"] || "";
-      out[map["ブロック"] - 1] = row["ブロック"] || "";
-      out[map["車種"] - 1] = row["車種"] || "";
-      out[map["総重量"] - 1] = toNum_(row["総重量"]);
-      out[map["費用区分"] - 1] = row["費用区分"] || classifyFeeType_(row["ブロック"]);
-      out[map["費用額"] - 1] = toNum_(row["費用額"]);
-      out[map["取込日時"] - 1] = now;
-      out[map["元ファイル名"] - 1] = "(過去データ移行: 運送QUERY2026)";
-      return out;
-    });
-
-    if (outRows.length > 0) {
-      sh.getRange(sh.getLastRow() + 1, 1, outRows.length, HAULING_HEADERS.length).setValues(outRows);
-    }
-    Object.keys(byClosing).forEach(c => upsertStatus_(company, c, "確定済み", { 取込日時: true, 確定日時: true }));
-
-    return { importedCount: outRows.length, closingMonths: Object.keys(byClosing).sort() };
-  });
 }
