@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap">
-<link rel="stylesheet" href="style.css?v=20261105u4">
+<link rel="stylesheet" href="style.css?v=20261105x1">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -79,7 +79,7 @@
       <div class="sticky-header">
         <div class="check-title-row">
           <h2>20日締めチェック</h2>
-          <span id="check-confirm-slot"></span>
+          <span class="title-actions"><span id="check-confirm-slot"></span><button type="button" class="btn btn-excel" id="excel-btn-check" onclick="downloadScreenExcel('check')" style="display:none;">⬇ Excelでダウンロード</button></span>
         </div>
         <div class="check-row">
           <div class="button-group" id="check-company-buttons"></div>
@@ -98,7 +98,10 @@
   <section id="screen-yearly" class="screen" style="display:none;">
     <div class="section">
       <div class="sticky-header">
-        <h2>年度集計</h2>
+        <div class="check-title-row">
+          <h2>年度集計</h2>
+          <button type="button" class="btn btn-excel" id="excel-btn-yearly" onclick="downloadScreenExcel('yearly')" style="display:none;">⬇ Excelでダウンロード</button>
+        </div>
         <div class="check-row">
           <div class="button-group" id="yearly-year-buttons"></div>
         </div>
@@ -114,6 +117,7 @@
       <div class="check-title-row">
         <h2>工事別内訳</h2>
         <span class="project-note-blink">ボタンで物件名を選択すると、全ての期間の合計が表示されます</span>
+        <button type="button" class="btn btn-excel" id="excel-btn-project" onclick="downloadScreenExcel('project')" style="display:none;">⬇ Excelでダウンロード</button>
       </div>
       <div class="check-row">
         <div id="project-buttons"></div>
@@ -126,7 +130,10 @@
   <section id="screen-company" class="screen" style="display:none;">
     <div class="section">
       <div class="sticky-header">
-        <h2>業者別内訳</h2>
+        <div class="check-title-row">
+          <h2>業者別内訳</h2>
+          <button type="button" class="btn btn-excel" id="excel-btn-company" onclick="downloadScreenExcel('company')" style="display:none;">⬇ Excelでダウンロード</button>
+        </div>
         <div class="check-row">
           <div class="button-group" id="company-buttons"></div>
         </div>
@@ -198,7 +205,7 @@
   </div>
 </div>
 
-<script src="app.js?v=20261105u4"></script>
+<script src="app.js?v=20261105x1"></script>
 <script src="to-launcher.js?v=20261019" data-target=".header-title" data-mode="in"></script>
 </body>
 </html>
