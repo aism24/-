@@ -200,6 +200,9 @@ table#result-table tbody tr:nth-child(even) { background: #fff6d9; }
 table#result-table tbody tr:nth-child(odd) { background: #fffdf3; }
 table#result-table tbody tr:hover { background: #f7fbff; }
 .dup-mark-row { background: #ffe4a3 !important; }
+/* クリックで「確認した」印を付けた行: 二重線で囲み、薄い青にする */
+table#result-table tbody tr { cursor: pointer; }
+table#result-table tbody tr.row-checked { background: #dcecff !important; outline: 4px double #1f5fbf; outline-offset: -4px; }
 .cell-missing { color: #c0392b; font-weight: bold; }
 /* 寸法線の不足で長さを推測した(橙)・確かめられなかった(赤)セル */
 .cell-len-estimated { background: #ffd8a8 !important; font-weight: bold; }

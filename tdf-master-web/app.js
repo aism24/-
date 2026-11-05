@@ -404,6 +404,13 @@ function renderTable(results) {
     const isDupMark = r['製品マーク'] && markCounts[r['製品マーク']] > 1;
     const tr = document.createElement('tr');
     if (isDupMark) tr.classList.add('dup-mark-row');
+    // 行をクリックすると「確認した」印(二重線の枠+薄い青)を付ける。もう一度クリックで外す。
+    // 印は結果の行(r._checked)に持たせるので、モード切替などで表を描き直しても残る。
+    if (r._checked) tr.classList.add('row-checked');
+    tr.addEventListener('click', () => {
+      r._checked = !r._checked;
+      tr.classList.toggle('row-checked', r._checked);
+    });
 
     const cols = [
       r._id, r['図番'] ?? '', r['製品マーク'] ?? '', r['設計符号'] ?? '', size,
