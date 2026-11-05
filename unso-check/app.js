@@ -1403,19 +1403,24 @@ async function refreshDeleteCompanies() {
 function renderDeleteConfirmSlot() {
   const slot = document.getElementById("delete-confirm-slot");
   slot.innerHTML = deleteState.companies.size > 0
-    ? "<div class=\"check-row\"><button class=\"btn btn-danger\" onclick=\"executeDelete()\">確定済みデータを削除</button>" +
+    ? "<div class=\"check-row\"><input type=\"password\" id=\"delete-password\" class=\"delete-password-input\" placeholder=\"削除用パスワード\" autocomplete=\"off\">" +
+      "<button class=\"btn btn-danger\" onclick=\"executeDelete()\">確定済みデータを削除</button>" +
       "<span class=\"delete-danger-warning\">！！！完全にデータが消えるので注意！！！</span></div>"
     : "";
 }
 
 // 削除実行: 確認ダイアログ無し(ユーザー指示による)。「配車データ」「締め状態」両シートの
 // 該当行を削除するGAS APIを1回のリクエストで(選択した複数業者分まとめて)呼び出す。
+// 削除用パスワード(GASのスクリプトプロパティ DELETE_PASSWORD)はGAS側で照合する。
 async function executeDelete() {
   const closingMonth = fiscalMonthToClosing(deleteState.fiscalYear, deleteState.month);
   const companies = Array.from(deleteState.companies);
+  const pwInput = document.getElementById("delete-password");
+  const password = pwInput ? pwInput.value : "";
+  if (!password) { showErrorModal("削除用パスワードを入力してください"); return; }
   showLoadingModal();
   try {
-    await apiPost("deleteConfirmedMonth", { companies: companies, closingMonth: closingMonth });
+    await apiPost("deleteConfirmedMonth", { companies: companies, closingMonth: closingMonth, password: password });
     refreshHaulingDataInBackground(); // 配車データ・締め状態が変わったため、キャッシュを破棄して再取得を始めておく
     hideLoadingModal(true);
     const month = Number(closingMonth.split("/")[1]);
