@@ -419,6 +419,7 @@ from __future__ import annotations
 import collections
 import math
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 import tdf_binary as tb
@@ -464,6 +465,45 @@ def _looks_like_size(text: str) -> bool:
     return bool(SIZE_PATTERN.match(text.strip()))
 
 
+def _single_letter(text: str | None) -> str | None:
+    """1文字の英字(全角も可)なら半角大文字で返す。それ以外はNone。"""
+    if not text:
+        return None
+    s = unicodedata.normalize("NFKC", text.strip()).upper()
+    return s if len(s) == 1 and "A" <= s <= "Z" else None
+
+
+def _legend_material_marks(tdf: tb.TdfData) -> set[str]:
+    """凡例の「◯◯印」(例: 「Ｎ」「Ｂ」「印」→ "NB")の記号を集める。
+
+    他社図面(阪和、2026-11-05 WB1-2G-03)では、製品の行が
+    「製品マーク|設計符号|材質の記号(N・Ｂを1文字ずつ)|サイズ|本数」と並び、
+    材質の記号は図面の凡例に「ＮＢ印 ＳＮ４９０Ｂ」のように書かれている。
+    「印」の左に同じ高さ(「印」の文字の高さの1/4以内)で続く1文字の英字を
+    左から順につないだものを記号とする。"""
+    marks: set[str] = set()
+    for r in tdf.texts:
+        if r.rot != 0 or tdf.resolve_text(r) != "印":
+            continue
+        letters = sorted(
+            (t for t in tdf.texts
+             if t.rot == 0 and abs(t.y - r.y) <= r.h / 4 and t.x < r.x
+             and _single_letter(tdf.resolve_text(t))),
+            key=lambda t: t.x,
+        )
+        mark = ""
+        right = r.x
+        for t in reversed(letters):
+            # 文字どうしの間隔が文字の高さの2倍を超えたら別の記号
+            if right - t.x > 2 * max(t.h, r.h):
+                break
+            mark = _single_letter(tdf.resolve_text(t)) + mark
+            right = t.x
+        if mark:
+            marks.add(mark)
+    return marks
+
+
 # ---------------------------------------------------------------------------
 # 製品情報テーブルの検出
 # ---------------------------------------------------------------------------
@@ -505,6 +545,7 @@ def find_product_rows(tdf: tb.TdfData) -> list[ProductRow]:
             dai_cells.append(r)
 
     rows: list[ProductRow] = []
+    legend_marks: set[str] | None = None
     for dai in dai_cells:
         # 同じ行とみなせるY範囲で、Xがdaiより小さい通常テキスト(rot=0)を
         # 集めて左から並べる
@@ -513,6 +554,17 @@ def find_product_rows(tdf: tb.TdfData) -> list[ProductRow]:
             if r.rot == 0 and abs(r.y - dai.y) < SAME_ROW_Y_TOLERANCE and r.x < dai.x and tdf.resolve_text(r)
         ]
         same_row.sort(key=lambda r: r.x)
+        # サイズのすぐ左に並ぶ1文字の英字が、凡例の材質の記号と一致するときは
+        # 読み飛ばす(阪和の図面。_legend_material_marks参照)
+        n = len(same_row) - 1
+        while n > 0 and _single_letter(tdf.resolve_text(same_row[n - 1])):
+            n -= 1
+        if len(same_row) - 1 - n > 0 and n >= 2:
+            if legend_marks is None:
+                legend_marks = _legend_material_marks(tdf)
+            letters = "".join(_single_letter(tdf.resolve_text(r)) for r in same_row[n:-1])
+            if letters in legend_marks:
+                same_row = same_row[:n] + same_row[-1:]
         if len(same_row) < 3:
             continue
         # 直近3つを [製品マーク, 設計符号, サイズ] の順とみなす(サイズがdaiに一番近い)
