@@ -233,6 +233,14 @@
     pg.drawImage(img, { x: 0, y: 0, width: w, height: hh });
     return (await pdf.save()).buffer;
   }
+  var MAX_PDF_PAGES = 20;
+  // PDFのページ数。読めないPDFは0を返し、これまでどおりの処理(エラー表示など)に任せる
+  async function pdfPages(buf) {
+    var d = null;
+    try { d = await pdfjsLib.getDocument({ data: new Uint8Array(buf.slice(0)) }).promise; return d.numPages; }
+    catch (e) { return 0; }
+    finally { if (d) d.destroy(); }
+  }
   function mapOpt() { return LINK_MODE === 'web' ? { mapUri: function (u) { return ShippingCore.toOpenUrl(OPEN_BASE, u); } } : null; }
   async function handle(file) {
     if (!file || modalOpen || working) return;
@@ -244,6 +252,12 @@
     try {
       var isXlsx = /\.xls[xm]$/i.test(file.name), isImg = !isXlsx && isImage(file);
       var buf = isImg ? await imageToPdf(file) : await file.arrayBuffer();
+      // PDFは20ページまで(2026-11-05〜)。21ページ以上は時間がかかるので、解析せず(保存・記録もしない)分割を案内する
+      if (!isXlsx && !isImg && await pdfPages(buf) > MAX_PDF_PAGES) {
+        $('msg').textContent = '';
+        popup(['２０枚を超えたPDFは、時間がかかる為分割してください'], false, null, '');
+        return;
+      }
       var r = isXlsx ? await ShippingXlsx.linkXlsx(JSZip, buf, links, mapOpt()) : await ShippingCore.linkPdf(pdfjsLib, PDFLib, buf, links, mapOpt());
       // 詳細図(図番・製品名が線で描かれたCAD図面。寸法などの文字データだけ入っていることもある): 文字から図番らしい語が1つも見つからないときだけ、画像として読み取る
       if (!isXlsx && GAS_URL && r.stats.linked === 0 && r.stats.ng === 0) {
