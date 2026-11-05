@@ -515,6 +515,58 @@ def _drawn_value(dim_values, length):
     return min(near, key=lambda v: abs(v - length)) if near else None
 
 
+def _flange_width(size):
+    """サイズ表記のフランジ幅(2番目の数値)を返す(H-300x300x10x15 なら 300)。"""
+    m = re.match(r"^[^-0-9]*-[0-9]+(?:\.[0-9]+)?x([0-9]+(?:\.[0-9]+)?)x", size or "")
+    return float(m.group(1)) if m else None
+
+
+BASE_PLATE_MAX_T = 100.0  # ベースプレートの厚さの上限
+
+
+def _base_plate_thickness(tdf, member, width, dim_values):
+    """縦の部材(間柱等)の下端に付くベースプレートの厚さ。無ければ None。
+
+    梁モードで読む間柱も、長さはベースプレートの厚さを含める(柱モードと同じ。
+    2026-11-05、26-16 の WA2-1G-05A の 1P300-X22Y4。本体 1454 + PL-16 = 1470。
+    図面の全長の寸法 1470 は書かれていない)。下端の真下に、部材の幅より広い板の
+    四角(上辺は下端の高さ、下辺は厚さ t だけ下、左右の縦線)があり、t が寸法の
+    文字として書かれているときだけ、その t を返す。
+    """
+    length, (pa, pb), th_deg = member
+    if not width or abs(th_deg % 180.0 - 90.0) > 0.1:
+        return None
+    x0 = (pa[0] + pb[0]) / 2
+    y_end = min(pa[1], pb[1])
+    tol = 0.6
+    horiz = [ln for ln in tdf.lines
+             if abs(ln.y1 - ln.y2) < 0.01 and abs(ln.x2 - ln.x1) > width]
+    tops = [ln for ln in horiz if abs(ln.y1 - y_end) < tol]
+    for top in tops:
+        lo, hi = sorted((top.x1, top.x2))
+        # 板は部材より広く、部材の中心の左右に同じくらい張り出す
+        if not (lo < x0 - width / 2 - tol and hi > x0 + width / 2 + tol):
+            continue
+        if abs((x0 - lo) - (hi - x0)) > tol:
+            continue
+        for bot in horiz:
+            t = y_end - bot.y1
+            if not (tol < t <= BASE_PLATE_MAX_T):
+                continue
+            blo, bhi = sorted((bot.x1, bot.x2))
+            if blo > lo + tol or bhi < hi - tol:
+                continue
+            sides = 0
+            for x_side in (lo, hi):
+                if any(abs(ln.x1 - ln.x2) < 0.01 and abs(ln.x1 - x_side) < tol
+                       and abs(min(ln.y1, ln.y2) - bot.y1) < tol
+                       and abs(max(ln.y1, ln.y2) - y_end) < tol for ln in tdf.lines):
+                    sides += 1
+            if sides == 2 and _in_drawing(dim_values, t):
+                return t
+    return None
+
+
 def _web_member(tdf, member, tf, depth):
     """フランジから求めた梁の両端を、ウェブの端の線まで伸ばしたもの。
 
@@ -613,6 +665,12 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
         if drawn is not None:
             _member_length, member_ends[id(row)], axis = member
             length_value = drawn
+            plate_t = _base_plate_thickness(tdf, member, _flange_width(row.size), dim_values)
+            if plate_t is not None:
+                # 全長は図面に書かれていない(寸法の合計)ので「推測」の印を付け、
+                # 取り込み後のダイアログとセルの色で知らせる(ユーザー指示)
+                length_value = drawn + plate_t
+                length_checks[id(row)] = "推測"
         elif member is not None:
             # 梁の線の長さに合う寸法の文字が図面に無い(寸法線の不足等)。同じ寸法線の
             # 上の隣り合う寸法の合計が梁の長さに合えば、その合計を長さとし「推測」の
