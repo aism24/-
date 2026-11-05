@@ -1306,6 +1306,127 @@ async function loadCompanyDetail() {
   }
 }
 
+// ---------- Excelでダウンロード ----------
+// 各画面でボタン・リストで選んで表示中の表を、画面と同じ並び(見出し→説明→表)で1枚のシートに
+// まとめてExcel(.xlsx)で保存する。画面に表示された内容をそのまま読むので、集計ロジックは持たない。
+// 金額(「¥1,234」)・重量(「12.3t」)は数値として書き、表示形式で「¥」「t」を付ける。
+const EXCEL_SCREENS_ = {
+  check: { title: "20日締めチェック", containers: ["check-result"] },
+  yearly: { title: "年度集計", containers: ["yearly-total-line", "yearly-result"] },
+  project: { title: "工事別内訳", containers: ["project-result"] },
+  company: { title: "業者別内訳", containers: ["company-detail-header", "company-result"] },
+};
+
+// 条件(1行の説明)とファイル名の一部を、画面の選択状態から作る
+function excelConditions_(screen) {
+  if (screen === "check") {
+    const closing = fiscalMonthToClosing(checkState.fiscalYear, checkState.month);
+    const company = checkState.company === CHECK_COMPANY_ALL ? "全て" : checkState.company;
+    return { text: "締め月: " + closing + "〆　業者: " + company, file: closing.replace(/\//g, "") + "〆_" + company };
+  }
+  if (screen === "yearly") {
+    const y = yearlyState && yearlyState.fiscalYear;
+    return { text: "年度: " + y + "年度(" + fiscalYearPeriodLabel(y) + ")", file: y + "年度" };
+  }
+  if (screen === "project") {
+    return { text: "物件名: " + projectState.name + "(全ての期間)", file: projectState.name };
+  }
+  const years = companyState.years.length === 0 ? "全ての年度"
+    : companyState.years.slice().sort((a, b) => b - a).map(y => y + "年度").join("・");
+  return { text: "業者: " + companyState.name + "　年度: " + years, file: companyState.name + "_" + years };
+}
+
+// 表のセルの文字を、Excelのセル(数値+表示形式、または文字)にする
+function excelCell_(text) {
+  const t = String(text || "").trim();
+  let m = t.match(/^(-?)¥(-?[\d,]+)$/);
+  if (m) return { t: "n", v: Number((m[1] + m[2]).replace(/,/g, "")), z: "\"¥\"#,##0" };
+  m = t.match(/^(-?[\d,]+(?:\.\d+)?)t$/);
+  if (m) return { t: "n", v: Number(m[1].replace(/,/g, "")), z: "0.0\"t\"" };
+  return { t: "s", v: t };
+}
+
+// 画面の要素を上から順に読み、見出し・説明・表を行の配列にする(ボタンは読まない)
+function excelRowsFromScreen_(screen) {
+  const rows = [];
+  const def = EXCEL_SCREENS_[screen];
+  def.containers.forEach(id => {
+    const root = document.getElementById(id);
+    if (!root) return;
+    const nodes = root.matches("p") ? [root] : Array.from(root.querySelectorAll("h3, p, table"));
+    nodes.forEach(el => {
+      if (el.tagName === "TABLE") {
+        el.querySelectorAll("tr").forEach(tr => {
+          rows.push(Array.from(tr.children).map(c => c.tagName === "TH" ? { t: "s", v: c.textContent.trim() } : excelCell_(c.textContent)));
+        });
+        rows.push([]);
+      } else {
+        const text = el.textContent.replace(/\s+/g, " ").trim();
+        if (text) rows.push([{ t: "s", v: text }]);
+      }
+    });
+  });
+  return rows;
+}
+
+function hasScreenTable_(screen) {
+  return EXCEL_SCREENS_[screen].containers.some(id => {
+    const el = document.getElementById(id);
+    return el && el.querySelector("table");
+  });
+}
+
+function downloadScreenExcel(screen) {
+  try {
+    if (!hasScreenTable_(screen)) { showErrorModal("ダウンロードする表がありません"); return; }
+    const def = EXCEL_SCREENS_[screen];
+    const cond = excelConditions_(screen);
+    const now = new Date();
+    const stamp = now.getFullYear() + pad2(now.getMonth() + 1) + pad2(now.getDate());
+    const rows = [[{ t: "s", v: def.title }], [{ t: "s", v: cond.text }],
+      [{ t: "s", v: "出力日: " + now.getFullYear() + "/" + pad2(now.getMonth() + 1) + "/" + pad2(now.getDate()) }], []]
+      .concat(excelRowsFromScreen_(screen));
+    const ws = {};
+    let maxCol = 0;
+    rows.forEach((row, r) => {
+      row.forEach((cell, c) => { ws[XLSX.utils.encode_cell({ r: r, c: c })] = cell; });
+      maxCol = Math.max(maxCol, row.length);
+    });
+    ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(rows.length - 1, 0), c: Math.max(maxCol - 1, 0) } });
+    ws["!cols"] = [{ wch: 34 }].concat(Array.from({ length: Math.max(maxCol - 1, 0) }, () => ({ wch: 14 })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, def.title);
+    const safe = s => String(s).replace(/[\\/:*?"<>|\s]+/g, "_");
+    const bytes = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = safe(def.title + "_" + cond.file + "_" + stamp) + ".xlsx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (err) {
+    showErrorModal("Excelの作成に失敗しました: " + err.message);
+  }
+}
+
+// 表が表示されているときだけ、その画面の「Excelでダウンロード」ボタンを出す
+function setupExcelButtons_() {
+  Object.keys(EXCEL_SCREENS_).forEach(screen => {
+    const btn = document.getElementById("excel-btn-" + screen);
+    if (!btn) return;
+    const update = () => { btn.style.display = hasScreenTable_(screen) ? "" : "none"; };
+    EXCEL_SCREENS_[screen].containers.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) new MutationObserver(update).observe(el, { childList: true, subtree: true });
+    });
+    update();
+  });
+}
+document.addEventListener("DOMContentLoaded", setupExcelButtons_);
+
 // ---------- データ削除画面(ロゴ5回タップの隠しコマンドからのみ遷移) ----------
 // 「一意の月をやり直したい」場合の復旧手段。年度→月→業者の順で選択させ、業者ボタンは
 // その締め月で実際に「確定済み」のものしか表示しない(確定済み以外は選びようが無い)。

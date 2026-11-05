@@ -21,7 +21,7 @@
   --total-border: #f0dd8f;
 
   /* 地・面・境界線 */
-  --bg: #f4f0fa;
+  --bg: #e6ddf3; /* 2026-11-05 ユーザー指示で #f4f0fa から濃くした */
   --surface: #fff;
   --surface-sunken: #eef0f4;
   --ink: #1c1f26;
@@ -51,8 +51,9 @@ body {
      発生した。85x85pxの正方形1マス分だけをSVGタイル画像として敷き詰める
      方式(background-repeat)に変更し、単純な画像タイリングにすることで
      この描画不具合を回避している(45度の対角線はタイルの角同士がぴったり
-     繋がるため、境界での位置ズレが原理的に起きない)。 */
-  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc4NScgaGVpZ2h0PSc4NSc+PGxpbmUgeDE9JzAnIHkxPScwJyB4Mj0nODUnIHkyPSc4NScgc3Ryb2tlPSdyZ2JhKDI2LDM3LDY0LDAuMDcpJyBzdHJva2Utd2lkdGg9JzInLz48bGluZSB4MT0nODUnIHkxPScwJyB4Mj0nMCcgeTI9Jzg1JyBzdHJva2U9J3JnYmEoMjYsMzcsNjQsMC4wNDUpJyBzdHJva2Utd2lkdGg9JzEuNScvPjwvc3ZnPg==");
+     繋がるため、境界での位置ズレが原理的に起きない)。
+     2026-11-05、ユーザー指示で罫線を薄くした(不透明度 0.07/0.045 → 0.035/0.022)。 */
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSc4NScgaGVpZ2h0PSc4NSc+PGxpbmUgeDE9JzAnIHkxPScwJyB4Mj0nODUnIHkyPSc4NScgc3Ryb2tlPSdyZ2JhKDI2LDM3LDY0LDAuMDM1KScgc3Ryb2tlLXdpZHRoPScyJy8+PGxpbmUgeDE9Jzg1JyB5MT0nMCcgeDI9JzAnIHkyPSc4NScgc3Ryb2tlPSdyZ2JhKDI2LDM3LDY0LDAuMDIyKScgc3Ryb2tlLXdpZHRoPScxLjUnLz48L3N2Zz4=");
   background-repeat: repeat;
 }
 
@@ -173,6 +174,10 @@ h3 { font-size: 15px; font-weight: 700; color: var(--brand-strong); margin: 16px
 /* 「物件選択に戻る」ボタン: 黄色背景(内容確定ボタンの点滅アニメーションは付けない) */
 .btn-back { background: #ffeb3b; color: var(--brand-strong); border: none; flex-shrink: 0; }
 .btn-back:hover { background: #fff59d; }
+/* 「Excelでダウンロード」ボタン(Excelの緑) */
+.btn-excel { background: #107c41; color: #fff; border: 1px solid #107c41; flex-shrink: 0; }
+.btn-excel:hover { background: #0b5a2f; border-color: #0b5a2f; }
+.title-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 
 /* 画面中央のポップアップ(Excel取込み〜表示完了までの読み込み中・確定完了・
    エラー表示・確認ダイアログ)共通 */
