@@ -119,6 +119,12 @@ def find_product_rows(tdf: tb.TdfData) -> list[ProductRow]:
             continue
         # 直近3つを [製品マーク, 設計符号, サイズ] の順とみなす(サイズがdaiに一番近い)
         size_rec, code_rec, mark_rec = same_row[-1], same_row[-2], same_row[-3]
+        # 設計符号とサイズの間に1文字の書き込み(26-16 WB1-2G-03 の「N」「Ｂ」)が
+        # あると、それを製品マーク・設計符号と取り違える。1文字の文字を飛ばして
+        # 左に2つ残るときだけ、その2つを製品マーク・設計符号にする。
+        before = [r for r in same_row[:-1] if len(tdf.resolve_text(r).strip()) > 1]
+        if len(before) >= 2 and len(before) < len(same_row) - 1:
+            code_rec, mark_rec = before[-1], before[-2]
         size_text = tdf.resolve_text(size_rec)
         if not _looks_like_size(size_text):
             continue
