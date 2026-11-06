@@ -3923,8 +3923,11 @@ def _center_ys(tdf: tb.TdfData, cx: float, lo: float, hi: float):
 
 
 def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None = None,
-            min_body: float = MIN_BODY):
+            min_body: float = MIN_BODY, split_main: bool = False):
     """柱本体の候補(立面図が2つあれば2つ以上)と、その上下の端の候補のY。
+
+    split_main: 外形線の組の線が長丸をまたぐときも、長丸の位置で切って使う
+    (extract_column の measure で、長さが求まらなかったときだけ使う)。
 
     - 外形線の組: 外形の幅だけ離れた垂直線の組で、内側に板厚の線か中心線があるもの。
       外形線の無い区間で内側に収まる細い組(上の方が細い角形やH形に変わる柱)も足す。
@@ -3954,10 +3957,12 @@ def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None =
             # 外形線の組と重ならない細い部分の線が長丸をまたぐときは、長丸の位置で
             # 切って使う(上の節の柱の線が細い部分の線と一続きに描かれ、上の継手の
             # 長丸をまたぐことがある: 26-12 の 2C-06 の □-650)。外形線の組をまたぐ
-            # 線は従来どおり使わない(継手の先に描かれた隣の部材の線のため)。
+            # 線は従来どおり使わない(継手の先に描かれた隣の部材の線のため)。ただし
+            # split_main のときは切って使う(下の節の柱の線が継手をまたいで一続きに
+            # 描かれる: 26-16 の WA2-4C-03 の下継手 zCJ700A)。
             part += [(max(s[0], lo_b), min(s[1], hi_b)) for s in segs
                      if (s[0] < lo_b or s[1] > hi_b) and min(s[1], hi_b) > max(s[0], lo_b)
-                     and not _intersect([list(s)], [list(m) for m in p["segs"]])]
+                     and (split_main or not _intersect([list(s)], [list(m) for m in p["segs"]]))]
             cover = sum(s[1] - s[0] for s in part)
             if not part or cover < min_body:
                 continue
@@ -4237,7 +4242,8 @@ def _joint_on_next_member(caps, by_x, x1: float, x2: float, y_end: float, direct
     """端から700より遠い長丸のうち、端の先に描かれた隣の節の柱の外形線(端から700以内で
     始まる、同じ幅の縦線の組)の高さにあり、外形から横1000以内(_joint_near と同じ)に
     あるもの(26-12 の 2C-23 の下継手 CJ2A は下端の902下、下の節の柱の線の上。2C-28 の
-    JCc50A-6 は下端の800下、続く線の横490)。一番近いもの。"""
+    JCc50A-6 は下端の800下、続く線の横490)。隣の節の柱の線が端を通り抜けて一続きに
+    描かれているものも使う(26-16 の WA2-4C-03 の zCJ700A は下端の875下)。一番近いもの。"""
     def near_lines(x):
         return [iv for k, ivs in by_x.items() if abs(k - x) <= WIDTH_TOL for iv in ivs]
 
@@ -4245,7 +4251,7 @@ def _joint_on_next_member(caps, by_x, x1: float, x2: float, y_end: float, direct
         for lo, hi in near_lines(x):
             if lo <= cy <= hi:
                 near_end = hi if direction < 0 else lo
-                if (y_end - near_end) * direction <= JOINT_DY:
+                if (y_end - near_end) * direction <= JOINT_DY or lo <= y_end <= hi:
                     return True
         return False
 
@@ -4332,15 +4338,27 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
         return joint_caps[key]
 
     def measure(size, widths, h_in_drawing, owner):
+        res = measure_with(size, widths, h_in_drawing, owner, False)
+        if res[0] is None and widths:
+            # 長さが求まらなかったときだけ、長丸をまたぐ外形線も切って使って測り直す
+            # (いつも切ると、継手の先の隣の部材を本体に含めてしまう図面がある:
+            # 26-14 の N4C-8 が 4943 → 5500.3)
+            alt = measure_with(size, widths, h_in_drawing, owner, True)
+            if alt[0] is not None:
+                return alt
+        return res
+
+    def measure_with(size, widths, h_in_drawing, owner, split_main):
         tf = _flange_thickness(size)
-        if (tuple(widths), tf) not in found:
-            got = _bodies(tdf, widths, by_x, caps, tf) if widths else []
+        key = (tuple(widths), tf, split_main)
+        if key not in found:
+            got = _bodies(tdf, widths, by_x, caps, tf, split_main=split_main) if widths else []
             if widths and not got:
                 # 柱本体が1つも無いときだけ、外形の幅以上・長さ1000未満の外形線の組も
                 # 本体の候補にする(長さ470の間柱: 26-12 の 1P-08)
-                got = _bodies(tdf, widths, by_x, caps, tf, min_body=widths[0])
-            found[(tuple(widths), tf)] = got
-        bodies = found[(tuple(widths), tf)]
+                got = _bodies(tdf, widths, by_x, caps, tf, min_body=widths[0], split_main=split_main)
+            found[key] = got
+        bodies = found[key]
         if owner is not None:
             # 1図面に製品が複数あるときは、その製品の行に割り当てた本体だけで求める
             bodies = [b for b in bodies if _owner_row(b, rows) == owner]
