@@ -563,7 +563,10 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
                 x_next_r, _ = rotate(r.x_next, r.y)
                 left_ref, right_ref = (x_mark_r, None), (x_next_r, None)
                 use_2d = False
-            allowed_angles = [(joint_axes or {}).get(id(r), 0.0)] + size_angles.get(r.size, [])
+            # 腰折れ梁は左右の梁の向きが違うので、向きを複数渡す(tdf_app._bent_partner)
+            r_axes = (joint_axes or {}).get(id(r), 0.0)
+            r_axes = list(r_axes) if isinstance(r_axes, (list, tuple)) else [r_axes]
+            allowed_angles = r_axes + size_angles.get(r.size, [])
 
             # 梁の端に別の部材が取り付き、その部材の継手が梁と同じ向きの長丸で近くに
             # 描かれることがある(2026-10-30、S4B-26の4CSB700A-S3。梁の左端の下に吊り
@@ -598,7 +601,7 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
                     if apply_dup_exclusion and dup_flags[(mx, my, t)]:
                         continue
                     xr, yr = rotate(mx, my)
-                    parallel = _angle_diff(cand_angle[(mx, my, t)], allowed_angles[0]) <= JOINT_ANGLE_TOL_DEG
+                    parallel = any(_angle_diff(cand_angle[(mx, my, t)], a) <= JOINT_ANGLE_TOL_DEG for a in r_axes)
                     for side, ref in (("left", left_ref), ("right", right_ref)):
                         if parallel and not bolt_ok[side]:
                             continue
