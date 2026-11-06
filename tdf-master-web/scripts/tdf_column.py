@@ -84,7 +84,15 @@ def find_rows(tdf: tb.TdfData) -> list[dict]:
         elif _is_size(c):
             rows.append({"mark": a, "code": b, "size": c, "zushi": False,
                          "count": _norm(tdf.resolve_text(dai)), "pos": pos})
-    return rows + _shared_rows(tdf, rows)
+    rows = rows + _shared_rows(tdf, rows)
+    # ×印(削除マーク)の付いた行は除く。製品マークか本数のセルが×印の範囲に入る行
+    # (梁モードの exm.filter_deleted_rows と同じ判定。26-16 の EA2-1P-07 の EA22-1T1-1 は中止)
+    x_marks = exm.find_x_marks(tdf)
+    if x_marks:
+        rows = [r for r in rows
+                if not (exm._point_in_any_box(r["pos"][0], r["pos"][2], x_marks)
+                        or exm._point_in_any_box(r["pos"][1], r["pos"][2], x_marks))]
+    return rows
 
 
 def _shared_rows(tdf: tb.TdfData, rows: list[dict]) -> list[dict]:
@@ -976,6 +984,13 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
             "下継手": bottom if length is not None else None,
             "上継手": top if length is not None else None,
         })
+    # 1枚の図面で長さを求められない製品が1つでもあれば、その図面の全行の長さ・継手を
+    # 空にする(製品マーク・設計符号・サイズ・本数だけ出す)。図の描き方が普通でなく、
+    # 求められた行の長さも確かめられないため(26-16 の EA2-1P-10・11。ユーザー指示)。
+    # 画面では「長さ抽出範囲が不明瞭」として知らせる。
+    if any(r["長さ"] is None for r in out):
+        for r in out:
+            r["長さ"] = r["下継手"] = r["上継手"] = None
     return out
 
 
