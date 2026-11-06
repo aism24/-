@@ -572,8 +572,12 @@ var Wizard = {
     var targetNames = App.master.names.filter(function (n) { return n['部署'] === f['部署対象者']; }).map(function (n) { return n['氏名']; });
     var classOptions = App.master.classifications.filter(function (c) { return c['加工分類'] === f['加工先']; });
 
+    // 新規入力だけ、保存の横に「部署配置変更」(氏名シートの部署を書き換える。DeptChange)
+    var deptBtnHtml = (!f.id && !Wizard.modalMode)
+      ? '<button class="btn btn-secondary" style="padding:8px 12px;font-size:14px;" onclick="DeptChange.open()">部署配置変更</button>' : '';
     var topSaveBtnHtml = '<div class="btn-row" style="margin-top:0;margin-bottom:16px;">' +
-      '<button class="btn btn-success save-btn" style="padding:8px 12px;font-size:14px;" onclick="Wizard.save()">保存</button></div>';
+      '<button class="btn btn-success save-btn" style="padding:8px 12px;font-size:14px;" onclick="Wizard.save()">保存</button>' +
+      deptBtnHtml + '</div>';
     var bottomSaveBtnHtml = '<div class="btn-row"><button class="btn btn-success save-btn" onclick="Wizard.save()">保存</button></div>';
 
     var html = '<div class="card">' +
@@ -750,6 +754,129 @@ var Modal = {
   close: function () {
     var overlay = document.getElementById('wizardModalOverlay');
     if (overlay) overlay.remove();
+  }
+};
+
+/** ===================== 部署配置変更(新規入力) ===================== */
+/*
+ * 名簿(データソースの「氏名」シート。A列=在籍者全員を数式で抽出、B列=部署)の部署を変える。
+ * 部署は既存の部署ボタンから選ぶ。「空欄にする」と、その人は新規入力の対象者に出なくなる(今までどおり)。
+ */
+var DeptChange = {
+  EMPTY: '__empty__',
+  name: '',
+  dept: null,
+
+  open: function () {
+    var cur = Wizard.formData['対象者'] || '';
+    DeptChange.name = cur;
+    DeptChange.dept = null;
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'deptModalOverlay';
+    overlay.style.zIndex = 1100;
+    overlay.innerHTML = '<div class="modal-box"><div style="text-align:right;">' +
+      '<button class="btn-secondary" style="border:none;border-radius:6px;padding:6px 10px;cursor:pointer;" onclick="DeptChange.close()">✕ 閉じる</button>' +
+      '</div><div class="card" style="box-shadow:none;padding:0;">' +
+      '<h3 style="margin:4px 0 12px;">部署配置変更</h3>' +
+      '<div class="field"><label class="field-label">氏名</label><div class="field-content">' +
+      '<select id="deptChangeName" onchange="DeptChange.pickName(this.value)">' + DeptChange.nameOptions_(cur) + '</select>' +
+      '<div id="deptChangeCurrent" style="margin-top:6px;color:#555;font-size:14px;"></div></div></div>' +
+      '<div class="field"><label class="field-label">新しい部署</label><div class="field-content" id="deptChangeDepts"></div></div>' +
+      '<div class="btn-row"><button class="btn btn-success" id="deptChangeSave" onclick="DeptChange.save()" disabled>変更する</button></div>' +
+      '</div></div>';
+    document.getElementById('modalRoot').appendChild(overlay);
+    DeptChange.renderDepts_();
+    DeptChange.renderCurrent_();
+  },
+
+  close: function () {
+    var overlay = document.getElementById('deptModalOverlay');
+    if (overlay) overlay.remove();
+  },
+
+  /** 名簿の全員(部署が空欄の人も)。見やすいよう「氏名(部署)」で出す */
+  nameOptions_: function (cur) {
+    var seen = {};
+    return '<option value="">選択してください</option>' + App.master.names.map(function (n) {
+      var name = String(n['氏名'] == null ? '' : n['氏名']).trim();
+      if (!name || seen[name]) return '';
+      seen[name] = true;
+      var d = String(n['部署'] == null ? '' : n['部署']).trim();
+      return '<option value="' + escapeHtml(name) + '"' + (name === cur ? ' selected' : '') + '>' +
+        escapeHtml(name + '(' + (d || '空欄') + ')') + '</option>';
+    }).join('');
+  },
+
+  currentDept_: function (name) {
+    for (var i = 0; i < App.master.names.length; i++) {
+      var n = App.master.names[i];
+      if (String(n['氏名']).trim() === name) return String(n['部署'] == null ? '' : n['部署']).trim();
+    }
+    return '';
+  },
+
+  renderDepts_: function () {
+    var el = document.getElementById('deptChangeDepts');
+    if (!el) return;
+    var opts = App.master.departments.concat([DeptChange.EMPTY]);
+    el.innerHTML = '<div class="radio-group">' + opts.map(function (d) {
+      var label = d === DeptChange.EMPTY ? '空欄にする' : d;
+      return '<label class="' + (DeptChange.dept === d ? 'selected' : '') + '" data-v="' + escapeHtml(d) + '" ' +
+        'onclick="DeptChange.pickDept(this.getAttribute(\'data-v\'))"><input type="radio">' + escapeHtml(label) + '</label>';
+    }).join('') + '</div>';
+  },
+
+  renderCurrent_: function () {
+    var el = document.getElementById('deptChangeCurrent');
+    if (el) el.textContent = DeptChange.name ? '現在の部署: ' + (DeptChange.currentDept_(DeptChange.name) || '空欄') : '';
+    var btn = document.getElementById('deptChangeSave');
+    if (btn) btn.disabled = !DeptChange.canSave_();
+  },
+
+  canSave_: function () {
+    if (!DeptChange.name || DeptChange.dept === null) return false;
+    var to = DeptChange.dept === DeptChange.EMPTY ? '' : DeptChange.dept;
+    return to !== DeptChange.currentDept_(DeptChange.name);
+  },
+
+  pickName: function (v) { DeptChange.name = v; DeptChange.renderCurrent_(); },
+  pickDept: function (v) { DeptChange.dept = v; DeptChange.renderDepts_(); DeptChange.renderCurrent_(); },
+
+  save: function () {
+    if (!DeptChange.canSave_()) return;
+    var name = DeptChange.name;
+    var to = DeptChange.dept === DeptChange.EMPTY ? '' : DeptChange.dept;
+    showLoading('部署を変更中...');
+    callServer('updateNameDepartment', name, to).then(function (master) {
+      App.master = master;
+      Store.set('master', master);
+      hideLoading();
+      DeptChange.close();
+      DeptChange.refreshWizard_();
+      showToast(name + ' の部署を「' + (to || '空欄') + '」に変更しました');
+    }).catch(function (err) {
+      hideLoading();
+      showToast('部署の変更に失敗: ' + (err.message || err));
+    });
+  },
+
+  /** 入力中の内容は残し、⑥対象部署のボタンと⑦対象者の選択肢だけ作り直す */
+  refreshWizard_: function () {
+    var f = Wizard.formData;
+    if (f['部署対象者'] && App.master.departments.indexOf(f['部署対象者']) === -1) f['部署対象者'] = '';
+    var rg = document.getElementById('rg_部署対象者');
+    if (rg) rg.outerHTML = Wizard.radioGroup('部署対象者', App.master.departments, f['部署対象者']);
+    var keep = f['対象者'];
+    var names = App.master.names.filter(function (n) { return n['部署'] === f['部署対象者']; }).map(function (n) { return n['氏名']; });
+    if (names.indexOf(keep) === -1) keep = '';
+    var el = document.getElementById('対象者Select');
+    if (el) {
+      el.innerHTML = '<option value="">選択してください</option>' + names.map(function (n) {
+        return '<option value="' + escapeHtml(n) + '"' + (n === keep ? ' selected' : '') + '>' + escapeHtml(n) + '</option>';
+      }).join('');
+    }
+    Wizard.setField('対象者', keep);
   }
 };
 

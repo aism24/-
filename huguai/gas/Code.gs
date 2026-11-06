@@ -11,7 +11,7 @@
  */
 
 /** デプロイ後に doPost の ping で反映を確認するための版表記(コードを変えたら更新する) */
-var CODE_VERSION = '2026-10-25-launch-log';
+var CODE_VERSION = '2026-11-06-dept-change';
 
 var CONFIG_SHEET_NAME = '情報';
 var DATA_SHEET = '不具合記録';
@@ -44,6 +44,7 @@ var API_FUNCTIONS = {
   getKekkaBunsekiMonth: getKekkaBunsekiMonth, getKekkaBunsekiByProject: getKekkaBunsekiByProject,
   uploadPhoto: uploadPhoto, ocrProductName: ocrProductName,
   logAppLaunch: logAppLaunch, logPdfDownload: logPdfDownload,
+  updateNameDepartment: updateNameDepartment,
   getProductionWeights: getProductionWeights, clearCache: clearCache,
   ping: function () { return { version: CODE_VERSION }; }
 };
@@ -374,6 +375,39 @@ function buildMasterData_() {
     names: names,
     departments: departments
   };
+}
+
+/**
+ * 新規入力の「部署配置変更」: 氏名シートで、氏名(A列。在籍者を数式で抽出)が一致する行の「部署」列だけを書き換える。
+ * 部署は既存の部署(氏名シートに今ある値)か空欄('')だけ受け付ける。空欄の人は新規入力の対象者に出ない。
+ * 戻り値は更新後のマスタ(画面はこれで部署ボタン・対象者を作り直す)
+ */
+function updateNameDepartment(name, dept) {
+  name = String(name == null ? '' : name).trim();
+  dept = String(dept == null ? '' : dept).trim();
+  if (!name) throw new Error('氏名を選んでください');
+  var sheet = getSourceSS_().getSheetByName(NAME_SHEET);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var data = sheet.getDataRange().getValues();
+    var headers = data[0].map(function (h) { return String(h).trim(); });
+    var nameCol = headers.indexOf('氏名'), deptCol = headers.indexOf('部署');
+    if (nameCol === -1 || deptCol === -1) throw new Error('氏名シートの1行目に「氏名」「部署」の見出しがありません');
+    var depts = {}, row = -1;
+    for (var i = 1; i < data.length; i++) {
+      var d = String(data[i][deptCol] == null ? '' : data[i][deptCol]).trim();
+      if (d) depts[d] = true;
+      if (row === -1 && String(data[i][nameCol]).trim() === name) row = i + 1;
+    }
+    if (row === -1) throw new Error('氏名シートに「' + name + '」が見つかりません');
+    if (dept && !depts[dept]) throw new Error('部署「' + dept + '」は氏名シートにありません');
+    sheet.getRange(row, deptCol + 1).setValue(dept);
+  } finally {
+    lock.releaseLock();
+  }
+  bumpVer_('masterVer');
+  return getMasterData();
 }
 
 /** 分類 -> 加工分類(柱/梁)。マスタ(キャッシュ済み)から作るので分類シートは読み直さない */
