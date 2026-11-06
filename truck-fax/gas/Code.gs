@@ -5,7 +5,7 @@
  *   取込一覧 … FAX1台=1行の記録(列は見出し名で読み書きする。列の追加・並べ替えに強い)
  *   車両運転手情報 … 手配業者 / 運送業者 / 車種 / 車番 / 氏名 / 携帯番号 / 備考。1行=車と運転手の1組(同じ車に別の運転手、同じ運転手が別の車は、別の行)。
  *                  車番が空欄の行=車の組み合わせが無い運転手、氏名・携帯番号が空欄の行=運転手の組み合わせが無い車。
- *   情報 … A列=項目名、B列=値。「Geminiモデル名」「タイムゾーン」「APIKEY」。
+ *   情報 … A列=項目名、B列=値。「Geminiモデル名」「タイムゾーン」「APIKEY」。見出し「名前」「APIキー」の表があれば、そのキーを上から順に1日400回ずつ使う(callGemini_ の上)。
  *          工事番号と工事名のリスト(見出し「工事番号」「工事名」の列)も、この見出しを探して読む。
  *
  * Geminiのモデル名とAPIキーは「情報」シートのセルから読む(コード修正・再デプロイ不要)。
@@ -13,7 +13,7 @@
  */
 
 // 貼り替え・デプロイの確認用。ping と init がこの値を返す。コードを変えたら更新する(キャッシュのキーにも入るので、更新すると古い版のキャッシュは使われない)。
-var CODE_VERSION = '20261028c';
+var CODE_VERSION = '20261106a';
 
 var SHEET_IMPORT = '取込一覧';
 var SHEET_MERGED = '車両運転手情報'; // 1行=車と運転手の1組。シートの列は MERGED_HEADERS(見出し名で読み書きする)
@@ -586,23 +586,114 @@ function parseJsonText_(text) {
   try { return JSON.parse(t); } catch { throw new Error('読み取り結果をJSONとして解釈できませんでした。もう一度お試しください。'); }
 }
 
+// ---------- APIキーの切り替え(2026-11-06、ユーザー指示) ----------
+// 情報シートの見出し「APIキー」の列(左隣が「名前」)に、キーを上から並べる(5つ。別々のGoogle Cloudプロジェクトで作ったもの。上限はプロジェクトごとにかかるため)。
+// 上のキーから使い、キーごとにその日(日本時間)の呼び出し回数を数えて、KEY_DAILY_LIMIT 回に達したら次のキーへ。日本時間の0時に0回に戻る。
+// 上限前でもGoogleが「1日の回数超過」(429・PerDay)を返したら、そのキーはその日は使い切りにする。1分あたりの超過(429)は、その回だけ次のキーで読み直す。
+// 全部のキーが上限なら「本日の上限に達しました」。表が無い(空)ときは、従来どおり項目「APIKEY」(B列)のキーを回数制限なしで使う。
+// 回数はスクリプトプロパティに置く(シートには書かない。利用者に見えない)。キーの値そのものは置かず、SHA-256の先頭16文字で区別する。
+var KEY_DAILY_LIMIT = 400;
+var KEY_TZ = 'Asia/Tokyo';
+var KEY_PROP_PREFIX = 'geminiUse:';
+
+/** 情報シートの見出し「APIキー」の下を空行まで読む。[{name, key}] */
+function readApiKeys_() {
+  var grid = infoGrid_();
+  var top = grid.slice(0, 6);
+  for (var r = 0; r < top.length; r++) {
+    for (var c = 0; c < top[r].length; c++) {
+      if (String(top[r][c]).trim() !== 'APIキー') continue;
+      var out = [];
+      for (var i = r + 1; i < grid.length; i++) {
+        var k = String(grid[i][c]).trim();
+        if (!k) break;
+        out.push({ name: c > 0 ? String(grid[i][c - 1]).trim() || ('キー' + (out.length + 1)) : ('キー' + (out.length + 1)), key: k });
+      }
+      return out;
+    }
+  }
+  return [];
+}
+
+function keyId_(key) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, key, Utilities.Charset.UTF_8)
+    .slice(0, 8).map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join('');
+}
+
+function keyUseProp_() { return KEY_PROP_PREFIX + Utilities.formatDate(new Date(), KEY_TZ, 'yyyy-MM-dd'); }
+
+/** 今日の回数表 {keyId: 回数} を読み、fn で書き換えて保存する(ロックの中で。前の日の表は消す)。fn の戻り値を返す。 */
+function withKeyUse_(fn) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var name = keyUseProp_();
+    var use = {};
+    try { use = JSON.parse(props.getProperty(name) || '{}') || {}; } catch (ex) { use = {}; }
+    var ret = fn(use);
+    props.setProperty(name, JSON.stringify(use));
+    Object.keys(props.getProperties()).forEach(function (k) { if (k.indexOf(KEY_PROP_PREFIX) === 0 && k !== name) props.deleteProperty(k); });
+    return ret;
+  } finally { lock.releaseLock(); }
+}
+
+/** skip(この回に429で断られたキーのid)以外で、上限に達していない一番上のキーを選び、回数を1つ進める。無ければ null。 */
+function takeKey_(keys, skip) {
+  return withKeyUse_(function (use) {
+    for (var i = 0; i < keys.length; i++) {
+      var id = keyId_(keys[i].key);
+      if (skip[id] || (use[id] || 0) >= KEY_DAILY_LIMIT) continue;
+      use[id] = (use[id] || 0) + 1;
+      return { name: keys[i].name, key: keys[i].key, id: id };
+    }
+    return null;
+  });
+}
+
+/** Googleが1日の上限を返したキーを、その日は使い切りにする。 */
+function markKeyFull_(id) {
+  withKeyUse_(function (use) { use[id] = Math.max(use[id] || 0, KEY_DAILY_LIMIT); });
+}
+
+/** エディタで実行して、今日のキーごとの回数を「実行ログ」に出す(キーの値は出さない)。 */
+function showApiKeyUsage() {
+  var keys = readApiKeys_();
+  var use = withKeyUse_(function (u) { return JSON.parse(JSON.stringify(u)); });
+  var lines = keys.map(function (k, i) { return (i + 1) + '. ' + k.name + ': ' + (use[keyId_(k.key)] || 0) + ' / ' + KEY_DAILY_LIMIT + ' 回'; });
+  Logger.log(keyUseProp_() + '(日本時間)\n' + (lines.join('\n') || '情報シートに見出し「APIキー」の表がありません(B列のAPIKEYを回数制限なしで使用中)'));
+}
+
 function callGemini_(parts) {
   var model = getInfo_('Geminiモデル名');
   if (!model) throw new Error('情報シートの「Geminiモデル名」が空です。');
-  var key = getInfo_('APIKEY');
-  if (!key) throw new Error('情報シートの「APIKEY」が空です。');
+  var keys = readApiKeys_();
+  var single = null;
+  if (!keys.length) {
+    single = getInfo_('APIKEY');
+    if (!single) throw new Error('情報シートの「APIKEY」が空です。');
+  }
   var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
-  var payload = {
+  var payload = JSON.stringify({
     contents: [{ role: 'user', parts: parts }],
     generationConfig: { temperature: 0, responseMimeType: 'application/json' }
-  };
+  });
+  var all = keys.map(function (k) { return k.key; }).concat(single ? [single] : []);
+  var hide = function (msg) { all.forEach(function (k) { msg = msg.split(k).join('***'); }); return msg; };
+  var skip = {};
   var last = '';
-  for (var attempt = 1; attempt <= 3; attempt++) {
+  var fails = 0; // 5xx・429(1分あたり)の再試行の回数(従来どおり最大3回)
+  for (var guard = 0; guard < 20; guard++) {
+    var cur = single ? { key: single, id: '' } : takeKey_(keys, skip);
+    if (!cur) {
+      if (last) throw new Error(hide(last));
+      throw new Error('本日の上限に達しました(APIキー' + keys.length + 'つとも1日' + KEY_DAILY_LIMIT + '回を使い切りました。日本時間の0時に戻ります)。');
+    }
     var res = UrlFetchApp.fetch(url, {
       method: 'post',
       contentType: 'application/json',
-      headers: { 'x-goog-api-key': key },
-      payload: JSON.stringify(payload),
+      headers: { 'x-goog-api-key': cur.key },
+      payload: payload,
       muteHttpExceptions: true
     });
     var code = res.getResponseCode();
@@ -616,10 +707,18 @@ function callGemini_(parts) {
       throw new Error('Geminiから読み取り結果が返りませんでした' + (cand && cand.finishReason ? '(' + cand.finishReason + ')' : '') + '。');
     }
     last = 'Gemini APIエラー(HTTP ' + code + '): ' + (json && json.error ? json.error.message : raw.slice(0, 200));
+    if (code === 429 && !single) {
+      if (/PerDay/i.test(raw)) markKeyFull_(cur.id); // 1日の上限: そのキーは今日は使わない
+      else skip[cur.id] = true;                       // 1分あたりの上限: この回だけ次のキーで
+      last = '';
+      if (Object.keys(skip).length >= keys.length) { skip = {}; if (++fails >= 3) { last = 'Gemini APIエラー(HTTP 429): 混み合っています。しばらくしてからお試しください。'; break; } Utilities.sleep(2000 * fails); }
+      continue;
+    }
     if (code !== 429 && code < 500) break;
-    Utilities.sleep(2000 * attempt);
+    if (++fails >= 3) break;
+    Utilities.sleep(2000 * fails);
   }
-  throw new Error(last.replace(key, '***'));
+  throw new Error(hide(last || 'Gemini APIエラー'));
 }
 
 // ---------- 記録(取込一覧への追記+車両・運転手情報の更新) ----------
