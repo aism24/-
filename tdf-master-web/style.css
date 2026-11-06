@@ -1,7 +1,9 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
+/* ページの背景は黒(2026-11-06 ユーザー指示・案A)。ヘッダー・表・ボタン・ダイアログは白地のまま。
+   背景の上に直接のる文字は、黒の上で読める明るい色にしている(#empty-state・#merge-top 等)。 */
 body {
   font-family: 'Meiryo', 'Hiragino Kaku Gothic ProN', sans-serif;
-  background: #ffffff;
+  background: #000000;
   min-height: 100vh;
   color: #333;
   display: flex;
@@ -158,15 +160,16 @@ body.app-started #mode-cancel-btn { display: inline-block; }
 #mode-label:empty, #btn-mode { display: none; }
 body.app-started #btn-mode { display: inline-block; }
 
-#empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #888; font-size: 15px; text-align: center; padding: 40px; }
+#empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #ccc; font-size: 15px; text-align: center; padding: 40px; }
 .folder-path-warn-wrap { position: relative; display: inline-block; margin-top: 18px; cursor: help; }
 .folder-path-warn {
   display: inline-block; padding: 10px 16px; border-radius: 6px;
   color: #c0392b; font-weight: bold; font-size: 13px; line-height: 1.8;
   animation: folder-path-warn-blink 2.5s ease-in-out infinite;
 }
+/* 赤字が黒の背景の上で読みにくいので、点滅していないときは白地にする */
 @keyframes folder-path-warn-blink {
-  0%, 100% { background-color: rgba(255, 221, 0, 0); }
+  0%, 100% { background-color: #fff; }
   50% { background-color: rgba(255, 221, 0, 0.85); }
 }
 /* 注意書きにマウスを重ねると、アドレスコピー方法の画像を画面下に表示する。 */
@@ -186,7 +189,8 @@ main { flex: 1; display: flex; flex-direction: column; padding: 16px 20px 40px; 
    border-collapseの競合解決(二重線 > 実線 > 破線の優先順位)により、
    セル側に一律で実線・破線を指定するだけで、テーブル外周は自動的に
    tableのborder(二重線)が優先されて表示される。 */
-table#result-table { border-collapse: collapse; width: auto; font-size: 13px; border: 3px double #333; }
+/* 表の下地は白。色の付いていないセルがあっても、ページの黒の背景が透けて黒くならないようにする */
+table#result-table { border-collapse: collapse; width: auto; font-size: 13px; border: 3px double #333; background: #fff; }
 /* 各列は中身の幅に合わせ、左右の余白は15px(以前の製品マーク列の見た目の余白)にそろえる。 */
 table#result-table th, table#result-table td {
   border-bottom: 1px solid #ccc; border-right: 1px dashed #ccc;
@@ -322,13 +326,13 @@ table#result-table tbody tr.row-checked { background: #dcecff !important; outlin
 /* 複数のダウンロードファイルの結合 */
 #merge-area { display: none; flex-direction: column; align-items: center; gap: 10px; }
 #merge-area.open { display: flex; }
-#merge-top { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
+#merge-top { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; color: #eee; }
 /* 点線枠は表の幅に合わせる(枠自身は幅に寄与させず、表の幅に引き伸ばす)。表が無い間は最小幅 */
 #merge-body { display: flex; flex-direction: column; gap: 10px; width: fit-content; min-width: 560px; max-width: 100%; }
 .merge-bar { width: 0; min-width: 100%; box-sizing: border-box; }
-#merge-empty { width: 0; min-width: 100%; color: #888; text-align: center; padding: 20px 0; }
+#merge-empty { width: 0; min-width: 100%; color: #ccc; text-align: center; padding: 20px 0; }
 #merge-table-wrap { display: none; overflow: auto; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); max-height: 60vh; }
-table#merge-table { border-collapse: collapse; width: auto; margin: 0 auto; font-size: 13px; }
+table#merge-table { border-collapse: collapse; width: auto; margin: 0 auto; font-size: 13px; background: #fff; }
 table#merge-table th, table#merge-table td { padding: 6px 14px; border-bottom: 1px solid #e3e3e3; text-align: center; vertical-align: middle; }
 table#merge-table th { background: #e3f5e6; position: sticky; top: 0; z-index: 2; }
 table#merge-table td.merge-name { word-break: break-all; }
@@ -337,4 +341,4 @@ table#merge-table tr.merge-warn { background: #fff0d6; }
 table#merge-table tr.merge-warn td.merge-msg { color: #b03a00; font-weight: bold; }
 table#merge-table tr.merge-off { opacity: .5; }
 #merge-summary { font-weight: bold; }
-#merge-summary.warn { color: #b03a00; }
+#merge-summary.warn { color: #ffb07a; }
