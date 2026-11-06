@@ -414,6 +414,61 @@ def _center_ys(tdf: tb.TdfData, cx: float, lo: float, hi: float):
     return [y for y, a, b in _hlines(tdf, lo, hi) if a <= cx - 1.0 and b >= cx + 1.0]
 
 
+SPLICE_MAX = 2 * END_PLATE_REACH  # 外形線の端をまたぐ添え板の線の長さの上限
+_VRAW = {}
+
+
+def _raw_vertical(tdf: tb.TdfData):
+    """つなぐ前の垂直線を X ごとに(Y下, Y上)で。"""
+    got = _VRAW.get(id(tdf))
+    if got is None or got[0] is not tdf:
+        by_x: dict[float, list[tuple[float, float]]] = {}
+        for ln in tdf.lines:
+            if abs(ln.x1 - ln.x2) <= VERT_TOL and abs(ln.y1 - ln.y2) >= 20.0:
+                x = round((ln.x1 + ln.x2) / 2 * 2) / 2
+                by_x.setdefault(x, []).append((min(ln.y1, ln.y2), max(ln.y1, ln.y2)))
+        got = (tdf, by_x)
+        _VRAW.clear()
+        _VRAW[id(tdf)] = got
+    return got[1]
+
+
+def _cut_splice_plates(tdf: tb.TdfData, x1: float, x2: float, segs):
+    """外形線の端をまたいで両側に伸びる短い縦線(継手の添え板)の、端より外の部分を
+    外形線から除く。左右の外形線の両方で、長い線の同じ端を短い線(400以下)がまたぐ
+    ときだけ(26-16 の WA2-1P-01: 下継手 PJ300W の添え板 9850〜10200 が、下端 10030 の
+    外形線と同じ位置に描かれ、外形線が 9850 まで伸びていた)。"""
+    raw = _raw_vertical(tdf)
+
+    def lines(x):
+        return [iv for k, ivs in raw.items() if abs(k - x) <= WIDTH_TOL for iv in ivs]
+
+    def cuts(x):
+        ls = lines(x)
+        out = set()
+        for a, b in ls:
+            if b - a < SPLICE_MAX:
+                continue
+            for c, d in ls:
+                if d - c > SPLICE_MAX:
+                    continue
+                if c < a - 1.0 and a + 1.0 < d < b:
+                    out.add((round(a, 1), -1, c))   # 下端 a の下へ伸びる
+                if a < c < b - 1.0 and d > b + 1.0:
+                    out.add((round(b, 1), +1, d))   # 上端 b の上へ伸びる
+        return out
+
+    c1, c2 = cuts(x1), cuts(x2)
+    both = {(e, s) for e, s, _ in c1} & {(e, s) for e, s, _ in c2}
+    for e, s in both:
+        far = [f for e2, s2, f in c1 | c2 if (e2, s2) == (e, s)]
+        if s < 0:
+            segs = _subtract(segs, [[min(far), e]])
+        else:
+            segs = _subtract(segs, [[e, max(far)]])
+    return [list(v) for v in segs]
+
+
 def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None = None,
             min_body: float = MIN_BODY, split_main: bool = False):
     """柱本体の候補(立面図が2つあれば2つ以上)と、その上下の端の候補のY。
@@ -440,6 +495,7 @@ def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None =
         x1, x2 = p["x1"], p["x2"]
         segs = _merge([list(s) for s in p["segs"]] + _nested_segs(by_x, x1, x2, p["segs"]))
         segs = _drop_extension_segs(tdf, x1, x2, segs)
+        segs = _cut_splice_plates(tdf, x1, x2, segs)
         reach = (x2 - x1) / 2 + WIDTH_TOL
         cuts = sorted((c[1] + c[3]) / 2 for c in caps if x1 - reach <= (c[0] + c[2]) / 2 <= x2 + reach)
         bounds = [-1e18] + cuts + [1e18]
