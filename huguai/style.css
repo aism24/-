@@ -85,6 +85,7 @@
   }
     .btn-secondary { background: #e0e0e0; color: #333; }
   .btn-success { background: #34a853; color: #fff; }
+  .btn-dept-change { background: #ffeb3b; color: #d50000; font-weight: bold; }
     .btn:disabled { opacity: 0.5; }
   .btn-invalid { background: #ccc; color: #888; cursor: not-allowed; }
 
