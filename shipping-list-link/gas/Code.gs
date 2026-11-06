@@ -5,7 +5,7 @@
  *            ?action=rebuild は前回の再生成後に更新されたExcelだけを読み直す(他は「Excelごとの抜き出し結果」を流用)。毎朝は全件読み直す
  *            / 版の確認(?action=ping → {ok, version})
  *  - doPost: 取り込んだ元PDF・Excelを PENDING_FOLDER_ID へ保存し、スプレッドシート「記録」の2行目に日時/枚数(Excelはシート数)/URL/リンク付与/NGを挿入(最新が上)。作成から KEEP_DAYS 日超は trashOldFiles(毎日3時。setupTrash で作る)でゴミ箱へ
- *            / {action:'ocr', kind, image}: 詳細図PDFの切り出し画像、または手書き・スキャンの一覧表(kind=list。読む前の向きの確認は kind=orient4、旧は orient)をGeminiで読む(モデル名・APIKEYは「情報」シートから。1日400回まで)。?action=ocrcheck で設定の確認
+ *            / {action:'ocr', kind, image}: 詳細図PDFの切り出し画像、または手書き・スキャンの一覧表(kind=list。読む前の向きの確認は kind=orient4、旧は orient)をGeminiで読む(モデル名は「情報」シートのB列。APIキーは見出し「APIキー」の表を上から1キー1日400回ずつ。表が無ければB列のAPIKEYを1日400回まで)。?action=ocrcheck で設定の確認
  *
  * 【初回セットアップ】 ①このコードを貼り付け ②setupDaily を1回実行(権限を承認) ③buildMaster を1回実行
  *  ④デプロイ → ウェブアプリ(実行ユーザー=自分 / アクセス=全員)→ URLを app.js の GAS_URL に設定
@@ -18,7 +18,7 @@ var SHEET_ID = '19l9P9C15wQ0jIcjIc_czZCiyDbnesQbq-Q88ttndMfs';
 var SHEET_NAME = '記録';
 var LINKS_FILE_NAME = '_リンク表.json';
 var STORE_FILE_NAME = '_リンク表_Excel別.json'; // Excelごとの抜き出し結果(ボタンの再生成で、変更の無いExcelを読み直さないため)
-var CODE_VERSION = '20261102c';                // コードを変えたら更新する(?action=ping で確認)
+var CODE_VERSION = '20261106a';                // コードを変えたら更新する(?action=ping で確認)
 var COL_ZUBAN = 'F', COL_NAME = 'G'; // 図番列 / 製品名(製品マーク)列
 
 /* ===== 純粋関数(GAS API非依存・Nodeでテスト可能) ===== */
@@ -296,7 +296,11 @@ function doGet(e) {
 /* ===== 図面PDF(文字データの無い詳細図)の読み取り: Gemini =====
  * モデル名・APIKEYはスプレッドシート「情報」シート(A列=項目名、B列=値)から項目名で探して読む。空なら別モデルに切り替えずエラーにする。
  * 画面からは kind(locate/number/table)と画像だけを受け取り、プロンプトはここで固定する(任意の質問に使われないように)。 */
-var OCR_DAILY_LIMIT = 400;   // 1日の呼び出し上限(誰でも呼べるdoPostの乱用でGeminiの無料枠を使い切られないように)
+var OCR_DAILY_LIMIT = 400;   // 1キーあたりの1日(日本時間)の呼び出し上限(誰でも呼べるdoPostの乱用でGeminiの無料枠を使い切られないように)
+// APIキーの切り替え(2026-11-06、ユーザー指示): 情報シートの見出し「APIキー」(左隣「名前」)の下のキーを上から使い、1キー1日400回で次のキーへ。全部使い切ったら「本日の上限に達しました」。
+// キーは別々のGoogle Cloudプロジェクトで作ったもの(Geminiの上限はキーではなくプロジェクトごと)。回数はスクリプトプロパティ OCR_USE_PREFIX+日付 に {キーのSHA-256先頭16文字: 回数}(キーの値は置かない)。
+// Googleが429で1日の上限(本文に PerDay)を返したキーは、その日は使い切りにする。1分あたりの429は、その回だけ次のキーで読み直す(全部429なら、そのエラーを返す=画面が待って再試行)。
+var OCR_USE_PREFIX = 'ocrkeys_';
 var OCR_BOX = { type: 'ARRAY', items: { type: 'INTEGER' } };   // [ymin, xmin, ymax, xmax] を0〜1000で
 var OCR_KINDS = {
   locate: {
@@ -339,22 +343,37 @@ var OCR_KINDS = {
       properties: { text: { type: 'STRING' }, box: OCR_BOX }, required: ['text'] } } }, required: ['cells'] }
   }
 };
-function infoMap_() {   // 情報シート(A列=項目名、B列=値)を1回で読む
+function infoMap_() {   // 情報シート(A列=項目名、B列=値)を1回で読む。見出し「APIキー」の表(上から6行以内の見出しの下を空行まで)は o.__keys に [{name, key}]
   var sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName('情報');
   if (!sh) throw new Error('スプレッドシートに「情報」シートがありません');
-  var v = sh.getDataRange().getValues(), o = {};
+  var v = sh.getDataRange().getValues(), o = {}, keys = [];
   for (var i = 0; i < v.length; i++) o[String(v[i][0]).trim()] = String(v[i][1] || '').trim();
+  for (var r = 0; r < Math.min(v.length, 6) && !keys.length; r++) {
+    for (var c = 0; c < v[r].length; c++) {
+      if (String(v[r][c]).trim() !== 'APIキー') continue;
+      for (var j = r + 1; j < v.length; j++) {
+        var k = String(v[j][c] || '').trim();
+        if (!k) break;
+        keys.push({ name: (c > 0 && String(v[j][c - 1] || '').trim()) || ('キー' + (keys.length + 1)), key: k });
+      }
+      break;
+    }
+  }
+  o.__keys = keys;
   return o;
 }
 function ocrSettings_() {
-  // 情報シートの読み込み(読み取りのたびにスプレッドシートを開かないよう)は、60秒だけスクリプトのキャッシュに持つ。キーやモデル名を変えたら、最大60秒で反映される
-  var cache = CacheService.getScriptCache(), hit = cache.get('ocr_settings');
+  // 情報シートの読み込み(読み取りのたびにスプレッドシートを開かないよう)は、60秒だけスクリプトのキャッシュに持つ(キーの表を足した 20261106a で名前を ocr_settings2 に。旧版の形が残っていても使わない)。キーやモデル名を変えたら、最大60秒で反映される
+  var cache = CacheService.getScriptCache(), hit = cache.get('ocr_settings2');
   if (hit) return JSON.parse(hit);
-  var info = infoMap_(), model = info['Geminiモデル名'], key = info['APIKEY'];
+  var info = infoMap_(), model = info['Geminiモデル名'], keys = info.__keys;
   if (!model) throw new Error('情報シートのGeminiモデル名が空です');
-  if (!key) throw new Error('情報シートのAPIKEYが空です');
-  var st = { model: model, key: key };
-  cache.put('ocr_settings', JSON.stringify(st), 60);
+  if (!keys.length) {   // 「APIキー」の表が無いときは、従来どおりB列のAPIKEY
+    if (!info['APIKEY']) throw new Error('情報シートのAPIKEYが空です');
+    keys = [{ name: 'APIKEY', key: info['APIKEY'] }];
+  }
+  var st = { model: model, key: keys[0].key, keys: keys };
+  cache.put('ocr_settings2', JSON.stringify(st), 60);
   return st;
 }
 function geminiCall_(st, parts, schema) {
@@ -363,7 +382,7 @@ function geminiCall_(st, parts, schema) {
     payload: JSON.stringify({ contents: [{ parts: parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: schema } })
   });
   var code = res.getResponseCode(), body = res.getContentText();
-  if (code !== 200) throw new Error('Gemini応答エラー ' + code + ': ' + body.slice(0, 200));
+  if (code !== 200) throw new Error('Gemini応答エラー ' + code + (code === 429 && /PerDay/i.test(body) ? '(PerDay)' : '') + ': ' + body.slice(0, 200));   // 1日の上限かは本文の後ろ(quotaId)にあるので、先に印を付ける
   var j = JSON.parse(body), t = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts && j.candidates[0].content.parts[0] && j.candidates[0].content.parts[0].text;
   if (!t) throw new Error('Geminiの応答が空です');
   return JSON.parse(t);
@@ -375,16 +394,66 @@ function ocrCheck_() {
     return { ok: true, model: st.model };
   } catch (err) { return { ok: false, error: String(err) }; }
 }
+function keyId_(key) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, key, Utilities.Charset.UTF_8)
+    .slice(0, 8).map(function (b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join('');
+}
+/** 今日(日本時間)の回数表 {keyId: 回数} を、ロックの中で fn に渡して書き換え・保存する。前の日の表(旧方式の ocr_yyyyMMdd も)は消す。 */
+function withKeyUse_(fn) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var props = PropertiesService.getScriptProperties(), name = OCR_USE_PREFIX + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd'), use = {};
+    try { use = JSON.parse(props.getProperty(name) || '{}') || {}; } catch (err) { use = {}; }
+    var ret = fn(use);
+    props.setProperty(name, JSON.stringify(use));
+    Object.keys(props.getProperties()).forEach(function (p) { if ((p.indexOf(OCR_USE_PREFIX) === 0 && p !== name) || /^ocr_\d{8}$/.test(p)) props.deleteProperty(p); });
+    return ret;
+  } finally { lock.releaseLock(); }
+}
+/** skip 以外で、今日400回に達していない一番上のキーを選び、回数を1つ進める。無ければ null。 */
+function takeKey_(keys, skip) {
+  return withKeyUse_(function (use) {
+    for (var i = 0; i < keys.length; i++) {
+      var id = keyId_(keys[i].key);
+      if (skip[id] || (use[id] || 0) >= OCR_DAILY_LIMIT) continue;
+      use[id] = (use[id] || 0) + 1;
+      return { key: keys[i].key, id: id };
+    }
+    return null;
+  });
+}
+/** キーを切り替えながら Gemini を呼ぶ。エラー文のキーの値は *** にする。 */
+function geminiRotate_(st, parts, schema) {
+  var skip = {}, last = '';
+  var hide = function (m) { st.keys.forEach(function (k) { m = String(m).split(k.key).join('***'); }); return m; };
+  for (var n = 0; n < st.keys.length * 2; n++) {
+    var cur = takeKey_(st.keys, skip);
+    if (!cur) break;
+    try { return geminiCall_({ model: st.model, key: cur.key }, parts, schema); } catch (err) {
+      var msg = String(err && err.message || err);
+      if (!/^Gemini応答エラー 429/.test(msg)) throw new Error(hide(msg));
+      if (/PerDay/i.test(msg)) withKeyUse_(function (use) { use[cur.id] = Math.max(use[cur.id] || 0, OCR_DAILY_LIMIT); });   // 1日の上限: このキーは今日は使わない
+      else skip[cur.id] = true;   // 1分あたりの上限: この回だけ次のキーで
+      last = msg;
+    }
+  }
+  if (last && Object.keys(skip).length) throw new Error(hide(last));   // 1分あたりの上限が続いた(画面は429を見て待ってから再試行する)
+  throw new Error('本日の上限に達しました(' + (st.keys.length > 1 ? 'APIキー' + st.keys.length + 'つとも' : '') + '1日' + OCR_DAILY_LIMIT + '回を使い切りました。日本時間の0時に戻ります)');
+}
+/** エディタで実行して、今日のキーごとの回数を「実行ログ」に出す(キーの値は出さない)。 */
+function showApiKeyUsage() {
+  var keys = infoMap_().__keys, use = withKeyUse_(function (u) { return JSON.parse(JSON.stringify(u)); });
+  Logger.log(Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd') + '(日本時間)\n' + (keys.map(function (k, i) {
+    return (i + 1) + '. ' + k.name + ': ' + (use[keyId_(k.key)] || 0) + ' / ' + OCR_DAILY_LIMIT + ' 回';
+  }).join('\n') || '情報シートに見出し「APIキー」の表がありません(B列のAPIKEYを使用中)'));
+}
 function ocrRead_(d) {
   try {
     var k = OCR_KINDS[d.kind];
     if (!k) throw new Error('kind が不正です');
     if (!d.image || String(d.image).length > 6000000) throw new Error('画像が無い、または大きすぎます');
-    var props = PropertiesService.getScriptProperties(), day = 'ocr_' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
-    var n = Number(props.getProperty(day) || 0);
-    if (n >= OCR_DAILY_LIMIT) throw new Error('本日の読み取り上限(' + OCR_DAILY_LIMIT + '回)に達しました');
-    props.setProperty(day, String(n + 1));
-    return { ok: true, data: geminiCall_(ocrSettings_(), [{ text: k.prompt }, { inline_data: { mime_type: 'image/jpeg', data: d.image } }], k.schema) };
+    return { ok: true, data: geminiRotate_(ocrSettings_(), [{ text: k.prompt }, { inline_data: { mime_type: 'image/jpeg', data: d.image } }], k.schema) };
   } catch (err) { return { ok: false, error: String(err) }; }
 }
 
