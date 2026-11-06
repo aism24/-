@@ -4314,11 +4314,17 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
                                             or _is_flange_end(tdf, b["x1"], b["x2"], got[2], tf)
                                             or (_joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[1], -1)
                                                 and _joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[2], +1)))]
-        # 立面図ごとの長さが食い違うときは、長い方の立面図から使う。片方の立面図にしか
-        # 描かれていない部分(上が細いH形に変わる柱の上の部分)があると、もう片方では
-        # 下の部分の長さしか取れない(26-16 の WB1-3C-01: 全長 7243、Y方向の立面図では
-        # □の部分の 4599.9)。同じ長さのものは従来の順番のまま。
-        gots.sort(key=lambda bg: -(bg[1][0] if bg[1] is not None else -1.0))
+        # 立面図ごとの長さが食い違うときは、長さの両端に寸法の点があり寸法の文字で
+        # つながるもの(_on_dim_chain)を先に、その中では長い方から使う。
+        # - 片方の立面図にしか描かれていない部分(上が細いH形に変わる柱の上の部分)が
+        #   あると、もう片方では下の部分の長さしか取れない(26-16 の WB1-3C-01: 全長 7243、
+        #   Y方向の立面図では□の部分の 4599.9。どちらも寸法でつながる)。
+        # - 柱の断面図(SEC)が縦に並ぶと、その外形線が本体の候補になり、たまたま図面に
+        #   ある値と長さが合うことがある(26-16 の EA2-1C-01 で 7000、正しくは 6993)。
+        #   断面図の長さの両端には寸法の点が無いので後に回す。
+        # 同じものどうしは従来の順番(外形線の長い順)のまま。
+        gots.sort(key=lambda bg: (bg[1] is not None and _on_dim_chain(chains, bg[1][1], bg[1][2]),
+                                  bg[1][0] if bg[1] is not None else -1.0), reverse=True)
         for b, got in gots:
             if got is None:
                 continue
