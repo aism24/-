@@ -343,6 +343,25 @@ def _spanning_ys(tdf: tb.TdfData, x1: float, x2: float, lo: float, hi: float):
     return [y for y, a, b in _hlines(tdf, lo, hi) if a <= x1 + WIDTH_TOL and b >= x2 - WIDTH_TOL]
 
 
+def _is_chain(ln) -> bool:
+    """一点鎖線か(直線の ref0 の 5〜7 ビットが 3。0 は実線、2 は破線)。床・レベルの線や
+    中心線が一点鎖線で描かれる。"""
+    return (ln.ref0 >> 5) & 7 == 3
+
+
+def _solid_at(tdf: tb.TdfData, y: float, xa: float, xb: float) -> bool:
+    """高さ y に、xa〜xb を覆う実線(一点鎖線でない直線か、折れ線の辺)があるか。"""
+    if any(abs((ln.y1 + ln.y2) / 2 - y) <= VERT_TOL and abs(ln.y1 - ln.y2) <= VERT_TOL
+           and min(ln.x1, ln.x2) <= xa and max(ln.x1, ln.x2) >= xb and not _is_chain(ln)
+           for ln in tdf.lines):
+        return True
+    for _off, pts in getattr(tdf, "polylines", []):
+        for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+            if abs(ay - y) <= VERT_TOL and abs(by - y) <= VERT_TOL and min(ax, bx) <= xa and max(ax, bx) >= xb:
+                return True
+    return False
+
+
 def _center_ys(tdf: tb.TdfData, cx: float, lo: float, hi: float):
     """柱の中心を覆う水平線のY(lo〜hiの範囲)。上の方が細い部分の端の板(N4C-9の
     上端の厚さ22の板)は外形の幅を覆わないので、本体の外側ではこれも端の候補にする。"""
@@ -374,6 +393,7 @@ def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None =
             continue
         x1, x2 = p["x1"], p["x2"]
         segs = _merge([list(s) for s in p["segs"]] + _nested_segs(by_x, x1, x2, p["segs"]))
+        segs = _drop_extension_segs(tdf, x1, x2, segs)
         reach = (x2 - x1) / 2 + WIDTH_TOL
         cuts = sorted((c[1] + c[3]) / 2 for c in caps if x1 - reach <= (c[0] + c[2]) / 2 <= x2 + reach)
         bounds = [-1e18] + cuts + [1e18]
@@ -395,10 +415,15 @@ def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None =
                 continue
             lo, hi = min(s[0] for s in part), max(s[1] for s in part)
             ends = {y for s in part for y in s}
-            ends.update(_spanning_ys(tdf, x1, x2, max(lo - END_PLATE_REACH, lo_b), min(hi + END_PLATE_REACH, hi_b)))
+            # 外形線の外の端の候補のうち、一点鎖線だけの高さは使わない(床・レベルの線。
+            # 26-16 の EB2-0P-01 は間柱の下端の20下にガセットPLの取り合いの一点鎖線が
+            # あり、1370 になっていた。正しくは 1350)。同じ高さに実線が重なるときは使う
+            # (26-12 の 1P-17 はベースPL の下の線(折れ線)が一点鎖線に重なる: 5760)。
+            ends.update(y for y in _spanning_ys(tdf, x1, x2, max(lo - END_PLATE_REACH, lo_b), min(hi + END_PLATE_REACH, hi_b))
+                        if lo <= y <= hi or _solid_at(tdf, y, x1 + WIDTH_TOL, x2 - WIDTH_TOL))
             cx = (x1 + x2) / 2
-            ends.update(_center_ys(tdf, cx, max(lo - END_PLATE_REACH, lo_b), lo))
-            ends.update(_center_ys(tdf, cx, hi, min(hi + END_PLATE_REACH, hi_b)))
+            ends.update(y for y in _center_ys(tdf, cx, max(lo - END_PLATE_REACH, lo_b), lo) if _solid_at(tdf, y, cx - 1.0, cx + 1.0))
+            ends.update(y for y in _center_ys(tdf, cx, hi, min(hi + END_PLATE_REACH, hi_b)) if _solid_at(tdf, y, cx - 1.0, cx + 1.0))
             if tf is not None:
                 # H形の柱は、端の面の線(左右のフランジの厚さで区切られた水平線)も端の
                 # 候補にする。添え板で継ぐ柱は外形線が継手の先まで一続きに描かれ、
@@ -421,6 +446,31 @@ def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None =
     # 本体の長さの順(立面図の片方が取り付く梁の長丸で区切られることがある: S3C-06)
     found.sort(key=lambda b: -b["cover"])
     return found
+
+
+def _dim_points(tdf: tb.TdfData):
+    """寸法の点(小さな丸)の (X, Y)。"""
+    return [(a.cx, a.cy) for a in tdf.arcs if a.a1 is None and a.r < DIM_POINT_R]
+
+
+def _drop_extension_segs(tdf: tb.TdfData, x1: float, x2: float, segs):
+    """外形線の組のうち、一番長い区間から離れた区間で、遠い側の端に寸法の点が左右とも
+    付いているものを除く(外形線と同じ位置に引かれた幅の寸法の引き出し線。26-16 の
+    EB2-0P-01 の右の立面図で、上の引き出し線まで含めて 1650 になっていた)。"""
+    if len(segs) < 2:
+        return segs
+    pts = _dim_points(tdf)
+    def has_pt(x, y):
+        return any(abs(px - x) <= WIDTH_TOL and abs(py - y) <= DIM_POINT_TOL for px, py in pts)
+    main = max(segs, key=lambda s: s[1] - s[0])
+    out = []
+    for s in segs:
+        if s is not main:
+            outer = s[1] if s[0] >= main[1] else (s[0] if s[1] <= main[0] else None)
+            if outer is not None and has_pt(x1, outer) and has_pt(x2, outer):
+                continue
+        out.append(s)
+    return out
 
 
 def _drop_minor(bodies):
@@ -460,9 +510,10 @@ def _in_drawing(vals, length):
 MIN_COVER_SHARE = 0.5  # 長さの範囲に、本体の外形線の半分以上が入ること
 
 
-def determine_length(body, vals):
+def determine_length(body, vals, chains=None):
     """柱の長さ: 端の候補2つの差のうち図面に寸法の文字(vals)として書かれているものから、
-    その範囲に入る外形線が一番多いもの(同じなら長い方。ベースプレート等の板を含む)。
+    その範囲に入る外形線が一番多いもの(同じなら、両端が寸法の点でつながるもの(chains を
+    渡したとき)、それも同じなら長い方。ベースプレート等の板を含む)。
 
     範囲に入る外形線が本体の外形線の半分未満なら使わない(部材の詳細図に描かれた外形線
     の大半はその部材自身なので、半分も覆わない寸法は部分の寸法)。以前は「本体の外形線の
@@ -482,7 +533,7 @@ def determine_length(body, vals):
             inside = sum(min(hi, h) - max(lo, l) for lo, hi in segs if min(hi, h) > max(lo, l))
             if inside < body["cover"] * MIN_COVER_SHARE:
                 continue
-            key = (round(inside, 1), length)
+            key = (round(inside, 1), bool(chains) and _on_dim_chain(chains, l, h), length)
             if best is None or key > best[0]:
                 best = (key, (length, l, h))
     return best[1] if best else None
@@ -793,7 +844,7 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
         length = bottom = top = None
         # 長さは外形線の一番長い立面図で求める。継手の長丸は立面図の片方にだけ
         # 描かれることがある(N1P-1のPJ200W)ので、同じ長さになる立面図から順に探す
-        gots = [(b, determine_length(b, vals) or determine_length_by_chain(tdf, b, chains, size)) for b in bodies]
+        gots = [(b, determine_length(b, vals, chains) or determine_length_by_chain(tdf, b, chains, size)) for b in bodies]
         if h_in_drawing and tf is not None:
             # 図の中のH形の文字からサイズを取った柱は、上下の端のどちらかがH形の端の面の
             # 線のときだけ長さを使う。外形線が寸法の引き出し線や継手の先の部材まで一続きに

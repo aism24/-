@@ -1,6 +1,6 @@
 """実寸法師(.tdf)バイナリの低レベルパーサー。
 
-tdfファイルはオフセットベースの可変長レコード形式。本モジュールは以下の3種類の
+tdfファイルはオフセットベースの可変長レコード形式。本モジュールは以下の4種類の
 要素を読み取り専用で解析する(書き込みは一切行わない)。
 
 1. テキスト要素: マーカー「00 N (2*N) 00」(Nはテキストの機能種別、1〜63)で検出。
@@ -16,6 +16,10 @@ tdfファイルはオフセットベースの可変長レコード形式。本�
    [ref:4]*4 + [cx,cy,r: double]*3)の直後に、「開始角・終了角」レコード
    (サイズ0x80000020=32バイト、[cx?][val][ref] + [a1,a2: double(rad)]*2、
    実際の角度値はレコード先頭+16バイト目から)が続く。
+
+4. 折れ線要素(2026-11-06 追加): サイズヘッダー 0x80000000 | (28 + 16*点数)、val=16、
+   [ref:4]*3 + 点数:4 + [x,y: double]*点数。四角のベースプレート等が1つの折れ線で
+   描かれる(26-12 の 1P-17)。直線の一覧には加えず、TdfData.polylines に別に持つ。
 
 これらの構造は2026-09realistic実機データの解析で判明したもので、正式仕様書は無い。
 """
@@ -86,6 +90,7 @@ class TdfData:
     texts: list[TextRecord] = field(default_factory=list)
     lines: list[LineRecord] = field(default_factory=list)
     arcs: list[ArcRecord] = field(default_factory=list)
+    polylines: list = field(default_factory=list)  # [(offset, [(x, y), ...]), ...]
     body_text_by_id: dict[int, str] = field(default_factory=dict)
     body_rot_by_id: dict[int, float] = field(default_factory=dict)
 
@@ -196,6 +201,26 @@ def _parse_arcs(data: bytes) -> list[ArcRecord]:
     return arcs
 
 
+def _parse_polylines(data: bytes) -> list:
+    """折れ線要素(モジュールの説明の4)。戻り値: [(オフセット, [(x, y), ...]), ...]"""
+    n = len(data)
+    out = []
+    i = 0
+    while i < n - 28:
+        size_raw = struct.unpack_from("<i", data, i)[0]
+        if size_raw < 0 and (size_raw & 0x7FFFFFFF) >= 60 and struct.unpack_from("<i", data, i + 4)[0] == 16:
+            size = size_raw & 0x7FFFFFFF
+            cnt = struct.unpack_from("<i", data, i + 24)[0]
+            if 2 <= cnt <= 1000 and size == 28 + 16 * cnt and i + 28 + 16 * cnt <= n:
+                pts = [struct.unpack_from("<2d", data, i + 28 + 16 * k) for k in range(cnt)]
+                if all(v == v and abs(v) < _COORD_LIMIT for pt in pts for v in pt):
+                    out.append((i, pts))
+                    i += size
+                    continue
+        i += 1
+    return out
+
+
 def load(path: str) -> TdfData:
     """tdfファイルを読み取り専用で解析する。"""
     with open(path, "rb") as f:
@@ -204,6 +229,7 @@ def load(path: str) -> TdfData:
     texts = _parse_texts(raw)
     lines = _parse_lines(raw)
     arcs = _parse_arcs(raw)
+    polylines = _parse_polylines(raw)
 
     body_text_by_id: dict[int, str] = {}
     body_rot_by_id: dict[int, float] = {}
@@ -213,7 +239,7 @@ def load(path: str) -> TdfData:
             body_rot_by_id.setdefault(r.id_field, r.rot)
 
     return TdfData(
-        path=path, raw=raw, texts=texts, lines=lines, arcs=arcs,
+        path=path, raw=raw, texts=texts, lines=lines, arcs=arcs, polylines=polylines,
         body_text_by_id=body_text_by_id, body_rot_by_id=body_rot_by_id,
     )
 
