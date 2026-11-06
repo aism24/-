@@ -574,7 +574,7 @@ var Wizard = {
 
     // 新規入力だけ、保存の横に「部署配置変更」(氏名シートの部署を書き換える。DeptChange)
     var deptBtnHtml = (!f.id && !Wizard.modalMode)
-      ? '<button class="btn btn-secondary" style="padding:8px 12px;font-size:14px;" onclick="DeptChange.open()">部署配置変更</button>' : '';
+      ? '<button class="btn btn-dept-change" style="padding:8px 12px;font-size:14px;" onclick="DeptChange.open()">部署配置変更</button>' : '';
     var topSaveBtnHtml = '<div class="btn-row" style="margin-top:0;margin-bottom:16px;">' +
       '<button class="btn btn-success save-btn" style="padding:8px 12px;font-size:14px;" onclick="Wizard.save()">保存</button>' +
       deptBtnHtml + '</div>';
@@ -760,10 +760,11 @@ var Modal = {
 /** ===================== 部署配置変更(新規入力) ===================== */
 /*
  * 名簿(データソースの「氏名」シート。A列=在籍者全員を数式で抽出、B列=部署)の部署を変える。
- * 部署は既存の部署ボタンから選ぶ。「空欄にする」と、その人は新規入力の対象者に出なくなる(今までどおり)。
+ * 部署は既存の部署ボタンから選ぶ。「配属先無し」(シートの部署は空欄)にすると、その人は新規入力の対象者に出なくなる(今までどおり)。
  */
 var DeptChange = {
   EMPTY: '__empty__',
+  NONE_LABEL: '配属先無し', // 部署が空欄の人の表示(シートには空欄で保存)
   name: '',
   dept: null,
 
@@ -804,7 +805,7 @@ var DeptChange = {
       seen[name] = true;
       var d = String(n['部署'] == null ? '' : n['部署']).trim();
       return '<option value="' + escapeHtml(name) + '"' + (name === cur ? ' selected' : '') + '>' +
-        escapeHtml(name + '(' + (d || '空欄') + ')') + '</option>';
+        escapeHtml(name + '(' + (d || DeptChange.NONE_LABEL) + ')') + '</option>';
     }).join('');
   },
 
@@ -821,7 +822,7 @@ var DeptChange = {
     if (!el) return;
     var opts = App.master.departments.concat([DeptChange.EMPTY]);
     el.innerHTML = '<div class="radio-group">' + opts.map(function (d) {
-      var label = d === DeptChange.EMPTY ? '空欄にする' : d;
+      var label = d === DeptChange.EMPTY ? DeptChange.NONE_LABEL : d;
       return '<label class="' + (DeptChange.dept === d ? 'selected' : '') + '" data-v="' + escapeHtml(d) + '" ' +
         'onclick="DeptChange.pickDept(this.getAttribute(\'data-v\'))"><input type="radio">' + escapeHtml(label) + '</label>';
     }).join('') + '</div>';
@@ -829,7 +830,7 @@ var DeptChange = {
 
   renderCurrent_: function () {
     var el = document.getElementById('deptChangeCurrent');
-    if (el) el.textContent = DeptChange.name ? '現在の部署: ' + (DeptChange.currentDept_(DeptChange.name) || '空欄') : '';
+    if (el) el.textContent = DeptChange.name ? '現在の部署: ' + (DeptChange.currentDept_(DeptChange.name) || DeptChange.NONE_LABEL) : '';
     var btn = document.getElementById('deptChangeSave');
     if (btn) btn.disabled = !DeptChange.canSave_();
   },
@@ -854,7 +855,7 @@ var DeptChange = {
       hideLoading();
       DeptChange.close();
       DeptChange.refreshWizard_();
-      showToast(name + ' の部署を「' + (to || '空欄') + '」に変更しました');
+      showToast(name + ' の部署を「' + (to || DeptChange.NONE_LABEL) + '」に変更しました');
     }).catch(function (err) {
       hideLoading();
       showToast('部署の変更に失敗: ' + (err.message || err));
