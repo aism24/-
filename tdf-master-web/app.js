@@ -363,6 +363,9 @@ async function processFiles(files) {
   }
   const lengthChecks = extractedResults.filter(r => r['長さの確認']);
   if (lengthChecks.length > 0) showLengthCheckDialog(lengthChecks);
+  // 長さを求められなかった行(製品の行はあるが、図から長さの範囲を決められなかった)
+  const lengthUnclear = extractedResults.filter(r => r['長さ'] == null && !r['長さの確認']);
+  if (lengthUnclear.length > 0) showLengthUnclearDialog(lengthUnclear);
 }
 
 // 重量(t)を求める。TDFファイル自身に重量セル(kg)があればそれをt換算して使い
@@ -1015,6 +1018,43 @@ function showLengthCheckDialog(rows) {
     const tr = document.createElement('tr');
     const len = r['長さ'] == null ? '' : String(Number(Number(r['長さ']).toFixed(4)));
     [r['図番'] ?? '', r['製品マーク'] ?? '', len, r['長さの確認']].forEach(v => {
+      const td = document.createElement('td');
+      td.textContent = v;
+      tr.appendChild(td);
+    });
+    table.appendChild(tr);
+  });
+  sec.appendChild(table);
+  body.appendChild(sec);
+  document.getElementById('error-dialog-overlay').classList.add('open');
+  document.getElementById('error-dialog-close').focus();
+}
+// 長さが空の行(製品マーク・設計符号・サイズ・本数は読めたが、長さの範囲を図から
+// 決められなかった行)を、図番・製品マークの表で知らせる(26-16 の EA2-1P-10・11 等)。
+function showLengthUnclearDialog(rows) {
+  const body = document.getElementById('error-dialog-body');
+  const sec = document.createElement('div');
+  sec.className = 'error-dialog-section';
+  const h = document.createElement('div');
+  h.className = 'error-dialog-title';
+  h.textContent = '長さ抽出範囲が不明瞭(' + rows.length + ' 件)';
+  sec.appendChild(h);
+  const note = document.createElement('div');
+  note.className = 'error-dialog-note';
+  note.textContent = '長さ・継手は空欄です。図面で確認してください';
+  sec.appendChild(note);
+  const table = document.createElement('table');
+  table.className = 'error-dialog-table';
+  const head = document.createElement('tr');
+  ['図番', '製品マーク'].forEach(t => {
+    const th = document.createElement('th');
+    th.textContent = t;
+    head.appendChild(th);
+  });
+  table.appendChild(head);
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    [r['図番'] ?? '', r['製品マーク'] ?? ''].forEach(v => {
       const td = document.createElement('td');
       td.textContent = v;
       tr.appendChild(td);
