@@ -687,6 +687,53 @@ def _joint_on_next_member(caps, by_x, x1: float, x2: float, y_end: float, direct
     return best[1] if best else None
 
 
+STUB_MIN = 50.0  # 上に立つ細い部材の線の長さの下限
+
+
+def _stub_top(by_x, chains, vals, body, got):
+    """柱の上端に細い部材が立つ製品の、その部材の上端までの長さ。
+
+    26-16 の EA1-4C-04〜06: SH-800 の柱本体 3683 の上に H-150 が 247 立ち上がり、
+    全長は 3930(寸法線あり)。H-150 は柱の幅と違うので本体の外形線にならず、上端が
+    柱の頭の板で止まっていた。次をすべて満たすときだけ伸ばす。
+    - 柱の上端から上へ、柱の中心に対して左右対称の縦線の組(柱の幅より細い)が始まる
+    - 寸法の点が下端・上端・その先と続き、どの区間にも寸法の文字がある
+    - その先の点が細い部材の縦線の上端から板の範囲(END_PLATE_REACH)以内にあり、
+      下端からその点までの長さが寸法の文字として書かれている
+    戻り値: (長さ, 下端Y, 上端Y)。当たらなければ None。
+    """
+    x1, x2 = body["x1"], body["x2"]
+    lo, hi = got[1], got[2]
+    cx, half = (x1 + x2) / 2, (x2 - x1) / 2
+
+    def tops_from_end(x):
+        return [b for k, ivs in by_x.items() if abs(k - x) <= WIDTH_TOL
+                for a, b in ivs if abs(a - hi) <= 2.0 and b - a > STUB_MIN]
+
+    tops = []
+    for k in by_x:
+        d = k - cx
+        if not (1.0 < d < half - WIDTH_TOL):
+            continue
+        right, left = tops_from_end(k), tops_from_end(cx - d)
+        if right and left:
+            tops.append(min(max(right), max(left)))
+    if not tops:
+        return None
+    stub_top = max(tops)
+    for pts, ok in chains:
+        i = next((n for n, y in enumerate(pts) if abs(y - lo) <= DIM_POINT_TOL), None)
+        j = next((n for n, y in enumerate(pts) if abs(y - hi) <= DIM_POINT_TOL), None)
+        if i is None or j is None or i >= j or j + 1 >= len(pts) or not all(ok[i:j + 1]):
+            continue
+        y2 = pts[j + 1]
+        if -2.0 <= y2 - stub_top <= END_PLATE_REACH:
+            length = round(y2 - lo, 1)
+            if _in_drawing(vals, length):
+                return (length, lo, y2)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # 1ファイル分
 # ---------------------------------------------------------------------------
@@ -741,6 +788,15 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
                                             or _is_flange_end(tdf, b["x1"], b["x2"], got[2], tf)
                                             or (_joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[1], -1)
                                                 and _joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[2], +1)))]
+        # 上端に細い部材が立つ柱は、その部材の上端までを長さにし、上継手は探さない
+        # (上の部材に付く別の部材の継手を拾うため: EA1-4C-04 の zB150)
+        stub = set()
+        for n, (b, got) in enumerate(gots):
+            if got is not None:
+                ext = _stub_top(by_x, chains, vals, b, got)
+                if ext is not None:
+                    gots[n] = (b, ext)
+                    stub.add(id(b))
         # 立面図ごとの長さが食い違うときは、長さの両端に寸法の点があり寸法の文字で
         # つながるもの(_on_dim_chain)を先に、その中では長い方から使う。
         # - 片方の立面図にしか描かれていない部分(上が細いH形に変わる柱の上の部分)が
@@ -760,12 +816,14 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
             elif abs(got[0] - length) > 0.6:
                 continue
             bottom = bottom or _joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[1], -1)
-            top = top or _joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[2], +1)
+            if id(b) not in stub:
+                top = top or _joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[2], +1)
         for b, got in gots:
             if got is None or length is None or abs(got[0] - length) > 0.6:
                 continue
             bottom = bottom or _joint_on_next_member(caps, by_x, b["x1"], b["x2"], got[1], -1)
-            top = top or _joint_on_next_member(caps, by_x, b["x1"], b["x2"], got[2], +1)
+            if id(b) not in stub:
+                top = top or _joint_on_next_member(caps, by_x, b["x1"], b["x2"], got[2], +1)
         return length, bottom, top
 
     # 同じサイズの行は結果も同じなので1回だけ求める(1枚に78行ある図面: 26-14 の4階間柱)。
