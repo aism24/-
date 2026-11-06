@@ -457,14 +457,33 @@ var Wizard = {
   },
 
   refreshPersonSelect: function (selectId, deptKey, fieldKey) {
-    var dept = Wizard.formData[deptKey];
-    var names = App.master.names.filter(function (n) { return n['部署'] === dept; }).map(function (n) { return n['氏名']; });
-    Wizard.setField(fieldKey, '');
+    // 名簿(氏名シート)は在籍者全員。部署で絞らず全員を出し、選んだ部署の人を先頭のグループにする。
+    // 全員が選択肢に残るので、部署を変えても選んだ対象者は消さない
     var el = document.getElementById(selectId);
-    if (el) {
-      el.innerHTML = '<option value="">選択してください</option>' +
-        names.map(function (n) { return '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>'; }).join('');
+    if (el) el.innerHTML = Wizard.personOptionsHtml(Wizard.formData[deptKey], Wizard.formData[fieldKey]);
+  },
+
+  /** 対象者の選択肢。選んだ部署の人 → その他の在籍者 の順。名簿に無い既存の値(退職者など)も残す */
+  personOptionsHtml: function (dept, current) {
+    var seen = {}, inDept = [], others = [];
+    App.master.names.forEach(function (n) {
+      var name = String(n['氏名'] == null ? '' : n['氏名']).trim();
+      if (!name || seen[name]) return;
+      seen[name] = true;
+      (dept && n['部署'] === dept ? inDept : others).push(name);
+    });
+    if (current && !seen[current]) inDept.unshift(current);
+    var opt = function (n) {
+      return '<option value="' + escapeHtml(n) + '"' + (n === current ? ' selected' : '') + '>' + escapeHtml(n) + '</option>';
+    };
+    var html = '<option value="">選択してください</option>';
+    if (inDept.length && dept) {
+      html += '<optgroup label="' + escapeHtml(dept) + '">' + inDept.map(opt).join('') + '</optgroup>' +
+        '<optgroup label="その他の在籍者">' + others.map(opt).join('') + '</optgroup>';
+    } else {
+      html += inDept.concat(others).map(opt).join('');
     }
+    return html;
   },
 
   refreshClassSelect: function () {
@@ -569,7 +588,6 @@ var Wizard = {
       var sel = (p === f['選択物件名'] && !f.isNewProperty) ? ' selected' : '';
       return '<option value="' + escapeHtml(p) + '"' + sel + '>' + escapeHtml(p) + '</option>';
     }).join('');
-    var targetNames = App.master.names.filter(function (n) { return n['部署'] === f['部署対象者']; }).map(function (n) { return n['氏名']; });
     var classOptions = App.master.classifications.filter(function (c) { return c['加工分類'] === f['加工先']; });
 
     var topSaveBtnHtml = '<div class="btn-row" style="margin-top:0;margin-bottom:16px;">' +
@@ -611,11 +629,7 @@ var Wizard = {
 
       '<div class="field" id="field_対象者"><label class="field-label">⑦ 対象者</label><div class="field-content">' +
       '<select id="対象者Select" onchange="Wizard.setField(\'対象者\', this.value)">' +
-      '<option value="">選択してください</option>' +
-      targetNames.map(function (n) {
-        var sel = (n === f['対象者']) ? ' selected' : '';
-        return '<option value="' + escapeHtml(n) + '"' + sel + '>' + escapeHtml(n) + '</option>';
-      }).join('') + '</select>' + Wizard.errorSpan('対象者') + '</div></div>' +
+      Wizard.personOptionsHtml(f['部署対象者'], f['対象者']) + '</select>' + Wizard.errorSpan('対象者') + '</div></div>' +
 
       '<div class="field" id="field_梁ロボ"><label class="field-label">⑧ 梁ロボ</label><div class="field-content">' +
       Wizard.radioGroup('梁ロボ', ['○', '-'], f['梁ロボ']) + Wizard.errorSpan('梁ロボ') + '</div></div>' +
