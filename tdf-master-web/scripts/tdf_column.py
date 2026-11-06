@@ -660,6 +660,9 @@ def _joint_near(caps, bolts, x1: float, x2: float, y_end: float, direction: int)
       上にある)。柱の頭の近くに取り付く梁の継手(NGW60等、端より300〜570内側)は、
       ボルトが梁の先(柱の外)にしか無いので使わない。距離だけでは両者を分けられない
       (ESPJ200の304とNGW60の300)ため、ボルトの位置で分ける(26-14の柱・間柱で確認)。
+    - 端の外側に長丸があれば、内側の長丸より先に使う(26-16 の EB3-0P-01 は、下端の
+      228上・横600に横の梁の継手 TB489 があり、下端にボルトがあるので内側でも候補に
+      なっていた。間柱の継手 PJ294 は下端の570下・横630)。
     """
     inward_ok = _bolts_on_member(bolts, x1, x2, y_end, direction)
     best = None
@@ -669,7 +672,7 @@ def _joint_near(caps, bolts, x1: float, x2: float, y_end: float, direction: int)
         dx = max(x1 - cx, 0.0, cx - x2)
         inward = (y_end - cy) * direction  # 端より柱の途中側へ入っている距離
         if -JOINT_DY <= inward <= (exm.BOLT_REACH if inward_ok else 0.0) and dx <= JOINT_DX:
-            d = math.hypot(dx, dy)
+            d = (inward > 0.0, math.hypot(dx, dy))  # 端の外側の長丸を先に
             if best is None or d < best[0]:
                 best = (d, c[5])
     return best[1] if best else None
@@ -840,6 +843,13 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
         if owner is not None:
             # 1図面に製品が複数あるときは、その製品の行に割り当てた本体だけで求める
             bodies = [b for b in bodies if _owner_row(b, rows) == owner]
+            if widths and not bodies:
+                # この製品に本体が無いときは、長さ1000未満の外形線の組も本体の候補にする
+                # (26-16 の EB3-0P-02 の EB32-0P300B-2 は 685。同じ図面の -1・-3 は1000以上)
+                skey = key + ("short",)
+                if skey not in found:
+                    found[skey] = _bodies(tdf, widths, by_x, caps, tf, min_body=widths[0], split_main=split_main)
+                bodies = [b for b in found[skey] if _owner_row(b, rows) == owner]
         bodies = _drop_minor(bodies)
         length = bottom = top = None
         # 長さは外形線の一番長い立面図で求める。継手の長丸は立面図の片方にだけ
