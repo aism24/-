@@ -2413,7 +2413,10 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
                 x_next_r, _ = rotate(r.x_next, r.y)
                 left_ref, right_ref = (x_mark_r, None), (x_next_r, None)
                 use_2d = False
-            allowed_angles = [(joint_axes or {}).get(id(r), 0.0)] + size_angles.get(r.size, [])
+            # 腰折れ梁は左右の梁の向きが違うので、向きを複数渡す(tdf_app._bent_partner)
+            r_axes = (joint_axes or {}).get(id(r), 0.0)
+            r_axes = list(r_axes) if isinstance(r_axes, (list, tuple)) else [r_axes]
+            allowed_angles = r_axes + size_angles.get(r.size, [])
 
             # 梁の端に別の部材が取り付き、その部材の継手が梁と同じ向きの長丸で近くに
             # 描かれることがある(2026-10-30、S4B-26の4CSB700A-S3。梁の左端の下に吊り
@@ -2448,7 +2451,7 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
                     if apply_dup_exclusion and dup_flags[(mx, my, t)]:
                         continue
                     xr, yr = rotate(mx, my)
-                    parallel = _angle_diff(cand_angle[(mx, my, t)], allowed_angles[0]) <= JOINT_ANGLE_TOL_DEG
+                    parallel = any(_angle_diff(cand_angle[(mx, my, t)], a) <= JOINT_ANGLE_TOL_DEG for a in r_axes)
                     for side, ref in (("left", left_ref), ("right", right_ref)):
                         if parallel and not bolt_ok[side]:
                             continue
@@ -2635,7 +2638,7 @@ def _beam_depth(size):
     return float(m.group(1)) if m else None
 
 
-def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
+def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None, with_others=False):
     """梁本体の端から端を、フランジの形から求める。
 
     フランジは「板厚tfだけ離れて向かい合う平行な2本の線」として描かれる
@@ -2666,10 +2669,14 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
     ハンチ等で短いフランジもあるため、最も長いものを梁本体とする。向きは線どうしで
     判定するので、斜めに描かれた梁にもそのまま使える。
     戻り値は (長さ, (左端, 右端), フランジの線の向き[度]) で、端は梁せいの中央の座標。
-    見つからなければNone。
+    見つからなければNone。with_others=True のときは (梁本体, [ほかの候補]) を返す
+    (腰折れ梁の判定用。ほかの候補も同じ形)。
     """
     if not tf:
         return None
+
+    def _finish(c):
+        return _finish_flange_member(tdf, c, joinable, depth)
     near = []
     for ln in tdf.lines:
         if not (min(ln.y1, ln.y2) > y_ref
@@ -2870,11 +2877,17 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
     if not keep:
         return None
     best = max(keep, key=lambda c: c[0])
+    if not with_others:
+        return _finish(best)
+    return _finish(best), [_finish(c) for c in keep if c is not best]
 
+
+def _finish_flange_member(tdf, c, joinable, depth):
+    """_flange_member の候補を、両端を伸ばして (長さ, (左端, 右端), 向き[度]) にする。"""
     # 選んだ梁の両端から、同じ高さの切れ端へ同じ条件でつながるときは、製品の範囲の
     # 外まで伸ばす(1枚の図面に製品が2つあると、梁の一部が次の製品マークより先まで
     # 描かれるため)。
-    _length, th, fs, level, start, end = best
+    _length, th, fs, level, start, end = c
     ux, uy = math.cos(th), math.sin(th)
 
     def depth_at(pos):
@@ -2922,6 +2935,105 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None):
         ends.append((pos * ux - c * uy, pos * uy + c * ux))
     ends.sort()
     return (round(end - start, 1), (ends[0], ends[1]), math.degrees(th))
+
+BENT_MIN_DEG = 0.05   # 腰折れ梁とみなす左右の梁の向きの差(下限。これ未満は同じ向き)
+BENT_MAX_DEG = 10.0   # 同(上限)
+BENT_MAX_GAP = 100.0  # 腰折れ梁の左右の梁の端(梁せいの中央)どうしの距離の上限(ダイアフラム等)
+
+
+def _bent_partner(member, others):
+    """腰折れ梁の、梁本体とつながるもう一方の梁。無ければ None。
+
+    中央付近でダイアフラムをはさんで2つのH形鋼をつなぎ、1本の製品にした梁
+    (屋根のように中央から左右に下る形)は、左右で向きのわずかに違う2本の梁として
+    描かれる(2026-11-06、26-16 の EB1-RG-05 の RG-X15Y3。左 6541.2・+0.872°、
+    右 5141・-0.776°、間 45)。同じサイズのフランジの組から求めたほかの候補のうち、
+    向きの差が BENT_MIN_DEG〜BENT_MAX_DEG で、端(梁せいの中央)どうしが
+    BENT_MAX_GAP 以内にあり、そこから反対側へ伸びるものを、もう一方の梁とする。
+    戻り値は (端どうしの距離, もう一方の梁, 梁本体の外側の端, もう一方の梁の外側の端)。
+    """
+    _length, (pa, pb), deg = member
+    best = None
+    for o in others:
+        d = abs((o[2] - deg + 90.0) % 180.0 - 90.0)
+        if not BENT_MIN_DEG < d <= BENT_MAX_DEG:
+            continue
+        qa, qb = o[1]
+        for e_m, far_m in ((pa, pb), (pb, pa)):
+            for e_o, far_o in ((qa, qb), (qb, qa)):
+                gap = math.hypot(e_o[0] - e_m[0], e_o[1] - e_m[1])
+                if gap > BENT_MAX_GAP:
+                    continue
+                # もう一方の梁は、つなぎ目から梁本体と反対の側へ伸びる
+                if math.hypot(far_o[0] - far_m[0], far_o[1] - far_m[1]) <= math.hypot(e_m[0] - far_m[0], e_m[1] - far_m[1]):
+                    continue
+                if best is None or gap < best[0]:
+                    best = (gap, o, far_m, far_o)
+    return best
+
+
+def _bent_length(tdf, member, partner, cands, dim_values, tf):
+    """腰折れ梁の、左右の梁の長さとつなぎ目の隙間の合計(mm)。
+
+    上下のフランジで長さと端の位置が少しずつ違い、図面にも両方の寸法が書かれる
+    (26-16 の EB1-RG-05: 上 6541.2・5141、下 6541.8・5141.5。つなぎ目が屋根形なので
+    下側ほど隙間が広い)。左右それぞれ、同じ向き・同じ区間のフランジの組(長さが
+    寸法の文字にあるものを優先)の中から、つなぎ目側のフランジの線の端どうしが
+    一番近い組み合わせを選び、その長さ(寸法の文字の値)と端どうしの距離を足す
+    (EB1-RG-05: 6541.2 + 45 + 5141 = 11727.2。ユーザー指示)。
+    """
+    def same(a, b):
+        d = abs((a[2] - b[2] + 90.0) % 180.0 - 90.0)
+        if d > 0.05:
+            return False
+        ux, uy = math.cos(math.radians(a[2])), math.sin(math.radians(a[2]))
+        pa = sorted(p[0] * ux + p[1] * uy for p in a[1])
+        pb = sorted(p[0] * ux + p[1] * uy for p in b[1])
+        return min(pa[1], pb[1]) - max(pa[0], pb[0]) > 0.5 * min(pa[1] - pa[0], pb[1] - pb[0])
+
+    def group(seg):
+        g = [c for c in cands if same(c, seg)] or [seg]
+        drawn = [(c, _drawn_value(dim_values, c[0])) for c in g]
+        return [(c, v) for c, v in drawn if v is not None] or [(c, None) for c in g]
+
+    # つなぎ目の位置(両方の梁の端のうち一番近い2点の中点)
+    _g, j1, j2 = min(((math.hypot(a[0] - b[0], a[1] - b[1]), a, b) for a in member[1] for b in partner[1]),
+                     key=lambda v: v[0])
+    jx, jy = (j1[0] + j2[0]) / 2, (j1[1] + j2[1]) / 2
+    reach = 2 * (_g + 2 * (tf or 0)) + 1000  # つなぎ目の近くにある端点だけを見る
+
+    def ends(seg):
+        # その組のフランジの線(長さが組の長さに一致する、同じ向きの線)のつなぎ目側の端点
+        out = []
+        th = math.radians(seg[2])
+        for ln in tdf.lines:
+            if ln.length < 100 or abs(ln.length - seg[0]) > MEMBER_DIM_TOL:  # 組の長さは0.1単位
+                continue
+            t = math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1)
+            d = abs((math.degrees(t - th) + 90.0) % 180.0 - 90.0)
+            if d > 0.05:
+                continue
+            for q in ((ln.x1, ln.y1), (ln.x2, ln.y2)):
+                if math.hypot(q[0] - jx, q[1] - jy) <= reach:
+                    out.append(q)
+        return out
+
+    best = None
+    for cm, vm in group(member):
+        em = ends(cm)
+        for cp, vp in group(partner):
+            ep = ends(cp)
+            gaps = [math.hypot(a[0] - b[0], a[1] - b[1]) for a in em for b in ep]
+            if not gaps:
+                continue
+            gap = min(gaps)
+            if best is None or gap < best[0]:
+                best = (gap, cm[0] if vm is None else vm, cp[0] if vp is None else vp)
+    if best is None:
+        return round(member[0] + _g + partner[0], 1)
+    gap, seg_m, seg_p = best
+    return round(seg_m + gap + seg_p, 1)
+
 
 _NUMERIC_TEXT = re.compile(r"^[0-9]+(?:\.[0-9]+)?$")
 
@@ -3159,12 +3271,35 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
             x_min = row.x_mark
             x_max = row.x_next
         length_value, debug = ex.determine_length(tdf, x_min, x_max, row.y, y_max=tier_y_max)
-        member = _flange_member(tdf, x_min, x_max, row.y, tier_y_max, _flange_thickness(row.size),
-                                depth=_beam_depth(row.size))
+        found = _flange_member(tdf, x_min, x_max, row.y, tier_y_max, _flange_thickness(row.size),
+                               depth=_beam_depth(row.size), with_others=True)
+        member, others = found if found is not None else (None, [])
+        bent = _bent_partner(member, others) if member is not None else None
         # 図面に寸法として書かれていない数値は長さにしない(ユーザー指示。フランジの
         # 形から求めた値が寸法の文字に無ければ、従来の寸法から選ぶ方式の値を使う)
         axis = debug.get("main_axis_deg")
-        drawn = _drawn_value(dim_values, member[0]) if member is not None else None
+        drawn = _drawn_value(dim_values, member[0]) if member is not None and bent is None else None
+        if bent is not None:
+            # 腰折れ梁(2026-11-06、ユーザー指示): 全長の寸法が書かれていればその値。
+            # 無ければ「長さの記載漏れ」として、左右の梁の長さ(寸法の文字があればその値)と
+            # 間の隙間(ダイアフラム)の合計を暫定の長さにし、「推測」の印を付けて
+            # 取り込み後のダイアログとセルの色で知らせる。継手は左右の外側の端で探し、
+            # 長丸の向きは左右どちらの梁の向きでもよい。
+            gap, partner, far_m, far_p = bent
+            total = _bent_length(tdf, member, partner, [member] + others, dim_values,
+                                 _flange_thickness(row.size))
+            whole = _drawn_value(dim_values, total)
+            if whole is not None:
+                length_value = whole
+            else:
+                length_value = total
+                length_checks[id(row)] = "推測"
+            member_ends[id(row)] = tuple(sorted((far_m, far_p)))
+            axis = member[2]
+            joint_axes[id(row)] = [member[2] % 180.0, partner[2] % 180.0]
+            lengths[id(row)] = length_value
+            beam_types[id(row)] = classify_beam_type(axis)
+            continue
         if member is not None and drawn is None:
             # フランジの長さに合う寸法が無ければ、ウェブの端まで伸ばした長さで探す
             web = _web_member(tdf, member, _flange_thickness(row.size), _beam_depth(row.size))
