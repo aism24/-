@@ -84,7 +84,45 @@ def find_rows(tdf: tb.TdfData) -> list[dict]:
         elif _is_size(c):
             rows.append({"mark": a, "code": b, "size": c, "zushi": False,
                          "count": _norm(tdf.resolve_text(dai)), "pos": pos})
-    return rows
+    return rows + _shared_rows(tdf, rows)
+
+
+def _shared_rows(tdf: tb.TdfData, rows: list[dict]) -> list[dict]:
+    """設計符号・サイズを複数の行で共有する表の、製品マークだけの行(梁モードと同じ
+    exm.find_product_rows_shared_group で読む)。
+
+    26-16 の EA2-1P-09: 製品マーク3行(EA21-1T1-3・-2・-1)に対し、設計符号 T1 と
+    サイズ [-100x50x5x7.5 は真ん中の -2 の行にだけ書かれ、図は1つ。-2 は find_rows の
+    行として読めるが、-1・-3 は製品マークしか無いので読めなかった。
+    同じ表で共有する行(共有のセルが書かれた行を含む)は同じ図の製品なので、
+    "group" に同じ値を入れ、本体の割り当て(_owner_row)では1つの製品として扱う。
+    """
+    existing = {(round(r["pos"][1], 1), round(r["pos"][2], 1)) for r in rows}
+    shared = exm.find_product_rows_shared_group(tdf, existing_positions=existing)
+    if not shared:
+        return []
+    clusters: list[list] = []
+    for pr in sorted(shared, key=lambda r: (round(r.x_mark, 1), round(r.x_next, 1), r.y)):
+        last = clusters[-1][-1] if clusters else None
+        if (last is not None and abs(last.x_mark - pr.x_mark) <= WIDTH_TOL
+                and abs(last.x_next - pr.x_next) <= WIDTH_TOL and pr.y - last.y <= 3000.0):
+            clusters[-1].append(pr)
+        else:
+            clusters.append([pr])
+    out = []
+    for n, cl in enumerate(clusters):
+        gid = ("shared", n)
+        lo, hi = min(pr.y for pr in cl), max(pr.y for pr in cl)
+        for r in rows:
+            x_lo, x_hi, y = r["pos"]
+            if (abs(x_lo - cl[0].x_mark) <= WIDTH_TOL and abs(x_hi - cl[0].x_next) <= WIDTH_TOL
+                    and lo <= y <= hi and r["code"] == cl[0].design_code and r["size"] == cl[0].size):
+                r["group"] = gid
+        for pr in cl:
+            out.append({"mark": _norm(pr.mark), "code": _norm(pr.design_code), "size": _norm(pr.size),
+                        "zushi": False, "count": _norm(pr.count),
+                        "pos": (pr.x_mark, pr.x_next, pr.y), "group": gid})
+    return out
 
 
 def _box_labels(tdf: tb.TdfData):
@@ -842,14 +880,14 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
         bodies = found[key]
         if owner is not None:
             # 1図面に製品が複数あるときは、その製品の行に割り当てた本体だけで求める
-            bodies = [b for b in bodies if _owner_row(b, rows) == owner]
+            bodies = [b for b in bodies if unit.get(_owner_row(b, rows)) == owner]
             if widths and not bodies:
                 # この製品に本体が無いときは、長さ1000未満の外形線の組も本体の候補にする
                 # (26-16 の EB3-0P-02 の EB32-0P300B-2 は 685。同じ図面の -1・-3 は1000以上)
                 skey = key + ("short",)
                 if skey not in found:
                     found[skey] = _bodies(tdf, widths, by_x, caps, tf, min_body=widths[0], split_main=split_main)
-                bodies = [b for b in found[skey] if _owner_row(b, rows) == owner]
+                bodies = [b for b in found[skey] if unit.get(_owner_row(b, rows)) == owner]
         bodies = _drop_minor(bodies)
         length = bottom = top = None
         # 長さは外形線の一番長い立面図で求める。継手の長丸は立面図の片方にだけ
@@ -908,7 +946,12 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
     # 同じサイズの行は結果も同じなので1回だけ求める(1枚に78行ある図面: 26-14 の4階間柱)。
     # 製品が複数の図面は、製品ごとに描かれた図から長さを求める(長さの違う製品が並ぶ:
     # 26-12 の 1P-09 の 1278 と 4220)
-    multi = len(rows) >= 2
+    if any("group" in r for r in rows):
+        # 共有する表の行は製品マークの順に並べる(梁モードと同じ)
+        rows.sort(key=lambda r: exm.mark_sort_key(r["mark"]))
+    # 本体を割り当てる単位: 共有する表の行はまとめて1つ(同じ図の製品)
+    unit = {id(r): r.get("group", id(r)) for r in rows}
+    multi = len(set(unit.values())) >= 2
     measured = {}
     out = []
     for row in rows:
@@ -921,7 +964,7 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
                 h_in_drawing = size is not None
         else:
             size, widths = row["size"], _widths_from_size(row["size"])
-        owner = id(row) if multi else None
+        owner = unit[id(row)] if multi else None
         key = (size, tuple(widths), h_in_drawing, owner)
         if key not in measured:
             measured[key] = measure(size, widths, h_in_drawing, owner)
