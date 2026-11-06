@@ -11,7 +11,7 @@
  */
 
 /** デプロイ後に doPost の ping で反映を確認するための版表記(コードを変えたら更新する) */
-var CODE_VERSION = '2026-11-06-dept-change';
+var CODE_VERSION = '2026-11-06-dept-change2';
 
 var CONFIG_SHEET_NAME = '情報';
 var DATA_SHEET = '不具合記録';
@@ -358,7 +358,9 @@ function buildMasterData_() {
   var inspectors = sheetToObjects_(ss.getSheetByName(INSPECTOR_SHEET)).map(function (i) { return i['検査員']; })
     .filter(function (name) { return HIDDEN_INSPECTORS.indexOf(name) === -1; });
   var classifications = sheetToObjects_(ss.getSheetByName(CLASS_SHEET));
-  var names = sheetToObjects_(ss.getSheetByName(NAME_SHEET));
+  // 氏名が空でB列(部署)だけ残った行は除く(A列は数式で抽出するので、人数が減ると下の行に部署だけ残る)
+  var names = sheetToObjects_(ss.getSheetByName(NAME_SHEET))
+    .filter(function (n) { return String(n['氏名'] == null ? '' : n['氏名']).trim() !== ''; });
 
   var propRows = ss.getSheetByName(PROPERTY_SHEET).getDataRange().getValues();
   var properties = propRows.slice(1).map(function (r) { return r[0]; }).filter(function (v) { return v; }).reverse();
