@@ -210,8 +210,9 @@ def _vertical_lines(tdf: tb.TdfData):
     return {x: _merge(iv) for x, iv in by_x.items()}
 
 
-# 継手名は英大文字で始まる。2文字目以降は小文字も入る(26-12 の JCc50-3)
-_JOINT_NAME = re.compile(r"^[A-Z][A-Za-z0-9\-]+$")
+# 継手名は英字で始まる。小文字も入る(26-12 の JCc50-3、26-16 の WB1-3C-01 の
+# 上継手 zCJ700 は小文字で始まる)
+_JOINT_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9\-]+$")
 _PLATE_NAME = re.compile(r"PL-\d")
 AXIS_TOL = 1.0
 
@@ -226,7 +227,7 @@ def _capsule_text(tdf: tb.TdfData, cap) -> str | None:
 
 
 def _capsules(tdf: tb.TdfData):
-    """継手の長丸: 向きが水平か垂直で、中に継手名(英大文字で始まる2文字以上)があるもの。
+    """継手の長丸: 向きが水平か垂直で、中に継手名(英字で始まる2文字以上)があるもの。
 
     改訂の雲マークの円弧どうし(N4C-1)や、「N」等の1文字の丸囲みを除く。
     戻り値: [(ax, ay, bx, by, r, 継手名), ...]
@@ -740,6 +741,11 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
                                             or _is_flange_end(tdf, b["x1"], b["x2"], got[2], tf)
                                             or (_joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[1], -1)
                                                 and _joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[2], +1)))]
+        # 立面図ごとの長さが食い違うときは、長い方の立面図から使う。片方の立面図にしか
+        # 描かれていない部分(上が細いH形に変わる柱の上の部分)があると、もう片方では
+        # 下の部分の長さしか取れない(26-16 の WB1-3C-01: 全長 7243、Y方向の立面図では
+        # □の部分の 4599.9)。同じ長さのものは従来の順番のまま。
+        gots.sort(key=lambda bg: -(bg[1][0] if bg[1] is not None else -1.0))
         for b, got in gots:
             if got is None:
                 continue
