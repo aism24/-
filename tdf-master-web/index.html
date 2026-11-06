@@ -4334,6 +4334,7 @@ def determine_length_by_chain(tdf: tb.TdfData, body, chains, size: str | None):
 
 JOINT_DY = 700.0      # 端から長丸の中心までの上下の距離
 JOINT_DX = 1000.0     # 柱の外形から長丸の中心までの横の距離
+JOINT_FAR = 1500.0    # 柱の真下・真上(幅の半分以内の横)の長丸を探す端からの距離
 
 
 def _bolts_on_member(bolts, x1: float, x2: float, y_end: float, direction: int) -> bool:
@@ -4366,13 +4367,17 @@ def _joint_near(caps, bolts, x1: float, x2: float, y_end: float, direction: int)
       なっていた。間柱の継手 PJ294 は下端の570下・横630)。
     """
     inward_ok = _bolts_on_member(bolts, x1, x2, y_end, direction)
+    half = (x2 - x1) / 2
     best = None
     for c in caps:
         cx, cy = (c[0] + c[2]) / 2, (c[1] + c[3]) / 2
         dy = abs(cy - y_end)
         dx = max(x1 - cx, 0.0, cx - x2)
         inward = (y_end - cy) * direction  # 端より柱の途中側へ入っている距離
-        if -JOINT_DY <= inward <= (exm.BOLT_REACH if inward_ok else 0.0) and dx <= JOINT_DX:
+        # 柱の幅の中か幅の半分以内の横にある長丸は、端の外へ JOINT_FAR まで使う
+        # (26-16 の EA1-4CP-03 の下継手 zC700A は下端の1219下・横27)
+        reach_out = JOINT_FAR if dx <= half else JOINT_DY
+        if -reach_out <= inward <= (exm.BOLT_REACH if inward_ok else 0.0) and dx <= JOINT_DX:
             d = (inward > 0.0, math.hypot(dx, dy))  # 端の外側の長丸を先に
             if best is None or d < best[0]:
                 best = (d, c[5])
