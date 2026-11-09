@@ -323,30 +323,52 @@ function checkNorm(s) {
   return String(s ?? '').normalize('NFKC').replace(/\s+/g, '').trim();
 }
 
-// 見出しに「図番」「製品マーク」がある行を、各シートの先頭30行から探す
+// 見出しに「図番」と「製品マーク」(または「製品名」)がある行を、各シートの先頭30行から探す。
+// 見出しの合うシートが複数あるときは、行がいちばん多いシートを使う(切断リストは同じ見出しの
+// 空のシートが多い。26-11 の切断リストは「工場出図」)。
+// 見出しの読み方(2026-11-09):
+//   製品マーク … 「製品マーク」「製品名」
+//   継手       … 「左継手」「右継手」/「下継手」「上継手」/「J」「J'」(切断リスト。J(開先) 等は使わない)
+//   サイズ     … 最初の「サイズ」の列。「,,」「〃」は上の行と同じ
+const CHECK_DITTO = new Set([',,', '〃', '″', '"', '”']);
+function checkHead(v) {
+  return checkNorm(v).replace(/[’‘′´`]/g, "'");
+}
 function checkReadExcel(buf) {
   const wb = XLSX.read(new Uint8Array(buf), { type: 'array', cellDates: true });
+  let best = null;
   for (const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];
     if (!ws || !ws['!ref']) continue;
     const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
     const top = XLSX.utils.decode_range(ws['!ref']).s.r; // 表がA1から始まらないとき、Excelの行番号に直す
     for (let h = 0; h < Math.min(30, aoa.length); h++) {
-      const head = aoa[h].map(checkNorm);
-      if (!head.includes('図番') || !head.some(v => v.startsWith('製品マーク'))) continue;
+      const head = aoa[h].map(checkHead);
       const col = (...keys) => head.findIndex(v => keys.some(k => v === k || v.startsWith(k + '(')));
+      const exact = (...keys) => head.findIndex(v => keys.includes(v));
+      const zubanCol = exact('図番');
+      const markCol = col('製品マーク', '製品名');
+      if (zubanCol < 0 || markCol < 0) continue;
       const ci = {
-        zuban: col('図番'), mark: col('製品マーク'), size: col('サイズ'), len: col('長さ'), honsu: col('本数'),
-        ja: col('左継手', '下継手'), jb: col('右継手', '上継手'),
+        zuban: zubanCol, mark: markCol, size: col('サイズ'), len: col('長さ'), honsu: col('本数'),
+        ja: [col('左継手', '下継手'), exact('J')].find(i => i >= 0) ?? -1,
+        jb: [col('右継手', '上継手'), exact("J'")].find(i => i >= 0) ?? -1,
       };
       const lenHead = ci.len >= 0 ? head[ci.len] : '';
       const rows = [];
+      const prev = {};
       for (let r = h + 1; r < aoa.length; r++) {
         const row = aoa[r];
         const zuban = checkNorm(row[ci.zuban]), mark = checkNorm(row[ci.mark]);
         if (!zuban && !mark) continue;
-        const g = i => (i < 0 ? undefined : row[i]);
-        rows.push({ rowNo: top + r + 1, zuban, mark, size: g(ci.size), len: g(ci.len), honsu: g(ci.honsu), ja: g(ci.ja), jb: g(ci.jb) });
+        const g = (k, i) => {
+          if (i < 0) return undefined;
+          let v = row[i];
+          if (CHECK_DITTO.has(checkNorm(v))) v = prev[k]; // 「,,」は上の行と同じ
+          prev[k] = v;
+          return v;
+        };
+        rows.push({ rowNo: top + r + 1, zuban, mark, rawMarkTail: String(row[ci.mark] ?? '').trim().endsWith('㋱'), size: g('size', ci.size), len: g('len', ci.len), honsu: g('honsu', ci.honsu), ja: g('ja', ci.ja), jb: g('jb', ci.jb) });
       }
       // 長さの単位: 見出しに(mm)・(m)があればそれ。無ければ値の大きさ(中央値が100未満ならm)
       let unit = /mm/i.test(lenHead) ? 'mm' : /\(m\)/i.test(lenHead) ? 'm' : null;
@@ -354,17 +376,34 @@ function checkReadExcel(buf) {
         const v = rows.map(r => Number(r.len)).filter(x => isFinite(x) && x > 0).sort((a, b) => a - b);
         unit = v.length && v[Math.floor(v.length / 2)] < 100 ? 'm' : 'mm';
       }
-      return { sheetName, rows, unit, cols: ci, hasSize: ci.size >= 0, hasLen: ci.len >= 0, hasHonsu: ci.honsu >= 0, hasJoint: ci.ja >= 0 || ci.jb >= 0 };
+      // 切断リスト(両端の継手が「J」「J'」の列)は、次の扱いを切断リストのときだけにする(2026-11-09 ユーザー指示)
+      //   ・サイズの頭文字「TH」と「H」は、数字がすべて同じなら同じ
+      //   ・製品名の最後の「㋱」は外して照合する
+      //   ・継手の欄の「孔有」のような、継手名ではない書き込み(英字を含まない)は無視する
+      const cut = exact('J') >= 0 && exact("J'") >= 0;
+      if (cut) {
+        // 「㋱」は NFKC で「メ」になるので、元の文字の最後が「㋱」のときだけ1文字外す
+        for (const x of rows) if (x.rawMarkTail) x.mark = x.mark.slice(0, -1);
+      }
+      const cand = { sheetName, rows, unit, cols: ci, cut, hasSize: ci.size >= 0, hasLen: ci.len >= 0, hasHonsu: ci.honsu >= 0, hasJoint: ci.ja >= 0 || ci.jb >= 0 };
+      if (!best || rows.length > best.rows.length) best = cand;
+      break;
     }
   }
-  throw new Error('見出しに「図番」「製品マーク」がある表が見つかりません');
+  if (best && best.rows.length) return best;
+  throw new Error('見出しに「図番」「製品マーク」(または「製品名」)がある表が見つかりません');
 }
 
 // ---- 比べる ----
-function checkSizeSame(xl, dw) {
-  const n = s => String(s ?? '').normalize('NFKC').replace(/\s/g, '').replace(/[×X]/g, 'x');
-  const a = n(xl), b = n(dw);
+function checkSizeSame(xl, dw, cut = false) {
+  const n = s => String(s ?? '').normalize('NFKC').replace(/\s/g, '').replace(/[×X*]/g, 'x'); // 切断リストは「*」区切り
+  let a = n(xl), b = n(dw);
   if (a === b) return true;
+  // 切断リストだけ: 頭文字「TH」と「H」は、数字がすべて同じなら同じ(2026-11-09 ユーザー指示)
+  if (cut) {
+    const th = s => s.replace(/^TH-/, 'H-');
+    if (th(a) === th(b)) return true;
+  }
   // 柱(□): 外形の数字だけ比べる。図面が節ごとに「_」で並ぶときは、どれかと同じなら一致
   if (a.startsWith('□-') && b.startsWith('□-')) {
     const ap = a.slice(2).split('x');
@@ -382,6 +421,29 @@ function checkSizeSame(xl, dw) {
     if (d1.length > 1 || d2.size > 1) return d1.every(d => d2.has(d));
   }
   return false;
+}
+
+// 両端の継手を「左 / 右」(柱は「下 / 上」)の形で表示する。無い端は「－」
+function checkJointText(a, b) {
+  const s = v => checkNorm(v) || '－';
+  return checkNorm(a) || checkNorm(b) ? `${s(a)} / ${s(b)}` : '';
+}
+
+// 継手の比べ方: 両端の継手名の組み合わせが同じなら一致(左右の書き順は問わない)。
+// Excelの列が片側だけのときは、その継手名が図面の両端のどちらかにあれば一致。
+// Excelの行に継手が何も書かれていないときは比べない(不一致にしない。2026-11-09 ユーザー指示)。
+// 切断リストでは、継手名ではない書き込み(「孔有」等。英字を含まない)はその端に何も書かれて
+// いないのと同じではなく「分からない」として扱い、書かれた継手名が図面にあれば一致とする。
+function checkJointSame(x, row, mode, xl) {
+  const [ka, kb] = mode === 'column' ? ['下継手', '上継手'] : ['左継手', '右継手'];
+  const raw = [xl.cols.ja >= 0 ? x.ja : null, xl.cols.jb >= 0 ? x.jb : null].map(checkNorm);
+  const isName = v => !xl.cut || /[A-Za-z]/.test(v);
+  const xs = raw.filter(v => v && isName(v)).sort();
+  if (!xs.length) return true;
+  const ds = [row[ka], row[kb]].map(checkNorm).filter(Boolean).sort();
+  const unknown = raw.some(v => v && !isName(v)); // 「孔有」等で分からない端がある
+  if (xl.cols.ja >= 0 && xl.cols.jb >= 0 && !unknown) return xs.join('|') === ds.join('|');
+  return xs.every(v => ds.includes(v));
 }
 
 function checkQty(v) {
@@ -536,58 +598,66 @@ function checkCompare(xl, found, res) {
     }
   }
   const used = new Set();
+  const honsuSum = new Map(); // 切断リスト: 図番+製品名 → 本数の合計
+  if (xl.cut) {
+    for (const x of xl.rows) {
+      const k = x.zuban + '\u0000' + x.mark;
+      honsuSum.set(k, (honsuSum.get(k) || 0) + (checkQty(x.honsu) ?? 0));
+    }
+  }
   const rows = xl.rows.map(x => {
     const out = { x, judge: '', bad: [], memo: [], dw: null, file: null };
+    // 照合するのは、製品名(製品マーク)と図番が図面の製品と一致した行だけ(2026-11-09 ユーザー指示)。
+    // 切断リストには柱仕口・大梁付などの部材の行もあるので、一致しない行は「対象外」として照合しない。
     const files = found.get(x.zuban) || [];
-    if (!files.length) { out.judge = '図面が見つからない'; return out; }
-    out.file = res.get(files[0].path.join('\\'));
+    if (files.length) out.file = res.get(files[0].path.join('\\'));
     const cand = (byZuban.get(x.zuban) || []).filter(c => checkNorm(c.row['製品マーク']) === x.mark);
     if (!cand.length) {
-      const errs = files.map(f => res.get(f.path.join('\\'))).filter(r => r && r.err);
-      out.judge = errs.length ? '図面を読めなかった' : '製品マークが図面に無い';
-      if (!errs.length) {
-        const marks = (byZuban.get(x.zuban) || []).map(c => c.row['製品マーク']);
-        out.memo.push('図面の製品マーク: ' + (marks.length ? marks.join('、') : '(読めず)'));
-      }
+      out.judge = '対象外';
+      out.memo.push(!files.length ? '図番の図面が見つからない'
+        : files.some(f => (res.get(f.path.join('\\')) || {}).err) ? '図面を読めなかった' : '図面の製品マークに無い');
       return out;
     }
     const { key, mode, row } = cand[0];
     used.add(key + '\u0000' + x.mark);
     out.dw = row;
     out.file = res.get(key);
-    if (xl.hasSize && !checkSizeSame(x.size, row['サイズ'])) out.bad.push('サイズ');
+    if (xl.hasSize && !checkSizeSame(x.size, row['サイズ'], xl.cut)) out.bad.push('サイズ');
     if (xl.hasLen) {
       const xm = Number(x.len) * (xl.unit === 'm' ? 1000 : 1);
       if (row['長さ'] == null) { out.bad.push('長さ'); out.memo.push('図面から長さを読めなかった'); }
       else if (!isFinite(xm) || Math.abs(row['長さ'] * 1000 - xm) > CHECK_LEN_TOL_MM + 1e-6) out.bad.push('長さ');
     }
     if (row['長さの確認']) out.memo.push(`図面の長さは「${row['長さの確認']}」`);
-    if (xl.hasHonsu && checkQty(x.honsu) !== checkQty(row['本数'])) out.bad.push('本数');
-    if (xl.hasJoint) {
-      const [ka, kb] = mode === 'column' ? ['下継手', '上継手'] : ['左継手', '右継手'];
-      const eq = (p, q) => checkNorm(p) === checkNorm(q);
-      if (xl.cols.ja >= 0 && !eq(x.ja, row[ka])) out.bad.push('継手A');
-      if (xl.cols.jb >= 0 && !eq(x.jb, row[kb])) out.bad.push('継手B');
+    if (xl.hasHonsu) {
+      // 切断リストは製品1本ごとに1行(本数1)なので、同じ図番・製品名の行の本数を合計して図面の台数と比べる
+      const xq = xl.cut ? (honsuSum.get(x.zuban + '\u0000' + x.mark) ?? null) : checkQty(x.honsu);
+      if (xl.cut) out.honsuSum = xq;
+      if (xq !== checkQty(row['本数'])) out.bad.push('本数');
     }
+    // 図面から長さを読めなかった行は継手も空になるので、継手は比べない(長さの不一致は残す)
+    if (xl.hasJoint && row['長さ'] != null && !checkJointSame(x, row, mode, xl)) out.bad.push('継手');
     if (cand.length > 1) out.memo.push(`図面に同じ製品マークが${cand.length}行`);
     out.judge = out.bad.length ? '不一致' : '一致';
     return out;
   });
-  // 図面にあってExcelに無い製品(Excelに載っている図面の中だけ)
+  // 図面にあってExcelに無い製品(Excelに載っている図面の中だけ)。切断リストは部材ごとの表で
+  // 製品をすべて載せるものではない(柱は柱仕口の行だけ等)ので出さない
   const extra = [];
-  for (const z of new Set(xl.rows.map(r => r.zuban))) {
+  for (const z of xl.cut ? [] : new Set(xl.rows.map(r => r.zuban))) {
     for (const c of byZuban.get(z) || []) {
       const m = checkNorm(c.row['製品マーク']);
       if (!used.has(c.key + '\u0000' + m)) extra.push({ zuban: z, row: c.row, file: res.get(c.key) });
     }
   }
-  const stats = { total: rows.length, ok: rows.filter(r => r.judge === '一致').length };
-  ['不一致', '製品マークが図面に無い', '図面が見つからない', '図面を読めなかった'].forEach(k => { stats[k] = rows.filter(r => r.judge === k).length; });
+  const judged = rows.filter(r => r.judge !== '対象外');
+  const stats = { total: judged.length, ok: judged.filter(r => r.judge === '一致').length, all: rows.length };
+  ['不一致', '対象外'].forEach(k => { stats[k] = rows.filter(r => r.judge === k).length; });
   return { xl, rows, extra, stats, hasJoint: xl.hasJoint };
 }
 
 // ---- 表示 ----
-const CHECK_JUDGE_CLASS = { '一致': 'ok', '不一致': 'ng', '製品マークが図面に無い': 'warn', '図面が見つからない': 'gray', '図面を読めなかった': 'gray' };
+const CHECK_JUDGE_CLASS = { '一致': 'ok', '不一致': 'ng', '対象外': 'gray' };
 
 function renderCheck() {
   const has = !!checkResult;
@@ -611,27 +681,27 @@ function renderCheck() {
     sum.appendChild(s);
   };
   chip('一致', stats.ok, 'ok', 'Excelの行が図面と同じ');
-  chip('不一致', stats['不一致'], 'ng', '図面はあるが、サイズ・長さ・本数・継手のどれかが図面と違う');
-  chip('製品マークが図面に無い', stats['製品マークが図面に無い'], 'warn', '図番の図面はあるが、その中にExcelの製品マークが無い');
-  chip('図面が見つからない', stats['図面が見つからない'] + stats['図面を読めなかった'], 'gray',
-    'Excelの図番と同じ名前の図面(TDF)が詳細図フォルダに無い(図番の書き違い・図面の未作成・別のフォルダに置かれている等)。図面はあっても読めなかったものも含む', true);
+  chip('不一致', stats['不一致'], 'ng', 'サイズ・長さ・本数・継手のどれかが図面と違う');
+  chip('対象外', stats['対象外'], 'gray',
+    '製品名と図番が図面の製品と一致しない行。照合しない(柱仕口・大梁付などの部材の行、図番の図面が見つからない行等)。結果のExcelには載せます', true);
   chip('図面にあってExcelに無い', extra.length, 'warn', 'Excelに載っている図面の中に、Excelに無い製品マークがある(Excelの書き漏れの可能性)', true);
   const info = document.getElementById('check-info');
   const cols = ['サイズ', '長さ', '本数'].filter((k, i) => [xl.hasSize, xl.hasLen, xl.hasHonsu][i]);
   if (hasJoint) cols.push('継手');
   const tm = checkResult.times;
-  info.textContent = `シート「${xl.sheetName}」 / 比べた項目: ${cols.join('・')}(長さ ${xl.unit === 'm' ? 'm' : 'mm'}) / 図面 ${tm.files} 件(${checkResult.kojiDir}) / ` +
-    `探す ${Math.round(tm.find)}秒・解析 ${Math.round(tm.extract)}秒` + (tm.reused ? `(前回の結果を使用 ${tm.reused} 件)` : '');
+  info.textContent = `シート「${xl.sheetName}」 / 比べた項目: ${cols.join('・')}(長さ ${xl.unit === 'm' ? 'm' : 'mm'}) / 図面 ${tm.files} 件(${checkResult.kojiDir})` +
+    (tm.find || tm.extract ? ` / 探す ${Math.round(tm.find)}秒・解析 ${Math.round(tm.extract)}秒` + (tm.reused ? `(前回の結果を使用 ${tm.reused} 件)` : '') : '') +
+    (xl.cut ? ' / 切断リストとして照合' : '');
 
+  // 継手は表に必ず出す(2026-11-09 ユーザー指示)。Excelに継手の列があれば並べて比べる
   const head = ['判定', '行', '図番', '製品マーク', 'サイズ(Excel)', 'サイズ(図面)', '長さ(Excel)', '長さ(図面)', '本数(Excel)', '本数(図面)'];
-  if (hasJoint) head.push('継手A(Excel)', '継手A(図面)', '継手B(Excel)', '継手B(図面)');
-  head.push('メモ', '図面の更新日');
+  head.push('継手(Excel)', '継手(図面)', 'メモ', '図面の更新日'); // Excelに継手の列が無ければ「継手(Excel)」は空欄
   const thead = document.getElementById('check-thead');
   thead.innerHTML = '<tr>' + head.map(h => `<th>${h}</th>`).join('') + '</tr>';
 
   const tbody = document.getElementById('check-tbody');
   tbody.innerHTML = '';
-  const shown = rows.filter(r => !checkOnlyNg || r.judge !== '一致');
+  const shown = rows.filter(r => r.judge !== '対象外' && (!checkOnlyNg || r.judge !== '一致'));
   const td = (tr, text, cls) => { const c = document.createElement('td'); c.textContent = text ?? ''; if (cls) c.className = cls; tr.appendChild(c); return c; };
   for (const r of shown) {
     const tr = document.createElement('tr');
@@ -645,12 +715,12 @@ function renderCheck() {
     td(tr, r.x.size, bad('サイズ')); td(tr, dw['サイズ'], bad('サイズ'));
     const xlen = r.x.len == null || r.x.len === '' ? '' : (isFinite(Number(r.x.len)) ? String(Number(Number(r.x.len).toFixed(4))) : String(r.x.len));
     td(tr, xlen, 'num ' + bad('長さ')); td(tr, checkFmtLen(dw['長さ']), 'num ' + bad('長さ'));
-    td(tr, r.x.honsu, bad('本数')); td(tr, dw['本数'], bad('本数'));
-    if (hasJoint) {
-      const [ka, kb] = r.file && r.file.mode === 'column' ? ['下継手', '上継手'] : ['左継手', '右継手'];
-      td(tr, r.x.ja, bad('継手A')); td(tr, dw[ka], bad('継手A'));
-      td(tr, r.x.jb, bad('継手B')); td(tr, dw[kb], bad('継手B'));
-    }
+    // 切断リストで同じ製品の行が複数あるときだけ、合計を「1(計7)」のように出す
+    const hs = r.honsuSum != null && r.honsuSum !== checkQty(r.x.honsu) ? `${r.x.honsu ?? ''}(計${r.honsuSum})` : r.x.honsu;
+    td(tr, hs, bad('本数')); td(tr, dw['本数'], bad('本数'));
+    td(tr, checkJointText(r.x.ja, r.x.jb), bad('継手'));
+    const [ka, kb] = r.file && r.file.mode === 'column' ? ['下継手', '上継手'] : ['左継手', '右継手'];
+    td(tr, checkJointText(dw[ka], dw[kb]), bad('継手'));
     td(tr, r.memo.join(' / '), 'memo');
     td(tr, r.file ? checkFmtDate(r.file.mtime) : '');
     tbody.appendChild(tr);
@@ -700,17 +770,14 @@ function checkConfirm(title, message, okLabel, cancelLabel) {
 function downloadCheckExcel() {
   if (!checkResult) return;
   const { rows, extra, hasJoint } = checkResult;
-  const head = ['判定', 'Excelの行', '図番', '製品マーク', '違う項目', 'サイズ(Excel)', 'サイズ(図面)', '長さ(Excel)', '長さ(図面)', '本数(Excel)', '本数(図面)'];
-  if (hasJoint) head.push('継手A(Excel)', '継手A(図面)', '継手B(Excel)', '継手B(図面)');
-  head.push('メモ', '図面', '図面の更新日');
+  const head = ['判定', 'Excelの行', '図番', '製品マーク', '違う項目', 'サイズ(Excel)', 'サイズ(図面)', '長さ(Excel)', '長さ(図面)', '本数(Excel)', '本数(図面)',
+    '継手(Excel)', '継手(図面)', 'メモ', '図面', '図面の更新日'];
   const aoa = [head];
   for (const r of rows) {
     const dw = r.dw || {};
-    const line = [r.judge, r.x.rowNo, r.x.zuban, r.x.mark, r.bad.join('・'), r.x.size ?? '', dw['サイズ'] ?? '', r.x.len ?? '', dw['長さ'] ?? '', r.x.honsu ?? '', dw['本数'] ?? ''];
-    if (hasJoint) {
-      const [ka, kb] = r.file && r.file.mode === 'column' ? ['下継手', '上継手'] : ['左継手', '右継手'];
-      line.push(r.x.ja ?? '', dw[ka] ?? '', r.x.jb ?? '', dw[kb] ?? '');
-    }
+    const [ka, kb] = r.file && r.file.mode === 'column' ? ['下継手', '上継手'] : ['左継手', '右継手'];
+    const line = [r.judge, r.x.rowNo, r.x.zuban, r.x.mark, r.bad.join('・'), r.x.size ?? '', dw['サイズ'] ?? '', r.x.len ?? '', dw['長さ'] ?? '', r.honsuSum != null ? `${r.x.honsu ?? ''}(計${r.honsuSum})` : (r.x.honsu ?? ''), dw['本数'] ?? '',
+      checkJointText(r.x.ja, r.x.jb), r.dw ? checkJointText(dw[ka], dw[kb]) : ''];
     line.push(r.memo.join(' / '), r.file ? r.file.path.join('\\') : '', r.file ? checkFmtDate(r.file.mtime) : '');
     aoa.push(line);
   }
