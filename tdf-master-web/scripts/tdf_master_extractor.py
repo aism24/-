@@ -21,6 +21,7 @@ from __future__ import annotations
 import collections
 import math
 import re
+import unicodedata
 from dataclasses import dataclass
 
 import tdf_binary as tb
@@ -132,6 +133,11 @@ def find_product_rows(tdf: tb.TdfData) -> list[ProductRow]:
         size_text = tdf.resolve_text(size_rec)
         if not _looks_like_size(size_text):
             continue
+        # 製品マークの位置に「N台」(隣の表の本数)が来たものは製品の行ではない
+        # (26-16 の EA1-2B-06: 製品マークが行から下にずれて書かれ、左の表の「1台」を
+        # 製品マークと読んでいた。ITM.xlsx の照合で判明)。find_product_rows_offset_mark で読む。
+        if tb.is_dai_cell(tdf.resolve_text(mark_rec)):
+            continue
 
         # 重量(daiより右、ほぼ同じY、"N.Nkg"形式)があれば拾う。重量セルは本数セルと
         # 数ピクセル分Yがずれることがあるため、許容幅を広めに取る。
@@ -152,6 +158,62 @@ def find_product_rows(tdf: tb.TdfData) -> list[ProductRow]:
             x_mark=mark_rec.x, x_next=dai.x, y=dai.y,
         ))
 
+    rows.sort(key=lambda r: r.x_mark)
+    return rows
+
+
+OFFSET_MARK_DY = 130.0  # 製品マークが本数の行からずれて書かれていてもよい上下の幅(行の間隔240の約半分)
+_MARK_LIKE = re.compile(r"^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$")
+
+
+def find_product_rows_offset_mark(
+    tdf: tb.TdfData, existing_positions: set[tuple[float, float]] | None = None,
+) -> list[ProductRow]:
+    """製品マークが本数の行から少し上下にずれて書かれた行(ほかの読み方で使われなかった
+    「N台」だけを対象にする)。
+
+    26-16 の EA1-2B-06: EA12-2B35-51〜54 の製品マークが「1台」の行より60下に書かれ、
+    同じ行の文字として読めず、4製品が抜けていた(ITM.xlsx の照合で判明)。-53・-54 は
+    2行で設計符号・サイズを共有し、その文字は2行の真ん中(120ずれ)にある。
+
+    「N台」から左へ、同じ高さの直前の「N台」より右の範囲で、上下 OFFSET_MARK_DY 以内の
+    文字を見る。サイズの文字とその左の設計符号(サイズと同じ高さ)があり、さらに左で一番
+    近い製品マークらしい文字(英数字とハイフン)を製品マークにする。
+    """
+    existing_positions = existing_positions or set()
+    dais = [r for r in tdf.texts if r.rot == 0 and tdf.resolve_text(r) and tb.is_dai_cell(tdf.resolve_text(r))]
+    rows: list[ProductRow] = []
+    for dai in dais:
+        if (round(dai.x, 1), round(dai.y, 1)) in existing_positions:
+            continue
+        prev_x = max((d.x for d in dais if d.x < dai.x and abs(d.y - dai.y) < SAME_ROW_Y_TOLERANCE), default=None)
+        win = [r for r in tdf.texts
+               if r.rot == 0 and r.x < dai.x and (prev_x is None or r.x > prev_x)
+               and abs(r.y - dai.y) <= OFFSET_MARK_DY and tdf.resolve_text(r)
+               and not tb.is_dai_cell(tdf.resolve_text(r))]
+        sizes = [r for r in win if _looks_like_size(tdf.resolve_text(r))]
+        if not sizes:
+            continue
+        size_rec = min(sizes, key=lambda r: (abs(r.y - dai.y), -r.x))
+        codes = [r for r in win if r.x < size_rec.x and abs(r.y - size_rec.y) < SAME_ROW_Y_TOLERANCE]
+        if not codes:
+            continue
+        code_rec = max(codes, key=lambda r: r.x)
+        marks = [r for r in win if r.x < code_rec.x and r is not size_rec
+                 and _MARK_LIKE.match(unicodedata.normalize("NFKC", tdf.resolve_text(r)).strip())
+                 and not _looks_like_size(tdf.resolve_text(r))]
+        if not marks:
+            continue
+        mark_rec = max(marks, key=lambda r: r.x)
+        # 製品マークは、同じ列の「N台」のうちこの「N台」に一番近いこと(2行の表で取り違えない)
+        col = [d for d in dais if abs(d.x - dai.x) < 1.0]
+        if min(col, key=lambda d: abs(d.y - mark_rec.y)) is not dai:
+            continue
+        rows.append(ProductRow(
+            mark=tdf.resolve_text(mark_rec), design_code=tdf.resolve_text(code_rec),
+            size=tdf.resolve_text(size_rec), count=tdf.resolve_text(dai), weight=None,
+            x_mark=mark_rec.x, x_next=dai.x, y=dai.y,
+        ))
     rows.sort(key=lambda r: r.x_mark)
     return rows
 

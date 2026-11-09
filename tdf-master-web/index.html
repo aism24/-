@@ -443,6 +443,7 @@ from __future__ import annotations
 import collections
 import math
 import re
+import unicodedata
 from dataclasses import dataclass
 
 import tdf_binary as tb
@@ -554,6 +555,11 @@ def find_product_rows(tdf: tb.TdfData) -> list[ProductRow]:
         size_text = tdf.resolve_text(size_rec)
         if not _looks_like_size(size_text):
             continue
+        # 製品マークの位置に「N台」(隣の表の本数)が来たものは製品の行ではない
+        # (26-16 の EA1-2B-06: 製品マークが行から下にずれて書かれ、左の表の「1台」を
+        # 製品マークと読んでいた。ITM.xlsx の照合で判明)。find_product_rows_offset_mark で読む。
+        if tb.is_dai_cell(tdf.resolve_text(mark_rec)):
+            continue
 
         # 重量(daiより右、ほぼ同じY、"N.Nkg"形式)があれば拾う。重量セルは本数セルと
         # 数ピクセル分Yがずれることがあるため、許容幅を広めに取る。
@@ -574,6 +580,62 @@ def find_product_rows(tdf: tb.TdfData) -> list[ProductRow]:
             x_mark=mark_rec.x, x_next=dai.x, y=dai.y,
         ))
 
+    rows.sort(key=lambda r: r.x_mark)
+    return rows
+
+
+OFFSET_MARK_DY = 130.0  # 製品マークが本数の行からずれて書かれていてもよい上下の幅(行の間隔240の約半分)
+_MARK_LIKE = re.compile(r"^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$")
+
+
+def find_product_rows_offset_mark(
+    tdf: tb.TdfData, existing_positions: set[tuple[float, float]] | None = None,
+) -> list[ProductRow]:
+    """製品マークが本数の行から少し上下にずれて書かれた行(ほかの読み方で使われなかった
+    「N台」だけを対象にする)。
+
+    26-16 の EA1-2B-06: EA12-2B35-51〜54 の製品マークが「1台」の行より60下に書かれ、
+    同じ行の文字として読めず、4製品が抜けていた(ITM.xlsx の照合で判明)。-53・-54 は
+    2行で設計符号・サイズを共有し、その文字は2行の真ん中(120ずれ)にある。
+
+    「N台」から左へ、同じ高さの直前の「N台」より右の範囲で、上下 OFFSET_MARK_DY 以内の
+    文字を見る。サイズの文字とその左の設計符号(サイズと同じ高さ)があり、さらに左で一番
+    近い製品マークらしい文字(英数字とハイフン)を製品マークにする。
+    """
+    existing_positions = existing_positions or set()
+    dais = [r for r in tdf.texts if r.rot == 0 and tdf.resolve_text(r) and tb.is_dai_cell(tdf.resolve_text(r))]
+    rows: list[ProductRow] = []
+    for dai in dais:
+        if (round(dai.x, 1), round(dai.y, 1)) in existing_positions:
+            continue
+        prev_x = max((d.x for d in dais if d.x < dai.x and abs(d.y - dai.y) < SAME_ROW_Y_TOLERANCE), default=None)
+        win = [r for r in tdf.texts
+               if r.rot == 0 and r.x < dai.x and (prev_x is None or r.x > prev_x)
+               and abs(r.y - dai.y) <= OFFSET_MARK_DY and tdf.resolve_text(r)
+               and not tb.is_dai_cell(tdf.resolve_text(r))]
+        sizes = [r for r in win if _looks_like_size(tdf.resolve_text(r))]
+        if not sizes:
+            continue
+        size_rec = min(sizes, key=lambda r: (abs(r.y - dai.y), -r.x))
+        codes = [r for r in win if r.x < size_rec.x and abs(r.y - size_rec.y) < SAME_ROW_Y_TOLERANCE]
+        if not codes:
+            continue
+        code_rec = max(codes, key=lambda r: r.x)
+        marks = [r for r in win if r.x < code_rec.x and r is not size_rec
+                 and _MARK_LIKE.match(unicodedata.normalize("NFKC", tdf.resolve_text(r)).strip())
+                 and not _looks_like_size(tdf.resolve_text(r))]
+        if not marks:
+            continue
+        mark_rec = max(marks, key=lambda r: r.x)
+        # 製品マークは、同じ列の「N台」のうちこの「N台」に一番近いこと(2行の表で取り違えない)
+        col = [d for d in dais if abs(d.x - dai.x) < 1.0]
+        if min(col, key=lambda d: abs(d.y - mark_rec.y)) is not dai:
+            continue
+        rows.append(ProductRow(
+            mark=tdf.resolve_text(mark_rec), design_code=tdf.resolve_text(code_rec),
+            size=tdf.resolve_text(size_rec), count=tdf.resolve_text(dai), weight=None,
+            x_mark=mark_rec.x, x_next=dai.x, y=dai.y,
+        ))
     rows.sort(key=lambda r: r.x_mark)
     return rows
 
@@ -2192,6 +2254,10 @@ def _get_rows_small(tdf: tb.TdfData) -> list:
     # ようにマージする)。
     existing = {(round(r.x_next, 1), round(r.y, 1)) for r in rows}
     rows = rows + ex.find_product_rows_no_size(tdf, existing_positions=existing)
+    # 製品マークが本数の行から少し上下にずれて書かれた行(26-16 の EA1-2B-06)。
+    # ほかの読み方で使われなかった「N台」だけを対象にする。
+    existing = {(round(r.x_next, 1), round(r.y, 1)) for r in rows}
+    rows = rows + ex.find_product_rows_offset_mark(tdf, existing_positions=existing)
     rows = exm.filter_deleted_rows(tdf, rows)
     return rows
 
@@ -2896,6 +2962,7 @@ def _in_drawing(dim_values, length):
 
 
 MEMBER_DIM_TOL = 0.1  # フランジから求めた長さと寸法の文字の差の許容
+MEMBER_DIM_LOOSE_TOL = 0.5  # 「要確認」になる行だけに使う、寸法の文字の差の許容
 
 
 def _drawn_value(dim_values, length):
@@ -3088,6 +3155,7 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
     dim_values = _numeric_texts(tdf)
     dim_sums = None  # 寸法の合計(必要になったときだけ求める)
     length_checks: dict[int, str] = {}  # id(row) -> "推測" / "要確認"
+    no_tier_limit: set[int] = set()  # 段の上限を外して梁を見つけた行
     for row in rows:
         _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
         if row.size_missing:
@@ -3125,6 +3193,21 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                                   depth=_beam_depth(row.size), with_others=True)
             if wide is not None and _drawn_value(dim_values, wide[0][0]) is not None:
                 member, others = wide
+        if member is None and tier_y_max is not None:
+            # 上の段の行の高さで探す範囲を切ると梁が入らないとき、上限を外して探す。
+            # 長さが寸法の文字にあり、梁とこの行の間(梁の中点の真下)に別の製品の行が
+            # 無いときだけ使う(2026-11-09、26-16 の EB2-1B-07 の EB22-1TB788-1。右の列の
+            # -2 の行が上の段とみなされ、梁 8345 の手前で範囲が切られていた。ITM.xlsx の照合で判明)
+            up = _flange_member(tdf, x_min, x_max, row.y, None, _flange_thickness(row.size),
+                                depth=_beam_depth(row.size), with_others=True)
+            if up is not None and _drawn_value(dim_values, up[0][0]) is not None:
+                (_a, (p1, p2), _b) = up[0]
+                mx, my = (p1[0] + p2[0]) / 2.0, max(p1[1], p2[1])
+                between = [r for r in rows if r is not row and r.x_mark <= mx <= r.x_next
+                           and row.y < r.y < my]
+                if not between:
+                    member, others = up
+                    no_tier_limit.add(id(row))  # 継手も上限を外して探す
         bent =(_bent_partner(member, others, tdf, _beam_depth(row.size))
                 if member is not None else None)
         # 図面に寸法として書かれていない数値は長さにしない(ユーザー指示。フランジの
@@ -3193,9 +3276,20 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                     if near:
                         est = min(near, key=lambda s: abs(s - cand))
                         break
+            loose = None
+            if est is None:
+                # 「要確認」になる行だけ: 梁の線の長さとの差が0.5以内の寸法の文字があれば、
+                # 寸法の値を長さにする(寸法は整数で書かれ、梁の線が端数を持つ図面がある。
+                # 26-16 の EB3-1G-15 の 1G-X11Y1: 梁の線 2410.5、寸法 2410。ITM.xlsx の照合で判明)
+                near = [v for v in dim_values if abs(v - member[0]) <= MEMBER_DIM_LOOSE_TOL + 1e-9]
+                if near:
+                    loose = min(near, key=lambda v: abs(v - member[0]))
             if est is not None:
                 length_value = est
                 length_checks[id(row)] = "推測"
+            elif loose is not None:
+                length_value = loose
+                _member_length, member_ends[id(row)], axis = member
             else:
                 length_checks[id(row)] = "要確認"
         lengths[id(row)] = length_value
@@ -3283,8 +3377,11 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
     # グルーピングロジック)には一切渡さない。
     member_depths = {id(r): _beam_depth(r.size) for r in rows
                      if id(r) in member_ends and _beam_depth(r.size)}
+    joint_tier = dict(tier_info)
+    for rid in no_tier_limit:
+        joint_tier[rid] = (joint_tier[rid][0], None)
     joints = exm.assign_joints_batch(
-        tdf, [r for r in rows if not r.size_missing], tier_info, lengths, member_ends, joint_axes,
+        tdf, [r for r in rows if not r.size_missing], joint_tier, lengths, member_ends, joint_axes,
         member_depths,
     )
     joints.update(joints_no_size)
@@ -3388,15 +3485,18 @@ def find_rows(tdf: tb.TdfData) -> list[dict]:
     (どちらにも無ければ並びのとおり)。
     """
     rows = []
+    rest = []  # 製品の行にならなかった「N台」と、その左の文字
     for dai in tdf.texts:
         if dai.rot != 0 or not tb.is_dai_cell(tdf.resolve_text(dai)):
             continue
-        cells = sorted(
+        left = sorted(
             [r for r in tdf.texts if r.rot == 0 and abs(r.y - dai.y) < SAME_ROW_Y_TOL
              and r.x < dai.x and tdf.resolve_text(r)],
             key=lambda r: r.x,
-        )[-3:]
+        )
+        cells = left[-3:]
         if len(cells) < 3:
+            rest.append((dai, left))
             continue
         a, b, c = (_norm(tdf.resolve_text(r)) for r in cells)
         pos = (cells[0].x, dai.x, dai.y)  # 行の左端X・右端X・高さ(本体を行に割り当てるため)
@@ -3407,10 +3507,14 @@ def find_rows(tdf: tb.TdfData) -> list[dict]:
             else:
                 code, mark = b, a
             rows.append({"mark": mark, "code": code, "size": None, "zushi": True,
-                         "count": _norm(tdf.resolve_text(dai)), "pos": pos})
+                         "count": _norm(tdf.resolve_text(dai)), "pos": pos,
+                         "cols": (cells[0].x, cells[1].x, cells[2].x), "code_left": code == a})
         elif _is_size(c):
             rows.append({"mark": a, "code": b, "size": c, "zushi": False,
                          "count": _norm(tdf.resolve_text(dai)), "pos": pos})
+        else:
+            rest.append((dai, left))
+    rows = rows + _zushi_followers(tdf, rows, rest)
     rows = rows + _shared_rows(tdf, rows)
     # ×印(削除マーク)の付いた行は除く。製品マークか本数のセルが×印の範囲に入る行
     # (梁モードの exm.filter_deleted_rows と同じ判定。26-16 の EA2-1P-07 の EA22-1T1-1 は中止)
@@ -3420,6 +3524,53 @@ def find_rows(tdf: tb.TdfData) -> list[dict]:
                 if not (exm._point_in_any_box(r["pos"][0], r["pos"][2], x_marks)
                         or exm._point_in_any_box(r["pos"][1], r["pos"][2], x_marks))]
     return rows
+
+
+ZUSHI_FOLLOW_GAP = 400.0  # 「図示」の行に続く行とみなす行の間隔(表の1行は290)
+
+
+def _zushi_followers(tdf: tb.TdfData, rows: list[dict], rest) -> list[dict]:
+    """「図示」の行の上下に続く、設計符号と製品マークだけの行(サイズの欄が空)。
+
+    26-16 の EA1-1C-04: 「1C1B | 1C-X17Y3 | 図 示 | １台」の下に「1C1B | 1C-X18Y3 | (空) | １台」。
+    2行目は文字が2つしか無いので製品の行として読めず、1C-X18Y3 が抜けていた
+    (ITM.xlsx の照合で判明。EA1-1C-06 は3行)。図は1つなので、同じ図の製品として
+    "group" に同じ値を入れる。設計符号の文字が「図示」の行と同じで、設計符号・製品マーク・
+    本数の位置がそろい、サイズの欄に文字が無い行だけを使う。
+    """
+    out = []
+    zushi = [r for r in rows if r.get("zushi") and "cols" in r]
+    if not zushi or not rest:
+        return out
+    taken = set()
+    for n, z in enumerate(zushi):
+        x_a, x_b, x_c = z["cols"]
+        x_code, x_mark = (x_a, x_b) if z["code_left"] else (x_b, x_a)
+        members = [z]
+        changed = True
+        while changed:  # 「図示」の行から1行ずつ上下へたどる
+            changed = False
+            for k, (dai, left) in enumerate(rest):
+                if k in taken or abs(dai.x - z["pos"][1]) > WIDTH_TOL:
+                    continue
+                if min(abs(dai.y - m["pos"][2]) for m in members) > ZUSHI_FOLLOW_GAP:
+                    continue
+                at = {round(r.x, 1): _norm(tdf.resolve_text(r)) for r in left if r.x >= x_a - WIDTH_TOL}
+                code = next((v for x, v in at.items() if abs(x - x_code) <= WIDTH_TOL), None)
+                mark = next((v for x, v in at.items() if abs(x - x_mark) <= WIDTH_TOL), None)
+                if (code != z["code"] or not mark or len(at) != 2
+                        or any(abs(x - x_c) <= WIDTH_TOL for x in at)):
+                    continue
+                taken.add(k)
+                changed = True
+                row = {"mark": mark, "code": code, "size": None, "zushi": True,
+                       "count": _norm(tdf.resolve_text(dai)), "pos": (x_a, dai.x, dai.y),
+                       "group": ("zushi", n)}
+                members.append(row)
+                out.append(row)
+        if len(members) > 1:
+            z["group"] = ("zushi", n)
+    return out
 
 
 def _shared_rows(tdf: tb.TdfData, rows: list[dict]) -> list[dict]:
