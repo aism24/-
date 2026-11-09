@@ -147,6 +147,7 @@ async function startApp(mode) {
     // 帳票チェック: Excelを取り込み、図面を探して抽出するのでPyodideも使う
     if (mergeMode) { mergeMode = false; document.getElementById('merge-area').classList.remove('open'); }
     if (!checkMode) openCheck();
+    else loadCheckRoot(); // 工事を変えたときは、その工事用に覚えたフォルダを表示し直す
     if (!pyodide) await initPyodide();
     return;
   }
@@ -209,7 +210,7 @@ window.addEventListener('resize', () => {
 });
 
 function renderManualPage() {
-  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png?v=20261109b`;
+  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png?v=20261109c`;
   document.getElementById('manual-page-indicator').textContent = `${manualPage} / ${MANUAL_PAGE_COUNT}`;
   document.getElementById('manual-prev').disabled = manualPage <= 1;
   document.getElementById('manual-next').disabled = manualPage >= MANUAL_PAGE_COUNT;
