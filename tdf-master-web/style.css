@@ -150,7 +150,8 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 .mode-btn:hover:not(:disabled) { filter: brightness(1.08); }
 #mode-btn-beam { background: #ffd8a8; }
 #mode-btn-merge { background: #1a73e8; }
-.mode-btn:disabled, #mode-btn-beam:disabled, #mode-btn-merge:disabled { background: #bbb; color: #555; cursor: not-allowed; }
+#mode-btn-check { background: #f8c8dc; }  /* 帳票チェックは薄いピンク(ユーザー指定) */
+.mode-btn:disabled, #mode-btn-beam:disabled, #mode-btn-merge:disabled, #mode-btn-check:disabled { background: #bbb; color: #555; cursor: not-allowed; }
 .mode-sub { font-size: 14px; font-weight: normal; }
 /* モード切替で開き直したときだけ、キャンセル(元のモードに戻る)を出す */
 #mode-cancel-btn { display: none; margin-top: 14px; }
@@ -341,4 +342,51 @@ table#merge-table tr.merge-warn { background: #fff0d6; }
 table#merge-table tr.merge-warn td.merge-msg { color: #b03a00; font-weight: bold; }
 table#merge-table tr.merge-off { opacity: .5; }
 #merge-summary { font-weight: bold; }
+
+/* 帳票チェックモード */
+#mode-label.check { background: #f8c8dc; color: #000; }
+#check-area { display: none; flex-direction: column; align-items: center; gap: 10px; }
+#check-area.open { display: flex; }
+#check-top { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; justify-content: center; color: #eee; }
+#check-top strong { color: #f8c8dc; font-size: 16px; }
+#check-top span { font-size: 13px; color: #ccc; }
+#check-folder { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; background: #1c1c1c; border: 1px solid #444; border-radius: 8px; padding: 8px 14px; color: #eee; font-size: 13px; }
+.check-folder-label { color: #aaa; }
+#check-folder-name { font-weight: bold; color: #fff; }
+#check-folder-name.unset { color: #ffb07a; }
+.check-bar { width: 760px; max-width: 100%; box-sizing: border-box; border-color: #f0a8c4; }
+.check-bar.compact { padding: 10px; }
+#check-result { display: none; flex-direction: column; align-items: center; gap: 8px; max-width: 100%; }
+#check-summary { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.check-chip { border-radius: 12px; padding: 4px 12px; font-size: 13px; font-weight: bold; color: #000; }
+.check-chip.ok { background: #bfe8c9; }
+.check-chip.ng { background: #ffb3b3; }
+.check-chip.warn { background: #ffe08a; }
+.check-chip.gray { background: #d0d0d0; }
+.check-chip.zero { opacity: .45; }
+#check-info { color: #bbb; font-size: 12px; text-align: center; }
+#check-note { color: #ffcf8a; font-size: 12px; text-align: center; }
+#check-only-ng { color: #eee; font-size: 13px; cursor: pointer; }
+#check-table-wrap, .check-extra-wrap { overflow: auto; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); max-height: 62vh; max-width: 100%; }
+table#check-table, table#check-extra-table { border-collapse: collapse; font-size: 13px; background: #fff; }
+table#check-table th, table#check-table td, table#check-extra-table th, table#check-extra-table td { border-bottom: 1px solid #ddd; border-right: 1px dashed #ddd; padding: 6px 10px; text-align: center; white-space: nowrap; }
+table#check-table th, table#check-extra-table th { background: #fde3ee; position: sticky; top: 0; z-index: 2; }
+table#check-table td.num, table#check-extra-table td.num { text-align: right; }
+table#check-table td.diff { background: #ffd0d0; color: #a00000; font-weight: bold; }
+table#check-table td.memo { text-align: left; white-space: normal; min-width: 180px; max-width: 320px; font-size: 12px; }
+table#check-table td.judge { font-weight: bold; }
+table#check-table td.judge.ok { background: #e6f6ea; color: #1e7b34; }
+table#check-table td.judge.ng { background: #ffb3b3; color: #8a0000; }
+table#check-table td.judge.warn { background: #ffe9a8; color: #7a5200; }
+table#check-table td.judge.gray { background: #e0e0e0; color: #444; }
+table#check-table td.all-ok { color: #1e7b34; font-weight: bold; padding: 18px; }
+#check-extra { display: none; max-width: 100%; }
+.check-extra-title { color: #ffe08a; font-size: 13px; font-weight: bold; text-align: center; margin: 6px 0; }
+#check-confirm { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000; align-items: center; justify-content: center; }
+#check-confirm.open { display: flex; }
+#check-confirm-box { background: #c0392b; color: #fff; border-radius: 10px; padding: 22px 28px; max-width: 520px; box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+#check-confirm-title { font-size: 18px; font-weight: bold; margin-bottom: 10px; }
+#check-confirm-msg { font-size: 14px; line-height: 1.6; margin-bottom: 18px; }
+.check-confirm-actions { display: flex; gap: 12px; justify-content: center; }
+.check-confirm-actions button { font-size: 14px; padding: 8px 18px; }
 #merge-summary.warn { color: #ffb07a; }

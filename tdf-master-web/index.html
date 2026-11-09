@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>実寸法師データよりマスタ情報抽出</title>
-<link rel="stylesheet" href="style.css?v=20261106b">
+<link rel="stylesheet" href="style.css?v=20261109a">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
@@ -38,6 +38,7 @@
       <button type="button" class="mode-btn" id="mode-btn-beam" onclick="startApp('beam')" disabled>梁モード<span class="mode-sub">製品が横向き・斜め向き</span></button>
       <button type="button" class="mode-btn" id="mode-btn-column" onclick="startApp('column')" disabled>柱モード<span class="mode-sub">製品が縦向き</span></button>
       <button type="button" class="mode-btn" id="mode-btn-merge" onclick="startApp('merge')" disabled>結合モード<span class="mode-sub">ダウンロード済みのExcelの集計</span></button>
+      <button type="button" class="mode-btn" id="mode-btn-check" onclick="startApp('check')" disabled>帳票チェック<span class="mode-sub">切断リスト・出荷リスト等を最新の図面と照合</span></button>
     </div>
     <button type="button" id="mode-cancel-btn" class="header-btn" onclick="closeModeSelect()">キャンセル</button>
   </div>
@@ -65,6 +66,7 @@
 
 <input type="file" id="file-input" accept=".tdf" multiple style="display:none">
 <input type="file" id="merge-file-input" accept=".xlsx" multiple style="display:none">
+<input type="file" id="check-file-input" accept=".xlsx,.xlsm,.xls" style="display:none">
 
 <main>
   <div id="empty-state">
@@ -100,6 +102,34 @@
         <tbody id="merge-tbody"></tbody>
       </table>
     </div>
+    </div>
+  </div>
+
+  <div id="check-area">
+    <div id="check-top"><strong>帳票チェック</strong><span>Excelのサイズ・長さ・本数・継手を、最新の詳細図と照合します</span></div>
+    <div id="check-folder">
+      <span class="check-folder-label">現場フォルダ(①進行中工事)</span>
+      <span id="check-folder-name"></span>
+      <button type="button" class="header-btn" id="check-folder-btn" onclick="pickCheckRoot()">📁 フォルダを選ぶ</button>
+    </div>
+    <div id="check-drop" class="upload-bar check-bar" onclick="document.getElementById('check-file-input').click()">📂 チェックするExcel(切断リスト・出荷リスト・マスターデータ等)をここにドロップ / クリックして選択</div>
+    <div id="check-result">
+      <div id="check-summary"></div>
+      <div id="check-info"></div>
+      <div id="check-note">⚠ 「不一致」でも、Excelが間違いとは限りません。アプリが図面を読み違えることがあります。実寸法師で図面を確認してください。</div>
+      <label id="check-only-ng"><input type="checkbox" checked onchange="setCheckOnlyNg(this.checked)"> 一致しない行だけ表示</label>
+      <div id="check-table-wrap">
+        <table id="check-table"><thead id="check-thead"></thead><tbody id="check-tbody"></tbody></table>
+      </div>
+      <div id="check-extra">
+        <div class="check-extra-title">図面にあってExcelに無い製品(Excelに載っている図面の中だけ)</div>
+        <div class="check-extra-wrap">
+          <table id="check-extra-table">
+            <thead><tr><th>図番</th><th>製品マーク(図面)</th><th>サイズ</th><th>長さ(m)</th><th>本数</th><th>図面の更新日</th></tr></thead>
+            <tbody id="check-extra-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -139,6 +169,17 @@
     <div class="basepath-actions">
       <button type="button" id="basepath-skip-btn" class="header-btn">スキップ</button>
       <button type="button" id="basepath-ok-btn" class="header-action-btn orange">OK</button>
+    </div>
+  </div>
+</div>
+
+<div id="check-confirm">
+  <div id="check-confirm-box">
+    <div id="check-confirm-title"></div>
+    <div id="check-confirm-msg"></div>
+    <div class="check-confirm-actions">
+      <button type="button" id="check-confirm-cancel" class="header-btn"></button>
+      <button type="button" id="check-confirm-ok" class="header-action-btn orange"></button>
     </div>
   </div>
 </div>
@@ -4541,7 +4582,8 @@ def extract_file(path: str, filename: str | None = None) -> list[dict]:
     return extract_column(tb.load(path), filename or path)
 </script>
 
-<script src="app.js?v=20261109c"></script>
+<script src="app.js?v=20261109d"></script>
+<script src="check.js?v=20261109b"></script>
 <!-- 「← アプリ一覧へ」ボタンは非表示(2026-10-30、ユーザー指示)。復活するときは下の行のコメントを外すだけ(to-launcher.js はそのまま残している)
 <script src="to-launcher.js?v=20261019" data-target="#header-brand .side-icon" data-mode="before"></script>
 -->
