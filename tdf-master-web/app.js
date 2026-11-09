@@ -210,7 +210,7 @@ window.addEventListener('resize', () => {
 });
 
 function renderManualPage() {
-  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png?v=20261109c`;
+  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png?v=20261109d`;
   document.getElementById('manual-page-indicator').textContent = `${manualPage} / ${MANUAL_PAGE_COUNT}`;
   document.getElementById('manual-prev').disabled = manualPage <= 1;
   document.getElementById('manual-next').disabled = manualPage >= MANUAL_PAGE_COUNT;
