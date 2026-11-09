@@ -271,22 +271,38 @@ function moveManualButtonToHeader() {
   });
 }
 
+// Pyodideの読み込み(1回だけ)。起動画面を出した時点で裏で始め(先読み)、
+// モードを押したときは initPyodide がその完了を待つ。失敗したら次に呼ばれたとき読み直す。
+let pyodidePromise = null;
+let pyodideLoaded = false;
+function preparePyodide() {
+  if (!pyodidePromise) {
+    pyodidePromise = (async () => {
+      const py = await loadPyodide();
+      py.FS.mkdir('/scripts');
+      const files = {
+        '/scripts/tdf_binary.py': 'py-tdf-binary',
+        '/scripts/tdf_master_extractor.py': 'py-tdf-master-extractor',
+        '/scripts/tdf_master_extractor_multi.py': 'py-tdf-master-extractor-multi',
+        '/scripts/tdf_app.py': 'py-tdf-app',
+        '/scripts/tdf_column.py': 'py-tdf-column',
+      };
+      for (const [path, elId] of Object.entries(files)) {
+        py.FS.writeFile(path, document.getElementById(elId).textContent);
+      }
+      await py.runPythonAsync("import sys\nsys.path.insert(0, '/scripts')\nimport tdf_app\nimport tdf_column");
+      pyodideLoaded = true;
+      return py;
+    })().catch(e => { pyodidePromise = null; throw e; });
+  }
+  return pyodidePromise;
+}
+
 async function initPyodide() {
-  showStatus('準備中', '初回は30秒ほどかかる場合があります');
+  // 先読みが終わっていれば「準備中」は出さない
+  if (!pyodideLoaded) showStatus('準備中', '初回は30秒ほどかかる場合があります');
   try {
-    pyodide = await loadPyodide();
-    pyodide.FS.mkdir('/scripts');
-    const files = {
-      '/scripts/tdf_binary.py': 'py-tdf-binary',
-      '/scripts/tdf_master_extractor.py': 'py-tdf-master-extractor',
-      '/scripts/tdf_master_extractor_multi.py': 'py-tdf-master-extractor-multi',
-      '/scripts/tdf_app.py': 'py-tdf-app',
-      '/scripts/tdf_column.py': 'py-tdf-column',
-    };
-    for (const [path, elId] of Object.entries(files)) {
-      pyodide.FS.writeFile(path, document.getElementById(elId).textContent);
-    }
-    await pyodide.runPythonAsync("import sys\nsys.path.insert(0, '/scripts')\nimport tdf_app\nimport tdf_column");
+    pyodide = await preparePyodide();
 
     hideStatus();
     showToast('準備完了 — TDFファイルを選択してください', 'success');
@@ -1111,4 +1127,7 @@ document.body.addEventListener('drop', e => {
   await loadMasterData();
   hideStatus();
   document.getElementById('beam-modal').classList.remove('hidden');
+  // 工場・工事名を選んでいる間に、抽出用のPython(Pyodide)を裏で読み込み始める
+  // (モードを押したあとの待ち時間を減らすため。失敗してもモードを押したときに読み直す)
+  preparePyodide().catch(() => {});
 })();

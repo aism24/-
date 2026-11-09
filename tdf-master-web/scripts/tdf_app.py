@@ -12,17 +12,13 @@ tdf_binary.py / tdf_master_extractor.py / tdf_master_extractor_multi.py は
 """
 from __future__ import annotations
 
+import bisect
 import math
 import re
 
 import tdf_binary as tb
 import tdf_master_extractor as ex
 import tdf_master_extractor_multi as exm
-
-HEADERS = [
-    "ID", "図番", "製品マーク", "設計符号", "サイズ", "本数",
-    "長さ(m)", "重量", "左継手", "右継手", "種別", "製品段",
-]
 
 _AXIS_TOLERANCE_DEG = 0.1
 TIER_Y_GAP_THRESHOLD = 3000.0
@@ -206,12 +202,51 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None, with_others=
                             return True
         return False
 
+    # 下の総当たり(以前は全部の組を比べていた)で、比べる相手を先に絞る。
+    # 相手は「向きの差が0.05度以内」かつ「向きに直交する方向の距離が板厚±0.6」の線
+    # だけなので、
+    #  ・向きがまったく同じ線(図面の線のほとんどは水平・垂直): 向きごとに直交方向の
+    #    位置で並べておき、位置が板厚±0.6 のものを二分探索で取り出す(位置は相手の線と
+    #    同じ式・同じ向きで計算するので、判定と同じ値になる)。
+    #  ・向きが少しだけ違う線: 0.05度の範囲(0度と180度の境目をまたぐものも)の向きの
+    #    線をすべて候補にする。
+    # 候補には下の判定をそのままかけ、比べる順番(i の後ろの線を前から)も以前と同じ
+    # にするので、見つかるフランジとその順番は総当たりと同じ(2026-11-09)。
+    by_angle: dict[float, list] = {}
+    for k, (t, ln) in enumerate(long_segs):
+        ux, uy = math.cos(t), math.sin(t)
+        by_angle.setdefault(t, []).append((-ln.x1 * uy + ln.y1 * ux, k))
+    for v in by_angle.values():
+        v.sort()
+    offs_by_angle = {t: [o for o, _k in v] for t, v in by_angle.items()}
+    angles = sorted(by_angle)
+    ang_win = math.radians(0.05) + 1e-9
+    near_angles = {}
+    for t in angles:
+        found = []
+        for c in (t, t + math.pi, t - math.pi):
+            lo = bisect.bisect_left(angles, c - ang_win)
+            hi = bisect.bisect_right(angles, c + ang_win)
+            found.extend(angles[lo:hi])
+        near_angles[t] = [u for u in found if u != t]
+
+    def pair_candidates(i, ta, da):
+        js = set()
+        group, offs = by_angle[ta], offs_by_angle[ta]
+        for c in (da - tf, da + tf):
+            lo = bisect.bisect_left(offs, c - 0.6 - 1e-6)
+            hi = bisect.bisect_right(offs, c + 0.6 + 1e-6)
+            js.update(k for _o, k in group[lo:hi] if k > i)
+        for u in near_angles[ta]:
+            js.update(k for _o, k in by_angle[u] if k > i)
+        return sorted(js)
+
     flanges = []  # (向き, 直交方向の位置lo, hi, 軸方向の始点, 終点)
     for i, (ta, a) in enumerate(long_segs):
         ux, uy = math.cos(ta), math.sin(ta)
         pa = sorted((a.x1 * ux + a.y1 * uy, a.x2 * ux + a.y2 * uy))
         da = -a.x1 * uy + a.y1 * ux
-        for tb_, b in long_segs[i + 1:]:
+        for tb_, b in (long_segs[j] for j in pair_candidates(i, ta, da)):
             d = abs(ta - tb_)
             if min(d, math.pi - d) > math.radians(0.05):
                 continue

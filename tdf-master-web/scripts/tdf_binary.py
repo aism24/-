@@ -37,6 +37,9 @@ MAX_N = 63
 _SIZE_LINE = -2147483592       # 0x80000038 = 56
 _SIZE_ARC_CENTER = -2147483600  # 0x80000030 = 48
 _SIZE_ARC_ANGLE = -2147483616   # 0x80000020 = 32
+_PAT_LINE = struct.pack("<i", _SIZE_LINE)
+_PAT_ARC_CENTER = struct.pack("<i", _SIZE_ARC_CENTER)
+_PAT_VAL16 = struct.pack("<i", 16)
 
 DAI_PATTERN = re.compile(r"^[0-9]+台$")
 
@@ -105,18 +108,22 @@ class TdfData:
         return self.body_rot_by_id.get(rec.id_field, 0.0)
 
 
+def _occurrences(data: bytes, pat: bytes, end: int):
+    """data の中で pat が始まる位置(end 未満)を、重なりも含めて前から順に返す。
+    1バイトずつ Python で比べる代わりに bytes.find で探す(2026-11-09。結果は同じ)。"""
+    i = data.find(pat)
+    while i != -1 and i < end:
+        yield i
+        i = data.find(pat, i + 1)
+
+
 def _find_all_text_markers(data: bytes) -> list[int]:
+    """「00 N (2*N) 00」(N は 1〜MAX_N)の位置を小さい順に返す。"""
     idxs = []
-    n = len(data)
-    for i in range(n - 3):
-        if data[i] != 0 or data[i + 3] != 0:
-            continue
-        b1 = data[i + 1]
-        if b1 == 0 or b1 > MAX_N:
-            continue
-        if data[i + 2] != b1 * 2:
-            continue
-        idxs.append(i)
+    end = len(data) - 3
+    for b1 in range(1, MAX_N + 1):
+        idxs.extend(_occurrences(data, bytes((0, b1, b1 * 2, 0)), end))
+    idxs.sort()
     return idxs
 
 
@@ -152,52 +159,41 @@ def _parse_texts(data: bytes) -> list[TextRecord]:
 
 
 def _parse_lines(data: bytes) -> list[LineRecord]:
-    n = len(data)
     lines = []
-    i = 0
-    while i < n - 56:
-        size_raw = struct.unpack_from("<i", data, i)[0]
-        if size_raw == _SIZE_LINE:
-            val = struct.unpack_from("<i", data, i + 4)[0]
-            if val == 1:
-                try:
-                    ref0 = struct.unpack_from("<i", data, i + 8)[0]
-                    x1, y1, x2, y2 = struct.unpack_from("<4d", data, i + 24)
-                except struct.error:
-                    i += 1
-                    continue
-                if all(v == v and abs(v) < _COORD_LIMIT for v in (x1, y1, x2, y2)):
-                    lines.append(LineRecord(i, ref0, x1, y1, x2, y2))
-        i += 1
+    for i in _occurrences(data, _PAT_LINE, len(data) - 56):
+        val = struct.unpack_from("<i", data, i + 4)[0]
+        if val == 1:
+            try:
+                ref0 = struct.unpack_from("<i", data, i + 8)[0]
+                x1, y1, x2, y2 = struct.unpack_from("<4d", data, i + 24)
+            except struct.error:
+                continue
+            if all(v == v and abs(v) < _COORD_LIMIT for v in (x1, y1, x2, y2)):
+                lines.append(LineRecord(i, ref0, x1, y1, x2, y2))
     return lines
 
 
 def _parse_arcs(data: bytes) -> list[ArcRecord]:
     n = len(data)
     arcs = []
-    i = 0
-    while i < n - 48:
-        size_raw = struct.unpack_from("<i", data, i)[0]
-        if size_raw == _SIZE_ARC_CENTER:
-            val = struct.unpack_from("<i", data, i + 4)[0]
-            if val == 2:
-                try:
-                    cx, cy, r = struct.unpack_from("<3d", data, i + 24)
-                except struct.error:
-                    i += 1
-                    continue
-                if cx == cx and cy == cy and r == r and 0 < r < 1000 and abs(cx) < _COORD_LIMIT and abs(cy) < _COORD_LIMIT:
-                    a1 = None
-                    angle_off = i + 48
-                    if angle_off + 32 <= n:
-                        size2 = struct.unpack_from("<i", data, angle_off)[0]
-                        if size2 == _SIZE_ARC_ANGLE:
-                            try:
-                                a1, _a2 = struct.unpack_from("<2d", data, angle_off + 16)
-                            except struct.error:
-                                a1 = None
-                    arcs.append(ArcRecord(i, cx, cy, r, a1))
-        i += 1
+    for i in _occurrences(data, _PAT_ARC_CENTER, n - 48):
+        val = struct.unpack_from("<i", data, i + 4)[0]
+        if val == 2:
+            try:
+                cx, cy, r = struct.unpack_from("<3d", data, i + 24)
+            except struct.error:
+                continue
+            if cx == cx and cy == cy and r == r and 0 < r < 1000 and abs(cx) < _COORD_LIMIT and abs(cy) < _COORD_LIMIT:
+                a1 = None
+                angle_off = i + 48
+                if angle_off + 32 <= n:
+                    size2 = struct.unpack_from("<i", data, angle_off)[0]
+                    if size2 == _SIZE_ARC_ANGLE:
+                        try:
+                            a1, _a2 = struct.unpack_from("<2d", data, angle_off + 16)
+                        except struct.error:
+                            a1 = None
+                arcs.append(ArcRecord(i, cx, cy, r, a1))
     return arcs
 
 
@@ -205,19 +201,21 @@ def _parse_polylines(data: bytes) -> list:
     """折れ線要素(モジュールの説明の4)。戻り値: [(オフセット, [(x, y), ...]), ...]"""
     n = len(data)
     out = []
-    i = 0
-    while i < n - 28:
+    nxt = 0  # 読み取った折れ線の中は探さない(以前の i += size と同じ)
+    # 4バイト目からの「16」(val)を探し、その4バイト前をレコードの先頭とする
+    for j in _occurrences(data, _PAT_VAL16, n - 24):
+        i = j - 4
+        if i < nxt:
+            continue
         size_raw = struct.unpack_from("<i", data, i)[0]
-        if size_raw < 0 and (size_raw & 0x7FFFFFFF) >= 60 and struct.unpack_from("<i", data, i + 4)[0] == 16:
+        if size_raw < 0 and (size_raw & 0x7FFFFFFF) >= 60:
             size = size_raw & 0x7FFFFFFF
             cnt = struct.unpack_from("<i", data, i + 24)[0]
             if 2 <= cnt <= 1000 and size == 28 + 16 * cnt and i + 28 + 16 * cnt <= n:
                 pts = [struct.unpack_from("<2d", data, i + 28 + 16 * k) for k in range(cnt)]
                 if all(v == v and abs(v) < _COORD_LIMIT for pt in pts for v in pt):
                     out.append((i, pts))
-                    i += size
-                    continue
-        i += 1
+                    nxt = i + size
     return out
 
 
