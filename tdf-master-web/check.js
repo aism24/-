@@ -8,7 +8,7 @@
 //   「①進行中工事」だけは最初に1回選んでもらい、ブラウザの中(IndexedDB)に覚える。
 // - 梁で読むか柱で読むかは、図面のフォルダ名に「柱詳細図」(間柱詳細図を含む)があれば柱。
 // - 比べるのはExcelにある列だけ(継手の列が無ければ継手は比べない)。サイズは書き方の違い
-//   (柱の板厚の有無・細くなる柱・せいが変わる梁)を同じとみなす。長さは±1mm。
+//   (柱の板厚の有無・細くなる柱・せいが変わる梁)を同じとみなす。長さは±0.1mm。
 
 let checkMode = false;
 let checkRoot = null;      // 「①進行中工事」のフォルダ(FileSystemDirectoryHandle)
@@ -19,36 +19,77 @@ const CHECK_DB = 'tdf-check';
 const CHECK_STORE = 'handles';
 const CHECK_ROOT_KEY = 'site-root';
 const CHECK_SKIP_DIR = /旧|発行歴/;
-const CHECK_LEN_TOL_MM = 1.0;
+const CHECK_LEN_TOL_MM = 0.1; // 長さの許容差(±0.1mm。2026-11-09 ユーザー指定)
 
 // ---- フォルダを覚える(ブラウザの中だけ。PC・ブラウザごと) ----
+const CHECK_EXTRACT_STORE = 'extract'; // 図面ごとの抽出結果(2回目から解析を飛ばす)
+let checkDbPromise = null;
 function checkIdb() {
-  return new Promise((res, rej) => {
-    const r = indexedDB.open(CHECK_DB, 1);
-    r.onupgradeneeded = () => r.result.createObjectStore(CHECK_STORE);
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
+  if (!checkDbPromise) {
+    checkDbPromise = new Promise((res, rej) => {
+      const r = indexedDB.open(CHECK_DB, 2);
+      r.onupgradeneeded = () => {
+        const db = r.result;
+        if (!db.objectStoreNames.contains(CHECK_STORE)) db.createObjectStore(CHECK_STORE);
+        if (!db.objectStoreNames.contains(CHECK_EXTRACT_STORE)) db.createObjectStore(CHECK_EXTRACT_STORE);
+      };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    }).catch(e => { checkDbPromise = null; throw e; });
+  }
+  return checkDbPromise;
 }
-async function checkIdbGet(key) {
+async function checkIdbGet(key, store = CHECK_STORE) {
   try {
     const db = await checkIdb();
     return await new Promise((res, rej) => {
-      const q = db.transaction(CHECK_STORE).objectStore(CHECK_STORE).get(key);
+      const q = db.transaction(store).objectStore(store).get(key);
       q.onsuccess = () => res(q.result || null);
       q.onerror = () => rej(q.error);
     });
   } catch (_) { return null; }
 }
-async function checkIdbSet(key, val) {
+async function checkIdbSet(key, val, store = CHECK_STORE) {
   try {
     const db = await checkIdb();
     await new Promise((res, rej) => {
-      const q = db.transaction(CHECK_STORE, 'readwrite').objectStore(CHECK_STORE).put(val, key);
+      const q = db.transaction(store, 'readwrite').objectStore(store).put(val, key);
       q.onsuccess = () => res();
       q.onerror = () => rej(q.error);
     });
-  } catch (e) { console.error('フォルダを覚えられませんでした', e); }
+  } catch (e) { console.error('ブラウザに保存できませんでした', e); }
+}
+async function checkIdbClear(store) {
+  try {
+    const db = await checkIdb();
+    await new Promise((res, rej) => {
+      const q = db.transaction(store, 'readwrite').objectStore(store).clear();
+      q.onsuccess = () => res();
+      q.onerror = () => rej(q.error);
+    });
+  } catch (_) {}
+}
+
+// 抽出のPython(index.html に埋め込んだ5つ)の版。これが変われば覚えた抽出結果は使わない。
+let checkScriptsVer = null;
+async function checkScriptsVersion() {
+  if (checkScriptsVer) return checkScriptsVer;
+  const ids = ['py-tdf-binary', 'py-tdf-master-extractor', 'py-tdf-master-extractor-multi', 'py-tdf-app', 'py-tdf-column'];
+  const text = ids.map(id => document.getElementById(id).textContent).join('\u0000');
+  try {
+    const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(text));
+    checkScriptsVer = [...new Uint8Array(buf)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (_) {
+    let h = 0;
+    for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
+    checkScriptsVer = 'h' + (h >>> 0).toString(16) + text.length;
+  }
+  // 版が変わったら、前の版で覚えた抽出結果を消す(ブラウザの容量を使い続けないため)
+  if ((await checkIdbGet('scripts-ver')) !== checkScriptsVer) {
+    await checkIdbClear(CHECK_EXTRACT_STORE);
+    await checkIdbSet('scripts-ver', checkScriptsVer);
+  }
+  return checkScriptsVer;
 }
 
 async function loadCheckRoot() {
@@ -280,22 +321,32 @@ async function processCheckFile(files) {
       showStatus('図面を探しています', `${kojiDir.name}  フォルダ ${d} / ${total}`));
     const t1 = performance.now();
 
-    // 抽出(図面ごとに1回)
+    // 抽出(図面ごとに1回)。更新日時・大きさ・抽出の版が前回と同じ図面は、覚えた結果を使う
     const files = [...found.values()].flat();
     const res = new Map(); // パス → { mode, rows, err, mtime }
+    const ver = await checkScriptsVersion();
+    let reused = 0;
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       const key = f.path.join('\\');
       const mode = f.path.some(p => p.includes('柱詳細図')) ? 'column' : 'beam';
-      showStatus('図面を解析しています', `(${i + 1}/${files.length}) ${f.handle.name}`);
+      showStatus('図面を解析しています', `(${i + 1}/${files.length}) ${f.handle.name}` + (reused ? `  前回の結果を使用 ${reused} 件` : ''));
       try {
-        const blob = await f.handle.getFile();
+        const blob = await f.handle.getFile(); // ここでは中身は読まない(更新日時・大きさだけ)
+        const ckey = [ver, kojiNo, key, blob.lastModified, blob.size].join('|');
+        const saved = await checkIdbGet(ckey, CHECK_EXTRACT_STORE);
+        if (saved && saved.mode === mode) {
+          res.set(key, { mode, rows: saved.rows, err: null, mtime: blob.lastModified, path: f.path });
+          reused++;
+          continue;
+        }
         pyodide.FS.writeFile('/input.tdf', new Uint8Array(await blob.arrayBuffer()));
         pyodide.globals.set('tdf_filename', f.handle.name);
         const py = await pyodide.runPythonAsync(`${mode === 'column' ? 'tdf_column' : 'tdf_app'}.extract_file('/input.tdf', tdf_filename)`);
         const rows = py.toJs({ dict_converter: Object.fromEntries });
         py.destroy();
         res.set(key, { mode, rows, err: null, mtime: blob.lastModified, path: f.path });
+        await checkIdbSet(ckey, { mode, rows }, CHECK_EXTRACT_STORE);
       } catch (e) {
         res.set(key, { mode, rows: [], err: e.message, mtime: null, path: f.path });
       }
@@ -305,7 +356,7 @@ async function processCheckFile(files) {
     checkResult = checkCompare(xl, found, res);
     checkResult.fileName = file.name;
     checkResult.kojiDir = kojiDir.name;
-    checkResult.times = { find: (t1 - t0) / 1000, extract: (t2 - t1) / 1000, files: files.length };
+    checkResult.times = { find: (t1 - t0) / 1000, extract: (t2 - t1) / 1000, files: files.length, reused };
     hideStatus();
     renderCheck();
     const s = checkResult.stats;
@@ -351,7 +402,7 @@ function checkCompare(xl, found, res) {
     if (xl.hasLen) {
       const xm = Number(x.len) * (xl.unit === 'm' ? 1000 : 1);
       if (row['長さ'] == null) { out.bad.push('長さ'); out.memo.push('図面から長さを読めなかった'); }
-      else if (!isFinite(xm) || Math.abs(row['長さ'] * 1000 - xm) > CHECK_LEN_TOL_MM) out.bad.push('長さ');
+      else if (!isFinite(xm) || Math.abs(row['長さ'] * 1000 - xm) > CHECK_LEN_TOL_MM + 1e-6) out.bad.push('長さ');
     }
     if (row['長さの確認']) out.memo.push(`図面の長さは「${row['長さの確認']}」`);
     if (xl.hasHonsu && checkQty(x.honsu) !== checkQty(row['本数'])) out.bad.push('本数');
@@ -407,7 +458,9 @@ function renderCheck() {
   const info = document.getElementById('check-info');
   const cols = ['サイズ', '長さ', '本数'].filter((k, i) => [xl.hasSize, xl.hasLen, xl.hasHonsu][i]);
   if (hasJoint) cols.push('継手');
-  info.textContent = `シート「${xl.sheetName}」 / 比べた項目: ${cols.join('・')}(長さ ${xl.unit === 'm' ? 'm' : 'mm'}) / 図面 ${checkResult.times.files} 件(${checkResult.kojiDir})`;
+  const tm = checkResult.times;
+  info.textContent = `シート「${xl.sheetName}」 / 比べた項目: ${cols.join('・')}(長さ ${xl.unit === 'm' ? 'm' : 'mm'}) / 図面 ${tm.files} 件(${checkResult.kojiDir}) / ` +
+    `探す ${Math.round(tm.find)}秒・解析 ${Math.round(tm.extract)}秒` + (tm.reused ? `(前回の結果を使用 ${tm.reused} 件)` : '');
 
   const head = ['判定', '行', '図番', '製品マーク', 'サイズ(Excel)', 'サイズ(図面)', '長さ(Excel)', '長さ(図面)', '本数(Excel)', '本数(図面)'];
   if (hasJoint) head.push('継手A(Excel)', '継手A(図面)', '継手B(Excel)', '継手B(図面)');
