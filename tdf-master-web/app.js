@@ -55,6 +55,7 @@ function updateStartBtn() {
   document.getElementById('mode-btn-beam').disabled = !ready;
   document.getElementById('mode-btn-column').disabled = !ready;
   document.getElementById('mode-btn-merge').disabled = !ready;
+  document.getElementById('mode-btn-check').disabled = !ready;
   if (kojiNo) {
     try { localStorage.setItem(KOJI_STORAGE_KEY, kojiNo); } catch (_) {}
   }
@@ -104,7 +105,7 @@ async function loadMasterData() {
 // 梁モードと柱モードは抽出のPythonと継手の列(左右/下上)が違うので、抽出結果を
 // モードごとに分けて持ち、切り替えたときに入れ替える。
 
-const MODE_NAMES = { beam: '梁モード', column: '柱モード', merge: '結合モード' };
+const MODE_NAMES = { beam: '梁モード', column: '柱モード', merge: '結合モード', check: '帳票チェックモード' };
 const JOINT_HEADERS = { beam: ['左継手', '右継手'], column: ['下継手', '上継手'] };
 let currentMode = null;
 let resultsMode = 'beam'; // extractedResults がどちらのモードの結果か
@@ -139,7 +140,16 @@ async function startApp(mode) {
   const kojiName = document.getElementById('koji-select').selectedOptions[0]?.textContent || kojiNo;
   document.getElementById('beam-type-label').textContent = kojiNo + '＿' + kojiName;
   document.getElementById('mode-label').textContent = MODE_NAMES[mode];
+  document.getElementById('mode-label').classList.toggle('check', mode === 'check');
   document.body.classList.add('app-started');
+  if (mode !== 'check' && checkMode) closeCheck();
+  if (mode === 'check') {
+    // 帳票チェック: Excelを取り込み、図面を探して抽出するのでPyodideも使う
+    if (mergeMode) { mergeMode = false; document.getElementById('merge-area').classList.remove('open'); }
+    if (!checkMode) openCheck();
+    if (!pyodide) await initPyodide();
+    return;
+  }
   if (mode === 'merge') {
     if (!mergeMode) openMerge();
     return;
@@ -164,7 +174,7 @@ function closeModeSelect() {
 
 // ---------- 操作マニュアル(説明書) ----------
 
-const MANUAL_PAGE_COUNT = 13;
+const MANUAL_PAGE_COUNT = 14;
 let manualPage = 1;
 
 // 1ページ目の「実際のアプリを開く」ボタンの矩形を、ページ全体に対する割合で
@@ -199,7 +209,7 @@ window.addEventListener('resize', () => {
 });
 
 function renderManualPage() {
-  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png?v=20261109`;
+  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png?v=20261109b`;
   document.getElementById('manual-page-indicator').textContent = `${manualPage} / ${MANUAL_PAGE_COUNT}`;
   document.getElementById('manual-prev').disabled = manualPage <= 1;
   document.getElementById('manual-next').disabled = manualPage >= MANUAL_PAGE_COUNT;
@@ -589,6 +599,7 @@ function downloadBlob(blob, filename) {
 
 async function downloadExcel() {
   if (mergeMode) return downloadMergedExcel();
+  if (checkMode) return downloadCheckExcel();
   if (extractedResults.length === 0) return;
   const basePath = await askBasePath();
 
@@ -665,6 +676,7 @@ async function downloadExcel() {
 }
 
 function resetApp() {
+  if (checkMode) { resetCheck(); return; }
   if (mergeMode) {
     if (mergeFiles.length && confirm('取り込んだ ' + mergeFiles.length + ' ファイルをすべて一覧から外しますか?(Excelファイル自体は消えません)')) {
       mergeFiles = [];
@@ -1151,7 +1163,7 @@ document.getElementById('file-input').addEventListener('change', e => {
 ['dragenter', 'dragover'].forEach(ev => {
   document.body.addEventListener(ev, e => {
     e.preventDefault();
-    if ((pyodide || mergeMode) && !errorDialogOpen()) document.getElementById('drop-overlay').classList.add('active');
+    if ((pyodide || mergeMode || checkMode) && !errorDialogOpen()) document.getElementById('drop-overlay').classList.add('active');
   });
 });
 ['dragleave', 'drop'].forEach(ev => {
@@ -1162,6 +1174,10 @@ document.getElementById('file-input').addEventListener('change', e => {
 });
 document.body.addEventListener('drop', e => {
   if (errorDialogOpen()) return;
+  if (checkMode) {
+    if (e.dataTransfer.files.length) processCheckFile(e.dataTransfer.files);
+    return;
+  }
   if (mergeMode) {
     if (e.dataTransfer.files.length) processMergeFiles(e.dataTransfer.files);
     return;
