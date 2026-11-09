@@ -602,7 +602,8 @@ function renderCheck() {
   const sum = document.getElementById('check-summary');
   sum.innerHTML = '';
   // マウスを乗せると意味が出る(2026-11-09 ユーザーの質問)
-  const chip = (label, n, cls, tip) => {
+  const chip = (label, n, cls, tip, hideZero) => {
+    if (hideZero && !n) return; // 「図面が見つからない」「図面にあってExcelに無い」は0件なら出さない(ユーザー指示)
     const s = document.createElement('span');
     s.className = 'check-chip ' + cls + (n ? '' : ' zero');
     s.textContent = `${label} ${n}`;
@@ -613,8 +614,8 @@ function renderCheck() {
   chip('不一致', stats['不一致'], 'ng', '図面はあるが、サイズ・長さ・本数・継手のどれかが図面と違う');
   chip('製品マークが図面に無い', stats['製品マークが図面に無い'], 'warn', '図番の図面はあるが、その中にExcelの製品マークが無い');
   chip('図面が見つからない', stats['図面が見つからない'] + stats['図面を読めなかった'], 'gray',
-    'Excelの図番と同じ名前の図面(TDF)が詳細図フォルダに無い(図番の書き違い・図面の未作成・別のフォルダに置かれている等)。図面はあっても読めなかったものも含む');
-  chip('図面にあってExcelに無い', extra.length, 'warn', 'Excelに載っている図面の中に、Excelに無い製品マークがある(Excelの書き漏れの可能性)');
+    'Excelの図番と同じ名前の図面(TDF)が詳細図フォルダに無い(図番の書き違い・図面の未作成・別のフォルダに置かれている等)。図面はあっても読めなかったものも含む', true);
+  chip('図面にあってExcelに無い', extra.length, 'warn', 'Excelに載っている図面の中に、Excelに無い製品マークがある(Excelの書き漏れの可能性)', true);
   const info = document.getElementById('check-info');
   const cols = ['サイズ', '長さ', '本数'].filter((k, i) => [xl.hasSize, xl.hasLen, xl.hasHonsu][i]);
   if (hasJoint) cols.push('継手');
