@@ -473,8 +473,10 @@ def _try_float(s: str | None) -> float | None:
 # 認識されず「マーク|設計符号|本数」の3項目の表として1列ずれて読まれていた。
 # 2026-11-09、26-16 EB3-EVM1B-04 の角形鋼管`□-100x100x3.2`を追加。同じく
 # 3項目の表として読まれ、製品マーク以降が1列ずれていた。
+# 2026-11-09、26-12 2B-81 のブレース`2LS-75x75x6`(L形鋼2枚)を追加。同じく
+# 1列ずれていた。
 SIZE_PATTERN = re.compile(
-    r"^(2L|BBOX|BCP|BCR|BOX|BH|BT|CT|C|MHY|HFT|HYT|HF|HY|H|I|LH|L|P|SH|TH|[0-9]+φ|\[|角|□)[\-‐]?\s*[0-9]"
+    r"^(2LS|2L|BBOX|BCP|BCR|BOX|BH|BT|CT|C|MHY|HFT|HYT|HF|HY|H|I|LH|L|P|SH|TH|[0-9]+φ|\[|角|□)[\-‐]?\s*[0-9]"
 )
 
 # 「同じ行」とみなすY座標の許容誤差。当初1.0(ほぼ完全一致)だったが、
@@ -2979,6 +2981,73 @@ def _web_member(tdf, member, tf, depth):
     return (round(end - start, 1), (ends[0], ends[1]), th_deg)
 
 
+END_PLATE_MAX_T = 50.0  # 梁の端のエンドプレートの厚さの上限
+
+
+def _end_plate_member(tdf, member, depth, dim_values):
+    """梁の端に付くエンドプレートの厚さを足した梁と、その長さの寸法の文字の値。
+
+    2026-11-09、26-12 の 2B-53 の 2CSb30W-1・-2。左端に PL-16 のエンドプレートが
+    付き、フランジは 729、図面の長さの寸法は 745(= 729 + 16)。梁の端から外側へ
+    厚さ t(END_PLATE_MAX_T 以下)の位置に、主軸に直交し梁せい以上の長さで梁の中心を
+    横切る線があり、梁の端とその線を結ぶ主軸方向の線(板の上辺か下辺)があるとき、
+    その t を板の厚さとみなす。両端の板の組み合わせ(片端だけを含む)のうち、
+    足した長さが寸法の文字として書かれているものだけを返す。無ければ None。
+    """
+    if not depth:
+        return None
+    length, (pa, pb), th_deg = member
+    th = math.radians(th_deg)
+    ux, uy = math.cos(th), math.sin(th)
+    m = -pa[0] * uy + pa[1] * ux  # 梁せいの中央(主軸に直交する方向の位置)
+    a, b = pa[0] * ux + pa[1] * uy, pb[0] * ux + pb[1] * uy
+    start, end = min(a, b), max(a, b)
+    tol = 0.6
+
+    def along(x, y):
+        return x * ux + y * uy
+
+    def across(x, y):
+        return -x * uy + y * ux
+
+    def is_dir(ln, perp):
+        t = math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1) % math.pi
+        d = abs(t - th % math.pi)
+        d = min(d, math.pi - d)
+        return abs(d - math.pi / 2) <= math.radians(0.05) if perp else d <= math.radians(0.05)
+
+    perp = [ln for ln in tdf.lines if is_dir(ln, True) and ln.length >= depth - tol]
+    par = [ln for ln in tdf.lines if is_dir(ln, False) and ln.length <= END_PLATE_MAX_T + tol]
+
+    def plates(p, outward):
+        found = [0.0]
+        for ln in perp:
+            o = sorted((across(ln.x1, ln.y1), across(ln.x2, ln.y2)))
+            if not (o[0] < m < o[1]):
+                continue
+            t = (along((ln.x1 + ln.x2) / 2, (ln.y1 + ln.y2) / 2) - p) * outward
+            if not (tol < t <= END_PLATE_MAX_T):
+                continue
+            for e in par:
+                q = sorted(((along(e.x1, e.y1) - p) * outward, (along(e.x2, e.y2) - p) * outward))
+                if abs(q[0]) < tol and abs(q[1] - t) < tol and o[0] - tol <= across(e.x1, e.y1) <= o[1] + tol:
+                    found.append(round(t, 1))
+                    break
+        return sorted(set(found))
+
+    best = None
+    for ts in plates(start, -1):
+        for te in plates(end, +1):
+            if ts == 0 and te == 0:
+                continue
+            drawn = _drawn_value(dim_values, length + ts + te)
+            if drawn is not None and (best is None or ts + te < best[0]):
+                s, e = start - ts, end + te
+                ends = tuple(sorted(((s * ux - m * uy, s * uy + m * ux), (e * ux - m * uy, e * uy + m * ux))))
+                best = (ts + te, ((round(e - s, 1), ends, th_deg), drawn))
+    return best[1] if best else None
+
+
 def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
     drawing_number = ex.find_drawing_number(tdf, filename)
     rows = _get_rows_small(tdf)
@@ -3022,7 +3091,19 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
         found = _flange_member(tdf, x_min, x_max, row.y, tier_y_max, _flange_thickness(row.size),
                                depth=_beam_depth(row.size), with_others=True)
         member, others = found if found is not None else (None, [])
-        bent = (_bent_partner(member, others, tdf, _beam_depth(row.size))
+        if member is None and len(rows) > 1:
+            # 製品の範囲に梁の中点が無いとき、右の範囲を次の製品マークまで(同じ段に
+            # 無ければ範囲の幅1つ分)広げて探す。寸法の文字に合う長さが見つかった
+            # ときだけ使う(2026-11-09、26-12 の 2B-03 の 2Sb70M-5。左の 2Sb70M-5A と
+            # 1本につながって描かれ、梁の中点がこの製品の範囲の右端より少し右にある。
+            # 図面の長さは 8490.1 で、全体の 12673.9 になっていた)。
+            nxt = [r.x_mark for r in rows if r is not row and abs(r.y - row.y) < 1 and r.x_mark > row.x_mark]
+            x_ext = min(nxt) if nxt else x_max + (x_max - x_min)
+            wide = _flange_member(tdf, x_min, x_ext, row.y, tier_y_max, _flange_thickness(row.size),
+                                  depth=_beam_depth(row.size), with_others=True)
+            if wide is not None and _drawn_value(dim_values, wide[0][0]) is not None:
+                member, others = wide
+        bent =(_bent_partner(member, others, tdf, _beam_depth(row.size))
                 if member is not None else None)
         # 図面に寸法として書かれていない数値は長さにしない(ユーザー指示。フランジの
         # 形から求めた値が寸法の文字に無ければ、従来の寸法から選ぶ方式の値を使う)
@@ -3056,6 +3137,11 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                 drawn = _drawn_value(dim_values, web[0])
                 if drawn is not None:
                     member = web
+        if member is not None and drawn is None:
+            # まだ合わなければ、梁の端に付くエンドプレートの厚さを足した長さで探す
+            ep = _end_plate_member(tdf, member, _beam_depth(row.size), dim_values)
+            if ep is not None:
+                member, drawn = ep
         if drawn is not None:
             _member_length, member_ends[id(row)], axis = member
             length_value = drawn
