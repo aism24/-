@@ -314,7 +314,11 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None, with_others=
             # 下に H350W が取り付く区間でフランジの線が 220・280・6545 に分かれて
             # 描かれ、6545 だけが梁本体になっていた。図面の長さは 7045)。
             return spanning_line(th, end, lo, hi)
-        if crossing_line(th, end, lo, hi) and crossing_line(th, s1, lo, hi):
+        # 梁を横切る板は薄いので、隙間が梁せいより長ければ板とみなさない(2026-11-09、
+        # 26-12 の 2B-85。横に並べた 2Sb20N-3 と -4 の図の間 3500 を、両側の柱の線が
+        # 梁を横切るため1本の梁 6776 としてつないでいた)
+        if (s1 - end <= (hi - lo) + 0.6
+                and crossing_line(th, end, lo, hi) and crossing_line(th, s1, lo, hi)):
             return True  # 梁を横切る板
         return (depth is not None and abs((hi - lo) - depth) <= 0.6
                 and abs((dl[1] - dl[0]) - depth) <= 0.6 and abs((dr[1] - dr[0]) - depth) <= 0.6
