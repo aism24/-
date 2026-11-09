@@ -49,8 +49,10 @@ def _try_float(s: str | None) -> float | None:
 # (`M`+H系統)が実データで初めて確認されたため追加。
 # 2026-10-29、N2B-36〜42の間柱`2L-75x75x9`(L形鋼2枚)を追加。サイズと
 # 認識されず「マーク|設計符号|本数」の3項目の表として1列ずれて読まれていた。
+# 2026-11-09、26-16 EB3-EVM1B-04 の角形鋼管`□-100x100x3.2`を追加。同じく
+# 3項目の表として読まれ、製品マーク以降が1列ずれていた。
 SIZE_PATTERN = re.compile(
-    r"^(2L|BBOX|BCP|BCR|BOX|BH|BT|CT|C|MHY|HFT|HYT|HF|HY|H|I|LH|L|P|SH|TH|[0-9]+φ|\[|角)[\-‐]?\s*[0-9]"
+    r"^(2L|BBOX|BCP|BCR|BOX|BH|BT|CT|C|MHY|HFT|HYT|HF|HY|H|I|LH|L|P|SH|TH|[0-9]+φ|\[|角|□)[\-‐]?\s*[0-9]"
 )
 
 # 「同じ行」とみなすY座標の許容誤差。当初1.0(ほぼ完全一致)だったが、

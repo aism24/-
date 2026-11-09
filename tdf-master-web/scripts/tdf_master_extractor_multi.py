@@ -608,6 +608,11 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
                             abs((qx - ex_) * vx + (qy - ey_) * vy) <= BOLT_REACH
                             and abs(-(qx - ex_) * vy + (qy - ey_) * vx) <= r_depth / 2
                             for qx, qy in bolt_marks)
+                    # 両端ともボルトが描かれていない梁は、この判定の根拠が無いので
+                    # かけない(2026-11-09、26-16 EB3-EVM1B-04 の角形鋼管 EB□100。
+                    # ボルトの記号が無く、正解の継手 EB□100 が両方とも空になっていた)。
+                    if not any(bolt_ok.values()):
+                        bolt_ok = {"left": True, "right": True}
 
             def scan(two_d):
                 found = False
