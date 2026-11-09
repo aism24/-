@@ -354,6 +354,11 @@ table#merge-table tr.merge-off { opacity: .5; }
 .check-folder-label { color: #aaa; }
 #check-folder-name { font-weight: bold; color: #fff; }
 #check-folder-name.unset { color: #ffb07a; }
+#check-folder-hint { color: #999; font-size: 12px; margin-top: -4px; }
+.srv-btn { background: #2a2a2a; color: #ccc; border: 1px solid #666; border-radius: 16px; padding: 5px 14px; font-size: 13px; font-weight: bold; cursor: pointer; }
+.srv-btn:hover { border-color: #f8c8dc; color: #fff; }
+.srv-btn.selected { background: #f8c8dc; color: #000; border-color: #f8c8dc; }
+.check-chip { cursor: help; }
 .check-bar { width: 760px; max-width: 100%; box-sizing: border-box; border-color: #f0a8c4; }
 .check-bar.compact { padding: 10px; }
 #check-result { display: none; flex-direction: column; align-items: center; gap: 8px; max-width: 100%; }

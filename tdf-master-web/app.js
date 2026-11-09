@@ -147,6 +147,7 @@ async function startApp(mode) {
     // 帳票チェック: Excelを取り込み、図面を探して抽出するのでPyodideも使う
     if (mergeMode) { mergeMode = false; document.getElementById('merge-area').classList.remove('open'); }
     if (!checkMode) openCheck();
+    else loadCheckRoot(); // 工事を変えたときは、その工事用に覚えたフォルダを表示し直す
     if (!pyodide) await initPyodide();
     return;
   }
