@@ -257,8 +257,8 @@ def _vertical_lines(tdf: tb.TdfData):
 
 
 # 継手名は英字で始まる。小文字も入る(26-12 の JCc50-3、26-16 の WB1-3C-01 の
-# 上継手 zCJ700 は小文字で始まる)
-_JOINT_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9\-]+$")
+# 上継手 zCJ700 は小文字で始まる)。角形鋼管の「□」も入る(26-16 の EB3-EV1P-11 の EP□100)
+_JOINT_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9\-□]+$")
 _PLATE_NAME = re.compile(r"PL-\d")
 AXIS_TOL = 1.0
 
