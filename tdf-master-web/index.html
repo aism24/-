@@ -1972,6 +1972,22 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
         for mx, my, t in candidates_raw
     }
 
+    # 長丸のすぐ下(長丸の高さ程度の範囲)に部材のサイズの文字があるものは、そのサイズの
+    # 部材の継手。行のサイズと違えば、梁に取り付く別の部材の継手として使わない
+    # (2026-11-09、26-12 の 2B-85 の 2Sb20N-3。右端の BJ20N-1 の下に、取り付く
+    # HSb19M の H-194x150x6x9 が書かれている。ユーザー確認: 右継手は無し)。
+    other_size_caps: dict[tuple, str] = {}
+    size_texts = []
+    for rec in tdf.texts:
+        st = tdf.resolve_text(rec)
+        if st and ex.SIZE_PATTERN.match(st):
+            size_texts.append((rec.x, rec.y, st))
+    for mx, my, t in candidates_raw:
+        below = [(my - sy, st) for sx, sy, st in size_texts
+                 if 0 < my - sy <= 250 and abs(sx - mx) <= 250]
+        if below:
+            other_size_caps[(mx, my, t)] = min(below)[1]
+
     # (候補位置, テキスト, 側) ごとに、最も近いグループ(と距離)を記録する
     claims: dict[tuple, tuple] = {}
     for key, members in groups.items():
@@ -2057,6 +2073,8 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
                 found = False
                 for mx, my, t in candidates_raw:
                     if my <= r.y or (y_max is not None and my >= y_max):
+                        continue
+                    if (mx, my, t) in other_size_caps and other_size_caps[(mx, my, t)] != r.size:
                         continue
                     if all(_angle_diff(cand_angle[(mx, my, t)], a) > JOINT_ANGLE_TOL_DEG
                            for a in allowed_angles):
@@ -2440,7 +2458,11 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None, with_others=
             # 下に H350W が取り付く区間でフランジの線が 220・280・6545 に分かれて
             # 描かれ、6545 だけが梁本体になっていた。図面の長さは 7045)。
             return spanning_line(th, end, lo, hi)
-        if crossing_line(th, end, lo, hi) and crossing_line(th, s1, lo, hi):
+        # 梁を横切る板は薄いので、隙間が梁せいより長ければ板とみなさない(2026-11-09、
+        # 26-12 の 2B-85。横に並べた 2Sb20N-3 と -4 の図の間 3500 を、両側の柱の線が
+        # 梁を横切るため1本の梁 6776 としてつないでいた)
+        if (s1 - end <= (hi - lo) + 0.6
+                and crossing_line(th, end, lo, hi) and crossing_line(th, s1, lo, hi)):
             return True  # 梁を横切る板
         return (depth is not None and abs((hi - lo) - depth) <= 0.6
                 and abs((dl[1] - dl[0]) - depth) <= 0.6 and abs((dr[1] - dr[0]) - depth) <= 0.6
