@@ -382,6 +382,17 @@ async function processFiles(files) {
   // 長さを求められなかった行(製品の行はあるが、図から長さの範囲を決められなかった)
   const lengthUnclear = extractedResults.filter(r => r['長さ'] == null && !r['長さの確認']);
   if (lengthUnclear.length > 0) showLengthUnclearDialog(lengthUnclear);
+  // 同じ製品マークが2回以上ある(図面の書き間違いの可能性。26-16 WB3-EVMRB-01 で
+  // WB32-PHESB250-1 が2回書かれていた)。行はそのまま残し、図面の確認を促す。
+  const markCount = new Map();
+  extractedResults.forEach(r => {
+    const m = String(r['製品マーク'] ?? '').trim();
+    if (!m) return;
+    if (!markCount.has(m)) markCount.set(m, []);
+    markCount.get(m).push(r);
+  });
+  const dupMarks = [...markCount.entries()].filter(([, rs]) => rs.length > 1);
+  if (dupMarks.length > 0) showDuplicateMarkDialog(dupMarks);
 }
 
 // 重量(t)を求める。TDFファイル自身に重量セル(kg)があればそれをt換算して使い
@@ -1071,6 +1082,44 @@ function showLengthUnclearDialog(rows) {
   rows.forEach(r => {
     const tr = document.createElement('tr');
     [r['図番'] ?? '', r['製品マーク'] ?? ''].forEach(v => {
+      const td = document.createElement('td');
+      td.textContent = v;
+      tr.appendChild(td);
+    });
+    table.appendChild(tr);
+  });
+  sec.appendChild(table);
+  body.appendChild(sec);
+  document.getElementById('error-dialog-overlay').classList.add('open');
+  document.getElementById('error-dialog-close').focus();
+}
+// 同じ製品マークが複数ある製品を、製品マーク・図番・件数の表で知らせる。
+// dupMarks: [[製品マーク, 行の配列], ...]
+function showDuplicateMarkDialog(dupMarks) {
+  const body = document.getElementById('error-dialog-body');
+  const sec = document.createElement('div');
+  sec.className = 'error-dialog-section';
+  const h = document.createElement('div');
+  h.className = 'error-dialog-title';
+  h.textContent = '製品名が重複しています(' + dupMarks.length + ' 件)';
+  sec.appendChild(h);
+  const note = document.createElement('div');
+  note.className = 'error-dialog-note';
+  note.textContent = '図面を確認してください';
+  sec.appendChild(note);
+  const table = document.createElement('table');
+  table.className = 'error-dialog-table';
+  const head = document.createElement('tr');
+  ['製品マーク', '図番', '件数'].forEach(t => {
+    const th = document.createElement('th');
+    th.textContent = t;
+    head.appendChild(th);
+  });
+  table.appendChild(head);
+  dupMarks.forEach(([mark, rs]) => {
+    const tr = document.createElement('tr');
+    const zuban = [...new Set(rs.map(r => r['図番'] ?? ''))].join('、');
+    [mark, zuban, String(rs.length)].forEach(v => {
       const td = document.createElement('td');
       td.textContent = v;
       tr.appendChild(td);
