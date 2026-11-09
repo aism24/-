@@ -61,15 +61,18 @@ def find_rows(tdf: tb.TdfData) -> list[dict]:
     (どちらにも無ければ並びのとおり)。
     """
     rows = []
+    rest = []  # 製品の行にならなかった「N台」と、その左の文字
     for dai in tdf.texts:
         if dai.rot != 0 or not tb.is_dai_cell(tdf.resolve_text(dai)):
             continue
-        cells = sorted(
+        left = sorted(
             [r for r in tdf.texts if r.rot == 0 and abs(r.y - dai.y) < SAME_ROW_Y_TOL
              and r.x < dai.x and tdf.resolve_text(r)],
             key=lambda r: r.x,
-        )[-3:]
+        )
+        cells = left[-3:]
         if len(cells) < 3:
+            rest.append((dai, left))
             continue
         a, b, c = (_norm(tdf.resolve_text(r)) for r in cells)
         pos = (cells[0].x, dai.x, dai.y)  # 行の左端X・右端X・高さ(本体を行に割り当てるため)
@@ -80,10 +83,14 @@ def find_rows(tdf: tb.TdfData) -> list[dict]:
             else:
                 code, mark = b, a
             rows.append({"mark": mark, "code": code, "size": None, "zushi": True,
-                         "count": _norm(tdf.resolve_text(dai)), "pos": pos})
+                         "count": _norm(tdf.resolve_text(dai)), "pos": pos,
+                         "cols": (cells[0].x, cells[1].x, cells[2].x), "code_left": code == a})
         elif _is_size(c):
             rows.append({"mark": a, "code": b, "size": c, "zushi": False,
                          "count": _norm(tdf.resolve_text(dai)), "pos": pos})
+        else:
+            rest.append((dai, left))
+    rows = rows + _zushi_followers(tdf, rows, rest)
     rows = rows + _shared_rows(tdf, rows)
     # ×印(削除マーク)の付いた行は除く。製品マークか本数のセルが×印の範囲に入る行
     # (梁モードの exm.filter_deleted_rows と同じ判定。26-16 の EA2-1P-07 の EA22-1T1-1 は中止)
@@ -93,6 +100,53 @@ def find_rows(tdf: tb.TdfData) -> list[dict]:
                 if not (exm._point_in_any_box(r["pos"][0], r["pos"][2], x_marks)
                         or exm._point_in_any_box(r["pos"][1], r["pos"][2], x_marks))]
     return rows
+
+
+ZUSHI_FOLLOW_GAP = 400.0  # 「図示」の行に続く行とみなす行の間隔(表の1行は290)
+
+
+def _zushi_followers(tdf: tb.TdfData, rows: list[dict], rest) -> list[dict]:
+    """「図示」の行の上下に続く、設計符号と製品マークだけの行(サイズの欄が空)。
+
+    26-16 の EA1-1C-04: 「1C1B | 1C-X17Y3 | 図 示 | １台」の下に「1C1B | 1C-X18Y3 | (空) | １台」。
+    2行目は文字が2つしか無いので製品の行として読めず、1C-X18Y3 が抜けていた
+    (ITM.xlsx の照合で判明。EA1-1C-06 は3行)。図は1つなので、同じ図の製品として
+    "group" に同じ値を入れる。設計符号の文字が「図示」の行と同じで、設計符号・製品マーク・
+    本数の位置がそろい、サイズの欄に文字が無い行だけを使う。
+    """
+    out = []
+    zushi = [r for r in rows if r.get("zushi") and "cols" in r]
+    if not zushi or not rest:
+        return out
+    taken = set()
+    for n, z in enumerate(zushi):
+        x_a, x_b, x_c = z["cols"]
+        x_code, x_mark = (x_a, x_b) if z["code_left"] else (x_b, x_a)
+        members = [z]
+        changed = True
+        while changed:  # 「図示」の行から1行ずつ上下へたどる
+            changed = False
+            for k, (dai, left) in enumerate(rest):
+                if k in taken or abs(dai.x - z["pos"][1]) > WIDTH_TOL:
+                    continue
+                if min(abs(dai.y - m["pos"][2]) for m in members) > ZUSHI_FOLLOW_GAP:
+                    continue
+                at = {round(r.x, 1): _norm(tdf.resolve_text(r)) for r in left if r.x >= x_a - WIDTH_TOL}
+                code = next((v for x, v in at.items() if abs(x - x_code) <= WIDTH_TOL), None)
+                mark = next((v for x, v in at.items() if abs(x - x_mark) <= WIDTH_TOL), None)
+                if (code != z["code"] or not mark or len(at) != 2
+                        or any(abs(x - x_c) <= WIDTH_TOL for x in at)):
+                    continue
+                taken.add(k)
+                changed = True
+                row = {"mark": mark, "code": code, "size": None, "zushi": True,
+                       "count": _norm(tdf.resolve_text(dai)), "pos": (x_a, dai.x, dai.y),
+                       "group": ("zushi", n)}
+                members.append(row)
+                out.append(row)
+        if len(members) > 1:
+            z["group"] = ("zushi", n)
+    return out
 
 
 def _shared_rows(tdf: tb.TdfData, rows: list[dict]) -> list[dict]:

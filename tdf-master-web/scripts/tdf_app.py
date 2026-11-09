@@ -48,6 +48,10 @@ def _get_rows_small(tdf: tb.TdfData) -> list:
     # ようにマージする)。
     existing = {(round(r.x_next, 1), round(r.y, 1)) for r in rows}
     rows = rows + ex.find_product_rows_no_size(tdf, existing_positions=existing)
+    # 製品マークが本数の行から少し上下にずれて書かれた行(26-16 の EA1-2B-06)。
+    # ほかの読み方で使われなかった「N台」だけを対象にする。
+    existing = {(round(r.x_next, 1), round(r.y, 1)) for r in rows}
+    rows = rows + ex.find_product_rows_offset_mark(tdf, existing_positions=existing)
     rows = exm.filter_deleted_rows(tdf, rows)
     return rows
 
@@ -752,6 +756,7 @@ def _in_drawing(dim_values, length):
 
 
 MEMBER_DIM_TOL = 0.1  # フランジから求めた長さと寸法の文字の差の許容
+MEMBER_DIM_LOOSE_TOL = 0.5  # 「要確認」になる行だけに使う、寸法の文字の差の許容
 
 
 def _drawn_value(dim_values, length):
@@ -944,6 +949,7 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
     dim_values = _numeric_texts(tdf)
     dim_sums = None  # 寸法の合計(必要になったときだけ求める)
     length_checks: dict[int, str] = {}  # id(row) -> "推測" / "要確認"
+    no_tier_limit: set[int] = set()  # 段の上限を外して梁を見つけた行
     for row in rows:
         _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
         if row.size_missing:
@@ -981,6 +987,21 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                                   depth=_beam_depth(row.size), with_others=True)
             if wide is not None and _drawn_value(dim_values, wide[0][0]) is not None:
                 member, others = wide
+        if member is None and tier_y_max is not None:
+            # 上の段の行の高さで探す範囲を切ると梁が入らないとき、上限を外して探す。
+            # 長さが寸法の文字にあり、梁とこの行の間(梁の中点の真下)に別の製品の行が
+            # 無いときだけ使う(2026-11-09、26-16 の EB2-1B-07 の EB22-1TB788-1。右の列の
+            # -2 の行が上の段とみなされ、梁 8345 の手前で範囲が切られていた。ITM.xlsx の照合で判明)
+            up = _flange_member(tdf, x_min, x_max, row.y, None, _flange_thickness(row.size),
+                                depth=_beam_depth(row.size), with_others=True)
+            if up is not None and _drawn_value(dim_values, up[0][0]) is not None:
+                (_a, (p1, p2), _b) = up[0]
+                mx, my = (p1[0] + p2[0]) / 2.0, max(p1[1], p2[1])
+                between = [r for r in rows if r is not row and r.x_mark <= mx <= r.x_next
+                           and row.y < r.y < my]
+                if not between:
+                    member, others = up
+                    no_tier_limit.add(id(row))  # 継手も上限を外して探す
         bent =(_bent_partner(member, others, tdf, _beam_depth(row.size))
                 if member is not None else None)
         # 図面に寸法として書かれていない数値は長さにしない(ユーザー指示。フランジの
@@ -1049,9 +1070,20 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                     if near:
                         est = min(near, key=lambda s: abs(s - cand))
                         break
+            loose = None
+            if est is None:
+                # 「要確認」になる行だけ: 梁の線の長さとの差が0.5以内の寸法の文字があれば、
+                # 寸法の値を長さにする(寸法は整数で書かれ、梁の線が端数を持つ図面がある。
+                # 26-16 の EB3-1G-15 の 1G-X11Y1: 梁の線 2410.5、寸法 2410。ITM.xlsx の照合で判明)
+                near = [v for v in dim_values if abs(v - member[0]) <= MEMBER_DIM_LOOSE_TOL + 1e-9]
+                if near:
+                    loose = min(near, key=lambda v: abs(v - member[0]))
             if est is not None:
                 length_value = est
                 length_checks[id(row)] = "推測"
+            elif loose is not None:
+                length_value = loose
+                _member_length, member_ends[id(row)], axis = member
             else:
                 length_checks[id(row)] = "要確認"
         lengths[id(row)] = length_value
@@ -1139,8 +1171,11 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
     # グルーピングロジック)には一切渡さない。
     member_depths = {id(r): _beam_depth(r.size) for r in rows
                      if id(r) in member_ends and _beam_depth(r.size)}
+    joint_tier = dict(tier_info)
+    for rid in no_tier_limit:
+        joint_tier[rid] = (joint_tier[rid][0], None)
     joints = exm.assign_joints_batch(
-        tdf, [r for r in rows if not r.size_missing], tier_info, lengths, member_ends, joint_axes,
+        tdf, [r for r in rows if not r.size_missing], joint_tier, lengths, member_ends, joint_axes,
         member_depths,
     )
     joints.update(joints_no_size)
