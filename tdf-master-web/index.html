@@ -207,6 +207,9 @@ MAX_N = 63
 _SIZE_LINE = -2147483592       # 0x80000038 = 56
 _SIZE_ARC_CENTER = -2147483600  # 0x80000030 = 48
 _SIZE_ARC_ANGLE = -2147483616   # 0x80000020 = 32
+_PAT_LINE = struct.pack("<i", _SIZE_LINE)
+_PAT_ARC_CENTER = struct.pack("<i", _SIZE_ARC_CENTER)
+_PAT_VAL16 = struct.pack("<i", 16)
 
 DAI_PATTERN = re.compile(r"^[0-9]+台$")
 
@@ -275,18 +278,22 @@ class TdfData:
         return self.body_rot_by_id.get(rec.id_field, 0.0)
 
 
+def _occurrences(data: bytes, pat: bytes, end: int):
+    """data の中で pat が始まる位置(end 未満)を、重なりも含めて前から順に返す。
+    1バイトずつ Python で比べる代わりに bytes.find で探す(2026-11-09。結果は同じ)。"""
+    i = data.find(pat)
+    while i != -1 and i < end:
+        yield i
+        i = data.find(pat, i + 1)
+
+
 def _find_all_text_markers(data: bytes) -> list[int]:
+    """「00 N (2*N) 00」(N は 1〜MAX_N)の位置を小さい順に返す。"""
     idxs = []
-    n = len(data)
-    for i in range(n - 3):
-        if data[i] != 0 or data[i + 3] != 0:
-            continue
-        b1 = data[i + 1]
-        if b1 == 0 or b1 > MAX_N:
-            continue
-        if data[i + 2] != b1 * 2:
-            continue
-        idxs.append(i)
+    end = len(data) - 3
+    for b1 in range(1, MAX_N + 1):
+        idxs.extend(_occurrences(data, bytes((0, b1, b1 * 2, 0)), end))
+    idxs.sort()
     return idxs
 
 
@@ -322,52 +329,41 @@ def _parse_texts(data: bytes) -> list[TextRecord]:
 
 
 def _parse_lines(data: bytes) -> list[LineRecord]:
-    n = len(data)
     lines = []
-    i = 0
-    while i < n - 56:
-        size_raw = struct.unpack_from("<i", data, i)[0]
-        if size_raw == _SIZE_LINE:
-            val = struct.unpack_from("<i", data, i + 4)[0]
-            if val == 1:
-                try:
-                    ref0 = struct.unpack_from("<i", data, i + 8)[0]
-                    x1, y1, x2, y2 = struct.unpack_from("<4d", data, i + 24)
-                except struct.error:
-                    i += 1
-                    continue
-                if all(v == v and abs(v) < _COORD_LIMIT for v in (x1, y1, x2, y2)):
-                    lines.append(LineRecord(i, ref0, x1, y1, x2, y2))
-        i += 1
+    for i in _occurrences(data, _PAT_LINE, len(data) - 56):
+        val = struct.unpack_from("<i", data, i + 4)[0]
+        if val == 1:
+            try:
+                ref0 = struct.unpack_from("<i", data, i + 8)[0]
+                x1, y1, x2, y2 = struct.unpack_from("<4d", data, i + 24)
+            except struct.error:
+                continue
+            if all(v == v and abs(v) < _COORD_LIMIT for v in (x1, y1, x2, y2)):
+                lines.append(LineRecord(i, ref0, x1, y1, x2, y2))
     return lines
 
 
 def _parse_arcs(data: bytes) -> list[ArcRecord]:
     n = len(data)
     arcs = []
-    i = 0
-    while i < n - 48:
-        size_raw = struct.unpack_from("<i", data, i)[0]
-        if size_raw == _SIZE_ARC_CENTER:
-            val = struct.unpack_from("<i", data, i + 4)[0]
-            if val == 2:
-                try:
-                    cx, cy, r = struct.unpack_from("<3d", data, i + 24)
-                except struct.error:
-                    i += 1
-                    continue
-                if cx == cx and cy == cy and r == r and 0 < r < 1000 and abs(cx) < _COORD_LIMIT and abs(cy) < _COORD_LIMIT:
-                    a1 = None
-                    angle_off = i + 48
-                    if angle_off + 32 <= n:
-                        size2 = struct.unpack_from("<i", data, angle_off)[0]
-                        if size2 == _SIZE_ARC_ANGLE:
-                            try:
-                                a1, _a2 = struct.unpack_from("<2d", data, angle_off + 16)
-                            except struct.error:
-                                a1 = None
-                    arcs.append(ArcRecord(i, cx, cy, r, a1))
-        i += 1
+    for i in _occurrences(data, _PAT_ARC_CENTER, n - 48):
+        val = struct.unpack_from("<i", data, i + 4)[0]
+        if val == 2:
+            try:
+                cx, cy, r = struct.unpack_from("<3d", data, i + 24)
+            except struct.error:
+                continue
+            if cx == cx and cy == cy and r == r and 0 < r < 1000 and abs(cx) < _COORD_LIMIT and abs(cy) < _COORD_LIMIT:
+                a1 = None
+                angle_off = i + 48
+                if angle_off + 32 <= n:
+                    size2 = struct.unpack_from("<i", data, angle_off)[0]
+                    if size2 == _SIZE_ARC_ANGLE:
+                        try:
+                            a1, _a2 = struct.unpack_from("<2d", data, angle_off + 16)
+                        except struct.error:
+                            a1 = None
+                arcs.append(ArcRecord(i, cx, cy, r, a1))
     return arcs
 
 
@@ -375,19 +371,21 @@ def _parse_polylines(data: bytes) -> list:
     """折れ線要素(モジュールの説明の4)。戻り値: [(オフセット, [(x, y), ...]), ...]"""
     n = len(data)
     out = []
-    i = 0
-    while i < n - 28:
+    nxt = 0  # 読み取った折れ線の中は探さない(以前の i += size と同じ)
+    # 4バイト目からの「16」(val)を探し、その4バイト前をレコードの先頭とする
+    for j in _occurrences(data, _PAT_VAL16, n - 24):
+        i = j - 4
+        if i < nxt:
+            continue
         size_raw = struct.unpack_from("<i", data, i)[0]
-        if size_raw < 0 and (size_raw & 0x7FFFFFFF) >= 60 and struct.unpack_from("<i", data, i + 4)[0] == 16:
+        if size_raw < 0 and (size_raw & 0x7FFFFFFF) >= 60:
             size = size_raw & 0x7FFFFFFF
             cnt = struct.unpack_from("<i", data, i + 24)[0]
             if 2 <= cnt <= 1000 and size == 28 + 16 * cnt and i + 28 + 16 * cnt <= n:
                 pts = [struct.unpack_from("<2d", data, i + 28 + 16 * k) for k in range(cnt)]
                 if all(v == v and abs(v) < _COORD_LIMIT for pt in pts for v in pt):
                     out.append((i, pts))
-                    i += size
-                    continue
-        i += 1
+                    nxt = i + size
     return out
 
 
@@ -445,7 +443,7 @@ from __future__ import annotations
 import collections
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import tdf_binary as tb
 
@@ -509,7 +507,7 @@ class ProductRow:
     right_joint: str | None = None
     drawing_number: str | None = None
     # True: find_product_rows_no_size(「マーク|設計符号|本数」3項目パターン)由来の行。
-    # この行だけ、長さ・継手・サイズの判定を別の専用ロジック(determine_length_no_size等)に
+    # この行だけ、継手・サイズの判定を別の専用ロジック(determine_joints_no_size等)に
     # 振り分ける(既存の4項目パターン向けdetermine_length等は一切変更しない)。
     # デフォルトFalseのため、既存のfind_product_rows/find_product_rows_shared_groupが
     # 作る行には影響しない(2026-09-16、KIX01現場`N-1 2G-05`対応)。
@@ -1011,415 +1009,25 @@ def determine_length(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float,
 
 
 # ---------------------------------------------------------------------------
-# 「左継手・右継手」の判定
-# ---------------------------------------------------------------------------
-
-def find_stadium_centers(tdf: tb.TdfData, angle_tol_deg: float = 1.0,
-                          radius_tol: float = 0.5, max_dist_factor: float = 20.0):
-    """長丸(半径一致・開始角180度差の円弧ペア)の中心座標を全部求める。"""
-    arcs = [a for a in tdf.arcs if a.a1 is not None]
-    centers = []
-    used = set()
-    n = len(arcs)
-    for i in range(n):
-        a = arcs[i]
-        if a.offset in used:
-            continue
-        for j in range(i + 1, n):
-            b = arcs[j]
-            if b.offset in used:
-                continue
-            if abs(a.r - b.r) > radius_tol:
-                continue
-            a1d = math.degrees(a.a1)
-            b1d = math.degrees(b.a1)
-            diff = abs((a1d - b1d) % 360)
-            diff = min(diff, 360 - diff)
-            if abs(diff - 180.0) > angle_tol_deg:
-                continue
-            dist = math.hypot(b.cx - a.cx, b.cy - a.cy)
-            if not (0.1 < dist < a.r * max_dist_factor):
-                continue
-            mid_x = (a.cx + b.cx) / 2
-            mid_y = (a.cy + b.cy) / 2
-            centers.append((mid_x, mid_y, a.r))
-            used.add(a.offset)
-            used.add(b.offset)
-            break
-    return centers
-
-
-JOINT_CODE_PATTERN = re.compile(r"^GJ")
-
-
-def determine_joints(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float,
-                      main_axis_deg: float, length_value: float,
-                      x_tolerance_factor: float = 0.6,
-                      y_max: float | None = None) -> tuple[str | None, str | None]:
-    """長丸で囲まれた継手候補のうち、継手コード特有の文字列パターン(`GJ`で
-    始まる)に一致するものだけを対象に、製品マーク側(左)・本数セル側(右)の
-    それぞれに最も近いものを左右継手として採用する。
-
-    継手コードは図面内で必ず`GJ`始まりであり(`P441`や`TB888`等の無関係な
-    部材記号はこのパターンに一致しない)、「N台」パターンと同様に文字列
-    そのもので確実に識別できる(2026-09-14、鳥取現場図面での検証で確立)。
-    片側にしか継手が無い図面では、該当側の候補が遠すぎる(x_tolerance_factor
-    ×lengthを超える)場合にNoneを返す。
-
-    `y_max`を指定すると、長さ判定(determine_length)と同様にY範囲の上限を
-    打ち切る(1枚の図面に梁の立面が2段に描かれている場合、下段の行から
-    見て上段の行より上にある継手は別の梁のものなので含めてはいけない。
-    2026-09-14追加)。
-    """
-    centers = find_stadium_centers(tdf)
-    theta = -math.radians(main_axis_deg)
-
-    def rotate(x, y):
-        xr = x * math.cos(theta) - y * math.sin(theta)
-        yr = x * math.sin(theta) + y * math.cos(theta)
-        return xr, yr
-
-    x_mark_r, _ = rotate(x_min, y_ref)
-    x_next_r, _ = rotate(x_max, y_ref)
-
-    joint_candidates = []
-    for mx, my, r in centers:
-        near = [rec for rec in tdf.texts if abs(rec.x - mx) < 3 and abs(rec.y - my) < 3]
-        for rec in near:
-            text = tdf.resolve_text(rec)
-            if not text or not JOINT_CODE_PATTERN.match(text):
-                continue
-            if my <= y_ref or (y_max is not None and my >= y_max):
-                continue
-            xr, yr = rotate(mx, my)
-            joint_candidates.append((text, xr))
-
-    if not joint_candidates:
-        return None, None
-
-    threshold = length_value * x_tolerance_factor
-    left_best = min(joint_candidates, key=lambda c: abs(c[1] - x_mark_r))
-    right_best = min(joint_candidates, key=lambda c: abs(c[1] - x_next_r))
-    left = left_best[0] if abs(left_best[1] - x_mark_r) <= threshold else None
-    right = right_best[0] if abs(right_best[1] - x_next_r) <= threshold else None
-    return left, right
-
-
-# ---------------------------------------------------------------------------
-# メイン抽出処理
-# ---------------------------------------------------------------------------
-
-RELAX_MARGIN = 5000.0
-
-
-# ---------------------------------------------------------------------------
 # 「製品マーク|設計符号|本数(N台)」3項目パターン(サイズ省略)専用の
-# 長さ・継手・サイズ判定
+# 継手・サイズ判定
 # ---------------------------------------------------------------------------
 #
 # find_product_rows_no_size()が見つけた行(ProductRow.size_missing=True)だけを
-# 対象にする、完全に独立したロジック。既存の4項目パターン向け
-# determine_length/determine_joints、および呼び出し元のfind_product_rows等は
-# 一切変更していない。
+# 対象にする(2026-09-16、KIX01現場`N-1 2G-05`対応で追加)。
+#   - 継手: 確定した長さと一致する直線の実端点(_find_reference_line_endpoints)の
+#     近傍にある長丸のうち、各端点に最も近いものを採用する。
+#   - サイズ: 各継手位置に最も近いサイズ文字列が長さのX範囲の外側にあれば
+#     「継手側(接続先部材)のサイズ」とみなし、そのY座標帯(±_SIZE_JOINT_Y_BAND)・
+#     長さのX範囲内で改めて探した単一候補を採用する。
 #
-# 2026-09-16、KIX01現場`N-1 2G-05`(2GX1Y3/G16N)で、既存ロジックの前提
-# (マーク〜本数のX範囲が梁の見た目の全長に対応する)が成り立たない図面が
-# 見つかったことを受けて追加。ユーザーと共に、姉妹アプリ(DXF抽出アプリ、
-# 他社図面向けIndex他社図面.html)の考え方を参考に設計した:
-#   - 長さ: 単純な「向き一致・長さ一致の直線本数が最多」ではなく、
-#     DXFアプリの「サブ寸法和+直線連結性の検証」(_bottom_up_y_validate/
-#     _filter_connected_nums_y)を移植して使う。
-#   - 継手: 確定した長さと一致する直線の実端点(_find_reference_line_endpoints、
-#     小梁側と共通の既存ユーティリティを流用)の近傍にある長丸のうち、
-#     各端点に最も近いものを採用する(絶対閾値は設けない。DXFアプリの
-#     nearest_sizeと同じ考え方)。
-#   - サイズ: 各継手位置に最も近いサイズ文字列を探し、それが長さのX範囲の
-#     外側にあれば「継手側(＝接続先部材)のサイズ」とみなし(DXFアプリの
-#     is_joint_size)、そのY座標帯(±300)・長さのX範囲内で改めて探した
-#     単一候補を採用する。
-#
-# 実例1件(N-1 2G-05)でのみ検証済み。ユーザー確認の上、以下は今回
-# 意図的に対象外とした(実例が無いまま組むと根拠のない実装になるため):
-#   - 斜め梁(種別判定自体は既存classify_beam_typeを流用し角度で判定するが、
-#     斜め梁と判定された場合の長さ・サイズ抽出ロジックは無い)
-#   - サブ寸法和が0件/複数値タイの場合のタイブレーク(空欄のままにする)
-#   - サイズ候補が0件/複数件の場合のフォールバック(空欄のままにする)
-#   - 製品段(tier)は既存のcompute_tier_info(呼び出し側でrows全体に対して
-#     実行される)をそのまま流用する(この関数自体には手を加えない)。
+# 2026-11-09: この節の長さ判定(determine_length_no_size と補助関数)と、
+# 旧来の「GJ始まり」の継手判定(determine_joints・find_stadium_centers)、
+# 単独実行用の extract() は、アプリから呼ばれていなかったので削除した。
 
-_NUM_MIN_VALUE = 10.0
-_SUBSUM_Y_GROUP_TOL = 10.0  # 連結性フィルタ用のYグループ化許容誤差
-_SUBSUM_VALIDATE_Y_TOL = 50.0  # サブ寸法和検証用のYグループ化許容誤差(緩め)
-# 2026-09-16、N-1 2G-10対応で500→2000に引き上げ: 500のままだと、梁本体とは
-# 無関係な小さな数値(ボルト穴等の斜め注記400+200+200=800)が偶然近傍の別の
-# 「800」ラベルと一致し、誤って全長として採用されてしまうケースがあった
-# (実際の全長は9035で、9035自体は分解されない単一ラベルのため、こちらは
-# 下の_line_length_frequency_no_sizeフォールバックで拾う)。この定数は
-# determine_length_no_size専用で、既存4項目パターンのdetermine_lengthとは
-# 無関係(そちらへの影響なし)。
-_SUBSUM_MIN_SUM = 2000.0
+# 製品が1種類だけの図面で、長さを探すX範囲を左右に広げる幅(tdf_app から使う)
+RELAX_MARGIN = 5000.0
 _SIZE_JOINT_Y_BAND = 300.0
-_LINE_FREQ_MIN_COUNT = 3  # 同一長さ直線の頻度フォールバック採用の最低本数
-_LINE_FREQ_MIN_VALUE = 2000.0  # フォールバック候補の最小値(全長として現実的な下限)
-
-
-def _collect_horiz_nums_no_size(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float):
-    """y_refより上・[x_min,x_max]内にある数値テキストを(value, x, y, rot_deg)で集める。
-    縦書き(90°±10°)は除外する(追い寸法のため長さ算出に使わない、という
-    既存determine_lengthと同じ前提)。"""
-    items = []
-    for r in tdf.texts:
-        text = tdf.resolve_text(r)
-        if text is None:
-            continue
-        vc = text.strip()
-        try:
-            val = float(vc)
-        except ValueError:
-            continue
-        if val < _NUM_MIN_VALUE:
-            continue
-        if not (x_min <= r.x <= x_max and r.y > y_ref):
-            continue
-        rot_deg = math.degrees(tdf.resolve_rot(r))
-        if abs(abs(rot_deg) % 180 - 90) <= 10:
-            continue
-        items.append((val, r.x, r.y, rot_deg))
-    return items
-
-
-def _find_matching_line_x(tdf: tb.TdfData, val: float, tx: float, ty: float):
-    """値valとほぼ同じ長さ(±0.1)の直線のうち、Y平均がtyに近く(±300)、
-    中点XがtxはXに最も近いものの(min_x, max_x, y平均)を返す。無ければNone。"""
-    best = None
-    best_dx = float("inf")
-    for ln in tdf.lines:
-        if abs(ln.length - val) > 0.1:
-            continue
-        y_avg = (ln.y1 + ln.y2) / 2
-        if abs(y_avg - ty) >= 300:
-            continue
-        cx = (ln.x1 + ln.x2) / 2
-        dx = abs(cx - tx)
-        if dx < best_dx:
-            best_dx = dx
-            best = (min(ln.x1, ln.x2), max(ln.x1, ln.x2), y_avg)
-    return best
-
-
-def _filter_connected_nums_no_size(tdf: tb.TdfData, nums_xy):
-    """同一Y座標グループ内で、対応する直線の端点が実際に繋がっている
-    (沿い方向の座標差50以内)最大の連結成分だけを残す。対応する直線が
-    見つからない数値は無条件で残す(DXFアプリの_filter_connected_nums_yの
-    移植)。"""
-    if not nums_xy:
-        return []
-    annotated = [
-        (val, tx, ty, ang, _find_matching_line_x(tdf, val, tx, ty))
-        for val, tx, ty, ang in nums_xy
-    ]
-
-    groups: dict[float, list[int]] = {}
-    grp_keys: list[float] = []
-    for i, (_val, _tx, ty, _ang, _xr) in enumerate(annotated):
-        placed = False
-        for rep_y in grp_keys:
-            if abs(ty - rep_y) <= _SUBSUM_Y_GROUP_TOL:
-                groups[rep_y].append(i)
-                placed = True
-                break
-        if not placed:
-            grp_keys.append(ty)
-            groups[ty] = [i]
-
-    def _keep_largest_component(indices: list[int]) -> set[int]:
-        if len(indices) <= 1:
-            return set(indices)
-        with_line = [(k, annotated[k]) for k in indices if annotated[k][-1] is not None]
-        without_line = [k for k in indices if annotated[k][-1] is None]
-        if len(with_line) <= 1:
-            return set(indices)
-        n = len(with_line)
-        par = list(range(n))
-
-        def _find(x):
-            while par[x] != x:
-                par[x] = par[par[x]]
-                x = par[x]
-            return x
-
-        def _union(a, b):
-            par[_find(a)] = _find(b)
-
-        for a in range(n):
-            xa = with_line[a][1][-1]
-            for b in range(a + 1, n):
-                xb = with_line[b][1][-1]
-                if abs(xa[1] - xb[0]) <= 50 or abs(xb[1] - xa[0]) <= 50:
-                    _union(a, b)
-        comp_count: dict[int, int] = {}
-        for k in range(n):
-            c = _find(k)
-            comp_count[c] = comp_count.get(c, 0) + 1
-        max_size = max(comp_count.values())
-        keep = set(without_line)
-        for k, (orig_idx, _rec) in enumerate(with_line):
-            if comp_count[_find(k)] == max_size:
-                keep.add(orig_idx)
-        return keep
-
-    keep: set[int] = set()
-    for indices in groups.values():
-        keep |= _keep_largest_component(indices)
-
-    result = []
-    for i in range(len(nums_xy)):
-        if i not in keep:
-            continue
-        line_range = annotated[i][4]
-        eff_y = line_range[2] if line_range is not None else nums_xy[i][2]
-        result.append((nums_xy[i][0], eff_y, nums_xy[i][3]))
-    return result
-
-
-def _bottom_up_validate_no_size(tdf: tb.TdfData, group_nums_y, target_nums_y):
-    """同一Y-group(連結性フィルタ後、±50)の合算が、target_nums_y内の
-    別の単体テキスト(水平のみ)と一致する回数を数える(DXFアプリの
-    _bottom_up_y_validateの移植)。孤立した候補(近傍に他の数値テキストも
-    接続する直線も無い)は採用しない。
-    Returns: {value: match_count}
-    """
-    groups: dict[float, list[float]] = {}
-    grp_keys: list[float] = []
-    for val, y, _ang in group_nums_y:
-        placed = False
-        for rep_y in grp_keys:
-            if abs(y - rep_y) <= _SUBSUM_VALIDATE_Y_TOL:
-                groups[rep_y].append(val)
-                placed = True
-                break
-        if not placed:
-            grp_keys.append(y)
-            groups[y] = [val]
-
-    def _is_isolated(tx: float, ty: float) -> bool:
-        for _v2, x2, y2, _a2 in target_nums_y:
-            if abs(y2 - ty) <= _SUBSUM_VALIDATE_Y_TOL and x2 != tx:
-                return False
-        for ln in tdf.lines:
-            y_avg = (ln.y1 + ln.y2) / 2
-            if abs(y_avg - ty) <= _SUBSUM_VALIDATE_Y_TOL and (
-                abs(ln.x1 - tx) <= 50 or abs(ln.x2 - tx) <= 50
-            ):
-                return False
-        return True
-
-    def _dist_horiz(ang_deg: float) -> float:
-        am = ang_deg % 180
-        return min(am, 180 - am)
-
-    text_entries = [(v, x, y) for v, x, y, ang in target_nums_y if _dist_horiz(ang) <= 0.1]
-    match_counts: dict[float, int] = {}
-    for rep_y, vals in groups.items():
-        if len(vals) < 2:
-            continue
-        group_sum = sum(vals)
-        if group_sum < _SUBSUM_MIN_SUM:
-            continue
-        tol = max(2.0, group_sum * 0.001)
-        ranked = sorted(
-            (abs(tv - group_sum), tv, tx, ty)
-            for tv, tx, ty in text_entries if abs(tv - group_sum) <= tol
-        )
-        best_tv = None
-        for _diff, tv, tx, ty in ranked:
-            if _is_isolated(tx, ty):
-                continue
-            best_tv = tv
-            break
-        if best_tv is not None:
-            match_counts[best_tv] = match_counts.get(best_tv, 0) + 1
-    return match_counts
-
-
-def _line_length_frequency_no_size(tdf: tb.TdfData, x_min: float, x_max: float,
-                                    candidates) -> dict[float, int]:
-    """候補値ごとに、[x_min, x_max]内に完全に収まる(両端点とも範囲内)、
-    長さがほぼ一致(±0.1)する直線の本数を数える。
-
-    サブ寸法和検証(合計が別のテキストと一致するか)が使えない場合の
-    フォールバック: ある数値がそのまま梁の全長を表す単一ラベルであり、
-    かつ実際に同じ長さの直線が複数本(基準線・上端線・下端線等)存在する
-    ケースを拾う(N-1 2G-10で確認: 全長9035が分解されないラベルとして
-    1回だけ書かれ、同じ長さの水平線が9本ある)。
-    """
-    counts: dict[float, int] = {}
-    for v in candidates:
-        c = 0
-        for ln in tdf.lines:
-            if abs(ln.length - v) > 0.1:
-                continue
-            lo, hi = min(ln.x1, ln.x2), max(ln.x1, ln.x2)
-            if lo < x_min or hi > x_max:
-                continue
-            c += 1
-        if c > 0:
-            counts[v] = c
-    return counts
-
-
-def determine_length_no_size(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float):
-    """3項目パターン専用の長さ判定。DXF抽出アプリの「サブ寸法和+直線連結性の
-    検証」を移植したもの(既存のdetermine_lengthとは独立、互いに影響しない)。
-
-    サブ寸法和で一意に決まらない場合、同一長さ直線の頻度によるフォールバック
-    (`_line_length_frequency_no_size`)を試みる。それでも一意に決まらない
-    場合はNoneを返す(2026-09-16、N-1 2G-10対応で追加)。
-
-    Returns: (length_value or None, debug dict)
-    """
-    all_nums_xy = _collect_horiz_nums_no_size(tdf, x_min, x_max, y_ref)
-    group_nums_y = _filter_connected_nums_no_size(tdf, all_nums_xy)
-    match_counts = _bottom_up_validate_no_size(tdf, group_nums_y, all_nums_xy)
-
-    debug = {"all_nums_count": len(all_nums_xy), "match_counts": match_counts}
-
-    length_value = None
-    if match_counts:
-        max_c = max(match_counts.values())
-        top = [v for v, c in match_counts.items() if c == max_c]
-        if len(top) == 1:
-            length_value = top[0]
-
-    if length_value is None:
-        candidates = {
-            v for v, _x, _y, ang in all_nums_xy
-            if v >= _LINE_FREQ_MIN_VALUE and (abs(ang % 180 - 0) <= 0.1 or abs(ang % 180 - 180) <= 0.1)
-        }
-        freq = _line_length_frequency_no_size(tdf, x_min, x_max, candidates)
-        debug["line_freq"] = freq
-        if freq:
-            max_fc = max(freq.values())
-            top_f = [v for v, c in freq.items() if c == max_fc]
-            if max_fc >= _LINE_FREQ_MIN_COUNT and len(top_f) == 1:
-                length_value = top_f[0]
-                debug["reason"] = "line frequency fallback"
-
-    if length_value is None:
-        return None, {**debug, "reason": debug.get("reason", "no sub-sum match / no line-frequency match")}
-
-    # 種別(普通梁/斜め梁)判定用に、確定した長さに一致する参照直線の角度を求める。
-    # tdf_master_extractor_multiは本モジュールをimportしているため、循環import
-    # を避けるためここでは関数内でローカルimportする。
-    import tdf_master_extractor_multi as exm
-    endpoints = exm._find_reference_line_endpoints(tdf, x_min, x_max, y_ref, None, length_value)
-    main_axis_deg = None
-    if endpoints is not None:
-        (lx, ly), (rx, ry) = endpoints
-        main_axis_deg = math.degrees(math.atan2(ry - ly, rx - lx))
-    debug["main_axis_deg"] = main_axis_deg
-    debug["endpoints"] = endpoints
-    return length_value, debug
 
 
 def _nearest_size_text_no_size(tdf: tb.TdfData, cx: float, cy: float):
@@ -1440,9 +1048,8 @@ def _nearest_size_text_no_size(tdf: tb.TdfData, cx: float, cy: float):
 
 def _find_stadium_capsules_no_size(tdf: tb.TdfData, angle_tol_deg: float = 1.0,
                                     radius_tol: float = 0.5, max_dist_factor: float = 20.0):
-    """`find_stadium_centers`と同じペアリングロジックだが、中点だけでなく
-    2つの円弧中心そのもの(カプセルの両端点)も返す(既存のfind_stadium_centers
-    は変更せず、こちらは独立実装)。
+    """長丸(半径一致・開始角180度差の円弧ペア)を探し、中点だけでなく
+    2つの円弧中心そのもの(カプセルの両端点)も返す。
 
     2026-09-16、KIX01現場`N-1 2G-06`で、継手記号(半径57.0)とは別に、
     フランジ沿いのボルト穴らしき小さい円弧ペア(半径4.6)も同じ条件を
@@ -1517,7 +1124,7 @@ def _text_enclosed_by_capsule_no_size(tdf: tb.TdfData, rec, capsule) -> bool:
 def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float, endpoints,
                               y_max: float | None = None):
     """3項目パターン専用の継手判定。確定した長さに一致する参照直線の実端点
-    (endpoints、determine_length_no_sizeのdebug['endpoints']をそのまま渡す)
+    (endpoints、左右端点の(x, y))
     それぞれについて、**実際に長丸(カプセル)に囲まれているテキスト**だけを
     候補にし、その中で最も近いものを左右継手として採用する(絶対閾値は
     設けない)。
@@ -1824,54 +1431,6 @@ def _chain_sum_candidate(tdf: tb.TdfData, row: ProductRow, candidates: list, y_m
     if best_cnt >= _CHAIN_MIN_WIN_COUNT and best_cnt > second_cnt:
         return best_val
     return None
-
-
-def extract(path: str) -> list[ProductRow]:
-    tdf = tb.load(path)
-    drawing_number = find_drawing_number(tdf)
-    rows = find_product_rows(tdf)
-
-    for i, row in enumerate(rows):
-        if len(rows) == 1:
-            # 製品が1種類だけの図面は、他の製品との取り違えリスクが無いため
-            # X範囲を左右5000mmずつ緩和し、長さ候補の見落としを減らす。
-            x_min = row.x_mark - RELAX_MARGIN
-            x_max = row.x_next + RELAX_MARGIN
-        else:
-            x_min = row.x_mark
-            x_max = row.x_next
-        y_ref = row.y
-        length_value, debug = determine_length(tdf, x_min, x_max, y_ref)
-        row.length = length_value
-        if length_value is not None:
-            main_axis_deg = debug.get("main_axis_deg", 0.0)
-            # 継手判定は緩和前の製品自身のマーク/本数セル座標を基準にする
-            # (緩和後のx_min/x_maxを使うと、判定基準点が製品本体から
-            # 大きくずれて別の候補を誤って拾ってしまう)。
-            left, right = determine_joints(
-                tdf, row.x_mark, row.x_next, y_ref, main_axis_deg, length_value
-            )
-            row.left_joint = left
-            row.right_joint = right
-        row.drawing_number = drawing_number
-
-    return rows
-
-
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) != 2:
-        print("使い方: python tdf_master_extractor.py <tdfパス>")
-        raise SystemExit(1)
-
-    rows = extract(sys.argv[1])
-    dn = find_drawing_number(tb.load(sys.argv[1]))
-    print(f"図番: {dn}")
-    for r in rows:
-        print(f"  製品マーク={r.mark} 設計符号={r.design_code} サイズ={r.size} "
-              f"本数={r.count} 重量={r.weight} 長さ={r.length} "
-              f"左継手={r.left_joint} 右継手={r.right_joint}")
 </script>
 <script id="py-tdf-master-extractor-multi" type="text/python-src">
 """実寸法師(.tdf)から製品マスタ情報を抽出するロジックのうち、「1製品に複数
@@ -2003,23 +1562,42 @@ def _forms_x_cross(a: tb.LineRecord, b: tb.LineRecord, tol: float = _XMARK_CORNE
 
 
 def find_x_marks(tdf: tb.TdfData) -> list[tuple[float, float, float, float]]:
-    """ファイル内の全ての×印(削除マーク)の矩形範囲(x0,x1,y0,y1)を求める。"""
+    """ファイル内の全ての×印(削除マーク)の矩形範囲(x0,x1,y0,y1)を求める。
+
+    斜めの線を前から順に見て、まだ組になっていない後ろの線のうち最初に X 字を成す
+    ものと組にする。以前は後ろの線をすべて総当たりで比べていたが(1ファイルで約90万回、
+    抽出時間の6〜8割)、X 字の相手の始点は自分の矩形の角から _XMARK_CORNER_TOL 未満に
+    あるので、始点を _XMARK_CORNER_TOL 四方の升目で引ける表にし、角の周りの升目の
+    線だけを比べる。組になる線とその順番は総当たりと同じ(2026-11-09)。
+
+    梁モード・柱モードとも1ファイルで2回呼ぶので、結果は tdf に覚えておく。"""
+    cached = getattr(tdf, "_x_marks_cache", None)
+    if cached is not None:
+        return cached
+    tol = _XMARK_CORNER_TOL
     diag = [ln for ln in tdf.lines if not _is_axis_aligned(ln)]
+    grid: dict[tuple[int, int], list[int]] = {}
+    for j, ln in enumerate(diag):
+        grid.setdefault((math.floor(ln.x1 / tol), math.floor(ln.y1 / tol)), []).append(j)
     boxes = []
     used = set()
-    n = len(diag)
-    for i in range(n):
-        if diag[i].offset in used:
+    for i, a in enumerate(diag):
+        if a.offset in used:
             continue
-        for j in range(i + 1, n):
-            if diag[j].offset in used:
-                continue
-            box = _forms_x_cross(diag[i], diag[j])
-            if box is not None:
-                boxes.append(box)
-                used.add(diag[i].offset)
-                used.add(diag[j].offset)
-                break
+        best = None
+        for cx, cy in ((a.x1, a.y2), (a.x2, a.y1)):
+            gx, gy = math.floor(cx / tol), math.floor(cy / tol)
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for j in grid.get((gx + dx, gy + dy), ()):
+                        if (j > i and (best is None or j < best) and diag[j].offset not in used
+                                and _forms_x_cross(a, diag[j]) is not None):
+                            best = j
+        if best is not None:
+            boxes.append(_forms_x_cross(a, diag[best]))
+            used.add(a.offset)
+            used.add(diag[best].offset)
+    tdf._x_marks_cache = boxes
     return boxes
 
 
@@ -2551,17 +2129,13 @@ tdf_binary.py / tdf_master_extractor.py / tdf_master_extractor_multi.py は
 """
 from __future__ import annotations
 
+import bisect
 import math
 import re
 
 import tdf_binary as tb
 import tdf_master_extractor as ex
 import tdf_master_extractor_multi as exm
-
-HEADERS = [
-    "ID", "図番", "製品マーク", "設計符号", "サイズ", "本数",
-    "長さ(m)", "重量", "左継手", "右継手", "種別", "製品段",
-]
 
 _AXIS_TOLERANCE_DEG = 0.1
 TIER_Y_GAP_THRESHOLD = 3000.0
@@ -2745,12 +2319,51 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None, with_others=
                             return True
         return False
 
+    # 下の総当たり(以前は全部の組を比べていた)で、比べる相手を先に絞る。
+    # 相手は「向きの差が0.05度以内」かつ「向きに直交する方向の距離が板厚±0.6」の線
+    # だけなので、
+    #  ・向きがまったく同じ線(図面の線のほとんどは水平・垂直): 向きごとに直交方向の
+    #    位置で並べておき、位置が板厚±0.6 のものを二分探索で取り出す(位置は相手の線と
+    #    同じ式・同じ向きで計算するので、判定と同じ値になる)。
+    #  ・向きが少しだけ違う線: 0.05度の範囲(0度と180度の境目をまたぐものも)の向きの
+    #    線をすべて候補にする。
+    # 候補には下の判定をそのままかけ、比べる順番(i の後ろの線を前から)も以前と同じ
+    # にするので、見つかるフランジとその順番は総当たりと同じ(2026-11-09)。
+    by_angle: dict[float, list] = {}
+    for k, (t, ln) in enumerate(long_segs):
+        ux, uy = math.cos(t), math.sin(t)
+        by_angle.setdefault(t, []).append((-ln.x1 * uy + ln.y1 * ux, k))
+    for v in by_angle.values():
+        v.sort()
+    offs_by_angle = {t: [o for o, _k in v] for t, v in by_angle.items()}
+    angles = sorted(by_angle)
+    ang_win = math.radians(0.05) + 1e-9
+    near_angles = {}
+    for t in angles:
+        found = []
+        for c in (t, t + math.pi, t - math.pi):
+            lo = bisect.bisect_left(angles, c - ang_win)
+            hi = bisect.bisect_right(angles, c + ang_win)
+            found.extend(angles[lo:hi])
+        near_angles[t] = [u for u in found if u != t]
+
+    def pair_candidates(i, ta, da):
+        js = set()
+        group, offs = by_angle[ta], offs_by_angle[ta]
+        for c in (da - tf, da + tf):
+            lo = bisect.bisect_left(offs, c - 0.6 - 1e-6)
+            hi = bisect.bisect_right(offs, c + 0.6 + 1e-6)
+            js.update(k for _o, k in group[lo:hi] if k > i)
+        for u in near_angles[ta]:
+            js.update(k for _o, k in by_angle[u] if k > i)
+        return sorted(js)
+
     flanges = []  # (向き, 直交方向の位置lo, hi, 軸方向の始点, 終点)
     for i, (ta, a) in enumerate(long_segs):
         ux, uy = math.cos(ta), math.sin(ta)
         pa = sorted((a.x1 * ux + a.y1 * uy, a.x2 * ux + a.y2 * uy))
         da = -a.x1 * uy + a.y1 * ux
-        for tb_, b in long_segs[i + 1:]:
+        for tb_, b in (long_segs[j] for j in pair_candidates(i, ta, da)):
             d = abs(ta - tb_)
             if min(d, math.pi - d) > math.radians(0.05):
                 continue
@@ -4662,7 +4275,7 @@ def extract_file(path: str, filename: str | None = None) -> list[dict]:
     return extract_column(tb.load(path), filename or path)
 </script>
 
-<script src="app.js?v=20261106b"></script>
+<script src="app.js?v=20261109"></script>
 <!-- 「← アプリ一覧へ」ボタンは非表示(2026-10-30、ユーザー指示)。復活するときは下の行のコメントを外すだけ(to-launcher.js はそのまま残している)
 <script src="to-launcher.js?v=20261019" data-target="#header-brand .side-icon" data-mode="before"></script>
 -->

@@ -127,23 +127,42 @@ def _forms_x_cross(a: tb.LineRecord, b: tb.LineRecord, tol: float = _XMARK_CORNE
 
 
 def find_x_marks(tdf: tb.TdfData) -> list[tuple[float, float, float, float]]:
-    """ファイル内の全ての×印(削除マーク)の矩形範囲(x0,x1,y0,y1)を求める。"""
+    """ファイル内の全ての×印(削除マーク)の矩形範囲(x0,x1,y0,y1)を求める。
+
+    斜めの線を前から順に見て、まだ組になっていない後ろの線のうち最初に X 字を成す
+    ものと組にする。以前は後ろの線をすべて総当たりで比べていたが(1ファイルで約90万回、
+    抽出時間の6〜8割)、X 字の相手の始点は自分の矩形の角から _XMARK_CORNER_TOL 未満に
+    あるので、始点を _XMARK_CORNER_TOL 四方の升目で引ける表にし、角の周りの升目の
+    線だけを比べる。組になる線とその順番は総当たりと同じ(2026-11-09)。
+
+    梁モード・柱モードとも1ファイルで2回呼ぶので、結果は tdf に覚えておく。"""
+    cached = getattr(tdf, "_x_marks_cache", None)
+    if cached is not None:
+        return cached
+    tol = _XMARK_CORNER_TOL
     diag = [ln for ln in tdf.lines if not _is_axis_aligned(ln)]
+    grid: dict[tuple[int, int], list[int]] = {}
+    for j, ln in enumerate(diag):
+        grid.setdefault((math.floor(ln.x1 / tol), math.floor(ln.y1 / tol)), []).append(j)
     boxes = []
     used = set()
-    n = len(diag)
-    for i in range(n):
-        if diag[i].offset in used:
+    for i, a in enumerate(diag):
+        if a.offset in used:
             continue
-        for j in range(i + 1, n):
-            if diag[j].offset in used:
-                continue
-            box = _forms_x_cross(diag[i], diag[j])
-            if box is not None:
-                boxes.append(box)
-                used.add(diag[i].offset)
-                used.add(diag[j].offset)
-                break
+        best = None
+        for cx, cy in ((a.x1, a.y2), (a.x2, a.y1)):
+            gx, gy = math.floor(cx / tol), math.floor(cy / tol)
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for j in grid.get((gx + dx, gy + dy), ()):
+                        if (j > i and (best is None or j < best) and diag[j].offset not in used
+                                and _forms_x_cross(a, diag[j]) is not None):
+                            best = j
+        if best is not None:
+            boxes.append(_forms_x_cross(a, diag[best]))
+            used.add(a.offset)
+            used.add(diag[best].offset)
+    tdf._x_marks_cache = boxes
     return boxes
 
 
