@@ -2376,7 +2376,7 @@ def _beam_depth(size):
     return float(m.group(1)) if m else None
 
 
-def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None, with_others=False):
+def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None, with_others=False, angle_leg=False):
     """梁本体の端から端を、フランジの形から求める。
 
     フランジは「板厚tfだけ離れて向かい合う平行な2本の線」として描かれる
@@ -2581,6 +2581,24 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None, with_others=
                 and not mid_lines(th, end - 0.6, end + 0.6, lo, hi)
                 and not mid_lines(th, s1 - 0.6, s1 + 0.6, lo, hi))
 
+    def _angle_back(th, lo, hi, start, end):
+        # 山形鋼(L形)を横から見た図: 板厚の2本線(脚の1枚)の反対側に、外側どうしで
+        # 脚の幅(depth)だけ離れた1本の線(もう1枚の脚の背)が、同じ向きで同じ長さ
+        # (両端の差が板厚以内)に引かれているか(2026-11-10、26-16 の WB3-EVM1B-03 の
+        # WB32-M1EL75-1。L-75x75x6 は板厚6の2本線と75離れた1本線で描かれ、
+        # もう1組のフランジが無いため梁として見つからなかった)
+        ux, uy = math.cos(th), math.sin(th)
+        for o in (hi - depth, lo + depth):
+            k = bisect.bisect_left(offs_by_angle.get(th, []), o - 0.6 - 1e-6)
+            for off, j in by_angle.get(th, [])[k:]:
+                if off > o + 0.6 + 1e-6:
+                    break
+                ln = long_segs[j][1]
+                p = sorted((ln.x1 * ux + ln.y1 * uy, ln.x2 * ux + ln.y2 * uy))
+                if abs(p[0] - start) <= tf + 0.6 and abs(p[1] - end) <= tf + 0.6:
+                    return True
+        return False
+
     cands = []  # (長さ, 向き, その向きのフランジ, 高さ, 始点, 終点)
     by_theta = {}
     for f in flanges:
@@ -2618,7 +2636,7 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None, with_others=
                         (round(f[1]), round(f[2])) != (lv_lo, lv_hi)
                         and f[3] < end - 0.6 and f[4] > start + 0.6
                         and abs(max(f[2], lv_hi) - min(f[1], lv_lo) - depth) <= 0.6
-                        for f in fs):
+                        for f in fs) and not (angle_leg and _angle_back(th, lv_lo, lv_hi, start, end)):
                     continue
                 cands.append((length, th, fs, (lv_lo, lv_hi), start, end))
 
@@ -3253,6 +3271,13 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                 if not between:
                     member, others = up
                     no_tier_limit.add(id(row))  # 継手も上限を外して探す
+        if member is None and re.match(r"^L-", row.size or ""):
+            # 山形鋼(L-)は脚の背の1本線を2組目のフランジの代わりにして探す。
+            # 長さが寸法の文字にあるときだけ使う(2026-11-10、26-16 の WB3-EVM1B-03)
+            ang = _flange_member(tdf, x_min, x_max, row.y, tier_y_max, _flange_thickness(row.size),
+                                 depth=_beam_depth(row.size), with_others=True, angle_leg=True)
+            if ang is not None and _drawn_value(dim_values, ang[0][0]) is not None:
+                member, others = ang
         bent =(_bent_partner(member, others, tdf, _beam_depth(row.size))
                 if member is not None else None)
         # 図面に寸法として書かれていない数値は長さにしない(ユーザー指示。フランジの
@@ -4161,7 +4186,54 @@ def determine_length(body, vals, chains=None):
             key = (round(inside, 1), bool(chains) and _on_dim_chain(chains, l, h), length)
             if best is None or key > best[0]:
                 best = (key, (length, l, h))
-    return best[1] if best else None
+    if best is None:
+        return None
+    if chains:
+        ext = _extend_on_chain(best[1], ends, segs, chains)
+        # 延ばした長さと数mmだけ違う寸法の文字(書き違えた全長)があるときだけ使う
+        if ext is not None and any(0.6 <= abs(v - ext[0]) <= EXTEND_MISWRITE_MM for v in vals):
+            return ext
+    return best[1]
+
+
+EXTEND_COVER_SHARE = 0.8  # 延ばす区間に外形線がこの割合以上あること
+EXTEND_MISWRITE_MM = 5.0  # 書き違えた全長の寸法とみなす差の上限
+
+
+def _extend_on_chain(got, ends, segs, chains):
+    """長さの端が寸法の点の連なりの途中にあり、その先の区間にも寸法の文字があって、
+    その区間の大部分(8割以上)に外形線が続き、区間の先が端の候補のときは、そこまで
+    延ばす(寸法の合計)。全長の寸法の文字が図面の誤りで、内訳の1つを全長にしてしまう
+    図面のため(2026-11-10、26-16 の WA2-3C-04。全長の寸法は 5793 だが柱の線と
+    内訳 4789.8+1006.2 は 5796。ユーザー確認で 5796 が正しい)。
+    呼び出し側(determine_length)は、延ばした長さと数mm(EXTEND_MISWRITE_MM)だけ違う
+    寸法の文字があるときだけ使う(上の節の柱が続けて描かれた図面で、正しい全長の先まで
+    延ばさないため: 26-16 の WA2-3C-05 等が 5796 → 5993 になった)。
+    延ばしたときは (長さ, 下端Y, 上端Y)、延ばさないときは None。"""
+    _length, lo, hi = got
+
+    def covered(a, b):
+        return sum(min(s1, b) - max(s0, a) for s0, s1 in segs if min(s1, b) > max(s0, a))
+
+    def is_end(y):
+        return any(abs(e - y) <= DIM_POINT_TOL for e in ends)
+
+    new_lo, new_hi = lo, hi
+    for pts, ok in chains:
+        i = next((k for k, y in enumerate(pts) if abs(y - new_lo) <= DIM_POINT_TOL), None)
+        j = next((k for k, y in enumerate(pts) if abs(y - new_hi) <= DIM_POINT_TOL), None)
+        if i is None or j is None or i >= j or not all(ok[i:j]):
+            continue
+        while j + 1 < len(pts) and ok[j] and is_end(pts[j + 1]) \
+                and covered(pts[j], pts[j + 1]) >= (pts[j + 1] - pts[j]) * EXTEND_COVER_SHARE:
+            j += 1
+        while i > 0 and ok[i - 1] and is_end(pts[i - 1]) \
+                and covered(pts[i - 1], pts[i]) >= (pts[i] - pts[i - 1]) * EXTEND_COVER_SHARE:
+            i -= 1
+        new_lo, new_hi = pts[i], pts[j]
+    if (new_lo, new_hi) == (lo, hi):
+        return None
+    return (round(new_hi - new_lo, 1), new_lo, new_hi)
 
 
 DIM_POINT_R = 30.0     # 寸法の点(小さな丸)の半径の上限
