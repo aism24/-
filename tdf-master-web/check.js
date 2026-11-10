@@ -872,10 +872,16 @@ async function downloadCheckExcel() {
   const wb = XLSX.utils.book_new();
   const ws1 = XLSX.utils.aoa_to_sheet(aoa);
   for (const [ref, url] of links) { if (ws1[ref]) ws1[ref].l = { Target: url }; }
+  // 列をオートフィット、A〜P列にフィルタ、1行目をウィンドウ枠で固定(2026-11-10 ユーザー指示。
+  // 固定は SheetJS コミュニティ版では書けないので checkStyleExcel で sheet1.xml に足す)
+  ws1['!cols'] = computeColWidths(aoa);
+  ws1['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: aoa.length - 1, c: head.length - 1 } }) };
   XLSX.utils.book_append_sheet(wb, ws1, '照合結果');
   const ex = [['図番', '製品マーク(図面)', 'サイズ', '長さ', '本数', '図面', '図面の更新日']]
     .concat(extra.map(e => [e.zuban, e.row['製品マーク'], e.row['サイズ'] ?? '', e.row['長さ'] ?? '', e.row['本数'] ?? '', e.file.path.join('\\'), checkFmtDate(e.file.mtime)]));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ex), '図面にあってExcelに無い');
+  const ws2 = XLSX.utils.aoa_to_sheet(ex);
+  ws2['!cols'] = computeColWidths(ex);
+  XLSX.utils.book_append_sheet(wb, ws2, '図面にあってExcelに無い');
   const base = checkResult.fileName.replace(/\.[^.]+$/, '');
   const fname = base + '_帳票チェック結果.xlsx';
   try {
@@ -951,6 +957,11 @@ async function checkStyleExcel(wb, yellow, red, links = new Set()) {
     }
     return `<row r="${rn}"${attrs}>${body}</row>`;
   });
+  // 1行目をウィンドウ枠で固定する(SheetJS は sheetView に枠の固定を書けない)
+  const frozen = '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
+    + '<selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>';
+  if (/<sheetViews>[\s\S]*?<\/sheetViews>/.test(sh)) sh = sh.replace(/<sheetViews>[\s\S]*?<\/sheetViews>/, frozen);
+  else sh = sh.replace(/(<worksheet[^>]*>)/, `$1${frozen}`);
   zip.file(sheetPath, sh);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
