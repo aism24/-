@@ -5,9 +5,9 @@
 //
 // - 図面は「①進行中工事」フォルダから、工事番号で始まるフォルダ → その中の「詳細図」
 //   フォルダの順に自動でたどる。ブラウザは利用者が選んだフォルダしか読めないので、
-//   サーバー(本社・鳥取)ごとに「①進行中工事」を最初に1回選んでもらい、ブラウザの中
-//   (IndexedDB)に覚える。工事フォルダ・詳細図フォルダを選んでもよい(下の「図面の保存場所」)。
-// - 梁で読むか柱で読むかは、図面のフォルダ名に「柱詳細図」(間柱詳細図を含む)があれば柱。
+//   「①進行中工事」を「フォルダを選ぶ」で選んでもらい、ブラウザごとに(IndexedDB に)覚える。
+//   工事フォルダ・詳細図フォルダを選んでもよい(下の「図面の保存場所」)。
+// - 梁で読むか柱で読むかは、図面のフォルダ名で決める(checkModeOfPath)。
 // - 比べるのはExcelにある列だけ(継手の列が無ければ継手は比べない)。サイズは書き方の違い
 //   (柱の板厚の有無・細くなる柱・せいが変わる梁)を同じとみなす。長さは±0.1mm。
 
@@ -92,21 +92,17 @@ async function checkScriptsVersion() {
   return checkScriptsVer;
 }
 
-// 図面の保存場所(2026-11-09 ユーザー指示)
-// - サーバーは2つ(本社・鳥取)。工場(加工先)とは関係なく、帳票チェックの画面のボタンで選ぶ
-//   (鳥取で操作して本社サーバーの工事を見ることもある)。サーバーごとに「①進行中工事」を
-//   最初に1回だけ選んでもらい、'server:本社/鳥取' に覚える。どちらを使ったかは工事ごとに覚える。
+// 図面の保存場所(2026-11-10 ユーザー指示で、本社・鳥取サーバーのボタンをやめた)
+// - 「フォルダを選ぶ」で「①進行中工事」を選び、ブラウザごとに 'site-root' に覚える。
 // - 工事フォルダ・詳細図フォルダを直接選んでもよい(その工事の分として 'koji:工事番号' に覚え、
-//   サーバーより先に使う)。
+//   ①進行中工事より先に使う)。
 // ブラウザは選ばれたフォルダの名前しか教えてくれない(上の階層のパスは読めない)ので、名前で見分ける。
 //   root  : ①進行中工事(名前に工事番号も「詳細図」も無い)
 //   koji  : 工事フォルダ(名前の先頭が工事番号)
 //   detail: 詳細図フォルダ(名前に「詳細図」。工事番号が無いので、照合のときにExcelの図番が
 //           どれだけ見つかるかで工事の違いを確かめる)
-const CHECK_SERVERS = { honsha: '本社サーバー', tottori: '鳥取サーバー' };
-let checkServerRoots = { honsha: null, tottori: null };
-let checkServerSel = 'honsha';
-let checkServerLoaded = false;
+let checkRoot = null;
+let checkRootLoaded = false;
 let checkKojiFolders = {}; // 工事番号 → 工事フォルダか詳細図フォルダ(無ければ null)
 
 function checkKojiOfName(name) {
@@ -119,29 +115,26 @@ function checkFolderKind(h) {
   return 'root';
 }
 function checkCurrentFolder() {
-  return checkKojiFolders[kojiNo] || checkServerRoots[checkServerSel];
+  return checkKojiFolders[kojiNo] || checkRoot;
 }
 
 async function loadCheckRoot() {
-  if (!checkServerLoaded) {
-    for (const k of Object.keys(CHECK_SERVERS)) {
-      const saved = await checkIdbGet('server:' + k);
-      if (!checkServerRoots[k]) checkServerRoots[k] = saved; // 読んでいる間に選ばれたときはそちらを使う
+  if (!checkRootLoaded) {
+    let saved = await checkIdbGet(CHECK_ROOT_KEY);
+    if (!saved) {
+      // 前の版(本社・鳥取サーバーのボタン)で覚えたものがあれば、最後に使ったサーバーの分を引き継ぐ
+      const sel = await checkIdbGet('server-sel');
+      for (const k of [sel, 'honsha', 'tottori']) {
+        if (!saved && k) saved = await checkIdbGet('server:' + k);
+      }
+      if (saved) await checkIdbSet(CHECK_ROOT_KEY, saved);
     }
-    // 前の版で覚えた「①進行中工事」(本社サーバーのもの)は本社サーバーの分として引き継ぐ
-    if (!checkServerRoots.honsha) {
-      const old = await checkIdbGet(CHECK_ROOT_KEY);
-      if (old) { checkServerRoots.honsha = old; await checkIdbSet('server:honsha', old); }
-    }
-    checkServerLoaded = true;
+    if (!checkRoot) checkRoot = saved; // 読んでいる間に選ばれたときはそちらを使う
+    checkRootLoaded = true;
   }
-  if (kojiNo) {
-    const sel = (await checkIdbGet('server-for:' + kojiNo)) || (await checkIdbGet('server-sel'));
-    if (sel && CHECK_SERVERS[sel]) checkServerSel = sel;
-    if (!(kojiNo in checkKojiFolders)) {
-      const saved = await checkIdbGet('koji:' + kojiNo);
-      if (!(kojiNo in checkKojiFolders)) checkKojiFolders[kojiNo] = saved;
-    }
+  if (kojiNo && !(kojiNo in checkKojiFolders)) {
+    const saved = await checkIdbGet('koji:' + kojiNo);
+    if (!(kojiNo in checkKojiFolders)) checkKojiFolders[kojiNo] = saved;
   }
   renderCheckFolder();
 }
@@ -149,21 +142,15 @@ async function loadCheckRoot() {
 function renderCheckFolder() {
   const name = document.getElementById('check-folder-name');
   const own = checkKojiFolders[kojiNo];
-  const root = checkServerRoots[checkServerSel];
-  for (const k of Object.keys(CHECK_SERVERS)) {
-    const b = document.getElementById('srv-' + k);
-    b.classList.toggle('selected', !own && k === checkServerSel);
-    b.textContent = CHECK_SERVERS[k] + (checkServerRoots[k] ? '' : '(未設定)');
-  }
   if (own) {
     name.textContent = `${kojiNo} 用: ${own.name}(${checkFolderKind(own) === 'koji' ? '工事フォルダ' : '詳細図フォルダ'})`;
-  } else if (root) {
-    name.textContent = `${CHECK_SERVERS[checkServerSel]}の「${root.name}」から探します`;
+  } else if (checkRoot) {
+    name.textContent = `「${checkRoot.name}」から探します`;
   } else {
-    name.textContent = `${CHECK_SERVERS[checkServerSel]}の「①進行中工事」が未設定です(最初に1回だけ選んでください)`;
+    name.textContent = '「①進行中工事」が未設定です(「フォルダを選ぶ」で選んでください)';
   }
-  name.classList.toggle('unset', !own && !root);
-  document.getElementById('check-folder-clear').style.display = own ? '' : 'none';
+  name.classList.toggle('unset', !own && !checkRoot);
+  document.getElementById('check-folder-clear').style.display = own && checkRoot ? '' : 'none';
 }
 
 async function checkPickDir() {
@@ -182,43 +169,16 @@ async function checkPickDir() {
   }
 }
 
-async function checkSetServer(key) {
-  checkServerSel = key;
-  await checkIdbSet('server-sel', key);
-  if (kojiNo) await checkIdbSet('server-for:' + kojiNo, key);
-}
-
-// サーバーのボタン。まだ「①進行中工事」を選んでいなければ、ここで1回だけ選ぶ
-async function selectCheckServer(key) {
-  if (!checkServerRoots[key]) {
-    const h = await checkPickDir();
-    if (!h) return;
-    if (checkFolderKind(h) !== 'root') {
-      showErrorDialog(`${CHECK_SERVERS[key]}の「①進行中工事」フォルダを選んでください`,
-        [`選んだフォルダ: ${h.name}`, '工事フォルダ・詳細図フォルダは「フォルダを選ぶ」から選べます']);
-      return;
-    }
-    checkServerRoots[key] = h;
-    await checkIdbSet('server:' + key, h);
-    showToast(`「${h.name}」を${CHECK_SERVERS[key]}として覚えました`, 'success');
-  }
-  await checkSetServer(key);
-  // サーバーを選んだときは、この工事の分として覚えた工事・詳細図フォルダは使わない
-  if (checkKojiFolders[kojiNo]) { checkKojiFolders[kojiNo] = null; await checkIdbSet('koji:' + kojiNo, null); }
-  renderCheckFolder();
-}
-
-// 「フォルダを選ぶ」: ①進行中工事(今のサーバーの分として選び直す)・工事フォルダ・詳細図フォルダ
+// 「フォルダを選ぶ」: ①進行中工事・工事フォルダ・詳細図フォルダ
 async function pickCheckRoot() {
   const h = await checkPickDir();
   if (!h) return;
   const kind = checkFolderKind(h);
   if (kind === 'root') {
-    checkServerRoots[checkServerSel] = h;
-    await checkIdbSet('server:' + checkServerSel, h);
-    await checkSetServer(checkServerSel);
+    checkRoot = h;
+    await checkIdbSet(CHECK_ROOT_KEY, h);
     if (checkKojiFolders[kojiNo]) { checkKojiFolders[kojiNo] = null; await checkIdbSet('koji:' + kojiNo, null); }
-    showToast(`「${h.name}」を${CHECK_SERVERS[checkServerSel]}として覚えました`, 'success');
+    showToast(`「${h.name}」を覚えました`, 'success');
   } else {
     if (kind === 'koji') {
       const no = checkKojiOfName(h.name);
@@ -235,7 +195,7 @@ async function pickCheckRoot() {
   renderCheckFolder();
 }
 
-// 工事ごとに覚えたフォルダをやめて、サーバーの①進行中工事から探す
+// 工事ごとに覚えたフォルダをやめて、①進行中工事から探す
 async function clearKojiFolder() {
   checkKojiFolders[kojiNo] = null;
   await checkIdbSet('koji:' + kojiNo, null);
@@ -423,6 +383,23 @@ function checkSizeSame(xl, dw, cut = false) {
   return false;
 }
 
+// 結果のExcelで「不一致→OK」にするサイズの違い(2026-11-10 ユーザー指示。checkSizeSame で
+// 一致にならなかったものだけに使う): 頭文字(H・SH・BH・BCP・□ 等)を除いた数字が同じか、
+// 図面側の数字が足りないだけ(柱の板厚はアプリでは読まない: BCP-900x900x36 と □-900x900)。
+// 図面が節ごとに「＿」で並ぶときは、どれかの節と合えばよい。数字が1つでも違えば不一致のまま
+// (H-2448x124x5x8 と H-248x124x5x8 は不一致)。
+function checkSizeLoose(xl, dw) {
+  const nums = s => (s.match(/\d+(?:\.\d+)?/g) || []).map(Number);
+  const n = s => String(s ?? '').normalize('NFKC').replace(/\s/g, '');
+  const body = s => s.replace(/^[^-\d]*-/, ''); // 頭文字(「-」より前)を除く
+  const xn = nums(body(n(xl)));
+  if (!xn.length) return false;
+  return body(n(dw)).split('_').some(sec => {
+    const dn = nums(sec);
+    return dn.length >= 2 && dn.length <= xn.length && dn.every((v, i) => v === xn[i]);
+  });
+}
+
 // 両端の継手を「左 / 右」(柱は「下 / 上」)の形で表示する。無い端は「－」
 function checkJointText(a, b) {
   const s = v => checkNorm(v) || '－';
@@ -499,21 +476,8 @@ async function processCheckFile(files) {
     let detailDirs, label;
     if (kind === 'root') {
       showStatus('工事のフォルダを探しています', kojiNo);
-      let kojiDir = await checkFindKojiDir(folder, kojiNo);
-      if (!kojiDir) {
-        // 選んでいるサーバーに無ければ、もう一方のサーバー(選んだことがあり、読む許可があるとき)も探す
-        const other = Object.keys(CHECK_SERVERS).find(k => k !== checkServerSel);
-        const oroot = checkServerRoots[other];
-        if (oroot && (await checkRootPermission(oroot, false))) {
-          kojiDir = await checkFindKojiDir(oroot, kojiNo);
-          if (kojiDir) {
-            await checkSetServer(other);
-            renderCheckFolder();
-            showToast(`${kojiNo} は${CHECK_SERVERS[other]}にありました(この工事は${CHECK_SERVERS[other]}を使います)`, 'success');
-          }
-        }
-      }
-      if (!kojiDir) throw new Error(`${CHECK_SERVERS[checkServerSel]}の「${folder.name}」の中に、${kojiNo} で始まるフォルダが見つかりません。サーバーのボタンで保存場所を確かめてください`);
+      const kojiDir = await checkFindKojiDir(folder, kojiNo);
+      if (!kojiDir) throw new Error(`「${folder.name}」の中に、${kojiNo} で始まるフォルダが見つかりません。「フォルダを選ぶ」で、この工事のあるサーバーの「①進行中工事」(または工事フォルダ)を選んでください`);
       detailDirs = await checkFindDetailDirs(kojiDir);
       if (!detailDirs.length) throw new Error(`「${kojiDir.name}」の中に「詳細図」フォルダが見つかりません`);
       label = kojiDir.name;
@@ -548,7 +512,7 @@ async function processCheckFile(files) {
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       const key = f.path.join('\\');
-      const mode = f.path.some(p => p.includes('柱詳細図')) ? 'column' : 'beam';
+      const mode = checkModeOfPath(f.path);
       showStatus('図面を解析しています', `(${i + 1}/${files.length}) ${f.handle.name}` + (reused ? `  前回の結果を使用 ${reused} 件` : ''));
       try {
         const blob = await f.handle.getFile(); // ここでは中身は読まない(更新日時・大きさだけ)
@@ -588,6 +552,14 @@ async function processCheckFile(files) {
   }
 }
 
+// 梁で読むか柱で読むか: 図面までのフォルダ名(ファイル名は除く)に「柱」があり「梁」が無いものが
+// 1つでもあれば柱(「01.柱詳細図」「間柱詳細図」に加え、「06.EV詳細図\02.間柱」のような
+// フォルダもある。2026-11-10、26-16 の WB3-EV1P-04・07 等が梁モードで読まれ、長さが空や
+// 違う値になっていた)
+function checkModeOfPath(path) {
+  return path.slice(0, -1).some(p => p.includes('柱') && !p.includes('梁')) ? 'column' : 'beam';
+}
+
 function checkCompare(xl, found, res) {
   const byZuban = new Map(); // 図番 → [{ key, mode, row }]
   for (const [key, r] of res) {
@@ -622,7 +594,10 @@ function checkCompare(xl, found, res) {
     used.add(key + '\u0000' + x.mark);
     out.dw = row;
     out.file = res.get(key);
-    if (xl.hasSize && !checkSizeSame(x.size, row['サイズ'], xl.cut)) out.bad.push('サイズ');
+    if (xl.hasSize && !checkSizeSame(x.size, row['サイズ'], xl.cut)) {
+      out.bad.push('サイズ');
+      out.sizeLoose = checkSizeLoose(x.size, row['サイズ']);
+    }
     if (xl.hasLen) {
       const xm = Number(x.len) * (xl.unit === 'm' ? 1000 : 1);
       if (row['長さ'] == null) { out.bad.push('長さ'); out.memo.push('図面から長さを読めなかった'); }
@@ -767,19 +742,39 @@ function checkConfirm(title, message, okLabel, cancelLabel) {
   });
 }
 
-function downloadCheckExcel() {
+// 結果のExcel(2026-11-10 ユーザー指示)
+// - A列の判定: サイズの違いが書き方だけ(checkSizeLoose)で、ほかの項目が合う行は「不一致→OK」。
+//   画面の表と件数は変えない(Excelだけ)。
+// - 「不一致」の行は A〜P 列を黄色、違う項目の「(Excel)」のセル(サイズ F・長さ H・本数 J・継手 L)を
+//   赤の太字にする。書き方だけのサイズの違いは赤にしない。
+const CHECK_XL_BAD_COL = { 'サイズ': 5, '長さ': 7, '本数': 9, '継手': 11 }; // 0始まりの列
+
+function checkExcelJudge(r) {
+  if (r.judge !== '不一致') return { judge: r.judge, red: [] };
+  const real = r.bad.filter(k => !(k === 'サイズ' && r.sizeLoose));
+  return real.length ? { judge: '不一致', red: real } : { judge: '不一致→OK', red: [] };
+}
+
+async function downloadCheckExcel() {
   if (!checkResult) return;
-  const { rows, extra, hasJoint } = checkResult;
+  const { rows, extra } = checkResult;
   const head = ['判定', 'Excelの行', '図番', '製品マーク', '違う項目', 'サイズ(Excel)', 'サイズ(図面)', '長さ(Excel)', '長さ(図面)', '本数(Excel)', '本数(図面)',
     '継手(Excel)', '継手(図面)', 'メモ', '図面', '図面の更新日'];
   const aoa = [head];
+  const yellow = new Set(), red = new Set(); // セル番地(A2 等)
   for (const r of rows) {
     const dw = r.dw || {};
     const [ka, kb] = r.file && r.file.mode === 'column' ? ['下継手', '上継手'] : ['左継手', '右継手'];
-    const line = [r.judge, r.x.rowNo, r.x.zuban, r.x.mark, r.bad.join('・'), r.x.size ?? '', dw['サイズ'] ?? '', r.x.len ?? '', dw['長さ'] ?? '', r.honsuSum != null ? `${r.x.honsu ?? ''}(計${r.honsuSum})` : (r.x.honsu ?? ''), dw['本数'] ?? '',
+    const j = checkExcelJudge(r);
+    const line = [j.judge, r.x.rowNo, r.x.zuban, r.x.mark, r.bad.join('・'), r.x.size ?? '', dw['サイズ'] ?? '', r.x.len ?? '', dw['長さ'] ?? '', r.honsuSum != null ? `${r.x.honsu ?? ''}(計${r.honsuSum})` : (r.x.honsu ?? ''), dw['本数'] ?? '',
       checkJointText(r.x.ja, r.x.jb), r.dw ? checkJointText(dw[ka], dw[kb]) : ''];
     line.push(r.memo.join(' / '), r.file ? r.file.path.join('\\') : '', r.file ? checkFmtDate(r.file.mtime) : '');
     aoa.push(line);
+    if (j.judge === '不一致') {
+      const rn = aoa.length;
+      for (let c = 0; c < head.length; c++) yellow.add(XLSX.utils.encode_cell({ r: rn - 1, c }));
+      for (const k of j.red) red.add(XLSX.utils.encode_cell({ r: rn - 1, c: CHECK_XL_BAD_COL[k] }));
+    }
   }
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '照合結果');
@@ -787,7 +782,58 @@ function downloadCheckExcel() {
     .concat(extra.map(e => [e.zuban, e.row['製品マーク'], e.row['サイズ'] ?? '', e.row['長さ'] ?? '', e.row['本数'] ?? '', e.file.path.join('\\'), checkFmtDate(e.file.mtime)]));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ex), '図面にあってExcelに無い');
   const base = checkResult.fileName.replace(/\.[^.]+$/, '');
-  XLSX.writeFile(wb, base + '_帳票チェック結果.xlsx');
+  downloadBlob(await checkStyleExcel(wb, yellow, red), base + '_帳票チェック結果.xlsx');
+}
+
+// SheetJSコミュニティ版は書式を書き込めないので、作ったxlsxをJSZipで開いて、styles.xml に
+// 黄色の塗りつぶしと赤の太字を足し、1枚目のシートの対象セルの s 属性を差し替える
+// (app.js の applyHyperlinkStyle と同じ方法)。値の無いセルにも色を付けるため、
+// 行の中に無いセルは空のセルとして足す。
+async function checkStyleExcel(wb, yellow, red) {
+  const zip = await JSZip.loadAsync(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }));
+  let st = await zip.file('xl/styles.xml').async('string');
+  const fontCount = parseInt(st.match(/<fonts count="(\d+)">/)[1], 10);
+  st = st.replace(/<fonts count="\d+">/, `<fonts count="${fontCount + 1}">`)
+    .replace('</fonts>', '<font><b/><sz val="12"/><color rgb="FFFF0000"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font></fonts>');
+  const fillCount = parseInt(st.match(/<fills count="(\d+)">/)[1], 10);
+  st = st.replace(/<fills count="\d+">/, `<fills count="${fillCount + 1}">`)
+    .replace('</fills>', '<fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/><bgColor indexed="64"/></patternFill></fill></fills>');
+  const xfCount = parseInt(st.match(/<cellXfs count="(\d+)">/)[1], 10);
+  const xfYellow = xfCount, xfRed = xfCount + 1;
+  st = st.replace(/<cellXfs count="\d+">/, `<cellXfs count="${xfCount + 2}">`)
+    .replace('</cellXfs>', `<xf numFmtId="0" fontId="0" fillId="${fillCount}" borderId="0" xfId="0" applyFill="1"/>` +
+      `<xf numFmtId="0" fontId="${fontCount}" fillId="${fillCount}" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>`);
+  zip.file('xl/styles.xml', st);
+
+  const sheetPath = 'xl/worksheets/sheet1.xml';
+  let sh = await zip.file(sheetPath).async('string');
+  const styleOf = ref => (red.has(ref) ? xfRed : yellow.has(ref) ? xfYellow : null);
+  const byRow = new Map(); // 行番号 → 塗るセル
+  for (const ref of yellow) {
+    const rn = ref.replace(/^[A-Z]+/, '');
+    if (!byRow.has(rn)) byRow.set(rn, []);
+    byRow.get(rn).push(ref);
+  }
+  sh = sh.replace(/<row r="(\d+)"([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g, (m, rn, attrs, inner = '') => {
+    const want = byRow.get(rn);
+    if (!want) return m;
+    const have = new Set();
+    let body = inner.replace(/<c r="([A-Z]+\d+)"([^>]*?)(\/?)>/g, (cm, ref, a, sc) => {
+      have.add(ref);
+      const s = styleOf(ref);
+      return s == null ? cm : `<c r="${ref}"${a.replace(/\ss="\d+"/, '')} s="${s}"${sc}>`;
+    });
+    const add = want.filter(ref => !have.has(ref)).map(ref => `<c r="${ref}" s="${styleOf(ref)}"/>`).join('');
+    if (add) {
+      // 列の順に並べ直す
+      const cells = (body + add).match(/<c r="[A-Z]+\d+"[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g) || [];
+      const col = c => XLSX.utils.decode_cell(c.match(/r="([A-Z]+\d+)"/)[1]).c;
+      body = cells.sort((a, b) => col(a) - col(b)).join('');
+    }
+    return `<row r="${rn}"${attrs}>${body}</row>`;
+  });
+  zip.file(sheetPath, sh);
+  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
 function resetCheck() {
