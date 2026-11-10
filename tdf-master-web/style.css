@@ -242,6 +242,15 @@ table#result-table tbody tr.row-checked { background: #dcecff !important; outlin
   0%, 100% { background-color: #fff; }
   50% { background-color: #ff8fc7; }
 }
+/* 帳票チェックの結果Excel用: 図面サーバーの選択(設定シートのH:I列)。パスは伏せ字で表示する */
+#basepath-servers { display: flex; gap: 10px; margin-bottom: 10px; }
+#basepath-servers:empty { display: none; }
+#basepath-servers button { flex: 1; padding: 12px 8px; font-size: 14px; }
+#basepath-servers button.selected { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+#basepath-mask {
+  width: 100%; padding: 8px 10px; font-size: 13px; letter-spacing: 2px;
+  border: 1px solid #bbb; border-radius: 6px; background: #f4f4f4; color: #333;
+}
 #basepath-textarea {
   width: 100%; min-height: 64px; padding: 8px 10px; font-size: 13px;
   border: 1px solid #bbb; border-radius: 6px; resize: vertical; font-family: inherit;

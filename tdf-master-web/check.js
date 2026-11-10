@@ -18,6 +18,7 @@ let checkOnlyNg = true;    // 一致しない行だけ表示
 const CHECK_DB = 'tdf-check';
 const CHECK_STORE = 'handles';
 const CHECK_ROOT_KEY = 'site-root';
+const CHECK_LINK_SERVER_KEY = 'check-link-server'; // 結果Excelのリンク用に最後に選んだサーバーのパス(localStorage。ブラウザごと)
 const CHECK_SKIP_DIR = /旧|発行歴/;
 const CHECK_LEN_TOL_MM = 0.1; // 長さの許容差(±0.1mm。2026-11-09 ユーザー指定)
 
@@ -248,15 +249,19 @@ async function checkFindKojiDir(root, no) {
 }
 
 // 工事フォルダの下(3段まで)で、名前に「詳細図」を含むフォルダ(旧・発行歴は除く)
+// 見つけた詳細図フォルダの、工事フォルダからの途中のフォルダ名(自分は含まない)。
+// 結果Excelの図面へのリンクで、工事フォルダ〜詳細図フォルダの間の階層(例: ①-正光施工図)に使う
+const checkDirBase = new WeakMap();
 async function checkFindDetailDirs(kojiDir) {
   const found = [];
-  let level = [kojiDir];
+  let level = [{ d: kojiDir, base: [] }];
   for (let depth = 0; depth < 3 && level.length && !found.length; depth++) {
     const next = [];
-    for (const d of level) {
+    for (const { d, base } of level) {
       for (const e of await checkListDir(d)) {
         if (e.kind !== 'directory' || CHECK_SKIP_DIR.test(e.name)) continue;
-        if (e.name.includes('詳細図')) found.push(e); else next.push(e);
+        const b = depth === 0 ? [] : base.concat(d.name);
+        if (e.name.includes('詳細図')) { checkDirBase.set(e, b); found.push(e); } else next.push({ d: e, base: b });
       }
     }
     level = next;
@@ -271,17 +276,17 @@ const CHECK_WALK_PARALLEL = 8;
 const CHECK_PREFETCH = 4; // 解析中に先に読んでおく図面の数
 async function checkWalkTdf(dirs, need, onProgress) {
   const found = new Map(); // 図番 → [{ handle, path }]
-  const queue = dirs.map(d => ({ dir: d, path: [d.name] }));
+  const queue = dirs.map(d => ({ dir: d, path: [d.name], base: checkDirBase.get(d) || [] }));
   let done = 0, active = 0;
-  async function visit({ dir, path }) {
+  async function visit({ dir, path, base }) {
     for (const e of await checkListDir(dir)) {
       if (e.kind === 'directory') {
-        if (!CHECK_SKIP_DIR.test(e.name)) queue.push({ dir: e, path: path.concat(e.name) });
+        if (!CHECK_SKIP_DIR.test(e.name)) queue.push({ dir: e, path: path.concat(e.name), base });
       } else if (/\.tdf$/i.test(e.name)) {
         const z = checkZkey(e.name);
         if (need.has(z)) {
           if (!found.has(z)) found.set(z, []);
-          found.get(z).push({ handle: e, path: path.concat(e.name) });
+          found.get(z).push({ handle: e, path: path.concat(e.name), base });
         }
       }
     }
@@ -515,7 +520,7 @@ async function processCheckFileInner(files) {
 
     // 選んだフォルダの種類に合わせて「詳細図」フォルダまでたどる
     const kind = checkFolderKind(folder);
-    let detailDirs, label;
+    let detailDirs, label, linkBase = null; // linkBase: サーバーのパスの次に続くフォルダ名(詳細図フォルダの直接指定では上の階層が分からないので null=リンクなし)
     if (kind === 'root') {
       showStatus('工事のフォルダを探しています', kojiNo);
       const kojiDir = await checkFindKojiDir(folder, kojiNo);
@@ -523,10 +528,12 @@ async function processCheckFileInner(files) {
       detailDirs = await checkFindDetailDirs(kojiDir);
       if (!detailDirs.length) throw new Error(`「${kojiDir.name}」の中に「詳細図」フォルダが見つかりません`);
       label = kojiDir.name;
+      linkBase = [kojiDir.name];
     } else if (kind === 'koji') {
       detailDirs = await checkFindDetailDirs(folder);
       if (!detailDirs.length) throw new Error(`「${folder.name}」の中に「詳細図」フォルダが見つかりません`);
       label = folder.name;
+      linkBase = [folder.name];
     } else {
       detailDirs = [folder];
       label = folder.name;
@@ -573,9 +580,9 @@ async function processCheckFileInner(files) {
       showStatus('図面を解析しています', `(${i + 1}/${files.length}) ${f.handle.name}` + (reused ? `  前回の結果を使用 ${reused} 件` : ''));
       const p = await pending[i];
       pending[i] = null; // 読んだ中身を早めに手放す
-      if (p.err) { res.set(p.key, { mode: p.mode, rows: [], err: p.err.message, mtime: null, path: f.path }); continue; }
+      if (p.err) { res.set(p.key, { mode: p.mode, rows: [], err: p.err.message, mtime: null, path: f.path, base: f.base }); continue; }
       if (p.saved) {
-        res.set(p.key, { mode: p.mode, rows: p.saved.rows, err: null, mtime: p.blob.lastModified, path: f.path });
+        res.set(p.key, { mode: p.mode, rows: p.saved.rows, err: null, mtime: p.blob.lastModified, path: f.path, base: f.base });
         reused++;
         continue;
       }
@@ -585,16 +592,17 @@ async function processCheckFileInner(files) {
         const py = await pyodide.runPythonAsync(`${p.mode === 'column' ? 'tdf_column' : 'tdf_app'}.extract_file('/input.tdf', tdf_filename)`);
         const rows = py.toJs({ dict_converter: Object.fromEntries });
         py.destroy();
-        res.set(p.key, { mode: p.mode, rows, err: null, mtime: p.blob.lastModified, path: f.path });
+        res.set(p.key, { mode: p.mode, rows, err: null, mtime: p.blob.lastModified, path: f.path, base: f.base });
         checkIdbSet(p.ckey, { mode: p.mode, rows }, CHECK_EXTRACT_STORE); // 書き込みは待たない(失敗しても照合は続ける)
       } catch (e) {
-        res.set(p.key, { mode: p.mode, rows: [], err: e.message, mtime: null, path: f.path });
+        res.set(p.key, { mode: p.mode, rows: [], err: e.message, mtime: null, path: f.path, base: f.base });
       }
     }
     const t2 = performance.now();
 
     checkResult = checkCompare(xl, found, res);
     checkResult.fileName = file.name;
+    checkResult.linkBase = linkBase;
     checkResult.kojiDir = label;
     checkResult.times = { find: (t1 - t0) / 1000, extract: (t2 - t1) / 1000, files: files.length, reused };
     hideStatus();
@@ -816,6 +824,25 @@ function checkExcelJudge(r) {
 async function downloadCheckExcel() {
   if (!checkResult) return;
   const { rows, extra } = checkResult;
+  // 図面へのハイパーリンク(2026-11-10 ユーザー指示。リンクの形は「実寸法師ハイパーリンク付与」と同じ
+  // file://サーバー/…/図面.tdf)。ブラウザはサーバーのパスを教えてくれないので、設定シートの
+  // サーバー一覧(H:I列)から選ぶポップアップで、図面のあるサーバー(パスは伏せ字)を選んでもらう。
+  // 詳細図フォルダを直接選んだとき(上の階層が分からない)は、リンクなし。
+  let linkServer = '';
+  if (checkResult.linkBase) {
+    let servers = [];
+    try { servers = await apiGet('getServerPaths'); } catch (e) { console.error('サーバー一覧を取得できませんでした', e); }
+    let initial = '';
+    try { initial = localStorage.getItem(CHECK_LINK_SERVER_KEY) || ''; } catch (_) { /* 覚えられなくてもよい */ }
+    linkServer = await askBasePath({
+      servers, initial,
+      label: '図面があるサーバーを選択してください',
+      hint: 'サーバーを選んで「OK」を押すと、製品マークに図面へのリンクを付けて保存します。<br>'
+        + '「スキップ」を押すと、リンクなしで保存します。',
+    });
+    if (linkServer) { try { localStorage.setItem(CHECK_LINK_SERVER_KEY, linkServer); } catch (_) { /* 同上 */ } }
+  }
+  const links = new Map(); // セル番地 → file://リンク
   const head = ['判定', 'Excelの行', '図番', '製品マーク', '違う項目', 'サイズ(Excel)', 'サイズ(図面)', '長さ(Excel)', '長さ(図面)', '本数(Excel)', '本数(図面)',
     '継手(Excel)', '継手(図面)', 'メモ', '図面', '図面の更新日'];
   const aoa = [head];
@@ -829,6 +856,11 @@ async function downloadCheckExcel() {
       checkJointText(r.x.ja, r.x.jb), r.dw ? checkJointText(dw[ka], dw[kb]) : ''];
     line.push(r.memo.join(' / '), r.file ? r.file.path.join('\\') : '', r.file ? checkFmtDate(r.file.mtime) : '');
     aoa.push(line);
+    if (linkServer && r.judge !== '対象外' && r.file && r.file.path) {
+      // サーバーのパス + 工事フォルダ + (詳細図フォルダまでの途中) + 詳細図フォルダ以下のパス
+      links.set(XLSX.utils.encode_cell({ r: aoa.length - 1, c: 3 }),
+        buildFileUrl(linkServer, checkResult.linkBase.concat(r.file.base || [], r.file.path).join('/')));
+    }
     if (j.judge === '不一致') {
       const rn = aoa.length;
       for (let c = 0; c < head.length; c++) yellow.add(XLSX.utils.encode_cell({ r: rn - 1, c }));
@@ -838,14 +870,16 @@ async function downloadCheckExcel() {
     }
   }
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '照合結果');
+  const ws1 = XLSX.utils.aoa_to_sheet(aoa);
+  for (const [ref, url] of links) { if (ws1[ref]) ws1[ref].l = { Target: url }; }
+  XLSX.utils.book_append_sheet(wb, ws1, '照合結果');
   const ex = [['図番', '製品マーク(図面)', 'サイズ', '長さ', '本数', '図面', '図面の更新日']]
     .concat(extra.map(e => [e.zuban, e.row['製品マーク'], e.row['サイズ'] ?? '', e.row['長さ'] ?? '', e.row['本数'] ?? '', e.file.path.join('\\'), checkFmtDate(e.file.mtime)]));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ex), '図面にあってExcelに無い');
   const base = checkResult.fileName.replace(/\.[^.]+$/, '');
   const fname = base + '_帳票チェック結果.xlsx';
   try {
-    downloadBlob(await checkStyleExcel(wb, yellow, red), fname);
+    downloadBlob(await checkStyleExcel(wb, yellow, red, new Set(links.keys())), fname);
   } catch (e) {
     // 色付けに失敗しても、色の無いExcelは保存する(2026-11-10)
     console.error('結果のExcelの色付けに失敗しました', e);
@@ -870,27 +904,31 @@ async function downloadCheckExcel() {
 // 黄色の塗りつぶしと赤の太字を足し、1枚目のシートの対象セルの s 属性を差し替える
 // (app.js の applyHyperlinkStyle と同じ方法)。値の無いセルにも色を付けるため、
 // 行の中に無いセルは空のセルとして足す。
-async function checkStyleExcel(wb, yellow, red) {
+async function checkStyleExcel(wb, yellow, red, links = new Set()) {
   const zip = await JSZip.loadAsync(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }));
   let st = await zip.file('xl/styles.xml').async('string');
   const fontCount = parseInt(st.match(/<fonts count="(\d+)">/)[1], 10);
-  st = st.replace(/<fonts count="\d+">/, `<fonts count="${fontCount + 1}">`)
-    .replace('</fonts>', '<font><b/><sz val="12"/><color rgb="FFFF0000"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font></fonts>');
+  // 赤の太字(fontCount)と、リンクの青の下線太字(fontCount + 1。app.js の applyHyperlinkStyle と同じ書式)
+  st = st.replace(/<fonts count="\d+">/, `<fonts count="${fontCount + 2}">`)
+    .replace('</fonts>', '<font><b/><sz val="12"/><color rgb="FFFF0000"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>'
+      + '<font><u/><b/><sz val="11"/><color rgb="FF0000FF"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font></fonts>');
   const fillCount = parseInt(st.match(/<fills count="(\d+)">/)[1], 10);
   st = st.replace(/<fills count="\d+">/, `<fills count="${fillCount + 1}">`)
     .replace('</fills>', '<fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/><bgColor indexed="64"/></patternFill></fill></fills>');
   const xfCount = parseInt(st.match(/<cellXfs count="(\d+)">/)[1], 10);
-  const xfYellow = xfCount, xfRed = xfCount + 1;
-  st = st.replace(/<cellXfs count="\d+">/, `<cellXfs count="${xfCount + 2}">`)
+  const xfYellow = xfCount, xfRed = xfCount + 1, xfLink = xfCount + 2, xfLinkY = xfCount + 3;
+  st = st.replace(/<cellXfs count="\d+">/, `<cellXfs count="${xfCount + 4}">`)
     .replace('</cellXfs>', `<xf numFmtId="0" fontId="0" fillId="${fillCount}" borderId="0" xfId="0" applyFill="1"/>` +
-      `<xf numFmtId="0" fontId="${fontCount}" fillId="${fillCount}" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>`);
+      `<xf numFmtId="0" fontId="${fontCount}" fillId="${fillCount}" borderId="0" xfId="0" applyFont="1" applyFill="1"/>` +
+      `<xf numFmtId="0" fontId="${fontCount + 1}" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
+      `<xf numFmtId="0" fontId="${fontCount + 1}" fillId="${fillCount}" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>`);
   zip.file('xl/styles.xml', st);
 
   const sheetPath = 'xl/worksheets/sheet1.xml';
   let sh = await zip.file(sheetPath).async('string');
-  const styleOf = ref => (red.has(ref) ? xfRed : yellow.has(ref) ? xfYellow : null);
+  const styleOf = ref => (red.has(ref) ? xfRed : links.has(ref) ? (yellow.has(ref) ? xfLinkY : xfLink) : yellow.has(ref) ? xfYellow : null);
   const byRow = new Map(); // 行番号 → 塗るセル
-  for (const ref of yellow) {
+  for (const ref of new Set([...yellow, ...links])) {
     const rn = ref.replace(/^[A-Z]+/, '');
     if (!byRow.has(rn)) byRow.set(rn, []);
     byRow.get(rn).push(ref);
