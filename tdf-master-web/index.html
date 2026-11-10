@@ -4450,20 +4450,9 @@ def _joint_on_next_member(caps, by_x, x1: float, x2: float, y_end: float, direct
 STUB_MIN = 50.0  # 上に立つ細い部材の線の長さの下限
 
 
-def _stub_top(by_x, chains, vals, body, got):
-    """柱の上端に細い部材が立つ製品の、その部材の上端までの長さ。
-
-    26-16 の EA1-4C-04〜06: SH-800 の柱本体 3683 の上に H-150 が 247 立ち上がり、
-    全長は 3930(寸法線あり)。H-150 は柱の幅と違うので本体の外形線にならず、上端が
-    柱の頭の板で止まっていた。次をすべて満たすときだけ伸ばす。
-    - 柱の上端から上へ、柱の中心に対して左右対称の縦線の組(柱の幅より細い)が始まる
-    - 寸法の点が下端・上端・その先と続き、どの区間にも寸法の文字がある
-    - その先の点が細い部材の縦線の上端から板の範囲(END_PLATE_REACH)以内にあり、
-      下端からその点までの長さが寸法の文字として書かれている
-    戻り値: (長さ, 下端Y, 上端Y)。当たらなければ None。
-    """
-    x1, x2 = body["x1"], body["x2"]
-    lo, hi = got[1], got[2]
+def _stub_top_y(by_x, x1: float, x2: float, hi: float):
+    """柱の上端(hi)から上へ、柱の中心に対して左右対称で柱の幅より細い縦線の組が立つとき、
+    その縦線の上端のY。無ければ None。"""
     cx, half = (x1 + x2) / 2, (x2 - x1) / 2
 
     def tops_from_end(x):
@@ -4478,9 +4467,25 @@ def _stub_top(by_x, chains, vals, body, got):
         right, left = tops_from_end(k), tops_from_end(cx - d)
         if right and left:
             tops.append(min(max(right), max(left)))
-    if not tops:
+    return max(tops) if tops else None
+
+
+def _stub_top(by_x, chains, vals, body, got):
+    """柱の上端に細い部材が立つ製品の、その部材の上端までの長さ。
+
+    26-16 の EA1-4C-04〜06: SH-800 の柱本体 3683 の上に H-150 が 247 立ち上がり、
+    全長は 3930(寸法線あり)。H-150 は柱の幅と違うので本体の外形線にならず、上端が
+    柱の頭の板で止まっていた。次をすべて満たすときだけ伸ばす。
+    - 柱の上端から上へ、柱の中心に対して左右対称の縦線の組(柱の幅より細い)が始まる
+    - 寸法の点が下端・上端・その先と続き、どの区間にも寸法の文字がある
+    - その先の点が細い部材の縦線の上端から板の範囲(END_PLATE_REACH)以内にあり、
+      下端からその点までの長さが寸法の文字として書かれている
+    戻り値: (長さ, 下端Y, 上端Y)。当たらなければ None。
+    """
+    lo, hi = got[1], got[2]
+    stub_top = _stub_top_y(by_x, body["x1"], body["x2"], hi)
+    if stub_top is None:
         return None
-    stub_top = max(tops)
     for pts, ok in chains:
         i = next((n for n, y in enumerate(pts) if abs(y - lo) <= DIM_POINT_TOL), None)
         j = next((n for n, y in enumerate(pts) if abs(y - hi) <= DIM_POINT_TOL), None)
@@ -4492,6 +4497,49 @@ def _stub_top(by_x, chains, vals, body, got):
             if _in_drawing(vals, length):
                 return (length, lo, y2)
     return None
+
+
+def _stub_total(by_x, chains, vals, body):
+    """柱の上端に細い部材が立ち、本体だけの長さは寸法の文字に無いが、下端から細い部材の
+    上端までが1つの寸法(または連なった寸法の合計)として書かれている製品の全長。
+
+    26-16 の EA2-3C-09: □-550 の本体は 4397〜10390(5993。寸法の文字は無い)で、その上に
+    H-100 が立ち、下端から細い部材の上端(12055)までの寸法の文字が 7658。_stub_top は
+    本体の長さが寸法の文字にあるときしか使えない。次をすべて満たすときだけ使う。
+    - 下端(lo)と、その上の本体の上端(hi)の外形線が、本体の外形線の半分以上を覆う
+    - hi から上へ、柱の中心に対して左右対称の縦線の組(柱の幅より細い)が始まる
+    - 寸法の点が lo から、細い部材の縦線の上端から板の範囲(END_PLATE_REACH)以内の点まで
+      続き、どの区間にも寸法の文字があり、lo からその点までの長さが寸法の文字として書かれている
+    戻り値: (長さ, 下端Y, 上端Y)。当たらなければ None。
+    """
+    ends, segs = body["ends"], body["segs"]
+    best = None
+    for hi in ends:
+        stub_top = None
+        for lo in ends:
+            if lo >= hi:
+                continue
+            inside = sum(min(h, hi) - max(l, lo) for l, h in segs if min(h, hi) > max(l, lo))
+            if inside < body["cover"] * MIN_COVER_SHARE:
+                continue
+            if stub_top is None:
+                stub_top = _stub_top_y(by_x, body["x1"], body["x2"], hi) or False
+            if stub_top is False:
+                break
+            for pts, ok in chains:
+                i = next((n for n, y in enumerate(pts) if abs(y - lo) <= DIM_POINT_TOL), None)
+                if i is None:
+                    continue
+                for j in range(i + 1, len(pts)):
+                    y2 = pts[j]
+                    if y2 <= hi or not all(ok[i:j]) or not (-2.0 <= y2 - stub_top <= END_PLATE_REACH):
+                        continue
+                    length = round(y2 - lo, 1)
+                    if _in_drawing(vals, length):
+                        key = (round(inside, 1), length)
+                        if best is None or key > best[0]:
+                            best = (key, (length, lo, y2))
+    return best[1] if best else None
 
 
 # ---------------------------------------------------------------------------
@@ -4571,11 +4619,11 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
         # (上の部材に付く別の部材の継手を拾うため: EA1-4C-04 の zB150)
         stub = set()
         for n, (b, got) in enumerate(gots):
-            if got is not None:
-                ext = _stub_top(by_x, chains, vals, b, got)
-                if ext is not None:
-                    gots[n] = (b, ext)
-                    stub.add(id(b))
+            # 本体だけの長さが寸法の文字に無いときは、下端から細い部材の上端までの寸法を探す
+            ext = _stub_top(by_x, chains, vals, b, got) if got is not None else _stub_total(by_x, chains, vals, b)
+            if ext is not None:
+                gots[n] = (b, ext)
+                stub.add(id(b))
         # 立面図ごとの長さが食い違うときは、長さの両端に寸法の点があり寸法の文字で
         # つながるもの(_on_dim_chain)を先に、その中では長い方から使う。
         # - 片方の立面図にしか描かれていない部分(上が細いH形に変わる柱の上の部分)が
