@@ -126,6 +126,21 @@ function getKojiList() {
     .filter(([no]) => no !== '');
 }
 
+// 設定シートの図面サーバー一覧(H:I列。H=サーバー名、I=ファイルパス。2行目から、H列が空の行で止める)
+// 帳票チェックの結果Excelで、図面へのハイパーリンクを作るときに使う
+// [[サーバー名, ファイルパス], ...]
+function getServerPaths() {
+  const sheet = sheet_(SHEET_SETTING);
+  if (sheet.getLastRow() < 2) return [];
+  const out = [];
+  const vals = sheet.getRange(2, 8, sheet.getLastRow() - 1, 2).getValues();
+  for (const [name, path] of vals) {
+    if (String(name).trim() === '') break;
+    out.push([String(name).trim(), String(path).trim()]);
+  }
+  return out;
+}
+
 // 利用記録: モードボタン(梁モード/結合モード)を押したときに呼び出し(日時・工場・モードを記録)。
 // 時間の記録は行わない。常に見出し行の直下(2行目)に挿入し、既存の記録は下にずらす(=2行目が常に最新)。
 function logUsageStart(factory, mode) {
@@ -162,6 +177,7 @@ function doGet(e) {
     const p = e.parameter;
     if (p.action === "getWeightTable") return ok_(getWeightTable());
     if (p.action === "getKojiList") return ok_(getKojiList());
+    if (p.action === "getServerPaths") return ok_(getServerPaths());
     return errRes_("不明なaction: " + p.action);
   } catch (err) {
     return errRes_(err.message);

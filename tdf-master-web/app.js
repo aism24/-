@@ -572,19 +572,56 @@ function buildFileUrl(basePath, fileName) {
 // ファイルの実際の絶対パスを取得できないため、フォルダのパスだけユーザーに貼って
 // もらい、既に判明しているファイル名(_filename)と組み合わせてリンクを作る。
 // 案件ごとにフォルダが変わるため、前回値は記憶せず毎回空欄から始める。
-function askBasePath() {
+// opts(帳票チェックの結果Excel用。省略すると今までと同じ):
+//   label / hint … 見出しと説明の差し替え、initial … 欄の初期値、
+//   servers … [[サーバー名, パス], ...](サーバー名のボタンで選ぶ。パスは伏せ字で表示。空なら貼り付け入力)
+function askBasePath(opts) {
+  opts = opts || {};
   return new Promise(resolve => {
     const overlay = document.getElementById('basepath-overlay');
     const textarea = document.getElementById('basepath-textarea');
     const pasteBtn = document.getElementById('basepath-paste-btn');
     const okBtn = document.getElementById('basepath-ok-btn');
     const skipBtn = document.getElementById('basepath-skip-btn');
-    textarea.value = '';
+    const labelEl = overlay.querySelector('.basepath-label');
+    const hintEl = overlay.querySelector('.basepath-hint');
+    const srvEl = document.getElementById('basepath-servers');
+    const orig = { label: labelEl.innerHTML, hint: hintEl.innerHTML };
+    if (opts.label) labelEl.textContent = opts.label;
+    if (opts.hint) hintEl.innerHTML = opts.hint;
+    srvEl.innerHTML = '';
+    // サーバー一覧があるとき(帳票チェック): サーバー名のボタンで選ぶ。貼り付けボタンと入力欄は隠し、
+    // 選んだパスは伏せ字(●)で表示する。サーバー一覧が取れなかったときは今までどおり貼り付けで入力する。
+    const servers = opts.servers || [];
+    const pick = servers.length > 0;
+    const maskEl = document.getElementById('basepath-mask');
+    let chosen = '';
+    const maskText = () => { maskEl.value = chosen ? '●'.repeat(12) : ''; };
+    const choose = (path, btn) => {
+      chosen = path;
+      srvEl.querySelectorAll('button').forEach(x => x.classList.toggle('selected', x === btn));
+      maskText();
+    };
+    servers.forEach(([name, path]) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'header-btn';
+      b.textContent = /サーバー$/.test(name) ? name : name + 'サーバー';
+      b.addEventListener('click', () => choose(path, b));
+      srvEl.appendChild(b);
+      if (opts.initial && stripQuotes(opts.initial.trim()) === path) choose(path, b);
+    });
+    textarea.style.display = pick ? 'none' : '';
+    pasteBtn.style.display = pick ? 'none' : '';
+    maskEl.style.display = pick ? '' : 'none';
+    maskText();
+    textarea.value = pick ? '' : (opts.initial || '');
     overlay.classList.add('open');
-    textarea.focus();
+    if (!pick) textarea.focus();
 
     function cleanup() {
       overlay.classList.remove('open');
+      labelEl.innerHTML = orig.label; hintEl.innerHTML = orig.hint; srvEl.innerHTML = '';
+      textarea.style.display = ''; pasteBtn.style.display = ''; maskEl.style.display = 'none';
       pasteBtn.removeEventListener('click', onPaste);
       okBtn.removeEventListener('click', onOk);
       skipBtn.removeEventListener('click', onSkip);
@@ -598,7 +635,8 @@ function askBasePath() {
       }
     }
     function onOk() {
-      const val = stripQuotes(textarea.value.trim());
+      if (pick && !chosen) { showToast('サーバーを選んでください(リンクなしで保存するときは「スキップ」)', 'error'); return; }
+      const val = pick ? chosen : stripQuotes(textarea.value.trim());
       cleanup();
       resolve(val);
     }

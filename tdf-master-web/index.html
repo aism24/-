@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>実寸法師データよりマスタ情報抽出</title>
-<link rel="stylesheet" href="style.css?v=20261110b">
+<link rel="stylesheet" href="style.css?v=20261110d">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
@@ -166,6 +166,8 @@
       (前後の &quot; は自動的に取り除きます)。<br>
       未入力のまま「スキップ」を押した場合は、図番へのハイパーリンクなしでダウンロードします。
     </div>
+    <div id="basepath-servers"></div>
+    <input type="text" id="basepath-mask" readonly placeholder="(サーバーを選んでください)" style="display:none">
     <button type="button" id="basepath-paste-btn" class="header-btn">📋 クリップボードから貼り付け</button>
     <textarea id="basepath-textarea" placeholder="例: \\server\share\TDF図面&#10;例: C:\Users\name\Documents\TDF"></textarea>
     <div class="basepath-actions">
@@ -4710,8 +4712,8 @@ def extract_file(path: str, filename: str | None = None) -> list[dict]:
     return extract_column(tb.load(path), filename or path)
 </script>
 
-<script defer src="app.js?v=20261110c"></script>
-<script defer src="check.js?v=20261110f"></script>
+<script defer src="app.js?v=20261110e"></script>
+<script defer src="check.js?v=20261110g"></script>
 <!-- 「← アプリ一覧へ」ボタンは非表示(2026-10-30、ユーザー指示)。復活するときは下の行のコメントを外すだけ(to-launcher.js はそのまま残している)
 <script src="to-launcher.js?v=20261019" data-target="#header-brand .side-icon" data-mode="before"></script>
 -->
