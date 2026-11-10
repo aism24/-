@@ -318,7 +318,9 @@ function checkNorm(s) {
 // 見出しの読み方(2026-11-09):
 //   製品マーク … 「製品マーク」「製品名」
 //   継手       … 「左継手」「右継手」/「下継手」「上継手」/「J」「J'」(切断リスト。J(開先) 等は使わない)
-//                 /「J若番」「J老番」(出荷リスト。左(下)・右(上)。継手名の【】は外す)
+//                 /「J若番」「J老番」(出荷リスト。左(下)・右(上)。継手名の【】・◎は外す)
+//                 /「SPL・方杖」(マスターデータ。結合セルで、その列=左(下)、右隣の列=右(上)。
+//                 上の継手の見出しが1つも無いときだけ)
 //   製品マーク … 上のほか「製品番号」(出荷リスト。「製品マーク」「製品名」があればそちらを先に使う)
 //   長さ       … 「長さ」のほか「製品長」(出荷リスト)
 //   サイズ     … 最初の「サイズ」の列。「,,」「〃」は上の行と同じ
@@ -341,11 +343,15 @@ function checkReadExcel(buf) {
       const zubanCol = exact('図番');
       const markCol = [col('製品マーク', '製品名'), col('製品番号')].find(i => i >= 0) ?? -1; // 出荷リストは「製品番号」
       if (zubanCol < 0 || markCol < 0) continue;
+      // マスターデータ(見出しの P1:R1 が結合セルの「SPL・方杖」)は、P列=左(下)継手、Q列=右(上)継手
+      // (2026-11-10 ユーザー指示)。ほかの継手の見出しが無いときだけ、この列を継手として使う。
+      const spl = exact('SPL・方杖');
+      const hasJointHead = col('左継手', '下継手') >= 0 || col('右継手', '上継手') >= 0 || exact('J') >= 0 || exact("J'") >= 0 || exact('J若番') >= 0 || exact('J老番') >= 0;
       const ci = {
         zuban: zubanCol, mark: markCol, size: col('サイズ'), honsu: col('本数'),
         len: [col('長さ'), col('製品長')].find(i => i >= 0) ?? -1, // 出荷リストは「製品長」
-        ja: [col('左継手', '下継手'), exact('J'), exact('J若番')].find(i => i >= 0) ?? -1, // 出荷リスト: J若番=左(下)
-        jb: [col('右継手', '上継手'), exact("J'"), exact('J老番')].find(i => i >= 0) ?? -1, // 出荷リスト: J老番=右(上)
+        ja: [col('左継手', '下継手'), exact('J'), exact('J若番'), hasJointHead ? -1 : spl].find(i => i >= 0) ?? -1, // 出荷リスト: J若番=左(下)
+        jb: [col('右継手', '上継手'), exact("J'"), exact('J老番'), hasJointHead || spl < 0 ? -1 : spl + 1].find(i => i >= 0) ?? -1, // 出荷リスト: J老番=右(上)
       };
       const lenHead = ci.len >= 0 ? head[ci.len] : '';
       const rows = [];
@@ -359,7 +365,7 @@ function checkReadExcel(buf) {
           let v = row[i];
           if (CHECK_DITTO.has(checkNorm(v))) v = prev[k]; // 「,,」は上の行と同じ
           prev[k] = v;
-          if ((k === 'ja' || k === 'jb') && typeof v === 'string') v = v.replace(/[【】]/g, ''); // 出荷リストは継手名が【CJ1】の形
+          if ((k === 'ja' || k === 'jb') && typeof v === 'string') v = v.replace(/[【】◎]/g, ''); // 継手名が【CJ1】や IJ250K◎ の形(◎は印。名前ではない)
           return v;
         };
         rows.push({ rowNo: top + r + 1, zuban, mark, rawMarkTail: String(row[ci.mark] ?? '').trim().endsWith('㋱'), size: g('size', ci.size), len: g('len', ci.len), honsu: g('honsu', ci.honsu), ja: g('ja', ci.ja), jb: g('jb', ci.jb) });
@@ -379,7 +385,7 @@ function checkReadExcel(buf) {
         // 「㋱」は NFKC で「メ」になるので、元の文字の最後が「㋱」のときだけ1文字外す
         for (const x of rows) if (x.rawMarkTail) x.mark = x.mark.slice(0, -1);
       }
-      const cand = { sheetName, rows, unit, cols: ci, cut, hasSize: ci.size >= 0, hasLen: ci.len >= 0, hasHonsu: ci.honsu >= 0, hasJoint: ci.ja >= 0 || ci.jb >= 0 };
+      const cand = { sheetName, rows, unit, cols: ci, cut, hasSize: ci.size >= 0, hasLen: ci.len >= 0, hasHonsu: ci.honsu >= 0, hasJoint: (ci.ja >= 0 || ci.jb >= 0) && rows.some(r => checkNorm(r.ja) || checkNorm(r.jb)) }; // 継手が1行も書かれていなければ、継手は比べない
       if (!best || rows.length > best.rows.length) best = cand;
       break;
     }
