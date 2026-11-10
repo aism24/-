@@ -797,6 +797,7 @@ async function downloadCheckExcel() {
     '継手(Excel)', '継手(図面)', 'メモ', '図面', '図面の更新日'];
   const aoa = [head];
   const yellow = new Set(), red = new Set(); // セル番地(A2 等)
+  const yellowRows = [], redCells = []; // スプレッドシートの記録用(データ行の番号・列。0始まり)
   for (const r of rows) {
     const dw = r.dw || {};
     const [ka, kb] = r.file && r.file.mode === 'column' ? ['下継手', '上継手'] : ['左継手', '右継手'];
@@ -809,6 +810,8 @@ async function downloadCheckExcel() {
       const rn = aoa.length;
       for (let c = 0; c < head.length; c++) yellow.add(XLSX.utils.encode_cell({ r: rn - 1, c }));
       for (const k of j.red) red.add(XLSX.utils.encode_cell({ r: rn - 1, c: CHECK_XL_BAD_COL[k] }));
+      yellowRows.push(rn - 2);
+      for (const k of j.red) redCells.push([rn - 2, CHECK_XL_BAD_COL[k]]);
     }
   }
   const wb = XLSX.utils.book_new();
@@ -825,6 +828,18 @@ async function downloadCheckExcel() {
     console.error('結果のExcelの色付けに失敗しました', e);
     showToast('色付けに失敗したため、色の無いExcelを保存します', 'error');
     XLSX.writeFile(wb, fname);
+  }
+
+  // スプレッドシートにも記録する(2026-11-10 ユーザー指示): 「照合結果」シートの内容(A〜P列・全行)を
+  // 新しいシートに入れ、「記録」シートに1行。製品数は照合結果の行数(対象外も含む)、
+  // F列「図番頭」は空欄。新しいシートにも黄色・赤の太字を付ける。失敗してもダウンロードは済んでいる。
+  try {
+    await apiPost('onExcelDownload', {
+      kojiNo, productCount: rows.length, rows: aoa,
+      opts: { noZubanHead: true, highlight: { yellowRows, redCells } },
+    });
+  } catch (e) {
+    console.error('GAS記録エラー', e);
   }
 }
 
