@@ -146,9 +146,7 @@ function switchResults(mode) {
   extractedResults = savedResults[mode].rows;
   resultsInfo = savedResults[mode].info;
   document.getElementById('file-info').textContent = resultsInfo;
-  const [a, b] = jointKeys();
-  document.getElementById('th-joint-a').textContent = a;
-  document.getElementById('th-joint-b').textContent = b;
+  applyResultHead();
   document.getElementById('file-input').value = '';
   if (extractedResults.length > 0) renderTable(extractedResults);
 }
@@ -193,6 +191,8 @@ async function startApp(mode) {
     return;
   }
   switchResults(mode);
+  applyResultHead(); // 入力データの取り込みか、単純に作成かで、表の見出しと列が変わる
+  if (extractedResults.length > 0) renderTable(extractedResults);
   if (mergeMode) closeMerge();
   else showExtractView();
   // Pyodideは起動画面で先読みしている(preparePyodide)。ここではその完了を待つ(結合モードでは使わない)。
@@ -251,7 +251,6 @@ async function saveToInputBook(recordRows) {
   const book = inputBook;
   const [ja, jb] = jointKeys();
   const factoryName = FACTORY_NAMES[appliedFactory] || '';
-  const nk = v => String(v ?? '').normalize('NFKC').replace(/\s/g, '');
   const add = [], dup = [];
   for (const r of extractedResults) {
     const len = parseFloat(r['長さ']);
@@ -260,7 +259,7 @@ async function saveToInputBook(recordRows) {
       L: isNaN(len) ? null : Number((len * 1000).toFixed(1)), M: parseInt(r['本数']) || null,
       Y: r[ja] ?? '', AB: r[jb] ?? '',
     };
-    if (book.info.keys.has(nk(rec.I) + '|' + nk(rec.J))) dup.push(`${rec.I}  ${rec.J}`);
+    if (book.info.keys.has(inputKey(rec.I, rec.J))) dup.push(`${rec.I}  ${rec.J}`);
     else add.push(rec);
   }
   if (!add.length) {
@@ -300,6 +299,7 @@ async function saveToInputBook(recordRows) {
   book.buf = res.bytes;
   book.info = await inputXlsm.inspect(JSZip, res.bytes);
   renderInputNote(currentMode);
+  renderTable(extractedResults); // 追記した行も、入力データにある行(グレー)になる
   showToast(`「ﾃﾞｰﾀ」の${res.firstRow}行目から ${res.count} 行を追記しました` + (dup.length ? `(すでにある ${dup.length} 行は追記しませんでした)` : ''), 'success');
   if (dup.length) showErrorDialog('すでに入力データにあるため追記しませんでした', dup);
   try {
@@ -623,6 +623,30 @@ function computeWeightT(r) {
   return null;
 }
 
+// 「入力データの取り込み」中(本社・夢前の梁・柱モード)かどうか
+function inputTableOn() { return !!inputBook && (currentMode === 'beam' || currentMode === 'column'); }
+// 入力データにすでにあるかの照合キー(図番+製品名。全角半角・空白の違いは同じとみなす)
+function inputKey(zuban, mark) {
+  const nk = v => String(v ?? '').normalize('NFKC').replace(/\s/g, '');
+  return nk(zuban) + '|' + nk(mark);
+}
+// 結果の表の見出し。通常は ID・図番・…・左右(下上)継手、入力データの取り込み中は入力データの列
+// (加工先・図番・製品名・サイズ・全長・本数・J若番・J老番。ID・設計符号・重量は出さない。2026-11-10 ユーザー指示)
+const RESULT_HEAD_DEFAULT = document.getElementById('result-thead').innerHTML;
+function applyResultHead() {
+  const on = inputTableOn();
+  document.getElementById('result-table').classList.toggle('input-mode', on);
+  const head = document.getElementById('result-thead');
+  if (on) {
+    head.innerHTML = '<tr><th>加工先</th><th>図番</th><th>製品名</th><th>サイズ</th><th>全長</th><th>本数</th><th>J若番</th><th>J老番</th></tr>';
+  } else {
+    head.innerHTML = RESULT_HEAD_DEFAULT;
+    const [ja, jb] = jointKeys();
+    document.getElementById('th-joint-a').textContent = ja;
+    document.getElementById('th-joint-b').textContent = jb;
+  }
+}
+
 function renderTable(results) {
   const tbody = document.getElementById('result-tbody');
   tbody.innerHTML = '';
@@ -630,6 +654,7 @@ function renderTable(results) {
   const [ja, jb] = jointKeys(); // 梁モードは左継手・右継手、柱モードは下継手・上継手
 
   const marks = countMarks(results);
+  const inputOn = inputTableOn();
 
   results.forEach(r => {
     const size = r['サイズ'] ?? '';
@@ -651,17 +676,34 @@ function renderTable(results) {
       tr.classList.toggle('row-checked', r._checked);
     });
 
-    const cols = [
-      r._id, r['図番'] ?? '', r['製品マーク'] ?? '', r['設計符号'] ?? '', size,
-      honsuRaw, lenStr, weightStr, r[ja] ?? '', r[jb] ?? '',
-    ];
-    const missingIdx = new Set([6, 8, 9]); // 長さ・継手が空なら強調
+    let cols, missingIdx, lenCol;
+    if (inputOn) {
+      // 入力データの列に合わせる。全長はmm(追記する値と同じ)。すでに入力データにある行は追記しない(グレー)
+      const len = parseFloat(r['長さ']);
+      cols = [
+        FACTORY_NAMES[appliedFactory] || '', r['図番'] ?? '', r['製品マーク'] ?? '', size,
+        isNaN(len) ? '' : Number((len * 1000).toFixed(1)), honsuRaw, r[ja] ?? '', r[jb] ?? '',
+      ];
+      missingIdx = new Set([4, 6, 7]); // 全長・継手が空なら強調
+      lenCol = 4;
+      if (inputBook.info.keys.has(inputKey(r['図番'], r['製品マーク']))) {
+        tr.classList.add('in-input-row');
+        tr.title = '入力データにあるため追記しません';
+      }
+    } else {
+      cols = [
+        r._id, r['図番'] ?? '', r['製品マーク'] ?? '', r['設計符号'] ?? '', size,
+        honsuRaw, lenStr, weightStr, r[ja] ?? '', r[jb] ?? '',
+      ];
+      missingIdx = new Set([6, 8, 9]); // 長さ・継手が空なら強調
+      lenCol = 6;
+    }
     cols.forEach((v, ci) => {
       const td = document.createElement('td');
       td.textContent = v === null || v === undefined ? '' : v;
       if (missingIdx.has(ci) && !v) td.classList.add('cell-missing');
       // 寸法線の不足で長さを推測した・確かめられなかった行の長さ(ポップアップと同じ印)
-      if (ci === 6 && r['長さの確認']) td.classList.add(r['長さの確認'] === '推測' ? 'cell-len-estimated' : 'cell-len-check');
+      if (ci === lenCol && r['長さの確認']) td.classList.add(r['長さの確認'] === '推測' ? 'cell-len-estimated' : 'cell-len-check');
       tr.appendChild(td);
     });
     frag.appendChild(tr);
