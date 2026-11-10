@@ -6,6 +6,7 @@ let weightMap = {};
 let kojiNo = '';
 let selectedFactory = null;
 let extractedResults = [];
+let inputBook = null; // 本社・夢前の梁・柱モードで「入力データの取り込み」を選んだとき: { name, buf, info }
 
 const FACTORY_NAMES = { h: '本社', y: '夢前', t: '鳥取' };
 
@@ -153,6 +154,17 @@ function switchResults(mode) {
 }
 
 async function startApp(mode) {
+  // 本社・夢前の梁・柱モードだけ、TDF選択の前に「入力データの取り込み / 単純にExcelデータ作成」を選ぶ
+  // (2026-11-10 ユーザー指示。鳥取は今までどおり)
+  if (mode === 'beam' || mode === 'column') {
+    if (selectedFactory === 'h' || selectedFactory === 'y') {
+      const c = await askInputChoice();
+      if (!c) return; // 戻る
+      inputBook = c === 'simple' ? null : c;
+    } else {
+      inputBook = null;
+    }
+  }
   // 利用記録シートへ日時・工場・モードを記録する(失敗してもアプリ利用は継続させる)。
   apiPost('logUsageStart', { factory: FACTORY_NAMES[selectedFactory] || selectedFactory, mode: MODE_NAMES[mode] }).catch(() => {});
   moveManualButtonToHeader();
@@ -164,6 +176,7 @@ async function startApp(mode) {
   const kojiName = document.getElementById('koji-select').selectedOptions[0]?.textContent || kojiNo;
   document.getElementById('beam-type-label').textContent = kojiNo + '＿' + kojiName;
   document.getElementById('mode-label').textContent = MODE_NAMES[mode];
+  renderInputNote(mode);
   document.getElementById('mode-label').classList.toggle('check', mode === 'check');
   document.body.classList.add('app-started');
   if (mode !== 'check' && checkMode) closeCheck();
@@ -184,6 +197,116 @@ async function startApp(mode) {
   else showExtractView();
   // Pyodideは起動画面で先読みしている(preparePyodide)。ここではその完了を待つ(結合モードでは使わない)。
   if (!pyodide) await initPyodide();
+}
+
+// 「入力データの取り込み」を選んだとき、ヘッダーに取り込んだファイル名と追記する位置を出す
+function renderInputNote(mode) {
+  const el = document.getElementById('input-note');
+  const on = inputBook && (mode === 'beam' || mode === 'column');
+  el.textContent = on ? `入力データ: ${inputBook.name}(「ﾃﾞｰﾀ」${inputBook.info.lastRow + 1}行目から追記)` : '';
+}
+
+// 「入力データの取り込み」か「単純にExcelデータ作成」かを選ばせる。戻り値:
+//   { name, buf, info } = 取り込む / 'simple' = 単純に作成 / null = 戻る
+function askInputChoice() {
+  return new Promise(resolve => {
+    const ov = document.getElementById('input-choice');
+    const fi = document.getElementById('input-book-file');
+    const msg = document.getElementById('input-choice-msg');
+    const bImport = document.getElementById('input-choice-import');
+    const bSimple = document.getElementById('input-choice-simple');
+    const bBack = document.getElementById('input-choice-back');
+    msg.textContent = '';
+    const done = v => {
+      ov.classList.remove('open');
+      bImport.onclick = bSimple.onclick = bBack.onclick = null;
+      fi.onchange = null;
+      resolve(v);
+    };
+    bImport.onclick = () => { fi.value = ''; fi.click(); };
+    fi.onchange = async () => {
+      const file = fi.files[0];
+      if (!file) return;
+      msg.textContent = '読み込んでいます…';
+      try {
+        const buf = await file.arrayBuffer();
+        const info = await inputXlsm.inspect(JSZip, buf);
+        done({ name: file.name, buf, info });
+      } catch (e) {
+        console.error(e);
+        msg.textContent = '';
+        showErrorDialog('入力データを読み込めませんでした', [e.message]);
+      }
+    };
+    bSimple.onclick = () => done('simple');
+    bBack.onclick = () => done(null);
+    ov.classList.add('open');
+  });
+}
+
+// 入力データ様式のExcelの「ﾃﾞｰﾀ」シートの最終行の次から、抽出結果を書き込んで保存する。
+// 書き込むのは H 加工先・I 図番・J 製品名・K サイズ・L 全長(mm)・M 本数・Y J若番・AB J老番 だけ
+// (そのほかの列・計算式は数式化マクロの担当。ユーザー指示)。同じ図番・製品名がすでにあれば追記しない。
+async function saveToInputBook(recordRows) {
+  const book = inputBook;
+  const [ja, jb] = jointKeys();
+  const factoryName = FACTORY_NAMES[appliedFactory] || '';
+  const nk = v => String(v ?? '').normalize('NFKC').replace(/\s/g, '');
+  const add = [], dup = [];
+  for (const r of extractedResults) {
+    const len = parseFloat(r['長さ']);
+    const rec = {
+      H: factoryName, I: r['図番'] ?? '', J: r['製品マーク'] ?? '', K: r['サイズ'] ?? '',
+      L: isNaN(len) ? null : Number((len * 1000).toFixed(1)), M: parseInt(r['本数']) || null,
+      Y: r[ja] ?? '', AB: r[jb] ?? '',
+    };
+    if (book.info.keys.has(nk(rec.I) + '|' + nk(rec.J))) dup.push(`${rec.I}  ${rec.J}`);
+    else add.push(rec);
+  }
+  if (!add.length) {
+    showErrorDialog('追記する行がありません(すべて入力データにすでにあります)', dup);
+    return;
+  }
+  let res;
+  try {
+    res = await inputXlsm.append(JSZip, book.buf, add);
+  } catch (e) {
+    console.error(e);
+    showErrorDialog('入力データに追記できませんでした', [e.message]);
+    return;
+  }
+  const isMacro = /\.xlsm$/i.test(book.name);
+  const mime = isMacro ? 'application/vnd.ms-excel.sheet.macroEnabled.12' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  try {
+    if (window.showSaveFilePicker) {
+      // 保存先と名前はユーザーが選ぶ(元のファイルと同じ名前を選べば上書き)
+      const h = await window.showSaveFilePicker({
+        suggestedName: book.name,
+        types: [{ description: 'Excelブック', accept: { [mime]: [isMacro ? '.xlsm' : '.xlsx'] } }],
+      });
+      const w = await h.createWritable();
+      await w.write(res.bytes);
+      await w.close();
+    } else {
+      downloadBlob(new Blob([res.bytes], { type: mime }), book.name.replace(/(\.[^.]+)$/, '_追記$1'));
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') return; // 保存先の選択をやめた
+    console.error(e);
+    showErrorDialog('保存できませんでした', [e.message, '同じ名前で上書きするときは、Excelでそのファイルを閉じてから保存してください']);
+    return;
+  }
+  // 続けて抽出・保存するときは、いま書き込んだ内容の続きから追記する
+  book.buf = res.bytes;
+  book.info = await inputXlsm.inspect(JSZip, res.bytes);
+  renderInputNote(currentMode);
+  showToast(`「ﾃﾞｰﾀ」の${res.firstRow}行目から ${res.count} 行を追記しました` + (dup.length ? `(すでにある ${dup.length} 行は追記しませんでした)` : ''), 'success');
+  if (dup.length) showErrorDialog('すでに入力データにあるため追記しませんでした', dup);
+  try {
+    await apiPost('onExcelDownload', { kojiNo, productCount: extractedResults.length, rows: recordRows });
+  } catch (e) {
+    console.error('GAS記録エラー', e);
+  }
 }
 
 // 梁モード・柱モードの抽出結果を両方とも消す(工事を変えたとき)
@@ -716,7 +839,8 @@ async function downloadExcel() {
   if (mergeMode) return downloadMergedExcel();
   if (checkMode) return downloadCheckExcel();
   if (extractedResults.length === 0) return;
-  const basePath = await askBasePath();
+  const useInputBook = !!inputBook && (currentMode === 'beam' || currentMode === 'column');
+  const basePath = useInputBook ? '' : await askBasePath();
 
   const [ja, jb] = jointKeys(); // 梁モードは左継手・右継手、柱モードは下継手・上継手
   const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(t)', ja, jb];
@@ -736,6 +860,7 @@ async function downloadExcel() {
   const recordHeaders = [...headers, '梁判別', '段'];
   const recordRows = extractedResults.map((r, i) => [...rows[i], r['種別'] ?? '', r['製品段'] ?? '']);
   const recordExcelRows = [recordHeaders, ...recordRows];
+  if (useInputBook) return saveToInputBook(recordExcelRows);
 
   const ws = XLSX.utils.aoa_to_sheet(excelRows);
   ws['!cols'] = computeColWidths(excelRows);
