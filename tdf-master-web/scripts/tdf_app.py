@@ -125,7 +125,7 @@ def _beam_depth(size):
     return float(m.group(1)) if m else None
 
 
-def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None, with_others=False):
+def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None, with_others=False, angle_leg=False):
     """梁本体の端から端を、フランジの形から求める。
 
     フランジは「板厚tfだけ離れて向かい合う平行な2本の線」として描かれる
@@ -330,6 +330,24 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None, with_others=
                 and not mid_lines(th, end - 0.6, end + 0.6, lo, hi)
                 and not mid_lines(th, s1 - 0.6, s1 + 0.6, lo, hi))
 
+    def _angle_back(th, lo, hi, start, end):
+        # 山形鋼(L形)を横から見た図: 板厚の2本線(脚の1枚)の反対側に、外側どうしで
+        # 脚の幅(depth)だけ離れた1本の線(もう1枚の脚の背)が、同じ向きで同じ長さ
+        # (両端の差が板厚以内)に引かれているか(2026-11-10、26-16 の WB3-EVM1B-03 の
+        # WB32-M1EL75-1。L-75x75x6 は板厚6の2本線と75離れた1本線で描かれ、
+        # もう1組のフランジが無いため梁として見つからなかった)
+        ux, uy = math.cos(th), math.sin(th)
+        for o in (hi - depth, lo + depth):
+            k = bisect.bisect_left(offs_by_angle.get(th, []), o - 0.6 - 1e-6)
+            for off, j in by_angle.get(th, [])[k:]:
+                if off > o + 0.6 + 1e-6:
+                    break
+                ln = long_segs[j][1]
+                p = sorted((ln.x1 * ux + ln.y1 * uy, ln.x2 * ux + ln.y2 * uy))
+                if abs(p[0] - start) <= tf + 0.6 and abs(p[1] - end) <= tf + 0.6:
+                    return True
+        return False
+
     cands = []  # (長さ, 向き, その向きのフランジ, 高さ, 始点, 終点)
     by_theta = {}
     for f in flanges:
@@ -367,7 +385,7 @@ def _flange_member(tdf, x_min, x_max, y_ref, y_max, tf, depth=None, with_others=
                         (round(f[1]), round(f[2])) != (lv_lo, lv_hi)
                         and f[3] < end - 0.6 and f[4] > start + 0.6
                         and abs(max(f[2], lv_hi) - min(f[1], lv_lo) - depth) <= 0.6
-                        for f in fs):
+                        for f in fs) and not (angle_leg and _angle_back(th, lv_lo, lv_hi, start, end)):
                     continue
                 cands.append((length, th, fs, (lv_lo, lv_hi), start, end))
 
@@ -1002,6 +1020,13 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                 if not between:
                     member, others = up
                     no_tier_limit.add(id(row))  # 継手も上限を外して探す
+        if member is None and re.match(r"^L-", row.size or ""):
+            # 山形鋼(L-)は脚の背の1本線を2組目のフランジの代わりにして探す。
+            # 長さが寸法の文字にあるときだけ使う(2026-11-10、26-16 の WB3-EVM1B-03)
+            ang = _flange_member(tdf, x_min, x_max, row.y, tier_y_max, _flange_thickness(row.size),
+                                 depth=_beam_depth(row.size), with_others=True, angle_leg=True)
+            if ang is not None and _drawn_value(dim_values, ang[0][0]) is not None:
+                member, others = ang
         bent =(_bent_partner(member, others, tdf, _beam_depth(row.size))
                 if member is not None else None)
         # 図面に寸法として書かれていない数値は長さにしない(ユーザー指示。フランジの
