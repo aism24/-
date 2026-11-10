@@ -21,6 +21,19 @@ const CHECK_ROOT_KEY = 'site-root';
 const CHECK_SKIP_DIR = /旧|発行歴/;
 const CHECK_LEN_TOL_MM = 0.1; // 長さの許容差(±0.1mm。2026-11-09 ユーザー指定)
 
+// 長さが同じか。Excelの長さがm単位で、小数第一位まで(小数第二位を四捨五入した値)しか書かれていないときは、
+// 図面の長さ(m)を小数第二位で四捨五入した値と同じなら一致とする(2026-11-10 ユーザー指示。
+// Excel側が四捨五入していることがあるため)。それ以外は ±CHECK_LEN_TOL_MM。
+function checkLenSame(xlLen, unit, dwM) {
+  const xm = Number(xlLen) * (unit === 'm' ? 1000 : 1);
+  if (!isFinite(xm)) return false;
+  if (Math.abs(dwM * 1000 - xm) <= CHECK_LEN_TOL_MM + 1e-6) return true;
+  if (unit !== 'm') return false;
+  const x = Number(xlLen);
+  const oneDecimal = Math.abs(x * 10 - Math.round(x * 10)) < 1e-9;
+  return oneDecimal && Math.abs(Math.floor(dwM * 10 + 0.5 + 1e-9) / 10 - x) < 1e-9;
+}
+
 // ---- フォルダを覚える(ブラウザの中だけ。PC・ブラウザごと) ----
 const CHECK_EXTRACT_STORE = 'extract'; // 図面ごとの抽出結果(2回目から解析を飛ばす)
 let checkDbPromise = null;
@@ -637,9 +650,8 @@ function checkCompare(xl, found, res) {
       out.sizeLoose = checkSizeLoose(x.size, row['サイズ']);
     }
     if (xl.hasLen) {
-      const xm = Number(x.len) * (xl.unit === 'm' ? 1000 : 1);
       if (row['長さ'] == null) { out.bad.push('長さ'); out.memo.push('図面から長さを読めなかった'); }
-      else if (!isFinite(xm) || Math.abs(row['長さ'] * 1000 - xm) > CHECK_LEN_TOL_MM + 1e-6) out.bad.push('長さ');
+      else if (!checkLenSame(x.len, xl.unit, row['長さ'])) out.bad.push('長さ');
     }
     if (row['長さの確認']) out.memo.push(`図面の長さは「${row['長さの確認']}」`);
     if (xl.hasHonsu) {
