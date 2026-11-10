@@ -31,7 +31,12 @@ const SHEET_USAGE = "利用記録";
 // kojiNo      : 工事番号(画面で入力したもの)
 // productCount: 製品数(データ行数)
 // rows        : [ヘッダー行, ...データ行] の2次元配列
-function onExcelDownload(kojiNo, productCount, rows) {
+// opts        : 帳票チェックモードから呼ぶときだけ渡す(2026-11-10)
+//   noZubanHead: true … 記録シートのF列「図番頭」を空欄にする
+//   highlight  : { yellowRows: [データ行の番号(0始まり)...], redCells: [[データ行, 列](0始まり)...] }
+//                … データシートの行を黄色(見出しと同じ列数ぶん)、セルを赤の太字にする
+function onExcelDownload(kojiNo, productCount, rows, opts) {
+  opts = opts || {};
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   // 記録シートの2行目に挿入(A=タイムスタンプ, B=工事番号, C=工事名(式), D=製品数, E=シート名, F=図番頭)
@@ -47,11 +52,12 @@ function onExcelDownload(kojiNo, productCount, rows) {
   recSheet.getRange(recRow, 1, 1, 4).setValues([[new Date(), kojiNo, kojiFormula, productCount]]);
 
   // データシートを最右端に追加(最大10件)
-  const dataSheetName = addDataSheet_(ss, rows);
+  const dataSheetName = addDataSheet_(ss, rows, opts.highlight);
   if (dataSheetName) recSheet.getRange(recRow, 5).setValue(dataSheetName);
 
   // rows[0]はヘッダー行。rows[1]が先頭データ行、その「図番」列(index=2)から図番頭を取る
-  const zubanHead = (rows && rows.length > 1 && rows[1][2])
+  // (帳票チェックモードは空欄にする)
+  const zubanHead = (!opts.noZubanHead && rows && rows.length > 1 && rows[1][2])
     ? String(rows[1][2]).split('-')[0] : '';
   if (zubanHead) recSheet.getRange(recRow, 6).setValue(zubanHead);
 
@@ -59,7 +65,7 @@ function onExcelDownload(kojiNo, productCount, rows) {
 }
 
 // データシート追加(最大10件、超えたら古いシートから削除)。最右端(末尾)に挿入する。
-function addDataSheet_(ss, rows) {
+function addDataSheet_(ss, rows, highlight) {
   const DATE_PAT = /^\d{8}_\d{6}$/;
   const dataSheets = ss.getSheets().filter(s => DATE_PAT.test(s.getName()));
 
@@ -76,8 +82,30 @@ function addDataSheet_(ss, rows) {
       .setFontWeight('bold')
       .setBackground('#d9e1f2');
     newSheet.setFrozenRows(1);
+    if (highlight && rows.length > 1) applyHighlight_(newSheet, rows.length - 1, rows[0].length, highlight);
   }
   return sheetName;
+}
+
+// 帳票チェックの色(結果のExcelと同じ): 不一致の行を黄色、違う項目のセルを赤の太字。
+// 1セルずつ書くと遅いので、データ行全体の色・太さの表を作って1回で書く(2026-11-10)。
+function applyHighlight_(sheet, nRows, nCols, highlight) {
+  const bg = [], color = [], weight = [];
+  for (let r = 0; r < nRows; r++) {
+    bg.push(new Array(nCols).fill(null));
+    color.push(new Array(nCols).fill(null));
+    weight.push(new Array(nCols).fill(null));
+  }
+  (highlight.yellowRows || []).forEach(r => {
+    if (r >= 0 && r < nRows) for (let c = 0; c < nCols; c++) bg[r][c] = '#ffff00';
+  });
+  (highlight.redCells || []).forEach(([r, c]) => {
+    if (r >= 0 && r < nRows && c >= 0 && c < nCols) { color[r][c] = '#ff0000'; weight[r][c] = 'bold'; }
+  });
+  const range = sheet.getRange(2, 1, nRows, nCols);
+  range.setBackgrounds(bg);
+  range.setFontColors(color);
+  range.setFontWeights(weight);
 }
 
 // 設定シートの重量表(A:B列)を返す(アプリ起動時に呼び出し)
@@ -143,7 +171,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
-    if (body.action === "onExcelDownload") return ok_(onExcelDownload(body.kojiNo, body.productCount, body.rows));
+    if (body.action === "onExcelDownload") return ok_(onExcelDownload(body.kojiNo, body.productCount, body.rows, body.opts));
     if (body.action === "logUsageStart") return ok_(logUsageStart(body.factory, body.mode));
     return errRes_("不明なaction: " + body.action);
   } catch (err) {

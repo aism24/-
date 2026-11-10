@@ -15,13 +15,15 @@ const FACTORY_NAMES = { h: '本社', y: '夢前', t: '鳥取' };
 
 // GAS の応答が止まったときに「読込中」のまま進まないよう、15秒で打ち切る(2026-11-10)
 const API_TIMEOUT_MS = 15000;
-async function fetchWithTimeout(url, opts) {
+// Excelの記録(onExcelDownload)は行数が多いとGASの処理に時間がかかるので長めに待つ
+const API_RECORD_TIMEOUT_MS = 180000;
+async function fetchWithTimeout(url, opts, timeoutMs = API_TIMEOUT_MS) {
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), API_TIMEOUT_MS);
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
     return await fetch(url, Object.assign({ signal: ac.signal }, opts));
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error('サーバーの応答がありません(' + API_TIMEOUT_MS / 1000 + '秒)');
+    if (e.name === 'AbortError') throw new Error('サーバーの応答がありません(' + timeoutMs / 1000 + '秒)');
     throw e;
   } finally {
     clearTimeout(timer);
@@ -45,7 +47,7 @@ async function apiPost(action, payload) {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(Object.assign({ action: action }, payload)),
-  });
+  }, action === 'onExcelDownload' ? API_RECORD_TIMEOUT_MS : API_TIMEOUT_MS);
   if (!res.ok) throw new Error('サーバーエラー(HTTP ' + res.status + ')');
   const json = await res.json();
   if (json.status !== 'success') throw new Error(json.message || '処理に失敗しました');
