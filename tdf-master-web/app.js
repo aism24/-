@@ -13,11 +13,26 @@ const FACTORY_NAMES = { h: '本社', y: '夢前', t: '鳥取' };
 // (URL未設定・GAS側の不調時もアプリ本来の抽出・Excel出力は止めない。
 //  呼び出し側は必ずcatchし、失敗してもユーザー作業は継続させること)
 
+// GAS の応答が止まったときに「読込中」のまま進まないよう、15秒で打ち切る(2026-11-10)
+const API_TIMEOUT_MS = 15000;
+async function fetchWithTimeout(url, opts) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), API_TIMEOUT_MS);
+  try {
+    return await fetch(url, Object.assign({ signal: ac.signal }, opts));
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('サーバーの応答がありません(' + API_TIMEOUT_MS / 1000 + '秒)');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function apiGet(action, params) {
   const url = new URL(GAS_API_URL);
   url.searchParams.set('action', action);
   if (params) Object.keys(params).forEach(k => { if (params[k] !== undefined && params[k] !== null) url.searchParams.set(k, params[k]); });
-  const res = await fetch(url.toString(), { method: 'GET' });
+  const res = await fetchWithTimeout(url.toString(), { method: 'GET' });
   if (!res.ok) throw new Error('サーバーエラー(HTTP ' + res.status + ')');
   const json = await res.json();
   if (json.status !== 'success') throw new Error(json.message || '取得に失敗しました');
@@ -26,7 +41,7 @@ async function apiGet(action, params) {
 
 // Content-Type: text/plain でCORSプリフライト(OPTIONS)を回避する(GASはOPTIONS未対応のため)
 async function apiPost(action, payload) {
-  const res = await fetch(GAS_API_URL, {
+  const res = await fetchWithTimeout(GAS_API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(Object.assign({ action: action }, payload)),
@@ -95,13 +110,17 @@ async function loadMasterData() {
       sel.value = lastKoji;
       updateStartBtn();
     }
+  } else {
+    // 工事一覧が取れないとモードを始められないので、理由を知らせる(2026-11-10)
+    showToast('工事一覧を読み込めませんでした: ' + kojiResult.reason.message + '(ページを開き直してください)', 'error');
   }
 }
 
 // ---------- モード選択 ----------
-// 工場・工事名を選んだ画面で、モードボタン(梁/柱/結合)を押して開始する。
+// 工場・工事名を選んだ画面で、モードボタン(梁/柱/結合/帳票チェック)を押して開始する。
 // 開始後はヘッダーの「モード切替」で同じ画面を開き直す(工場・工事名は選んだまま残し、
-// 梁モード・柱モードの抽出結果と結合モードの取り込みも消さない)。
+// 梁モード・柱モードの抽出結果と結合モードの取り込みも消さない。ただし工事を変えたときは
+// 梁モード・柱モードの抽出結果を消す。IDの先頭が抽出したときの工事番号になるため)。
 // 梁モードと柱モードは抽出のPythonと継手の列(左右/下上)が違うので、抽出結果を
 // モードごとに分けて持ち、切り替えたときに入れ替える。
 
@@ -112,16 +131,18 @@ let resultsMode = 'beam'; // extractedResults がどちらのモードの結果�
 const savedResults = { beam: { rows: [], info: '' }, column: { rows: [], info: '' } };
 let appliedFactory = null; // 最後にモードボタンを押したときの工場・工事名(キャンセルで戻す)
 let appliedKoji = '';
+let resultsInfo = ''; // 今の抽出結果の件数表示(帳票チェック・結合モードから戻ったときに表示し直す)
 
 function jointKeys() { return JOINT_HEADERS[resultsMode]; }
 
 // 梁モード⇔柱モードの切り替えで、抽出結果・件数表示・表の継手の見出しを入れ替える。
 function switchResults(mode) {
   if (mode === resultsMode) return;
-  savedResults[resultsMode] = { rows: extractedResults, info: document.getElementById('file-info').textContent };
+  savedResults[resultsMode] = { rows: extractedResults, info: resultsInfo };
   resultsMode = mode;
   extractedResults = savedResults[mode].rows;
-  document.getElementById('file-info').textContent = savedResults[mode].info;
+  resultsInfo = savedResults[mode].info;
+  document.getElementById('file-info').textContent = resultsInfo;
   const [a, b] = jointKeys();
   document.getElementById('th-joint-a').textContent = a;
   document.getElementById('th-joint-b').textContent = b;
@@ -135,6 +156,7 @@ async function startApp(mode) {
   moveManualButtonToHeader();
   document.getElementById('beam-modal').classList.add('hidden');
   currentMode = mode;
+  if (appliedKoji && kojiNo !== appliedKoji) clearExtractResults(); // 工事を変えたら梁・柱の抽出結果を消す(2026-11-10 ユーザー指示)
   appliedFactory = selectedFactory;
   appliedKoji = kojiNo;
   const kojiName = document.getElementById('koji-select').selectedOptions[0]?.textContent || kojiNo;
@@ -158,8 +180,19 @@ async function startApp(mode) {
   switchResults(mode);
   if (mergeMode) closeMerge();
   else showExtractView();
-  // Pyodideは梁モード・柱モードを初めて選んだときだけ読み込む(結合モードでは使わない)。
+  // Pyodideは起動画面で先読みしている(preparePyodide)。ここではその完了を待つ(結合モードでは使わない)。
   if (!pyodide) await initPyodide();
+}
+
+// 梁モード・柱モードの抽出結果を両方とも消す(工事を変えたとき)
+function clearExtractResults() {
+  savedResults.beam = { rows: [], info: '' };
+  savedResults.column = { rows: [], info: '' };
+  extractedResults = [];
+  resultsInfo = '';
+  document.getElementById('file-info').textContent = '';
+  document.getElementById('result-tbody').innerHTML = '';
+  document.getElementById('file-input').value = '';
 }
 
 function openModeSelect() {
@@ -209,8 +242,16 @@ window.addEventListener('resize', () => {
   if (document.getElementById('manual-overlay').classList.contains('open')) positionManualLink();
 });
 
+const manualPageSrc = n => `assets/manual/page${n}.png?v=20261110a`;
+const manualPreloaded = new Set();
 function renderManualPage() {
-  document.getElementById('manual-image').src = `assets/manual/page${manualPage}.png?v=20261110a`;
+  document.getElementById('manual-image').src = manualPageSrc(manualPage);
+  // 次のページの画像を先に読み込んでおき、ページ送りの待ちを無くす(2026-11-10)
+  const next = manualPage + 1;
+  if (next <= MANUAL_PAGE_COUNT && !manualPreloaded.has(next)) {
+    manualPreloaded.add(next);
+    new Image().src = manualPageSrc(next);
+  }
   document.getElementById('manual-page-indicator').textContent = `${manualPage} / ${MANUAL_PAGE_COUNT}`;
   document.getElementById('manual-prev').disabled = manualPage <= 1;
   document.getElementById('manual-next').disabled = manualPage >= MANUAL_PAGE_COUNT;
@@ -316,14 +357,49 @@ async function initPyodide() {
     pyodide = await preparePyodide();
 
     hideStatus();
-    showToast('準備完了 — TDFファイルを選択してください', 'success');
+    showToast('準備完了 — ' + (currentMode === 'check' ? 'チェックするExcel' : 'TDFファイル') + 'を選択してください', 'success');
   } catch (e) {
     hideStatus();
     showToast('初期化エラー: ' + e.message, 'error');
   }
 }
 
-async function processFiles(files) {
+// 処理中(抽出・取り込み・照合)は次のファイルを受け付けない。2つの処理が同時に動くと、
+// 同じ /input.tdf に書き込んで図面を読み違えたり、途中の結果が消えたりするため(2026-11-10)。
+let busy = false;
+async function withBusy(fn) {
+  if (busy) { showToast('処理中です。終わってからもう一度入れてください', 'error'); return; }
+  busy = true;
+  try { return await fn(); } finally { busy = false; }
+}
+
+// 日本語の並べ替え(数字は数として比べる)。localeCompare(…, 'ja', { numeric: true }) と同じ順で、
+// 比べる仕組みを1回だけ作る(2026-11-10。1万行の並べ替えで毎回作り直していた)
+const JA_COLLATOR = new Intl.Collator('ja', { numeric: true });
+const jaCompare = (x, y) => JA_COLLATOR.compare(String(x ?? ''), String(y ?? ''));
+
+// 長さ(m)の表示: 小数4桁まで、末尾の0は出さない。空なら空欄
+function fmtLen(v) {
+  return (v === null || v === undefined || v === '') ? '' : String(Number(Number(v).toFixed(4)));
+}
+
+// 製品マークごとの行(空白を除いて比べる)。重複の知らせと表の色で同じ数え方にする
+function countMarks(results) {
+  const m = new Map();
+  results.forEach(r => {
+    const k = String(r['製品マーク'] ?? '').trim();
+    if (!k) return;
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(r);
+  });
+  return m;
+}
+
+function processFiles(files) {
+  return withBusy(() => processFilesInner(files));
+}
+
+async function processFilesInner(files) {
   const tdfFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.tdf'));
   if (tdfFiles.length === 0) { showToast('TDFファイルを選択してください', 'error'); return; }
   if (!pyodide) { showToast('準備中です。しばらくお待ちください', 'error'); return; }
@@ -361,22 +437,24 @@ async function processFiles(files) {
   hideStatus();
 
   if (extractedResults.length === 0) {
+    // 前の結果の表は消えているので、空の画面(ファイルを入れる案内)に戻す(2026-11-10)
+    resultsInfo = '';
+    document.getElementById('file-info').textContent = '';
+    showExtractView();
     showErrorDialog('製品情報が見つかりませんでした' + (errors.length ? '。エラーになったファイル' : ''), errors);
     return;
   }
 
   document.getElementById('btn-reset').disabled = false;
 
-  extractedResults.sort((a, b) => {
-    const cmp = (key) => String(a[key] ?? '').localeCompare(String(b[key] ?? ''), 'ja', { numeric: true });
-    return cmp('図番') || cmp('製品マーク');
-  });
+  extractedResults.sort((a, b) => jaCompare(a['図番'], b['図番']) || jaCompare(a['製品マーク'], b['製品マーク']));
 
   const kojiRaw = kojiNo.replace(/-/g, '');
   extractedResults.forEach((r, i) => { r._id = kojiRaw + String(i + 1).padStart(4, '0'); });
 
   renderTable(extractedResults);
-  document.getElementById('file-info').textContent = tdfFiles.length + ' ファイル  /  ' + extractedResults.length + ' 件';
+  resultsInfo = tdfFiles.length + ' ファイル  /  ' + extractedResults.length + ' 件';
+  document.getElementById('file-info').textContent = resultsInfo;
   document.getElementById('result-area').classList.add('visible');
   document.getElementById('empty-state').style.display = 'none';
   document.getElementById('btn-excel').disabled = false;
@@ -385,6 +463,8 @@ async function processFiles(files) {
   if (errors.length) msg += '（' + errors.length + ' ファイルでエラー）';
   showToast(msg, errors.length ? '' : 'success');
 
+  // 一部のファイルだけ読めなかったときも、どのファイルかを一覧で知らせる(2026-11-10)
+  if (errors.length > 0) showErrorDialog('読み込めなかったファイル', errors);
   if (noTableFiles.length > 0) {
     showErrorDialog('製品情報が見つからなかったファイル', noTableFiles);
   }
@@ -395,14 +475,7 @@ async function processFiles(files) {
   if (lengthUnclear.length > 0) showLengthUnclearDialog(lengthUnclear);
   // 同じ製品マークが2回以上ある(図面の書き間違いの可能性。26-16 WB3-EVMRB-01 で
   // WB32-PHESB250-1 が2回書かれていた)。行はそのまま残し、図面の確認を促す。
-  const markCount = new Map();
-  extractedResults.forEach(r => {
-    const m = String(r['製品マーク'] ?? '').trim();
-    if (!m) return;
-    if (!markCount.has(m)) markCount.set(m, []);
-    markCount.get(m).push(r);
-  });
-  const dupMarks = [...markCount.entries()].filter(([, rs]) => rs.length > 1);
+  const dupMarks = [...countMarks(extractedResults).entries()].filter(([, rs]) => rs.length > 1);
   if (dupMarks.length > 0) showDuplicateMarkDialog(dupMarks);
 }
 
@@ -428,21 +501,21 @@ function computeWeightT(r) {
 function renderTable(results) {
   const tbody = document.getElementById('result-tbody');
   tbody.innerHTML = '';
+  const frag = document.createDocumentFragment(); // 行はまとめて1回で表に入れる
   const [ja, jb] = jointKeys(); // 梁モードは左継手・右継手、柱モードは下継手・上継手
 
-  const markCounts = {};
-  results.forEach(r => { if (r['製品マーク']) markCounts[r['製品マーク']] = (markCounts[r['製品マーク']] || 0) + 1; });
+  const marks = countMarks(results);
 
   results.forEach(r => {
     const size = r['サイズ'] ?? '';
     const honsuRaw = r['本数'] ?? '';
-    const lenRaw = r['長さ'];
     // 表示は ##.####(小数4桁まで、末尾の0は出さない)。Excelには元の値を書く。
-    const lenStr = (lenRaw === null || lenRaw === undefined || lenRaw === '') ? '' : String(Number(Number(lenRaw).toFixed(4)));
+    const lenStr = fmtLen(r['長さ']);
     const weightT = computeWeightT(r);
     const weightStr = weightT == null ? '' : weightT.toFixed(2);
 
-    const isDupMark = r['製品マーク'] && markCounts[r['製品マーク']] > 1;
+    const mk = String(r['製品マーク'] ?? '').trim();
+    const isDupMark = mk && marks.get(mk).length > 1;
     const tr = document.createElement('tr');
     if (isDupMark) tr.classList.add('dup-mark-row');
     // 行をクリックすると「確認した」印(二重線の枠+薄い青)を付ける。もう一度クリックで外す。
@@ -466,8 +539,9 @@ function renderTable(results) {
       if (ci === 6 && r['長さの確認']) td.classList.add(r['長さの確認'] === '推測' ? 'cell-len-estimated' : 'cell-len-check');
       tr.appendChild(td);
     });
-    tbody.appendChild(tr);
+    frag.appendChild(tr);
   });
+  tbody.appendChild(frag);
 }
 
 // Windowsエクスプローラーの「パスのコピー」は前後を二重引用符で囲むため、あれば取り除く。
@@ -686,6 +760,7 @@ function resetApp() {
     return;
   }
   extractedResults = [];
+  resultsInfo = '';
   document.getElementById('result-area').classList.remove('visible');
   document.getElementById('empty-state').style.display = 'flex';
   document.getElementById('file-info').textContent = '';
@@ -780,7 +855,11 @@ async function readDownloadedExcel(file) {
   return { kojiNo: kojis[0] || '', rows, isColumn };
 }
 
-async function processMergeFiles(files) {
+function processMergeFiles(files) {
+  return withBusy(() => processMergeFilesInner(files));
+}
+
+async function processMergeFilesInner(files) {
   const list = Array.from(files).filter(f => /\.xlsx$/i.test(f.name));
   const skipped = Array.from(files).length - list.length;
   if (skipped > 0) showToast('Excel(.xlsx)以外の ' + skipped + ' ファイルは取り込みませんでした', 'error');
@@ -811,17 +890,24 @@ function analyzeMerge() {
   checked.forEach(f => { if (f.kojiNo && (!baseKoji || kojiCount[f.kojiNo] > kojiCount[baseKoji])) baseKoji = f.kojiNo; });
 
   const keySets = new Map(checked.map(f => [f.id, new Set(f.rows.map(mergeRowKey))]));
+  // キー(図番+製品マーク)→そのキーを持つファイル。ファイルどうしの総当たりで全キーを
+  // 比べる代わりに、この索引で重なりを数える(2026-11-10。数えた結果は同じ)
+  const owners = new Map();
+  checked.forEach(f => keySets.get(f.id).forEach(k => {
+    if (!owners.has(k)) owners.set(k, []);
+    owners.get(k).push(f.id);
+  }));
   const info = new Map();
   mergeFiles.forEach(f => info.set(f.id, { kojiMismatch: false, dups: [] }));
   checked.forEach(f => {
     const entry = info.get(f.id);
     entry.kojiMismatch = !!(baseKoji && f.kojiNo && f.kojiNo !== baseKoji);
+    const a = keySets.get(f.id);
+    const shared = new Map(); // 相手のファイル → 重なるキーの数
+    a.forEach(k => owners.get(k).forEach(id => { if (id !== f.id) shared.set(id, (shared.get(id) || 0) + 1); }));
     checked.forEach(o => {
-      if (o.id === f.id) return;
-      const a = keySets.get(f.id), b = keySets.get(o.id);
-      let n = 0;
-      a.forEach(k => { if (b.has(k)) n++; });
-      if (n > 0) entry.dups.push({ name: o.name, count: n, same: n === a.size && a.size === b.size });
+      const n = shared.get(o.id) || 0;
+      if (n > 0) entry.dups.push({ name: o.name, count: n, same: n === a.size && a.size === keySets.get(o.id).size });
     });
   });
   const total = checked.reduce((s, f) => s + f.rows.length, 0);
@@ -835,7 +921,8 @@ function renderMerge() {
   const tbody = document.getElementById('merge-tbody');
   tbody.innerHTML = '';
   // 表は、ファイル内の先頭の図番(昇順)→ファイル名の順に並べる(集計Excelの並びと揃える)。
-  const cmp = (p, q) => String(p ?? '').localeCompare(String(q ?? ''), 'ja', { numeric: true });
+  const cmp = jaCompare;
+  const frag = document.createDocumentFragment();
   const firstZuban = f => f.rows.map(r => String(r.zuban).trim()).sort(cmp)[0] || '';
   const shown = mergeFiles.map(f => ({ f, z: firstZuban(f) })).sort((p, q) => cmp(p.z, q.z) || cmp(p.f.name, q.f.name)).map(o => o.f);
   shown.forEach(f => {
@@ -877,8 +964,9 @@ function renderMerge() {
     tdDel.appendChild(del);
 
     [tdChk, tdName, tdKoji, tdCnt, tdZ, tdWarn, tdDel].forEach(td => tr.appendChild(td));
-    tbody.appendChild(tr);
+    frag.appendChild(tr);
   });
+  tbody.appendChild(frag);
 
   document.getElementById('merge-empty').style.display = mergeFiles.length ? 'none' : 'block';
   document.getElementById('merge-table-wrap').style.display = mergeFiles.length ? 'block' : 'none';
@@ -900,6 +988,7 @@ function openMerge() {
   document.getElementById('result-area').classList.remove('visible');
   document.getElementById('merge-area').classList.add('open');
   document.getElementById('drop-overlay').textContent = 'Excelファイルをここにドロップ';
+  document.getElementById('file-info').textContent = ''; // 梁・柱モードの件数は出さない(戻ると表示し直す)
   renderMerge();
 }
 
@@ -913,6 +1002,8 @@ function closeMerge() {
 // 抽出画面(梁モード・柱モード)を、今の抽出結果の有無に合わせて表示する。
 function showExtractView() {
   const has = extractedResults.length > 0;
+  // 帳票チェック・結合モードから戻ったときに、その件数表示が残らないよう表示し直す
+  document.getElementById('file-info').textContent = has ? resultsInfo : '';
   document.getElementById('btn-excel').disabled = !has;
   document.getElementById('btn-reset').disabled = !has;
   document.getElementById('result-area').classList.toggle('visible', has);
@@ -931,10 +1022,7 @@ async function downloadMergedExcel() {
   // 工事番号が混在していても、IDは行の工事番号ごとに1から振る。
   const all = [];
   checked.forEach(f => f.rows.forEach(r => all.push(r)));
-  all.sort((a, b) => {
-    const cmp = (x, y) => String(x ?? '').localeCompare(String(y ?? ''), 'ja', { numeric: true });
-    return cmp(a.zuban, b.zuban) || cmp(a.mark, b.mark);
-  });
+  all.sort((a, b) => jaCompare(a.zuban, b.zuban) || jaCompare(a.mark, b.mark));
   const counters = {};
   const rows = all.map(r => {
     const koji = r.kojiNo || baseKoji;
@@ -1056,7 +1144,7 @@ function showLengthCheckDialog(rows) {
   table.appendChild(head);
   rows.forEach(r => {
     const tr = document.createElement('tr');
-    const len = r['長さ'] == null ? '' : String(Number(Number(r['長さ']).toFixed(4)));
+    const len = fmtLen(r['長さ']);
     [r['図番'] ?? '', r['製品マーク'] ?? '', len, r['長さの確認']].forEach(v => {
       const td = document.createElement('td');
       td.textContent = v;
@@ -1189,11 +1277,11 @@ document.body.addEventListener('drop', e => {
 // アプリ起動直後は「読込中」を表示し、工事名選択肢・重量表の取得(前回選択
 // した工事名の復元含む)が完了してから工場・工事名選択モーダルを表示する。
 (async () => {
+  // 抽出用のPython(Pyodide)は、工事情報の取得と同時に裏で読み込み始める(2026-11-10。以前は
+  // GAS の応答を待ってから始めていた)。失敗してもモードを押したときに読み直す
+  preparePyodide().catch(() => {});
   showStatus('読込中', '工事情報を取得しています…');
   await loadMasterData();
   hideStatus();
   document.getElementById('beam-modal').classList.remove('hidden');
-  // 工場・工事名を選んでいる間に、抽出用のPython(Pyodide)を裏で読み込み始める
-  // (モードを押したあとの待ち時間を減らすため。失敗してもモードを押したときに読み直す)
-  preparePyodide().catch(() => {});
 })();

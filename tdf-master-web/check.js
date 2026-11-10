@@ -12,7 +12,7 @@
 //   (柱の板厚の有無・細くなる柱・せいが変わる梁)を同じとみなす。長さは±0.1mm。
 
 let checkMode = false;
-let checkResult = null;    // { fileName, sheet, hasJoint, rows, extra, stats }
+let checkResult = null;    // { fileName, xl, rows, extra, stats, kojiDir, times }
 let checkOnlyNg = true;    // 一致しない行だけ表示
 
 const CHECK_DB = 'tdf-check';
@@ -251,30 +251,46 @@ async function checkFindDetailDirs(kojiDir) {
   return found;
 }
 
-// 詳細図フォルダの下を全部たどり、図番が need にあるTDFを集める(同時に8フォルダずつ読む)
+// 詳細図フォルダの下を全部たどり、図番が need にあるTDFを集める(同時に8フォルダずつ読む)。
+// 以前は8つの読み手が最初にキューが空だとすぐ終わり、実際には1フォルダずつ読んでいた
+// (2026-11-10 修正。読み中のフォルダがある間は、新しく見つかったフォルダを待って読み続ける)。
+const CHECK_WALK_PARALLEL = 8;
+const CHECK_PREFETCH = 4; // 解析中に先に読んでおく図面の数
 async function checkWalkTdf(dirs, need, onProgress) {
   const found = new Map(); // 図番 → [{ handle, path }]
   const queue = dirs.map(d => ({ dir: d, path: [d.name] }));
-  let done = 0;
-  async function worker() {
-    while (queue.length) {
-      const { dir, path } = queue.shift();
-      for (const e of await checkListDir(dir)) {
-        if (e.kind === 'directory') {
-          if (!CHECK_SKIP_DIR.test(e.name)) queue.push({ dir: e, path: path.concat(e.name) });
-        } else if (/\.tdf$/i.test(e.name)) {
-          const z = checkZkey(e.name);
-          if (need.has(z)) {
-            if (!found.has(z)) found.set(z, []);
-            found.get(z).push({ handle: e, path: path.concat(e.name) });
-          }
+  let done = 0, active = 0;
+  async function visit({ dir, path }) {
+    for (const e of await checkListDir(dir)) {
+      if (e.kind === 'directory') {
+        if (!CHECK_SKIP_DIR.test(e.name)) queue.push({ dir: e, path: path.concat(e.name) });
+      } else if (/\.tdf$/i.test(e.name)) {
+        const z = checkZkey(e.name);
+        if (need.has(z)) {
+          if (!found.has(z)) found.set(z, []);
+          found.get(z).push({ handle: e, path: path.concat(e.name) });
         }
       }
-      done++;
-      if (onProgress) onProgress(done, done + queue.length);
     }
   }
-  await Promise.all(Array.from({ length: 8 }, worker));
+  await new Promise(resolve => {
+    const pump = () => {
+      while (active < CHECK_WALK_PARALLEL && queue.length) {
+        active++;
+        visit(queue.shift()).finally(() => {
+          active--;
+          done++;
+          if (onProgress) onProgress(done, done + active + queue.length);
+          pump();
+        });
+      }
+      if (!active && !queue.length) resolve();
+    };
+    pump();
+  });
+  // 読み終わる順は毎回違うので、同じ図番の図面はパスの順に並べておく(結果を毎回同じにする)
+  const byPath = (a, b) => (a.path.join('\\') < b.path.join('\\') ? -1 : a.path.join('\\') > b.path.join('\\') ? 1 : 0);
+  for (const list of found.values()) list.sort(byPath);
   return found;
 }
 
@@ -428,9 +444,7 @@ function checkQty(v) {
   return m ? Number(m[1]) : null;
 }
 
-function checkFmtLen(m) {
-  return m == null ? '' : String(Number(Number(m).toFixed(4)));
-}
+const checkFmtLen = fmtLen; // 長さの表示(app.js と同じ書き方)
 
 function checkFmtDate(ms) {
   if (!ms) return '';
@@ -439,7 +453,11 @@ function checkFmtDate(ms) {
 }
 
 // ---- 実行 ----
-async function processCheckFile(files) {
+function processCheckFile(files) {
+  return withBusy(() => processCheckFileInner(files));
+}
+
+async function processCheckFileInner(files) {
   const file = Array.from(files).find(f => /\.xls[xm]?$/i.test(f.name));
   if (!file) { showToast('Excelファイルを選択してください', 'error'); return; }
   document.getElementById('check-file-input').value = '';
@@ -477,7 +495,7 @@ async function processCheckFile(files) {
     if (kind === 'root') {
       showStatus('工事のフォルダを探しています', kojiNo);
       const kojiDir = await checkFindKojiDir(folder, kojiNo);
-      if (!kojiDir) throw new Error(`「${folder.name}」の中に、${kojiNo} で始まるフォルダが見つかりません。「フォルダを選ぶ」で、この工事のあるサーバーの「①進行中工事」(または工事フォルダ)を選んでください`);
+      if (!kojiDir) throw new Error(`「${folder.name}」の中に、${kojiNo} で始まるフォルダが見つかりません。「フォルダを選ぶ」で、この工事の入っている「①進行中工事」(または工事フォルダ)を選んでください`);
       detailDirs = await checkFindDetailDirs(kojiDir);
       if (!detailDirs.length) throw new Error(`「${kojiDir.name}」の中に「詳細図」フォルダが見つかりません`);
       label = kojiDir.name;
@@ -504,34 +522,49 @@ async function processCheckFile(files) {
       if (!ok) return;
     }
 
-    // 抽出(図面ごとに1回)。更新日時・大きさ・抽出の版が前回と同じ図面は、覚えた結果を使う
+    // 抽出(図面ごとに1回)。更新日時・大きさ・抽出の版が前回と同じ図面は、覚えた結果を使う。
+    // Python が1つの図面を解析している間に、次の図面(CHECK_PREFETCH 件先まで)の読み込みと
+    // 前回の結果の確認を済ませておく(2026-11-10。以前は1件ずつ順番に待っていた)。
     const files = [...found.values()].flat();
     const res = new Map(); // パス → { mode, rows, err, mtime }
     const ver = await checkScriptsVersion();
     let reused = 0;
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
+    const prepare = f => (async () => {
       const key = f.path.join('\\');
       const mode = checkModeOfPath(f.path);
-      showStatus('図面を解析しています', `(${i + 1}/${files.length}) ${f.handle.name}` + (reused ? `  前回の結果を使用 ${reused} 件` : ''));
       try {
-        const blob = await f.handle.getFile(); // ここでは中身は読まない(更新日時・大きさだけ)
+        const blob = await f.handle.getFile();
         const ckey = [ver, kojiNo, key, blob.lastModified, blob.size].join('|');
         const saved = await checkIdbGet(ckey, CHECK_EXTRACT_STORE);
-        if (saved && saved.mode === mode) {
-          res.set(key, { mode, rows: saved.rows, err: null, mtime: blob.lastModified, path: f.path });
-          reused++;
-          continue;
-        }
-        pyodide.FS.writeFile('/input.tdf', new Uint8Array(await blob.arrayBuffer()));
+        if (saved && saved.mode === mode) return { key, mode, blob, saved };
+        return { key, mode, blob, ckey, bytes: new Uint8Array(await blob.arrayBuffer()) };
+      } catch (e) {
+        return { key, mode, err: e };
+      }
+    })();
+    const pending = [];
+    for (let i = 0; i < files.length; i++) {
+      for (let j = pending.length; j <= Math.min(i + CHECK_PREFETCH, files.length - 1); j++) pending.push(prepare(files[j]));
+      const f = files[i];
+      showStatus('図面を解析しています', `(${i + 1}/${files.length}) ${f.handle.name}` + (reused ? `  前回の結果を使用 ${reused} 件` : ''));
+      const p = await pending[i];
+      pending[i] = null; // 読んだ中身を早めに手放す
+      if (p.err) { res.set(p.key, { mode: p.mode, rows: [], err: p.err.message, mtime: null, path: f.path }); continue; }
+      if (p.saved) {
+        res.set(p.key, { mode: p.mode, rows: p.saved.rows, err: null, mtime: p.blob.lastModified, path: f.path });
+        reused++;
+        continue;
+      }
+      try {
+        pyodide.FS.writeFile('/input.tdf', p.bytes);
         pyodide.globals.set('tdf_filename', f.handle.name);
-        const py = await pyodide.runPythonAsync(`${mode === 'column' ? 'tdf_column' : 'tdf_app'}.extract_file('/input.tdf', tdf_filename)`);
+        const py = await pyodide.runPythonAsync(`${p.mode === 'column' ? 'tdf_column' : 'tdf_app'}.extract_file('/input.tdf', tdf_filename)`);
         const rows = py.toJs({ dict_converter: Object.fromEntries });
         py.destroy();
-        res.set(key, { mode, rows, err: null, mtime: blob.lastModified, path: f.path });
-        await checkIdbSet(ckey, { mode, rows }, CHECK_EXTRACT_STORE);
+        res.set(p.key, { mode: p.mode, rows, err: null, mtime: p.blob.lastModified, path: f.path });
+        checkIdbSet(p.ckey, { mode: p.mode, rows }, CHECK_EXTRACT_STORE); // 書き込みは待たない(失敗しても照合は続ける)
       } catch (e) {
-        res.set(key, { mode, rows: [], err: e.message, mtime: null, path: f.path });
+        res.set(p.key, { mode: p.mode, rows: [], err: e.message, mtime: null, path: f.path });
       }
     }
     const t2 = performance.now();
@@ -626,9 +659,9 @@ function checkCompare(xl, found, res) {
     }
   }
   const judged = rows.filter(r => r.judge !== '対象外');
-  const stats = { total: judged.length, ok: judged.filter(r => r.judge === '一致').length, all: rows.length };
+  const stats = { total: judged.length, ok: judged.filter(r => r.judge === '一致').length };
   ['不一致', '対象外'].forEach(k => { stats[k] = rows.filter(r => r.judge === k).length; });
-  return { xl, rows, extra, stats, hasJoint: xl.hasJoint };
+  return { xl, rows, extra, stats };
 }
 
 // ---- 表示 ----
@@ -641,7 +674,7 @@ function renderCheck() {
   document.getElementById('btn-excel').disabled = !has;
   document.getElementById('btn-reset').disabled = !has;
   if (!has) { document.getElementById('file-info').textContent = ''; return; }
-  const { xl, rows, extra, stats, hasJoint } = checkResult;
+  const { xl, rows, extra, stats } = checkResult;
   document.getElementById('file-info').textContent = checkResult.fileName + '  /  ' + stats.total + ' 行';
 
   const sum = document.getElementById('check-summary');
@@ -662,7 +695,7 @@ function renderCheck() {
   chip('図面にあってExcelに無い', extra.length, 'warn', 'Excelに載っている図面の中に、Excelに無い製品マークがある(Excelの書き漏れの可能性)', true);
   const info = document.getElementById('check-info');
   const cols = ['サイズ', '長さ', '本数'].filter((k, i) => [xl.hasSize, xl.hasLen, xl.hasHonsu][i]);
-  if (hasJoint) cols.push('継手');
+  if (xl.hasJoint) cols.push('継手');
   const tm = checkResult.times;
   info.textContent = `シート「${xl.sheetName}」 / 比べた項目: ${cols.join('・')}(長さ ${xl.unit === 'm' ? 'm' : 'mm'}) / 図面 ${tm.files} 件(${checkResult.kojiDir})` +
     (tm.find || tm.extract ? ` / 探す ${Math.round(tm.find)}秒・解析 ${Math.round(tm.extract)}秒` + (tm.reused ? `(前回の結果を使用 ${tm.reused} 件)` : '') : '') +
@@ -678,6 +711,7 @@ function renderCheck() {
   tbody.innerHTML = '';
   const shown = rows.filter(r => r.judge !== '対象外' && (!checkOnlyNg || r.judge !== '一致'));
   const td = (tr, text, cls) => { const c = document.createElement('td'); c.textContent = text ?? ''; if (cls) c.className = cls; tr.appendChild(c); return c; };
+  const frag = document.createDocumentFragment(); // 行はまとめて1回で表に入れる
   for (const r of shown) {
     const tr = document.createElement('tr');
     const dw = r.dw || {};
@@ -698,8 +732,9 @@ function renderCheck() {
     td(tr, checkJointText(dw[ka], dw[kb]), bad('継手'));
     td(tr, r.memo.join(' / '), 'memo');
     td(tr, r.file ? checkFmtDate(r.file.mtime) : '');
-    tbody.appendChild(tr);
+    frag.appendChild(tr);
   }
+  tbody.appendChild(frag);
   if (!shown.length) {
     const tr = document.createElement('tr');
     const c = td(tr, 'すべての行が図面と一致しました', 'all-ok');
@@ -782,7 +817,15 @@ async function downloadCheckExcel() {
     .concat(extra.map(e => [e.zuban, e.row['製品マーク'], e.row['サイズ'] ?? '', e.row['長さ'] ?? '', e.row['本数'] ?? '', e.file.path.join('\\'), checkFmtDate(e.file.mtime)]));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ex), '図面にあってExcelに無い');
   const base = checkResult.fileName.replace(/\.[^.]+$/, '');
-  downloadBlob(await checkStyleExcel(wb, yellow, red), base + '_帳票チェック結果.xlsx');
+  const fname = base + '_帳票チェック結果.xlsx';
+  try {
+    downloadBlob(await checkStyleExcel(wb, yellow, red), fname);
+  } catch (e) {
+    // 色付けに失敗しても、色の無いExcelは保存する(2026-11-10)
+    console.error('結果のExcelの色付けに失敗しました', e);
+    showToast('色付けに失敗したため、色の無いExcelを保存します', 'error');
+    XLSX.writeFile(wb, fname);
+  }
 }
 
 // SheetJSコミュニティ版は書式を書き込めないので、作ったxlsxをJSZipで開いて、styles.xml に
