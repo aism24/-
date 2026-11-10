@@ -345,6 +345,7 @@ function checkReadExcel(buf) {
       const head = aoa[h].map(checkHead);
       const col = (...keys) => head.findIndex(v => keys.some(k => v === k || v.startsWith(k + '(')));
       const exact = (...keys) => head.findIndex(v => keys.includes(v));
+      const lastExact = (...keys) => head.map((v, i) => keys.includes(v) ? i : -1).filter(i => i >= 0).pop() ?? -1; // 入力データは「J若番」「J老番」が2列ずつ(1列目は計算式の表示、2列目が入力)。入力の2列目を使う
       const zubanCol = exact('図番');
       const markCol = [col('製品マーク', '製品名'), col('製品番号')].find(i => i >= 0) ?? -1; // 出荷リストは「製品番号」
       if (zubanCol < 0 || markCol < 0) continue;
@@ -354,9 +355,9 @@ function checkReadExcel(buf) {
       const hasJointHead = col('左継手', '下継手') >= 0 || col('右継手', '上継手') >= 0 || exact('J') >= 0 || exact("J'") >= 0 || exact('J若番') >= 0 || exact('J老番') >= 0;
       const ci = {
         zuban: zubanCol, mark: markCol, size: col('サイズ'), honsu: col('本数'),
-        len: [col('長さ'), col('製品長')].find(i => i >= 0) ?? -1, // 出荷リストは「製品長」
-        ja: [col('左継手', '下継手'), exact('J'), exact('J若番'), hasJointHead ? -1 : spl].find(i => i >= 0) ?? -1, // 出荷リスト: J若番=左(下)
-        jb: [col('右継手', '上継手'), exact("J'"), exact('J老番'), hasJointHead || spl < 0 ? -1 : spl + 1].find(i => i >= 0) ?? -1, // 出荷リスト: J老番=右(上)
+        len: [col('長さ'), col('製品長'), col('全長')].find(i => i >= 0) ?? -1, // 出荷リストは「製品長」、入力データは「全長」
+        ja: [col('左継手', '下継手'), exact('J'), lastExact('J若番'), hasJointHead ? -1 : spl].find(i => i >= 0) ?? -1, // 出荷リスト: J若番=左(下)
+        jb: [col('右継手', '上継手'), exact("J'"), lastExact('J老番'), hasJointHead || spl < 0 ? -1 : spl + 1].find(i => i >= 0) ?? -1, // 出荷リスト: J老番=右(上)
       };
       const lenHead = ci.len >= 0 ? head[ci.len] : '';
       const rows = [];
@@ -370,13 +371,13 @@ function checkReadExcel(buf) {
           let v = row[i];
           if (CHECK_DITTO.has(checkNorm(v))) v = prev[k]; // 「,,」は上の行と同じ
           prev[k] = v;
-          if ((k === 'ja' || k === 'jb') && typeof v === 'string') v = v.replace(/[【】◎]/g, ''); // 継手名が【CJ1】や IJ250K◎ の形(◎は印。名前ではない)
+          if ((k === 'ja' || k === 'jb') && typeof v === 'string') v = v.replace(/[【】◎★☆]/g, ''); // 継手名が【CJ1】や IJ250K◎★ の形(【】◎★☆は印。名前ではない)
           return v;
         };
         rows.push({ rowNo: top + r + 1, zuban, mark, rawMarkTail: String(row[ci.mark] ?? '').trim().endsWith('㋱'), size: g('size', ci.size), len: g('len', ci.len), honsu: g('honsu', ci.honsu), ja: g('ja', ci.ja), jb: g('jb', ci.jb) });
       }
       // 長さの単位: 見出しに(mm)・(m)があればそれ。無ければ値の大きさ(中央値が100未満ならm)
-      let unit = /mm/i.test(lenHead) ? 'mm' : /\(m\)/i.test(lenHead) ? 'm' : null;
+      let unit = /mm/i.test(lenHead) ? 'mm' : /\(m\)/i.test(lenHead) ? 'm' : lenHead === '全長' ? 'mm' : null; // 入力データの「全長」はmm
       if (!unit) {
         const v = rows.map(r => Number(r.len)).filter(x => isFinite(x) && x > 0).sort((a, b) => a - b);
         unit = v.length && v[Math.floor(v.length / 2)] < 100 ? 'm' : 'mm';
