@@ -1579,12 +1579,18 @@ def mark_sort_key(mark_text: str | None):
     -2の次に-1が来る逆順になる不具合を修正)。呼び出し側(extract_to_excel.py
     等)でも、ex.find_product_rows()由来の行とexm由来の行が混在する行を
     最終的に並べ直す際にこのキーを使うこと(片方の関数だけで昇順にしても、
-    もう片方の関数が見つけた同じグループの行と混ざると順序が崩れるため)。"""
+    もう片方の関数が見つけた同じグループの行と混ざると順序が崩れるため)。
+
+    キーは常に (数値, 文字列)。「-番号」の無いマークは数値を -1 にして、番号つきのマークより
+    前に並べる(番号の無いマークどうしは今までどおり文字列の順)。以前は番号の無いマークを
+    (文字列,) としていたため、同じ接頭辞に「-1」「-2」のマークと番号の無いマーク(26-16 の
+    外階段 EA2-K2G-01 の 2G-Y4X22-1・2G-Y4X22・2G-Y4X22-2)が並ぶと、数値と文字列を比べて
+    TypeError で止まっていた。"""
     if not mark_text:
-        return (mark_text or "",)
+        return (-1, "")
     m = _MARK_NUM_PATTERN.search(mark_text)
     if not m:
-        return (mark_text,)
+        return (-1, mark_text)
     return (int(m.group(1)), m.group(2))
 
 
