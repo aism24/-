@@ -244,26 +244,63 @@ function askInputChoice() {
   });
 }
 
+// 抽出の1行を、入力データに書く値(H 加工先・I 図番・J 製品名・K サイズ・L 全長mm・M 本数・Y J若番・AB J老番)にする
+function inputRecOf(r) {
+  const [ja, jb] = jointKeys();
+  const len = parseFloat(r['長さ']);
+  return {
+    H: FACTORY_NAMES[appliedFactory] || '', I: r['図番'] ?? '', J: r['製品マーク'] ?? '', K: r['サイズ'] ?? '',
+    L: isNaN(len) ? null : Number((len * 1000).toFixed(1)), M: parseInt(r['本数']) || null,
+    Y: r[ja] ?? '', AB: r[jb] ?? '',
+  };
+}
+
+// 入力データにすでにあるか、あれば内容が同じか(2026-11-10 ユーザー指示: サイズ・長さ・本数・継手の4項目、長さは±0.1mm)。
+//   { state: 'none' } = 入力データに無い(追記する)
+//   { state: 'same' } = 図番・製品名が同じで、4項目も同じ(追記しない)
+//   { state: 'diff', diffs: [...] } = 図番・製品名は同じだが、4項目のどれかが違う(追記しない。違いを知らせる)
+// 同じ図番・製品名が入力データに複数あるときは、どれか1つと同じなら 'same'、どれとも違えば最後の行との違いを出す。
+function inputStatus(rec) {
+  const list = inputBook.info.byKey.get(inputKey(rec.I, rec.J));
+  if (!list) return { state: 'none' };
+  const nz = s => String(s ?? '').normalize('NFKC').replace(/\s/g, '');
+  const size = s => nz(s).replace(/[×X*]/g, 'x');
+  const show = v => (v === '' || v == null ? '(空)' : v);
+  const diffsOf = ex => {
+    const d = [];
+    if (size(ex.K) !== size(rec.K)) d.push(`サイズ ${show(ex.K)} → ${show(rec.K)}`);
+    const exL = parseFloat(ex.L);
+    // 図面から長さを読めなかった行(rec.L が空)は、長さを比べない
+    if (rec.L != null && !(isFinite(exL) && Math.abs(exL - rec.L) <= 0.1 + 1e-6)) d.push(`長さ ${isFinite(exL) ? exL : '(空)'} → ${rec.L}`);
+    if ((parseInt(ex.M) || null) !== (rec.M ?? null)) d.push(`本数 ${show(ex.M)} → ${show(rec.M)}`);
+    if (nz(ex.Y) !== nz(rec.Y)) d.push(`J若番 ${show(ex.Y)} → ${show(rec.Y)}`);
+    if (nz(ex.AB) !== nz(rec.AB)) d.push(`J老番 ${show(ex.AB)} → ${show(rec.AB)}`);
+    return d;
+  };
+  const all = list.map(diffsOf);
+  if (all.some(d => !d.length)) return { state: 'same' };
+  return { state: 'diff', diffs: all[all.length - 1] };
+}
+
 // 入力データ様式のExcelの「ﾃﾞｰﾀ」シートの最終行の次から、抽出結果を書き込んで保存する。
 // 書き込むのは H 加工先・I 図番・J 製品名・K サイズ・L 全長(mm)・M 本数・Y J若番・AB J老番 だけ
 // (そのほかの列・計算式は数式化マクロの担当。ユーザー指示)。同じ図番・製品名がすでにあれば追記しない。
 async function saveToInputBook(recordRows) {
   const book = inputBook;
-  const [ja, jb] = jointKeys();
-  const factoryName = FACTORY_NAMES[appliedFactory] || '';
-  const add = [], dup = [];
+  const add = [], dup = [], diff = [];
   for (const r of extractedResults) {
-    const len = parseFloat(r['長さ']);
-    const rec = {
-      H: factoryName, I: r['図番'] ?? '', J: r['製品マーク'] ?? '', K: r['サイズ'] ?? '',
-      L: isNaN(len) ? null : Number((len * 1000).toFixed(1)), M: parseInt(r['本数']) || null,
-      Y: r[ja] ?? '', AB: r[jb] ?? '',
-    };
-    if (book.info.keys.has(inputKey(rec.I, rec.J))) dup.push(`${rec.I}  ${rec.J}`);
-    else add.push(rec);
+    const rec = inputRecOf(r);
+    const st = inputStatus(rec);
+    if (st.state === 'none') add.push(rec);
+    else if (st.state === 'same') dup.push(`${rec.I}  ${rec.J}`);
+    else diff.push(`${rec.I}  ${rec.J}:  ${st.diffs.join(' / ')}`);
   }
+  // すでに入力データにあるが内容が違う行は、書き換えずに、入力データの値 → 今回の値 で知らせる
+  const showDiff = () => { if (diff.length) showErrorDialog('すでに入力データにあるが、内容が違います(追記しません。入力データの値 → 今回の値)', diff); };
   if (!add.length) {
-    showErrorDialog('追記する行がありません(すべて入力データにすでにあります)', dup);
+    if (dup.length) showErrorDialog('追記する行がありません(すべて入力データにすでにあります)', dup);
+    showDiff();
+    if (!dup.length && !diff.length) showToast('追記する行がありません', 'error');
     return;
   }
   let res;
@@ -300,8 +337,9 @@ async function saveToInputBook(recordRows) {
   book.info = await inputXlsm.inspect(JSZip, res.bytes);
   renderInputNote(currentMode);
   renderTable(extractedResults); // 追記した行も、入力データにある行(グレー)になる
-  showToast(`「ﾃﾞｰﾀ」の${res.firstRow}行目から ${res.count} 行を追記しました` + (dup.length ? `(すでにある ${dup.length} 行は追記しませんでした)` : ''), 'success');
+  showToast(`「ﾃﾞｰﾀ」の${res.firstRow}行目から ${res.count} 行を追記しました` + ((dup.length + diff.length) ? `(すでにある ${dup.length + diff.length} 行は追記しませんでした)` : ''), 'success');
   if (dup.length) showErrorDialog('すでに入力データにあるため追記しませんでした', dup);
+  showDiff();
   try {
     await apiPost('onExcelDownload', { kojiNo, productCount: extractedResults.length, rows: recordRows });
   } catch (e) {
@@ -686,9 +724,13 @@ function renderTable(results) {
       ];
       missingIdx = new Set([4, 6, 7]); // 全長・継手が空なら強調
       lenCol = 4;
-      if (inputBook.info.keys.has(inputKey(r['図番'], r['製品マーク']))) {
+      const st = inputStatus(inputRecOf(r));
+      if (st.state === 'same') {
         tr.classList.add('in-input-row');
         tr.title = '入力データにあるため追記しません';
+      } else if (st.state === 'diff') {
+        tr.classList.add('in-input-diff');
+        tr.title = '入力データにありますが、内容が違います(追記しません): ' + st.diffs.join(' / ');
       }
     } else {
       cols = [

@@ -72,16 +72,20 @@
     const { rows } = splitRows(await zip.file(path).async('string'));
     let lastRow = HEAD_ROW;
     const keys = new Set();
+    const byKey = new Map(); // 図番|製品名 → 既存の行の値 [{ row, K, L, M, Y, AB }](同じ組み合わせが複数あれば全部)
     for (const r of rows) {
       if (r.n <= HEAD_ROW) continue;
       const cs = cellsOf(r.xml), by = c => cs.find(x => x.col === c);
       const j = cellText(by('J'), sst);
       if (j.trim() !== '') {
         lastRow = Math.max(lastRow, r.n);
-        keys.add(nfkc(cellText(by('I'), sst)).replace(/\s/g, '') + '|' + nfkc(j).replace(/\s/g, ''));
+        const key = nfkc(cellText(by('I'), sst)).replace(/\s/g, '') + '|' + nfkc(j).replace(/\s/g, '');
+        keys.add(key);
+        if (!byKey.has(key)) byKey.set(key, []);
+        byKey.get(key).push({ row: r.n, K: cellText(by('K'), sst), L: cellText(by('L'), sst), M: cellText(by('M'), sst), Y: cellText(by('Y'), sst), AB: cellText(by('AB'), sst) });
       }
     }
-    return { lastRow, keys, path };
+    return { lastRow, keys, byKey, path };
   }
 
   // rows: [{ H, I, J, K, L, M, Y, AB }]。L・M は数、ほかは文字。空は書かない。

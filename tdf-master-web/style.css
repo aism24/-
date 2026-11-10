@@ -423,3 +423,5 @@ table#check-table td.all-ok { color: #1e7b34; font-weight: bold; padding: 18px; 
 table#result-table.input-mode td:nth-child(5), table#result-table.input-mode td:nth-child(6) { text-align: right; padding-right: 8px; }
 table#result-table.input-mode td:nth-child(7), table#result-table.input-mode td:nth-child(8) { text-align: center; padding-right: 15px; }
 table#result-table tbody tr.in-input-row:not(.row-checked) { background: #e3e3e3 !important; color: #888; }
+/* すでに入力データにあるが、サイズ・長さ・本数・継手のどれかが違う行(追記しない)は薄い紫 */
+table#result-table tbody tr.in-input-diff:not(.row-checked) { background: #e8dcff !important; }
