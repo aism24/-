@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>実寸法師データよりマスタ情報抽出</title>
-<link rel="stylesheet" href="style.css?v=20261109c">
+<link rel="stylesheet" href="style.css?v=20261110a">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
@@ -109,13 +109,11 @@
     <div id="check-top"><strong>帳票チェック</strong><span>Excelのサイズ・長さ・本数・継手を、最新の詳細図と照合します</span></div>
     <div id="check-folder">
       <span class="check-folder-label">図面の保存場所</span>
-      <button type="button" class="srv-btn" id="srv-honsha" onclick="selectCheckServer('honsha')">本社サーバー</button>
-      <button type="button" class="srv-btn" id="srv-tottori" onclick="selectCheckServer('tottori')">鳥取サーバー</button>
       <span id="check-folder-name"></span>
-      <button type="button" class="header-btn" id="check-folder-btn" onclick="pickCheckRoot()" title="①進行中工事(今のサーバーの分として選び直す)・工事フォルダ・詳細図フォルダのどれでも選べます">📁 フォルダを選ぶ</button>
-      <button type="button" class="header-btn" id="check-folder-clear" onclick="clearKojiFolder()" style="display:none" title="この工事用に覚えたフォルダをやめて、サーバーの①進行中工事から探します">サーバーから探す</button>
+      <button type="button" class="header-btn" id="check-folder-btn" onclick="pickCheckRoot()" title="①進行中工事・工事フォルダ・詳細図フォルダのどれでも選べます">📁 フォルダを選ぶ</button>
+      <button type="button" class="header-btn" id="check-folder-clear" onclick="clearKojiFolder()" style="display:none" title="この工事用に覚えたフォルダをやめて、①進行中工事から探します">①進行中工事から探す</button>
     </div>
-    <div id="check-folder-hint">サーバーのボタンは、それぞれ最初の1回だけ「①進行中工事」フォルダを選びます。「フォルダを選ぶ」で工事フォルダ・詳細図フォルダを直接選ぶこともできます。</div>
+    <div id="check-folder-hint">「フォルダを選ぶ」で「①進行中工事」(または工事フォルダ・詳細図フォルダ)を選びます。選んだフォルダはこのブラウザに覚えます。</div>
     <div id="check-drop" class="upload-bar check-bar" onclick="document.getElementById('check-file-input').click()">📂 チェックするExcel(切断リスト・出荷リスト・マスターデータ等)をここにドロップ / クリックして選択</div>
     <div id="check-result">
       <div id="check-summary"></div>
@@ -4659,7 +4657,7 @@ def extract_file(path: str, filename: str | None = None) -> list[dict]:
 </script>
 
 <script src="app.js?v=20261109h"></script>
-<script src="check.js?v=20261109k"></script>
+<script src="check.js?v=20261110a"></script>
 <!-- 「← アプリ一覧へ」ボタンは非表示(2026-10-30、ユーザー指示)。復活するときは下の行のコメントを外すだけ(to-launcher.js はそのまま残している)
 <script src="to-launcher.js?v=20261019" data-target="#header-brand .side-icon" data-mode="before"></script>
 -->
