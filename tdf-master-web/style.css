@@ -61,7 +61,6 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 .header-action-btn.excel { background: #217346; color: #fff; border-color: #217346; }
 .header-action-btn:disabled, .header-btn:disabled { opacity: .45; cursor: not-allowed; }
 
-#beam-modal, #beam-box {}
 #beam-modal {
   display: flex; position: fixed; inset: 0; z-index: 2000;
   background: rgba(20,30,40,0.55); align-items: center; justify-content: center;
@@ -137,11 +136,11 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
   width: 100%; padding: 9px 10px; font-size: 14px; border: 1px solid #bbb; border-radius: 6px;
   background: #fff; cursor: pointer;
 }
-/* モード選択(梁/柱/結合)。押したモードでそのまま開始する */
+/* モード選択(梁/柱/結合/帳票チェック)。押したモードでそのまま開始する */
 #mode-field { margin-top: 20px; display: flex; flex-direction: column; gap: 12px; }
 .mode-title { font-size: 13px; color: #555; }
-/* 文字は3つとも黒。梁=薄いオレンジ、柱=緑、結合=青。
-   モード名と説明の頭を3つのボタンでそろえる(モード名の列は一番長い「結合モード」の幅) */
+/* 文字は4つとも黒。梁=薄いオレンジ、柱=緑、結合=青、帳票チェック=薄いピンク。
+   モード名と説明の頭を4つのボタンでそろえる(モード名の列は一番長い「結合モード」の幅) */
 .mode-btn {
   display: grid; grid-template-columns: 6em 1fr; align-items: baseline; column-gap: 12px;
   text-align: left; width: 100%; padding: 16px 12px 16px 32px; font-size: 19px; font-weight: bold;
@@ -355,12 +354,11 @@ table#merge-table tr.merge-off { opacity: .5; }
 #check-folder-name { font-weight: bold; color: #fff; }
 #check-folder-name.unset { color: #ffb07a; }
 #check-folder-hint { color: #999; font-size: 12px; margin-top: -4px; }
-.check-chip { cursor: help; }
 .check-bar { width: 760px; max-width: 100%; box-sizing: border-box; border-color: #f0a8c4; }
 .check-bar.compact { padding: 10px; }
 #check-result { display: none; flex-direction: column; align-items: center; gap: 8px; max-width: 100%; }
 #check-summary { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-.check-chip { border-radius: 12px; padding: 4px 12px; font-size: 13px; font-weight: bold; color: #000; }
+.check-chip { cursor: help; border-radius: 12px; padding: 4px 12px; font-size: 13px; font-weight: bold; color: #000; }
 .check-chip.ok { background: #bfe8c9; }
 .check-chip.ng { background: #ffb3b3; }
 .check-chip.warn { background: #ffe08a; }
@@ -379,7 +377,6 @@ table#check-table td.memo { text-align: left; white-space: normal; min-width: 18
 table#check-table td.judge { font-weight: bold; }
 table#check-table td.judge.ok { background: #e6f6ea; color: #1e7b34; }
 table#check-table td.judge.ng { background: #ffb3b3; color: #8a0000; }
-table#check-table td.judge.warn { background: #ffe9a8; color: #7a5200; }
 table#check-table td.judge.gray { background: #e0e0e0; color: #444; }
 table#check-table td.all-ok { color: #1e7b34; font-weight: bold; padding: 18px; }
 #check-extra { display: none; max-width: 100%; }
