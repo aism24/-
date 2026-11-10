@@ -417,3 +417,9 @@ table#check-table td.all-ok { color: #1e7b34; font-weight: bold; padding: 18px; 
 #input-choice-back:hover { background: #d5d9dd; }
 #input-choice-msg { font-size: 12px; color: #1a73e8; min-height: 1em; text-align: center; }
 #input-note { font-size: 12px; color: #b05a00; font-weight: bold; margin-left: 10px; white-space: nowrap; }
+
+/* 「入力データの取り込み」中の結果の表(入力データの列に合わせた8列: 加工先・図番・製品名・サイズ・全長・本数・J若番・J老番)。
+   全長(5列目)・本数(6列目)は右揃え。すでに入力データにある行(追記しない)は薄いグレー。 */
+table#result-table.input-mode td:nth-child(5), table#result-table.input-mode td:nth-child(6) { text-align: right; padding-right: 8px; }
+table#result-table.input-mode td:nth-child(7), table#result-table.input-mode td:nth-child(8) { text-align: center; padding-right: 15px; }
+table#result-table tbody tr.in-input-row:not(.row-checked) { background: #e3e3e3 !important; color: #888; }
