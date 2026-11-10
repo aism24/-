@@ -305,6 +305,9 @@ function checkNorm(s) {
 // 見出しの読み方(2026-11-09):
 //   製品マーク … 「製品マーク」「製品名」
 //   継手       … 「左継手」「右継手」/「下継手」「上継手」/「J」「J'」(切断リスト。J(開先) 等は使わない)
+//                 /「J若番」「J老番」(出荷リスト。左(下)・右(上)。継手名の【】は外す)
+//   製品マーク … 上のほか「製品番号」(出荷リスト。「製品マーク」「製品名」があればそちらを先に使う)
+//   長さ       … 「長さ」のほか「製品長」(出荷リスト)
 //   サイズ     … 最初の「サイズ」の列。「,,」「〃」は上の行と同じ
 const CHECK_DITTO = new Set([',,', '〃', '″', '"', '”']);
 function checkHead(v) {
@@ -323,12 +326,13 @@ function checkReadExcel(buf) {
       const col = (...keys) => head.findIndex(v => keys.some(k => v === k || v.startsWith(k + '(')));
       const exact = (...keys) => head.findIndex(v => keys.includes(v));
       const zubanCol = exact('図番');
-      const markCol = col('製品マーク', '製品名');
+      const markCol = [col('製品マーク', '製品名'), col('製品番号')].find(i => i >= 0) ?? -1; // 出荷リストは「製品番号」
       if (zubanCol < 0 || markCol < 0) continue;
       const ci = {
-        zuban: zubanCol, mark: markCol, size: col('サイズ'), len: col('長さ'), honsu: col('本数'),
-        ja: [col('左継手', '下継手'), exact('J')].find(i => i >= 0) ?? -1,
-        jb: [col('右継手', '上継手'), exact("J'")].find(i => i >= 0) ?? -1,
+        zuban: zubanCol, mark: markCol, size: col('サイズ'), honsu: col('本数'),
+        len: [col('長さ'), col('製品長')].find(i => i >= 0) ?? -1, // 出荷リストは「製品長」
+        ja: [col('左継手', '下継手'), exact('J'), exact('J若番')].find(i => i >= 0) ?? -1, // 出荷リスト: J若番=左(下)
+        jb: [col('右継手', '上継手'), exact("J'"), exact('J老番')].find(i => i >= 0) ?? -1, // 出荷リスト: J老番=右(上)
       };
       const lenHead = ci.len >= 0 ? head[ci.len] : '';
       const rows = [];
@@ -342,6 +346,7 @@ function checkReadExcel(buf) {
           let v = row[i];
           if (CHECK_DITTO.has(checkNorm(v))) v = prev[k]; // 「,,」は上の行と同じ
           prev[k] = v;
+          if ((k === 'ja' || k === 'jb') && typeof v === 'string') v = v.replace(/[【】]/g, ''); // 出荷リストは継手名が【CJ1】の形
           return v;
         };
         rows.push({ rowNo: top + r + 1, zuban, mark, rawMarkTail: String(row[ci.mark] ?? '').trim().endsWith('㋱'), size: g('size', ci.size), len: g('len', ci.len), honsu: g('honsu', ci.honsu), ja: g('ja', ci.ja), jb: g('jb', ci.jb) });
