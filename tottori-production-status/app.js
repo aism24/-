@@ -26,7 +26,7 @@
       { label: '図番', i: 2 },
       { label: '重量(t)', i: 3, cls: 'num', fmt: fmtWeight },
       { label: '生産予定日', i: 4, fmt: fmtDate },
-      { label: '遅れ日数', i: 5, cls: 'num', html: daysBadge },
+      { label: '遅れ日数(営業日)', i: 5, cls: 'num', html: daysBadge, days: true },
     ],
   };
 
@@ -45,7 +45,7 @@
   function fmtDateY(key) { const p = parts(key); return p ? p.y + '/' + p.m + '/' + p.d + '(' + WD[new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay()] + ')' : ''; }
   function daysBadge(v) {
     const n = Number(v) || 0;
-    const c = n >= 7 ? 'd3' : n >= 3 ? 'd2' : 'd1';
+    const c = n >= 5 ? 'd3' : n >= 3 ? 'd2' : 'd1'; // 営業日: 5日(約1週間)以上=赤、3日以上=橙
     return '<span class="days ' + c + '">' + n + '日</span>';
   }
   function sumWeight(rows) { return rows.reduce(function (s, r) { return s + (Number(r[3]) || 0); }, 0); }
@@ -229,7 +229,7 @@
       const col = ws.getColumn(i + 1);
       if (c.label === '重量(t)') col.numFmt = '0.000';
       if (c.fmt === fmtDate) col.numFmt = 'yyyy/m/d';
-      if (c.label === '遅れ日数') col.numFmt = '0"日"';
+      if (c.days) col.numFmt = '0"日"';
       let w = textWidth(c.label);
       rows.forEach(function (r) { w = Math.max(w, textWidth(c.fmt === fmtDate ? '2026/11/11' : c.cls === 'num' ? fmtWeight(r[c.i]) : r[c.i])); });
       col.width = Math.min(60, Math.max(8, w + 2));

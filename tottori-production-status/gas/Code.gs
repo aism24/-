@@ -8,7 +8,7 @@
  * ■ 作るもの(鳥取の行だけ)
  *   前日出来高 : 案件マスターの「加工」列の日付が「前の営業日」の行
  *   遅れリスト : 「備考①」列に日付があり(=生産予定日)、その日付が今日より前で、「加工」列に日付が無い行
- *               遅れ日数 = 今日 − 生産予定日(暦日)
+ *               遅れ日数 = 生産予定日の翌日から今日までの「出勤」日の数(営業日。2026-11-11 ユーザー指定で暦日から変更)
  *   「前の営業日」は、索引スプレッドシートの会社カレンダー(I列=日付、J列=出勤/休日)で決める。
  *
  * ■ 読むもの(書き込みは一切しない)
@@ -25,7 +25,7 @@
  * セットアップ手順は README.md を参照してください。
  */
 
-const CODE_VERSION = '2026-11-11a';
+const CODE_VERSION = '2026-11-11b';
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
 const IGNORE_WORK_NO = '00-00';
@@ -49,7 +49,7 @@ const INFO_PENDING = '未取込の案件';
 const INFO_WARN = '注意';
 
 const HEAD_YESTERDAY = ['工事名', '製品名', '図番', '重量(t)', '生産日'];
-const HEAD_LATE = ['工事名', '製品名', '図番', '重量(t)', '生産予定日', '遅れ日数'];
+const HEAD_LATE = ['工事名', '製品名', '図番', '重量(t)', '生産予定日', '遅れ日数(営業日)'];
 const HEAD_DATA = ['ファイルID', '工事番号', '工事名', '製品名', '図番', '重量(t)', '生産予定日', '生産日'];
 const HEAD_STATE = ['ファイルID', '工事番号', 'ファイル名', '元ファイル更新日時', '取込日時', '鳥取の行数', '形式', 'エラー'];
 const HEAD_LOG = ['日時', '種別', '内容'];
@@ -269,23 +269,34 @@ function getData_() {
 function buildLists_(allRows, calendar, today) {
   const prev = prevBusinessDay_(calendar, today);
   const yesterday = [], late = [];
+  const lateDays = {}; // 生産予定日 -> 遅れ日数(同じ予定日は1回だけ数える)
+  let missingCal = '';
   allRows.forEach(function (r) {
     const plan = normalizeKey_(r[6]), done = normalizeKey_(r[7]);
     const weight = Number(r[5]) || 0;
     if (done && done === prev.key) yesterday.push([r[2], r[3], r[4], weight, done, r[1]]);
-    if (plan && !done && plan < today) late.push([r[2], r[3], r[4], weight, plan, daysBetween_(plan, today), r[1]]);
+    if (plan && !done && plan < today) {
+      if (!(plan in lateDays)) {
+        const c = businessDaysAfter_(calendar, plan, today);
+        lateDays[plan] = c.days;
+        if (c.missing && (!missingCal || c.missing < missingCal)) missingCal = c.missing;
+      }
+      late.push([r[2], r[3], r[4], weight, plan, lateDays[plan], r[1]]);
+    }
   });
   const byText = function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
   // 前日出来高: 工事番号 → 図番 → 製品名
   yesterday.sort(function (a, b) { return byText(a[5], b[5]) || byText(a[2], b[2]) || byText(a[1], b[1]); });
-  // 遅れリスト: 遅れ日数の大きい順 → 工事番号 → 図番 → 製品名
-  late.sort(function (a, b) { return (b[5] - a[5]) || byText(a[6], b[6]) || byText(a[2], b[2]) || byText(a[1], b[1]); });
+  // 遅れリスト: 遅れ日数の大きい順 → 生産予定日の古い順 → 工事番号 → 図番 → 製品名
+  late.sort(function (a, b) { return (b[5] - a[5]) || byText(a[4], b[4]) || byText(a[6], b[6]) || byText(a[2], b[2]) || byText(a[1], b[1]); });
+  const warnings = prev.warning ? [prev.warning] : [];
+  if (missingCal) warnings.push('会社カレンダー(索引スプレッドシートのI・J列)に ' + missingCal.replace(/-/g, '/') + ' などがありません。遅れ日数(営業日)は、カレンダーに無い日を土日休みとみなして数えました。');
   return {
     baseDate: today,
     prevDate: prev.key,
     yesterday: yesterday.map(function (r) { return r.slice(0, 5); }),
     late: late.map(function (r) { return r.slice(0, 6); }),
-    warnings: prev.warning ? [prev.warning] : [],
+    warnings: warnings,
   };
 }
 
@@ -312,7 +323,23 @@ function calendarWarn_(key) {
   return '会社カレンダー(索引スプレッドシートのI・J列)に ' + key.replace(/-/g, '/') + ' がありません。土日を休みとみなして前の営業日を決めました。カレンダーを延ばしてください。';
 }
 
-function daysBetween_(fromKey, toKey) { return Math.round((keyToUtc_(toKey) - keyToUtc_(fromKey)) / 86400000); }
+// 遅れ日数(営業日): 生産予定日の翌日から今日まで(今日を含む)の「出勤」日の数。
+// 例: 予定 11/6(金)・今日 11/9(月) → 1。カレンダーに無い日は土日を休みとみなし、その最初の日を missing で返す。
+function businessDaysAfter_(calendar, planKey, todayKey) {
+  const end = keyToUtc_(todayKey);
+  let days = 0, missing = '';
+  for (let d = keyToUtc_(planKey) + 86400000; d <= end; d += 86400000) {
+    const key = utcToKey_(d);
+    if (Object.prototype.hasOwnProperty.call(calendar, key)) {
+      if (calendar[key]) days++;
+    } else {
+      if (!missing) missing = key;
+      const wd = new Date(d).getUTCDay();
+      if (wd !== 0 && wd !== 6) days++;
+    }
+  }
+  return { days: days, missing: missing };
+}
 function keyToUtc_(key) { const p = key.split('-'); return Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2])); }
 function utcToKey_(ms) { const d = new Date(ms); return d.getUTCFullYear() + '-' + pad2_(d.getUTCMonth() + 1) + '-' + pad2_(d.getUTCDate()); }
 function pad2_(n) { return n < 10 ? '0' + n : String(n); }
