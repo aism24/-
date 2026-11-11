@@ -57,6 +57,7 @@ body {
 .company { font-weight: 600; font-size: 14px; white-space: nowrap; }
 .hdr-meta { font-size: 13px; color: #c9d6e4; flex: 1; min-width: 200px; }
 .hdr-meta b { color: #fff; font-weight: 600; }
+.hdr-meta .live { color: #ffd479; }
 
 .btn {
   font: inherit;
