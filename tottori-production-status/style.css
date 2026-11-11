@@ -182,3 +182,10 @@ table.sheet tr.total td { border-top: 2px solid #8a98a8; }
 .drop-overlay { position: fixed; inset: 0; z-index: 40; background: rgba(31, 111, 209, .14); border: 4px dashed var(--accent); display: flex; align-items: center; justify-content: center; pointer-events: none; }
 .drop-overlay[hidden] { display: none; }
 .drop-overlay div { background: var(--accent); color: #fff; font-size: 22px; font-weight: 700; padding: 14px 28px; border-radius: 12px; }
+
+/* 取込のお知らせ(2026-11-12 ユーザー指定: 画面中央・ピンク背景・黒の太字・OKを押すまで消えない) */
+.notice-modal { z-index: 40; }
+.notice-box { background: #ffd1dc; border: 2px solid #f29bb2; border-radius: 14px; width: min(560px, 100%); padding: 22px 22px 16px; box-shadow: 0 12px 32px rgba(0, 0, 0, .25); }
+.notice-text { margin: 0; color: #000; font-weight: 700; font-size: 18px; line-height: 1.6; text-align: center; white-space: pre-wrap; }
+.notice-actions { display: flex; justify-content: center; margin-top: 16px; }
+.notice-ok { min-width: 120px; font-size: 17px; }

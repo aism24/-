@@ -101,7 +101,7 @@
     w.classList.remove('error'); w.hidden = !(d.warnings && d.warnings.length); w.textContent = (d.warnings || []).join('\n');
     render('late');
     render('yesterday');
-    $('dlBtn').disabled = false;
+    $('dlBtn').disabled = !st.src;
     const p = d.plan;
     if (p && p.count) $('planInfo').innerHTML = '読み込んだ予定表: <b>' + esc(p.fileName || '(名前なし)') + '</b>(' + esc(fmtDate(p.from)) + '〜' + esc(fmtDate(p.to)) + '、読込 ' + esc(String(p.loadedAt).slice(0, 16)) + ')・保存済みの予定 ' + p.count + '件';
     const mt = missingText(p);
@@ -135,6 +135,19 @@
     $('abbrModal').hidden = false;
   }
   // 加工結果(PDFの結果重量の表)の製品で、作業用データを読み直してもマスターに加工日が無いものを出す
+  // 画面中央のお知らせ(ピンク背景・黒の太字。OKを押すまで消えない)
+  function notice(msg, onOk) {
+    $('noticeText').textContent = msg;
+    $('noticeModal').hidden = false;
+    st.noticeOk = onOk || null;
+    $('noticeOk').focus();
+  }
+  function closeNotice() {
+    $('noticeModal').hidden = true;
+    const f = st.noticeOk; st.noticeOk = null;
+    if (f) f();
+  }
+
   function showResultCheck(rc) {
     if (!rc || !rc.missing || !rc.missing.length) return;
     if (!$('abbrModal').hidden) return; // 略称の選択が先(保存すると改めて確認する)
@@ -237,7 +250,7 @@
       return Promise.all(pages);
     }).then(function (contents) {
       const tx = contents.map(textLines);
-      const found = tx.map(planFromText).filter(function (r) { return r && r.items.length; });
+      const found = tx.map(function (t, i) { const r = planFromText(t); if (r) r.page = i; return r; }).filter(function (r) { return r && r.items.length; });
       if (!found.length) throw new Error('このPDFに「鳥取工場 加工予定表」が見つかりませんでした(文字の読めるPDFが必要です。スキャンした画像のPDFは読めません)。');
       const ym = pdfYearMonth(fileName, tx.map(function (t) { return t.all; }).join(''));
       const results = tx.map(function (t) { return resultFromText(t, ym); }).filter(Boolean).reduce(function (a, r) { return a.concat(r); }, []);
@@ -246,7 +259,7 @@
         const r = t.all.match(/(\d{1,2})\.(\d{1,2})結果重量/);
         if (r && !resultDate) resultDate = mdKey(ym, +r[1], +r[2]);
       });
-      return { items: found.reduce(function (a, r) { return a.concat(r.items); }, []), results: results, resultDate: resultDate };
+      return { items: found.reduce(function (a, r) { return a.concat(r.items); }, []), results: results, resultDate: resultDate, planPages: found.map(function (r) { return r.page; }) };
     });
   }
 
@@ -356,17 +369,22 @@
     label.classList.add('busy');
     if (!st.shown) landingState(true, '読み取っています…', '「' + file.name + '」', '');
     else toast('「' + file.name + '」を読み取っています…');
-    file.arrayBuffer().then(function (buf) { return parsePlanPdf(buf, file.name); }).then(function (r) {
+    let bytes = null, planPages = [];
+    loadPdfLib().catch(function () {}); // ダウンロード用の部品を先に読み込んでおく
+    file.arrayBuffer().then(function (buf) { bytes = buf.slice(0); return parsePlanPdf(buf, file.name); }).then(function (r) {
+      planPages = r.planPages;
       if (!st.shown) landingState(true, '照らし合わせています…', '予定表 ' + r.items.length + ' 件を案件マスターと照らし合わせています(しばらくかかることがあります)', '');
       else toast('予定表から ' + r.items.length + ' 件を読み取りました。案件マスターと照らし合わせています…');
       return fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'schedule', fileName: file.name, items: r.items, results: r.results, resultDate: r.resultDate }) }).then(function (x) { return x.json(); });
     }).then(function (res) {
       if (res.status !== 'success') throw new Error(res.message || '保存に失敗しました');
       showResult();
+      st.src = { bytes: bytes, planPages: planPages, name: file.name };
       setData(res.data);
       const mt = missingText(res.data.plan);
-      toast('予定表を読み込みました(' + res.saved + '件)' + (mt ? '。' + mt : ''));
-      showResultCheck(res.resultCheck);
+      // 取込のお知らせは画面中央に出し、OKを押すまで消さない(2026-11-12 ユーザー指定)。OKの後に加工結果の確認を出す
+      notice('予定表を読み込みました(' + res.saved + '件)' + (mt ? '。' + mt : ''), function () { showResultCheck(res.resultCheck); });
+      return downloadPdf(); // 一覧が出たら、そのままPDFをダウンロード
     }).catch(function (e) {
       if (!st.shown) landingState(false, '加工結果を送ってください', 'PDFを画面のどこかにドロップするか、フォルダから選んでください', '読み込めませんでした: ' + e.message);
       else showError('加工結果PDFの読み込みに失敗しました: ' + e.message);
@@ -390,109 +408,148 @@
     });
   })();
 
-  // ---- Excel(見本と同じく、左=生産遅れ・右=結果重量を1枚に並べる) ----
-  function textWidth(s) {
-    let w = 0;
-    String(s == null ? '' : s).split('').forEach(function (ch) { w += /[^\x00-\xff]/.test(ch) ? 2 : /[il1.,:;'|!()\-]/.test(ch) ? 0.6 : /[MW]/.test(ch) ? 1.4 : 1.1; });
-    return w;
+  // ---- ダウンロードするPDF(2026-11-12 ユーザー指定。Excelはやめた) ----
+  // 1ページ目: A4縦に、画面と同じ 左=生産遅れ・右=結果重量 の表。2ページ目以降: 取り込んだPDFの「加工予定表」のページ(元のまま=A4横)。
+  // グラフのページと「予定重量・結果重量」のページは入れない。PDFを読み込んで一覧が出たら自動でダウンロードする。
+  function loadPdfLib() {
+    if (typeof PDFLib !== 'undefined') return Promise.resolve();
+    if (st.pdfLibLoading) return st.pdfLibLoading;
+    st.pdfLibLoading = new Promise(function (ok, ng) {
+      const sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+      sc.onload = function () { ok(); };
+      sc.onerror = function () { st.pdfLibLoading = null; ng(new Error('PDFの部品を読み込めませんでした')); };
+      document.head.appendChild(sc);
+    });
+    return st.pdfLibLoading;
   }
 
-  // Excelの部品(約200KB)は、ダウンロードを押したときに初めて読み込む
-  function loadExcelJS() {
-    if (typeof ExcelJS !== 'undefined') return Promise.resolve();
-    return new Promise(function (ok, ng) {
-      const sc = document.createElement('script');
-      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
-      sc.onload = function () { ok(); };
-      sc.onerror = function () { ng(new Error('Excelの部品を読み込めませんでした')); };
-      document.head.appendChild(sc);
+  // 1ページ目の絵(A4縦・300dpi)。単位はmm(ctx.scale で px に直す)
+  function drawSummaryPage() {
+    const d = st.data, PX = 300 / 25.4, W = 210, H = 297, M = 10, GAP = 5;
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(W * PX); cv.height = Math.round(H * PX);
+    const c = cv.getContext('2d');
+    c.scale(PX, PX);
+    c.fillStyle = '#fff'; c.fillRect(0, 0, W, H);
+    const FONT = '"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo","Noto Sans JP","Noto Sans CJK JP",sans-serif';
+    const font = function (size, bold) { c.font = (bold ? 'bold ' : '') + size + 'px ' + FONT; };
+    // 文字が枠に入らなければ横に縮める
+    const text = function (s, x, y, w, align, size, bold, color) {
+      s = String(s == null ? '' : s);
+      font(size, bold);
+      c.fillStyle = color || '#1d2733';
+      c.textBaseline = 'middle';
+      const tw = c.measureText(s).width, room = w - 1.2;
+      c.save();
+      let x0 = align === 'left' ? x + 0.6 : align === 'right' ? x + w - 0.6 : x + w / 2;
+      if (tw > room && room > 0) { const k = room / tw; c.translate(x0, y); c.scale(k, 1); x0 = 0; y = 0; }
+      c.textAlign = align || 'center';
+      c.fillText(s, x0, y);
+      c.restore();
+    };
+    // 見出し
+    text('鳥取工場 生産状況', M, M + 3, 100, 'left', 5.2, true);
+    text('結果の日 ' + fmtDateY(d.prevDate) + '・基準日 ' + fmtDateY(d.baseDate), W - M - 100, M + 3, 100, 'right', 3.2, false, '#5d6b7a');
+    let top = M + 8;
+    const mt = missingText(d.plan);
+    if (mt) { text(mt, M, top + 2, W - 2 * M, 'left', 3, false, '#7a5300'); top += 5; }
+    // 2つの表の列(mm)。遅れ: 物件名|部位|製品名|数量|重量|予定日|遅れ  結果: 物件名|部位|製品名|数量|重量
+    const colsL = [13, 10, 29, 9, 13, 15, 11], colsR = [13, 10, 29, 9, 13];
+    const sum = function (a) { return a.reduce(function (x, y) { return x + y; }, 0); };
+    const k = (W - 2 * M - GAP) / (sum(colsL) + sum(colsR));
+    const wl = colsL.map(function (v) { return v * k; }), wr = colsR.map(function (v) { return v * k; });
+    const tables = [{ kind: 'late', x: M, w: wl }, { kind: 'yesterday', x: M + sum(wl) + GAP, w: wr }];
+    tables.forEach(function (t) { t.gs = groups(d[t.kind] || [], KIND[t.kind]); t.rows = t.gs.reduce(function (a, g) { return a + g.rows.length + 1; }, 0) + (t.gs.length ? 1 : 0); });
+    const maxRows = Math.max(1, tables[0].rows, tables[1].rows) + 1; // +見出し
+    const rh = Math.min(5.2, (H - M - top - 9) / maxRows), fs = Math.min(3.1, rh * 0.62);
+    const FILL = { late: '#cfe8f7', yesterday: '#fff2a8' };
+    tables.forEach(function (t) {
+      const kd = KIND[t.kind], tw = sum(t.w), tt = totals(t.gs);
+      text(title(t.kind), t.x, top + 3.5, tw * 0.75, 'left', 4.2, true);
+      text(fmtW(tt.weight) + 't', t.x + tw * 0.6, top + 3.5, tw * 0.4, 'right', 4.2, true);
+      let y = top + 7;
+      const line = function (cells, fill, bold) {
+        let x = t.x;
+        if (fill) { c.fillStyle = fill; c.fillRect(t.x, y, tw, rh); }
+        c.strokeStyle = '#808080'; c.lineWidth = 0.15;
+        cells.forEach(function (cell) {
+          const w = cell.span ? t.w.slice(cell.i, cell.i + cell.span).reduce(function (a, b) { return a + b; }, 0) : t.w[cell.i];
+          c.strokeRect(x, y, w, rh);
+          text(cell.v, x, y + rh / 2, w, cell.align, fs, bold || cell.bold, cell.color);
+          x += w;
+        });
+        y += rh;
+      };
+      const head = ['物件名', '部位', '製品名', '数量', '重量'].concat(kd.extra.map(function (e) { return e.label; }));
+      line(head.map(function (h, i) { return { i: i, v: h }; }), '#eef2f7', true);
+      const subLine = function (label, qty, weight) {
+        const cells = [{ i: 0, span: 3, v: label }, { i: 3, v: qty }, { i: 4, v: fmtW(weight), align: 'right' }];
+        if (t.w.length > 5) cells.push({ i: 5, span: t.w.length - 5, v: '' });
+        line(cells, FILL[t.kind], true);
+      };
+      t.gs.forEach(function (g) {
+        g.rows.forEach(function (r, i) {
+          const cells = [{ i: 0, v: i === 0 ? g.name : '', bold: true }, { i: 1, v: r[kd.part] }, { i: 2, v: r[1] }, { i: 3, v: r[kd.qty] }, { i: 4, v: fmtW(r[3]), align: 'right' }];
+          kd.extra.forEach(function (e, j) {
+            if (e.date) cells.push({ i: 5 + j, v: fmtDate(r[e.i]) });
+            if (e.days) { const n = Number(r[e.i]) || 0; cells.push({ i: 5 + j, v: n + '日', bold: n >= 3, color: n >= 5 ? '#a3121c' : n >= 3 ? '#8a3d00' : '#1d2733' }); }
+          });
+          line(cells);
+        });
+        subLine(kd.sub, g.qty, g.weight);
+      });
+      if (t.gs.length) subLine(kd.total, tt.qty, tt.weight);
+      else text(t.kind === 'late' ? '遅れている製品はありません' : '結果の日の出来高はありません', t.x, y + rh / 2, tw, 'center', fs, false, '#5d6b7a');
+    });
+    return cv;
+  }
+
+  function buildPdf() {
+    const src = st.src;
+    if (!src) return Promise.reject(new Error('取り込んだPDFがありません'));
+    return loadPdfLib().then(function () {
+      const P = PDFLib;
+      return Promise.all([P.PDFDocument.create(), P.PDFDocument.load(src.bytes, { ignoreEncryption: true })]).then(function (docs) {
+        const out = docs[0], org = docs[1];
+        const png = drawSummaryPage().toDataURL('image/png');
+        return out.embedPng(png).then(function (img) {
+          const pg = out.addPage([595.28, 841.89]); // A4縦
+          pg.drawImage(img, { x: 0, y: 0, width: 595.28, height: 841.89 });
+          return out.copyPages(org, src.planPages);
+        }).then(function (pages) {
+          pages.forEach(function (p) { out.addPage(p); }); // 予定表のページ(元のPDFのまま。A4横)
+          out.setTitle(title('late') + '・' + title('yesterday'));
+          return out.save();
+        });
+      });
     });
   }
 
-  function download() {
+  function downloadPdf() {
     const btn = $('dlBtn');
+    if (!st.data || !st.src) return Promise.resolve();
     btn.disabled = true;
-    loadExcelJS().then(buildExcel).catch(function (e) { toast('Excelの作成に失敗しました: ' + e.message); }).then(function () { btn.disabled = false; });
-  }
-
-  function buildExcel() {
-    const d = st.data;
-    const fileName = '鳥取_生産状況_' + d.baseDate.replace(/-/g, '') + '.xlsx';
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('生産状況');
-    const thin = { style: 'thin', color: { argb: 'FF808080' } };
-    const box = { top: thin, left: thin, bottom: thin, right: thin };
-    const FILL = { late: 'FFCFE8F7', yesterday: 'FFFFF2A8' };
-    const widths = {};
-    function put(row, col, v, opt) {
-      opt = opt || {};
-      const c = ws.getCell(row, col);
-      c.value = v;
-      if (opt.border !== false) c.border = box;
-      if (opt.fill) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: opt.fill } };
-      if (opt.fmt) c.numFmt = opt.fmt;
-      if (opt.align) c.alignment = { horizontal: opt.align };
-      if (opt.size) c.font = { size: opt.size };
-      if (!opt.noWidth) widths[col] = Math.max(widths[col] || 0, textWidth(opt.wtext != null ? opt.wtext : v));
-      return c;
-    }
-    function sumRow(r, col0, last, label, qty, weight, fill) {
-      for (let c = col0; c <= last; c++) put(r, c, '', { fill: fill, noWidth: true });
-      ws.mergeCells(r, col0, r, col0 + 2);
-      put(r, col0, label, { fill: fill, align: 'center', noWidth: true });
-      put(r, col0 + 3, qty, { fill: fill, align: 'center' });
-      put(r, col0 + 4, weight, { fill: fill, fmt: '0.00', wtext: fmtW(weight) });
-      return r + 1;
-    }
-    function table(kind, col0) {
-      const k = KIND[kind], gs = groups(d[kind] || [], k), t = totals(gs);
-      const head = ['物件名', '部位', '製品名', '数量', '重量'].concat(k.extra.map(function (e) { return e.label; }));
-      const last = col0 + head.length - 1;
-      put(1, col0, title(kind), { border: false, noWidth: true, size: 14 });
-      put(1, last, fmtW(t.weight) + 't', { border: false, align: 'right', noWidth: true, size: 14 });
-      head.forEach(function (h, i) { put(2, col0 + i, h, { align: 'center' }); });
-      let r = 3;
-      gs.forEach(function (g) {
-        g.rows.forEach(function (x, i) {
-          put(r, col0, i === 0 ? g.name : '', { align: 'center' });
-          put(r, col0 + 1, x[k.part], { align: 'center' });
-          put(r, col0 + 2, x[1], { align: 'center' });
-          put(r, col0 + 3, x[k.qty] === '' ? '' : Number(x[k.qty]), { align: 'center' });
-          put(r, col0 + 4, r2(x[3]), { fmt: '0.00', wtext: fmtW(x[3]) });
-          k.extra.forEach(function (e, j) {
-            if (e.date) { const p = parts(x[e.i]); put(r, col0 + 5 + j, p ? new Date(Date.UTC(p.y, p.m - 1, p.d)) : '', { fmt: 'm/d', align: 'center', wtext: '10/13' }); }
-            if (e.days) put(r, col0 + 5 + j, Number(x[e.i]) || 0, { fmt: '0"日"', align: 'center', wtext: '000日' });
-          });
-          r++;
-        });
-        r = sumRow(r, col0, last, k.sub, g.qty, g.weight, FILL[kind]);
-      });
-      if (gs.length) sumRow(r, col0, last, k.total, t.qty, t.weight, FILL[kind]);
-    }
-    table('late', 1);       // A〜G
-    table('yesterday', 9);  // I〜M(Hは空ける)
-    Object.keys(widths).forEach(function (c) { ws.getColumn(Number(c)).width = Math.min(40, Math.max(6, widths[c] + 2)); });
-    ws.getColumn(8).width = 2;
-    ws.views = [{ state: 'frozen', ySplit: 2 }];
-    ws.pageSetup = { orientation: 'portrait', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:2' };
-    return wb.xlsx.writeBuffer().then(function (buf) {
-      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const fileName = '鳥取_生産状況_' + String(st.data.baseDate).replace(/-/g, '') + '.pdf';
+    return buildPdf().then(function (bytes) {
+      const blob = new Blob([bytes], { type: 'application/pdf' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = fileName;
       document.body.appendChild(a);
       a.click();
-      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
       sendLog('ダウンロード', fileName);
-    });
+    }).catch(function (e) { toast('PDFの作成に失敗しました: ' + e.message); }).then(function () { btn.disabled = false; });
   }
 
-  $('dlBtn').addEventListener('click', download);
+  $('dlBtn').addEventListener('click', downloadPdf);
   $('pdfInput').addEventListener('change', function () { onPdf(this.files && this.files[0]); });
   $('pdfInput2').addEventListener('change', function () { onPdf(this.files && this.files[0]); });
   $('abbrBtn').addEventListener('click', function () { openAbbr(false); });
   $('abbrCancel').addEventListener('click', function () { $('abbrModal').hidden = true; });
   $('abbrSave').addEventListener('click', saveAbbr);
+  $('noticeOk').addEventListener('click', closeNotice);
   $('dateClose').addEventListener('click', function () { $('dateModal').hidden = true; });
 
   init();
