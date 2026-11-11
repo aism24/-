@@ -952,6 +952,39 @@ def _end_plate_member(tdf, member, depth, dim_values):
     return best[1] if best else None
 
 
+def _lines_for_length(tdf, val, x0, x1, y_ref, y_max, axis_deg):
+    """範囲内で、長さが val に一致し主軸の向きに合う直線(determine_length の数え方と同じ条件)。"""
+    out = []
+    for ln in tdf.lines:
+        if not (x0 <= (ln.x1 + ln.x2) / 2 <= x1 and ln.y1 > y_ref and ln.y2 > y_ref
+                and (y_max is None or (ln.y1 < y_max and ln.y2 < y_max))):
+            continue
+        if abs(ln.length - val) >= 0.5:
+            continue
+        ang = math.degrees(math.atan2(ln.y2 - ln.y1, ln.x2 - ln.x1)) % 180
+        d = abs(ang - axis_deg)
+        if min(d, 180 - d) <= 5.0:
+            out.append(ln)
+    return out
+
+
+def _spanning_length(tdf, current, g_debug, gx0, gx1, y_ref, y_max):
+    """現在の長さの直線が範囲の端から端までかからないとき、直線が8本以上で端から端までかかる別の候補を返す。"""
+    if current is None or not g_debug.get("candidates"):
+        return None
+    axis_deg = g_debug.get("main_axis_deg") or 0.0
+
+    def spans(val):
+        return any(min(l.x1, l.x2) <= gx0 + 1.0 and max(l.x1, l.x2) >= gx1 - 1.0
+                   for l in _lines_for_length(tdf, val, gx0, gx1, y_ref, y_max, axis_deg))
+    if spans(current):
+        return None
+    for c in sorted(g_debug["candidates"], key=lambda c: -c[1]):
+        if c[1] >= 8 and c[0] != current and spans(c[0]):
+            return c[0]
+    return None
+
+
 def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
     drawing_number = ex.find_drawing_number(tdf, filename)
     rows = _get_rows_small(tdf)
@@ -1010,7 +1043,14 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                 w_value, w_debug = ex.determine_length(tdf, row.x_mark - ex.RELAX_MARGIN, row.x_next + ex.RELAX_MARGIN,
                                                        row.y, y_max=tier_y_max)
                 wide_a = max([c[1] for c in (w_debug.get("candidates") or [])] or [0])
-                if w_value is not None and wide_a > own_a:
+                # 範囲内の結果が直線4本以上で支持され、その直線が製品の範囲の端から端までかかるときは、広げた結果を使わない
+                # (2026-11-11、26-17 EMRG-17。範囲内の全長 8580 の直線が範囲にかかり、広げると
+                # 梁の両端の部分の 3240 の直線の方が多くなっていた)
+                own_spans = length_value is not None and own_a >= 4 and any(
+                    min(l.x1, l.x2) <= row.x_mark + 1.0 and max(l.x1, l.x2) >= row.x_next - 1.0
+                    for l in _lines_for_length(tdf, length_value, row.x_mark, row.x_next, row.y,
+                                               tier_y_max, debug.get("main_axis_deg") or 0.0))
+                if w_value is not None and wide_a > own_a and not own_spans:
                     length_value, debug = w_value, w_debug
                     widened = (row.x_mark - ex.RELAX_MARGIN, row.x_next + ex.RELAX_MARGIN)  # 継手・サイズも同じ範囲で探す
             if id(row) in group_range:
@@ -1036,7 +1076,15 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                 if g_value is not None and own <= 4 and grp >= 8 and grp >= 2 * max(own, 1) and g_value != length_value:
                     length_value, debug = g_value, g_debug
                 else:
-                    group_range.pop(id(row))
+                    # 行ごとの結果の長さの直線が、まとめた範囲の端から端までかからず(梁の一部の寸法)、
+                    # まとめた範囲では一致する直線が8本以上の別の候補の直線が端から端までかかるときは、
+                    # その候補を全長とする(2026-11-11、26-17 EMRG-05A。2段の梁は全長 8580 の両端に
+                    # 3240 の部分があり、左右の列の行が 3240 を拾っていた)。
+                    alt = _spanning_length(tdf, length_value, g_debug, gx0, gx1, row.y, tier_y_max)
+                    if alt is not None:
+                        length_value, debug = alt, g_debug
+                    else:
+                        group_range.pop(id(row))
             if id(row) not in group_range and widened is None:
                 # 行の範囲の寸法の文字に全長が無く、一致する直線も1本以下のとき(2026-11-11、26-17
                 # D1M4G-05 の D1M4G4H。下の段の梁には全長の寸法の文字が無く、上の段の 10580 だけが
