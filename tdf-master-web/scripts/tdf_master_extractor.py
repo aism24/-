@@ -863,8 +863,8 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
     right_cx, right_cy, right_text = _nearest(rx_r, right_pool)
     return (
         left_text, right_text,
-        {"cx": left_cx, "cy": left_cy},
-        {"cx": right_cx, "cy": right_cy},
+        {"cx": left_cx, "cy": left_cy} if left_text is not None else None,
+        {"cx": right_cx, "cy": right_cy} if right_text is not None else None,
     )
 
 
