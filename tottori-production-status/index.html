@@ -5,7 +5,7 @@
 <title>鳥取工場 生産状況</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="style.css?v=20261111j">
+<link rel="stylesheet" href="style.css?v=20261112a">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body class="landing-mode">
@@ -38,7 +38,7 @@
     <label class="btn primary file-btn" id="pdfLabel">別の加工結果PDFを読み込む<input type="file" id="pdfInput2" accept="application/pdf,.pdf" hidden></label>
     <div class="plan-info" id="planInfo">週間予定表(加工結果PDFの「鳥取工場 加工予定表」)を読み込むと、予定日を過ぎても加工されていない製品を左に出します。</div>
     <button type="button" class="btn" id="abbrBtn" disabled>略称の対応</button>
-    <button type="button" class="btn" id="dlBtn" disabled>Excelダウンロード</button>
+    <button type="button" class="btn" id="dlBtn" disabled>PDFをもう一度ダウンロード</button>
     <div class="plan-missing" id="planMissing" hidden></div>
   </section>
 
@@ -63,6 +63,14 @@
 
 <div class="toast" id="toast" hidden></div>
 
+<!-- 取込のお知らせ(画面中央・OKを押すまで消えない) -->
+<div class="modal notice-modal" id="noticeModal" hidden>
+  <div class="notice-box" role="alertdialog" aria-modal="true" aria-labelledby="noticeText">
+    <p class="notice-text" id="noticeText"></p>
+    <div class="notice-actions"><button type="button" class="btn primary notice-ok" id="noticeOk">OK</button></div>
+  </div>
+</div>
+
 <!-- 加工結果の確認(マスターに加工日が無い製品) -->
 <div class="modal" id="dateModal" hidden>
   <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="dateTitle">
@@ -86,7 +94,7 @@
   </div>
 </div>
 
-<script src="app.js?v=20261111m"></script>
+<script src="app.js?v=20261112a"></script>
 <script>
 // 会社ロゴを5回続けて(1.5秒以内の間隔で)タップすると、この端末だけ「← アプリ一覧へ」が出る(ブラウザに記憶)。もう一度5回で消える
 // (2026-11-11、ユーザー指示。truck-fax・shipping-list-link と同じ仕組み)
