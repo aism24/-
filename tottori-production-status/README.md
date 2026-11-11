@@ -21,7 +21,7 @@
 - `sample.json`: GASのURLが未設定のとき(または `?demo=1`)に出すサンプル(実データではない)
 - `gas/Code.gs`: GAS(新しいスプレッドシート「鳥取工場生産状況周知」に紐づけて使う)
 - `gas/appsscript.json`: GASの設定の参考(時間帯 Asia/Tokyo・Drive API v3)
-- `to-launcher.js`: 「← アプリ一覧へ」ボタン(正本は `docs/to-launcher/`)
+- `to-launcher.js`: 「← アプリ一覧へ」ボタン(正本は `docs/to-launcher/`)。普段は非表示で、左上の会社ロゴを1.5秒以内の間隔で5回タップすると、その端末だけ表示(ブラウザに記憶)。もう一度5回で消える(2026-11-11、ユーザー指示。truck-fax と同じ仕組み)
 - `vercel.json`: push・マージでVercelのビルドを走らせない
 
 ## 仕組み
