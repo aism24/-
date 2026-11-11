@@ -3243,6 +3243,21 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
     dim_sums = None  # 寸法の合計(必要になったときだけ求める)
     length_checks: dict[int, str] = {}  # id(row) -> "推測" / "要確認"
     no_tier_limit: set[int] = set()  # 段の上限を外して梁を見つけた行
+    # 3項目パターンで、同じ設計符号の行が複数あるとき(1つの梁に製品マークが3つ付く図面。
+    # 2026-11-11、26-17 の B1M2G-01 の 2G2・2G12)、行ごとの範囲だと梁の一部しか見えず、
+    # 別の寸法(2750 等)を拾う。同じ設計符号の行をまとめた範囲で探した結果の方が、一致する直線が
+    # 2倍以上多く支持されるときだけ、そちらを使う。
+    group_range: dict[int, tuple] = {}
+    by_code: dict[str, list] = {}
+    for r in rows:
+        if r.size_missing and r.design_code:
+            by_code.setdefault(r.design_code, []).append(r)
+    for members in by_code.values():
+        if len(members) >= 2:
+            gx0 = min(m.x_mark for m in members)
+            gx1 = max(m.x_next for m in members)
+            for m in members:
+                group_range[id(m)] = (gx0, gx1)
     for row in rows:
         _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
         if row.size_missing:
@@ -3255,6 +3270,15 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
             # と判明。緩和なしのdetermine_lengthだけでN-1 2G・S-1 R1Gの
             # 大半の長さが正解することを確認済み)。
             length_value, debug = ex.determine_length(tdf, row.x_mark, row.x_next, row.y, y_max=tier_y_max)
+            if id(row) in group_range:
+                gx0, gx1 = group_range[id(row)]
+                g_value, g_debug = ex.determine_length(tdf, gx0, gx1, row.y, y_max=tier_y_max)
+                own = max([c[1] for c in (debug.get("candidates") or [])] or [0])
+                grp = max([c[1] for c in (g_debug.get("candidates") or [])] or [0])
+                if g_value is not None and grp >= 2 * max(own, 1) and g_value != length_value:
+                    length_value, debug = g_value, g_debug
+                else:
+                    group_range.pop(id(row))
             lengths[id(row)] = length_value
             size_missing_debug[id(row)] = debug
             continue
@@ -3468,7 +3492,7 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
         )
         endpoints = (
             exm._find_reference_line_endpoints(
-                tdf, row.x_mark, row.x_next, row.y, tier_y_max, length_value,
+                tdf, *group_range.get(id(row), (row.x_mark, row.x_next)), row.y, tier_y_max, length_value,
             ) if length_value is not None else None
         )
         left, right, left_jobj, right_jobj = ex.determine_joints_no_size(
