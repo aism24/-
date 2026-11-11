@@ -26,12 +26,12 @@
  * セットアップ手順は README.md を参照してください。
  */
 
-const CODE_VERSION = '2026-11-11g';
+const CODE_VERSION = '2026-11-11h';
 const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す生産予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
 const IGNORE_WORK_NO = '00-00';
-const PARSE_VERSION = 3; // v2: 部位・本数を追加、v3: 日付の無い鳥取の行も持つ(週間予定表との突き合わせ用。2026-11-11) // 取込データの形を変えたら上げる(全ファイルを読み直す)
+const PARSE_VERSION = 4; // v2: 部位・本数を追加、v3: 日付の無い鳥取の行も持つ(週間予定表との突き合わせ用)、v4: マスターの行番号(2026-11-11) // 取込データの形を変えたら上げる(全ファイルを読み直す)
 const TIME_BUDGET_MS = 240 * 1000; // 1回の実行で案件マスターを読む時間の上限(6分制限の手前)
 const TEMP_PREFIX = '_鳥取周知_一時変換_';
 
@@ -56,7 +56,10 @@ const INFO_PLAN = '予定表の概要';
 const HEAD_YESTERDAY = ['物件名', '製品名', '図番', '重量(t)', '生産日', '部位', '数量', '工事番号'];
 const HEAD_LATE = ['物件名', '製品名', '図番', '重量(t)', '生産予定日', '遅れ日数(営業日)', '部位', '数量', '工事番号'];
 const HEAD_ABBR = ['略称', '工事番号'];
-const HEAD_DATA = ['ファイルID', '工事番号', '工事名', '製品名', '図番', '重量(t)', '生産予定日', '生産日', '部位', '本数'];
+// 加工結果PDFの「鳥取工場MM.DD結果重量」の表(加工済みのはずの製品)。マスターに加工日が入っているかの確認に使う
+const SHEET_RESULT = '加工結果';
+const HEAD_RESULT = ['物件名', '製品名', '加工日', '読込日時', 'ファイル名'];
+const HEAD_DATA = ['ファイルID', '工事番号', '工事名', '製品名', '図番', '重量(t)', '生産予定日', '生産日', '部位', '本数', '行番号'];
 const PART_ORDER = ['柱', '大梁', '小梁']; // 一覧の並び: 物件名 → 部位(柱→大梁→小梁→その他) → 案件マスターの行の順
 const HEAD_STATE = ['ファイルID', '工事番号', 'ファイル名', '元ファイル更新日時', '取込日時', '鳥取の行数', '形式', 'エラー'];
 const HEAD_LOG = ['日時', '種別', '内容'];
@@ -119,12 +122,72 @@ function saveSchedule_(body) {
       map[k] = [String(x.name || ''), String(x.mark), String(x.drawing || ''), normalizeKey_(x.date), qty_(x.qty), Number(x.weight) || 0, now, fileName];
     });
     writeTable_(sh, HEAD_PLAN, keys.map(function (k) { return map[k]; }), [0, 1, 2, 3, 6, 7]);
+    // 加工結果の表(あれば)を保存して、マスターに加工日が入っているか確かめる
+    const results = (body.results || []).filter(function (x) { return x && x.mark; });
+    if (results.length) {
+      const rsh = ss.getSheetByName(SHEET_RESULT) || ensureSheet_(ss, SHEET_RESULT, HEAD_RESULT, true);
+      writeTable_(rsh, HEAD_RESULT, results.map(function (x) { return [String(x.name || ''), String(x.mark), normalizeKey_(x.date), now, fileName]; }), [0, 1, 2, 3, 4]);
+    }
     const info = ss.getSheetByName(SHEET_INFO);
-    const built = rebuildFromSheets_(ss, info);
-    return { status: 'success', version: CODE_VERSION, saved: items.length, data: toPayload_(built) };
+    // このPDFに加工結果の表があるときだけ確かめる(前回のPDFの結果で、何度もポップアップを出さない)
+    const check = results.length ? checkResultsWithReread_(ss, info) : { result: null, built: null };
+    const built = check.built || rebuildFromSheets_(ss, info);
+    return { status: 'success', version: CODE_VERSION, saved: items.length, resultCheck: check.result, data: toPayload_(built) };
   } finally {
     lock.releaseLock();
   }
+}
+
+// 加工結果(PDFの結果重量の表)とマスターの加工日を照らし合わせる(2026-11-11 ユーザー指定)
+// ① 加工日の無い製品があれば、その工事の案件マスターだけを更新日時に関係なく読み直す(作業用データが古い場合)
+// ② もう一度照らし合わせる ③ それでも無ければ、画面が「マスターデータに日付が入ってません」(製品名|行数)を出す
+function checkResultsWithReread_(ss, info) {
+  const sh = ss.getSheetByName(SHEET_RESULT);
+  const results = sh ? readTableRows_(sh, HEAD_RESULT.length).map(function (r) { return { name: String(r[0]), mark: String(r[1]), date: normalizeKey_(r[2]) }; }).filter(function (x) { return x.mark; }) : [];
+  if (!results.length) return { result: null, built: null };
+  const abbr = readAbbr_(ss);
+  let allRows = readTableRows_(ss.getSheetByName(SHEET_DATA), HEAD_DATA.length);
+  let miss = findMissingDates_(allRows, results, abbr);
+  let reread = 0, built = null;
+  if (miss.length) {
+    // 読み直す工事: 略称の工事番号のファイル、または見つかった行のファイル
+    const indexId = extractId_(readInfo_(info, INFO_INDEX));
+    const files = indexId ? readFileIndex_(readIndexRows_(indexId)) : [];
+    const force = {};
+    miss.forEach(function (m) {
+      if (m.fileId) force[m.fileId] = true;
+      const no = abbr[m.name];
+      if (no) files.forEach(function (f) { if (f.workNo === no) force[f.fileId] = true; });
+    });
+    reread = Object.keys(force).length;
+    if (reread) {
+      built = toBuilt_(runRefresh_(force));
+      allRows = readTableRows_(ss.getSheetByName(SHEET_DATA), HEAD_DATA.length);
+      miss = findMissingDates_(allRows, results, abbr);
+    }
+  }
+  return { result: { date: results[0].date, checked: results.length, reread: reread, missing: miss.map(function (m) { return { name: m.name, mark: m.mark, row: m.row, file: m.file }; }) }, built: built };
+}
+
+// runRefresh_ の戻り値(画面用の形)を、rebuildFromSheets_ と同じ形として扱う
+function toBuilt_(r) { return r && r.data ? r.data : null; }
+
+// 加工結果の製品のうち、マスターに加工日が入っていないもの(見つからないものも含む)
+function findMissingDates_(allRows, results, abbr) {
+  const byWorkMark = {}, byMark = {};
+  allRows.forEach(function (r, i) {
+    (byWorkMark[String(r[1]) + '\t' + String(r[3])] = byWorkMark[String(r[1]) + '\t' + String(r[3])] || []).push(i);
+    (byMark[String(r[3])] = byMark[String(r[3])] || []).push(i);
+  });
+  const out = [];
+  results.forEach(function (x) {
+    const no = abbr[x.name];
+    const cands = no ? (byWorkMark[no + '\t' + x.mark] || []) : (byMark[x.mark] || []);
+    if (cands.some(function (j) { return normalizeKey_(allRows[j][7]); })) return;
+    const m = cands.length ? allRows[cands[0]] : null;
+    out.push({ name: x.name, mark: x.mark, row: m ? (Number(m[10]) || '') : '', file: m ? String(m[2]) : '', fileId: m ? String(m[0]) : '' });
+  });
+  return out;
 }
 
 // 略称 → 工事番号 の対応を保存して(同じ略称は上書き)、一覧を作り直して返す
@@ -142,8 +205,10 @@ function saveAbbr_(body) {
       if (no) cur[a] = no; else delete cur[a];
     });
     writeTable_(sh, HEAD_ABBR, Object.keys(cur).sort().map(function (a) { return [a, cur[a]]; }), [0, 1]);
-    const built = rebuildFromSheets_(ss, ss.getSheetByName(SHEET_INFO));
-    return { status: 'success', version: CODE_VERSION, data: toPayload_(built) };
+    const info = ss.getSheetByName(SHEET_INFO);
+    const check = checkResultsWithReread_(ss, info);
+    const built = check.built || rebuildFromSheets_(ss, info);
+    return { status: 'success', version: CODE_VERSION, resultCheck: check.result, data: toPayload_(built) };
   } finally {
     lock.releaseLock();
   }
@@ -208,6 +273,7 @@ function setupSheets() {
   ensureSheet_(ss, SHEET_LOG, HEAD_LOG, true);
   ensureSheet_(ss, SHEET_PLAN, HEAD_PLAN, false);
   ensureSheet_(ss, SHEET_ABBR, HEAD_ABBR, false);
+  ensureSheet_(ss, SHEET_RESULT, HEAD_RESULT, true);
   const info = ss.getSheetByName(SHEET_INFO);
   [INFO_INDEX, INFO_SITE, INFO_BASE, INFO_PREV, INFO_UPDATED, INFO_PENDING, INFO_WARN].forEach(function (k) {
     if (findInfoRow_(info, k) < 0) info.appendRow([k, k === INFO_SITE ? TARGET_SITE_DEFAULT : '']);
@@ -268,7 +334,9 @@ function runRefreshLocked_(wait) {
 }
 
 // 変わった案件マスターだけ読み直し、一覧を作り直してシートへ書く。
-function runRefresh_() {
+// force: 更新日時に関係なく読み直すファイルID({id: true})。加工結果の確認で、食い違った工事だけ読み直すときに使う
+function runRefresh_(force) {
+  force = force || {};
   const started = Date.now();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const info = ss.getSheetByName(SHEET_INFO);
@@ -304,7 +372,7 @@ function runRefresh_() {
       return;
     }
     const mtime = String(file.getLastUpdated().getTime());
-    if (st && st.mtime === mtime && st.version === PARSE_VERSION && !st.error && st.workNo === entry.workNo) return; // 変更なし
+    if (!force[entry.fileId] && st && st.mtime === mtime && st.version === PARSE_VERSION && !st.error && st.workNo === entry.workNo) return; // 変更なし
     if (Date.now() - started > TIME_BUDGET_MS) { pending++; return; }
     changed++;
     let rows = [], error = '';
@@ -316,7 +384,7 @@ function runRefresh_() {
       rows = st ? null : []; // 失敗時は前回の取込データを残す
     }
     parsed[entry.fileId] = rows ? rows.map(function (r) {
-      return [entry.fileId, entry.workNo, '', r.mark, r.drawing, r.weight, r.plan || '', r.done || '', r.part, r.qty];
+      return [entry.fileId, entry.workNo, '', r.mark, r.drawing, r.weight, r.plan || '', r.done || '', r.part, r.qty, r.row];
     }) : null;
     state[entry.fileId] = { fileId: entry.fileId, workNo: entry.workNo, fileName: entry.fileName, mtime: mtime, importedAt: Date.now(), count: rows ? rows.length : (st ? st.count : 0), version: PARSE_VERSION, error: error };
   });
@@ -634,6 +702,7 @@ function parseMasterRows_(header, values, site) {
       weight: col.weight >= 0 ? (Number(row[col.weight]) || 0) : 0,
       plan: plan,
       done: done,
+      row: i + 2, // マスターの行番号(1行目が見出し)
     });
   }
   return out;
@@ -741,7 +810,7 @@ function readDataByFile_(sh) {
     const id = String(r[0] || '');
     if (!id) return;
     // 日付は文字列でそろえる(シートが日付に変換していても戻す)
-    (map[id] = map[id] || []).push([id, String(r[1]), String(r[2]), String(r[3]), String(r[4]), Number(r[5]) || 0, normalizeKey_(r[6]), normalizeKey_(r[7]), String(r[8] == null ? '' : r[8]), r[9] === '' || r[9] == null ? '' : Number(r[9])]);
+    (map[id] = map[id] || []).push([id, String(r[1]), String(r[2]), String(r[3]), String(r[4]), Number(r[5]) || 0, normalizeKey_(r[6]), normalizeKey_(r[7]), String(r[8] == null ? '' : r[8]), r[9] === '' || r[9] == null ? '' : Number(r[9]), Number(r[10]) || '']);
   });
   return map;
 }

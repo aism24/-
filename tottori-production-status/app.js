@@ -191,6 +191,20 @@
     Array.prototype.forEach.call($('abbrList').querySelectorAll('select'), function (sel) { sel.value = known[sel.getAttribute('data-abbr')] || ''; });
     $('abbrModal').hidden = false;
   }
+  // 加工結果(PDFの結果重量の表)の製品で、作業用データを読み直してもマスターに加工日が無いものを出す
+  function showResultCheck(rc) {
+    if (!rc || !rc.missing || !rc.missing.length) return;
+    if (!$('abbrModal').hidden) return; // 略称の選択が先(保存すると改めて確認する)
+    const by = {};
+    rc.missing.forEach(function (m) { (by[m.name || '(件名なし)'] = by[m.name || '(件名なし)'] || []).push(m); });
+    $('dateNote').textContent = fmtDateY(rc.date) + 'の加工結果のうち、案件マスターに加工日が無い製品です' + (rc.reread ? '(作業用データを' + rc.reread + '件読み直して確認しました)' : '') + '。マスターに日付を入れてください。';
+    $('dateList').innerHTML = Object.keys(by).map(function (n) {
+      return '<div class="date-group"><div class="date-name">' + esc(n) + '</div><table class="sheet"><thead><tr><th>製品名</th><th>行数</th></tr></thead><tbody>'
+        + by[n].map(function (m) { return '<tr><td>' + esc(m.mark) + '</td><td class="num">' + (m.row ? esc(m.row) : 'マスターに無し') + '</td></tr>'; }).join('') + '</tbody></table></div>';
+    }).join('');
+    $('dateModal').hidden = false;
+  }
+
   function saveAbbr() {
     const map = {};
     Array.prototype.forEach.call($('abbrList').querySelectorAll('select'), function (sel) { map[sel.getAttribute('data-abbr')] = sel.value; });
@@ -202,6 +216,7 @@
       setData(res.data);
       saveCache(res.data);
       toast('略称の対応を保存しました');
+      showResultCheck(res.resultCheck);
     }).catch(function (e) { toast('保存に失敗しました: ' + e.message); }).then(function () { btn.disabled = false; });
   }
 
@@ -262,13 +277,16 @@
       }
       return Promise.all(pages);
     }).then(function (contents) {
-      const found = contents.map(planFromText).filter(function (r) { return r && r.items.length; });
+      const tx = contents.map(textLines);
+      const found = tx.map(planFromText).filter(function (r) { return r && r.items.length; });
       if (!found.length) throw new Error('このPDFに「鳥取工場 加工予定表」が見つかりませんでした(文字の読めるPDFが必要です。スキャンした画像のPDFは読めません)。');
-      return { items: found.reduce(function (a, r) { return a.concat(r.items); }, []) };
+      const results = tx.map(resultFromText).filter(Boolean).reduce(function (a, r) { return a.concat(r); }, []);
+      return { items: found.reduce(function (a, r) { return a.concat(r.items); }, []), results: results };
     });
   }
 
-  function planFromText(raw) {
+  // 同じ高さ(±2pt)の文字を左から並べ、すき間の無い文字どうしは1語につなぐ
+  function textLines(raw) {
     // 同じ高さ(±2pt)の文字を左から並べ、すき間の無い文字どうしは1語につなぐ(漢字や「ITM」が1文字ずつ分かれて入っているため)
     const lines = [];
     raw.filter(function (t) { return String(t.str).trim(); }).sort(function (a, b) { return a.y - b.y || a.x - b.x; }).forEach(function (t) {
@@ -288,7 +306,35 @@
       ln.ts = words;
     });
     const its = lines.reduce(function (a, l) { return a.concat(l.ts); }, []);
-    const all = its.map(function (t) { return t.s; }).join('');
+    return { lines: lines, its: its, all: its.map(function (t) { return t.s; }).join('') };
+  }
+
+  // 2ページ目の「鳥取工場11.10結果重量」の表(右側)から、加工済みのはずの製品を読む(物件名|部位|製品名|数量|重量)
+  function resultFromText(tx) {
+    const head = tx.its.find(function (t) { return /(\d{1,2})\.(\d{1,2})結果重量/.test(t.s); });
+    if (!head) return null;
+    const m = head.s.match(/(\d{1,2})\.(\d{1,2})結果重量/);
+    const now = new Date();
+    let y = now.getFullYear();
+    if (+m[1] - (now.getMonth() + 1) > 6) y--;
+    const date = y + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2);
+    const x0 = head.x - 5;
+    const out = [];
+    let cur = '';
+    tx.lines.forEach(function (ln) {
+      const ts = ln.ts.filter(function (t) { return t.x >= x0; });
+      for (let i = 0; i < ts.length; i++) {
+        const t = ts[i];
+        if (i === 0 && /^[A-Za-z][A-Za-z0-9]{1,9}$/.test(t.s)) { cur = t.s; continue; }
+        const q = ts[i + 1], w = ts[i + 2];
+        if (q && w && /-/.test(t.s) && /^\d+$/.test(q.s) && /^\d+(\.\d+)?$/.test(w.s)) { out.push({ date: date, name: cur, mark: t.s }); i += 2; }
+      }
+    });
+    return out;
+  }
+
+  function planFromText(tx) {
+    const lines = tx.lines, its = tx.its, all = tx.all;
     if (all.indexOf('加工予定表') < 0) return null;
     // 年: 「更新日:2026/11/10」から(無ければ今年)
     const up = all.match(/更新日[:：]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/);
@@ -332,13 +378,14 @@
     toast('「' + file.name + '」を読み取っています…');
     file.arrayBuffer().then(parsePlanPdf).then(function (r) {
       toast('予定表から ' + r.items.length + ' 件を読み取りました。案件マスターと照らし合わせています…');
-      return fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'schedule', fileName: file.name, items: r.items }) }).then(function (x) { return x.json(); });
+      return fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'schedule', fileName: file.name, items: r.items, results: r.results }) }).then(function (x) { return x.json(); });
     }).then(function (res) {
       if (res.status !== 'success') throw new Error(res.message || '保存に失敗しました');
       setData(res.data);
       saveCache(res.data);
       const mt = missingText(res.data.plan);
       toast('予定表を読み込みました(' + res.saved + '件)' + (mt ? '。' + mt : ''));
+      showResultCheck(res.resultCheck);
     }).catch(function (e) {
       showError('加工結果PDFの読み込みに失敗しました: ' + e.message);
     }).then(function () { label.classList.remove('busy'); $('pdfInput').value = ''; });
@@ -429,6 +476,7 @@
   $('abbrBtn').addEventListener('click', function () { openAbbr(false); });
   $('abbrCancel').addEventListener('click', function () { $('abbrModal').hidden = true; });
   $('abbrSave').addEventListener('click', saveAbbr);
+  $('dateClose').addEventListener('click', function () { $('dateModal').hidden = true; });
   $('refreshBtn').addEventListener('click', function () { refresh(false); });
 
   load();
