@@ -498,8 +498,7 @@
     text('鳥取工場 生産状況', M, M + 3, 100, 'left', 5.2, true);
     text('結果の日 ' + fmtDateY(d.prevDate) + '・基準日 ' + fmtDateY(d.baseDate), W - M - 100, M + 3, 100, 'right', 3.2, false, '#5d6b7a');
     let top = M + 8;
-    const mt = missingText(d.plan);
-    if (mt) { text(mt, M, top + 2, W - 2 * M, 'left', 3, false, '#7a5300'); top += 5; }
+    // 「…予定通り完了したものと考えます」はPDFに入れない(2026-11-12 ユーザー指定。読み込み時のお知らせにだけ出す)
     // 2つの表の列(mm)。遅れ: 物件名|部位|製品名|数量|重量|予定日|遅れ  結果: 物件名|部位|製品名|数量|重量
     const colsL = [13, 10, 29, 9, 13, 15, 11], colsR = [13, 10, 29, 9, 13];
     const sum = function (a) { return a.reduce(function (x, y) { return x + y; }, 0); };
