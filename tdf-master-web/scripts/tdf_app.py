@@ -968,15 +968,18 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
     dim_sums = None  # 寸法の合計(必要になったときだけ求める)
     length_checks: dict[int, str] = {}  # id(row) -> "推測" / "要確認"
     no_tier_limit: set[int] = set()  # 段の上限を外して梁を見つけた行
-    # 3項目パターンで、同じ設計符号の行が複数あるとき(1つの梁に製品マークが3つ付く図面。
-    # 2026-11-11、26-17 の B1M2G-01 の 2G2・2G12)、行ごとの範囲だと梁の一部しか見えず、
-    # 別の寸法(2750 等)を拾う。同じ設計符号の行をまとめた範囲で探した結果の方が、一致する直線が
-    # 2倍以上多く支持されるときだけ、そちらを使う。
+    # 3項目パターンで、同じ段(1段・2段。1つの立面図)の行が複数あるとき(1つの梁に製品マークが
+    # 3つ以上付く図面。2026-11-11、26-17 の B1M2G-01・B1M2G-04・B1M4G-01・B1M4G-02。設計符号が
+    # 違う行(4G1・4G2 等)も同じ梁)、行ごとの範囲だと梁の一部しか見えず、別の寸法(2750 等)を拾う。
+    # 同じ段の行をまとめた範囲で探した結果の方が、一致する直線が2倍以上、かつ8本以上で支持され、
+    # 行ごとの結果の支持が4本以下のときだけ、そちらを使う。
     group_range: dict[int, tuple] = {}
+    joint_caps = None  # 継手の長丸の中心(必要になったときだけ求める)
     by_code: dict[str, list] = {}
     for r in rows:
-        if r.size_missing and r.design_code:
-            by_code.setdefault(r.design_code, []).append(r)
+        lab = tier_info.get(id(r), (None, None))[0]
+        if r.size_missing and lab:
+            by_code.setdefault(lab, []).append(r)
     for members in by_code.values():
         if len(members) >= 2:
             gx0 = min(m.x_mark for m in members)
@@ -1000,7 +1003,22 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                 g_value, g_debug = ex.determine_length(tdf, gx0, gx1, row.y, y_max=tier_y_max)
                 own = max([c[1] for c in (debug.get("candidates") or [])] or [0])
                 grp = max([c[1] for c in (g_debug.get("candidates") or [])] or [0])
-                if g_value is not None and grp >= 2 * max(own, 1) and g_value != length_value:
+                # 一致する直線の数が同じ候補が複数あるとき(26-17 B1M2G-04: 全長 10581.1 と途中の 3930.5)は、
+                # 両端の近く(X方向700以内)に継手の長丸がある候補だけを全長とみなす。ちょうど1つのときだけ使う。
+                tops = [c for c in (g_debug.get("candidates") or []) if c[1] == grp]
+                if len(tops) > 1:
+                    if joint_caps is None:
+                        joint_caps = [((c[0] + c[2]) / 2, (c[1] + c[3]) / 2)
+                                      for c in ex._find_stadium_capsules_no_size(tdf)
+                                      if any(ex._text_enclosed_by_capsule_no_size(tdf, rec, c) for rec in tdf.texts)]
+                    ended = []
+                    for c in tops:
+                        ep = exm._find_reference_line_endpoints(tdf, gx0, gx1, row.y, tier_y_max, c[0])
+                        if ep is not None and all(any(abs(cx - e[0]) <= 700 and abs(cy - e[1]) <= 1500 for cx, cy in joint_caps) for e in ep):
+                            ended.append(c[0])
+                    if len(ended) == 1:
+                        g_value = ended[0]
+                if g_value is not None and own <= 4 and grp >= 8 and grp >= 2 * max(own, 1) and g_value != length_value:
                     length_value, debug = g_value, g_debug
                 else:
                     group_range.pop(id(row))
