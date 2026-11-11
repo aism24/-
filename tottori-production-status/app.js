@@ -4,7 +4,7 @@
   'use strict';
 
   // GAS WebアプリのURL(デプロイ後に設定する)
-  const GAS_URL = '';
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycby82K8BtvFOn5dHnlFMVB4-gYsVQNBCyaarn5ZjgcuCRK5knLSJ4rzTKu_T4vBuezlL/exec';
   const CACHE_KEY = 'tottori-production-status:last';
 
   const params = new URLSearchParams(location.search);
