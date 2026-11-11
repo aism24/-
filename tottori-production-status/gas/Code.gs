@@ -11,6 +11,9 @@
  *   前日出来高: 加工日が前の営業日の製品(読み込んだ工事のもの)
  *   加工結果の確認: 結果重量の表の製品に加工日が無ければ、その工事のファイルだけ読み直して再確認し、残ったもの(製品名・行番号)を返す
  *   「前の営業日」「営業日」は索引スプレッドシートの会社カレンダー(I列=日付、J列=出勤/休日)で決める。
+ *   何日の結果を出すかは、PDFの「鳥取工場MM.DD結果重量」の日付で決める(2026-11-11 ユーザー指定)。
+ *   その日 = 前日出来高の日、その次の営業日 = 基準日(遅れの数え終わり)。
+ *   いつ読み込んでも、そのPDFの日の結果・遅れになる(遅れの判定は、加工日が結果の日以前のものだけを「加工済み」とみなす)。
  *
  * ■ 読むもの(書き込みはしない)
  *   索引スプレッドシート「Excelマスタ一覧」。IDは「情報」シートの「索引スプレッドシート」にURLかIDを貼る(公開リポジトリにIDを書かないため)。
@@ -25,7 +28,7 @@
  * セットアップ手順は README.md を参照。
  */
 
-const CODE_VERSION = '2026-11-11k';
+const CODE_VERSION = '2026-11-11m';
 const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
@@ -234,6 +237,8 @@ function saveSchedule_(body) {
     const results = (body.results || []).filter(function (x) { return x && x.mark; }).map(function (x) { return { name: String(x.name || ''), mark: String(x.mark), date: normalizeKey_(x.date) }; });
     if (results.length) writeTable_(sheet_(SHEET_RESULT) || ensureSheet_(ss, SHEET_RESULT, HEAD_RESULT, true), HEAD_RESULT, results.map(function (x) { return [x.name, x.mark, x.date, now, fileName]; }), [0, 1, 2, 3, 4]);
     writePdfRecord_(ss, now, fileName);
+    // PDFの「MM.DD結果重量」の日付を控える(この日の結果を出す。結果の表が無いPDFなら今日を基準にする)
+    propSet_('PDF_PREV', normalizeKey_(body.resultDate) || '');
     const r = refreshAndCheck_(results);
     return { status: 'success', version: CODE_VERSION, saved: items.length, resultCheck: r.check, data: toPayload_(r.built) };
   } finally {
@@ -457,7 +462,8 @@ function runRefresh_(opts) {
   const namesSig = JSON.stringify(fileIndex.map(function (e) { return e.fileId + '=' + workName_(e); }));
   const namesChanged = propGet_('WORKNAMES_SIG') !== namesSig;
 
-  const today = todayKey_();
+  const dates = baseDates_(calendar);
+  const today = dates.base;
   const now = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm');
   const prevWarn = splitWarn_(infoGet_(INFO_WARN)).filter(function (w) { return w.indexOf('読み込みに失敗') >= 0 || w.indexOf('開けませんでした') >= 0 || w.indexOf('読み切れなかった') >= 0; });
   // 何も変わっていない(ファイル・名前・日付・前回の未取込/失敗なし)ときは、取込データを読み書きせずに返す
@@ -481,7 +487,7 @@ function runRefresh_(opts) {
   }
 
   saveWorkList_(rows);
-  const built = buildLists_(allRows, calendar, today, planRows_(), effectiveAbbr_());
+  const built = buildLists_(allRows, calendar, today, planRows_(), effectiveAbbr_(), dates.prev);
   if (pending > 0) warnings.push('時間内に読み切れなかった案件が' + pending + '件あります。1分後に自動で続きを読みます。');
   built.warnings = warnings.concat(built.warnings);
   built.pending = pending;
@@ -493,12 +499,15 @@ function runRefresh_(opts) {
 
 // 画面からの取得(今の画面は使わないが、確認用に残す)。日付が変わっていたら、取込データから一覧だけ作り直す
 function getData_() {
-  if (normalizeKey_(infoGet_(INFO_BASE)) !== todayKey_() && String(infoGet_(INFO_UPDATED) || '')) {
+  const usePdf = !!propGet_('PDF_PREV'); // PDFの日付が基準なら、一覧は取込時のままでよい
+  if (!usePdf && normalizeKey_(infoGet_(INFO_BASE)) !== todayKey_() && String(infoGet_(INFO_UPDATED) || '')) {
     const lock = LockService.getScriptLock();
     if (lock.tryLock(20000)) {
       try {
         const rows = indexRows_();
-        const built = buildLists_(dataRows_(), readCalendar_(rows), todayKey_(), planRows_(), effectiveAbbr_());
+        const calendar = readCalendar_(rows);
+        const dates = baseDates_(calendar);
+        const built = buildLists_(dataRows_(), calendar, dates.base, planRows_(), effectiveAbbr_(), dates.prev);
         built.warnings = splitWarn_(infoGet_(INFO_WARN)).filter(function (w) { return w.indexOf('読み込みに失敗') >= 0 || w.indexOf('開けませんでした') >= 0 || w.indexOf('読み切れなかった') >= 0; }).concat(built.warnings);
         built.pending = Number(infoGet_(INFO_PENDING)) || 0;
         built.updatedAt = String(infoGet_(INFO_UPDATED) || '');
@@ -518,12 +527,13 @@ function getData_() {
 // allRows: 取込データの行(列は D を参照。日付は'yyyy-MM-dd')
 // planRows: 予定表の行 [物件名, 製品名, 図番, 予定日, 数量, 重量, 読込日時, ファイル名]
 // calendar: {'yyyy-MM-dd': true(出勤)/false(休日)}  today: 'yyyy-MM-dd'  abbr: {略称: 工事番号}
+// prevKey: 前日出来高の日(PDFの結果の日)。省略時は today の前の営業日
 // 前日出来高 = 加工日が前の営業日の行。
-// 生産遅れ  = 予定表で予定日が今週の月曜より前(2か月以内)なのに、案件マスターに加工日が無い製品
+// 生産遅れ  = 予定表で予定日が今週の月曜より前(2か月以内)なのに、案件マスターに加工日が無い(または前の営業日より後の)製品
 //             (今週の予定は遅れにしない=「先週の漏れ」を遅れとする。備考①は加工予定日とは限らないため使わない。2026-11-11 ユーザー指定)
-function buildLists_(allRows, calendar, today, planRows, abbr) {
+function buildLists_(allRows, calendar, today, planRows, abbr, prevKey) {
   abbr = abbr || {};
-  const prev = prevBusinessDay_(calendar, today);
+  const prev = prevKey ? { key: prevKey, warning: '' } : prevBusinessDay_(calendar, today);
   const lateFrom = lateCutoff_(today);
   const lateBefore = weekStart_(today);
   const yesterday = [], late = [];
@@ -554,7 +564,7 @@ function buildLists_(allRows, calendar, today, planRows, abbr) {
       if (cands.length > 1) cands = [];
     }
     if (!cands.length) notFound++;
-    if (cands.some(function (j) { return allRows[j][D.DONE]; })) return; // 加工済み
+    if (cands.some(function (j) { return allRows[j][D.DONE] && allRows[j][D.DONE] <= prev.key; })) return; // 加工済み(結果の日までに加工したもの。後日読み込んでも、そのPDFの日の遅れになる)
     const m = cands.length ? allRows[cands[0]] : null;
     if (!(plan in lateDays)) {
       const c = businessDaysAfter_(calendar, plan, today);
@@ -606,6 +616,25 @@ function planCoverage_(sum, planRows, calendar, weekStart, prevKey) {
   }
   sum.missing = missing;
   return sum;
+}
+
+// 基準日と前日出来高の日。最後に読み込んだPDFの「MM.DD結果重量」の日付があれば、
+// その日 = 前日出来高の日、次の営業日 = 基準日(2026-11-11 ユーザー指定)。無ければ今日とその前の営業日。
+function baseDates_(calendar) {
+  const prev = normalizeKey_(propGet_('PDF_PREV') || '');
+  if (prev) return { base: nextBusinessDay_(calendar, prev), prev: prev };
+  return { base: todayKey_(), prev: '' };
+}
+
+// 次の営業日(カレンダーに無い日は土日を休みとみなす)
+function nextBusinessDay_(calendar, key) {
+  let d = keyToUtc_(key);
+  for (let i = 0; i < 60; i++) {
+    d += 86400000;
+    const k = utcToKey_(d);
+    if (Object.prototype.hasOwnProperty.call(calendar, k) ? calendar[k] : (new Date(d).getUTCDay() % 6 !== 0)) return k;
+  }
+  return utcToKey_(keyToUtc_(key) + 86400000);
 }
 
 // 今週の月曜日('yyyy-MM-dd')。例: 2026-11-11(水) → 2026-11-09

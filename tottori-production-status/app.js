@@ -96,7 +96,7 @@
   // ---- 表示 ----
   function setData(d) {
     st.data = d;
-    $('meta').innerHTML = '基準日 <b>' + esc(fmtDateY(d.baseDate)) + '</b>・前の営業日 <b>' + esc(fmtDateY(d.prevDate)) + '</b>・更新 ' + esc(d.updatedAt || '');
+    $('meta').innerHTML = '基準日 <b>' + esc(fmtDateY(d.baseDate)) + '</b>・結果の日 <b>' + esc(fmtDateY(d.prevDate)) + '</b>・更新 ' + esc(d.updatedAt || '');
     const w = $('warn');
     w.classList.remove('error'); w.hidden = !(d.warnings && d.warnings.length); w.textContent = (d.warnings || []).join('\n');
     render('late');
@@ -203,7 +203,24 @@
   // 「鳥取工場 加工予定表」のページから、曜日ごとの列(N月N日(曜)加工予定)にある 件名|製品名|台数|重量|図番 の行を読む。
   // 製品の行 = 「製品名」の右に、同じ高さで 台数(整数)→重量(小数)が並ぶ行。件名(物件名)は列の左端の英数字の見出し(ITM・OSR など)。
   // 台数セルの色は読まない(完了・未完は案件マスターの加工日で判定する。色と116行すべて一致することを確認済み)。
-  function parsePlanPdf(buf) {
+  // PDFの年: ファイル名の先頭 YYMMDD(例: 261110_加工結果.pdf)→ 予定表の「更新日:2026/11/10」→ 今日 の順で決める
+  function pdfYearMonth(fileName, all) {
+    const f = String(fileName || '').match(/^(\d{2})(\d{2})(\d{2})/);
+    if (f && +f[2] >= 1 && +f[2] <= 12) return { y: 2000 + +f[1], m: +f[2] };
+    const up = String(all || '').match(/更新日[:：]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+    if (up) return { y: +up[1], m: +up[2] };
+    const now = new Date();
+    return { y: now.getFullYear(), m: now.getMonth() + 1 };
+  }
+  function mdKey(ym, mm, dd) {
+    let y = ym.y;
+    if (mm - ym.m > 6) y--; else if (ym.m - mm > 6) y++;
+    return y + '-' + ('0' + mm).slice(-2) + '-' + ('0' + dd).slice(-2);
+  }
+
+  // 戻り値: items=予定表の行、results=結果重量の表の製品、resultDate=「鳥取工場MM.DD結果重量」の日
+  // 何日の結果を出すかは resultDate で決める(2026-11-11 ユーザー指定。基準日はGASでその次の営業日にする)
+  function parsePlanPdf(buf, fileName) {
     if (typeof pdfjsLib === 'undefined') return Promise.reject(new Error('PDFの部品を読み込み中です。少し待ってからもう一度選んでください。'));
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     return pdfjsLib.getDocument({ data: buf }).promise.then(function (pdf) {
@@ -222,8 +239,14 @@
       const tx = contents.map(textLines);
       const found = tx.map(planFromText).filter(function (r) { return r && r.items.length; });
       if (!found.length) throw new Error('このPDFに「鳥取工場 加工予定表」が見つかりませんでした(文字の読めるPDFが必要です。スキャンした画像のPDFは読めません)。');
-      const results = tx.map(resultFromText).filter(Boolean).reduce(function (a, r) { return a.concat(r); }, []);
-      return { items: found.reduce(function (a, r) { return a.concat(r.items); }, []), results: results };
+      const ym = pdfYearMonth(fileName, tx.map(function (t) { return t.all; }).join(''));
+      const results = tx.map(function (t) { return resultFromText(t, ym); }).filter(Boolean).reduce(function (a, r) { return a.concat(r); }, []);
+      let resultDate = '';
+      tx.forEach(function (t) {
+        const r = t.all.match(/(\d{1,2})\.(\d{1,2})結果重量/);
+        if (r && !resultDate) resultDate = mdKey(ym, +r[1], +r[2]);
+      });
+      return { items: found.reduce(function (a, r) { return a.concat(r.items); }, []), results: results, resultDate: resultDate };
     });
   }
 
@@ -252,14 +275,11 @@
   }
 
   // 2ページ目の「鳥取工場11.10結果重量」の表(右側)から、加工済みのはずの製品を読む(物件名|部位|製品名|数量|重量)
-  function resultFromText(tx) {
+  function resultFromText(tx, ym) {
     const head = tx.its.find(function (t) { return /(\d{1,2})\.(\d{1,2})結果重量/.test(t.s); });
     if (!head) return null;
     const m = head.s.match(/(\d{1,2})\.(\d{1,2})結果重量/);
-    const now = new Date();
-    let y = now.getFullYear();
-    if (+m[1] - (now.getMonth() + 1) > 6) y--;
-    const date = y + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2);
+    const date = mdKey(ym, +m[1], +m[2]);
     const x0 = head.x - 5;
     const out = [];
     let cur = '';
@@ -336,10 +356,10 @@
     label.classList.add('busy');
     if (!st.shown) landingState(true, '読み取っています…', '「' + file.name + '」', '');
     else toast('「' + file.name + '」を読み取っています…');
-    file.arrayBuffer().then(parsePlanPdf).then(function (r) {
+    file.arrayBuffer().then(function (buf) { return parsePlanPdf(buf, file.name); }).then(function (r) {
       if (!st.shown) landingState(true, '照らし合わせています…', '予定表 ' + r.items.length + ' 件を案件マスターと照らし合わせています(しばらくかかることがあります)', '');
       else toast('予定表から ' + r.items.length + ' 件を読み取りました。案件マスターと照らし合わせています…');
-      return fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'schedule', fileName: file.name, items: r.items, results: r.results }) }).then(function (x) { return x.json(); });
+      return fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'schedule', fileName: file.name, items: r.items, results: r.results, resultDate: r.resultDate }) }).then(function (x) { return x.json(); });
     }).then(function (res) {
       if (res.status !== 'success') throw new Error(res.message || '保存に失敗しました');
       showResult();
