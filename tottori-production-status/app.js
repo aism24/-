@@ -8,7 +8,6 @@
 
   // GAS WebアプリのURL
   const GAS_URL = 'https://script.google.com/macros/s/AKfycby82K8BtvFOn5dHnlFMVB4-gYsVQNBCyaarn5ZjgcuCRK5knLSJ4rzTKu_T4vBuezlL/exec';
-  const CACHE_KEY = 'tottori-production-status:last2';
 
   const params = new URLSearchParams(location.search);
   const DEMO = !GAS_URL || params.get('demo') === '1';
@@ -21,7 +20,7 @@
     yesterday: { part: 5, qty: 6, no: 7, sub: '結果合計', total: '総結果合計', extra: [] },
   };
 
-  const st = { data: null, live: '' };
+  const st = { data: null, shown: false, busy: false };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
@@ -77,68 +76,14 @@
       return r.json();
     });
   }
-  function saveCache(d) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch (e) { /* 無視 */ } }
-
-  // 開いたら: 前回の表示 → 保存済みの一覧(すぐ出る)→ 裏で案件マスターの最新を確認(変わった分だけGASが読み直す)
-  // 備考①(予定日)などは担当者がいつでも書き換えるため、開くたびに最新を確認する(2026-11-11 ユーザー指示)
-  function load() {
-    if (DEMO) {
-      $('banner').hidden = false;
-      $('banner').textContent = GAS_URL ? 'サンプル表示です(?demo=1)。実際のデータではありません。' : 'サンプル表示です(GASのURLが未設定のため)。実際のデータではありません。';
-      $('refreshBtn').disabled = true;
-      return fetchJson('sample.json?v=20261111d').then(function (d) { setData(d); }).catch(function (e) { showError('サンプルの読み込みに失敗しました: ' + e.message); });
-    }
-    try {
-      const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
-      if (cached && cached.late) setData(cached, true);
-    } catch (e) { /* 無視 */ }
-    setLive('最新を確認中…');
-    return fetchJson(GAS_URL + '?action=getData').then(function (res) {
-      if (res.status !== 'success') throw new Error(res.message || '取得に失敗しました');
-      setData(res.data);
-      saveCache(res.data);
-    }).catch(function (e) {
-      showError('データの取得に失敗しました: ' + e.message + (st.data ? '\n(前回取得した内容を表示しています)' : ''));
-    }).then(function () { refresh(true); });
-  }
-
-  // silent=true は開いたときの自動確認(トーストを出さない)。false は「最新データを取得」ボタン。
-  function refresh(silent) {
-    if (DEMO) return;
-    const btn = $('refreshBtn');
-    btn.disabled = true;
-    btn.textContent = '確認中…';
-    setLive('最新を確認中…');
-    if (!silent) toast('案件マスターの変更を確認しています(変更があれば数十秒かかることがあります)');
-    fetchJson(GAS_URL + '?action=refresh').then(function (res) {
-      if (res.status === 'busy') {
-        // 他の人(または自動更新)が更新中。終わるころに保存済みの一覧を取り直す
-        setLive('他の人が更新中…');
-        if (!silent) toast(res.message);
-        return new Promise(function (r) { setTimeout(r, 20000); }).then(function () { return fetchJson(GAS_URL + '?action=getData'); }).then(function (g) {
-          if (g.status === 'success') { setData(g.data); saveCache(g.data); }
-          setLive('');
-        });
-      }
-      if (res.status !== 'success') throw new Error(res.message || '更新に失敗しました');
-      setData(res.data);
-      saveCache(res.data);
-      setLive(res.pending ? '一部の案件を読み込み中(1〜2分後にもう一度開いてください)' : '');
-      if (!silent) toast(res.pending ? '一部の案件は読み込み中です。1〜2分後にもう一度開いてください。' : '最新のデータにしました');
-    }).catch(function (e) {
-      setLive('最新の確認に失敗しました');
-      if (!silent) showError('更新に失敗しました: ' + e.message);
-    }).then(function () {
-      btn.disabled = false;
-      btn.textContent = '最新データを取得';
-    });
-  }
-
-  // ヘッダーの「最新を確認中…」などの表示
-  function setLive(msg) {
-    st.live = msg;
-    const el = $('live');
-    if (el) el.textContent = msg ? '・' + msg : '';
+  // 開いた直後は「加工結果を送ってください」だけ(2026-11-11 ユーザー指定)。一覧はPDFを読み込んだときにGASが作る
+  // (最新の加工日の確認もそのときに行うので、開いた時点ではGASを呼ばない)
+  function init() {
+    if (!DEMO) return;
+    $('banner').hidden = false;
+    $('banner').textContent = GAS_URL ? 'サンプル表示です(?demo=1)。実際のデータではありません。' : 'サンプル表示です(GASのURLが未設定のため)。実際のデータではありません。';
+    showResult();
+    fetchJson('sample.json?v=20261111d').then(function (d) { setData(d); }).catch(function (e) { showError('サンプルの読み込みに失敗しました: ' + e.message); });
   }
 
   function showError(msg) {
@@ -146,16 +91,14 @@
     w.hidden = false;
     w.classList.add('error');
     w.textContent = msg;
-    if (!st.data) $('meta').textContent = '読み込めませんでした';
   }
 
   // ---- 表示 ----
-  function setData(d, fromCache) {
+  function setData(d) {
     st.data = d;
-    $('meta').innerHTML = '基準日 <b>' + esc(fmtDateY(d.baseDate)) + '</b>・前の営業日 <b>' + esc(fmtDateY(d.prevDate)) + '</b>・更新 ' + esc(d.updatedAt || '') + (fromCache ? '(前回の表示)' : '') + '<span id="live" class="live"></span>';
-    setLive(st.live || '');
+    $('meta').innerHTML = '基準日 <b>' + esc(fmtDateY(d.baseDate)) + '</b>・前の営業日 <b>' + esc(fmtDateY(d.prevDate)) + '</b>・更新 ' + esc(d.updatedAt || '');
     const w = $('warn');
-    if (!fromCache) { w.classList.remove('error'); w.hidden = !(d.warnings && d.warnings.length); w.textContent = (d.warnings || []).join('\n'); }
+    w.classList.remove('error'); w.hidden = !(d.warnings && d.warnings.length); w.textContent = (d.warnings || []).join('\n');
     render('late');
     render('yesterday');
     $('dlBtn').disabled = false;
@@ -166,7 +109,7 @@
     $('planMissing').textContent = mt;
     $('abbrBtn').disabled = DEMO || !((d.unknown || []).length || Object.keys(d.abbr || {}).length);
     // 新しい略称があれば、工事番号を選ぶ画面を出す(前回の表示からは出さない)
-    if (!fromCache && !DEMO && (d.unknown || []).length && $('abbrModal').hidden) openAbbr(true);
+    if (st.shown && !DEMO && (d.unknown || []).length && $('abbrModal').hidden) openAbbr(true);
   }
 
   function missingText(p) {
@@ -214,7 +157,6 @@
       if (res.status !== 'success') throw new Error(res.message || '保存に失敗しました');
       $('abbrModal').hidden = true;
       setData(res.data);
-      saveCache(res.data);
       toast('略称の対応を保存しました');
       showResultCheck(res.resultCheck);
     }).catch(function (e) { toast('保存に失敗しました: ' + e.message); }).then(function () { btn.disabled = false; });
@@ -370,26 +312,63 @@
     return { items: items };
   }
 
+  // 開いた直後の「加工結果を送ってください」から、一覧の画面へ切り替える
+  function showResult() {
+    st.shown = true;
+    $('landing').hidden = true;
+    $('resultView').hidden = false;
+    document.body.classList.remove('landing-mode');
+  }
+  function landingState(busy, title, sub, err) {
+    $('landing').classList.toggle('busy', busy);
+    $('landingTitle').textContent = title;
+    $('landingSub').textContent = sub;
+    $('landingErr').hidden = !err;
+    $('landingErr').textContent = err || '';
+  }
+
   function onPdf(file) {
-    if (!file) return;
+    if (!file || st.busy) return;
     if (DEMO) { toast('サンプル表示では読み込めません'); return; }
+    if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') { toast('PDFを送ってください'); return; }
+    st.busy = true;
     const label = $('pdfLabel');
     label.classList.add('busy');
-    toast('「' + file.name + '」を読み取っています…');
+    if (!st.shown) landingState(true, '読み取っています…', '「' + file.name + '」', '');
+    else toast('「' + file.name + '」を読み取っています…');
     file.arrayBuffer().then(parsePlanPdf).then(function (r) {
-      toast('予定表から ' + r.items.length + ' 件を読み取りました。案件マスターと照らし合わせています…');
+      if (!st.shown) landingState(true, '照らし合わせています…', '予定表 ' + r.items.length + ' 件を案件マスターと照らし合わせています(しばらくかかることがあります)', '');
+      else toast('予定表から ' + r.items.length + ' 件を読み取りました。案件マスターと照らし合わせています…');
       return fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'schedule', fileName: file.name, items: r.items, results: r.results }) }).then(function (x) { return x.json(); });
     }).then(function (res) {
       if (res.status !== 'success') throw new Error(res.message || '保存に失敗しました');
+      showResult();
       setData(res.data);
-      saveCache(res.data);
       const mt = missingText(res.data.plan);
       toast('予定表を読み込みました(' + res.saved + '件)' + (mt ? '。' + mt : ''));
       showResultCheck(res.resultCheck);
     }).catch(function (e) {
-      showError('加工結果PDFの読み込みに失敗しました: ' + e.message);
-    }).then(function () { label.classList.remove('busy'); $('pdfInput').value = ''; });
+      if (!st.shown) landingState(false, '加工結果を送ってください', 'PDFを画面のどこかにドロップするか、フォルダから選んでください', '読み込めませんでした: ' + e.message);
+      else showError('加工結果PDFの読み込みに失敗しました: ' + e.message);
+    }).then(function () { st.busy = false; label.classList.remove('busy'); $('pdfInput').value = ''; $('pdfInput2').value = ''; });
   }
+
+  // 画面のどこにドロップしても受け付ける
+  (function () {
+    let depth = 0;
+    const hasFile = function (e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0; };
+    document.addEventListener('dragenter', function (e) { if (!hasFile(e)) return; e.preventDefault(); depth++; $('dropOverlay').hidden = false; });
+    document.addEventListener('dragover', function (e) { if (!hasFile(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+    document.addEventListener('dragleave', function (e) { if (!hasFile(e)) return; depth = Math.max(0, depth - 1); if (!depth) $('dropOverlay').hidden = true; });
+    document.addEventListener('drop', function (e) {
+      if (!hasFile(e)) return;
+      e.preventDefault();
+      depth = 0;
+      $('dropOverlay').hidden = true;
+      const f = Array.prototype.find.call(e.dataTransfer.files || [], function (x) { return /\.pdf$/i.test(x.name) || x.type === 'application/pdf'; });
+      if (f) onPdf(f); else toast('PDFを送ってください');
+    });
+  })();
 
   // ---- Excel(見本と同じく、左=生産遅れ・右=結果重量を1枚に並べる) ----
   function textWidth(s) {
@@ -398,8 +377,25 @@
     return w;
   }
 
+  // Excelの部品(約200KB)は、ダウンロードを押したときに初めて読み込む
+  function loadExcelJS() {
+    if (typeof ExcelJS !== 'undefined') return Promise.resolve();
+    return new Promise(function (ok, ng) {
+      const sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+      sc.onload = function () { ok(); };
+      sc.onerror = function () { ng(new Error('Excelの部品を読み込めませんでした')); };
+      document.head.appendChild(sc);
+    });
+  }
+
   function download() {
-    if (typeof ExcelJS === 'undefined') { toast('Excelの部品を読み込み中です。少し待ってからもう一度押してください。'); return; }
+    const btn = $('dlBtn');
+    btn.disabled = true;
+    loadExcelJS().then(buildExcel).catch(function (e) { toast('Excelの作成に失敗しました: ' + e.message); }).then(function () { btn.disabled = false; });
+  }
+
+  function buildExcel() {
     const d = st.data;
     const fileName = '鳥取_生産状況_' + d.baseDate.replace(/-/g, '') + '.xlsx';
     const wb = new ExcelJS.Workbook();
@@ -459,7 +455,7 @@
     ws.getColumn(8).width = 2;
     ws.views = [{ state: 'frozen', ySplit: 2 }];
     ws.pageSetup = { orientation: 'portrait', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:2' };
-    wb.xlsx.writeBuffer().then(function (buf) {
+    return wb.xlsx.writeBuffer().then(function (buf) {
       const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -468,17 +464,17 @@
       a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
       sendLog('ダウンロード', fileName);
-    }).catch(function (e) { toast('Excelの作成に失敗しました: ' + e.message); });
+    });
   }
 
   $('dlBtn').addEventListener('click', download);
   $('pdfInput').addEventListener('change', function () { onPdf(this.files && this.files[0]); });
+  $('pdfInput2').addEventListener('change', function () { onPdf(this.files && this.files[0]); });
   $('abbrBtn').addEventListener('click', function () { openAbbr(false); });
   $('abbrCancel').addEventListener('click', function () { $('abbrModal').hidden = true; });
   $('abbrSave').addEventListener('click', saveAbbr);
   $('dateClose').addEventListener('click', function () { $('dateModal').hidden = true; });
-  $('refreshBtn').addEventListener('click', function () { refresh(false); });
 
-  load();
+  init();
   sendLog('起動', '');
 })();
