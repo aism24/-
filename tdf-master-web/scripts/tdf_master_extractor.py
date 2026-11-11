@@ -218,6 +218,17 @@ def find_product_rows_offset_mark(
     return rows
 
 
+_H_TYPE_PREFIX = re.compile(r"^(2LS|2L|BBOX|BCP|BCR|BOX|BH|BT|CT|C|MHY|HFT|HYT|HF|HY|H|I|LH|L|SH|TH)")
+
+
+def _is_code_not_size(text: str) -> bool:
+    """H形鋼などの接頭辞で始まるが、「x」(寸法の区切り)が無い文字は、サイズでなく設計符号。
+    (2026-11-11、26-17 B1M2B-05。設計符号「TH441」がサイズの書き方「TH-441x…」と同じ形とみなされ、
+    製品の行が読み飛ばされて0行になった。サイズには必ず幅や厚さの「x」が入る。)"""
+    t = unicodedata.normalize("NFKC", text).strip()
+    return bool(_H_TYPE_PREFIX.match(t)) and not re.search(r"[xX×*]", t)
+
+
 def find_product_rows_no_size(
     tdf: tb.TdfData, existing_positions: set[tuple[float, float]] | None = None,
 ) -> list[ProductRow]:
@@ -275,7 +286,7 @@ def find_product_rows_no_size(
             continue
         code_rec, mark_rec = same_row[-1], same_row[-2]
         code_text = tdf.resolve_text(code_rec)
-        if _looks_like_size(code_text):
+        if _looks_like_size(code_text) and not _is_code_not_size(code_text):
             # サイズが実は描かれていた(3つ目が本来のサイズ)=4項目パターンの
             # 対象であり、既にfind_product_rowsで処理されているはず。ここでは
             # 二重集計を避けるため無視する。

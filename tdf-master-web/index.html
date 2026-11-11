@@ -703,6 +703,17 @@ def find_product_rows_offset_mark(
     return rows
 
 
+_H_TYPE_PREFIX = re.compile(r"^(2LS|2L|BBOX|BCP|BCR|BOX|BH|BT|CT|C|MHY|HFT|HYT|HF|HY|H|I|LH|L|SH|TH)")
+
+
+def _is_code_not_size(text: str) -> bool:
+    """H形鋼などの接頭辞で始まるが、「x」(寸法の区切り)が無い文字は、サイズでなく設計符号。
+    (2026-11-11、26-17 B1M2B-05。設計符号「TH441」がサイズの書き方「TH-441x…」と同じ形とみなされ、
+    製品の行が読み飛ばされて0行になった。サイズには必ず幅や厚さの「x」が入る。)"""
+    t = unicodedata.normalize("NFKC", text).strip()
+    return bool(_H_TYPE_PREFIX.match(t)) and not re.search(r"[xX×*]", t)
+
+
 def find_product_rows_no_size(
     tdf: tb.TdfData, existing_positions: set[tuple[float, float]] | None = None,
 ) -> list[ProductRow]:
@@ -760,7 +771,7 @@ def find_product_rows_no_size(
             continue
         code_rec, mark_rec = same_row[-1], same_row[-2]
         code_text = tdf.resolve_text(code_rec)
-        if _looks_like_size(code_text):
+        if _looks_like_size(code_text) and not _is_code_not_size(code_text):
             # サイズが実は描かれていた(3つ目が本来のサイズ)=4項目パターンの
             # 対象であり、既にfind_product_rowsで処理されているはず。ここでは
             # 二重集計を避けるため無視する。
@@ -3436,6 +3447,13 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                         length_value = lv
                         debug = {"main_axis_deg": debug.get("main_axis_deg"), "candidates": [(lv, len(lns), 1, 0)]}
                         group_range[id(row)] = (min(min(l.x1, l.x2) for l in lns), max(max(l.x1, l.x2) for l in lns))
+            if id(row) not in group_range and widened is None and length_value is not None:
+                # 行の範囲の結果の直線が行の範囲の端から端までかからず(梁の一部の寸法)、一致する直線が
+                # 8本以上の別の候補の直線が端から端までかかるときは、その候補を全長とする
+                # (2026-11-11、26-17 B1M2B-06 の B1M2SB60-2。梁の一部の 1655 でなく全長 3555)。
+                alt = _spanning_length(tdf, length_value, debug, row.x_mark, row.x_next, row.y, tier_y_max)
+                if alt is not None:
+                    length_value = alt
             if widened is not None and id(row) not in group_range:
                 group_range[id(row)] = widened
             lengths[id(row)] = length_value

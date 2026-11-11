@@ -1110,6 +1110,13 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                         length_value = lv
                         debug = {"main_axis_deg": debug.get("main_axis_deg"), "candidates": [(lv, len(lns), 1, 0)]}
                         group_range[id(row)] = (min(min(l.x1, l.x2) for l in lns), max(max(l.x1, l.x2) for l in lns))
+            if id(row) not in group_range and widened is None and length_value is not None:
+                # 行の範囲の結果の直線が行の範囲の端から端までかからず(梁の一部の寸法)、一致する直線が
+                # 8本以上の別の候補の直線が端から端までかかるときは、その候補を全長とする
+                # (2026-11-11、26-17 B1M2B-06 の B1M2SB60-2。梁の一部の 1655 でなく全長 3555)。
+                alt = _spanning_length(tdf, length_value, debug, row.x_mark, row.x_next, row.y, tier_y_max)
+                if alt is not None:
+                    length_value = alt
             if widened is not None and id(row) not in group_range:
                 group_range[id(row)] = widened
             lengths[id(row)] = length_value
