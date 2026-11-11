@@ -53,6 +53,9 @@ def _get_rows_small(tdf: tb.TdfData) -> list:
     existing = {(round(r.x_next, 1), round(r.y, 1)) for r in rows}
     rows = rows + ex.find_product_rows_offset_mark(tdf, existing_positions=existing)
     rows = exm.filter_deleted_rows(tdf, rows)
+    # 設計符号の位置に、図番+3桁+「-番号」の部品の番号(D1M3G008-3 等)が書かれた行は、梁の製品ではない
+    # (2026-11-11、26-17 D1M3G-08 の KGR206。この行が有ると製品が2つに数えられ、4H の長さを読めなかった)。
+    rows = [r for r in rows if not (r.design_code and re.match(r"^[A-Za-z0-9]+\d{3}-\d+$", r.design_code))]
     return rows
 
 
@@ -998,20 +1001,18 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
             # と判明。緩和なしのdetermine_lengthだけでN-1 2G・S-1 R1Gの
             # 大半の長さが正解することを確認済み)。
             widened = None
+            length_value, debug = ex.determine_length(tdf, row.x_mark, row.x_next, row.y, y_max=tier_y_max)
+            own_a = max([c[1] for c in (debug.get("candidates") or [])] or [0])
             if len(rows) == 1:
                 # 製品が1つだけの図面は、梁が製品の範囲の外まで描かれるので、左右に広げて探す
                 # (2026-11-11、26-17 D1M2G-09。範囲内の 1775.1 でなく、全長 9981.1 が正しい)。
                 # 広げた結果の方が一致する直線が多いときだけ使う。
-                length_value, debug = ex.determine_length(tdf, row.x_mark, row.x_next, row.y, y_max=tier_y_max)
                 w_value, w_debug = ex.determine_length(tdf, row.x_mark - ex.RELAX_MARGIN, row.x_next + ex.RELAX_MARGIN,
                                                        row.y, y_max=tier_y_max)
-                own_a = max([c[1] for c in (debug.get("candidates") or [])] or [0])
                 wide_a = max([c[1] for c in (w_debug.get("candidates") or [])] or [0])
                 if w_value is not None and wide_a > own_a:
                     length_value, debug = w_value, w_debug
                     widened = (row.x_mark - ex.RELAX_MARGIN, row.x_next + ex.RELAX_MARGIN)  # 継手・サイズも同じ範囲で探す
-            else:
-                length_value, debug = ex.determine_length(tdf, row.x_mark, row.x_next, row.y, y_max=tier_y_max)
             if id(row) in group_range:
                 gx0, gx1 = group_range[id(row)]
                 g_value, g_debug = ex.determine_length(tdf, gx0, gx1, row.y, y_max=tier_y_max)
@@ -1240,11 +1241,11 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
         _tier_label, tier_y_max = tier_info.get(id(row), (None, None))
         chain_val = ex._chain_sum_candidate(tdf, row, candidates, tier_y_max)
         if chain_val is not None and chain_val != lengths.get(id(row)):
-            # 今の長さが一致する直線8本以上で支持され、連結の合計で選ばれた値の支持が3本以下のときは
+            # 今の長さが一致する直線6本以上で支持され、連結の合計で選ばれた値の支持が3本以下のときは
             # 上書きしない(2026-11-11、26-17 D1M2G-01・D1M2G-08。図面の枠の寸法 11000・13000 に上書きされていた)
             def _support(v):
                 return max([c[1] for c in candidates if v is not None and abs(c[0] - v) < 1e-6] or [0])
-            if not (_support(lengths.get(id(row))) >= 8 and _support(chain_val) <= 3):
+            if not (_support(lengths.get(id(row))) >= 6 and _support(chain_val) <= 3):
                 lengths[id(row)] = chain_val
 
     for row in size_missing_rows:
