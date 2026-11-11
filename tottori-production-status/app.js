@@ -169,12 +169,6 @@
     if (!fromCache && !DEMO && (d.unknown || []).length && $('abbrModal').hidden) openAbbr(true);
   }
 
-  // 物件名の下に「26-16 カゴヤ多々羅キャンパス」(索引のG・H列)を小さく添える
-  function workLabel(no) {
-    if (!no) return '';
-    const hit = (st.data.workList || []).find(function (w) { return w[0] === no; });
-    return '<div class="wname">' + esc(no + (hit && hit[1] ? ' ' + hit[1] : '')) + '</div>';
-  }
   function missingText(p) {
     if (!p || !p.missing || !p.missing.length) return '';
     return p.missing.map(fmtDate).join('と') + 'の予定が含まれていないので、予定通り完了したものと考えます';
@@ -228,7 +222,7 @@
     let html = '<thead><tr>' + head.map(function (h, i) { return '<th' + (i === 3 || i === 4 ? ' class="num"' : '') + '>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>';
     gs.forEach(function (g) {
       g.rows.forEach(function (r, i) {
-        html += '<tr><td class="work">' + (i === 0 ? esc(g.name) + workLabel(g.no) : '') + '</td><td class="part">' + esc(r[k.part]) + '</td><td class="mark">' + esc(r[1]) + '</td>'
+        html += '<tr><td class="work">' + (i === 0 ? esc(g.name) : '') + '</td><td class="part">' + esc(r[k.part]) + '</td><td class="mark">' + esc(r[1]) + '</td>'
           + '<td class="num">' + esc(r[k.qty]) + '</td><td class="num">' + fmtW(r[3]) + '</td>';
         k.extra.forEach(function (e) {
           if (e.date) html += '<td class="date">' + esc(fmtDate(r[e.i])) + '</td>';
