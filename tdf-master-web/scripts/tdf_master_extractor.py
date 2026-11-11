@@ -672,6 +672,7 @@ def determine_length(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float,
 # 製品が1種類だけの図面で、長さを探すX範囲を左右に広げる幅(tdf_app から使う)
 RELAX_MARGIN = 5000.0
 _SIZE_JOINT_Y_BAND = 300.0
+_JOINT_IN_MAX = 200.0  # 梁の端より内側に、継手の長丸の中心がこれ以上入っていたら、その端の継手にしない
 _JOINT_Y_NEAR = 600.0  # 継手の長丸を、長さの基準線のこの上下の範囲から優先して選ぶ
 
 
@@ -838,15 +839,28 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
     mid_xr = (lx_r + rx_r) / 2.0
     ref_y = (ly + ry) / 2.0
     near = [c for c in candidates if abs(c[1] - ref_y) <= _JOINT_Y_NEAR]
-    if (any(_rotate_x(c[0], c[1]) < mid_xr for c in near)
-            and any(_rotate_x(c[0], c[1]) >= mid_xr for c in near)):
-        candidates = near
+    # 梁の端より内側に200以上入った長丸は、その端の継手にしない(2026-11-11、26-17 D1MM2G-01。
+    # 右端より559内側にある別の梁の PJ340 を、右端の継手に選んでいた。正しい継手は端の外側に付く)
+    left_near = [c for c in near if _rotate_x(c[0], c[1]) < mid_xr and _rotate_x(c[0], c[1]) <= lx_r + _JOINT_IN_MAX]
+    right_near = [c for c in near if _rotate_x(c[0], c[1]) >= mid_xr and _rotate_x(c[0], c[1]) >= rx_r - _JOINT_IN_MAX]
+    if left_near and right_near:
+        left_pool, right_pool = left_near, right_near
+    elif near:
+        # 継手が基準線の近くに描かれている図面で、片側の端の近くには継手が無いとき(その端は継手なし)、
+        # 離れた別の部材の継手を選ばない(2026-11-11、26-17 D1MM2G-01。左端に継手が無い梁が、
+        # 上の別の部材の HVJ4z を選んでいた)。
+        left_pool, right_pool = left_near, right_near
+    else:
+        left_pool = right_pool = candidates
 
-    def _nearest(target_xr: float):
-        return min(candidates, key=lambda c: abs(_rotate_x(c[0], c[1]) - target_xr))
+    def _nearest(target_xr: float, pool):
+        if not pool:
+            return None, None, None
+        c = min(pool, key=lambda c: abs(_rotate_x(c[0], c[1]) - target_xr))
+        return c
 
-    left_cx, left_cy, left_text = _nearest(lx_r)
-    right_cx, right_cy, right_text = _nearest(rx_r)
+    left_cx, left_cy, left_text = _nearest(lx_r, left_pool)
+    right_cx, right_cy, right_text = _nearest(rx_r, right_pool)
     return (
         left_text, right_text,
         {"cx": left_cx, "cy": left_cy},
