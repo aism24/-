@@ -34,7 +34,6 @@
   function fmtMD(key) { const p = parts(key); return p ? p.m + '.' + p.d : ''; }
   function fmtDateY(key) { const p = parts(key); return p ? p.y + '/' + p.m + '/' + p.d + '(' + wd(p) + ')' : ''; }
   function daysClass(n) { return n >= 5 ? 'd3' : n >= 3 ? 'd2' : 'd1'; } // 営業日: 5日以上=赤、3日以上=橙
-  function prevDay(key) { const p = parts(key); return p ? new Date(Date.UTC(p.y, p.m - 1, p.d - 1)).toISOString().slice(0, 10) : ''; }
 
   // 物件ごとにまとめる(行の順はそのまま)
   // 工事別の合計行の見出し: 【ITM】　遅れ合計(2026-11-12 ユーザー指定)
@@ -188,9 +187,7 @@
     const gs = groups(d[kind] || [], k), t = totals(gs);
     $(kind + 'Title').textContent = title(kind);
     $(kind + 'Total').textContent = fmtW(t.weight) + 't';
-    $(kind + 'Note').textContent = kind === 'late'
-      ? (d.plan && d.plan.count ? '読み込んだ予定表で、予定日が ' + fmtDate(d.lateFrom) + '〜' + fmtDate(prevDay(d.lateBefore)) + ' なのに加工日が無い製品(今週の予定は遅れにしない。遅れは営業日)' : '加工結果PDFを読み込むと表示します')
-      : '加工日が ' + fmtDateY(d.prevDate) + ' の製品';
+    $(kind + 'Note').hidden = true; // 表の説明文は出さない(2026-11-12 ユーザー指定)
     const head = ['物件名', '部位', '製品名', '数量', '重量'].concat(k.extra.map(function (e) { return e.label; }));
     let html = '<thead><tr>' + head.map(function (h, i) { return '<th' + (i === 3 || i === 4 ? ' class="num"' : '') + '>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>';
     gs.forEach(function (g) {
@@ -209,7 +206,42 @@
     html += '</tbody>';
     $(kind + 'Table').innerHTML = gs.length ? html : '';
     $(kind + 'Empty').hidden = gs.length > 0;
+    $(kind + 'Sticky').removeAttribute('data-src');
+    setTimeout(updateStickyTotals, 0);
   }
+
+  // 総合計の行(総遅れ合計・総結果合計)が画面の下に隠れているときは、画面の最下部に写しを固定する。
+  // スクロールして本物の行が見えたら写しを消す(=本物がスクロールに合わせて動く)(2026-11-12 ユーザー指定)
+  function updateStickyTotals() {
+    ['late', 'yesterday'].forEach(function (kind) {
+      const bar = $(kind + 'Sticky'), row = $(kind + 'Table').querySelector('tr.total');
+      const wrap = $(kind + 'Table').parentNode;
+      if (!row || $('resultView').hidden) { bar.hidden = true; return; }
+      const vh = window.innerHeight, rr = row.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+      const show = rr.bottom > vh && wr.top < vh - rr.height * 2; // 本物が画面の下にあり、表は画面に入っている
+      bar.hidden = !show;
+      if (!show) return;
+      const cells = row.children;
+      if (bar.getAttribute('data-src') !== row.textContent + '|' + wrap.clientWidth) {
+        const t = document.createElement('table');
+        t.className = 'sheet';
+        const tr = row.cloneNode(true);
+        Array.prototype.forEach.call(tr.children, function (td, i) { td.style.width = td.style.minWidth = td.style.maxWidth = cells[i].getBoundingClientRect().width + 'px'; td.style.boxSizing = 'border-box'; });
+        t.appendChild(document.createElement('tbody')).appendChild(tr);
+        t.style.width = row.parentNode.parentNode.getBoundingClientRect().width + 'px';
+        t.style.tableLayout = 'fixed';
+        bar.innerHTML = '';
+        bar.appendChild(t);
+        bar.setAttribute('data-src', row.textContent + '|' + wrap.clientWidth);
+      }
+      bar.style.left = wr.left + 'px';
+      bar.style.width = wr.width + 'px';
+      bar.firstChild.style.transform = 'translateX(' + (-wrap.scrollLeft) + 'px)';
+    });
+  }
+  window.addEventListener('scroll', updateStickyTotals, { passive: true });
+  window.addEventListener('resize', function () { ['lateSticky', 'yesterdaySticky'].forEach(function (id) { $(id).removeAttribute('data-src'); }); updateStickyTotals(); });
+  ['lateTable', 'yesterdayTable'].forEach(function (id) { $(id).parentNode.addEventListener('scroll', updateStickyTotals, { passive: true }); });
 
   function subRow(label, qty, weight, cols, cls) {
     return '<tr class="' + cls + '"><td colspan="3" class="label">' + esc(label) + '</td><td class="num">' + qty + '</td><td class="num">' + fmtW(weight) + '</td>' + (cols > 5 ? '<td colspan="' + (cols - 5) + '"></td>' : '') + '</tr>';
@@ -362,6 +394,7 @@
     ['noticeModal', 'dateModal', 'abbrModal', 'warn', 'toast'].forEach(function (id) { $(id).hidden = true; });
     ['lateTable', 'yesterdayTable', 'meta', 'planInfo'].forEach(function (id) { $(id).innerHTML = ''; });
     $('resultView').hidden = true;
+    updateStickyTotals();
     $('landing').hidden = false;
     document.body.classList.add('landing-mode');
     landingState(false, '加工結果を送ってください', 'PDFを画面のどこかにドロップするか、フォルダから選んでください', '');
