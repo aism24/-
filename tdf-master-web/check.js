@@ -371,7 +371,7 @@ function checkReadExcel(buf) {
           let v = row[i];
           if (CHECK_DITTO.has(checkNorm(v))) v = prev[k]; // 「,,」は上の行と同じ
           prev[k] = v;
-          if ((k === 'ja' || k === 'jb') && typeof v === 'string') v = v.replace(/[【】◎★☆]/g, ''); // 継手名が【CJ1】や IJ250K◎★ の形(【】◎★☆は印。名前ではない)
+          if ((k === 'ja' || k === 'jb') && typeof v === 'string') v = v.replace(/[【】◎★☆]/g, ''); if (checkNorm(v) === '保留') v = ''; // 入力データの「保留」は継手名ではない(2026-11-11 ユーザー指示) // 継手名が【CJ1】や IJ250K◎★ の形(【】◎★☆は印。名前ではない)
           return v;
         };
         rows.push({ rowNo: top + r + 1, zuban, mark, rawMarkTail: String(row[ci.mark] ?? '').trim().endsWith('㋱'), size: g('size', ci.size), len: g('len', ci.len), honsu: g('honsu', ci.honsu), ja: g('ja', ci.ja), jb: g('jb', ci.jb) });
