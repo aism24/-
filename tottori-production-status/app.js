@@ -198,7 +198,7 @@
           + '<td class="num">' + esc(r[k.qty]) + '</td><td class="num">' + fmtW(r[3]) + '</td>';
         k.extra.forEach(function (e) {
           if (e.date) html += '<td class="date">' + esc(fmtDate(r[e.i])) + '</td>';
-          if (e.days) { const n = Number(r[e.i]) || 0; html += '<td class="num"><span class="days ' + daysClass(n) + '">' + n + '日</span></td>'; }
+          if (e.days) { const n = Number(r[e.i]) || 0; html += '<td class="days-cell"><span class="days ' + daysClass(n) + '">' + n + '日</span></td>'; }
         });
         html += '</tr>';
       });
