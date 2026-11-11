@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>鳥取工場 生産状況</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="style.css?v=20261111a">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+</head>
+<body>
+<header class="app-header">
+  <div class="hdr-inner">
+    <h1>鳥取工場 生産状況</h1>
+    <div class="hdr-meta" id="meta">読み込み中…</div>
+    <button type="button" class="btn ghost" id="refreshBtn">最新データを取得</button>
+  </div>
+</header>
+
+<main class="page">
+  <div id="banner" class="banner" hidden></div>
+  <div id="warn" class="warn" hidden></div>
+
+  <nav class="tabs" role="tablist">
+    <button type="button" class="tab" role="tab" id="tabYesterday" aria-selected="true" data-tab="yesterday">
+      <span class="tab-title">前日出来高</span><span class="tab-sub" id="subYesterday">—</span>
+    </button>
+    <button type="button" class="tab" role="tab" id="tabLate" aria-selected="false" data-tab="late">
+      <span class="tab-title">生産遅れリスト</span><span class="tab-sub" id="subLate">—</span>
+    </button>
+  </nav>
+
+  <section class="panel">
+    <div class="toolbar">
+      <div class="summary" id="summary"></div>
+      <label class="filter">工事
+        <select id="workFilter"><option value="">すべて</option></select>
+      </label>
+      <button type="button" class="btn primary" id="dlBtn" disabled>Excelダウンロード</button>
+    </div>
+    <div class="table-wrap">
+      <table class="list" id="list">
+        <thead id="thead"></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty" id="empty" hidden></div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js?v=20261111a"></script>
+<script src="to-launcher.js?v=20261019" data-target=".app-header h1" data-mode="in"></script>
+</body>
+</html>
