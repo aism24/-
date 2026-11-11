@@ -7,7 +7,8 @@
  *
  * ■ 作るもの(鳥取の行だけ)
  *   前日出来高 : 案件マスターの「加工」列の日付が「前の営業日」の行
- *   遅れリスト : 「備考①」列に日付があり(=生産予定日)、その日付が今日より前で、「加工」列に日付が無い行
+ *   遅れリスト : 「備考①」列に日付があり(=生産予定日)、その日付が今日より前で、「加工」列に日付が無い行。
+ *               ただし生産予定日が2か月より前の行は出さない(2か月過ぎたものは出荷まで完了済み。加工日の記入漏れなので。2026-11-11 ユーザー指定)
  *               遅れ日数 = 生産予定日の翌日から今日までの「出勤」日の数(営業日。2026-11-11 ユーザー指定で暦日から変更)
  *   「前の営業日」は、索引スプレッドシートの会社カレンダー(I列=日付、J列=出勤/休日)で決める。
  *
@@ -25,7 +26,8 @@
  * セットアップ手順は README.md を参照してください。
  */
 
-const CODE_VERSION = '2026-11-11b';
+const CODE_VERSION = '2026-11-11c';
+const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す生産予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
 const IGNORE_WORK_NO = '00-00';
@@ -268,6 +270,7 @@ function getData_() {
 // calendar: {'yyyy-MM-dd': true(出勤)/false(休日)}  today: 'yyyy-MM-dd'
 function buildLists_(allRows, calendar, today) {
   const prev = prevBusinessDay_(calendar, today);
+  const lateFrom = lateCutoff_(today);
   const yesterday = [], late = [];
   const lateDays = {}; // 生産予定日 -> 遅れ日数(同じ予定日は1回だけ数える)
   let missingCal = '';
@@ -275,7 +278,7 @@ function buildLists_(allRows, calendar, today) {
     const plan = normalizeKey_(r[6]), done = normalizeKey_(r[7]);
     const weight = Number(r[5]) || 0;
     if (done && done === prev.key) yesterday.push([r[2], r[3], r[4], weight, done, r[1]]);
-    if (plan && !done && plan < today) {
+    if (plan && !done && plan < today && plan >= lateFrom) {
       if (!(plan in lateDays)) {
         const c = businessDaysAfter_(calendar, plan, today);
         lateDays[plan] = c.days;
@@ -302,6 +305,16 @@ function buildLists_(allRows, calendar, today) {
 
 // 前の営業日: 今日より前で、会社カレンダーが「出勤」の最も近い日。
 // カレンダーに無い日に当たったら、土日を休みとみなして続け、注意を出す。
+// 遅れリストに出す生産予定日の下限: 今日のちょうど LATE_WINDOW_MONTHS か月前の日(その日を含む)。
+// 例: 11/11 → 9/11。その月に同じ日が無ければ月末(4/30 → 2/28)。
+function lateCutoff_(today) {
+  const p = today.split('-').map(Number);
+  let y = p[0], m = p[1] - LATE_WINDOW_MONTHS;
+  while (m < 1) { m += 12; y--; }
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return y + '-' + pad2_(m) + '-' + pad2_(Math.min(p[2], last));
+}
+
 function prevBusinessDay_(calendar, today) {
   let d = keyToUtc_(today);
   let missing = '';
@@ -570,7 +583,7 @@ function readPayloadFromSheets_(ss, info) {
 }
 
 function toPayload_(b) {
-  return { site: TARGET_SITE_DEFAULT, baseDate: b.baseDate, prevDate: b.prevDate, updatedAt: b.updatedAt, pending: b.pending || 0, warnings: b.warnings || [], yesterday: b.yesterday, late: b.late };
+  return { site: TARGET_SITE_DEFAULT, baseDate: b.baseDate, prevDate: b.prevDate, lateFrom: b.baseDate ? lateCutoff_(b.baseDate) : '', lateMonths: LATE_WINDOW_MONTHS, updatedAt: b.updatedAt, pending: b.pending || 0, warnings: b.warnings || [], yesterday: b.yesterday, late: b.late };
 }
 
 function getOwnFolder_(ss) {

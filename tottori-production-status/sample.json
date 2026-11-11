@@ -2,6 +2,7 @@
  "site": "鳥取",
  "baseDate": "2026-11-11",
  "prevDate": "2026-11-10",
+ "lateFrom": "2026-09-11",
  "updatedAt": "2026-11-11 06:03",
  "pending": 0,
  "warnings": [],
