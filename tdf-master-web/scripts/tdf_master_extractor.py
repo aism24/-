@@ -672,6 +672,8 @@ def determine_length(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float,
 # 製品が1種類だけの図面で、長さを探すX範囲を左右に広げる幅(tdf_app から使う)
 RELAX_MARGIN = 5000.0
 _SIZE_JOINT_Y_BAND = 300.0
+_JOINT_END_X = 1200.0  # 継手の高さを比べるとき、梁の端からX方向にこの範囲の長丸だけを使う
+_JOINT_LEVEL_TOL = 60.0  # 継手の長丸の高さの違いがこれ以内なら、同じ高さに描かれたものとみなす
 _JOINT_IN_MAX = 200.0  # 梁の端より内側に、継手の長丸の中心がこれ以上入っていたら、その端の継手にしない
 _JOINT_Y_NEAR = 600.0  # 継手の長丸を、長さの基準線のこの上下の範囲から優先して選ぶ
 
@@ -844,6 +846,17 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
     left_near = [c for c in near if _rotate_x(c[0], c[1]) < mid_xr and _rotate_x(c[0], c[1]) <= lx_r + _JOINT_IN_MAX]
     right_near = [c for c in near if _rotate_x(c[0], c[1]) >= mid_xr and _rotate_x(c[0], c[1]) >= rx_r - _JOINT_IN_MAX]
     if left_near and right_near:
+        # 基準線に最も近い高さに描かれた長丸だけにする(2026-11-11、26-17 D1M3G-03・-06。基準線の上下600に
+        # 別の部材の継手 BTJB(427上)と梁の継手 J7207A(350下)があり、X方向では BTJB の方が近かった)。
+        # 左右の側がそろうときだけ絞る。
+        # (端から X方向に1200以内にある長丸だけで高さを比べる。遠くの別の部材の長丸は含めない)
+        l_end = [c for c in left_near if abs(_rotate_x(c[0], c[1]) - lx_r) <= _JOINT_END_X]
+        r_end = [c for c in right_near if abs(_rotate_x(c[0], c[1]) - rx_r) <= _JOINT_END_X]
+        near_dy = min(abs(c[1] - ref_y) for c in l_end + r_end) if (l_end and r_end) else None
+        ln = [c for c in left_near if near_dy is not None and abs(c[1] - ref_y) <= near_dy + _JOINT_LEVEL_TOL]
+        rn = [c for c in right_near if near_dy is not None and abs(c[1] - ref_y) <= near_dy + _JOINT_LEVEL_TOL]
+        if ln and rn:
+            left_near, right_near = ln, rn
         left_pool, right_pool = left_near, right_near
     elif near:
         # 継手が基準線の近くに描かれている図面で、片側の端の近くには継手が無いとき(その端は継手なし)、
