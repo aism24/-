@@ -166,3 +166,6 @@ table.sheet tr.total td { border-top: 2px solid #8a98a8; }
 .abbr-row .ab .new { display: inline-block; font-size: 11px; font-weight: 600; color: #a3121c; background: #ffe2e2; border-radius: 6px; padding: 0 5px; margin-left: 4px; }
 .abbr-row select { flex: 1; min-width: 0; font: inherit; font-size: 15px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; background: #fff; color: var(--ink); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.date-group { margin-bottom: 10px; }
+.date-name { font-weight: 700; margin: 4px 0; }
+#dateTitle { color: #a3121c; }
