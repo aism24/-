@@ -26,12 +26,12 @@
  * セットアップ手順は README.md を参照してください。
  */
 
-const CODE_VERSION = '2026-11-11e';
+const CODE_VERSION = '2026-11-11g';
 const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す生産予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
 const IGNORE_WORK_NO = '00-00';
-const PARSE_VERSION = 2; // v2: 部位・本数を追加(2026-11-11) // 取込データの形を変えたら上げる(全ファイルを読み直す)
+const PARSE_VERSION = 3; // v2: 部位・本数を追加、v3: 日付の無い鳥取の行も持つ(週間予定表との突き合わせ用。2026-11-11) // 取込データの形を変えたら上げる(全ファイルを読み直す)
 const TIME_BUDGET_MS = 240 * 1000; // 1回の実行で案件マスターを読む時間の上限(6分制限の手前)
 const TEMP_PREFIX = '_鳥取周知_一時変換_';
 
@@ -41,6 +41,8 @@ const SHEET_LATE = '遅れリスト';
 const SHEET_DATA = '取込データ';
 const SHEET_STATE = '状態';
 const SHEET_LOG = '利用記録';
+const SHEET_PLAN = '予定表';
+const SHEET_ABBR = '略称'; // 週間予定表の件名(略称。例: ITM)→ 工事番号(例: 26-16)。画面で選んで保存する
 
 const INFO_INDEX = '索引スプレッドシート';
 const INFO_SITE = '対象拠点';
@@ -49,13 +51,17 @@ const INFO_PREV = '前の営業日';
 const INFO_UPDATED = '最終更新';
 const INFO_PENDING = '未取込の案件';
 const INFO_WARN = '注意';
+const INFO_PLAN = '予定表の概要';
 
-const HEAD_YESTERDAY = ['物件名', '製品名', '図番', '重量(t)', '生産日', '部位', '数量'];
-const HEAD_LATE = ['物件名', '製品名', '図番', '重量(t)', '生産予定日', '遅れ日数(営業日)', '部位', '数量'];
+const HEAD_YESTERDAY = ['物件名', '製品名', '図番', '重量(t)', '生産日', '部位', '数量', '工事番号'];
+const HEAD_LATE = ['物件名', '製品名', '図番', '重量(t)', '生産予定日', '遅れ日数(営業日)', '部位', '数量', '工事番号'];
+const HEAD_ABBR = ['略称', '工事番号'];
 const HEAD_DATA = ['ファイルID', '工事番号', '工事名', '製品名', '図番', '重量(t)', '生産予定日', '生産日', '部位', '本数'];
 const PART_ORDER = ['柱', '大梁', '小梁']; // 一覧の並び: 物件名 → 部位(柱→大梁→小梁→その他) → 案件マスターの行の順
 const HEAD_STATE = ['ファイルID', '工事番号', 'ファイル名', '元ファイル更新日時', '取込日時', '鳥取の行数', '形式', 'エラー'];
 const HEAD_LOG = ['日時', '種別', '内容'];
+// 週間予定表(加工結果PDFの「鳥取工場 加工予定表」)から読み込んだ予定。物件名+製品名ごとに1行(新しく読み込んだ予定日で上書き)
+const HEAD_PLAN = ['物件名', '製品名', '図番', '予定日', '数量', '重量(t)', '読込日時', 'ファイル名'];
 
 // ========== エントリーポイント ==========
 
@@ -71,15 +77,118 @@ function doGet(e) {
 }
 
 // 利用記録(画面には何も出さない。失敗しても画面側は無視する)
+// 週間予定表の読み込み(action=schedule。画面がPDFから読み取った行を送ってくる)もここで受ける
 function doPost(e) {
+  let body = {};
+  try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (x) { body = {}; }
+  if (body.action === 'schedule' || body.action === 'mapNames') {
+    try {
+      return json_(body.action === 'schedule' ? saveSchedule_(body) : saveAbbr_(body));
+    } catch (err) {
+      return json_({ status: 'error', version: CODE_VERSION, message: String(err && err.message || err) });
+    }
+  }
   try {
-    let body = {};
-    try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (x) { body = {}; }
     if (body.action === 'log') writeLog_(String(body.kind || ''), String(body.detail || ''));
   } catch (err) {
     // 記録の失敗は無視する
   }
   return json_({ status: 'success' });
+}
+
+// 週間予定表の行を「予定表」シートへ保存し(物件名+製品名が同じ行は新しい予定日で上書き)、一覧を作り直して返す
+function saveSchedule_(body) {
+  const items = (body.items || []).filter(function (x) { return x && x.mark && normalizeKey_(x.date); });
+  if (!items.length) throw new Error('予定表の行がありません');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(120000);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sh = ss.getSheetByName(SHEET_PLAN) || ensureSheet_(ss, SHEET_PLAN, HEAD_PLAN, false);
+    const map = {}, keys = [];
+    readTableRows_(sh, HEAD_PLAN.length).forEach(function (r) {
+      const k = String(r[0]) + '\t' + String(r[1]);
+      if (!map[k]) keys.push(k);
+      map[k] = [String(r[0]), String(r[1]), String(r[2]), normalizeKey_(r[3]), qty_(r[4]), Number(r[5]) || 0, String(r[6]), String(r[7])];
+    });
+    const now = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss'); // 秒まで(「最後に読み込んだ予定表」を見分けるため)
+    const fileName = String(body.fileName || '').slice(0, 100);
+    items.forEach(function (x) {
+      const k = String(x.name || '') + '\t' + String(x.mark);
+      if (!map[k]) keys.push(k);
+      map[k] = [String(x.name || ''), String(x.mark), String(x.drawing || ''), normalizeKey_(x.date), qty_(x.qty), Number(x.weight) || 0, now, fileName];
+    });
+    writeTable_(sh, HEAD_PLAN, keys.map(function (k) { return map[k]; }), [0, 1, 2, 3, 6, 7]);
+    const info = ss.getSheetByName(SHEET_INFO);
+    const built = rebuildFromSheets_(ss, info);
+    return { status: 'success', version: CODE_VERSION, saved: items.length, data: toPayload_(built) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 略称 → 工事番号 の対応を保存して(同じ略称は上書き)、一覧を作り直して返す
+function saveAbbr_(body) {
+  const map = body.map || {};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(120000);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sh = ss.getSheetByName(SHEET_ABBR) || ensureSheet_(ss, SHEET_ABBR, HEAD_ABBR, false);
+    const cur = readAbbr_(ss);
+    Object.keys(map).forEach(function (k) {
+      const a = String(k).trim(), no = String(map[k] || '').trim();
+      if (!a) return;
+      if (no) cur[a] = no; else delete cur[a];
+    });
+    writeTable_(sh, HEAD_ABBR, Object.keys(cur).sort().map(function (a) { return [a, cur[a]]; }), [0, 1]);
+    const built = rebuildFromSheets_(ss, ss.getSheetByName(SHEET_INFO));
+    return { status: 'success', version: CODE_VERSION, data: toPayload_(built) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function readAbbr_(ss) {
+  const sh = ss.getSheetByName(SHEET_ABBR);
+  const map = {};
+  if (!sh) return map;
+  readTableRows_(sh, HEAD_ABBR.length).forEach(function (r) { const a = String(r[0]).trim(), no = String(r[1]).trim(); if (a && no) map[a] = no; });
+  return map;
+}
+
+// 索引のG・H列(工事番号→工事名)。画面の選択肢と表示に使うので、作り直すたびにスクリプトのプロパティへ控えておく
+function saveWorkList_(indexRows) {
+  const seen = {}, list = [];
+  indexRows.forEach(function (row) {
+    const no = String(row[6] || '').trim(), name = String(row[7] || '').trim();
+    if (no && !seen[no]) { seen[no] = true; list.push([no, name]); }
+  });
+  list.sort(function (a, b) { return a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0; }); // 新しい工事番号を上に
+  try { PropertiesService.getScriptProperties().setProperty('WORKLIST', JSON.stringify(list)); } catch (e) { /* 控えられなくても続ける */ }
+  return list;
+}
+
+// 取込データ・予定表・会社カレンダーから一覧だけ作り直す(案件マスターは読まない)
+function rebuildFromSheets_(ss, info) {
+  const indexId = extractId_(readInfo_(info, INFO_INDEX));
+  if (!indexId) throw new Error('「' + SHEET_INFO + '」シートの「' + INFO_INDEX + '」が空です。');
+  const indexRows = readIndexRows_(indexId);
+  saveWorkList_(indexRows);
+  const calendar = readCalendar_(indexRows);
+  const allRows = readTableRows_(ss.getSheetByName(SHEET_DATA), HEAD_DATA.length);
+  const built = buildLists_(allRows, calendar, todayKey_(), readPlanRows_(ss), readAbbr_(ss));
+  built.warnings = splitWarn_(readInfo_(info, INFO_WARN)).filter(function (w) { return w.indexOf('会社カレンダー') < 0 && w.indexOf('予定表の製品') < 0 && w.indexOf('略称') < 0; }).concat(built.warnings);
+  built.pending = Number(readInfo_(info, INFO_PENDING)) || 0;
+  built.updatedAt = String(readInfo_(info, INFO_UPDATED) || '');
+  writeOutputs_(ss, info, built);
+  return built;
+}
+
+function readPlanRows_(ss) {
+  const sh = ss.getSheetByName(SHEET_PLAN);
+  if (!sh) return [];
+  return readTableRows_(sh, HEAD_PLAN.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), normalizeKey_(r[3]), qty_(r[4]), Number(r[5]) || 0, String(r[6]), String(r[7])]; });
 }
 
 function json_(obj) {
@@ -97,6 +206,8 @@ function setupSheets() {
   ensureSheet_(ss, SHEET_DATA, HEAD_DATA, true);
   ensureSheet_(ss, SHEET_STATE, HEAD_STATE, true);
   ensureSheet_(ss, SHEET_LOG, HEAD_LOG, true);
+  ensureSheet_(ss, SHEET_PLAN, HEAD_PLAN, false);
+  ensureSheet_(ss, SHEET_ABBR, HEAD_ABBR, false);
   const info = ss.getSheetByName(SHEET_INFO);
   [INFO_INDEX, INFO_SITE, INFO_BASE, INFO_PREV, INFO_UPDATED, INFO_PENDING, INFO_WARN].forEach(function (k) {
     if (findInfoRow_(info, k) < 0) info.appendRow([k, k === INFO_SITE ? TARGET_SITE_DEFAULT : '']);
@@ -246,7 +357,8 @@ function runRefresh_() {
   writeState_(stateSh, state);
   props.setProperty('WORKNAMES_SIG', namesSig);
 
-  const built = buildLists_(allRows, calendar, today);
+  saveWorkList_(indexRows);
+  const built = buildLists_(allRows, calendar, today, readPlanRows_(ss), readAbbr_(ss));
   if (pending > 0) warnings.push('時間内に読み切れなかった案件が' + pending + '件あります。1分後に自動で続きを読みます。');
   built.warnings = warnings.concat(built.warnings);
   built.pending = pending;
@@ -269,16 +381,7 @@ function getData_() {
     if (lock.tryLock(20000)) {
       try {
         if (normalizeKey_(readInfo_(info, INFO_BASE)) !== today) {
-          const indexId = extractId_(readInfo_(info, INFO_INDEX));
-          if (!indexId) throw new Error('「' + SHEET_INFO + '」シートの「' + INFO_INDEX + '」が空です。');
-          const calendar = readCalendar_(readIndexRows_(indexId));
-          const allRows = readTableRows_(ss.getSheetByName(SHEET_DATA), HEAD_DATA.length);
-          const built = buildLists_(allRows, calendar, today);
-          built.warnings = splitWarn_(readInfo_(info, INFO_WARN)).filter(function (w) { return w.indexOf('会社カレンダー') < 0; }).concat(built.warnings);
-          built.pending = Number(readInfo_(info, INFO_PENDING)) || 0;
-          built.updatedAt = String(readInfo_(info, INFO_UPDATED) || '');
-          writeOutputs_(ss, info, built);
-          return toPayload_(built);
+          return toPayload_(rebuildFromSheets_(ss, info));
         }
       } finally {
         lock.releaseLock();
@@ -290,43 +393,116 @@ function getData_() {
 
 // ========== 一覧づくり(純粋な計算。テストで直接呼ぶ) ==========
 
-// allRows: 取込データの行 [ファイルID, 工事番号, 工事名, 製品名, 図番, 重量, 生産予定日, 生産日](日付は'yyyy-MM-dd'の文字列)
+// allRows: 取込データの行 [ファイルID, 工事番号, 物件名, 製品名, 図番, 重量, 備考①, 加工日, 部位, 本数](日付は'yyyy-MM-dd')
+// planRows: 予定表の行 [物件名, 製品名, 図番, 予定日, 数量, 重量, 読込日時, ファイル名]
 // calendar: {'yyyy-MM-dd': true(出勤)/false(休日)}  today: 'yyyy-MM-dd'
-function buildLists_(allRows, calendar, today) {
+// 前日出来高 = 加工日が前の営業日の行。
+// 生産遅れ  = 予定表で予定日が今週より前(今週の月曜より前、2か月以内)なのに、案件マスターに加工日が無い製品
+//             (今週の予定は遅れにしない。先週までの予定の取り残し=「先週の漏れ」を遅れとする。2026-11-11 ユーザー指定)
+//             (備考①は加工予定日とは限らないため使わない。2026-11-11 ユーザー指定)
+function buildLists_(allRows, calendar, today, planRows, abbr) {
+  abbr = abbr || {};
   const prev = prevBusinessDay_(calendar, today);
   const lateFrom = lateCutoff_(today);
+  const lateBefore = weekStart_(today);
   const yesterday = [], late = [];
-  const lateDays = {}; // 生産予定日 -> 遅れ日数(同じ予定日は1回だけ数える)
-  let missingCal = '';
-  allRows.forEach(function (r) {
-    const plan = normalizeKey_(r[6]), done = normalizeKey_(r[7]);
-    const weight = Number(r[5]) || 0;
-    if (done && done === prev.key) yesterday.push([r[2], r[3], r[4], weight, done, r[8] || '', qty_(r[9])]);
-    if (plan && !done && plan < today && plan >= lateFrom) {
-      if (!(plan in lateDays)) {
-        const c = businessDaysAfter_(calendar, plan, today);
-        lateDays[plan] = c.days;
-        if (c.missing && (!missingCal || c.missing < missingCal)) missingCal = c.missing;
-      }
-      late.push([r[2], r[3], r[4], weight, plan, lateDays[plan], r[8] || '', qty_(r[9])]);
+  // 工事番号 → 略称(表示用。同じ工事番号に略称が複数あれば、名前順で最初のもの)
+  const rev = {};
+  Object.keys(abbr).sort().forEach(function (a) { if (!rev[abbr[a]]) rev[abbr[a]] = a; });
+  const byWorkMark = {}, byMark = {};
+  allRows.forEach(function (r, i) {
+    const done = normalizeKey_(r[7]), no = String(r[1]);
+    if (done && done === prev.key) yesterday.push([rev[no] || r[2], r[3], r[4], Number(r[5]) || 0, done, r[8] || '', qty_(r[9]), no, i]);
+    (byWorkMark[no + '\t' + String(r[3])] = byWorkMark[no + '\t' + String(r[3])] || []).push(i);
+    (byMark[String(r[3])] = byMark[String(r[3])] || []).push(i);
+  });
+  const lateDays = {}; // 予定日 -> 遅れ日数(同じ予定日は1回だけ数える)
+  let missingCal = '', notFound = 0;
+  const unmapped = {};
+  (planRows || []).forEach(function (p) {
+    const plan = normalizeKey_(p[3]);
+    if (!plan || plan >= lateBefore || plan < lateFrom) return;
+    // 案件マスターの行を探す: 略称→工事番号+製品名(同じ工事番号の全ファイル)。略称が未設定なら、製品名(+図番)で1件に決まるときだけ
+    const no = abbr[p[0]];
+    let cands;
+    if (no) cands = byWorkMark[no + '\t' + p[1]] || [];
+    else {
+      unmapped[p[0]] = true;
+      cands = byMark[p[1]] || [];
+      if (cands.length > 1) cands = cands.filter(function (j) { return String(allRows[j][4]) === String(p[2]); });
+      if (cands.length > 1) cands = [];
     }
+    if (!cands.length) notFound++;
+    if (cands.some(function (j) { return normalizeKey_(allRows[j][7]); })) return; // 加工済み
+    const m = cands.length ? allRows[cands[0]] : null;
+    if (!(plan in lateDays)) {
+      const c = businessDaysAfter_(calendar, plan, today);
+      lateDays[plan] = c.days;
+      if (c.missing && (!missingCal || c.missing < missingCal)) missingCal = c.missing;
+    }
+    late.push([p[0], p[1], m ? m[4] : p[2], m ? (Number(m[5]) || 0) : (Number(p[5]) || 0), plan, lateDays[plan], m ? (m[8] || '') : '', m ? qty_(m[9]) : qty_(p[4]), no || (m ? String(m[1]) : ''), m ? cands[0] : allRows.length]);
   });
   // 並び(見本のPDFと同じ、2026-11-11 ユーザー指定): 物件名 → 部位(柱→大梁→小梁→その他)→ 案件マスターの行の順
-  // (取込データは案件マスターの行の順に並んでいるので、同じ順位の行は元の順のまま=安定ソート)
   const byText = function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
   const rank = function (p) { const i = PART_ORDER.indexOf(p); return i < 0 ? PART_ORDER.length : i; };
-  const order = function (pi) { return function (a, b) { return byText(a[0], b[0]) || (rank(a[pi]) - rank(b[pi])); }; };
-  stableSort_(yesterday, order(5));
-  stableSort_(late, order(6));
+  const order = function (pi, ii) { return function (a, b) { return byText(a[0], b[0]) || (rank(a[pi]) - rank(b[pi])) || (a[ii] - b[ii]); }; };
+  stableSort_(yesterday, order(5, 8));
+  stableSort_(late, order(6, 9));
   const warnings = prev.warning ? [prev.warning] : [];
   if (missingCal) warnings.push('会社カレンダー(索引スプレッドシートのI・J列)に ' + missingCal.replace(/-/g, '/') + ' などがありません。遅れ日数(営業日)は、カレンダーに無い日を土日休みとみなして数えました。');
+  const um = Object.keys(unmapped);
+  if (um.length) warnings.push('略称「' + um.join('」「') + '」の工事番号が未設定です。画面の「略称の対応」で選んでください。');
+  if (notFound) warnings.push('予定表の製品のうち ' + notFound + ' 件が案件マスター(鳥取)に見つかりませんでした。加工済みか判定できないため、遅れとして表示しています。');
   return {
     baseDate: today,
     prevDate: prev.key,
-    yesterday: yesterday,
-    late: late,
+    yesterday: yesterday.map(function (r) { return r.slice(0, 8); }),
+    late: late.map(function (r) { return r.slice(0, 9); }),
     warnings: warnings,
+    plan: planCoverage_(planSummary_(planRows), planRows, calendar, lateBefore, prev.key),
   };
+}
+
+// 画面の「略称の対応」用: 略称の対応表・工事番号の一覧(索引G・H列)・未設定の略称
+function payloadExtras_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const abbr = readAbbr_(ss);
+  let workList = [];
+  try { workList = JSON.parse(PropertiesService.getScriptProperties().getProperty('WORKLIST') || '[]'); } catch (e) { workList = []; }
+  const unknown = {};
+  readPlanRows_(ss).forEach(function (p) { if (p[0] && !abbr[p[0]]) unknown[p[0]] = true; });
+  return { abbr: abbr, workList: workList, unknown: Object.keys(unknown).sort() };
+}
+
+// 予定表の概要(画面に「読み込んだ予定表」として出す)
+function planSummary_(planRows) {
+  const rows = planRows || [];
+  const last = rows.reduce(function (a, p) { return String(p[6]) > a[0] ? [String(p[6]), String(p[7])] : a; }, ['', '']);
+  const latest = rows.filter(function (p) { return String(p[6]) === last[0]; }).map(function (p) { return normalizeKey_(p[3]); }).filter(Boolean).sort();
+  return { count: rows.length, loadedAt: last[0], fileName: last[1], from: latest[0] || '', to: latest[latest.length - 1] || '' };
+}
+
+// 今週(月曜〜前の営業日)の出勤日のうち、最後に読み込んだ予定表に無い日(=予定通り完了したとみなす日)を添える
+// 例: 11/11(水)に 11/2〜11/6 の予定表を読み込んだ → ['2026-11-09', '2026-11-10']
+function planCoverage_(sum, planRows, calendar, weekStart, prevKey) {
+  if (!sum.count) { sum.missing = []; return sum; }
+  const dates = {};
+  (planRows || []).forEach(function (p) { if (String(p[6]) === sum.loadedAt) dates[normalizeKey_(p[3])] = true; });
+  const missing = [];
+  for (let d = keyToUtc_(weekStart); prevKey && d <= keyToUtc_(prevKey); d += 86400000) {
+    const k = utcToKey_(d);
+    const work = Object.prototype.hasOwnProperty.call(calendar, k) ? calendar[k] : (new Date(d).getUTCDay() % 6 !== 0);
+    if (work && !dates[k]) missing.push(k);
+  }
+  sum.missing = missing;
+  return sum;
+}
+
+// 今週の月曜日('yyyy-MM-dd')。例: 2026-11-11(水) → 2026-11-09
+function weekStart_(today) {
+  const t = keyToUtc_(today);
+  const wd = new Date(t).getUTCDay(); // 0=日
+  return utcToKey_(t - ((wd + 6) % 7) * 86400000);
 }
 
 function qty_(v) { return v === '' || v == null || isNaN(Number(v)) ? '' : Number(v); }
@@ -450,7 +626,6 @@ function parseMasterRows_(header, values, site) {
     if (String(row[col.site] == null ? '' : row[col.site]).trim() !== site) continue;
     const plan = col.plan >= 0 && isDate_(row[col.plan]) ? dateToKeyJst_(row[col.plan]) : '';
     const done = isDate_(row[col.done]) ? dateToKeyJst_(row[col.done]) : '';
-    if (!plan && !done) continue;
     out.push({
       mark: col.mark >= 0 ? String(row[col.mark] == null ? '' : row[col.mark]).trim() : '',
       part: col.part >= 0 ? String(row[col.part] == null ? '' : row[col.part]).trim() : '',
@@ -592,18 +767,19 @@ function writeState_(sh, state) {
 
 function writeOutputs_(ss, info, built) {
   // 工事名・製品名・図番・日付は文字のまま書く
-  writeTable_(ss.getSheetByName(SHEET_YESTERDAY), HEAD_YESTERDAY, built.yesterday, [0, 1, 2, 4, 5]);
-  writeTable_(ss.getSheetByName(SHEET_LATE), HEAD_LATE, built.late, [0, 1, 2, 4, 6]);
+  writeTable_(ss.getSheetByName(SHEET_YESTERDAY), HEAD_YESTERDAY, built.yesterday, [0, 1, 2, 4, 5, 7]);
+  writeTable_(ss.getSheetByName(SHEET_LATE), HEAD_LATE, built.late, [0, 1, 2, 4, 6, 8]);
   writeInfo_(info, INFO_BASE, "'" + built.baseDate);
   writeInfo_(info, INFO_PREV, "'" + built.prevDate);
   writeInfo_(info, INFO_UPDATED, "'" + built.updatedAt);
   writeInfo_(info, INFO_PENDING, built.pending || 0);
   writeInfo_(info, INFO_WARN, built.warnings.join('\n'));
+  writeInfo_(info, INFO_PLAN, "'" + JSON.stringify(built.plan || null));
 }
 
 function readPayloadFromSheets_(ss, info) {
-  const y = readTableRows_(ss.getSheetByName(SHEET_YESTERDAY), HEAD_YESTERDAY.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), String(r[5]), qty_(r[6])]; });
-  const l = readTableRows_(ss.getSheetByName(SHEET_LATE), HEAD_LATE.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), Number(r[5]) || 0, String(r[6]), qty_(r[7])]; });
+  const y = readTableRows_(ss.getSheetByName(SHEET_YESTERDAY), HEAD_YESTERDAY.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), String(r[5]), qty_(r[6]), String(r[7])]; });
+  const l = readTableRows_(ss.getSheetByName(SHEET_LATE), HEAD_LATE.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), Number(r[5]) || 0, String(r[6]), qty_(r[7]), String(r[8])]; });
   return toPayload_({
     baseDate: normalizeKey_(readInfo_(info, INFO_BASE)),
     prevDate: normalizeKey_(readInfo_(info, INFO_PREV)),
@@ -612,11 +788,17 @@ function readPayloadFromSheets_(ss, info) {
     warnings: splitWarn_(readInfo_(info, INFO_WARN)),
     yesterday: y,
     late: l,
+    plan: readPlanInfo_(info) || planSummary_(readPlanRows_(ss)),
   });
 }
 
+function readPlanInfo_(info) {
+  try { return JSON.parse(String(readInfo_(info, INFO_PLAN) || 'null')); } catch (e) { return null; }
+}
+
 function toPayload_(b) {
-  return { site: TARGET_SITE_DEFAULT, baseDate: b.baseDate, prevDate: b.prevDate, lateFrom: b.baseDate ? lateCutoff_(b.baseDate) : '', lateMonths: LATE_WINDOW_MONTHS, updatedAt: b.updatedAt, pending: b.pending || 0, warnings: b.warnings || [], yesterday: b.yesterday, late: b.late };
+  const ex = payloadExtras_();
+  return { abbr: ex.abbr, workList: ex.workList, unknown: ex.unknown, site: TARGET_SITE_DEFAULT, plan: b.plan || null, lateBefore: b.baseDate ? weekStart_(b.baseDate) : '', baseDate: b.baseDate, prevDate: b.prevDate, lateFrom: b.baseDate ? lateCutoff_(b.baseDate) : '', lateMonths: LATE_WINDOW_MONTHS, updatedAt: b.updatedAt, pending: b.pending || 0, warnings: b.warnings || [], yesterday: b.yesterday, late: b.late };
 }
 
 function getOwnFolder_(ss) {

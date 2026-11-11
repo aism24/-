@@ -17,8 +17,8 @@
 
   // 表の列(見本: 物件名|部位|製品名|数量|重量。遅れリストは右に 予定日|遅れ を足す)
   const KIND = {
-    late: { part: 6, qty: 7, sub: '遅れ合計', total: '総遅れ合計', extra: [{ label: '予定日', i: 4, date: true }, { label: '遅れ', i: 5, days: true }] },
-    yesterday: { part: 5, qty: 6, sub: '結果合計', total: '総結果合計', extra: [] },
+    late: { part: 6, qty: 7, no: 8, sub: '遅れ合計', total: '総遅れ合計', extra: [{ label: '予定日', i: 4, date: true }, { label: '遅れ', i: 5, days: true }] },
+    yesterday: { part: 5, qty: 6, no: 7, sub: '結果合計', total: '総結果合計', extra: [] },
   };
 
   const st = { data: null, live: '' };
@@ -42,7 +42,7 @@
     const out = [];
     rows.forEach(function (r) {
       let g = out[out.length - 1];
-      if (!g || g.name !== r[0]) { g = { name: r[0], rows: [], qty: 0, weight: 0 }; out.push(g); }
+      if (!g || g.name !== r[0]) { g = { name: r[0], no: r[k.no] || '', rows: [], qty: 0, weight: 0 }; out.push(g); }
       g.rows.push(r);
       g.qty += Number(r[k.qty]) || 0;
       g.weight = r2(g.weight + r2(r[3]));
@@ -86,7 +86,7 @@
       $('banner').hidden = false;
       $('banner').textContent = GAS_URL ? 'サンプル表示です(?demo=1)。実際のデータではありません。' : 'サンプル表示です(GASのURLが未設定のため)。実際のデータではありません。';
       $('refreshBtn').disabled = true;
-      return fetchJson('sample.json?v=20261111c').then(function (d) { setData(d); }).catch(function (e) { showError('サンプルの読み込みに失敗しました: ' + e.message); });
+      return fetchJson('sample.json?v=20261111d').then(function (d) { setData(d); }).catch(function (e) { showError('サンプルの読み込みに失敗しました: ' + e.message); });
     }
     try {
       const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
@@ -159,6 +159,56 @@
     render('late');
     render('yesterday');
     $('dlBtn').disabled = false;
+    const p = d.plan;
+    if (p && p.count) $('planInfo').innerHTML = '読み込んだ予定表: <b>' + esc(p.fileName || '(名前なし)') + '</b>(' + esc(fmtDate(p.from)) + '〜' + esc(fmtDate(p.to)) + '、読込 ' + esc(String(p.loadedAt).slice(0, 16)) + ')・保存済みの予定 ' + p.count + '件';
+    const mt = missingText(p);
+    $('planMissing').hidden = !mt;
+    $('planMissing').textContent = mt;
+    $('abbrBtn').disabled = DEMO || !((d.unknown || []).length || Object.keys(d.abbr || {}).length);
+    // 新しい略称があれば、工事番号を選ぶ画面を出す(前回の表示からは出さない)
+    if (!fromCache && !DEMO && (d.unknown || []).length && $('abbrModal').hidden) openAbbr(true);
+  }
+
+  // 物件名の下に「26-16 カゴヤ多々羅キャンパス」(索引のG・H列)を小さく添える
+  function workLabel(no) {
+    if (!no) return '';
+    const hit = (st.data.workList || []).find(function (w) { return w[0] === no; });
+    return '<div class="wname">' + esc(no + (hit && hit[1] ? ' ' + hit[1] : '')) + '</div>';
+  }
+  function missingText(p) {
+    if (!p || !p.missing || !p.missing.length) return '';
+    return p.missing.map(fmtDate).join('と') + 'の予定が含まれていないので、予定通り完了したものと考えます';
+  }
+
+  // ---- 略称の対応(新しい略称が出たら、工事番号を選んでもらう) ----
+  function openAbbr(auto) {
+    const d = st.data;
+    if (!d) return;
+    const known = d.abbr || {}, unknown = d.unknown || [];
+    const names = Object.keys(known).concat(unknown.filter(function (u) { return !known[u]; })).sort();
+    if (!names.length) { toast('まだ予定表を読み込んでいないので、略称がありません'); return; }
+    $('abbrNote').textContent = auto
+      ? '新しい略称があります。週間予定表の件名(略称)が、どの工事番号の案件マスターかを選んでください。'
+      : '週間予定表の件名(略称)が、どの工事番号の案件マスターかを選んでください。';
+    const opts = (d.workList || []).map(function (w) { return '<option value="' + esc(w[0]) + '">' + esc(w[0] + ' ' + w[1]) + '</option>'; }).join('');
+    $('abbrList').innerHTML = names.map(function (n) {
+      return '<div class="abbr-row"><span class="ab">' + esc(n) + (known[n] ? '' : '<span class="new">新規</span>') + '</span><select data-abbr="' + esc(n) + '"><option value="">(選んでください)</option>' + opts + '</select></div>';
+    }).join('');
+    Array.prototype.forEach.call($('abbrList').querySelectorAll('select'), function (sel) { sel.value = known[sel.getAttribute('data-abbr')] || ''; });
+    $('abbrModal').hidden = false;
+  }
+  function saveAbbr() {
+    const map = {};
+    Array.prototype.forEach.call($('abbrList').querySelectorAll('select'), function (sel) { map[sel.getAttribute('data-abbr')] = sel.value; });
+    const btn = $('abbrSave');
+    btn.disabled = true;
+    fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'mapNames', map: map }) }).then(function (x) { return x.json(); }).then(function (res) {
+      if (res.status !== 'success') throw new Error(res.message || '保存に失敗しました');
+      $('abbrModal').hidden = true;
+      setData(res.data);
+      saveCache(res.data);
+      toast('略称の対応を保存しました');
+    }).catch(function (e) { toast('保存に失敗しました: ' + e.message); }).then(function () { btn.disabled = false; });
   }
 
   function title(kind) {
@@ -172,13 +222,13 @@
     $(kind + 'Title').textContent = title(kind);
     $(kind + 'Total').textContent = fmtW(t.weight) + 't';
     $(kind + 'Note').textContent = kind === 'late'
-      ? '生産予定日(備考①)が ' + fmtDate(d.lateFrom) + '〜' + fmtDate(prevDay(d.baseDate)) + ' で、加工日が未記入の製品(遅れは営業日)'
+      ? (d.plan && d.plan.count ? '読み込んだ予定表で、予定日が ' + fmtDate(d.lateFrom) + '〜' + fmtDate(prevDay(d.lateBefore)) + ' なのに加工日が無い製品(今週の予定は遅れにしない。遅れは営業日)' : '加工結果PDFを読み込むと表示します')
       : '加工日が ' + fmtDateY(d.prevDate) + ' の製品';
     const head = ['物件名', '部位', '製品名', '数量', '重量'].concat(k.extra.map(function (e) { return e.label; }));
     let html = '<thead><tr>' + head.map(function (h, i) { return '<th' + (i === 3 || i === 4 ? ' class="num"' : '') + '>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>';
     gs.forEach(function (g) {
       g.rows.forEach(function (r, i) {
-        html += '<tr><td class="work">' + (i === 0 ? esc(g.name) : '') + '</td><td class="part">' + esc(r[k.part]) + '</td><td class="mark">' + esc(r[1]) + '</td>'
+        html += '<tr><td class="work">' + (i === 0 ? esc(g.name) + workLabel(g.no) : '') + '</td><td class="part">' + esc(r[k.part]) + '</td><td class="mark">' + esc(r[1]) + '</td>'
           + '<td class="num">' + esc(r[k.qty]) + '</td><td class="num">' + fmtW(r[3]) + '</td>';
         k.extra.forEach(function (e) {
           if (e.date) html += '<td class="date">' + esc(fmtDate(r[e.i])) + '</td>';
@@ -196,6 +246,108 @@
 
   function subRow(label, qty, weight, cols, cls) {
     return '<tr class="' + cls + '"><td colspan="3" class="label">' + esc(label) + '</td><td class="num">' + qty + '</td><td class="num">' + fmtW(weight) + '</td>' + (cols > 5 ? '<td colspan="' + (cols - 5) + '"></td>' : '') + '</tr>';
+  }
+
+  // ---- 加工結果PDF(週間予定表)の読み取り ----
+  // 「鳥取工場 加工予定表」のページから、曜日ごとの列(N月N日(曜)加工予定)にある 件名|製品名|台数|重量|図番 の行を読む。
+  // 製品の行 = 「製品名」の右に、同じ高さで 台数(整数)→重量(小数)が並ぶ行。件名(物件名)は列の左端の英数字の見出し(ITM・OSR など)。
+  // 台数セルの色は読まない(完了・未完は案件マスターの加工日で判定する。色と116行すべて一致することを確認済み)。
+  function parsePlanPdf(buf) {
+    if (typeof pdfjsLib === 'undefined') return Promise.reject(new Error('PDFの部品を読み込み中です。少し待ってからもう一度選んでください。'));
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    return pdfjsLib.getDocument({ data: buf }).promise.then(function (pdf) {
+      const pages = [];
+      // 用紙を回転させたPDF(横向きのExcelから書き出したもの)もあるので、表示上の座標(左上が原点)に直して使う
+      for (let i = 1; i <= pdf.numPages; i++) {
+        pages.push(pdf.getPage(i).then(function (pg) {
+          const vt = pg.getViewport({ scale: 1 }).transform;
+          return pg.getTextContent().then(function (c) {
+            return c.items.map(function (t) { const m = pdfjsLib.Util.transform(vt, t.transform); return { str: t.str, x: m[4], y: m[5], w: t.width }; });
+          });
+        }));
+      }
+      return Promise.all(pages);
+    }).then(function (contents) {
+      const found = contents.map(planFromText).filter(function (r) { return r && r.items.length; });
+      if (!found.length) throw new Error('このPDFに「鳥取工場 加工予定表」が見つかりませんでした(文字の読めるPDFが必要です。スキャンした画像のPDFは読めません)。');
+      return { items: found.reduce(function (a, r) { return a.concat(r.items); }, []) };
+    });
+  }
+
+  function planFromText(raw) {
+    // 同じ高さ(±2pt)の文字を左から並べ、すき間の無い文字どうしは1語につなぐ(漢字や「ITM」が1文字ずつ分かれて入っているため)
+    const lines = [];
+    raw.filter(function (t) { return String(t.str).trim(); }).sort(function (a, b) { return a.y - b.y || a.x - b.x; }).forEach(function (t) {
+      let ln = lines.find(function (l) { return Math.abs(l.y - t.y) <= 2; });
+      if (!ln) { ln = { y: t.y, ts: [] }; lines.push(ln); }
+      ln.ts.push(t);
+    });
+    lines.sort(function (a, b) { return a.y - b.y; });
+    lines.forEach(function (ln) {
+      ln.ts.sort(function (a, b) { return a.x - b.x; });
+      const words = [];
+      ln.ts.forEach(function (t) {
+        const last = words[words.length - 1];
+        if (last && t.x - (last.x + last.w) < 1.5) { last.s += String(t.str).trim(); last.w = t.x + t.w - last.x; }
+        else words.push({ s: String(t.str).trim(), x: t.x, w: t.w });
+      });
+      ln.ts = words;
+    });
+    const its = lines.reduce(function (a, l) { return a.concat(l.ts); }, []);
+    const all = its.map(function (t) { return t.s; }).join('');
+    if (all.indexOf('加工予定表') < 0) return null;
+    // 年: 「更新日:2026/11/10」から(無ければ今年)
+    const up = all.match(/更新日[:：]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+    const baseY = up ? +up[1] : new Date().getFullYear(), baseM = up ? +up[2] : new Date().getMonth() + 1;
+    const heads = [];
+    its.forEach(function (t) {
+      const m = t.s.match(/^(\d{1,2})月(\d{1,2})日\(.\)加工予定$/);
+      if (!m) return;
+      let y = baseY;
+      if (+m[1] - baseM > 6) y--; else if (baseM - +m[1] > 6) y++;
+      heads.push({ date: y + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2), cx: t.x + t.w / 2 });
+    });
+    if (!heads.length) return null;
+    heads.sort(function (a, b) { return a.cx - b.cx; });
+    const span = heads.length > 1 ? (heads[heads.length - 1].cx - heads[0].cx) / (heads.length - 1) : 1e9;
+    const colOf = function (x) { let best = null; heads.forEach(function (h) { if (Math.abs(x - h.cx) <= span / 2 + 1 && (!best || Math.abs(x - h.cx) < Math.abs(x - best.cx))) best = h; }); return best; };
+    const items = [], curName = {};
+    lines.forEach(function (ln) {
+      const ts = ln.ts;
+      for (let i = 0; i < ts.length; i++) {
+        const t = ts[i], h = colOf(t.x);
+        if (!h) continue;
+        // 件名の見出し(英数字だけの短い語。例: ITM、OSR)
+        if (/^[A-Za-z][A-Za-z0-9]{1,9}$/.test(t.s) && ts[i + 1] && colOf(ts[i + 1].x) === h && /-/.test(ts[i + 1].s)) curName[h.date] = t.s;
+        const q = ts[i + 1], w = ts[i + 2];
+        if (!q || !w || colOf(q.x) !== h || colOf(w.x) !== h) continue;
+        if (!/-/.test(t.s) || !/^\d+$/.test(q.s) || !/^\d+(\.\d+)?$/.test(w.s)) continue;
+        const dw = ts[i + 3] && colOf(ts[i + 3].x) === h && /-/.test(ts[i + 3].s) ? ts[i + 3].s : '';
+        items.push({ date: h.date, name: curName[h.date] || '', mark: t.s, qty: +q.s, weight: +w.s, drawing: dw });
+        i += dw ? 3 : 2;
+      }
+    });
+    return { items: items };
+  }
+
+  function onPdf(file) {
+    if (!file) return;
+    if (DEMO) { toast('サンプル表示では読み込めません'); return; }
+    const label = $('pdfLabel');
+    label.classList.add('busy');
+    toast('「' + file.name + '」を読み取っています…');
+    file.arrayBuffer().then(parsePlanPdf).then(function (r) {
+      toast('予定表から ' + r.items.length + ' 件を読み取りました。案件マスターと照らし合わせています…');
+      return fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'schedule', fileName: file.name, items: r.items }) }).then(function (x) { return x.json(); });
+    }).then(function (res) {
+      if (res.status !== 'success') throw new Error(res.message || '保存に失敗しました');
+      setData(res.data);
+      saveCache(res.data);
+      const mt = missingText(res.data.plan);
+      toast('予定表を読み込みました(' + res.saved + '件)' + (mt ? '。' + mt : ''));
+    }).catch(function (e) {
+      showError('加工結果PDFの読み込みに失敗しました: ' + e.message);
+    }).then(function () { label.classList.remove('busy'); $('pdfInput').value = ''; });
   }
 
   // ---- Excel(見本と同じく、左=生産遅れ・右=結果重量を1枚に並べる) ----
@@ -279,6 +431,10 @@
   }
 
   $('dlBtn').addEventListener('click', download);
+  $('pdfInput').addEventListener('change', function () { onPdf(this.files && this.files[0]); });
+  $('abbrBtn').addEventListener('click', function () { openAbbr(false); });
+  $('abbrCancel').addEventListener('click', function () { $('abbrModal').hidden = true; });
+  $('abbrSave').addEventListener('click', saveAbbr);
   $('refreshBtn').addEventListener('click', function () { refresh(false); });
 
   load();
