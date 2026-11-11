@@ -169,3 +169,19 @@ table.sheet tr.total td { border-top: 2px solid #8a98a8; }
 .date-group { margin-bottom: 10px; }
 .date-name { font-weight: 700; margin: 4px 0; }
 #dateTitle { color: #a3121c; }
+
+/* 開いた直後の「加工結果を送ってください」(2026-11-11 ユーザー指定) */
+.landing-mode #meta, .landing-mode #refreshBtn { display: none; }
+.landing { min-height: calc(100vh - 140px); display: flex; align-items: center; justify-content: center; }
+.landing[hidden] { display: none; }
+.landing-box { text-align: center; padding: 48px 24px; width: min(640px, 100%); border: 3px dashed #b9c6d6; border-radius: 20px; background: var(--card); }
+.landing-icon { width: 72px; height: 72px; color: var(--accent); }
+.landing-title { margin: 12px 0 6px; font-size: 28px; }
+.landing-sub { margin: 0 0 22px; color: var(--muted); font-size: 15px; }
+.landing-btn { font-size: 17px; padding: 12px 28px; }
+.landing-err { margin-top: 16px; color: #a3121c; font-size: 14px; white-space: pre-line; }
+.landing.busy .landing-box { border-color: var(--accent); }
+.landing.busy .landing-btn { opacity: .5; pointer-events: none; }
+.drop-overlay { position: fixed; inset: 0; z-index: 40; background: rgba(31, 111, 209, .14); border: 4px dashed var(--accent); display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.drop-overlay[hidden] { display: none; }
+.drop-overlay div { background: var(--accent); color: #fff; font-size: 22px; font-weight: 700; padding: 14px 28px; border-radius: 12px; }

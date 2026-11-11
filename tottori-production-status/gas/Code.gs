@@ -26,7 +26,7 @@
  * セットアップ手順は README.md を参照してください。
  */
 
-const CODE_VERSION = '2026-11-11i';
+const CODE_VERSION = '2026-11-11j';
 const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す生産予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
@@ -105,7 +105,7 @@ function saveSchedule_(body) {
   const items = (body.items || []).filter(function (x) { return x && x.mark && normalizeKey_(x.date); });
   if (!items.length) throw new Error('予定表の行がありません');
   const lock = LockService.getScriptLock();
-  lock.waitLock(120000);
+  if (!lock.tryLock(150000)) throw new Error('他の更新が終わらないため、受け付けられませんでした。1〜2分後にもう一度送ってください。');
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sh = ss.getSheetByName(SHEET_PLAN) || ensureSheet_(ss, SHEET_PLAN, HEAD_PLAN, false);
@@ -131,13 +131,40 @@ function saveSchedule_(body) {
     }
     writePdfRecord_(ss, now, fileName);
     const info = ss.getSheetByName(SHEET_INFO);
+    // 予定表に出てくる工事のファイルを読む(更新日時が変わっていなければ読み直さない)
+    runRefresh_();
+    let built = rebuildFromSheets_(ss, info); // 予定表が変わったので一覧は必ず作り直す(ファイルに変更が無いと runRefresh_ は保存済みの一覧を返すため)
     // このPDFに加工結果の表があるときだけ確かめる(前回のPDFの結果で、何度もポップアップを出さない)
     const check = results.length ? checkResultsWithReread_(ss, info) : { result: null, built: null };
-    const built = check.built || rebuildFromSheets_(ss, info);
+    built = check.built || built;
     return { status: 'success', version: CODE_VERSION, saved: items.length, resultCheck: check.result, data: toPayload_(built) };
   } finally {
     lock.releaseLock();
   }
+}
+
+// 予定表の件名(略称)に対応するファイルだけを選ぶ: ① 略称シートの工事番号のファイル ② ファイル名(拡張子なし)が略称と同じファイル
+// ②で結び付いた略称は、画面で選ばなくても使えるように自動の対応として控える
+function targetFiles_(fileIndex, planRows, abbr) {
+  const names = {};
+  (planRows || []).forEach(function (p) { if (p[0]) names[p[0]] = true; });
+  const auto = {}, picked = {}, out = [];
+  fileIndex.forEach(function (f) {
+    const base = workName_(f);
+    const byAbbr = Object.keys(names).some(function (n) { return abbr[n] && abbr[n] === f.workNo; });
+    const byName = !!names[base];
+    if (byName && !abbr[base]) auto[base] = f.workNo;
+    if ((byAbbr || byName) && !picked[f.fileId]) { picked[f.fileId] = true; out.push(f); }
+  });
+  try { PropertiesService.getScriptProperties().setProperty('AUTOABBR', JSON.stringify(auto)); } catch (e) { /* 控えられなくても続ける */ }
+  return out;
+}
+
+// 略称の対応(画面で選んだもの + ファイル名が同じで自動で結び付いたもの)
+function effectiveAbbr_(ss) {
+  let auto = {};
+  try { auto = JSON.parse(PropertiesService.getScriptProperties().getProperty('AUTOABBR') || '{}'); } catch (e) { auto = {}; }
+  return Object.assign({}, auto, readAbbr_(ss));
 }
 
 // 加工結果(PDFの結果重量の表)とマスターの加工日を照らし合わせる(2026-11-11 ユーザー指定)
@@ -147,7 +174,7 @@ function checkResultsWithReread_(ss, info) {
   const sh = ss.getSheetByName(SHEET_RESULT);
   const results = sh ? readTableRows_(sh, HEAD_RESULT.length).map(function (r) { return { name: String(r[0]), mark: String(r[1]), date: normalizeKey_(r[2]) }; }).filter(function (x) { return x.mark; }) : [];
   if (!results.length) return { result: null, built: null };
-  const abbr = readAbbr_(ss);
+  const abbr = effectiveAbbr_(ss);
   let allRows = readTableRows_(ss.getSheetByName(SHEET_DATA), HEAD_DATA.length);
   let miss = findMissingDates_(allRows, results, abbr);
   let reread = 0, built = null;
@@ -208,8 +235,10 @@ function saveAbbr_(body) {
     });
     writeTable_(sh, HEAD_ABBR, Object.keys(cur).sort().map(function (a) { return [a, cur[a]]; }), [0, 1]);
     const info = ss.getSheetByName(SHEET_INFO);
+    runRefresh_(); // 略称が変わると読むファイルも変わる
+    let built = rebuildFromSheets_(ss, info);
     const check = checkResultsWithReread_(ss, info);
-    const built = check.built || rebuildFromSheets_(ss, info);
+    built = check.built || built;
     return { status: 'success', version: CODE_VERSION, resultCheck: check.result, data: toPayload_(built) };
   } finally {
     lock.releaseLock();
@@ -244,7 +273,7 @@ function rebuildFromSheets_(ss, info) {
   saveWorkList_(indexRows);
   const calendar = readCalendar_(indexRows);
   const allRows = readTableRows_(ss.getSheetByName(SHEET_DATA), HEAD_DATA.length);
-  const built = buildLists_(allRows, calendar, todayKey_(), readPlanRows_(ss), readAbbr_(ss));
+  const built = buildLists_(allRows, calendar, todayKey_(), readPlanRows_(ss), effectiveAbbr_(ss));
   built.warnings = splitWarn_(readInfo_(info, INFO_WARN)).filter(function (w) { return w.indexOf('会社カレンダー') < 0 && w.indexOf('予定表の製品') < 0 && w.indexOf('略称') < 0; }).concat(built.warnings);
   built.pending = Number(readInfo_(info, INFO_PENDING)) || 0;
   built.updatedAt = String(readInfo_(info, INFO_UPDATED) || '');
@@ -348,7 +377,8 @@ function runRefresh_(force) {
   const site = String(readInfo_(info, INFO_SITE) || TARGET_SITE_DEFAULT).trim();
 
   const indexRows = readIndexRows_(indexId);
-  const fileIndex = readFileIndex_(indexRows);
+  // 読むのは、予定表に出てくる工事(略称 → 工事番号、またはファイル名が略称と同じ)のファイルだけ(2026-11-11 ユーザー指定。全36件を読むと数分かかるため)
+  const fileIndex = targetFiles_(readFileIndex_(indexRows), readPlanRows_(ss), readAbbr_(ss));
   const calendar = readCalendar_(indexRows);
 
   const stateSh = ss.getSheetByName(SHEET_STATE);
@@ -428,7 +458,7 @@ function runRefresh_(force) {
   props.setProperty('WORKNAMES_SIG', namesSig);
 
   saveWorkList_(indexRows);
-  const built = buildLists_(allRows, calendar, today, readPlanRows_(ss), readAbbr_(ss));
+  const built = buildLists_(allRows, calendar, today, readPlanRows_(ss), effectiveAbbr_(ss));
   if (pending > 0) warnings.push('時間内に読み切れなかった案件が' + pending + '件あります。1分後に自動で続きを読みます。');
   built.warnings = warnings.concat(built.warnings);
   built.pending = pending;
@@ -536,7 +566,7 @@ function buildLists_(allRows, calendar, today, planRows, abbr) {
 // 画面の「略称の対応」用: 略称の対応表・工事番号の一覧(索引G・H列)・未設定の略称
 function payloadExtras_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const abbr = readAbbr_(ss);
+  const abbr = effectiveAbbr_(ss);
   let workList = [];
   try { workList = JSON.parse(PropertiesService.getScriptProperties().getProperty('WORKLIST') || '[]'); } catch (e) { workList = []; }
   const unknown = {};
