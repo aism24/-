@@ -26,7 +26,7 @@
  * セットアップ手順は README.md を参照してください。
  */
 
-const CODE_VERSION = '2026-11-11h';
+const CODE_VERSION = '2026-11-11i';
 const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す生産予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
@@ -41,6 +41,7 @@ const SHEET_LATE = '遅れリスト';
 const SHEET_DATA = '取込データ';
 const SHEET_STATE = '状態';
 const SHEET_LOG = '利用記録';
+const SHEET_PDFLOG = '記録'; // 加工結果PDFの取込記録(見出し「日時」「取込ファイル名」はユーザーが用意。2026-11-11)
 const SHEET_PLAN = '予定表';
 const SHEET_ABBR = '略称'; // 週間予定表の件名(略称。例: ITM)→ 工事番号(例: 26-16)。画面で選んで保存する
 
@@ -128,6 +129,7 @@ function saveSchedule_(body) {
       const rsh = ss.getSheetByName(SHEET_RESULT) || ensureSheet_(ss, SHEET_RESULT, HEAD_RESULT, true);
       writeTable_(rsh, HEAD_RESULT, results.map(function (x) { return [String(x.name || ''), String(x.mark), normalizeKey_(x.date), now, fileName]; }), [0, 1, 2, 3, 4]);
     }
+    writePdfRecord_(ss, now, fileName);
     const info = ss.getSheetByName(SHEET_INFO);
     // このPDFに加工結果の表があるときだけ確かめる(前回のPDFの結果で、何度もポップアップを出さない)
     const check = results.length ? checkResultsWithReread_(ss, info) : { result: null, built: null };
@@ -881,6 +883,24 @@ function scheduleContinue_(need) {
     if (t.getHandlerFunction() === 'continueRefresh') ScriptApp.deleteTrigger(t);
   });
   if (need) ScriptApp.newTrigger('continueRefresh').timeBased().after(60 * 1000).create();
+}
+
+// 加工結果PDFを取り込んだら「記録」シートの2行目(新しいものが上)に 日時・取込ファイル名 を入れる。
+// 列は1行目の見出しの文字で探す(無ければA列・B列)。シートが無ければ見出しを付けて作る。失敗しても取込は止めない
+function writePdfRecord_(ss, when, fileName) {
+  try {
+    let sh = ss.getSheetByName(SHEET_PDFLOG);
+    if (!sh) { sh = ss.insertSheet(SHEET_PDFLOG); sh.getRange(1, 1, 1, 2).setValues([['日時', '取込ファイル名']]); }
+    const lastCol = Math.max(sh.getLastColumn(), 2);
+    const head = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h || '').trim(); });
+    const cDate = head.indexOf('日時') >= 0 ? head.indexOf('日時') + 1 : 1;
+    const cFile = head.indexOf('取込ファイル名') >= 0 ? head.indexOf('取込ファイル名') + 1 : 2;
+    sh.insertRowBefore(2);
+    sh.getRange(2, cDate).setNumberFormat('@').setValue(when);
+    sh.getRange(2, cFile).setNumberFormat('@').setValue(fileName);
+  } catch (e) {
+    // 記録の失敗は無視する
+  }
 }
 
 function writeLog_(kind, detail) {
