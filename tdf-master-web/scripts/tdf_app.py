@@ -1005,6 +1005,17 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                                   depth=_beam_depth(row.size), with_others=True)
             if wide is not None and _drawn_value(dim_values, wide[0][0]) is not None:
                 member, others = wide
+        if member is None and len(rows) > 1:
+            # 同じ梁に製品の表が2つ以上並び、梁の中点が左の表の範囲(右へ広げた範囲)に入るとき、
+            # 右の表の行は左へ広げて探す。寸法の文字に合う長さが見つかったときだけ使う
+            # (2026-11-11、26-16 の WA2-PHB-06 の -14〜-21。梁の中点が -5〜-13 の表の右端と
+            # -14〜-21 の表の左端の間にあり、長さが空になっていた。正解は 10264.5)
+            prv = [r.x_mark for r in rows if r is not row and abs(r.y - row.y) < 1000 and r.x_mark < row.x_mark - 1.0]
+            x_left = max(prv) if prv else x_min - (x_max - x_min)
+            left = _flange_member(tdf, x_left, x_max, row.y, tier_y_max, _flange_thickness(row.size),
+                                  depth=_beam_depth(row.size), with_others=True)
+            if left is not None and _drawn_value(dim_values, left[0][0]) is not None:
+                member, others = left
         if member is None and tier_y_max is not None:
             # 上の段の行の高さで探す範囲を切ると梁が入らないとき、上限を外して探す。
             # 長さが寸法の文字にあり、梁とこの行の間(梁の中点の真下)に別の製品の行が
