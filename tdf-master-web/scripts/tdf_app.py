@@ -952,6 +952,17 @@ def _end_plate_member(tdf, member, depth, dim_values):
     return best[1] if best else None
 
 
+def _determine_length_counted(tdf, *args, **kwargs):
+    """ex.determine_length の結果。向きを問わない探し直し(主軸の判定が外れたとき)で値を決めた場合は、
+    候補の一致する直線の数も向きを問わない数に置き換える(2026-11-11、26-17 B1M3B-05 の
+    B1M3TH489-3。縦向きの文字が多くて主軸が90°になり、長さ 3305 を11本の直線で決めたのに
+    記録の本数が0本で、行をまとめる処理が別の梁の長さ 1655 に差し替えていた)。"""
+    value, debug = ex.determine_length(tdf, *args, **kwargs)
+    if debug.get("any_angle_candidates"):
+        debug = {**debug, "candidates": debug["any_angle_candidates"]}
+    return value, debug
+
+
 def _lines_for_length(tdf, val, x0, x1, y_ref, y_max, axis_deg):
     """範囲内で、長さが val に一致し主軸の向きに合う直線(determine_length の数え方と同じ条件)。"""
     out = []
@@ -1034,13 +1045,13 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
             # と判明。緩和なしのdetermine_lengthだけでN-1 2G・S-1 R1Gの
             # 大半の長さが正解することを確認済み)。
             widened = None
-            length_value, debug = ex.determine_length(tdf, row.x_mark, row.x_next, row.y, y_max=tier_y_max)
+            length_value, debug = _determine_length_counted(tdf, row.x_mark, row.x_next, row.y, y_max=tier_y_max)
             own_a = max([c[1] for c in (debug.get("candidates") or [])] or [0])
             if len(rows) == 1:
                 # 製品が1つだけの図面は、梁が製品の範囲の外まで描かれるので、左右に広げて探す
                 # (2026-11-11、26-17 D1M2G-09。範囲内の 1775.1 でなく、全長 9981.1 が正しい)。
                 # 広げた結果の方が一致する直線が多いときだけ使う。
-                w_value, w_debug = ex.determine_length(tdf, row.x_mark - ex.RELAX_MARGIN, row.x_next + ex.RELAX_MARGIN,
+                w_value, w_debug = _determine_length_counted(tdf, row.x_mark - ex.RELAX_MARGIN, row.x_next + ex.RELAX_MARGIN,
                                                        row.y, y_max=tier_y_max)
                 wide_a = max([c[1] for c in (w_debug.get("candidates") or [])] or [0])
                 # 範囲内の結果が直線4本以上で支持され、その直線が製品の範囲の端から端までかかるときは、広げた結果を使わない
@@ -1055,7 +1066,7 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                     widened = (row.x_mark - ex.RELAX_MARGIN, row.x_next + ex.RELAX_MARGIN)  # 継手・サイズも同じ範囲で探す
             if id(row) in group_range:
                 gx0, gx1 = group_range[id(row)]
-                g_value, g_debug = ex.determine_length(tdf, gx0, gx1, row.y, y_max=tier_y_max)
+                g_value, g_debug = _determine_length_counted(tdf, gx0, gx1, row.y, y_max=tier_y_max)
                 own = max([c[1] for c in (debug.get("candidates") or [])] or [0])
                 grp = max([c[1] for c in (g_debug.get("candidates") or [])] or [0])
                 # 一致する直線の数が同じ候補が複数あるとき(26-17 B1M2G-04: 全長 10581.1 と途中の 3930.5)は、
