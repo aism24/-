@@ -57,7 +57,6 @@ body {
 .company { font-weight: 600; font-size: 14px; white-space: nowrap; }
 .hdr-meta { font-size: 13px; color: #c9d6e4; flex: 1; min-width: 200px; }
 .hdr-meta b { color: #fff; font-weight: 600; }
-.hdr-meta .live { color: #ffd479; }
 
 .btn {
   font: inherit;
@@ -72,8 +71,6 @@ body {
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .btn.primary:not(:disabled):active { filter: brightness(.92); }
-.btn.ghost { background: transparent; color: #fff; border-color: rgba(255, 255, 255, .55); }
-.btn.ghost:not(:disabled):active { background: rgba(255, 255, 255, .12); }
 
 .page { max-width: 1200px; margin: 0 auto; padding: 16px 16px calc(24px + env(safe-area-inset-bottom)); }
 
@@ -99,7 +96,7 @@ body {
   margin-bottom: 12px;
 }
 .file-btn { display: inline-flex; align-items: center; }
-.btn:not(.primary):not(.ghost) { background: #fff; color: var(--ink); border-color: var(--line); font-weight: 600; }
+.btn:not(.primary) { background: #fff; color: var(--ink); border-color: var(--line); font-weight: 600; }
 .plan-info { flex: 1; min-width: 220px; font-size: 13px; color: var(--muted); }
 .plan-info b { color: var(--ink); }
 
@@ -171,7 +168,7 @@ table.sheet tr.total td { border-top: 2px solid #8a98a8; }
 #dateTitle { color: #a3121c; }
 
 /* 開いた直後の「加工結果を送ってください」(2026-11-11 ユーザー指定) */
-.landing-mode #meta, .landing-mode #refreshBtn { display: none; }
+.landing-mode #meta { display: none; }
 .landing { min-height: calc(100vh - 140px); display: flex; align-items: center; justify-content: center; }
 .landing[hidden] { display: none; }
 .landing-box { text-align: center; padding: 48px 24px; width: min(640px, 100%); border: 3px dashed #b9c6d6; border-radius: 20px; background: var(--card); }

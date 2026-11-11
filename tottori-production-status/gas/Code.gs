@@ -1,37 +1,36 @@
 /**
  * 「鳥取工場 生産状況周知」のGAS APIバックエンド。
  *
- * 新しいスプレッドシート「鳥取工場生産状況周知」の「拡張機能 → Apps Script」に貼り付けて使う
- * コンテナバインド型スクリプトです。画面(index.html / app.js)は Vercel・GitHub で配信する静的ページで、
- * このGASは JSON API と、案件マスターの読み取り・一覧の作成だけを行います。
+ * スプレッドシート「鳥取工場生産状況周知」の「拡張機能 → Apps Script」に貼り付けて使うコンテナバインド型スクリプト。
+ * 画面(index.html / app.js)は Vercel・GitHub で配信する静的ページで、このGASは JSON API だけを提供する。
  *
- * ■ 作るもの(鳥取の行だけ)
- *   前日出来高 : 案件マスターの「加工」列の日付が「前の営業日」の行
- *   遅れリスト : 「備考①」列に日付があり(=生産予定日)、その日付が今日より前で、「加工」列に日付が無い行。
- *               ただし生産予定日が2か月より前の行は出さない(2か月過ぎたものは出荷まで完了済み。加工日の記入漏れなので。2026-11-11 ユーザー指定)
- *               遅れ日数 = 生産予定日の翌日から今日までの「出勤」日の数(営業日。2026-11-11 ユーザー指定で暦日から変更)
- *   「前の営業日」は、索引スプレッドシートの会社カレンダー(I列=日付、J列=出勤/休日)で決める。
+ * ■ 流れ(2026-11-11 ユーザー指定)
+ *   画面で加工結果PDFを読み込む → 画面が「鳥取工場 加工予定表」(週間予定表)と「MM.DD結果重量」の表を読み取って送る(doPost schedule)
+ *   → 予定表に出てくる工事の案件マスターだけを読む(更新日時が前回と同じなら読み直さない)→ 一覧を作って返す。
+ *   生産遅れ  : 予定表で予定日が今週の月曜より前(2か月以内)なのに、案件マスターに加工日(「加工」列)が無い製品。遅れ日数は営業日
+ *   前日出来高: 加工日が前の営業日の製品(読み込んだ工事のもの)
+ *   加工結果の確認: 結果重量の表の製品に加工日が無ければ、その工事のファイルだけ読み直して再確認し、残ったもの(製品名・行番号)を返す
+ *   「前の営業日」「営業日」は索引スプレッドシートの会社カレンダー(I列=日付、J列=出勤/休日)で決める。
  *
- * ■ 読むもの(書き込みは一切しない)
- *   索引スプレッドシート「Excelマスタ一覧」(生産管理ダッシュボードと同じもの)。IDは「情報」シートの
- *   「索引スプレッドシート」の行に、URLかIDを貼る(公開リポジトリにIDを書かないため)。
- *   A〜E列=案件マスターの一覧(工事名はD列のファイル名から拡張子を除いたもの)、I・J列=会社カレンダー。
- *   案件マスターは列の見出し(加工先・製品マーク・図番・重量・備考①・加工)で列を探す。
+ * ■ 読むもの(書き込みはしない)
+ *   索引スプレッドシート「Excelマスタ一覧」。IDは「情報」シートの「索引スプレッドシート」にURLかIDを貼る(公開リポジトリにIDを書かないため)。
+ *   A〜E列=案件マスターの一覧、G・H列=工事番号→工事名(略称の選択肢)、I・J列=会社カレンダー。
+ *   案件マスターは列の見出し(加工先・製品マーク・図番・重量・加工・部位・本数)で列を探す。
  *   Excelは一時的にスプレッドシートへ変換して読み、読み終えたらすぐ削除する。元のExcelには触れない。
- *   元ファイルの更新日時が前回と同じなら読み直さない(「状態」シートで管理)。
  *
- * ■ シート(setupSheets で作る)
- *   情報(項目名・値)/ 前日出来高 / 遅れリスト / 取込データ(非表示)/ 状態(非表示)/ 利用記録(非表示)
+ * ■ 速さのための決まり(2026-11-11 見直し)
+ *   1回のリクエストの中では、各シート・索引・スクリプトのプロパティを1回だけ読み(cx_ に控える)、書き込みはまとめて行う。
+ *   読む案件マスターは、予定表の件名(略称)と同じファイル名のファイル、無ければ略称の工事番号のファイルだけ。
  *
- * セットアップ手順は README.md を参照してください。
+ * セットアップ手順は README.md を参照。
  */
 
-const CODE_VERSION = '2026-11-11j';
-const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す生産予定日の範囲(今日から何か月前まで)
+const CODE_VERSION = '2026-11-11k';
+const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
 const IGNORE_WORK_NO = '00-00';
-const PARSE_VERSION = 4; // v2: 部位・本数を追加、v3: 日付の無い鳥取の行も持つ(週間予定表との突き合わせ用)、v4: マスターの行番号(2026-11-11) // 取込データの形を変えたら上げる(全ファイルを読み直す)
+const PARSE_VERSION = 5; // 取込データの形を変えたら上げる(対象ファイルを読み直す)。v5: 使っていない備考①の列を削除
 const TIME_BUDGET_MS = 240 * 1000; // 1回の実行で案件マスターを読む時間の上限(6分制限の手前)
 const TEMP_PREFIX = '_鳥取周知_一時変換_';
 
@@ -41,9 +40,10 @@ const SHEET_LATE = '遅れリスト';
 const SHEET_DATA = '取込データ';
 const SHEET_STATE = '状態';
 const SHEET_LOG = '利用記録';
-const SHEET_PDFLOG = '記録'; // 加工結果PDFの取込記録(見出し「日時」「取込ファイル名」はユーザーが用意。2026-11-11)
+const SHEET_PDFLOG = '記録'; // 加工結果PDFの取込記録(見出し「日時」「取込ファイル名」はユーザーが用意)
 const SHEET_PLAN = '予定表';
-const SHEET_ABBR = '略称'; // 週間予定表の件名(略称。例: ITM)→ 工事番号(例: 26-16)。画面で選んで保存する
+const SHEET_ABBR = '略称'; // 週間予定表の件名(略称。例: ITM)→ 工事番号(例: 26-16)
+const SHEET_RESULT = '加工結果'; // PDFの「MM.DD結果重量」の表(加工済みのはずの製品)
 
 const INFO_INDEX = '索引スプレッドシート';
 const INFO_SITE = '対象拠点';
@@ -57,32 +57,137 @@ const INFO_PLAN = '予定表の概要';
 const HEAD_YESTERDAY = ['物件名', '製品名', '図番', '重量(t)', '生産日', '部位', '数量', '工事番号'];
 const HEAD_LATE = ['物件名', '製品名', '図番', '重量(t)', '生産予定日', '遅れ日数(営業日)', '部位', '数量', '工事番号'];
 const HEAD_ABBR = ['略称', '工事番号'];
-// 加工結果PDFの「鳥取工場MM.DD結果重量」の表(加工済みのはずの製品)。マスターに加工日が入っているかの確認に使う
-const SHEET_RESULT = '加工結果';
 const HEAD_RESULT = ['物件名', '製品名', '加工日', '読込日時', 'ファイル名'];
-const HEAD_DATA = ['ファイルID', '工事番号', '工事名', '製品名', '図番', '重量(t)', '生産予定日', '生産日', '部位', '本数', '行番号'];
-const PART_ORDER = ['柱', '大梁', '小梁']; // 一覧の並び: 物件名 → 部位(柱→大梁→小梁→その他) → 案件マスターの行の順
+const HEAD_DATA = ['ファイルID', '工事番号', '工事名', '製品名', '図番', '重量(t)', '生産日', '部位', '本数', '行番号'];
+const D = { ID: 0, NO: 1, NAME: 2, MARK: 3, DW: 4, W: 5, DONE: 6, PART: 7, QTY: 8, ROW: 9 }; // 取込データの列
 const HEAD_STATE = ['ファイルID', '工事番号', 'ファイル名', '元ファイル更新日時', '取込日時', '鳥取の行数', '形式', 'エラー'];
 const HEAD_LOG = ['日時', '種別', '内容'];
-// 週間予定表(加工結果PDFの「鳥取工場 加工予定表」)から読み込んだ予定。物件名+製品名ごとに1行(新しく読み込んだ予定日で上書き)
-const HEAD_PLAN = ['物件名', '製品名', '図番', '予定日', '数量', '重量(t)', '読込日時', 'ファイル名'];
+const HEAD_PLAN = ['物件名', '製品名', '図番', '予定日', '数量', '重量(t)', '読込日時', 'ファイル名']; // 物件名+製品名ごとに1行(新しく読み込んだ予定日で上書き)
+const PART_ORDER = ['柱', '大梁', '小梁']; // 一覧の並び: 物件名 → 部位(柱→大梁→小梁→その他)→ 案件マスターの行の順
+
+// ========== 1回のリクエストの中で読んだものを控える ==========
+
+let C_ = null;
+function begin_() { C_ = { ss: SpreadsheetApp.getActiveSpreadsheet(), sheets: {} }; return C_; }
+function cx_() { return C_ || begin_(); }
+function sheet_(name) {
+  const c = cx_();
+  if (!(name in c.sheets)) c.sheets[name] = c.ss.getSheetByName(name);
+  return c.sheets[name];
+}
+
+// 「情報」シート(A列=項目、B列=値)は1回で読み、書き込みは infoFlush_ でまとめて1回
+function info_() {
+  const c = cx_();
+  if (!c.info) {
+    const sh = sheet_(SHEET_INFO);
+    if (!sh) throw new Error('「' + SHEET_INFO + '」シートがありません。Apps Scriptエディタで setupSheets を実行してください。');
+    const last = sh.getLastRow();
+    const rows = last ? sh.getRange(1, 1, last, 2).getValues() : [];
+    const pos = {};
+    rows.forEach(function (r, i) { const k = String(r[0]).trim(); if (k && !(k in pos)) pos[k] = i; });
+    c.info = { sh: sh, rows: rows, pos: pos, dirty: false, added: [] };
+  }
+  return c.info;
+}
+function infoGet_(key) { const i = info_(); return key in i.pos ? i.rows[i.pos[key]][1] : ''; }
+function infoSet_(key, value) {
+  const i = info_();
+  if (!(key in i.pos)) { i.pos[key] = i.rows.length; i.rows.push([key, '']); i.added.push(key); }
+  i.rows[i.pos[key]][1] = value;
+  i.dirty = true;
+}
+// A:B を文字の書式にしてから、まとめて1回で書く(日付の文字列が日付型に変わらないように。先頭の ' は外す)
+function infoFlush_() {
+  const i = info_();
+  if (!i.dirty || !i.rows.length) return;
+  const vals = i.rows.map(function (r) { return [r[0], typeof r[1] === 'string' && r[1].charAt(0) === "'" ? r[1].slice(1) : (isDate_(r[1]) ? dateToKeyJst_(r[1]) : String(r[1] == null ? '' : r[1]))]; });
+  const range = i.sh.getRange(1, 1, vals.length, 2);
+  range.setNumberFormat('@');
+  range.setValues(vals);
+  i.dirty = false; i.added = [];
+}
+
+// スクリプトのプロパティも1回で読み、書き込みはまとめて1回
+function props_() {
+  const c = cx_();
+  if (!c.props) c.props = { all: PropertiesService.getScriptProperties().getProperties(), set: {} };
+  return c.props;
+}
+function propGet_(k) { return props_().all[k] == null ? null : props_().all[k]; }
+function propSet_(k, v) { const p = props_(); if (p.all[k] !== v) { p.all[k] = v; p.set[k] = v; } }
+function propFlush_() {
+  const p = props_();
+  if (Object.keys(p.set).length) { try { PropertiesService.getScriptProperties().setProperties(p.set, false); } catch (e) { /* 控えられなくても続ける */ } p.set = {}; }
+}
+function flushAll_() { infoFlush_(); propFlush_(); }
+
+// 索引スプレッドシートのA:J(2行目から)
+function indexRows_() {
+  const c = cx_();
+  if (!c.index) {
+    const id = extractId_(infoGet_(INFO_INDEX));
+    if (!id) throw new Error('「' + SHEET_INFO + '」シートの「' + INFO_INDEX + '」が空です。索引スプレッドシート「Excelマスタ一覧」のURLを貼ってください。');
+    const sh = SpreadsheetApp.openById(id).getSheets()[0];
+    const last = sh.getLastRow();
+    c.index = last < 2 ? [] : sh.getRange(2, 1, last - 1, 10).getValues();
+  }
+  return c.index;
+}
+
+function planRows_() {
+  const c = cx_();
+  if (!c.plan) {
+    const sh = sheet_(SHEET_PLAN);
+    c.plan = sh ? readTableRows_(sh, HEAD_PLAN.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), normalizeKey_(r[3]), qty_(r[4]), Number(r[5]) || 0, String(r[6]), String(r[7])]; }) : [];
+  }
+  return c.plan;
+}
+
+// 画面で選んだ略称の対応(略称シート)
+function userAbbr_() {
+  const c = cx_();
+  if (!c.abbr) {
+    const sh = sheet_(SHEET_ABBR), map = {};
+    if (sh) readTableRows_(sh, HEAD_ABBR.length).forEach(function (r) { const a = String(r[0]).trim(), no = String(r[1]).trim(); if (a && no) map[a] = no; });
+    c.abbr = map;
+  }
+  return c.abbr;
+}
+// 使う対応 = ファイル名が略称と同じで自動で結び付いたもの + 画面で選んだもの(画面で選んだものを優先)
+function effectiveAbbr_() {
+  let auto = {};
+  try { auto = JSON.parse(propGet_('AUTOABBR') || '{}'); } catch (e) { auto = {}; }
+  return Object.assign({}, auto, userAbbr_());
+}
+
+// 取込データ(対象ファイルの鳥取の行)。日付は'yyyy-MM-dd'にそろえる
+function dataRows_() {
+  const c = cx_();
+  if (!c.data) {
+    c.data = readTableRows_(sheet_(SHEET_DATA), HEAD_DATA.length).filter(function (r) { return String(r[D.ID] || ''); }).map(function (r) {
+      return [String(r[D.ID]), String(r[D.NO]), String(r[D.NAME]), String(r[D.MARK]), String(r[D.DW]), Number(r[D.W]) || 0, normalizeKey_(r[D.DONE]), String(r[D.PART] == null ? '' : r[D.PART]), qty_(r[D.QTY]), Number(r[D.ROW]) || ''];
+    });
+  }
+  return c.data;
+}
 
 // ========== エントリーポイント ==========
 
 function doGet(e) {
+  begin_();
   const action = (e && e.parameter && e.parameter.action) || 'getData';
   try {
     if (action === 'ping') return json_({ status: 'success', version: CODE_VERSION });
-    if (action === 'refresh') return json_(userRefresh_());
     return json_({ status: 'success', version: CODE_VERSION, data: getData_() });
   } catch (err) {
     return json_({ status: 'error', version: CODE_VERSION, message: String(err && err.message || err) });
   }
 }
 
-// 利用記録(画面には何も出さない。失敗しても画面側は無視する)
-// 週間予定表の読み込み(action=schedule。画面がPDFから読み取った行を送ってくる)もここで受ける
+// 週間予定表の読み込み(action=schedule)・略称の保存(action=mapNames)・利用記録(action=log。画面には何も出さない)
 function doPost(e) {
+  begin_();
   let body = {};
   try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (x) { body = {}; }
   if (body.action === 'schedule' || body.action === 'mapNames') {
@@ -100,88 +205,81 @@ function doPost(e) {
   return json_({ status: 'success' });
 }
 
-// 週間予定表の行を「予定表」シートへ保存し(物件名+製品名が同じ行は新しい予定日で上書き)、一覧を作り直して返す
+function json_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 週間予定表の行を「予定表」シートへ保存し(物件名+製品名が同じ行は新しい予定日で上書き)、
+// 予定表に出てくる工事の案件マスターを読んで一覧を作り、加工結果を確かめて返す
 function saveSchedule_(body) {
   const items = (body.items || []).filter(function (x) { return x && x.mark && normalizeKey_(x.date); });
   if (!items.length) throw new Error('予定表の行がありません');
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(150000)) throw new Error('他の更新が終わらないため、受け付けられませんでした。1〜2分後にもう一度送ってください。');
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sh = ss.getSheetByName(SHEET_PLAN) || ensureSheet_(ss, SHEET_PLAN, HEAD_PLAN, false);
-    const map = {}, keys = [];
-    readTableRows_(sh, HEAD_PLAN.length).forEach(function (r) {
-      const k = String(r[0]) + '\t' + String(r[1]);
-      if (!map[k]) keys.push(k);
-      map[k] = [String(r[0]), String(r[1]), String(r[2]), normalizeKey_(r[3]), qty_(r[4]), Number(r[5]) || 0, String(r[6]), String(r[7])];
-    });
+    const ss = cx_().ss;
     const now = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss'); // 秒まで(「最後に読み込んだ予定表」を見分けるため)
     const fileName = String(body.fileName || '').slice(0, 100);
+    const map = {}, keys = [];
+    planRows_().forEach(function (r) { const k = r[0] + '\t' + r[1]; if (!map[k]) keys.push(k); map[k] = r; });
     items.forEach(function (x) {
       const k = String(x.name || '') + '\t' + String(x.mark);
       if (!map[k]) keys.push(k);
       map[k] = [String(x.name || ''), String(x.mark), String(x.drawing || ''), normalizeKey_(x.date), qty_(x.qty), Number(x.weight) || 0, now, fileName];
     });
-    writeTable_(sh, HEAD_PLAN, keys.map(function (k) { return map[k]; }), [0, 1, 2, 3, 6, 7]);
-    // 加工結果の表(あれば)を保存して、マスターに加工日が入っているか確かめる
-    const results = (body.results || []).filter(function (x) { return x && x.mark; });
-    if (results.length) {
-      const rsh = ss.getSheetByName(SHEET_RESULT) || ensureSheet_(ss, SHEET_RESULT, HEAD_RESULT, true);
-      writeTable_(rsh, HEAD_RESULT, results.map(function (x) { return [String(x.name || ''), String(x.mark), normalizeKey_(x.date), now, fileName]; }), [0, 1, 2, 3, 4]);
-    }
+    const plan = keys.map(function (k) { return map[k]; });
+    writeTable_(sheet_(SHEET_PLAN) || ensureSheet_(ss, SHEET_PLAN, HEAD_PLAN, false), HEAD_PLAN, plan, [0, 1, 2, 3, 6, 7]);
+    cx_().plan = plan;
+    // 加工結果の表(あれば)を保存する。このPDFに結果の表があるときだけ確かめる(前回のPDFの結果で、何度もポップアップを出さない)
+    const results = (body.results || []).filter(function (x) { return x && x.mark; }).map(function (x) { return { name: String(x.name || ''), mark: String(x.mark), date: normalizeKey_(x.date) }; });
+    if (results.length) writeTable_(sheet_(SHEET_RESULT) || ensureSheet_(ss, SHEET_RESULT, HEAD_RESULT, true), HEAD_RESULT, results.map(function (x) { return [x.name, x.mark, x.date, now, fileName]; }), [0, 1, 2, 3, 4]);
     writePdfRecord_(ss, now, fileName);
-    const info = ss.getSheetByName(SHEET_INFO);
-    // 予定表に出てくる工事のファイルを読む(更新日時が変わっていなければ読み直さない)
-    runRefresh_();
-    let built = rebuildFromSheets_(ss, info); // 予定表が変わったので一覧は必ず作り直す(ファイルに変更が無いと runRefresh_ は保存済みの一覧を返すため)
-    // このPDFに加工結果の表があるときだけ確かめる(前回のPDFの結果で、何度もポップアップを出さない)
-    const check = results.length ? checkResultsWithReread_(ss, info) : { result: null, built: null };
-    built = check.built || built;
-    return { status: 'success', version: CODE_VERSION, saved: items.length, resultCheck: check.result, data: toPayload_(built) };
+    const r = refreshAndCheck_(results);
+    return { status: 'success', version: CODE_VERSION, saved: items.length, resultCheck: r.check, data: toPayload_(r.built) };
   } finally {
+    flushAll_();
     lock.releaseLock();
   }
 }
 
-// 予定表の件名(略称)に対応するファイルだけを選ぶ: ① 略称シートの工事番号のファイル ② ファイル名(拡張子なし)が略称と同じファイル
-// ②で結び付いた略称は、画面で選ばなくても使えるように自動の対応として控える
-function targetFiles_(fileIndex, planRows, abbr) {
-  const names = {};
-  (planRows || []).forEach(function (p) { if (p[0]) names[p[0]] = true; });
-  const auto = {}, picked = {}, out = [];
-  fileIndex.forEach(function (f) {
-    const base = workName_(f);
-    const byAbbr = Object.keys(names).some(function (n) { return abbr[n] && abbr[n] === f.workNo; });
-    const byName = !!names[base];
-    if (byName && !abbr[base]) auto[base] = f.workNo;
-    if ((byAbbr || byName) && !picked[f.fileId]) { picked[f.fileId] = true; out.push(f); }
-  });
-  try { PropertiesService.getScriptProperties().setProperty('AUTOABBR', JSON.stringify(auto)); } catch (e) { /* 控えられなくても続ける */ }
-  return out;
+// 略称 → 工事番号 の対応を保存して(同じ略称は上書き、空なら削除)、一覧を作り直して返す
+function saveAbbr_(body) {
+  const map = body.map || {};
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(150000)) throw new Error('他の更新が終わらないため、保存できませんでした。1〜2分後にもう一度保存してください。');
+  try {
+    const cur = Object.assign({}, userAbbr_());
+    Object.keys(map).forEach(function (k) {
+      const a = String(k).trim(), no = String(map[k] || '').trim();
+      if (!a) return;
+      if (no) cur[a] = no; else delete cur[a];
+    });
+    writeTable_(sheet_(SHEET_ABBR) || ensureSheet_(cx_().ss, SHEET_ABBR, HEAD_ABBR, false), HEAD_ABBR, Object.keys(cur).sort().map(function (a) { return [a, cur[a]]; }), [0, 1]);
+    cx_().abbr = cur;
+    const r = refreshAndCheck_(readResults_()); // 略称が変わると読むファイルも変わる
+    return { status: 'success', version: CODE_VERSION, resultCheck: r.check, data: toPayload_(r.built) };
+  } finally {
+    flushAll_();
+    lock.releaseLock();
+  }
 }
 
-// 略称の対応(画面で選んだもの + ファイル名が同じで自動で結び付いたもの)
-function effectiveAbbr_(ss) {
-  let auto = {};
-  try { auto = JSON.parse(PropertiesService.getScriptProperties().getProperty('AUTOABBR') || '{}'); } catch (e) { auto = {}; }
-  return Object.assign({}, auto, readAbbr_(ss));
+function readResults_() {
+  const sh = sheet_(SHEET_RESULT);
+  return sh ? readTableRows_(sh, HEAD_RESULT.length).map(function (r) { return { name: String(r[0]), mark: String(r[1]), date: normalizeKey_(r[2]) }; }).filter(function (x) { return x.mark; }) : [];
 }
 
-// 加工結果(PDFの結果重量の表)とマスターの加工日を照らし合わせる(2026-11-11 ユーザー指定)
-// ① 加工日の無い製品があれば、その工事の案件マスターだけを更新日時に関係なく読み直す(作業用データが古い場合)
-// ② もう一度照らし合わせる ③ それでも無ければ、画面が「マスターデータに日付が入ってません」(製品名|行数)を出す
-function checkResultsWithReread_(ss, info) {
-  const sh = ss.getSheetByName(SHEET_RESULT);
-  const results = sh ? readTableRows_(sh, HEAD_RESULT.length).map(function (r) { return { name: String(r[0]), mark: String(r[1]), date: normalizeKey_(r[2]) }; }).filter(function (x) { return x.mark; }) : [];
-  if (!results.length) return { result: null, built: null };
-  const abbr = effectiveAbbr_(ss);
-  let allRows = readTableRows_(ss.getSheetByName(SHEET_DATA), HEAD_DATA.length);
-  let miss = findMissingDates_(allRows, results, abbr);
-  let reread = 0, built = null;
+// 対象ファイルを読んで一覧を作り(予定表が変わったので必ず作り直す)、加工結果を確かめる(2026-11-11 ユーザー指定)
+// ① 結果の製品に加工日が無ければ、その工事のファイルだけ更新日時に関係なく読み直す(作業用データが古い場合)
+// ② もう一度確かめる ③ 残ったものを返す(画面が「マスターデータに日付が入ってません」製品名|行数 を出す)
+function refreshAndCheck_(results) {
+  let built = runRefresh_({ rebuild: true }).built;
+  if (!results.length) return { built: built, check: null };
+  const abbr = effectiveAbbr_();
+  let miss = findMissingDates_(dataRows_(), results, abbr);
+  let reread = 0;
   if (miss.length) {
-    // 読み直す工事: 略称の工事番号のファイル、または見つかった行のファイル
-    const indexId = extractId_(readInfo_(info, INFO_INDEX));
-    const files = indexId ? readFileIndex_(readIndexRows_(indexId)) : [];
+    const files = readFileIndex_(indexRows_());
     const force = {};
     miss.forEach(function (m) {
       if (m.fileId) force[m.fileId] = true;
@@ -190,112 +288,66 @@ function checkResultsWithReread_(ss, info) {
     });
     reread = Object.keys(force).length;
     if (reread) {
-      built = toBuilt_(runRefresh_(force));
-      allRows = readTableRows_(ss.getSheetByName(SHEET_DATA), HEAD_DATA.length);
-      miss = findMissingDates_(allRows, results, abbr);
+      built = runRefresh_({ rebuild: true, force: force }).built;
+      miss = findMissingDates_(dataRows_(), results, abbr);
     }
   }
-  return { result: { date: results[0].date, checked: results.length, reread: reread, missing: miss.map(function (m) { return { name: m.name, mark: m.mark, row: m.row, file: m.file }; }) }, built: built };
+  return { built: built, check: { date: results[0].date, checked: results.length, reread: reread, missing: miss.map(function (m) { return { name: m.name, mark: m.mark, row: m.row, file: m.file }; }) } };
 }
-
-// runRefresh_ の戻り値(画面用の形)を、rebuildFromSheets_ と同じ形として扱う
-function toBuilt_(r) { return r && r.data ? r.data : null; }
 
 // 加工結果の製品のうち、マスターに加工日が入っていないもの(見つからないものも含む)
 function findMissingDates_(allRows, results, abbr) {
   const byWorkMark = {}, byMark = {};
   allRows.forEach(function (r, i) {
-    (byWorkMark[String(r[1]) + '\t' + String(r[3])] = byWorkMark[String(r[1]) + '\t' + String(r[3])] || []).push(i);
-    (byMark[String(r[3])] = byMark[String(r[3])] || []).push(i);
+    (byWorkMark[r[D.NO] + '\t' + r[D.MARK]] = byWorkMark[r[D.NO] + '\t' + r[D.MARK]] || []).push(i);
+    (byMark[r[D.MARK]] = byMark[r[D.MARK]] || []).push(i);
   });
   const out = [];
   results.forEach(function (x) {
     const no = abbr[x.name];
     const cands = no ? (byWorkMark[no + '\t' + x.mark] || []) : (byMark[x.mark] || []);
-    if (cands.some(function (j) { return normalizeKey_(allRows[j][7]); })) return;
+    if (cands.some(function (j) { return allRows[j][D.DONE]; })) return;
     const m = cands.length ? allRows[cands[0]] : null;
-    out.push({ name: x.name, mark: x.mark, row: m ? (Number(m[10]) || '') : '', file: m ? String(m[2]) : '', fileId: m ? String(m[0]) : '' });
+    out.push({ name: x.name, mark: x.mark, row: m ? m[D.ROW] : '', file: m ? m[D.NAME] : '', fileId: m ? m[D.ID] : '' });
   });
   return out;
 }
 
-// 略称 → 工事番号 の対応を保存して(同じ略称は上書き)、一覧を作り直して返す
-function saveAbbr_(body) {
-  const map = body.map || {};
-  const lock = LockService.getScriptLock();
-  lock.waitLock(120000);
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sh = ss.getSheetByName(SHEET_ABBR) || ensureSheet_(ss, SHEET_ABBR, HEAD_ABBR, false);
-    const cur = readAbbr_(ss);
-    Object.keys(map).forEach(function (k) {
-      const a = String(k).trim(), no = String(map[k] || '').trim();
-      if (!a) return;
-      if (no) cur[a] = no; else delete cur[a];
-    });
-    writeTable_(sh, HEAD_ABBR, Object.keys(cur).sort().map(function (a) { return [a, cur[a]]; }), [0, 1]);
-    const info = ss.getSheetByName(SHEET_INFO);
-    runRefresh_(); // 略称が変わると読むファイルも変わる
-    let built = rebuildFromSheets_(ss, info);
-    const check = checkResultsWithReread_(ss, info);
-    built = check.built || built;
-    return { status: 'success', version: CODE_VERSION, resultCheck: check.result, data: toPayload_(built) };
-  } finally {
-    lock.releaseLock();
-  }
+// 予定表の件名(略称)ごとに読むファイルを選ぶ: ① ファイル名(拡張子なし)が略称と同じファイル ② 無ければ略称の工事番号のファイル
+// ①で結び付いた略称は、画面で選ばなくても使えるように自動の対応として控える(AUTOABBR)
+function targetFiles_(fileIndex, planRows, abbr) {
+  const names = {};
+  planRows.forEach(function (p) { if (p[0]) names[p[0]] = true; });
+  const byBase = {}, byNo = {};
+  fileIndex.forEach(function (f) { (byBase[workName_(f)] = byBase[workName_(f)] || []).push(f); (byNo[f.workNo] = byNo[f.workNo] || []).push(f); });
+  const auto = {}, picked = {}, out = [];
+  Object.keys(names).sort().forEach(function (n) {
+    let fs = byBase[n] || [];
+    if (fs.length) { if (!abbr[n]) auto[n] = fs[0].workNo; }
+    else if (abbr[n]) fs = byNo[abbr[n]] || [];
+    fs.forEach(function (f) { if (!picked[f.fileId]) { picked[f.fileId] = true; out.push(f); } });
+  });
+  propSet_('AUTOABBR', JSON.stringify(auto));
+  return out;
 }
 
-function readAbbr_(ss) {
-  const sh = ss.getSheetByName(SHEET_ABBR);
-  const map = {};
-  if (!sh) return map;
-  readTableRows_(sh, HEAD_ABBR.length).forEach(function (r) { const a = String(r[0]).trim(), no = String(r[1]).trim(); if (a && no) map[a] = no; });
-  return map;
-}
-
-// 索引のG・H列(工事番号→工事名)。画面の選択肢と表示に使うので、作り直すたびにスクリプトのプロパティへ控えておく
-function saveWorkList_(indexRows) {
+// 索引のG・H列(工事番号→工事名)。画面の「略称の対応」の選択肢。見出しの行(工事番号|工事名)は除く
+function saveWorkList_(rows) {
   const seen = {}, list = [];
-  indexRows.forEach(function (row) {
+  rows.forEach(function (row) {
     const no = String(row[6] || '').trim(), name = String(row[7] || '').trim();
-    if (no && !seen[no]) { seen[no] = true; list.push([no, name]); }
+    if (no && no !== '工事番号' && !seen[no]) { seen[no] = true; list.push([no, name]); }
   });
   list.sort(function (a, b) { return a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0; }); // 新しい工事番号を上に
-  try { PropertiesService.getScriptProperties().setProperty('WORKLIST', JSON.stringify(list)); } catch (e) { /* 控えられなくても続ける */ }
+  propSet_('WORKLIST', JSON.stringify(list));
   return list;
-}
-
-// 取込データ・予定表・会社カレンダーから一覧だけ作り直す(案件マスターは読まない)
-function rebuildFromSheets_(ss, info) {
-  const indexId = extractId_(readInfo_(info, INFO_INDEX));
-  if (!indexId) throw new Error('「' + SHEET_INFO + '」シートの「' + INFO_INDEX + '」が空です。');
-  const indexRows = readIndexRows_(indexId);
-  saveWorkList_(indexRows);
-  const calendar = readCalendar_(indexRows);
-  const allRows = readTableRows_(ss.getSheetByName(SHEET_DATA), HEAD_DATA.length);
-  const built = buildLists_(allRows, calendar, todayKey_(), readPlanRows_(ss), effectiveAbbr_(ss));
-  built.warnings = splitWarn_(readInfo_(info, INFO_WARN)).filter(function (w) { return w.indexOf('会社カレンダー') < 0 && w.indexOf('予定表の製品') < 0 && w.indexOf('略称') < 0; }).concat(built.warnings);
-  built.pending = Number(readInfo_(info, INFO_PENDING)) || 0;
-  built.updatedAt = String(readInfo_(info, INFO_UPDATED) || '');
-  writeOutputs_(ss, info, built);
-  return built;
-}
-
-function readPlanRows_(ss) {
-  const sh = ss.getSheetByName(SHEET_PLAN);
-  if (!sh) return [];
-  return readTableRows_(sh, HEAD_PLAN.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), normalizeKey_(r[3]), qty_(r[4]), Number(r[5]) || 0, String(r[6]), String(r[7])]; });
-}
-
-function json_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ========== Apps Scriptエディタから手動で実行する関数 ==========
 
-// 最初に1回実行する: シートと見出しを作り、毎朝の自動更新を設定する。既存のシート・値は消さない。
+// 最初に1回実行する: シートと見出しを作る。既存のシート・値は消さない。以前の自動更新(毎朝・1時間ごと)の予約は消す
 function setupSheets() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = begin_().ss;
   ensureSheet_(ss, SHEET_INFO, ['項目', '値'], false);
   ensureSheet_(ss, SHEET_YESTERDAY, HEAD_YESTERDAY, false);
   ensureSheet_(ss, SHEET_LATE, HEAD_LATE, false);
@@ -307,92 +359,70 @@ function setupSheets() {
   ensureSheet_(ss, SHEET_RESULT, HEAD_RESULT, true);
   const info = ss.getSheetByName(SHEET_INFO);
   [INFO_INDEX, INFO_SITE, INFO_BASE, INFO_PREV, INFO_UPDATED, INFO_PENDING, INFO_WARN].forEach(function (k) {
-    if (findInfoRow_(info, k) < 0) info.appendRow([k, k === INFO_SITE ? TARGET_SITE_DEFAULT : '']);
+    if (!(k in info_().pos)) infoSet_(k, k === INFO_SITE ? TARGET_SITE_DEFAULT : '');
   });
+  infoFlush_();
   info.setColumnWidth(1, 160);
   info.setColumnWidth(2, 480);
   // 何も無い初期の「シート1」は、空のときだけ消す
   const blank = ss.getSheetByName('シート1');
   if (blank && ss.getSheets().length > 1 && blank.getLastRow() === 0) ss.deleteSheet(blank);
-  createDailyTrigger();
-  Logger.log('シートを準備しました。「情報」シートの「' + INFO_INDEX + '」の値に、索引スプレッドシート「Excelマスタ一覧」のURLを貼ってから、refreshNow を実行してください。');
+  removeAutoTriggers_();
+  Logger.log('シートを準備しました。「情報」シートの「' + INFO_INDEX + '」に、索引スプレッドシート「Excelマスタ一覧」のURLを貼ってください。');
 }
 
-// 毎朝6時ごろに自動更新する(生産管理ダッシュボードの5時台の更新とは別に動く)。
-// 備考①(予定日)などは担当者がいつでも書き換えるため、毎朝6時ごろに加えて1時間ごとにも確認する
-// (更新日時が変わった案件マスターだけ読むので、変更が無ければ数秒で終わる)。画面を開いたときにも確認する(app.js)。
-function createDailyTrigger() {
+// 一覧は加工結果PDFを読み込んだときに作るので、自動更新(毎朝・1時間ごと)は使わない(2026-11-11)。予約が残っていれば消す
+function removeAutoTriggers_() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     const fn = t.getHandlerFunction();
     if (fn === 'dailyRefresh' || fn === 'hourlyRefresh') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('dailyRefresh').timeBased().atHour(6).nearMinute(0).everyDays(1).inTimezone(TIMEZONE).create();
-  ScriptApp.newTrigger('hourlyRefresh').timeBased().everyHours(1).create();
 }
+// 以前の版で予約した自動更新が動いたら、予約を消すだけ(貼り替えだけで止まるように残す)
+function dailyRefresh() { removeAutoTriggers_(); }
+function hourlyRefresh() { removeAutoTriggers_(); }
 
-// 手動で今すぐ更新する(初回の取り込みにも使う)。読み切れなかった案件は1分後に自動で続きを読む。
+// 手動で今すぐ読み直す(予定表に出てくる工事のファイルだけ)。読み切れなかった分は1分後に自動で続きを読む
 function refreshNow() {
+  begin_();
   const r = runRefreshLocked_(true);
-  Logger.log(JSON.stringify({ status: r.status, pending: r.pending, yesterday: r.data && r.data.yesterday.length, late: r.data && r.data.late.length, warnings: r.data && r.data.warnings }));
+  Logger.log(JSON.stringify({ status: r.status, pending: r.pending, yesterday: r.built && r.built.yesterday.length, late: r.built && r.built.late.length, warnings: r.built && r.built.warnings }));
 }
-
-function dailyRefresh() { runRefreshLocked_(true); }
-function hourlyRefresh() { runRefreshLocked_(false); } // 他の更新中なら今回は見送る
-function continueRefresh() { runRefreshLocked_(true); }
-
-// ========== 更新の本体 ==========
-
-function userRefresh_() {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(3000)) return { status: 'busy', message: '他の人がデータを更新中です。少し待ってからもう一度押してください。' };
-  try {
-    const r = runRefresh_();
-    return { status: 'success', version: CODE_VERSION, pending: r.pending, changed: r.changed, data: r.data };
-  } finally {
-    lock.releaseLock();
-  }
-}
+function continueRefresh() { begin_(); runRefreshLocked_(true); }
 
 function runRefreshLocked_(wait) {
   const lock = LockService.getScriptLock();
   if (wait) lock.waitLock(300000); else if (!lock.tryLock(3000)) return { status: 'busy' };
   try {
-    const r = runRefresh_();
-    return { status: 'success', pending: r.pending, data: r.data };
+    const r = runRefresh_({});
+    return { status: 'success', pending: r.pending, built: r.built };
   } finally {
+    flushAll_();
     lock.releaseLock();
   }
 }
 
-// 変わった案件マスターだけ読み直し、一覧を作り直してシートへ書く。
-// force: 更新日時に関係なく読み直すファイルID({id: true})。加工結果の確認で、食い違った工事だけ読み直すときに使う
-function runRefresh_(force) {
-  force = force || {};
+// ========== 更新の本体 ==========
+
+// 対象ファイル(予定表に出てくる工事)のうち、変わったものだけ読み直して一覧を作る。
+// opts.force: 更新日時に関係なく読み直すファイルID({id: true})。opts.rebuild: 変更が無くても一覧を作り直す
+function runRefresh_(opts) {
+  opts = opts || {};
+  const force = opts.force || {};
   const started = Date.now();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const info = ss.getSheetByName(SHEET_INFO);
-  if (!info) throw new Error('「' + SHEET_INFO + '」シートがありません。Apps Scriptエディタで setupSheets を実行してください。');
-  const indexId = extractId_(readInfo_(info, INFO_INDEX));
-  if (!indexId) throw new Error('「' + SHEET_INFO + '」シートの「' + INFO_INDEX + '」が空です。索引スプレッドシート「Excelマスタ一覧」のURLを貼ってください。');
-  const site = String(readInfo_(info, INFO_SITE) || TARGET_SITE_DEFAULT).trim();
-
-  const indexRows = readIndexRows_(indexId);
-  // 読むのは、予定表に出てくる工事(略称 → 工事番号、またはファイル名が略称と同じ)のファイルだけ(2026-11-11 ユーザー指定。全36件を読むと数分かかるため)
-  const fileIndex = targetFiles_(readFileIndex_(indexRows), readPlanRows_(ss), readAbbr_(ss));
-  const calendar = readCalendar_(indexRows);
-
-  const stateSh = ss.getSheetByName(SHEET_STATE);
-  const dataSh = ss.getSheetByName(SHEET_DATA);
-  const state = readState_(stateSh); // fileId -> {mtime, importedAt, ...}
+  const ss = cx_().ss;
+  const site = String(infoGet_(INFO_SITE) || TARGET_SITE_DEFAULT).trim();
+  const rows = indexRows_();
+  const fileIndex = targetFiles_(readFileIndex_(rows), planRows_(), userAbbr_());
+  const calendar = readCalendar_(rows);
+  const stateSh = sheet_(SHEET_STATE);
+  const state = readState_(stateSh);
 
   const warnings = [];
-  const folder = getOwnFolder_(ss);
+  let folder = null;
   const parsed = {}; // 今回読み直した案件: fileId -> 行(null=失敗で前回の取込データを残す)
-  // 取込が古い順(未取込が先)に、時間の許す範囲で読む。更新日時が前回と同じ案件は読まない。
-  const order = fileIndex.slice().sort(function (a, b) {
-    const sa = state[a.fileId], sb = state[b.fileId];
-    return (sa ? sa.importedAt : 0) - (sb ? sb.importedAt : 0);
-  });
+  // 取込が古い順(未取込が先)に、時間の許す範囲で読む。更新日時が前回と同じなら読まない
+  const order = fileIndex.slice().sort(function (a, b) { return (state[a.fileId] ? state[a.fileId].importedAt : 0) - (state[b.fileId] ? state[b.fileId].importedAt : 0); });
   let pending = 0, changed = 0;
   order.forEach(function (entry) {
     const st = state[entry.fileId];
@@ -407,99 +437,90 @@ function runRefresh_(force) {
     if (!force[entry.fileId] && st && st.mtime === mtime && st.version === PARSE_VERSION && !st.error && st.workNo === entry.workNo) return; // 変更なし
     if (Date.now() - started > TIME_BUDGET_MS) { pending++; return; }
     changed++;
-    let rows = [], error = '';
+    let got = [], error = '';
     try {
-      rows = readMasterRows_(entry, file, folder, site);
+      folder = folder || getOwnFolder_(ss);
+      got = readMasterRows_(entry, file, folder, site);
     } catch (err) {
       error = String(err && err.message || err);
       warnings.push('「' + entry.fileName + '」(' + entry.workNo + ')の読み込みに失敗しました: ' + error);
-      rows = st ? null : []; // 失敗時は前回の取込データを残す
+      got = st ? null : []; // 失敗時は前回の取込データを残す
     }
-    parsed[entry.fileId] = rows ? rows.map(function (r) {
-      return [entry.fileId, entry.workNo, '', r.mark, r.drawing, r.weight, r.plan || '', r.done || '', r.part, r.qty, r.row];
-    }) : null;
-    state[entry.fileId] = { fileId: entry.fileId, workNo: entry.workNo, fileName: entry.fileName, mtime: mtime, importedAt: Date.now(), count: rows ? rows.length : (st ? st.count : 0), version: PARSE_VERSION, error: error };
+    parsed[entry.fileId] = got ? got.map(function (r) { return [entry.fileId, entry.workNo, '', r.mark, r.drawing, r.weight, r.done || '', r.part, r.qty, r.row]; }) : null;
+    state[entry.fileId] = { fileId: entry.fileId, workNo: entry.workNo, fileName: entry.fileName, mtime: mtime, importedAt: Date.now(), count: got ? got.length : (st ? st.count : 0), version: PARSE_VERSION, error: error };
   });
 
   const live = {};
   fileIndex.forEach(function (e) { live[e.fileId] = e; });
-  const removed = Object.keys(state).filter(function (id) { return !live[id]; });
+  const removed = Object.keys(state).filter(function (id) { return !live[id]; }); // 対象から外れた・索引から消えたファイル
   removed.forEach(function (id) { delete state[id]; });
-  // 工事名=索引D列のファイル名(拡張子なし。2026-11-11 ユーザー指定)。変わったかは前回と比べて判断する
   const namesSig = JSON.stringify(fileIndex.map(function (e) { return e.fileId + '=' + workName_(e); }));
-  const props = PropertiesService.getScriptProperties();
-  const namesChanged = props.getProperty('WORKNAMES_SIG') !== namesSig;
+  const namesChanged = propGet_('WORKNAMES_SIG') !== namesSig;
 
   const today = todayKey_();
   const now = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm');
-  const prevPending = Number(readInfo_(info, INFO_PENDING)) || 0;
-  const prevWarn = splitWarn_(readInfo_(info, INFO_WARN)).filter(function (w) { return w.indexOf('読み込みに失敗') >= 0 || w.indexOf('開けませんでした') >= 0 || w.indexOf('読み切れなかった') >= 0; });
-  // 何も変わっていない(案件マスター・工事名・日付・前回の未取込/失敗なし)ときは、取込データを読み書きせずに返す
-  if (!changed && !pending && !removed.length && !namesChanged && !prevPending && !prevWarn.length && !warnings.length && normalizeKey_(readInfo_(info, INFO_BASE)) === today) {
-    writeInfo_(info, INFO_UPDATED, "'" + now);
+  const prevWarn = splitWarn_(infoGet_(INFO_WARN)).filter(function (w) { return w.indexOf('読み込みに失敗') >= 0 || w.indexOf('開けませんでした') >= 0 || w.indexOf('読み切れなかった') >= 0; });
+  // 何も変わっていない(ファイル・名前・日付・前回の未取込/失敗なし)ときは、取込データを読み書きせずに返す
+  if (!opts.rebuild && !changed && !pending && !removed.length && !namesChanged && !(Number(infoGet_(INFO_PENDING)) || 0) && !prevWarn.length && !warnings.length && normalizeKey_(infoGet_(INFO_BASE)) === today) {
+    infoSet_(INFO_UPDATED, "'" + now);
     scheduleContinue_(false);
-    return { pending: 0, changed: 0, data: readPayloadFromSheets_(ss, info) };
+    return { pending: 0, changed: 0, built: readBuiltFromSheets_() };
   }
 
-  const dataByFile = readDataByFile_(dataSh); // fileId -> rows(配列)
-  Object.keys(parsed).forEach(function (id) { if (parsed[id]) dataByFile[id] = parsed[id]; });
-  Object.keys(dataByFile).forEach(function (id) { if (!live[id]) delete dataByFile[id]; }); // 索引から消えた案件
+  let allRows = dataRows_();
+  if (changed || removed.length || namesChanged) {
+    const byFile = {};
+    allRows.forEach(function (r) { if (live[r[D.ID]]) (byFile[r[D.ID]] = byFile[r[D.ID]] || []).push(r); }); // 対象外のファイルの行は捨てる
+    Object.keys(parsed).forEach(function (id) { if (parsed[id]) byFile[id] = parsed[id]; });
+    allRows = [];
+    Object.keys(byFile).forEach(function (id) { byFile[id].forEach(function (r) { r[D.NAME] = workName_(live[id]); allRows.push(r); }); }); // 工事名は索引の最新のファイル名で付け直す
+    writeTable_(sheet_(SHEET_DATA), HEAD_DATA, allRows, [D.ID, D.NO, D.NAME, D.MARK, D.DW, D.DONE, D.PART]);
+    cx_().data = allRows;
+    writeState_(stateSh, state);
+    propSet_('WORKNAMES_SIG', namesSig);
+  }
 
-  // 工事名は毎回、索引の最新のファイル名(D列)で付け直す
-  const allRows = [];
-  Object.keys(dataByFile).forEach(function (id) {
-    dataByFile[id].forEach(function (r) {
-      r[2] = live[id] ? workName_(live[id]) : r[2];
-      allRows.push(r);
-    });
-  });
-  if (changed || removed.length || namesChanged) writeTable_(dataSh, HEAD_DATA, allRows, [0, 1, 2, 3, 4, 6, 7, 8]);
-  writeState_(stateSh, state);
-  props.setProperty('WORKNAMES_SIG', namesSig);
-
-  saveWorkList_(indexRows);
-  const built = buildLists_(allRows, calendar, today, readPlanRows_(ss), effectiveAbbr_(ss));
+  saveWorkList_(rows);
+  const built = buildLists_(allRows, calendar, today, planRows_(), effectiveAbbr_());
   if (pending > 0) warnings.push('時間内に読み切れなかった案件が' + pending + '件あります。1分後に自動で続きを読みます。');
   built.warnings = warnings.concat(built.warnings);
   built.pending = pending;
   built.updatedAt = now;
-  writeOutputs_(ss, info, built);
+  writeOutputs_(built);
   scheduleContinue_(pending > 0);
-  return { pending: pending, changed: changed, data: toPayload_(built) };
+  return { pending: pending, changed: changed, built: built };
 }
 
-// 画面からの取得。日付が変わっていたら(朝の自動更新の前など)、取込データから一覧だけ作り直す。
+// 画面からの取得(今の画面は使わないが、確認用に残す)。日付が変わっていたら、取込データから一覧だけ作り直す
 function getData_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const info = ss.getSheetByName(SHEET_INFO);
-  if (!info) throw new Error('「' + SHEET_INFO + '」シートがありません。setupSheets を実行してください。');
-  if (!String(readInfo_(info, INFO_UPDATED) || '')) throw new Error('まだ案件マスターを取り込んでいません。Apps Scriptエディタで refreshNow を実行してください。');
-  const base = readInfo_(info, INFO_BASE);
-  const today = todayKey_();
-  if (normalizeKey_(base) !== today) {
+  if (normalizeKey_(infoGet_(INFO_BASE)) !== todayKey_() && String(infoGet_(INFO_UPDATED) || '')) {
     const lock = LockService.getScriptLock();
     if (lock.tryLock(20000)) {
       try {
-        if (normalizeKey_(readInfo_(info, INFO_BASE)) !== today) {
-          return toPayload_(rebuildFromSheets_(ss, info));
-        }
+        const rows = indexRows_();
+        const built = buildLists_(dataRows_(), readCalendar_(rows), todayKey_(), planRows_(), effectiveAbbr_());
+        built.warnings = splitWarn_(infoGet_(INFO_WARN)).filter(function (w) { return w.indexOf('読み込みに失敗') >= 0 || w.indexOf('開けませんでした') >= 0 || w.indexOf('読み切れなかった') >= 0; }).concat(built.warnings);
+        built.pending = Number(infoGet_(INFO_PENDING)) || 0;
+        built.updatedAt = String(infoGet_(INFO_UPDATED) || '');
+        writeOutputs_(built);
+        return toPayload_(built);
       } finally {
+        flushAll_();
         lock.releaseLock();
       }
     }
   }
-  return readPayloadFromSheets_(ss, info);
+  return toPayload_(readBuiltFromSheets_());
 }
 
 // ========== 一覧づくり(純粋な計算。テストで直接呼ぶ) ==========
 
-// allRows: 取込データの行 [ファイルID, 工事番号, 物件名, 製品名, 図番, 重量, 備考①, 加工日, 部位, 本数](日付は'yyyy-MM-dd')
+// allRows: 取込データの行(列は D を参照。日付は'yyyy-MM-dd')
 // planRows: 予定表の行 [物件名, 製品名, 図番, 予定日, 数量, 重量, 読込日時, ファイル名]
-// calendar: {'yyyy-MM-dd': true(出勤)/false(休日)}  today: 'yyyy-MM-dd'
+// calendar: {'yyyy-MM-dd': true(出勤)/false(休日)}  today: 'yyyy-MM-dd'  abbr: {略称: 工事番号}
 // 前日出来高 = 加工日が前の営業日の行。
-// 生産遅れ  = 予定表で予定日が今週より前(今週の月曜より前、2か月以内)なのに、案件マスターに加工日が無い製品
-//             (今週の予定は遅れにしない。先週までの予定の取り残し=「先週の漏れ」を遅れとする。2026-11-11 ユーザー指定)
-//             (備考①は加工予定日とは限らないため使わない。2026-11-11 ユーザー指定)
+// 生産遅れ  = 予定表で予定日が今週の月曜より前(2か月以内)なのに、案件マスターに加工日が無い製品
+//             (今週の予定は遅れにしない=「先週の漏れ」を遅れとする。備考①は加工予定日とは限らないため使わない。2026-11-11 ユーザー指定)
 function buildLists_(allRows, calendar, today, planRows, abbr) {
   abbr = abbr || {};
   const prev = prevBusinessDay_(calendar, today);
@@ -511,38 +532,38 @@ function buildLists_(allRows, calendar, today, planRows, abbr) {
   Object.keys(abbr).sort().forEach(function (a) { if (!rev[abbr[a]]) rev[abbr[a]] = a; });
   const byWorkMark = {}, byMark = {};
   allRows.forEach(function (r, i) {
-    const done = normalizeKey_(r[7]), no = String(r[1]);
-    if (done && done === prev.key) yesterday.push([rev[no] || r[2], r[3], r[4], Number(r[5]) || 0, done, r[8] || '', qty_(r[9]), no, i]);
-    (byWorkMark[no + '\t' + String(r[3])] = byWorkMark[no + '\t' + String(r[3])] || []).push(i);
-    (byMark[String(r[3])] = byMark[String(r[3])] || []).push(i);
+    const done = r[D.DONE], no = r[D.NO];
+    if (done && done === prev.key) yesterday.push([rev[no] || r[D.NAME], r[D.MARK], r[D.DW], r[D.W], done, r[D.PART] || '', r[D.QTY], no, i]);
+    (byWorkMark[no + '\t' + r[D.MARK]] = byWorkMark[no + '\t' + r[D.MARK]] || []).push(i);
+    (byMark[r[D.MARK]] = byMark[r[D.MARK]] || []).push(i);
   });
   const lateDays = {}; // 予定日 -> 遅れ日数(同じ予定日は1回だけ数える)
   let missingCal = '', notFound = 0;
   const unmapped = {};
-  (planRows || []).forEach(function (p) {
-    const plan = normalizeKey_(p[3]);
+  planRows.forEach(function (p) {
+    const plan = p[3];
     if (!plan || plan >= lateBefore || plan < lateFrom) return;
-    // 案件マスターの行を探す: 略称→工事番号+製品名(同じ工事番号の全ファイル)。略称が未設定なら、製品名(+図番)で1件に決まるときだけ
+    // 案件マスターの行を探す: 略称→工事番号+製品名。略称が未設定なら、製品名(+図番)で1件に決まるときだけ
     const no = abbr[p[0]];
     let cands;
     if (no) cands = byWorkMark[no + '\t' + p[1]] || [];
     else {
       unmapped[p[0]] = true;
       cands = byMark[p[1]] || [];
-      if (cands.length > 1) cands = cands.filter(function (j) { return String(allRows[j][4]) === String(p[2]); });
+      if (cands.length > 1) cands = cands.filter(function (j) { return allRows[j][D.DW] === p[2]; });
       if (cands.length > 1) cands = [];
     }
     if (!cands.length) notFound++;
-    if (cands.some(function (j) { return normalizeKey_(allRows[j][7]); })) return; // 加工済み
+    if (cands.some(function (j) { return allRows[j][D.DONE]; })) return; // 加工済み
     const m = cands.length ? allRows[cands[0]] : null;
     if (!(plan in lateDays)) {
       const c = businessDaysAfter_(calendar, plan, today);
       lateDays[plan] = c.days;
       if (c.missing && (!missingCal || c.missing < missingCal)) missingCal = c.missing;
     }
-    late.push([p[0], p[1], m ? m[4] : p[2], m ? (Number(m[5]) || 0) : (Number(p[5]) || 0), plan, lateDays[plan], m ? (m[8] || '') : '', m ? qty_(m[9]) : qty_(p[4]), no || (m ? String(m[1]) : ''), m ? cands[0] : allRows.length]);
+    late.push([p[0], p[1], m ? m[D.DW] : p[2], m ? m[D.W] : (Number(p[5]) || 0), plan, lateDays[plan], m ? (m[D.PART] || '') : '', m ? m[D.QTY] : qty_(p[4]), no || (m ? m[D.NO] : ''), m ? cands[0] : allRows.length]);
   });
-  // 並び(見本のPDFと同じ、2026-11-11 ユーザー指定): 物件名 → 部位(柱→大梁→小梁→その他)→ 案件マスターの行の順
+  // 並び(見本のPDFと同じ): 物件名 → 部位(柱→大梁→小梁→その他)→ 案件マスターの行の順
   const byText = function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
   const rank = function (p) { const i = PART_ORDER.indexOf(p); return i < 0 ? PART_ORDER.length : i; };
   const order = function (pi, ii) { return function (a, b) { return byText(a[0], b[0]) || (rank(a[pi]) - rank(b[pi])) || (a[ii] - b[ii]); }; };
@@ -561,17 +582,6 @@ function buildLists_(allRows, calendar, today, planRows, abbr) {
     warnings: warnings,
     plan: planCoverage_(planSummary_(planRows), planRows, calendar, lateBefore, prev.key),
   };
-}
-
-// 画面の「略称の対応」用: 略称の対応表・工事番号の一覧(索引G・H列)・未設定の略称
-function payloadExtras_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const abbr = effectiveAbbr_(ss);
-  let workList = [];
-  try { workList = JSON.parse(PropertiesService.getScriptProperties().getProperty('WORKLIST') || '[]'); } catch (e) { workList = []; }
-  const unknown = {};
-  readPlanRows_(ss).forEach(function (p) { if (p[0] && !abbr[p[0]]) unknown[p[0]] = true; });
-  return { abbr: abbr, workList: workList, unknown: Object.keys(unknown).sort() };
 }
 
 // 予定表の概要(画面に「読み込んだ予定表」として出す)
@@ -686,7 +696,7 @@ function normalizeKey_(v) {
 
 // ========== 案件マスターの読み取り ==========
 
-// 案件マスターの1シート目から、対象拠点の行で「備考①」か「加工」に日付がある行だけを返す。
+// 案件マスターの1シート目から、対象拠点の行を返す
 function readMasterRows_(entry, file, folder, site) {
   if (entry.sourceType === 'sheet') {
     return parseMasterValues_(SpreadsheetApp.openById(entry.fileId).getSheets()[0], site);
@@ -705,35 +715,32 @@ function parseMasterValues_(sheet, site) {
   if (lastRow < 2 || lastCol < 1) return [];
   const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   const col = findColumns_(header);
-  const need = [col.site, col.mark, col.drawing, col.weight, col.plan, col.done, col.part, col.qty].filter(function (c) { return c >= 0; });
+  const need = [col.site, col.mark, col.drawing, col.weight, col.done, col.part, col.qty].filter(function (c) { return c >= 0; });
   const width = Math.max.apply(null, need) + 1;
   return parseMasterRows_(header, sheet.getRange(2, 1, lastRow - 1, width).getValues(), site);
 }
 
 function findColumns_(header) {
   const h = header.map(function (x) { return String(x == null ? '' : x).trim(); });
-  const col = { site: h.indexOf('加工先'), mark: h.indexOf('製品マーク'), drawing: h.indexOf('図番'), weight: h.indexOf('重量'), plan: h.indexOf('備考①'), done: h.indexOf('加工'), part: h.indexOf('部位'), qty: h.indexOf('本数') };
+  const col = { site: h.indexOf('加工先'), mark: h.indexOf('製品マーク'), drawing: h.indexOf('図番'), weight: h.indexOf('重量'), done: h.indexOf('加工'), part: h.indexOf('部位'), qty: h.indexOf('本数') };
   if (col.site < 0 || col.done < 0) throw new Error('見出しに「加工先」または「加工」がありません');
   return col;
 }
 
-// header: 見出し行、values: 2行目以降の値。純粋な計算(テストで直接呼ぶ)。
+// header: 見出し行、values: 2行目以降の値。純粋な計算(テストで直接呼ぶ)
 function parseMasterRows_(header, values, site) {
   const col = findColumns_(header);
   const out = [];
   for (let i = 0; i < values.length; i++) {
     const row = values[i];
     if (String(row[col.site] == null ? '' : row[col.site]).trim() !== site) continue;
-    const plan = col.plan >= 0 && isDate_(row[col.plan]) ? dateToKeyJst_(row[col.plan]) : '';
-    const done = isDate_(row[col.done]) ? dateToKeyJst_(row[col.done]) : '';
     out.push({
       mark: col.mark >= 0 ? String(row[col.mark] == null ? '' : row[col.mark]).trim() : '',
       part: col.part >= 0 ? String(row[col.part] == null ? '' : row[col.part]).trim() : '',
       qty: col.qty >= 0 && row[col.qty] !== '' && !isNaN(Number(row[col.qty])) ? Number(row[col.qty]) : '',
       drawing: col.drawing >= 0 ? String(row[col.drawing] == null ? '' : row[col.drawing]).trim() : '',
       weight: col.weight >= 0 ? (Number(row[col.weight]) || 0) : 0,
-      plan: plan,
-      done: done,
+      done: isDate_(row[col.done]) ? dateToKeyJst_(row[col.done]) : '',
       row: i + 2, // マスターの行番号(1行目が見出し)
     });
   }
@@ -742,15 +749,7 @@ function parseMasterRows_(header, values, site) {
 
 // ========== 索引スプレッドシート ==========
 
-function readIndexRows_(indexId) {
-  const sh = SpreadsheetApp.openById(indexId).getSheets()[0];
-  const lastRow = sh.getLastRow();
-  if (lastRow < 2) return [];
-  return sh.getRange(2, 1, lastRow - 1, 10).getValues(); // A:J
-}
-
-// A:E列。工事番号が空・"00-00"の行は除く。マスタNo(B列)が"S"始まりならスプレッドシート、それ以外はExcel。
-// (生産管理ダッシュボードの Code.gs と同じ決まり)
+// A:E列。工事番号が空・"00-00"の行は除く。マスタNo(B列)が"S"始まりならスプレッドシート、それ以外はExcel(生産管理ダッシュボードと同じ決まり)
 function readFileIndex_(rows) {
   const list = [], seen = {};
   rows.forEach(function (row) {
@@ -763,7 +762,6 @@ function readFileIndex_(rows) {
   });
   return list;
 }
-
 
 function readCalendar_(rows) {
   const cal = {};
@@ -781,10 +779,8 @@ function extractId_(v) {
   return m ? m[1] : '';
 }
 
-// 画面・Excelに出す工事名: 索引D列のファイル名から拡張子を除いたもの(例: 「OSR.xlsx」→「OSR」)
-function workName_(entry) { return stripExt_(entry.fileName); }
-
-function stripExt_(name) { return String(name || '').replace(/\.(xlsx|xlsm|xls)$/i, ''); }
+// 工事名: 索引D列のファイル名から拡張子を除いたもの(例: 「OSR.xlsx」→「OSR」)
+function workName_(entry) { return String(entry.fileName || '').replace(/\.(xlsx|xlsm|xls)$/i, ''); }
 
 // ========== このスプレッドシートの読み書き ==========
 
@@ -796,26 +792,8 @@ function ensureSheet_(ss, name, head, hidden) {
     sh.setFrozenRows(1);
   }
   if (hidden) sh.hideSheet();
+  if (C_) C_.sheets[name] = sh;
   return sh;
-}
-
-function findInfoRow_(info, key) {
-  const last = info.getLastRow();
-  if (last < 1) return -1;
-  const keys = info.getRange(1, 1, last, 1).getValues();
-  for (let i = 0; i < keys.length; i++) if (String(keys[i][0]).trim() === key) return i + 1;
-  return -1;
-}
-
-function readInfo_(info, key) {
-  const r = findInfoRow_(info, key);
-  return r < 0 ? '' : info.getRange(r, 2).getValue();
-}
-
-function writeInfo_(info, key, value) {
-  let r = findInfoRow_(info, key);
-  if (r < 0) { info.appendRow([key, '']); r = info.getLastRow(); }
-  info.getRange(r, 2).setValue(value);
 }
 
 function splitWarn_(v) { return String(v || '').split('\n').map(function (s) { return s.trim(); }).filter(Boolean); }
@@ -826,25 +804,21 @@ function readTableRows_(sh, width) {
   return sh.getRange(2, 1, last - 1, width).getValues();
 }
 
-// textCols: 文字のまま書く列(0始まり)。図番「2-1」や日付の文字列が、シートの自動変換で日付型に変わるのを防ぐ。
+// 見出し+行をまとめて1回で書く。textCols: 文字のまま書く列(0始まり。図番「2-1」や日付の文字列が日付型に変わるのを防ぐ)
+// 前より行・列が減ったときは、はみ出した分だけ消す
 function writeTable_(sh, head, rows, textCols) {
-  const last = sh.getLastRow();
-  if (last > 1) sh.getRange(2, 1, last - 1, Math.max(sh.getLastColumn(), head.length)).clearContent();
-  sh.getRange(1, 1, 1, head.length).setValues([head]);
-  if (!rows.length) return;
-  (textCols || []).forEach(function (c) { sh.getRange(2, c + 1, rows.length, 1).setNumberFormat('@'); });
-  sh.getRange(2, 1, rows.length, head.length).setValues(rows);
-}
-
-function readDataByFile_(sh) {
-  const map = {};
-  readTableRows_(sh, HEAD_DATA.length).forEach(function (r) {
-    const id = String(r[0] || '');
-    if (!id) return;
-    // 日付は文字列でそろえる(シートが日付に変換していても戻す)
-    (map[id] = map[id] || []).push([id, String(r[1]), String(r[2]), String(r[3]), String(r[4]), Number(r[5]) || 0, normalizeKey_(r[6]), normalizeKey_(r[7]), String(r[8] == null ? '' : r[8]), r[9] === '' || r[9] == null ? '' : Number(r[9]), Number(r[10]) || '']);
-  });
-  return map;
+  const lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+  const n = rows.length + 1, w = head.length;
+  if (lastRow > n) sh.getRange(n + 1, 1, lastRow - n, Math.max(lastCol, w)).clearContent();
+  if (lastCol > w) sh.getRange(1, w + 1, Math.min(lastRow, n) || 1, lastCol - w).clearContent();
+  const tc = {};
+  (textCols || []).forEach(function (c) { tc[c] = true; });
+  const fmtRow = head.map(function (h, c) { return tc[c] ? '@' : 'General'; });
+  const fmts = [head.map(function () { return '@'; })];
+  for (let i = 0; i < rows.length; i++) fmts.push(fmtRow);
+  const range = sh.getRange(1, 1, n, w);
+  range.setNumberFormats(fmts);
+  range.setValues([head].concat(rows));
 }
 
 function readState_(sh) {
@@ -866,40 +840,44 @@ function writeState_(sh, state) {
   writeTable_(sh, HEAD_STATE, rows, [0, 1, 2, 3, 6, 7]);
 }
 
-function writeOutputs_(ss, info, built) {
-  // 工事名・製品名・図番・日付は文字のまま書く
-  writeTable_(ss.getSheetByName(SHEET_YESTERDAY), HEAD_YESTERDAY, built.yesterday, [0, 1, 2, 4, 5, 7]);
-  writeTable_(ss.getSheetByName(SHEET_LATE), HEAD_LATE, built.late, [0, 1, 2, 4, 6, 8]);
-  writeInfo_(info, INFO_BASE, "'" + built.baseDate);
-  writeInfo_(info, INFO_PREV, "'" + built.prevDate);
-  writeInfo_(info, INFO_UPDATED, "'" + built.updatedAt);
-  writeInfo_(info, INFO_PENDING, built.pending || 0);
-  writeInfo_(info, INFO_WARN, built.warnings.join('\n'));
-  writeInfo_(info, INFO_PLAN, "'" + JSON.stringify(built.plan || null));
+// 一覧と「情報」シートの値を書く(情報シートは flushAll_ でまとめて1回)
+function writeOutputs_(built) {
+  writeTable_(sheet_(SHEET_YESTERDAY), HEAD_YESTERDAY, built.yesterday, [0, 1, 2, 4, 5, 7]);
+  writeTable_(sheet_(SHEET_LATE), HEAD_LATE, built.late, [0, 1, 2, 4, 6, 8]);
+  infoSet_(INFO_BASE, "'" + built.baseDate);
+  infoSet_(INFO_PREV, "'" + built.prevDate);
+  infoSet_(INFO_UPDATED, "'" + built.updatedAt);
+  infoSet_(INFO_PENDING, built.pending || 0);
+  infoSet_(INFO_WARN, built.warnings.join('\n'));
+  infoSet_(INFO_PLAN, "'" + JSON.stringify(built.plan || null));
 }
 
-function readPayloadFromSheets_(ss, info) {
-  const y = readTableRows_(ss.getSheetByName(SHEET_YESTERDAY), HEAD_YESTERDAY.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), String(r[5]), qty_(r[6]), String(r[7])]; });
-  const l = readTableRows_(ss.getSheetByName(SHEET_LATE), HEAD_LATE.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), Number(r[5]) || 0, String(r[6]), qty_(r[7]), String(r[8])]; });
-  return toPayload_({
-    baseDate: normalizeKey_(readInfo_(info, INFO_BASE)),
-    prevDate: normalizeKey_(readInfo_(info, INFO_PREV)),
-    updatedAt: String(readInfo_(info, INFO_UPDATED) || ''),
-    pending: Number(readInfo_(info, INFO_PENDING)) || 0,
-    warnings: splitWarn_(readInfo_(info, INFO_WARN)),
+// 保存済みの一覧(シート)を、buildLists_ と同じ形で読む
+function readBuiltFromSheets_() {
+  const y = readTableRows_(sheet_(SHEET_YESTERDAY), HEAD_YESTERDAY.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), String(r[5]), qty_(r[6]), String(r[7])]; });
+  const l = readTableRows_(sheet_(SHEET_LATE), HEAD_LATE.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), Number(r[5]) || 0, String(r[6]), qty_(r[7]), String(r[8])]; });
+  let plan = null;
+  try { plan = JSON.parse(String(infoGet_(INFO_PLAN) || 'null')); } catch (e) { plan = null; }
+  return {
+    baseDate: normalizeKey_(infoGet_(INFO_BASE)),
+    prevDate: normalizeKey_(infoGet_(INFO_PREV)),
+    updatedAt: String(infoGet_(INFO_UPDATED) || ''),
+    pending: Number(infoGet_(INFO_PENDING)) || 0,
+    warnings: splitWarn_(infoGet_(INFO_WARN)),
     yesterday: y,
     late: l,
-    plan: readPlanInfo_(info) || planSummary_(readPlanRows_(ss)),
-  });
+    plan: plan || planSummary_(planRows_()),
+  };
 }
 
-function readPlanInfo_(info) {
-  try { return JSON.parse(String(readInfo_(info, INFO_PLAN) || 'null')); } catch (e) { return null; }
-}
-
+// 画面へ返す形。略称の対応・工事番号の一覧(略称の選択肢)・未設定の略称を添える
 function toPayload_(b) {
-  const ex = payloadExtras_();
-  return { abbr: ex.abbr, workList: ex.workList, unknown: ex.unknown, site: TARGET_SITE_DEFAULT, plan: b.plan || null, lateBefore: b.baseDate ? weekStart_(b.baseDate) : '', baseDate: b.baseDate, prevDate: b.prevDate, lateFrom: b.baseDate ? lateCutoff_(b.baseDate) : '', lateMonths: LATE_WINDOW_MONTHS, updatedAt: b.updatedAt, pending: b.pending || 0, warnings: b.warnings || [], yesterday: b.yesterday, late: b.late };
+  const abbr = effectiveAbbr_();
+  let workList = [];
+  try { workList = JSON.parse(propGet_('WORKLIST') || '[]'); } catch (e) { workList = []; }
+  const unknown = {};
+  planRows_().forEach(function (p) { if (p[0] && !abbr[p[0]]) unknown[p[0]] = true; });
+  return { abbr: abbr, workList: workList, unknown: Object.keys(unknown).sort(), plan: b.plan || null, lateBefore: b.baseDate ? weekStart_(b.baseDate) : '', baseDate: b.baseDate, prevDate: b.prevDate, lateFrom: b.baseDate ? lateCutoff_(b.baseDate) : '', updatedAt: b.updatedAt, pending: b.pending || 0, warnings: b.warnings || [], yesterday: b.yesterday, late: b.late };
 }
 
 function getOwnFolder_(ss) {
@@ -907,12 +885,15 @@ function getOwnFolder_(ss) {
   return parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
 }
 
-// 読み切れなかった案件があれば1分後に続きを読む。無ければ続きの予約を消す。
+// 読み切れなかった案件があれば1分後に続きを読む。無ければ続きの予約を消す
 function scheduleContinue_(need) {
+  let has = false;
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'continueRefresh') ScriptApp.deleteTrigger(t);
+    if (t.getHandlerFunction() !== 'continueRefresh') return;
+    if (need && !has) { has = true; return; }
+    ScriptApp.deleteTrigger(t);
   });
-  if (need) ScriptApp.newTrigger('continueRefresh').timeBased().after(60 * 1000).create();
+  if (need && !has) ScriptApp.newTrigger('continueRefresh').timeBased().after(60 * 1000).create();
 }
 
 // 加工結果PDFを取り込んだら「記録」シートの2行目(新しいものが上)に 日時・取込ファイル名 を入れる。
@@ -934,7 +915,7 @@ function writePdfRecord_(ss, when, fileName) {
 }
 
 function writeLog_(kind, detail) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = cx_().ss;
   const sh = ss.getSheetByName(SHEET_LOG) || ensureSheet_(ss, SHEET_LOG, HEAD_LOG, true);
   sh.insertRowBefore(2);
   sh.getRange(2, 1, 1, 3).setValues([[Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss'), kind.slice(0, 50), detail.slice(0, 200)]]);
