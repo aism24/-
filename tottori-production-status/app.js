@@ -167,7 +167,7 @@
     const d = st.data;
     $('summary').innerHTML = (st.tab === 'yesterday'
       ? esc(fmtDateY(d.prevDate)) + ' の出来高 '
-      : esc(fmtDateY(d.baseDate)) + ' 時点の遅れ ')
+      : esc(fmtDateY(d.baseDate)) + ' 時点の遅れ' + (d.lateFrom ? '(予定日 ' + esc(fmtDate(d.lateFrom)) + '以降)' : '') + ' ')
       + '<b>' + rows.length + '件</b>・合計 <b>' + sumWeight(rows).toFixed(3) + 't</b>';
     $('thead').innerHTML = '<tr>' + cols.map(function (c) { return '<th' + (c.cls === 'num' ? ' class="num"' : '') + '>' + esc(c.label) + '</th>'; }).join('') + '</tr>';
     $('tbody').innerHTML = rows.map(function (r) {
@@ -206,7 +206,7 @@
     const ws = wb.addWorksheet(isLate ? '遅れリスト' : '前日出来高', { views: [{ state: 'frozen', ySplit: 3 }] });
     ws.getCell('A1').value = title;
     ws.getCell('A1').font = { bold: true, size: 14 };
-    ws.getCell('A2').value = (st.work ? '工事: ' + st.work + '  ' : '') + rows.length + '件  合計 ' + sumWeight(rows).toFixed(3) + 't  (データ更新 ' + (d.updatedAt || '') + ')';
+    ws.getCell('A2').value = (st.work ? '工事: ' + st.work + '  ' : '') + (isLate && d.lateFrom ? '生産予定日 ' + fmtDateY(d.lateFrom) + '以降  ' : '') + rows.length + '件  合計 ' + sumWeight(rows).toFixed(3) + 't  (データ更新 ' + (d.updatedAt || '') + ')';
     ws.getRow(3).values = cols.map(function (c) { return c.label; });
     ws.getRow(3).eachCell(function (cell) {
       cell.font = { bold: true };
