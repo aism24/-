@@ -3691,6 +3691,29 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
         left, right, left_jobj, right_jobj = ex.determine_joints_no_size(
             tdf, row.y, length_value, endpoints, y_max=tier_y_max
         ) if length_value is not None else (None, None, None, None)
+        if (length_value is not None and endpoints is not None and (left is None or right is None)
+                and ex.determine_size_no_size(tdf, endpoints, left_jobj, right_jobj) is None):
+            # 片側の継手が取れず、サイズも取れないとき、同じ長さの直線が別の高さにも描かれていれば(上の図と下の図など)、
+            # その高さで探し直す。左右の継手とサイズが取れたときだけ使う(2026-11-11、26-17 B2M2B-08 の
+            # B2M2HB100z-1・3。基準線を下の図で拾い、その近くの別の継手 tJ1z だけが右に取れて、
+            # 上の図の本物の継手 HBJ100z と サイズを読めなかった)。
+            gx0, gx1 = group_range.get(id(row), (row.x_mark, row.x_next))
+            ref_y0 = (endpoints[0][1] + endpoints[1][1]) / 2.0
+            levels = []
+            for ln in tdf.lines:
+                if abs(ln.length - length_value) >= 0.5 or abs(ln.y1 - ln.y2) > 1.0:
+                    continue
+                y = (ln.y1 + ln.y2) / 2.0
+                if y <= row.y or (tier_y_max is not None and y >= tier_y_max) or abs(y - ref_y0) <= 600:
+                    continue
+                if not any(abs(y - v) <= 300 for v in levels):
+                    levels.append(y)
+            for lvl in sorted(levels, key=lambda v: abs(v - ref_y0)):
+                alt_ep = ((endpoints[0][0], lvl), (endpoints[1][0], lvl))
+                al, ar, alj, arj = ex.determine_joints_no_size(tdf, row.y, length_value, alt_ep, y_max=tier_y_max)
+                if al is not None and ar is not None and                         ex.determine_size_no_size(tdf, alt_ep, alj, arj) is not None:
+                    left, right, left_jobj, right_jobj, endpoints = al, ar, alj, arj, alt_ep
+                    break
         joints_no_size[id(row)] = (left, right)
         if length_value is not None:
             row.size = ex.determine_size_no_size(tdf, endpoints, left_jobj, right_jobj)
