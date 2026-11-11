@@ -117,6 +117,9 @@ table.sheet tr.sub td, table.sheet tr.total td { font-weight: 700; }
 .late table.sheet tr.sub td, .late table.sheet tr.total td { background: #cfe8f7; }
 .done table.sheet tr.sub td, .done table.sheet tr.total td { background: #fff2a8; }
 table.sheet tr.total td { border-top: 2px solid #8a98a8; }
+/* 総合計は工事別の合計より濃く(2026-11-12 ユーザー指定) */
+.late table.sheet tr.total td { background: #7fbbe6; }
+.done table.sheet tr.total td { background: #ffd23f; }
 .days { display: inline-block; min-width: 3em; text-align: center; border-radius: 999px; padding: 0 8px; font-weight: 700; }
 .days.d1 { background: var(--late1); color: var(--late1-ink); }
 .days.d2 { background: var(--late2); color: var(--late2-ink); }
@@ -189,3 +192,5 @@ table.sheet tr.total td { border-top: 2px solid #8a98a8; }
 .notice-text { margin: 0; color: #000; font-weight: 700; font-size: 18px; line-height: 1.6; text-align: center; white-space: pre-wrap; }
 .notice-actions { display: flex; justify-content: center; margin-top: 16px; }
 .notice-ok { min-width: 120px; font-size: 17px; }
+/* 遅れ日数は中央揃え(2026-11-12 ユーザー指定) */
+table.sheet td.days-cell { text-align: center; }

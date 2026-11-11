@@ -37,6 +37,8 @@
   function prevDay(key) { const p = parts(key); return p ? new Date(Date.UTC(p.y, p.m - 1, p.d - 1)).toISOString().slice(0, 10) : ''; }
 
   // 物件ごとにまとめる(行の順はそのまま)
+  // 工事別の合計行の見出し: 【ITM】　遅れ合計(2026-11-12 ユーザー指定)
+  function subLabel(name, label) { return '【' + (name || '') + '】\u3000' + label; }
   function groups(rows, k) {
     const out = [];
     rows.forEach(function (r) {
@@ -196,11 +198,11 @@
           + '<td class="num">' + esc(r[k.qty]) + '</td><td class="num">' + fmtW(r[3]) + '</td>';
         k.extra.forEach(function (e) {
           if (e.date) html += '<td class="date">' + esc(fmtDate(r[e.i])) + '</td>';
-          if (e.days) { const n = Number(r[e.i]) || 0; html += '<td class="num"><span class="days ' + daysClass(n) + '">' + n + '日</span></td>'; }
+          if (e.days) { const n = Number(r[e.i]) || 0; html += '<td class="days-cell"><span class="days ' + daysClass(n) + '">' + n + '日</span></td>'; }
         });
         html += '</tr>';
       });
-      html += subRow(k.sub, g.qty, g.weight, head.length, 'sub');
+      html += subRow(subLabel(g.name, k.sub), g.qty, g.weight, head.length, 'sub');
     });
     if (gs.length) html += subRow(k.total, t.qty, t.weight, head.length, 'total');
     html += '</tbody>';
@@ -463,7 +465,7 @@
     tables.forEach(function (t) { t.gs = groups(d[t.kind] || [], KIND[t.kind]); t.rows = t.gs.reduce(function (a, g) { return a + g.rows.length + 1; }, 0) + (t.gs.length ? 1 : 0); });
     const maxRows = Math.max(1, tables[0].rows, tables[1].rows) + 1; // +見出し
     const rh = Math.min(5.2, (H - M - top - 9) / maxRows), fs = Math.min(3.1, rh * 0.62);
-    const FILL = { late: '#cfe8f7', yesterday: '#fff2a8' };
+    const FILL = { late: '#cfe8f7', yesterday: '#fff2a8' }, FILL_TOTAL = { late: '#7fbbe6', yesterday: '#ffd23f' }; // 総合計は工事別合計より濃く
     tables.forEach(function (t) {
       const kd = KIND[t.kind], tw = sum(t.w), tt = totals(t.gs);
       text(title(t.kind), t.x, top + 3.5, tw * 0.75, 'left', 4.2, true);
@@ -483,10 +485,10 @@
       };
       const head = ['物件名', '部位', '製品名', '数量', '重量'].concat(kd.extra.map(function (e) { return e.label; }));
       line(head.map(function (h, i) { return { i: i, v: h }; }), '#eef2f7', true);
-      const subLine = function (label, qty, weight) {
+      const subLine = function (label, qty, weight, isTotal) {
         const cells = [{ i: 0, span: 3, v: label }, { i: 3, v: qty }, { i: 4, v: fmtW(weight), align: 'right' }];
         if (t.w.length > 5) cells.push({ i: 5, span: t.w.length - 5, v: '' });
-        line(cells, FILL[t.kind], true);
+        line(cells, (isTotal ? FILL_TOTAL : FILL)[t.kind], true);
       };
       t.gs.forEach(function (g) {
         g.rows.forEach(function (r, i) {
@@ -497,9 +499,9 @@
           });
           line(cells);
         });
-        subLine(kd.sub, g.qty, g.weight);
+        subLine(subLabel(g.name, kd.sub), g.qty, g.weight);
       });
-      if (t.gs.length) subLine(kd.total, tt.qty, tt.weight);
+      if (t.gs.length) subLine(kd.total, tt.qty, tt.weight, true);
       else text(t.kind === 'late' ? '遅れている製品はありません' : '結果の日の出来高はありません', t.x, y + rh / 2, tw, 'center', fs, false, '#5d6b7a');
     });
     return cv;
