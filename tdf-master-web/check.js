@@ -243,6 +243,13 @@ function checkZkey(name) {
   return name.replace(/\.[^.]+$/, '').split(/[\s　_(（]/)[0];
 }
 
+// 図番の比べ方: 数字の先頭の0は無視する(B1M2G-001 と B1M2G-01 を同じ図番とみなす)。
+// 図面のファイル名が表題欄の図番と桁数だけ違う図面(26-17 B1M2G-01.tdf の表題欄は B1M2G-001)があるため
+// (2026-11-11 ユーザー指示)。結果の表やExcelに出す図番は、書かれたままの表記にする。
+function checkZnorm(s) {
+  return String(s ?? '').normalize('NFKC').replace(/\d+/g, m => String(parseInt(m, 10)));
+}
+
 async function checkFindKojiDir(root, no) {
   const dirs = (await checkListDir(root)).filter(e => e.kind === 'directory');
   return dirs.find(d => d.name === no || (d.name.startsWith(no) && !/[0-9]/.test(d.name.charAt(no.length)))) || null;
@@ -283,7 +290,7 @@ async function checkWalkTdf(dirs, need, onProgress) {
       if (e.kind === 'directory') {
         if (!CHECK_SKIP_DIR.test(e.name)) queue.push({ dir: e, path: path.concat(e.name), base });
       } else if (/\.tdf$/i.test(e.name)) {
-        const z = checkZkey(e.name);
+        const z = checkZnorm(checkZkey(e.name));
         if (need.has(z)) {
           if (!found.has(z)) found.set(z, []);
           found.get(z).push({ handle: e, path: path.concat(e.name), base });
@@ -517,7 +524,7 @@ async function processCheckFileInner(files) {
   try {
     showStatus('Excelを読んでいます', file.name);
     const xl = checkReadExcel(await file.arrayBuffer());
-    const need = new Set(xl.rows.map(r => r.zuban).filter(Boolean));
+    const need = new Set(xl.rows.map(r => checkZnorm(r.zuban)).filter(Boolean));
 
     // 選んだフォルダの種類に合わせて「詳細図」フォルダまでたどる
     const kind = checkFolderKind(folder);
@@ -630,7 +637,7 @@ function checkCompare(xl, found, res) {
   const byZuban = new Map(); // 図番 → [{ key, mode, row }]
   for (const [key, r] of res) {
     for (const row of r.rows) {
-      const z = checkNorm(row['図番']);
+      const z = checkZnorm(checkNorm(row['図番']));
       if (!byZuban.has(z)) byZuban.set(z, []);
       byZuban.get(z).push({ key, mode: r.mode, row });
     }
@@ -639,7 +646,7 @@ function checkCompare(xl, found, res) {
   const honsuSum = new Map(); // 切断リスト: 図番+製品名 → 本数の合計
   if (xl.cut) {
     for (const x of xl.rows) {
-      const k = x.zuban + '\u0000' + x.mark;
+      const k = checkZnorm(x.zuban) + '\u0000' + x.mark;
       honsuSum.set(k, (honsuSum.get(k) || 0) + (checkQty(x.honsu) ?? 0));
     }
   }
@@ -647,9 +654,9 @@ function checkCompare(xl, found, res) {
     const out = { x, judge: '', bad: [], memo: [], dw: null, file: null };
     // 照合するのは、製品名(製品マーク)と図番が図面の製品と一致した行だけ(2026-11-09 ユーザー指示)。
     // 切断リストには柱仕口・大梁付などの部材の行もあるので、一致しない行は「対象外」として照合しない。
-    const files = found.get(x.zuban) || [];
+    const files = found.get(checkZnorm(x.zuban)) || [];
     if (files.length) out.file = res.get(files[0].path.join('\\'));
-    const cand = (byZuban.get(x.zuban) || []).filter(c => checkNorm(c.row['製品マーク']) === x.mark);
+    const cand = (byZuban.get(checkZnorm(x.zuban)) || []).filter(c => checkNorm(c.row['製品マーク']) === x.mark);
     if (!cand.length) {
       out.judge = '対象外';
       out.memo.push(!files.length ? '図番の図面が見つからない'
@@ -671,7 +678,7 @@ function checkCompare(xl, found, res) {
     if (row['長さの確認']) out.memo.push(`図面の長さは「${row['長さの確認']}」`);
     if (xl.hasHonsu) {
       // 切断リストは製品1本ごとに1行(本数1)なので、同じ図番・製品名の行の本数を合計して図面の台数と比べる
-      const xq = xl.cut ? (honsuSum.get(x.zuban + '\u0000' + x.mark) ?? null) : checkQty(x.honsu);
+      const xq = xl.cut ? (honsuSum.get(checkZnorm(x.zuban) + '\u0000' + x.mark) ?? null) : checkQty(x.honsu);
       if (xl.cut) out.honsuSum = xq;
       if (xq !== checkQty(row['本数'])) out.bad.push('本数');
     }
@@ -684,8 +691,10 @@ function checkCompare(xl, found, res) {
   // 図面にあってExcelに無い製品(Excelに載っている図面の中だけ)。切断リストは部材ごとの表で
   // 製品をすべて載せるものではない(柱は柱仕口の行だけ等)ので出さない
   const extra = [];
-  for (const z of xl.cut ? [] : new Set(xl.rows.map(r => r.zuban))) {
-    for (const c of byZuban.get(z) || []) {
+  const zubanOnce = new Map(); // 0の違いだけの図番は1つにまとめる(表示は最初に書かれた表記)
+  for (const r of xl.rows) if (!zubanOnce.has(checkZnorm(r.zuban))) zubanOnce.set(checkZnorm(r.zuban), r.zuban);
+  for (const z of xl.cut ? [] : zubanOnce.values()) {
+    for (const c of byZuban.get(checkZnorm(z)) || []) {
       const m = checkNorm(c.row['製品マーク']);
       if (!used.has(c.key + '\u0000' + m)) extra.push({ zuban: z, row: c.row, file: res.get(c.key) });
     }

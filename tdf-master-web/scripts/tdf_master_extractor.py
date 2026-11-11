@@ -672,6 +672,7 @@ def determine_length(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float,
 # 製品が1種類だけの図面で、長さを探すX範囲を左右に広げる幅(tdf_app から使う)
 RELAX_MARGIN = 5000.0
 _SIZE_JOINT_Y_BAND = 300.0
+_JOINT_Y_NEAR = 600.0  # 継手の長丸を、長さの基準線のこの上下の範囲から優先して選ぶ
 
 
 def _nearest_size_text_no_size(tdf: tb.TdfData, cx: float, cy: float):
@@ -830,6 +831,17 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
     lx_r = _rotate_x(lx, ly)
     rx_r = _rotate_x(rx, ry)
 
+    # 長さの基準線の近く(上下600以内)に、左右の端それぞれの側の長丸があれば、そちらだけから選ぶ
+    # (2026-11-11、26-17 B1M2G-01 の 2G12: 梁の中ほどに付く別の部材の継手 BTJB の方がXでは近く、
+    # 梁の端の J7207A を選べなかった)。左右どちらかの側に無いときは今までどおり全部から選ぶ
+    # (全長の寸法線が離れた位置に描かれた図面。S-1 R1G-14〜16)。
+    mid_xr = (lx_r + rx_r) / 2.0
+    ref_y = (ly + ry) / 2.0
+    near = [c for c in candidates if abs(c[1] - ref_y) <= _JOINT_Y_NEAR]
+    if (any(_rotate_x(c[0], c[1]) < mid_xr for c in near)
+            and any(_rotate_x(c[0], c[1]) >= mid_xr for c in near)):
+        candidates = near
+
     def _nearest(target_xr: float):
         return min(candidates, key=lambda c: abs(_rotate_x(c[0], c[1]) - target_xr))
 
@@ -865,6 +877,18 @@ def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
         return None
     (lx, _ly), (rx, _ry) = endpoints
     x_lo, x_hi = min(lx, rx), max(lx, rx)
+
+    # 長さの基準線の近く(上下300以内)・長さのX範囲の中に、サイズの文字がちょうど1種類だけあれば、
+    # それが梁本体のサイズ(2026-11-11、26-17 B1M2G-01 の 2G2・2G12。継手の近くのサイズ文字は
+    # 継手の途中に付く別の部材 BT-300 等を拾ってしまう)。
+    near_ref = set()
+    for r in tdf.texts:
+        text = tdf.resolve_text(r)
+        if (text and _looks_like_size(text) and x_lo <= r.x <= x_hi
+                and abs(r.y - (_ly + _ry) / 2.0) <= _SIZE_JOINT_Y_BAND):
+            near_ref.add(text)
+    if len(near_ref) == 1:
+        return next(iter(near_ref))
 
     def _is_joint_size(pos) -> bool:
         return not (x_lo <= pos[0] <= x_hi)
