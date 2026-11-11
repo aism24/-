@@ -278,14 +278,14 @@
         pages.push(pdf.getPage(i).then(function (pg) {
           const vt = pg.getViewport({ scale: 1 }).transform;
           return pg.getTextContent().then(function (c) {
-            return c.items.map(function (t) { const m = pdfjsLib.Util.transform(vt, t.transform); return { str: t.str, x: m[4], y: m[5], w: t.width }; });
+            return c.items.map(function (t) { const m = pdfjsLib.Util.transform(vt, t.transform); return { str: t.str, x: m[4], y: m[5], w: t.width, h: Math.hypot(m[2], m[3]) }; });
           });
         }));
       }
       return Promise.all(pages);
     }).then(function (contents) {
       const tx = contents.map(textLines);
-      const found = tx.map(function (t, i) { const r = planFromText(t); if (r) r.page = i; return r; }).filter(function (r) { return r && r.items.length; });
+      const found = tx.map(function (t, i) { const r = planFromText(t); if (r) { r.page = i; r.items.forEach(function (it) { it.cell.page = i; }); } return r; }).filter(function (r) { return r && r.items.length; });
       if (!found.length) throw new Error('このPDFに「鳥取工場 加工予定表」が見つかりませんでした(文字の読めるPDFが必要です。スキャンした画像のPDFは読めません)。');
       const ym = pdfYearMonth(fileName, tx.map(function (t) { return t.all; }).join(''));
       const results = tx.map(function (t) { return resultFromText(t, ym); }).filter(Boolean).reduce(function (a, r) { return a.concat(r); }, []);
@@ -294,7 +294,10 @@
         const r = t.all.match(/(\d{1,2})\.(\d{1,2})結果重量/);
         if (r && !resultDate) resultDate = mdKey(ym, +r[1], +r[2]);
       });
-      return { items: found.reduce(function (a, r) { return a.concat(r.items); }, []), results: results, resultDate: resultDate, planPages: found.map(function (r) { return r.page; }) };
+      const all = found.reduce(function (a, r) { return a.concat(r.items); }, []);
+      const cells = all.map(function (it) { return it.cell; });
+      const items = all.map(function (it) { const o = Object.assign({}, it); delete o.cell; return o; });
+      return { items: items, results: results, resultDate: resultDate, planPages: found.map(function (r) { return r.page; }), cells: cells };
     });
   }
 
@@ -314,7 +317,7 @@
       ln.ts.forEach(function (t) {
         const last = words[words.length - 1];
         if (last && t.x - (last.x + last.w) < 1.5) { last.s += String(t.str).trim(); last.w = t.x + t.w - last.x; }
-        else words.push({ s: String(t.str).trim(), x: t.x, w: t.w });
+        else words.push({ s: String(t.str).trim(), x: t.x, w: t.w, y: t.y, h: t.h });
       });
       ln.ts = words;
     });
@@ -373,7 +376,9 @@
         if (!q || !w || colOf(q.x) !== h || colOf(w.x) !== h) continue;
         if (!/-/.test(t.s) || !/^\d+$/.test(q.s) || !/^\d+(\.\d+)?$/.test(w.s)) continue;
         const dw = ts[i + 3] && colOf(ts[i + 3].x) === h && /-/.test(ts[i + 3].s) ? ts[i + 3].s : '';
-        items.push({ date: h.date, name: curName[h.date] || '', mark: t.s, qty: +q.s, weight: +w.s, drawing: dw });
+        // cell: PDFの色付けに使う位置(台数・製品名・重量・図番の文字の位置。GASへは送らない)
+        items.push({ date: h.date, name: curName[h.date] || '', mark: t.s, qty: +q.s, weight: +w.s, drawing: dw,
+          cell: { y: t.y, h: t.h || 6, qty: { x: q.x, w: q.w }, paint: [t, w].concat(dw ? [ts[i + 3]] : []).map(function (z) { return { x: z.x, w: z.w }; }) } });
         i += dw ? 3 : 2;
       }
     });
@@ -415,17 +420,18 @@
     st.busy = true;
     if (!st.shown) landingState(true, '読み取っています…', '「' + file.name + '」', '');
     else toast('「' + file.name + '」を読み取っています…');
-    let bytes = null, planPages = [];
+    let bytes = null, planPages = [], cells = [];
     loadPdfLib().catch(function () {}); // ダウンロード用の部品を先に読み込んでおく
     file.arrayBuffer().then(function (buf) { bytes = buf.slice(0); return parsePlanPdf(buf, file.name); }).then(function (r) {
       planPages = r.planPages;
+      cells = r.cells;
       if (!st.shown) landingState(true, '照らし合わせています…', '予定表 ' + r.items.length + ' 件を案件マスターと照らし合わせています(しばらくかかることがあります)', '');
       else toast('予定表から ' + r.items.length + ' 件を読み取りました。案件マスターと照らし合わせています…');
       return fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'schedule', fileName: file.name, items: r.items, results: r.results, resultDate: r.resultDate }) }).then(function (x) { return x.json(); });
     }).then(function (res) {
       if (res.status !== 'success') throw new Error(res.message || '保存に失敗しました');
       showResult();
-      st.src = { bytes: bytes, planPages: planPages, name: file.name };
+      st.src = { bytes: bytes, planPages: planPages, cells: cells, name: file.name };
       setData(res.data);
       const mt = missingText(res.data.plan);
       // 取込のお知らせは画面中央に出し、OKを押すまで消さない(2026-11-12 ユーザー指定)。OKの後に加工結果の確認を出す
@@ -550,6 +556,94 @@
     return cv;
   }
 
+  // 予定表のページを絵にして、製品ごとに「台数」のセルの色を 製品名・重量・図番 のセルにも塗る(2026-11-12 ユーザー指定。どの製品がまだかを分かりやすく)。
+  // セルの枠は絵の上で文字の左右・上下を枠線まで探して決める。文字(黒・赤など)は残し、背景の色だけを塗り替える。
+  const PAINT_SCALE = 3; // 216dpi
+  function paintedPlanPages(src) {
+    if (!src.cells || !src.cells.length) return Promise.resolve(null);
+    return pdfjsLib.getDocument({ data: src.bytes.slice(0) }).promise.then(function (pdf) {
+      return src.planPages.reduce(function (pr, pi) {
+        return pr.then(function (acc) {
+          return pdf.getPage(pi + 1).then(function (pg) {
+            const vp = pg.getViewport({ scale: PAINT_SCALE }), v1 = pg.getViewport({ scale: 1 });
+            const cv = document.createElement('canvas');
+            cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+            const ctx = cv.getContext('2d');
+            return pg.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
+              const im = ctx.getImageData(0, 0, cv.width, cv.height);
+              const orig = new Uint8ClampedArray(im.data); // 色・枠は塗る前の絵で測る(先に塗った行に引きずられないように)
+              src.cells.filter(function (c) { return c.page === pi; }).forEach(function (c) { paintRow(im, c, orig); });
+              ctx.putImageData(im, 0, 0);
+              acc.push({ jpg: cv.toDataURL('image/jpeg', 0.92), w: v1.width, h: v1.height });
+              return acc;
+            });
+          });
+        });
+      }, Promise.resolve([]));
+    }).catch(function () { return null; });
+  }
+  function paintRow(im, c, o) {
+    const S = PAINT_SCALE, W = im.width, H = im.height, d = im.data;
+    const px = function (x, y) { x = Math.round(x); y = Math.round(y); if (x < 0 || y < 0 || x >= W || y >= H) return null; const i = (y * W + x) * 4; return [o[i], o[i + 1], o[i + 2]]; };
+    const dist = function (a, b) { return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]); };
+    const lum = function (a) { return 0.299 * a[0] + 0.587 * a[1] + 0.114 * a[2]; };
+    // (x0,y0)から dx,dy の向きに、背景と違う暗い線(枠線)まで進む
+    const edge = function (x0, y0, dx, dy, bg) {
+      for (let k = 1; k < 80 * S; k++) {
+        const p = px(x0 + dx * k, y0 + dy * k);
+        if (!p) return null;
+        if (dist(p, bg) > 60 && lum(p) < lum(bg) * 0.75) return { x: x0 + dx * k, y: y0 + dy * k }; // 背景よりはっきり暗い=枠線(濃い青の背景でも見つかるように比で見る)
+      }
+      return null;
+    };
+    // 背景を測る高さ: 文字の上下のすき間の候補のうち、周り(左右・上下)が同じ色の所(=枠線や文字の上ではない)
+    const bgAt = function (x) {
+      const cand = [0.9, 1.0, 0.8, 1.1, 0.7, -0.25, -0.35, -0.15];
+      for (let n = 0; n < cand.length; n++) {
+        const y = (c.y - c.h * cand[n]) * S, p = px(x, y);
+        if (!p) continue;
+        const ok = [[-4, 0], [4, 0], [0, -2], [0, 2], [-4, -2], [4, 2]].every(function (o) { const z = px(x + o[0], y + o[1]); return z && dist(z, p) < 30; });
+        if (ok) return { y: y, bg: p };
+      }
+      return null;
+    };
+    // セルの枠と背景色。row があれば上下はその行に合わせる(図番の列は行の間に横線が無いため)
+    const cellOf = function (t, row) {
+      const xc = (t.x + t.w / 2) * S, s0 = bgAt(xc);
+      if (!s0) return null;
+      const bg = s0.bg, y = s0.y;
+      const l = edge(xc, y, -1, 0, bg), r = edge(xc, y, 1, 0, bg);
+      if (!l || !r) return null;
+      let u, b;
+      if (row) { u = { y: row.y0 }; b = { y: row.y1 }; }
+      else {
+        const xs = Math.max(l.x + 2, t.x * S - 3); // 文字の左(文字に重ならない縦の線)で上下を探す
+        u = edge(xs, y, 0, -1, bg); b = edge(xs, y, 0, 1, bg);
+      }
+      if (!u || !b) return null;
+      return { x0: l.x, x1: r.x, y0: u.y, y1: b.y, bg: bg };
+    };
+    const q = cellOf(c.qty);
+    if (!q || q.x1 - q.x0 > 25 * S || q.y1 - q.y0 > 15 * S) { paintRow.miss = (paintRow.miss || 0) + 1; return; } // 台数のセルが大きすぎる=枠を取り違えた
+    const col = q.bg; // 台数のセルの色
+    // 台数が色なし(白)なら 製品名・重量・図番 も白にする(重量・図番の元の色は消える)
+    c.paint.forEach(function (t) {
+      const r = cellOf(t, q);
+      if (!r || r.x1 - r.x0 > 60 * S || r.y1 - r.y0 > 20 * S) { paintRow.miss = (paintRow.miss || 0) + 1; return; } // 枠が見つからない・大きすぎるときは塗らない
+      paintRow.done = (paintRow.done || 0) + 1;
+      const lb = Math.max(1, lum(r.bg));
+      for (let y = Math.round(r.y0) + 1; y < Math.round(r.y1); y++) {
+        for (let x = Math.round(r.x0) + 1; x < Math.round(r.x1); x++) {
+          const i = (y * W + x) * 4, p = [o[i], o[i + 1], o[i + 2]];
+          // 背景と文字(インク)の混ざり具合 a(0=背景、1=文字)。背景の分だけ色を差し替える: 新 = 今 + (台数の色 - 元の背景) × (1 - a)
+          const a = Math.min(1, Math.max(0, 1 - lum(p) / lb));
+          if (a > 0.97) continue;
+          for (let ch = 0; ch < 3; ch++) d[i + ch] = Math.min(255, Math.max(0, p[ch] + (col[ch] - r.bg[ch]) * (1 - a)));
+        }
+      }
+    });
+  }
+
   function buildPdf() {
     const src = st.src;
     if (!src) return Promise.reject(new Error('取り込んだPDFがありません'));
@@ -561,9 +655,14 @@
         return out.embedPng(png).then(function (img) {
           const pg = out.addPage([595.28, 841.89]); // A4縦
           pg.drawImage(img, { x: 0, y: 0, width: 595.28, height: 841.89 });
-          return out.copyPages(org, src.planPages);
-        }).then(function (pages) {
-          pages.forEach(function (p) { out.addPage(p); }); // 予定表のページ(元のPDFのまま。A4横)
+          return paintedPlanPages(src);
+        }).then(function (imgs) {
+          // 予定表のページ: 台数の色を 製品名・重量・図番 にも塗った絵(元のページの向き=A4横)。塗れなければ元のページをそのまま
+          if (!imgs) return out.copyPages(org, src.planPages).then(function (pages) { pages.forEach(function (p) { out.addPage(p); }); });
+          return imgs.reduce(function (pr, im) {
+            return pr.then(function () { return out.embedJpg(im.jpg); }).then(function (e) { out.addPage([im.w, im.h]).drawImage(e, { x: 0, y: 0, width: im.w, height: im.h }); });
+          }, Promise.resolve());
+        }).then(function () {
           out.setTitle(title('late') + '・' + title('yesterday'));
           return out.save();
         });
