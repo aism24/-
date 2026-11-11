@@ -97,6 +97,10 @@
 
   // ---- 表示 ----
   function setData(d) {
+    // 遅れの並び: 工事(物件名)ごと → 予定日の古い順。同じ予定日はGASの並び(部位→案件マスターの行)のまま(2026-11-12 ユーザー指定)
+    if (d && d.late) d.late = d.late.map(function (r, i) { return [r, i]; }).sort(function (a, b) {
+      return (a[0][0] < b[0][0] ? -1 : a[0][0] > b[0][0] ? 1 : 0) || (a[0][4] < b[0][4] ? -1 : a[0][4] > b[0][4] ? 1 : 0) || (a[1] - b[1]);
+    }).map(function (x) { return x[0]; });
     st.data = d;
     $('meta').innerHTML = '基準日 <b>' + esc(fmtDateY(d.baseDate)) + '</b>・結果の日 <b>' + esc(fmtDateY(d.prevDate)) + '</b>・更新 ' + esc(d.updatedAt || '');
     const w = $('warn');
