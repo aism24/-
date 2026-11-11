@@ -102,17 +102,14 @@
       return (a[0][0] < b[0][0] ? -1 : a[0][0] > b[0][0] ? 1 : 0) || (a[0][4] < b[0][4] ? -1 : a[0][4] > b[0][4] ? 1 : 0) || (a[1] - b[1]);
     }).map(function (x) { return x[0]; });
     st.data = d;
-    $('meta').innerHTML = '基準日 <b>' + esc(fmtDateY(d.baseDate)) + '</b>・結果の日 <b>' + esc(fmtDateY(d.prevDate)) + '</b>・更新 ' + esc(d.updatedAt || '');
+    $('meta').innerHTML = '基準日 <b>' + esc(fmtDateY(d.baseDate)) + '</b>・結果の日 <b>' + esc(fmtDateY(d.prevDate)) + '</b>';
     const w = $('warn');
     w.classList.remove('error'); w.hidden = !(d.warnings && d.warnings.length); w.textContent = (d.warnings || []).join('\n');
     render('late');
     render('yesterday');
-    $('dlBtn').disabled = !st.src;
     const p = d.plan;
     if (p && p.count) $('planInfo').innerHTML = '読み込んだ予定表: <b>' + esc(p.fileName || '(名前なし)') + '</b>(' + esc(fmtDate(p.from)) + '〜' + esc(fmtDate(p.to)) + '、読込 ' + esc(String(p.loadedAt).slice(0, 16)) + ')・保存済みの予定 ' + p.count + '件';
     const mt = missingText(p);
-    $('planMissing').hidden = !mt;
-    $('planMissing').textContent = mt;
     $('abbrBtn').disabled = DEMO || !((d.unknown || []).length || Object.keys(d.abbr || {}).length);
     // 新しい略称があれば、工事番号を選ぶ画面を出す(前回の表示からは出さない)
     if (st.shown && !DEMO && (d.unknown || []).length && $('abbrModal').hidden) openAbbr(true);
@@ -358,6 +355,18 @@
     $('resultView').hidden = false;
     document.body.classList.remove('landing-mode');
   }
+  // リセット: 一覧を消して、開いた直後の「加工結果を送ってください」に戻す(2026-11-12 ユーザー指定。GASのデータには触れない)
+  function reset() {
+    if (st.busy) return;
+    st.data = null; st.src = null; st.shown = false; st.noticeOk = null;
+    ['noticeModal', 'dateModal', 'abbrModal', 'warn', 'toast'].forEach(function (id) { $(id).hidden = true; });
+    ['lateTable', 'yesterdayTable', 'meta', 'planInfo'].forEach(function (id) { $(id).innerHTML = ''; });
+    $('resultView').hidden = true;
+    $('landing').hidden = false;
+    document.body.classList.add('landing-mode');
+    landingState(false, '加工結果を送ってください', 'PDFを画面のどこかにドロップするか、フォルダから選んでください', '');
+    window.scrollTo(0, 0);
+  }
   function landingState(busy, title, sub, err) {
     $('landing').classList.toggle('busy', busy);
     $('landingTitle').textContent = title;
@@ -371,8 +380,6 @@
     if (DEMO) { toast('サンプル表示では読み込めません'); return; }
     if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') { toast('PDFを送ってください'); return; }
     st.busy = true;
-    const label = $('pdfLabel');
-    label.classList.add('busy');
     if (!st.shown) landingState(true, '読み取っています…', '「' + file.name + '」', '');
     else toast('「' + file.name + '」を読み取っています…');
     let bytes = null, planPages = [];
@@ -394,7 +401,7 @@
     }).catch(function (e) {
       if (!st.shown) landingState(false, '加工結果を送ってください', 'PDFを画面のどこかにドロップするか、フォルダから選んでください', '読み込めませんでした: ' + e.message);
       else showError('加工結果PDFの読み込みに失敗しました: ' + e.message);
-    }).then(function () { st.busy = false; label.classList.remove('busy'); $('pdfInput').value = ''; $('pdfInput2').value = ''; });
+    }).then(function () { st.busy = false; $('pdfInput').value = ''; });
   }
 
   // 画面のどこにドロップしても受け付ける
@@ -533,9 +540,7 @@
   }
 
   function downloadPdf() {
-    const btn = $('dlBtn');
     if (!st.data || !st.src) return Promise.resolve();
-    btn.disabled = true;
     const fileName = '鳥取_生産状況_' + String(st.data.baseDate).replace(/-/g, '') + '.pdf';
     return buildPdf().then(function (bytes) {
       const blob = new Blob([bytes], { type: 'application/pdf' });
@@ -546,12 +551,11 @@
       a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
       sendLog('ダウンロード', fileName);
-    }).catch(function (e) { toast('PDFの作成に失敗しました: ' + e.message); }).then(function () { btn.disabled = false; });
+    }).catch(function (e) { toast('PDFの作成に失敗しました: ' + e.message); });
   }
 
-  $('dlBtn').addEventListener('click', downloadPdf);
   $('pdfInput').addEventListener('change', function () { onPdf(this.files && this.files[0]); });
-  $('pdfInput2').addEventListener('change', function () { onPdf(this.files && this.files[0]); });
+  $('resetBtn').addEventListener('click', reset);
   $('abbrBtn').addEventListener('click', function () { openAbbr(false); });
   $('abbrCancel').addEventListener('click', function () { $('abbrModal').hidden = true; });
   $('abbrSave').addEventListener('click', saveAbbr);

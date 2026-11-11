@@ -194,3 +194,16 @@ table.sheet tr.total td { border-top: 2px solid #8a98a8; }
 .notice-ok { min-width: 120px; font-size: 17px; }
 /* 遅れ日数は中央揃え(2026-11-12 ユーザー指定) */
 table.sheet td.days-cell { text-align: center; }
+
+/* ヘッダー(2026-11-12 ユーザー指定): アプリ名=中央、会社ロゴと会社名=右端。スクロールしても上に残す(sticky) */
+.hdr-inner { display: grid; grid-template-columns: 1fr auto 1fr; flex-wrap: nowrap; }
+.app-header h1 { justify-self: center; text-align: center; }
+.hdr-side.right { justify-self: end; }
+/* 基準日・結果の日は白い背景側の右端 */
+.dates { text-align: right; font-size: 14px; color: var(--muted); margin: 0 2px 8px; }
+.dates b { color: var(--ink); font-weight: 700; }
+.dates:empty { display: none; }
+@media (max-width: 640px) {
+  .hdr-inner { grid-template-columns: 0 auto 1fr; gap: 8px; }
+  .app-header h1 { justify-self: start; }
+}
