@@ -1,54 +1,57 @@
-// 鳥取工場 生産状況(前日出来高・生産遅れリスト)
+// 鳥取工場 生産状況(左=生産遅れリスト、右=前日出来高。見本のPDFと同じ並び・合計行。2026-11-11 ユーザー指定)
 // データはGAS(gas/Code.gs)の JSON API から取得する。GASのURLが未設定、または ?demo=1 のときはサンプル表示。
+// 行の形: 前日出来高 [物件名, 製品名, 図番, 重量, 生産日, 部位, 数量]
+//         遅れリスト [物件名, 製品名, 図番, 重量, 生産予定日, 遅れ日数(営業日), 部位, 数量]
+// 並び(物件名 → 部位 → 案件マスターの行の順)はGASが決める。画面は物件ごとに合計行を挟むだけ。
 (function () {
   'use strict';
 
-  // GAS WebアプリのURL(デプロイ後に設定する)
+  // GAS WebアプリのURL
   const GAS_URL = 'https://script.google.com/macros/s/AKfycby82K8BtvFOn5dHnlFMVB4-gYsVQNBCyaarn5ZjgcuCRK5knLSJ4rzTKu_T4vBuezlL/exec';
-  const CACHE_KEY = 'tottori-production-status:last';
+  const CACHE_KEY = 'tottori-production-status:last2';
 
   const params = new URLSearchParams(location.search);
   const DEMO = !GAS_URL || params.get('demo') === '1';
   const $ = function (id) { return document.getElementById(id); };
   const WD = ['日', '月', '火', '水', '木', '金', '土'];
 
-  const COLS = {
-    yesterday: [
-      { label: '工事名', i: 0, cls: 'work' },
-      { label: '製品名', i: 1 },
-      { label: '図番', i: 2 },
-      { label: '重量(t)', i: 3, cls: 'num', fmt: fmtWeight },
-      { label: '生産日', i: 4, fmt: fmtDate },
-    ],
-    late: [
-      { label: '工事名', i: 0, cls: 'work' },
-      { label: '製品名', i: 1 },
-      { label: '図番', i: 2 },
-      { label: '重量(t)', i: 3, cls: 'num', fmt: fmtWeight },
-      { label: '生産予定日', i: 4, fmt: fmtDate },
-      { label: '遅れ日数(営業日)', i: 5, cls: 'num', html: daysBadge, days: true },
-    ],
+  // 表の列(見本: 物件名|部位|製品名|数量|重量。遅れリストは右に 予定日|遅れ を足す)
+  const KIND = {
+    late: { part: 6, qty: 7, sub: '遅れ合計', total: '総遅れ合計', extra: [{ label: '予定日', i: 4, date: true }, { label: '遅れ', i: 5, days: true }] },
+    yesterday: { part: 5, qty: 6, sub: '結果合計', total: '総結果合計', extra: [] },
   };
 
-  const st = { data: null, tab: 'yesterday', work: '', live: '' };
+  const st = { data: null, live: '' };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
   }
-  function fmtWeight(v) { return (Number(v) || 0).toFixed(3); }
+  // 重量は小数第3位を四捨五入して2桁(合計は、四捨五入した値を足す=表の数字を足した値と一致させる)
+  function r2(v) { return Math.round((Number(v) || 0) * 100 + 1e-7) / 100; }
+  function fmtW(v) { return r2(v).toFixed(2); }
   function parts(key) { const p = String(key || '').split('-'); return p.length === 3 ? { y: +p[0], m: +p[1], d: +p[2] } : null; }
-  function fmtDate(key) {
-    const p = parts(key);
-    if (!p) return '';
-    return p.m + '/' + p.d + '(' + WD[new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay()] + ')';
+  function wd(p) { return WD[new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay()]; }
+  function fmtDate(key) { const p = parts(key); return p ? p.m + '/' + p.d + '(' + wd(p) + ')' : ''; }
+  function fmtMD(key) { const p = parts(key); return p ? p.m + '.' + p.d : ''; }
+  function fmtDateY(key) { const p = parts(key); return p ? p.y + '/' + p.m + '/' + p.d + '(' + wd(p) + ')' : ''; }
+  function daysClass(n) { return n >= 5 ? 'd3' : n >= 3 ? 'd2' : 'd1'; } // 営業日: 5日以上=赤、3日以上=橙
+  function prevDay(key) { const p = parts(key); return p ? new Date(Date.UTC(p.y, p.m - 1, p.d - 1)).toISOString().slice(0, 10) : ''; }
+
+  // 物件ごとにまとめる(行の順はそのまま)
+  function groups(rows, k) {
+    const out = [];
+    rows.forEach(function (r) {
+      let g = out[out.length - 1];
+      if (!g || g.name !== r[0]) { g = { name: r[0], rows: [], qty: 0, weight: 0 }; out.push(g); }
+      g.rows.push(r);
+      g.qty += Number(r[k.qty]) || 0;
+      g.weight = r2(g.weight + r2(r[3]));
+    });
+    return out;
   }
-  function fmtDateY(key) { const p = parts(key); return p ? p.y + '/' + p.m + '/' + p.d + '(' + WD[new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay()] + ')' : ''; }
-  function daysBadge(v) {
-    const n = Number(v) || 0;
-    const c = n >= 5 ? 'd3' : n >= 3 ? 'd2' : 'd1'; // 営業日: 5日(約1週間)以上=赤、3日以上=橙
-    return '<span class="days ' + c + '">' + n + '日</span>';
+  function totals(gs) {
+    return gs.reduce(function (t, g) { return { qty: t.qty + g.qty, weight: r2(t.weight + g.weight) }; }, { qty: 0, weight: 0 });
   }
-  function sumWeight(rows) { return rows.reduce(function (s, r) { return s + (Number(r[3]) || 0); }, 0); }
 
   let toastTimer = 0;
   function toast(msg) {
@@ -74,6 +77,7 @@
       return r.json();
     });
   }
+  function saveCache(d) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch (e) { /* 無視 */ } }
 
   // 開いたら: 前回の表示 → 保存済みの一覧(すぐ出る)→ 裏で案件マスターの最新を確認(変わった分だけGASが読み直す)
   // 備考①(予定日)などは担当者がいつでも書き換えるため、開くたびに最新を確認する(2026-11-11 ユーザー指示)
@@ -82,7 +86,7 @@
       $('banner').hidden = false;
       $('banner').textContent = GAS_URL ? 'サンプル表示です(?demo=1)。実際のデータではありません。' : 'サンプル表示です(GASのURLが未設定のため)。実際のデータではありません。';
       $('refreshBtn').disabled = true;
-      return fetchJson('sample.json?v=20261111b').then(function (d) { setData(d); }).catch(function (e) { showError('サンプルの読み込みに失敗しました: ' + e.message); });
+      return fetchJson('sample.json?v=20261111c').then(function (d) { setData(d); }).catch(function (e) { showError('サンプルの読み込みに失敗しました: ' + e.message); });
     }
     try {
       const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
@@ -92,7 +96,7 @@
     return fetchJson(GAS_URL + '?action=getData').then(function (res) {
       if (res.status !== 'success') throw new Error(res.message || '取得に失敗しました');
       setData(res.data);
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify(res.data)); } catch (e) { /* 無視 */ }
+      saveCache(res.data);
     }).catch(function (e) {
       showError('データの取得に失敗しました: ' + e.message + (st.data ? '\n(前回取得した内容を表示しています)' : ''));
     }).then(function () { refresh(true); });
@@ -130,13 +134,11 @@
     });
   }
 
-  function saveCache(d) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch (e) { /* 無視 */ } }
-
   // ヘッダーの「最新を確認中…」などの表示
   function setLive(msg) {
     st.live = msg;
     const el = $('live');
-    if (el) { el.textContent = msg ? '・' + msg : ''; }
+    if (el) el.textContent = msg ? '・' + msg : '';
   }
 
   function showError(msg) {
@@ -144,7 +146,7 @@
     w.hidden = false;
     w.classList.add('error');
     w.textContent = msg;
-    if (!st.data) { $('meta').textContent = '読み込めませんでした'; renderEmpty('データがありません'); }
+    if (!st.data) $('meta').textContent = '読み込めませんでした';
   }
 
   // ---- 表示 ----
@@ -154,113 +156,116 @@
     setLive(st.live || '');
     const w = $('warn');
     if (!fromCache) { w.classList.remove('error'); w.hidden = !(d.warnings && d.warnings.length); w.textContent = (d.warnings || []).join('\n'); }
-    $('subYesterday').textContent = fmtDate(d.prevDate) + '・' + d.yesterday.length + '件・' + sumWeight(d.yesterday).toFixed(1) + 't';
-    $('subLate').textContent = d.late.length + '件・' + sumWeight(d.late).toFixed(1) + 't';
-    $('subLate').classList.toggle('has-late', d.late.length > 0);
-    buildWorkFilter();
-    render();
+    render('late');
+    render('yesterday');
+    $('dlBtn').disabled = false;
   }
 
-  function currentRows() {
-    if (!st.data) return [];
-    const rows = st.data[st.tab] || [];
-    return st.work ? rows.filter(function (r) { return r[0] === st.work; }) : rows;
-  }
-
-  function buildWorkFilter() {
-    const sel = $('workFilter');
-    const names = {};
-    (st.data[st.tab] || []).forEach(function (r) { names[r[0]] = (names[r[0]] || 0) + 1; });
-    const keys = Object.keys(names).sort();
-    if (st.work && !names[st.work]) st.work = '';
-    sel.innerHTML = '<option value="">すべて</option>' + keys.map(function (k) { return '<option value="' + esc(k) + '"' + (k === st.work ? ' selected' : '') + '>' + esc(k) + '(' + names[k] + ')</option>'; }).join('');
-  }
-
-  function renderEmpty(msg) {
-    $('thead').innerHTML = '';
-    $('tbody').innerHTML = '';
-    $('empty').hidden = false;
-    $('empty').textContent = msg;
-    $('summary').textContent = '';
-    $('dlBtn').disabled = true;
-  }
-
-  function render() {
-    ['yesterday', 'late'].forEach(function (t) { $(t === 'yesterday' ? 'tabYesterday' : 'tabLate').setAttribute('aria-selected', String(st.tab === t)); });
-    const cols = COLS[st.tab];
-    const rows = currentRows();
+  function title(kind) {
     const d = st.data;
-    $('summary').innerHTML = (st.tab === 'yesterday'
-      ? esc(fmtDateY(d.prevDate)) + ' の出来高 '
-      : esc(fmtDateY(d.baseDate)) + ' 時点の遅れ' + (d.lateFrom ? '(予定日 ' + esc(fmtDate(d.lateFrom)) + '以降)' : '') + ' ')
-      + '<b>' + rows.length + '件</b>・合計 <b>' + sumWeight(rows).toFixed(3) + 't</b>';
-    $('thead').innerHTML = '<tr>' + cols.map(function (c) { return '<th' + (c.cls === 'num' ? ' class="num"' : '') + '>' + esc(c.label) + '</th>'; }).join('') + '</tr>';
-    $('tbody').innerHTML = rows.map(function (r) {
-      return '<tr>' + cols.map(function (c) {
-        const v = r[c.i];
-        const inner = c.html ? c.html(v) : esc(c.fmt ? c.fmt(v) : v);
-        return '<td' + (c.cls ? ' class="' + c.cls + '"' : '') + '>' + inner + '</td>';
-      }).join('') + '</tr>';
-    }).join('');
-    $('empty').hidden = rows.length > 0;
-    $('empty').textContent = st.tab === 'yesterday' ? '前の営業日の出来高はありません' : '生産が遅れている製品はありません';
-    $('dlBtn').disabled = rows.length === 0;
+    return kind === 'late' ? '鳥取工場' + fmtMD(d.baseDate) + '生産遅れ' : '鳥取工場' + fmtMD(d.prevDate) + '結果重量';
   }
 
-  // ---- Excel ----
-  // 文字の幅のめやす(全角2・細い文字0.6・他1.1)で列幅を決める
+  function render(kind) {
+    const d = st.data, k = KIND[kind];
+    const gs = groups(d[kind] || [], k), t = totals(gs);
+    $(kind + 'Title').textContent = title(kind);
+    $(kind + 'Total').textContent = fmtW(t.weight) + 't';
+    $(kind + 'Note').textContent = kind === 'late'
+      ? '生産予定日(備考①)が ' + fmtDate(d.lateFrom) + '〜' + fmtDate(prevDay(d.baseDate)) + ' で、加工日が未記入の製品(遅れは営業日)'
+      : '加工日が ' + fmtDateY(d.prevDate) + ' の製品';
+    const head = ['物件名', '部位', '製品名', '数量', '重量'].concat(k.extra.map(function (e) { return e.label; }));
+    let html = '<thead><tr>' + head.map(function (h, i) { return '<th' + (i === 3 || i === 4 ? ' class="num"' : '') + '>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>';
+    gs.forEach(function (g) {
+      g.rows.forEach(function (r, i) {
+        html += '<tr><td class="work">' + (i === 0 ? esc(g.name) : '') + '</td><td class="part">' + esc(r[k.part]) + '</td><td class="mark">' + esc(r[1]) + '</td>'
+          + '<td class="num">' + esc(r[k.qty]) + '</td><td class="num">' + fmtW(r[3]) + '</td>';
+        k.extra.forEach(function (e) {
+          if (e.date) html += '<td class="date">' + esc(fmtDate(r[e.i])) + '</td>';
+          if (e.days) { const n = Number(r[e.i]) || 0; html += '<td class="num"><span class="days ' + daysClass(n) + '">' + n + '日</span></td>'; }
+        });
+        html += '</tr>';
+      });
+      html += subRow(k.sub, g.qty, g.weight, head.length, 'sub');
+    });
+    if (gs.length) html += subRow(k.total, t.qty, t.weight, head.length, 'total');
+    html += '</tbody>';
+    $(kind + 'Table').innerHTML = gs.length ? html : '';
+    $(kind + 'Empty').hidden = gs.length > 0;
+  }
+
+  function subRow(label, qty, weight, cols, cls) {
+    return '<tr class="' + cls + '"><td colspan="3" class="label">' + esc(label) + '</td><td class="num">' + qty + '</td><td class="num">' + fmtW(weight) + '</td>' + (cols > 5 ? '<td colspan="' + (cols - 5) + '"></td>' : '') + '</tr>';
+  }
+
+  // ---- Excel(見本と同じく、左=生産遅れ・右=結果重量を1枚に並べる) ----
   function textWidth(s) {
     let w = 0;
-    String(s == null ? '' : s).split('').forEach(function (ch) {
-      w += /[^\x00-\xff]/.test(ch) ? 2 : /[il1.,:;'|!()\-]/.test(ch) ? 0.6 : /[MW]/.test(ch) ? 1.4 : 1.1;
-    });
+    String(s == null ? '' : s).split('').forEach(function (ch) { w += /[^\x00-\xff]/.test(ch) ? 2 : /[il1.,:;'|!()\-]/.test(ch) ? 0.6 : /[MW]/.test(ch) ? 1.4 : 1.1; });
     return w;
   }
 
   function download() {
     if (typeof ExcelJS === 'undefined') { toast('Excelの部品を読み込み中です。少し待ってからもう一度押してください。'); return; }
     const d = st.data;
-    const rows = currentRows();
-    const isLate = st.tab === 'late';
-    const cols = COLS[st.tab];
-    const title = isLate ? '鳥取工場 生産遅れリスト(' + fmtDateY(d.baseDate) + ' 時点)' : '鳥取工場 前日出来高(' + fmtDateY(d.prevDate) + ')';
-    const stamp = (isLate ? d.baseDate : d.prevDate).replace(/-/g, '');
-    const fileName = '鳥取_' + (isLate ? '遅れリスト' : '前日出来高') + '_' + stamp + (st.work ? '_' + st.work.replace(/[\\\/:*?"<>|]/g, '_') : '') + '.xlsx';
-
+    const fileName = '鳥取_生産状況_' + d.baseDate.replace(/-/g, '') + '.xlsx';
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet(isLate ? '遅れリスト' : '前日出来高', { views: [{ state: 'frozen', ySplit: 3 }] });
-    ws.getCell('A1').value = title;
-    ws.getCell('A1').font = { bold: true, size: 14 };
-    ws.getCell('A2').value = (st.work ? '工事: ' + st.work + '  ' : '') + (isLate && d.lateFrom ? '生産予定日 ' + fmtDateY(d.lateFrom) + '以降  ' : '') + rows.length + '件  合計 ' + sumWeight(rows).toFixed(3) + 't  (データ更新 ' + (d.updatedAt || '') + ')';
-    ws.getRow(3).values = cols.map(function (c) { return c.label; });
-    ws.getRow(3).eachCell(function (cell) {
-      cell.font = { bold: true };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EEF7' } };
-      cell.border = { bottom: { style: 'thin', color: { argb: 'FF9AA8B8' } } };
-    });
-    rows.forEach(function (r) {
-      const vals = cols.map(function (c) {
-        const v = r[c.i];
-        if (c.fmt === fmtDate) { const p = parts(v); return p ? new Date(Date.UTC(p.y, p.m - 1, p.d)) : ''; }
-        if (c.cls === 'num') return Number(v) || 0;
-        return v == null ? '' : String(v);
+    const ws = wb.addWorksheet('生産状況');
+    const thin = { style: 'thin', color: { argb: 'FF808080' } };
+    const box = { top: thin, left: thin, bottom: thin, right: thin };
+    const FILL = { late: 'FFCFE8F7', yesterday: 'FFFFF2A8' };
+    const widths = {};
+    function put(row, col, v, opt) {
+      opt = opt || {};
+      const c = ws.getCell(row, col);
+      c.value = v;
+      if (opt.border !== false) c.border = box;
+      if (opt.fill) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: opt.fill } };
+      if (opt.fmt) c.numFmt = opt.fmt;
+      if (opt.align) c.alignment = { horizontal: opt.align };
+      if (opt.size) c.font = { size: opt.size };
+      if (!opt.noWidth) widths[col] = Math.max(widths[col] || 0, textWidth(opt.wtext != null ? opt.wtext : v));
+      return c;
+    }
+    function sumRow(r, col0, last, label, qty, weight, fill) {
+      for (let c = col0; c <= last; c++) put(r, c, '', { fill: fill, noWidth: true });
+      ws.mergeCells(r, col0, r, col0 + 2);
+      put(r, col0, label, { fill: fill, align: 'center', noWidth: true });
+      put(r, col0 + 3, qty, { fill: fill, align: 'center' });
+      put(r, col0 + 4, weight, { fill: fill, fmt: '0.00', wtext: fmtW(weight) });
+      return r + 1;
+    }
+    function table(kind, col0) {
+      const k = KIND[kind], gs = groups(d[kind] || [], k), t = totals(gs);
+      const head = ['物件名', '部位', '製品名', '数量', '重量'].concat(k.extra.map(function (e) { return e.label; }));
+      const last = col0 + head.length - 1;
+      put(1, col0, title(kind), { border: false, noWidth: true, size: 14 });
+      put(1, last, fmtW(t.weight) + 't', { border: false, align: 'right', noWidth: true, size: 14 });
+      head.forEach(function (h, i) { put(2, col0 + i, h, { align: 'center' }); });
+      let r = 3;
+      gs.forEach(function (g) {
+        g.rows.forEach(function (x, i) {
+          put(r, col0, i === 0 ? g.name : '', { align: 'center' });
+          put(r, col0 + 1, x[k.part], { align: 'center' });
+          put(r, col0 + 2, x[1], { align: 'center' });
+          put(r, col0 + 3, x[k.qty] === '' ? '' : Number(x[k.qty]), { align: 'center' });
+          put(r, col0 + 4, r2(x[3]), { fmt: '0.00', wtext: fmtW(x[3]) });
+          k.extra.forEach(function (e, j) {
+            if (e.date) { const p = parts(x[e.i]); put(r, col0 + 5 + j, p ? new Date(Date.UTC(p.y, p.m - 1, p.d)) : '', { fmt: 'm/d', align: 'center', wtext: '10/13' }); }
+            if (e.days) put(r, col0 + 5 + j, Number(x[e.i]) || 0, { fmt: '0"日"', align: 'center', wtext: '000日' });
+          });
+          r++;
+        });
+        r = sumRow(r, col0, last, k.sub, g.qty, g.weight, FILL[kind]);
       });
-      ws.addRow(vals);
-    });
-    const total = ws.addRow(cols.map(function (c, i) { return i === 0 ? '合計' : c.label === '重量(t)' ? sumWeight(rows) : ''; }));
-    total.font = { bold: true };
-    total.eachCell(function (cell) { cell.border = { top: { style: 'thin', color: { argb: 'FF9AA8B8' } } }; });
-    cols.forEach(function (c, i) {
-      const col = ws.getColumn(i + 1);
-      if (c.label === '重量(t)') col.numFmt = '0.000';
-      if (c.fmt === fmtDate) col.numFmt = 'yyyy/m/d';
-      if (c.days) col.numFmt = '0"日"';
-      let w = textWidth(c.label);
-      rows.forEach(function (r) { w = Math.max(w, textWidth(c.fmt === fmtDate ? '2026/11/11' : c.cls === 'num' ? fmtWeight(r[c.i]) : r[c.i])); });
-      col.width = Math.min(60, Math.max(8, w + 2));
-    });
-    ws.pageSetup = { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9, printTitlesRow: '3:3' };
-
+      if (gs.length) sumRow(r, col0, last, k.total, t.qty, t.weight, FILL[kind]);
+    }
+    table('late', 1);       // A〜G
+    table('yesterday', 9);  // I〜M(Hは空ける)
+    Object.keys(widths).forEach(function (c) { ws.getColumn(Number(c)).width = Math.min(40, Math.max(6, widths[c] + 2)); });
+    ws.getColumn(8).width = 2;
+    ws.views = [{ state: 'frozen', ySplit: 2 }];
+    ws.pageSetup = { orientation: 'portrait', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:2' };
     wb.xlsx.writeBuffer().then(function (buf) {
       const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const a = document.createElement('a');
@@ -273,15 +278,6 @@
     }).catch(function (e) { toast('Excelの作成に失敗しました: ' + e.message); });
   }
 
-  // ---- 操作 ----
-  ['tabYesterday', 'tabLate'].forEach(function (id) {
-    $(id).addEventListener('click', function () {
-      st.tab = this.getAttribute('data-tab');
-      st.work = '';
-      if (st.data) { buildWorkFilter(); render(); }
-    });
-  });
-  $('workFilter').addEventListener('change', function () { st.work = this.value; render(); });
   $('dlBtn').addEventListener('click', download);
   $('refreshBtn').addEventListener('click', function () { refresh(false); });
 

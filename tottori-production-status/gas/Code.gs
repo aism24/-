@@ -26,12 +26,12 @@
  * セットアップ手順は README.md を参照してください。
  */
 
-const CODE_VERSION = '2026-11-11d';
+const CODE_VERSION = '2026-11-11e';
 const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す生産予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
 const IGNORE_WORK_NO = '00-00';
-const PARSE_VERSION = 1; // 取込データの形を変えたら上げる(全ファイルを読み直す)
+const PARSE_VERSION = 2; // v2: 部位・本数を追加(2026-11-11) // 取込データの形を変えたら上げる(全ファイルを読み直す)
 const TIME_BUDGET_MS = 240 * 1000; // 1回の実行で案件マスターを読む時間の上限(6分制限の手前)
 const TEMP_PREFIX = '_鳥取周知_一時変換_';
 
@@ -50,9 +50,10 @@ const INFO_UPDATED = '最終更新';
 const INFO_PENDING = '未取込の案件';
 const INFO_WARN = '注意';
 
-const HEAD_YESTERDAY = ['工事名', '製品名', '図番', '重量(t)', '生産日'];
-const HEAD_LATE = ['工事名', '製品名', '図番', '重量(t)', '生産予定日', '遅れ日数(営業日)'];
-const HEAD_DATA = ['ファイルID', '工事番号', '工事名', '製品名', '図番', '重量(t)', '生産予定日', '生産日'];
+const HEAD_YESTERDAY = ['物件名', '製品名', '図番', '重量(t)', '生産日', '部位', '数量'];
+const HEAD_LATE = ['物件名', '製品名', '図番', '重量(t)', '生産予定日', '遅れ日数(営業日)', '部位', '数量'];
+const HEAD_DATA = ['ファイルID', '工事番号', '工事名', '製品名', '図番', '重量(t)', '生産予定日', '生産日', '部位', '本数'];
+const PART_ORDER = ['柱', '大梁', '小梁']; // 一覧の並び: 物件名 → 部位(柱→大梁→小梁→その他) → 案件マスターの行の順
 const HEAD_STATE = ['ファイルID', '工事番号', 'ファイル名', '元ファイル更新日時', '取込日時', '鳥取の行数', '形式', 'エラー'];
 const HEAD_LOG = ['日時', '種別', '内容'];
 
@@ -204,7 +205,7 @@ function runRefresh_() {
       rows = st ? null : []; // 失敗時は前回の取込データを残す
     }
     parsed[entry.fileId] = rows ? rows.map(function (r) {
-      return [entry.fileId, entry.workNo, '', r.mark, r.drawing, r.weight, r.plan || '', r.done || ''];
+      return [entry.fileId, entry.workNo, '', r.mark, r.drawing, r.weight, r.plan || '', r.done || '', r.part, r.qty];
     }) : null;
     state[entry.fileId] = { fileId: entry.fileId, workNo: entry.workNo, fileName: entry.fileName, mtime: mtime, importedAt: Date.now(), count: rows ? rows.length : (st ? st.count : 0), version: PARSE_VERSION, error: error };
   });
@@ -241,7 +242,7 @@ function runRefresh_() {
       allRows.push(r);
     });
   });
-  if (changed || removed.length || namesChanged) writeTable_(dataSh, HEAD_DATA, allRows, [0, 1, 2, 3, 4, 6, 7]);
+  if (changed || removed.length || namesChanged) writeTable_(dataSh, HEAD_DATA, allRows, [0, 1, 2, 3, 4, 6, 7, 8]);
   writeState_(stateSh, state);
   props.setProperty('WORKNAMES_SIG', namesSig);
 
@@ -300,30 +301,42 @@ function buildLists_(allRows, calendar, today) {
   allRows.forEach(function (r) {
     const plan = normalizeKey_(r[6]), done = normalizeKey_(r[7]);
     const weight = Number(r[5]) || 0;
-    if (done && done === prev.key) yesterday.push([r[2], r[3], r[4], weight, done, r[1]]);
+    if (done && done === prev.key) yesterday.push([r[2], r[3], r[4], weight, done, r[8] || '', qty_(r[9])]);
     if (plan && !done && plan < today && plan >= lateFrom) {
       if (!(plan in lateDays)) {
         const c = businessDaysAfter_(calendar, plan, today);
         lateDays[plan] = c.days;
         if (c.missing && (!missingCal || c.missing < missingCal)) missingCal = c.missing;
       }
-      late.push([r[2], r[3], r[4], weight, plan, lateDays[plan], r[1]]);
+      late.push([r[2], r[3], r[4], weight, plan, lateDays[plan], r[8] || '', qty_(r[9])]);
     }
   });
+  // 並び(見本のPDFと同じ、2026-11-11 ユーザー指定): 物件名 → 部位(柱→大梁→小梁→その他)→ 案件マスターの行の順
+  // (取込データは案件マスターの行の順に並んでいるので、同じ順位の行は元の順のまま=安定ソート)
   const byText = function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
-  // 前日出来高: 工事番号 → 図番 → 製品名
-  yesterday.sort(function (a, b) { return byText(a[5], b[5]) || byText(a[2], b[2]) || byText(a[1], b[1]); });
-  // 遅れリスト: 遅れ日数の大きい順 → 生産予定日の古い順 → 工事番号 → 図番 → 製品名
-  late.sort(function (a, b) { return (b[5] - a[5]) || byText(a[4], b[4]) || byText(a[6], b[6]) || byText(a[2], b[2]) || byText(a[1], b[1]); });
+  const rank = function (p) { const i = PART_ORDER.indexOf(p); return i < 0 ? PART_ORDER.length : i; };
+  const order = function (pi) { return function (a, b) { return byText(a[0], b[0]) || (rank(a[pi]) - rank(b[pi])); }; };
+  stableSort_(yesterday, order(5));
+  stableSort_(late, order(6));
   const warnings = prev.warning ? [prev.warning] : [];
   if (missingCal) warnings.push('会社カレンダー(索引スプレッドシートのI・J列)に ' + missingCal.replace(/-/g, '/') + ' などがありません。遅れ日数(営業日)は、カレンダーに無い日を土日休みとみなして数えました。');
   return {
     baseDate: today,
     prevDate: prev.key,
-    yesterday: yesterday.map(function (r) { return r.slice(0, 5); }),
-    late: late.map(function (r) { return r.slice(0, 6); }),
+    yesterday: yesterday,
+    late: late,
     warnings: warnings,
   };
+}
+
+function qty_(v) { return v === '' || v == null || isNaN(Number(v)) ? '' : Number(v); }
+
+// 同じ順位の行は元の順を保つ並べ替え
+function stableSort_(arr, cmp) {
+  const idx = arr.map(function (v, i) { return [v, i]; });
+  idx.sort(function (a, b) { return cmp(a[0], b[0]) || (a[1] - b[1]); });
+  idx.forEach(function (x, i) { arr[i] = x[0]; });
+  return arr;
 }
 
 // 前の営業日: 今日より前で、会社カレンダーが「出勤」の最も近い日。
@@ -416,14 +429,14 @@ function parseMasterValues_(sheet, site) {
   if (lastRow < 2 || lastCol < 1) return [];
   const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   const col = findColumns_(header);
-  const need = [col.site, col.mark, col.drawing, col.weight, col.plan, col.done].filter(function (c) { return c >= 0; });
+  const need = [col.site, col.mark, col.drawing, col.weight, col.plan, col.done, col.part, col.qty].filter(function (c) { return c >= 0; });
   const width = Math.max.apply(null, need) + 1;
   return parseMasterRows_(header, sheet.getRange(2, 1, lastRow - 1, width).getValues(), site);
 }
 
 function findColumns_(header) {
   const h = header.map(function (x) { return String(x == null ? '' : x).trim(); });
-  const col = { site: h.indexOf('加工先'), mark: h.indexOf('製品マーク'), drawing: h.indexOf('図番'), weight: h.indexOf('重量'), plan: h.indexOf('備考①'), done: h.indexOf('加工') };
+  const col = { site: h.indexOf('加工先'), mark: h.indexOf('製品マーク'), drawing: h.indexOf('図番'), weight: h.indexOf('重量'), plan: h.indexOf('備考①'), done: h.indexOf('加工'), part: h.indexOf('部位'), qty: h.indexOf('本数') };
   if (col.site < 0 || col.done < 0) throw new Error('見出しに「加工先」または「加工」がありません');
   return col;
 }
@@ -440,6 +453,8 @@ function parseMasterRows_(header, values, site) {
     if (!plan && !done) continue;
     out.push({
       mark: col.mark >= 0 ? String(row[col.mark] == null ? '' : row[col.mark]).trim() : '',
+      part: col.part >= 0 ? String(row[col.part] == null ? '' : row[col.part]).trim() : '',
+      qty: col.qty >= 0 && row[col.qty] !== '' && !isNaN(Number(row[col.qty])) ? Number(row[col.qty]) : '',
       drawing: col.drawing >= 0 ? String(row[col.drawing] == null ? '' : row[col.drawing]).trim() : '',
       weight: col.weight >= 0 ? (Number(row[col.weight]) || 0) : 0,
       plan: plan,
@@ -551,7 +566,7 @@ function readDataByFile_(sh) {
     const id = String(r[0] || '');
     if (!id) return;
     // 日付は文字列でそろえる(シートが日付に変換していても戻す)
-    (map[id] = map[id] || []).push([id, String(r[1]), String(r[2]), String(r[3]), String(r[4]), Number(r[5]) || 0, normalizeKey_(r[6]), normalizeKey_(r[7])]);
+    (map[id] = map[id] || []).push([id, String(r[1]), String(r[2]), String(r[3]), String(r[4]), Number(r[5]) || 0, normalizeKey_(r[6]), normalizeKey_(r[7]), String(r[8] == null ? '' : r[8]), r[9] === '' || r[9] == null ? '' : Number(r[9])]);
   });
   return map;
 }
@@ -577,8 +592,8 @@ function writeState_(sh, state) {
 
 function writeOutputs_(ss, info, built) {
   // 工事名・製品名・図番・日付は文字のまま書く
-  writeTable_(ss.getSheetByName(SHEET_YESTERDAY), HEAD_YESTERDAY, built.yesterday, [0, 1, 2, 4]);
-  writeTable_(ss.getSheetByName(SHEET_LATE), HEAD_LATE, built.late, [0, 1, 2, 4]);
+  writeTable_(ss.getSheetByName(SHEET_YESTERDAY), HEAD_YESTERDAY, built.yesterday, [0, 1, 2, 4, 5]);
+  writeTable_(ss.getSheetByName(SHEET_LATE), HEAD_LATE, built.late, [0, 1, 2, 4, 6]);
   writeInfo_(info, INFO_BASE, "'" + built.baseDate);
   writeInfo_(info, INFO_PREV, "'" + built.prevDate);
   writeInfo_(info, INFO_UPDATED, "'" + built.updatedAt);
@@ -587,8 +602,8 @@ function writeOutputs_(ss, info, built) {
 }
 
 function readPayloadFromSheets_(ss, info) {
-  const y = readTableRows_(ss.getSheetByName(SHEET_YESTERDAY), HEAD_YESTERDAY.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4])]; });
-  const l = readTableRows_(ss.getSheetByName(SHEET_LATE), HEAD_LATE.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), Number(r[5]) || 0]; });
+  const y = readTableRows_(ss.getSheetByName(SHEET_YESTERDAY), HEAD_YESTERDAY.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), String(r[5]), qty_(r[6])]; });
+  const l = readTableRows_(ss.getSheetByName(SHEET_LATE), HEAD_LATE.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), Number(r[5]) || 0, String(r[6]), qty_(r[7])]; });
   return toPayload_({
     baseDate: normalizeKey_(readInfo_(info, INFO_BASE)),
     prevDate: normalizeKey_(readInfo_(info, INFO_PREV)),
