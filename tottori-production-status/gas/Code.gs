@@ -15,7 +15,7 @@
  * ■ 読むもの(書き込みは一切しない)
  *   索引スプレッドシート「Excelマスタ一覧」(生産管理ダッシュボードと同じもの)。IDは「情報」シートの
  *   「索引スプレッドシート」の行に、URLかIDを貼る(公開リポジトリにIDを書かないため)。
- *   A〜E列=案件マスターの一覧、G・H列=工事番号→工事名、I・J列=会社カレンダー。
+ *   A〜E列=案件マスターの一覧(工事名はD列のファイル名から拡張子を除いたもの)、I・J列=会社カレンダー。
  *   案件マスターは列の見出し(加工先・製品マーク・図番・重量・備考①・加工)で列を探す。
  *   Excelは一時的にスプレッドシートへ変換して読み、読み終えたらすぐ削除する。元のExcelには触れない。
  *   元ファイルの更新日時が前回と同じなら読み直さない(「状態」シートで管理)。
@@ -26,7 +26,7 @@
  * セットアップ手順は README.md を参照してください。
  */
 
-const CODE_VERSION = '2026-11-11c';
+const CODE_VERSION = '2026-11-11d';
 const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す生産予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
@@ -110,11 +110,15 @@ function setupSheets() {
 }
 
 // 毎朝6時ごろに自動更新する(生産管理ダッシュボードの5時台の更新とは別に動く)。
+// 備考①(予定日)などは担当者がいつでも書き換えるため、毎朝6時ごろに加えて1時間ごとにも確認する
+// (更新日時が変わった案件マスターだけ読むので、変更が無ければ数秒で終わる)。画面を開いたときにも確認する(app.js)。
 function createDailyTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'dailyRefresh') ScriptApp.deleteTrigger(t);
+    const fn = t.getHandlerFunction();
+    if (fn === 'dailyRefresh' || fn === 'hourlyRefresh') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('dailyRefresh').timeBased().atHour(6).nearMinute(0).everyDays(1).inTimezone(TIMEZONE).create();
+  ScriptApp.newTrigger('hourlyRefresh').timeBased().everyHours(1).create();
 }
 
 // 手動で今すぐ更新する(初回の取り込みにも使う)。読み切れなかった案件は1分後に自動で続きを読む。
@@ -124,6 +128,7 @@ function refreshNow() {
 }
 
 function dailyRefresh() { runRefreshLocked_(true); }
+function hourlyRefresh() { runRefreshLocked_(false); } // 他の更新中なら今回は見送る
 function continueRefresh() { runRefreshLocked_(true); }
 
 // ========== 更新の本体 ==========
@@ -133,7 +138,7 @@ function userRefresh_() {
   if (!lock.tryLock(3000)) return { status: 'busy', message: '他の人がデータを更新中です。少し待ってからもう一度押してください。' };
   try {
     const r = runRefresh_();
-    return { status: 'success', version: CODE_VERSION, pending: r.pending, data: r.data };
+    return { status: 'success', version: CODE_VERSION, pending: r.pending, changed: r.changed, data: r.data };
   } finally {
     lock.releaseLock();
   }
@@ -162,22 +167,21 @@ function runRefresh_() {
 
   const indexRows = readIndexRows_(indexId);
   const fileIndex = readFileIndex_(indexRows);
-  const workNames = readWorkNameMap_(indexRows);
   const calendar = readCalendar_(indexRows);
 
   const stateSh = ss.getSheetByName(SHEET_STATE);
   const dataSh = ss.getSheetByName(SHEET_DATA);
   const state = readState_(stateSh); // fileId -> {mtime, importedAt, ...}
-  const dataByFile = readDataByFile_(dataSh); // fileId -> rows(配列)
 
   const warnings = [];
   const folder = getOwnFolder_(ss);
-  // 取込が古い順(未取込が先)に、時間の許す範囲で読む
+  const parsed = {}; // 今回読み直した案件: fileId -> 行(null=失敗で前回の取込データを残す)
+  // 取込が古い順(未取込が先)に、時間の許す範囲で読む。更新日時が前回と同じ案件は読まない。
   const order = fileIndex.slice().sort(function (a, b) {
     const sa = state[a.fileId], sb = state[b.fileId];
     return (sa ? sa.importedAt : 0) - (sb ? sb.importedAt : 0);
   });
-  let pending = 0;
+  let pending = 0, changed = 0;
   order.forEach(function (entry) {
     const st = state[entry.fileId];
     let file;
@@ -190,46 +194,65 @@ function runRefresh_() {
     const mtime = String(file.getLastUpdated().getTime());
     if (st && st.mtime === mtime && st.version === PARSE_VERSION && !st.error && st.workNo === entry.workNo) return; // 変更なし
     if (Date.now() - started > TIME_BUDGET_MS) { pending++; return; }
+    changed++;
     let rows = [], error = '';
     try {
       rows = readMasterRows_(entry, file, folder, site);
     } catch (err) {
       error = String(err && err.message || err);
       warnings.push('「' + entry.fileName + '」(' + entry.workNo + ')の読み込みに失敗しました: ' + error);
-      if (st && dataByFile[entry.fileId]) rows = null; // 失敗時は前回の取込データを残す
+      rows = st ? null : []; // 失敗時は前回の取込データを残す
     }
-    if (rows) dataByFile[entry.fileId] = rows.map(function (r) {
+    parsed[entry.fileId] = rows ? rows.map(function (r) {
       return [entry.fileId, entry.workNo, '', r.mark, r.drawing, r.weight, r.plan || '', r.done || ''];
-    });
+    }) : null;
     state[entry.fileId] = { fileId: entry.fileId, workNo: entry.workNo, fileName: entry.fileName, mtime: mtime, importedAt: Date.now(), count: rows ? rows.length : (st ? st.count : 0), version: PARSE_VERSION, error: error };
   });
 
-  // 索引から消えた案件の取込データは捨てる
   const live = {};
   fileIndex.forEach(function (e) { live[e.fileId] = e; });
-  Object.keys(dataByFile).forEach(function (id) { if (!live[id]) delete dataByFile[id]; });
-  Object.keys(state).forEach(function (id) { if (!live[id]) delete state[id]; });
+  const removed = Object.keys(state).filter(function (id) { return !live[id]; });
+  removed.forEach(function (id) { delete state[id]; });
+  // 工事名=索引D列のファイル名(拡張子なし。2026-11-11 ユーザー指定)。変わったかは前回と比べて判断する
+  const namesSig = JSON.stringify(fileIndex.map(function (e) { return e.fileId + '=' + workName_(e); }));
+  const props = PropertiesService.getScriptProperties();
+  const namesChanged = props.getProperty('WORKNAMES_SIG') !== namesSig;
 
-  // 工事名は毎回、索引の最新の対応表で付け直す
+  const today = todayKey_();
+  const now = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm');
+  const prevPending = Number(readInfo_(info, INFO_PENDING)) || 0;
+  const prevWarn = splitWarn_(readInfo_(info, INFO_WARN)).filter(function (w) { return w.indexOf('読み込みに失敗') >= 0 || w.indexOf('開けませんでした') >= 0 || w.indexOf('読み切れなかった') >= 0; });
+  // 何も変わっていない(案件マスター・工事名・日付・前回の未取込/失敗なし)ときは、取込データを読み書きせずに返す
+  if (!changed && !pending && !removed.length && !namesChanged && !prevPending && !prevWarn.length && !warnings.length && normalizeKey_(readInfo_(info, INFO_BASE)) === today) {
+    writeInfo_(info, INFO_UPDATED, "'" + now);
+    scheduleContinue_(false);
+    return { pending: 0, changed: 0, data: readPayloadFromSheets_(ss, info) };
+  }
+
+  const dataByFile = readDataByFile_(dataSh); // fileId -> rows(配列)
+  Object.keys(parsed).forEach(function (id) { if (parsed[id]) dataByFile[id] = parsed[id]; });
+  Object.keys(dataByFile).forEach(function (id) { if (!live[id]) delete dataByFile[id]; }); // 索引から消えた案件
+
+  // 工事名は毎回、索引の最新のファイル名(D列)で付け直す
   const allRows = [];
   Object.keys(dataByFile).forEach(function (id) {
     dataByFile[id].forEach(function (r) {
-      r[2] = workNames[r[1]] || (live[id] ? stripExt_(live[id].fileName) : '');
+      r[2] = live[id] ? workName_(live[id]) : r[2];
       allRows.push(r);
     });
   });
-  writeTable_(dataSh, HEAD_DATA, allRows, [0, 1, 2, 3, 4, 6, 7]);
+  if (changed || removed.length || namesChanged) writeTable_(dataSh, HEAD_DATA, allRows, [0, 1, 2, 3, 4, 6, 7]);
   writeState_(stateSh, state);
+  props.setProperty('WORKNAMES_SIG', namesSig);
 
-  const today = todayKey_();
   const built = buildLists_(allRows, calendar, today);
   if (pending > 0) warnings.push('時間内に読み切れなかった案件が' + pending + '件あります。1分後に自動で続きを読みます。');
   built.warnings = warnings.concat(built.warnings);
   built.pending = pending;
-  built.updatedAt = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm');
+  built.updatedAt = now;
   writeOutputs_(ss, info, built);
   scheduleContinue_(pending > 0);
-  return { pending: pending, data: toPayload_(built) };
+  return { pending: pending, changed: changed, data: toPayload_(built) };
 }
 
 // 画面からの取得。日付が変わっていたら(朝の自動更新の前など)、取込データから一覧だけ作り直す。
@@ -450,14 +473,6 @@ function readFileIndex_(rows) {
   return list;
 }
 
-function readWorkNameMap_(rows) {
-  const map = {};
-  rows.forEach(function (row) {
-    const no = String(row[6] || '').trim(), name = String(row[7] || '').trim();
-    if (no) map[no] = name;
-  });
-  return map;
-}
 
 function readCalendar_(rows) {
   const cal = {};
@@ -474,6 +489,9 @@ function extractId_(v) {
   const m = s.match(/\/d\/([a-zA-Z0-9_-]{20,})/) || s.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) || s.match(/^([a-zA-Z0-9_-]{20,})$/);
   return m ? m[1] : '';
 }
+
+// 画面・Excelに出す工事名: 索引D列のファイル名から拡張子を除いたもの(例: 「OSR.xlsx」→「OSR」)
+function workName_(entry) { return stripExt_(entry.fileName); }
 
 function stripExt_(name) { return String(name || '').replace(/\.(xlsx|xlsm|xls)$/i, ''); }
 

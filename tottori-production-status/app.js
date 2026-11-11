@@ -30,7 +30,7 @@
     ],
   };
 
-  const st = { data: null, tab: 'yesterday', work: '' };
+  const st = { data: null, tab: 'yesterday', work: '', live: '' };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
@@ -75,44 +75,68 @@
     });
   }
 
+  // 開いたら: 前回の表示 → 保存済みの一覧(すぐ出る)→ 裏で案件マスターの最新を確認(変わった分だけGASが読み直す)
+  // 備考①(予定日)などは担当者がいつでも書き換えるため、開くたびに最新を確認する(2026-11-11 ユーザー指示)
   function load() {
     if (DEMO) {
       $('banner').hidden = false;
       $('banner').textContent = GAS_URL ? 'サンプル表示です(?demo=1)。実際のデータではありません。' : 'サンプル表示です(GASのURLが未設定のため)。実際のデータではありません。';
       $('refreshBtn').disabled = true;
-      return fetchJson('sample.json?v=20261111a').then(function (d) { setData(d); }).catch(function (e) { showError('サンプルの読み込みに失敗しました: ' + e.message); });
+      return fetchJson('sample.json?v=20261111b').then(function (d) { setData(d); }).catch(function (e) { showError('サンプルの読み込みに失敗しました: ' + e.message); });
     }
     try {
       const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
       if (cached && cached.late) setData(cached, true);
     } catch (e) { /* 無視 */ }
+    setLive('最新を確認中…');
     return fetchJson(GAS_URL + '?action=getData').then(function (res) {
       if (res.status !== 'success') throw new Error(res.message || '取得に失敗しました');
       setData(res.data);
       try { localStorage.setItem(CACHE_KEY, JSON.stringify(res.data)); } catch (e) { /* 無視 */ }
     }).catch(function (e) {
       showError('データの取得に失敗しました: ' + e.message + (st.data ? '\n(前回取得した内容を表示しています)' : ''));
-    });
+    }).then(function () { refresh(true); });
   }
 
-  function refresh() {
+  // silent=true は開いたときの自動確認(トーストを出さない)。false は「最新データを取得」ボタン。
+  function refresh(silent) {
     if (DEMO) return;
     const btn = $('refreshBtn');
     btn.disabled = true;
-    btn.textContent = '取得中…';
-    toast('案件マスターを読み直しています(数十秒かかることがあります)');
+    btn.textContent = '確認中…';
+    setLive('最新を確認中…');
+    if (!silent) toast('案件マスターの変更を確認しています(変更があれば数十秒かかることがあります)');
     fetchJson(GAS_URL + '?action=refresh').then(function (res) {
-      if (res.status === 'busy') { toast(res.message); return; }
+      if (res.status === 'busy') {
+        // 他の人(または自動更新)が更新中。終わるころに保存済みの一覧を取り直す
+        setLive('他の人が更新中…');
+        if (!silent) toast(res.message);
+        return new Promise(function (r) { setTimeout(r, 20000); }).then(function () { return fetchJson(GAS_URL + '?action=getData'); }).then(function (g) {
+          if (g.status === 'success') { setData(g.data); saveCache(g.data); }
+          setLive('');
+        });
+      }
       if (res.status !== 'success') throw new Error(res.message || '更新に失敗しました');
       setData(res.data);
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify(res.data)); } catch (e) { /* 無視 */ }
-      toast(res.pending ? '一部の案件は読み込み中です。1〜2分後にもう一度開いてください。' : '最新のデータにしました');
+      saveCache(res.data);
+      setLive(res.pending ? '一部の案件を読み込み中(1〜2分後にもう一度開いてください)' : '');
+      if (!silent) toast(res.pending ? '一部の案件は読み込み中です。1〜2分後にもう一度開いてください。' : '最新のデータにしました');
     }).catch(function (e) {
-      showError('更新に失敗しました: ' + e.message);
+      setLive('最新の確認に失敗しました');
+      if (!silent) showError('更新に失敗しました: ' + e.message);
     }).then(function () {
       btn.disabled = false;
       btn.textContent = '最新データを取得';
     });
+  }
+
+  function saveCache(d) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch (e) { /* 無視 */ } }
+
+  // ヘッダーの「最新を確認中…」などの表示
+  function setLive(msg) {
+    st.live = msg;
+    const el = $('live');
+    if (el) { el.textContent = msg ? '・' + msg : ''; }
   }
 
   function showError(msg) {
@@ -126,7 +150,8 @@
   // ---- 表示 ----
   function setData(d, fromCache) {
     st.data = d;
-    $('meta').innerHTML = '基準日 <b>' + esc(fmtDateY(d.baseDate)) + '</b>・前の営業日 <b>' + esc(fmtDateY(d.prevDate)) + '</b>・更新 ' + esc(d.updatedAt || '') + (fromCache ? '(前回の表示)' : '');
+    $('meta').innerHTML = '基準日 <b>' + esc(fmtDateY(d.baseDate)) + '</b>・前の営業日 <b>' + esc(fmtDateY(d.prevDate)) + '</b>・更新 ' + esc(d.updatedAt || '') + (fromCache ? '(前回の表示)' : '') + '<span id="live" class="live"></span>';
+    setLive(st.live || '');
     const w = $('warn');
     if (!fromCache) { w.classList.remove('error'); w.hidden = !(d.warnings && d.warnings.length); w.textContent = (d.warnings || []).join('\n'); }
     $('subYesterday').textContent = fmtDate(d.prevDate) + '・' + d.yesterday.length + '件・' + sumWeight(d.yesterday).toFixed(1) + 't';
@@ -258,7 +283,7 @@
   });
   $('workFilter').addEventListener('change', function () { st.work = this.value; render(); });
   $('dlBtn').addEventListener('click', download);
-  $('refreshBtn').addEventListener('click', refresh);
+  $('refreshBtn').addEventListener('click', function () { refresh(false); });
 
   load();
   sendLog('起動', '');
