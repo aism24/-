@@ -17,7 +17,7 @@
   // 表の列(見本: 物件名|部位|製品名|数量|重量。遅れリストは右に 予定日|遅れ を足す)
   const KIND = {
     late: { part: 6, qty: 7, no: 8, sub: '遅れ合計', total: '総遅れ合計', extra: [{ label: '予定日', i: 4, date: true }, { label: '遅れ', i: 5, days: true }] },
-    yesterday: { part: 5, qty: 6, no: 7, sub: '結果合計', total: '総結果合計', extra: [] },
+    yesterday: { part: 5, qty: 6, no: 7, sub: '結果合計', total: '総結果合計', extra: [{ label: '備考', i: 8, note: true }] },
   };
 
   const st = { data: null, shown: false, busy: false };
@@ -36,6 +36,14 @@
   function daysClass(n) { return n >= 5 ? 'd3' : n >= 3 ? 'd2' : 'd1'; } // 営業日: 5日以上=赤、3日以上=橙
 
   // 物件ごとにまとめる(行の順はそのまま)
+  // 前日出来高の備考(2026-11-12 ユーザー指定): 予定日より後に加工した(=遅れていた分を加工した)行だけ「11/5予定分対応」。それ以外は空欄
+  // 行の形: [物件名, 製品名, 図番, 重量, 生産日, 部位, 数量, 工事番号, 予定日]
+  function catchUp(r) {
+    const plan = r[8], p = parts(plan);
+    return p && r[4] && plan < r[4] ? p.m + '/' + p.d + '予定分対応' : '';
+  }
+  const CATCHUP_FILL = '#d9f2d9'; // 薄い緑
+
   // 工事別の合計行の見出し: 【ITM】　遅れ合計(2026-11-12 ユーザー指定)
   function subLabel(name, label) { return '【' + (name || '') + '】\u3000' + label; }
   function groups(rows, k) {
@@ -192,10 +200,12 @@
     let html = '<thead><tr>' + head.map(function (h, i) { return '<th' + (i === 3 || i === 4 ? ' class="num"' : '') + '>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>';
     gs.forEach(function (g) {
       g.rows.forEach(function (r, i) {
-        html += '<tr><td class="work">' + (i === 0 ? esc(g.name) : '') + '</td><td class="part">' + esc(r[k.part]) + '</td><td class="mark">' + esc(r[1]) + '</td>'
+        const note = kind === 'yesterday' ? catchUp(r) : '';
+        html += '<tr' + (note ? ' class="catchup"' : '') + '><td class="work">' + (i === 0 ? esc(g.name) : '') + '</td><td class="part">' + esc(r[k.part]) + '</td><td class="mark">' + esc(r[1]) + '</td>'
           + '<td class="num">' + esc(r[k.qty]) + '</td><td class="num">' + fmtW(r[3]) + '</td>';
         k.extra.forEach(function (e) {
           if (e.date) html += '<td class="date">' + esc(fmtDate(r[e.i])) + '</td>';
+          if (e.note) html += '<td class="note">' + esc(note) + '</td>';
           if (e.days) { const n = Number(r[e.i]) || 0; html += '<td class="days-cell"><span class="days ' + daysClass(n) + '">' + n + '日</span></td>'; }
         });
         html += '</tr>';
@@ -471,8 +481,8 @@
     text('結果の日 ' + fmtDateY(d.prevDate) + '・基準日 ' + fmtDateY(d.baseDate), W - M - 100, M + 3, 100, 'right', 3.2, false, '#5d6b7a');
     let top = M + 8;
     // 「…予定通り完了したものと考えます」はPDFに入れない(2026-11-12 ユーザー指定。読み込み時のお知らせにだけ出す)
-    // 2つの表の列(mm)。遅れ: 物件名|部位|製品名|数量|重量|予定日|遅れ  結果: 物件名|部位|製品名|数量|重量
-    const colsL = [13, 10, 29, 9, 13, 15, 11], colsR = [13, 10, 29, 9, 13];
+    // 2つの表の列(mm)。遅れ: 物件名|部位|製品名|数量|重量|予定日|遅れ  結果: 物件名|部位|製品名|数量|重量|備考
+    const colsL = [12, 9, 27, 8, 13, 15, 10], colsR = [12, 9, 27, 8, 13, 28]; // 結果: …|備考
     const sum = function (a) { return a.reduce(function (x, y) { return x + y; }, 0); };
     const k = (W - 2 * M - GAP) / (sum(colsL) + sum(colsR));
     const wl = colsL.map(function (v) { return v * k; }), wr = colsR.map(function (v) { return v * k; });
@@ -508,11 +518,13 @@
       t.gs.forEach(function (g) {
         g.rows.forEach(function (r, i) {
           const cells = [{ i: 0, v: i === 0 ? g.name : '', bold: true }, { i: 1, v: r[kd.part] }, { i: 2, v: r[1] }, { i: 3, v: r[kd.qty] }, { i: 4, v: fmtW(r[3]), align: 'right' }];
+          const note = t.kind === 'yesterday' ? catchUp(r) : '';
           kd.extra.forEach(function (e, j) {
+            if (e.note) cells.push({ i: 5 + j, v: note });
             if (e.date) cells.push({ i: 5 + j, v: fmtDate(r[e.i]) });
             if (e.days) { const n = Number(r[e.i]) || 0; cells.push({ i: 5 + j, v: n + '日', bold: n >= 3, color: n >= 5 ? '#a3121c' : n >= 3 ? '#8a3d00' : '#1d2733' }); }
           });
-          line(cells);
+          line(cells, note ? CATCHUP_FILL : null);
         });
         subLine(subLabel(g.name, kd.sub), g.qty, g.weight);
       });

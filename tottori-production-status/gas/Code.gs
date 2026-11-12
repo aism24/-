@@ -28,7 +28,7 @@
  * セットアップ手順は README.md を参照。
  */
 
-const CODE_VERSION = '2026-11-11m';
+const CODE_VERSION = '2026-11-12a';
 const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
@@ -57,7 +57,7 @@ const INFO_PENDING = '未取込の案件';
 const INFO_WARN = '注意';
 const INFO_PLAN = '予定表の概要';
 
-const HEAD_YESTERDAY = ['物件名', '製品名', '図番', '重量(t)', '生産日', '部位', '数量', '工事番号'];
+const HEAD_YESTERDAY = ['物件名', '製品名', '図番', '重量(t)', '生産日', '部位', '数量', '工事番号', '予定日']; // 予定日: 予定表の日(画面の備考「m/d予定分対応」に使う)
 const HEAD_LATE = ['物件名', '製品名', '図番', '重量(t)', '生産予定日', '遅れ日数(営業日)', '部位', '数量', '工事番号'];
 const HEAD_ABBR = ['略称', '工事番号'];
 const HEAD_RESULT = ['物件名', '製品名', '加工日', '読込日時', 'ファイル名'];
@@ -540,10 +540,21 @@ function buildLists_(allRows, calendar, today, planRows, abbr, prevKey) {
   // 工事番号 → 略称(表示用。同じ工事番号に略称が複数あれば、名前順で最初のもの)
   const rev = {};
   Object.keys(abbr).sort().forEach(function (a) { if (!rev[abbr[a]]) rev[abbr[a]] = a; });
+  // 予定表の予定日(前日出来高の備考用。2026-11-12 ユーザー指定): 工事番号+製品名、無ければ 略称+製品名 で引く
+  const planByNo = {}, planByName = {};
+  (planRows || []).forEach(function (p) {
+    const d = normalizeKey_(p[3]);
+    if (!d) return;
+    planByName[p[0] + '\t' + p[1]] = d;
+    if (abbr[p[0]]) planByNo[abbr[p[0]] + '\t' + p[1]] = d;
+  });
   const byWorkMark = {}, byMark = {};
   allRows.forEach(function (r, i) {
     const done = r[D.DONE], no = r[D.NO];
-    if (done && done === prev.key) yesterday.push([rev[no] || r[D.NAME], r[D.MARK], r[D.DW], r[D.W], done, r[D.PART] || '', r[D.QTY], no, i]);
+    if (done && done === prev.key) {
+      const name = rev[no] || r[D.NAME];
+      yesterday.push([name, r[D.MARK], r[D.DW], r[D.W], done, r[D.PART] || '', r[D.QTY], no, planByNo[no + '\t' + r[D.MARK]] || planByName[name + '\t' + r[D.MARK]] || '', i]);
+    }
     (byWorkMark[no + '\t' + r[D.MARK]] = byWorkMark[no + '\t' + r[D.MARK]] || []).push(i);
     (byMark[r[D.MARK]] = byMark[r[D.MARK]] || []).push(i);
   });
@@ -577,7 +588,7 @@ function buildLists_(allRows, calendar, today, planRows, abbr, prevKey) {
   const byText = function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
   const rank = function (p) { const i = PART_ORDER.indexOf(p); return i < 0 ? PART_ORDER.length : i; };
   const order = function (pi, ii) { return function (a, b) { return byText(a[0], b[0]) || (rank(a[pi]) - rank(b[pi])) || (a[ii] - b[ii]); }; };
-  stableSort_(yesterday, order(5, 8));
+  stableSort_(yesterday, order(5, 9));
   stableSort_(late, order(6, 9));
   const warnings = prev.warning ? [prev.warning] : [];
   if (missingCal) warnings.push('会社カレンダー(索引スプレッドシートのI・J列)に ' + missingCal.replace(/-/g, '/') + ' などがありません。遅れ日数(営業日)は、カレンダーに無い日を土日休みとみなして数えました。');
@@ -587,7 +598,7 @@ function buildLists_(allRows, calendar, today, planRows, abbr, prevKey) {
   return {
     baseDate: today,
     prevDate: prev.key,
-    yesterday: yesterday.map(function (r) { return r.slice(0, 8); }),
+    yesterday: yesterday.map(function (r) { return r.slice(0, 9); }),
     late: late.map(function (r) { return r.slice(0, 9); }),
     warnings: warnings,
     plan: planCoverage_(planSummary_(planRows), planRows, calendar, lateBefore, prev.key),
@@ -871,7 +882,7 @@ function writeState_(sh, state) {
 
 // 一覧と「情報」シートの値を書く(情報シートは flushAll_ でまとめて1回)
 function writeOutputs_(built) {
-  writeTable_(sheet_(SHEET_YESTERDAY), HEAD_YESTERDAY, built.yesterday, [0, 1, 2, 4, 5, 7]);
+  writeTable_(sheet_(SHEET_YESTERDAY), HEAD_YESTERDAY, built.yesterday, [0, 1, 2, 4, 5, 7, 8]);
   writeTable_(sheet_(SHEET_LATE), HEAD_LATE, built.late, [0, 1, 2, 4, 6, 8]);
   infoSet_(INFO_BASE, "'" + built.baseDate);
   infoSet_(INFO_PREV, "'" + built.prevDate);
@@ -883,7 +894,7 @@ function writeOutputs_(built) {
 
 // 保存済みの一覧(シート)を、buildLists_ と同じ形で読む
 function readBuiltFromSheets_() {
-  const y = readTableRows_(sheet_(SHEET_YESTERDAY), HEAD_YESTERDAY.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), String(r[5]), qty_(r[6]), String(r[7])]; });
+  const y = readTableRows_(sheet_(SHEET_YESTERDAY), HEAD_YESTERDAY.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), String(r[5]), qty_(r[6]), String(r[7]), normalizeKey_(r[8])]; });
   const l = readTableRows_(sheet_(SHEET_LATE), HEAD_LATE.length).map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), Number(r[3]) || 0, normalizeKey_(r[4]), Number(r[5]) || 0, String(r[6]), qty_(r[7]), String(r[8])]; });
   let plan = null;
   try { plan = JSON.parse(String(infoGet_(INFO_PLAN) || 'null')); } catch (e) { plan = null; }
