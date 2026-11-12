@@ -427,7 +427,7 @@
       cells = r.cells;
       if (!st.shown) {
         landingState(true, '処理を実行中\n塗りつぶし＆ハイパーリンク付与', // 2行・中央揃え(2026-11-12 ユーザー指定)
-          '予定表 ' + r.items.length + ' 件を案件マスターと照らし合わせています(しばらくかかることがあります)', '');
+          '予定表 ' + r.items.length + ' 件を案件マスターと照らし合わせています', '');
         $('landingNote').hidden = false;
         progressWait(15, 80, '案件マスターと照らし合わせ中');
       }
