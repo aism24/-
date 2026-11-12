@@ -163,7 +163,7 @@
     if (!$('abbrModal').hidden) return; // 略称の選択が先(保存すると改めて確認する)
     const by = {};
     rc.missing.forEach(function (m) { (by[m.name || '(件名なし)'] = by[m.name || '(件名なし)'] || []).push(m); });
-    $('dateNote').textContent = fmtDateY(rc.date) + 'の加工結果のうち、案件マスターに加工日が無い製品です' + (rc.reread ? '(作業用データを' + rc.reread + '件読み直して確認しました)' : '') + '。マスターに日付を入れてください。';
+    $('dateNote').textContent = fmtDateY(rc.date) + 'の加工結果のうち、案件マスターに加工日が無い製品です。マスターに日付を入れてください。';
     $('dateList').innerHTML = Object.keys(by).map(function (n) {
       return '<div class="date-group"><div class="date-name">' + esc(n) + '</div><table class="sheet"><thead><tr><th>製品名</th><th>行数</th></tr></thead><tbody>'
         + by[n].map(function (m) { return '<tr><td>' + esc(m.mark) + '</td><td class="num">' + (m.row ? esc(m.row) : 'マスターに無し') + '</td></tr>'; }).join('') + '</tbody></table></div>';
@@ -422,6 +422,7 @@
     else toast('「' + file.name + '」を読み取っています…');
     let bytes = null, planPages = [], cells = [];
     loadPdfLib().catch(function () {}); // ダウンロード用の部品を先に読み込んでおく
+    loadLinks().catch(function () {}); // 実寸リンク表もGASの照らし合わせと並行して読んでおく(2026-11-12)
     file.arrayBuffer().then(function (buf) { bytes = buf.slice(0); return parsePlanPdf(buf, file.name); }).then(function (r) {
       planPages = r.planPages;
       cells = r.cells;
@@ -685,7 +686,8 @@
   const LINK_GAS_URL = 'https://script.google.com/macros/s/AKfycbw0NvmN8vjr4g0TNx1TQ8DffC6FWwK6GfBOZb32N0mTp3CrcYXLNOpkxhXo2ce1PwE6/exec';
   function loadLinks() {
     if (st.links) return Promise.resolve(st.links);
-    return fetch(LINK_GAS_URL + '?action=links', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (m) {
+    if (st.linksP) return st.linksP; // 読み込み中なら同じものを待つ
+    st.linksP = fetch(LINK_GAS_URL + '?action=links', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (m) {
       if (!m || !m.links) throw new Error('リンク表がありません');
       const links = {};
       Object.keys(m.links).forEach(function (k) {
@@ -697,6 +699,8 @@
       st.links = links;
       return links;
     });
+    st.linksP.catch(function () { st.linksP = null; }); // 失敗したら次は読み直す
+    return st.linksP;
   }
   // shipping-list-link と同じ書き方(ASCII以外と括弧をエンコード)
   function encodeUri(u) {
