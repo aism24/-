@@ -202,46 +202,13 @@
       });
       html += subRow(subLabel(g.name, k.sub), g.qty, g.weight, head.length, 'sub');
     });
-    if (gs.length) html += subRow(k.total, t.qty, t.weight, head.length, 'total');
     html += '</tbody>';
+    if (gs.length) html += '<tfoot>' + subRow(k.total, t.qty, t.weight, head.length, 'total') + '</tfoot>'; // 総合計は tfoot(表の枠の最下部に固定するため)
     $(kind + 'Table').innerHTML = gs.length ? html : '';
     $(kind + 'Empty').hidden = gs.length > 0;
-    $(kind + 'Sticky').removeAttribute('data-src');
-    setTimeout(updateStickyTotals, 0);
   }
 
-  // 総合計の行(総遅れ合計・総結果合計)が画面の下に隠れているときは、画面の最下部に写しを固定する。
-  // スクロールして本物の行が見えたら写しを消す(=本物がスクロールに合わせて動く)(2026-11-12 ユーザー指定)
-  function updateStickyTotals() {
-    ['late', 'yesterday'].forEach(function (kind) {
-      const bar = $(kind + 'Sticky'), row = $(kind + 'Table').querySelector('tr.total');
-      const wrap = $(kind + 'Table').parentNode;
-      if (!row || $('resultView').hidden) { bar.hidden = true; return; }
-      const vh = window.innerHeight, rr = row.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
-      const show = rr.bottom > vh && wr.top < vh - rr.height * 2; // 本物が画面の下にあり、表は画面に入っている
-      bar.hidden = !show;
-      if (!show) return;
-      const cells = row.children;
-      if (bar.getAttribute('data-src') !== row.textContent + '|' + wrap.clientWidth) {
-        const t = document.createElement('table');
-        t.className = 'sheet';
-        const tr = row.cloneNode(true);
-        Array.prototype.forEach.call(tr.children, function (td, i) { td.style.width = td.style.minWidth = td.style.maxWidth = cells[i].getBoundingClientRect().width + 'px'; td.style.boxSizing = 'border-box'; });
-        t.appendChild(document.createElement('tbody')).appendChild(tr);
-        t.style.width = row.parentNode.parentNode.getBoundingClientRect().width + 'px';
-        t.style.tableLayout = 'fixed';
-        bar.innerHTML = '';
-        bar.appendChild(t);
-        bar.setAttribute('data-src', row.textContent + '|' + wrap.clientWidth);
-      }
-      bar.style.left = wr.left + 'px';
-      bar.style.width = wr.width + 'px';
-      bar.firstChild.style.transform = 'translateX(' + (-wrap.scrollLeft) + 'px)';
-    });
-  }
-  window.addEventListener('scroll', updateStickyTotals, { passive: true });
-  window.addEventListener('resize', function () { ['lateSticky', 'yesterdaySticky'].forEach(function (id) { $(id).removeAttribute('data-src'); }); updateStickyTotals(); });
-  ['lateTable', 'yesterdayTable'].forEach(function (id) { $(id).parentNode.addEventListener('scroll', updateStickyTotals, { passive: true }); });
+  // 見出しの行(物件名…)と総合計の行の固定は CSS(表の枠の中で sticky)で行う(2026-11-12 ユーザー指定)
 
   function subRow(label, qty, weight, cols, cls) {
     return '<tr class="' + cls + '"><td colspan="3" class="label">' + esc(label) + '</td><td class="num">' + qty + '</td><td class="num">' + fmtW(weight) + '</td>' + (cols > 5 ? '<td colspan="' + (cols - 5) + '"></td>' : '') + '</tr>';
@@ -399,7 +366,6 @@
     ['noticeModal', 'dateModal', 'abbrModal', 'warn', 'toast'].forEach(function (id) { $(id).hidden = true; });
     ['lateTable', 'yesterdayTable', 'meta', 'planInfo'].forEach(function (id) { $(id).innerHTML = ''; });
     $('resultView').hidden = true;
-    updateStickyTotals();
     $('landing').hidden = false;
     document.body.classList.add('landing-mode');
     landingState(false, '加工結果を送ってください', 'PDFを画面のどこかにドロップするか、フォルダから選んでください', '');

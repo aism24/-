@@ -208,8 +208,21 @@ table.sheet td.days-cell { text-align: center; }
   .app-header h1 { justify-self: start; }
 }
 
-/* 総合計の行の写し(画面の最下部に固定。本物の行が見えたら消える) */
-.sticky-total { position: fixed; bottom: 0; z-index: 9; overflow: hidden; padding-bottom: env(safe-area-inset-bottom); background: transparent; box-shadow: 0 -4px 10px rgba(0, 0, 0, .18); }
-.sticky-total[hidden] { display: none; }
-.sticky-total table.sheet { width: auto; }
-.sticky-total table.sheet tr.total td { border-top: 2px solid #8a98a8; }
+/* 一覧の画面(2026-11-12 ユーザー指定): ヘッダー・基準日・ボタン・表の題名と見出しの行(物件名…)を固定し、表の中だけスクロールする。
+   総合計の行は、表の下に隠れているあいだは表の枠の最下部に固定、見える所まで来たら一緒に動く(sticky) */
+table.sheet thead th { position: sticky; top: -1px; z-index: 2; box-shadow: inset 0 -1px 0 #c9d2dc, inset 0 1px 0 #c9d2dc; }
+table.sheet tfoot { position: sticky; bottom: 0; z-index: 2; } /* セルに sticky を付けても下には固定されないため tfoot ごと */
+table.sheet tfoot td { box-shadow: 0 -3px 8px rgba(0, 0, 0, .12); }
+.table-wrap { overflow: auto; overscroll-behavior: contain; }
+@media (min-width: 761px) {
+  body:not(.landing-mode) { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  body:not(.landing-mode) .app-header { flex: none; }
+  body:not(.landing-mode) .page { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+  body:not(.landing-mode) #resultView:not([hidden]) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  body:not(.landing-mode) .pair { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+  body:not(.landing-mode) .panel { max-height: 100%; display: flex; flex-direction: column; }
+  body:not(.landing-mode) .panel .table-wrap { flex: 0 1 auto; min-height: 0; }
+}
+@media (max-width: 760px) {
+  .panel .table-wrap { max-height: calc(100vh - 160px); max-height: calc(100dvh - 160px); }
+}
