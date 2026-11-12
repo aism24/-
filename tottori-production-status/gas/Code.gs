@@ -7,7 +7,7 @@
  * ■ 流れ(2026-11-11 ユーザー指定)
  *   画面で加工結果PDFを読み込む → 画面が「鳥取工場 加工予定表」(週間予定表)と「MM.DD結果重量」の表を読み取って送る(doPost schedule)
  *   → 予定表に出てくる工事の案件マスターだけを読む(更新日時が前回と同じなら読み直さない)→ 一覧を作って返す。
- *   生産遅れ  : 予定表で予定日が今週の月曜より前(2か月以内)なのに、案件マスターに加工日(「加工」列)が無い製品。遅れ日数は営業日
+ *   生産遅れ  : 予定表で予定日が結果の日以前(2か月以内)なのに、案件マスターに加工日(「加工」列)が無い製品。遅れ日数は営業日
  *   前日出来高: 加工日が前の営業日の製品(読み込んだ工事のもの)
  *   加工結果の確認: 結果重量の表の製品に加工日が無ければ、その工事のファイルだけ読み直して再確認し、残ったもの(製品名・行番号)を返す
  *   「前の営業日」「営業日」は索引スプレッドシートの会社カレンダー(I列=日付、J列=出勤/休日)で決める。
@@ -28,7 +28,7 @@
  * セットアップ手順は README.md を参照。
  */
 
-const CODE_VERSION = '2026-11-12d';
+const CODE_VERSION = '2026-11-12e';
 const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
@@ -516,8 +516,9 @@ function getData_() {
 // calendar: {'yyyy-MM-dd': true(出勤)/false(休日)}  today: 'yyyy-MM-dd'  abbr: {略称: 工事番号}
 // prevKey: 前日出来高の日(PDFの結果の日)。省略時は today の前の営業日
 // 前日出来高 = 加工日が前の営業日の行。
-// 生産遅れ  = 予定表で予定日が今週の月曜より前(2か月以内)なのに、案件マスターに加工日が無い(または前の営業日より後の)製品
-//             (今週の予定は遅れにしない=「先週の漏れ」を遅れとする。備考①は加工予定日とは限らないため使わない。2026-11-11 ユーザー指定)
+// 生産遅れ  = 予定表で予定日が結果の日以前(2か月以内)なのに、案件マスターに加工日が無い(または結果の日より後の)製品
+//             (今週の月曜〜結果の日の未加工分も遅れに入れる。2026-11-12 ユーザー指定。以前は今週の予定を除いていた。
+//              備考①は加工予定日とは限らないため使わない)
 function buildLists_(allRows, calendar, today, planRows, abbr, prevKey) {
   abbr = abbr || {};
   const prev = prevKey ? { key: prevKey, warning: '' } : prevBusinessDay_(calendar, today);
@@ -566,7 +567,7 @@ function buildLists_(allRows, calendar, today, planRows, abbr, prevKey) {
   const unmapped = {};
   planRows.forEach(function (p) {
     const plan = p[3];
-    if (!plan || plan >= lateBefore || plan < lateFrom) return;
+    if (!plan || plan > prev.key || plan < lateFrom) return;
     // 案件マスターの行を探す: 略称→工事番号+製品名。略称が未設定なら、製品名(+図番)で1件に決まるときだけ
     const no = abbr[p[0]];
     let cands;
