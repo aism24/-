@@ -238,3 +238,14 @@ table.sheet td.note { white-space: nowrap; font-size: 13px; }
 .progress-bar { height: 14px; border-radius: 999px; background: #e3e9f1; overflow: hidden; }
 .progress-fill { height: 100%; width: 0; border-radius: 999px; background: var(--accent); transition: width .4s ease; }
 .progress-text { margin-top: 6px; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* 「ダウンロードPDFの説明書」ボタン(開いた直後・リセット後の画面だけ。黄色の背景、縁が光る。2026-11-12 ユーザー指定) */
+.manual-wrap { margin-top: 22px; }
+.manual-btn { display: inline-block; padding: 11px 26px; border-radius: 12px; background: #ffe14d; color: #3a2e00; font-weight: 700; font-size: 16px; text-decoration: none; border: 2px solid #f5b400; animation: manual-glow 1.8s ease-in-out infinite; }
+.manual-btn:hover { background: #ffd61f; }
+@keyframes manual-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 196, 0, .0), 0 0 6px 1px rgba(255, 196, 0, .55); }
+  50% { box-shadow: 0 0 0 4px rgba(255, 196, 0, .35), 0 0 18px 6px rgba(255, 196, 0, .75); }
+}
+@media (prefers-reduced-motion: reduce) { .manual-btn { animation: none; box-shadow: 0 0 10px 3px rgba(255, 196, 0, .6); } }
+.landing.busy .manual-wrap { display: none; }
