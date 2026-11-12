@@ -28,7 +28,7 @@
  * セットアップ手順は README.md を参照。
  */
 
-const CODE_VERSION = '2026-11-12c';
+const CODE_VERSION = '2026-11-12d';
 const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
@@ -285,29 +285,14 @@ function readResults_() {
 }
 
 // 対象ファイルを読んで一覧を作り(予定表が変わったので必ず作り直す)、加工結果を確かめる(2026-11-11 ユーザー指定)
-// ① 結果の製品に加工日が無ければ、その工事のファイルだけ更新日時に関係なく読み直す(作業用データが古い場合)
-// ② もう一度確かめる ③ 残ったものを返す(画面が「マスターデータに日付が入ってません」製品名|行数 を出す)
+// 結果の製品に加工日が無いもの(製品名・行番号)を返す → 画面が「マスターデータに日付が入ってません」を出す。
+// 元のファイルを直接読み、更新日時が変わったものは runRefresh_ で読み直しているので、ここで更に読み直すことはしない
+// (以前は無ければ更新日時に関係なく読み直していたが、見つからない製品があると毎回 変換2回+作り直し が空振りしていた。2026-11-12)
 function refreshAndCheck_(results) {
-  let built = runRefresh_({ rebuild: true }).built;
+  const built = runRefresh_({ rebuild: true }).built;
   if (!results.length) return { built: built, check: null };
-  const abbr = effectiveAbbr_();
-  let miss = findMissingDates_(dataRows_(), results, abbr);
-  let reread = 0;
-  if (miss.length) {
-    const files = readFileIndex_(indexRows_());
-    const force = {};
-    miss.forEach(function (m) {
-      if (m.fileId) force[m.fileId] = true;
-      const no = abbr[m.name];
-      if (no) files.forEach(function (f) { if (f.workNo === no) force[f.fileId] = true; });
-    });
-    reread = Object.keys(force).length;
-    if (reread) {
-      built = runRefresh_({ rebuild: true, force: force }).built;
-      miss = findMissingDates_(dataRows_(), results, abbr);
-    }
-  }
-  return { built: built, check: { date: results[0].date, checked: results.length, reread: reread, missing: miss.map(function (m) { return { name: m.name, mark: m.mark, row: m.row, file: m.file }; }) } };
+  const miss = findMissingDates_(dataRows_(), results, effectiveAbbr_());
+  return { built: built, check: { date: results[0].date, checked: results.length, missing: miss.map(function (m) { return { name: m.name, mark: m.mark, row: m.row, file: m.file }; }) } };
 }
 
 // 加工結果の製品のうち、マスターに加工日が入っていないもの(見つからないものも含む)
@@ -393,16 +378,7 @@ function removeAutoTriggers_() {
     if (fn === 'dailyRefresh' || fn === 'hourlyRefresh') ScriptApp.deleteTrigger(t);
   });
 }
-// 以前の版で予約した自動更新が動いたら、予約を消すだけ(貼り替えだけで止まるように残す)
-function dailyRefresh() { removeAutoTriggers_(); }
-function hourlyRefresh() { removeAutoTriggers_(); }
-
-// 手動で今すぐ読み直す(予定表に出てくる工事のファイルだけ)。読み切れなかった分は1分後に自動で続きを読む
-function refreshNow() {
-  begin_();
-  const r = runRefreshLocked_(true);
-  Logger.log(JSON.stringify({ status: r.status, pending: r.pending, yesterday: r.built && r.built.yesterday.length, late: r.built && r.built.late.length, warnings: r.built && r.built.warnings }));
-}
+// 読み切れなかった案件の続き(1分後の予約から動く)
 function continueRefresh() { begin_(); runRefreshLocked_(true); }
 
 function runRefreshLocked_(wait) {
@@ -955,6 +931,9 @@ function getOwnFolder_(ss) {
 
 // 読み切れなかった案件があれば1分後に続きを読む。無ければ続きの予約を消す
 function scheduleContinue_(need) {
+  // 予約の一覧を見るのは、続きが要るときと、前に予約したときだけ(取込のたびに見に行かない。2026-11-12)
+  if (!need && propGet_('CONTINUE_SET') !== '1') return;
+  propSet_('CONTINUE_SET', need ? '1' : '');
   let has = false;
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() !== 'continueRefresh') return;
