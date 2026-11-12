@@ -383,7 +383,25 @@
     $('landing').hidden = false;
     document.body.classList.add('landing-mode');
     landingState(false, '加工結果を送ってください', 'PDFを画面のどこかにドロップするか、フォルダから選んでください', '');
+    progress(null);
+    $('landingNote').hidden = true;
     window.scrollTo(0, 0);
+  }
+  // 進捗バー(2026-11-12 ユーザー指定)。段階: PDFの読み取り 0〜15% → 照らし合わせ(GAS)15〜80% → PDF作成 80〜100%。
+  // GASの処理は途中経過が分からないので、待ち時間に応じて80%の手前まで少しずつ進める
+  let progTimer = 0;
+  function progress(pct, label) {
+    $('progress').hidden = pct == null;
+    if (pct == null) { clearInterval(progTimer); return; }
+    st.prog = Math.max(st.prog || 0, pct);
+    $('progressFill').style.width = st.prog.toFixed(1) + '%';
+    $('progressText').textContent = Math.floor(st.prog) + '%' + (label ? '　' + label : '');
+  }
+  function progressWait(from, to, label) {
+    clearInterval(progTimer);
+    const t0 = Date.now();
+    progress(from, label);
+    progTimer = setInterval(function () { progress(from + (to - from) * (1 - Math.exp(-(Date.now() - t0) / 15000)), label); }, 300);
   }
   function landingState(busy, title, sub, err) {
     $('landing').classList.toggle('busy', busy);
@@ -398,30 +416,43 @@
     if (DEMO) { toast('サンプル表示では読み込めません'); return; }
     if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') { toast('PDFを送ってください'); return; }
     st.busy = true;
-    if (!st.shown) landingState(true, '読み取っています…', '「' + file.name + '」', '');
+    st.prog = 0;
+    $('landingNote').hidden = true;
+    if (!st.shown) { landingState(true, '読み取っています…', '「' + file.name + '」', ''); progress(3, 'PDFを読み取り中'); }
     else toast('「' + file.name + '」を読み取っています…');
     let bytes = null, planPages = [], cells = [];
     loadPdfLib().catch(function () {}); // ダウンロード用の部品を先に読み込んでおく
     file.arrayBuffer().then(function (buf) { bytes = buf.slice(0); return parsePlanPdf(buf, file.name); }).then(function (r) {
       planPages = r.planPages;
       cells = r.cells;
-      if (!st.shown) landingState(true, '処理を実行中\n塗りつぶし＆ハイパーリンク付与', // 2行・中央揃え(2026-11-12 ユーザー指定)
-         '予定表 ' + r.items.length + ' 件を案件マスターと照らし合わせています(しばらくかかることがあります)', '');
+      if (!st.shown) {
+        landingState(true, '処理を実行中\n塗りつぶし＆ハイパーリンク付与', // 2行・中央揃え(2026-11-12 ユーザー指定)
+          '予定表 ' + r.items.length + ' 件を案件マスターと照らし合わせています(しばらくかかることがあります)', '');
+        $('landingNote').hidden = false;
+        progressWait(15, 80, '案件マスターと照らし合わせ中');
+      }
       else toast('予定表から ' + r.items.length + ' 件を読み取りました。案件マスターと照らし合わせています…');
       return fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'schedule', fileName: file.name, items: r.items, results: r.results, resultDate: r.resultDate }) }).then(function (x) { return x.json(); });
     }).then(function (res) {
       if (res.status !== 'success') throw new Error(res.message || '保存に失敗しました');
-      showResult();
+      clearInterval(progTimer);
+      progress(80, 'PDFを作成中(塗りつぶし・リンク)');
       st.src = { bytes: bytes, planPages: planPages, cells: cells, name: file.name };
-      setData(res.data);
+      setData(res.data); // 一覧は裏で作り、PDFができてから画面を切り替える(進捗バーを最後まで見せるため)
       const mt = missingText(res.data.plan);
       // 取込のお知らせは画面中央に出し、OKを押すまで消さない(2026-11-12 ユーザー指定)。OKの後に加工結果の確認を出す
       // 一覧が出たら、そのままPDFをダウンロード。お知らせはPDFを作ったあとに出す(マスタで完了を確認して塗り直した件数を添えるため)
       return downloadPdf().then(function () {
+        progress(100, '完了');
+        showResult();
+        progress(null);
+        if (!DEMO && (res.data.unknown || []).length && $('abbrModal').hidden) openAbbr(true); // 新しい略称があれば工事番号を選ぶ画面
         const fixed = st.linkStat ? st.linkStat.fixed : 0;
         notice('予定表を読み込みました(' + res.saved + '件)' + (mt ? '。' + mt : '') + (fixed ? '\nマスタで完了を確認：' + fixed + '件' : ''), function () { showResultCheck(res.resultCheck); });
       });
     }).catch(function (e) {
+      progress(null);
+      $('landingNote').hidden = true;
       if (!st.shown) landingState(false, '加工結果を送ってください', 'PDFを画面のどこかにドロップするか、フォルダから選んでください', '読み込めませんでした: ' + e.message);
       else showError('加工結果PDFの読み込みに失敗しました: ' + e.message);
     }).then(function () { st.busy = false; $('pdfInput').value = ''; });
@@ -569,6 +600,7 @@
                 c.rects.forEach(function (k) { rects.push({ key: (c.dw || '') + '\t' + c.mark, rect: [k.x0 / PAINT_SCALE, v1.height - k.y1 / PAINT_SCALE, k.x1 / PAINT_SCALE, v1.height - k.y0 / PAINT_SCALE] }); });
               });
               acc.push({ jpg: cv.toDataURL('image/jpeg', 0.92), w: v1.width, h: v1.height, rects: rects });
+              if (!st.shown) progress(80 + 17 * acc.length / src.planPages.length, 'PDFを作成中(塗りつぶし・リンク)');
               return acc;
             });
           });

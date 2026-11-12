@@ -230,3 +230,11 @@ table.sheet tfoot td { box-shadow: 0 -3px 8px rgba(0, 0, 0, .12); }
 /* 前日出来高: 遅れていた分を加工した行(備考「m/d予定分対応」)は薄い緑(2026-11-12 ユーザー指定) */
 .done table.sheet tr.catchup td { background: #d9f2d9; }
 table.sheet td.note { white-space: nowrap; font-size: 13px; }
+
+/* 読み込み中の進捗バーと注意書き(2026-11-12 ユーザー指定) */
+.landing-sub.landing-note { margin-bottom: 4px; }
+.progress { width: min(440px, 100%); margin: 0 auto 22px; }
+.progress[hidden] { display: none; }
+.progress-bar { height: 14px; border-radius: 999px; background: #e3e9f1; overflow: hidden; }
+.progress-fill { height: 100%; width: 0; border-radius: 999px; background: var(--accent); transition: width .4s ease; }
+.progress-text { margin-top: 6px; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
