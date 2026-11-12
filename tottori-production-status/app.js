@@ -355,7 +355,8 @@
         const dw = ts[i + 3] && colOf(ts[i + 3].x) === h && /-/.test(ts[i + 3].s) ? ts[i + 3].s : '';
         // cell: PDFの色付けに使う位置(台数・製品名・重量・図番の文字の位置。GASへは送らない)
         items.push({ date: h.date, name: curName[h.date] || '', mark: t.s, qty: +q.s, weight: +w.s, drawing: dw,
-          cell: { y: t.y, h: t.h || 6, qty: { x: q.x, w: q.w }, paint: [t, w].concat(dw ? [ts[i + 3]] : []).map(function (z) { return { x: z.x, w: z.w }; }) } });
+          cell: { y: t.y, h: t.h || 6, qty: { x: q.x, w: q.w }, mark: t.s, dw: dw,
+            paint: [[t, 'mark'], [w, 'weight']].concat(dw ? [[ts[i + 3], 'dw']] : []).map(function (z) { return { x: z[0].x, w: z[0].w, role: z[1] }; }) } });
         i += dw ? 3 : 2;
       }
     });
@@ -552,7 +553,12 @@
               const orig = new Uint8ClampedArray(im.data); // 色・枠は塗る前の絵で測る(先に塗った行に引きずられないように)
               src.cells.filter(function (c) { return c.page === pi; }).forEach(function (c) { paintRow(im, c, orig); });
               ctx.putImageData(im, 0, 0);
-              acc.push({ jpg: cv.toDataURL('image/jpeg', 0.92), w: v1.width, h: v1.height });
+              // リンクの範囲をPDFの座標(左下が原点、単位pt)に直す
+              const rects = [];
+              src.cells.filter(function (c) { return c.page === pi && c.rects; }).forEach(function (c) {
+                c.rects.forEach(function (k) { rects.push({ key: (c.dw || '') + '\t' + c.mark, rect: [k.x0 / PAINT_SCALE, v1.height - k.y1 / PAINT_SCALE, k.x1 / PAINT_SCALE, v1.height - k.y0 / PAINT_SCALE] }); });
+              });
+              acc.push({ jpg: cv.toDataURL('image/jpeg', 0.92), w: v1.width, h: v1.height, rects: rects });
               return acc;
             });
           });
@@ -601,6 +607,8 @@
       if (!u || !b) return null;
       return { x0: l.x, x1: r.x, y0: u.y, y1: b.y, bg: bg };
     };
+    // リンクを付ける範囲(製品名・図番)。セルの枠が見つからなければ文字の範囲(単位は絵のpx)
+    c.rects = c.paint.filter(function (t) { return t.role !== 'weight'; }).map(function (t) { return { role: t.role, x0: t.x * S - 2, x1: (t.x + t.w) * S + 2, y0: (c.y - c.h) * S, y1: (c.y + c.h * 0.25) * S }; });
     const q = cellOf(c.qty);
     if (!q || q.x1 - q.x0 > 25 * S || q.y1 - q.y0 > 15 * S) { paintRow.miss = (paintRow.miss || 0) + 1; return; } // 台数のセルが大きすぎる=枠を取り違えた
     const col = q.bg; // 台数のセルの色
@@ -609,6 +617,7 @@
       const r = cellOf(t, q);
       if (!r || r.x1 - r.x0 > 60 * S || r.y1 - r.y0 > 20 * S) { paintRow.miss = (paintRow.miss || 0) + 1; return; } // 枠が見つからない・大きすぎるときは塗らない
       paintRow.done = (paintRow.done || 0) + 1;
+      c.rects.forEach(function (k) { if (k.role === t.role) { k.x0 = r.x0; k.x1 = r.x1; k.y0 = r.y0; k.y1 = r.y1; } });
       const lb = Math.max(1, lum(r.bg));
       for (let y = Math.round(r.y0) + 1; y < Math.round(r.y1); y++) {
         for (let x = Math.round(r.x0) + 1; x < Math.round(r.x1); x++) {
@@ -622,9 +631,46 @@
     });
   }
 
+  // 実寸法師へのリンク表(shipping-list-link のマスタ。図番+TAB+製品名 → file://…tdf)を読む(2026-11-12 ユーザー指定)。
+  // 読むだけ(向こうのアプリの記録・保存は動かない)。重複(リンクが複数)は付けない
+  const LINK_GAS_URL = 'https://script.google.com/macros/s/AKfycbw0NvmN8vjr4g0TNx1TQ8DffC6FWwK6GfBOZb32N0mTp3CrcYXLNOpkxhXo2ce1PwE6/exec';
+  function loadLinks() {
+    if (st.links) return Promise.resolve(st.links);
+    return fetch(LINK_GAS_URL + '?action=links', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (m) {
+      if (!m || !m.links) throw new Error('リンク表がありません');
+      const links = {};
+      Object.keys(m.links).forEach(function (k) {
+        const v = m.links[k];
+        if (typeof v !== 'string') return; // 重複
+        const i = v.indexOf('|');
+        links[k] = m.d ? (i > 0 ? m.d[+v.slice(0, i)] : '') + v.slice(i + 1) : v;
+      });
+      st.links = links;
+      return links;
+    });
+  }
+  // shipping-list-link と同じ書き方(ASCII以外と括弧をエンコード)
+  function encodeUri(u) {
+    return u.replace(/[^\x21-\x7e]/g, function (c) { return encodeURIComponent(c); }).replace(/\(/g, '%28').replace(/\)/g, '%29');
+  }
+  function addLinks(out, page, rects, links) {
+    let n = 0;
+    const P = PDFLib, ctx = out.context;
+    rects.forEach(function (k) {
+      const uri = links[k.key];
+      if (!uri) return;
+      const act = ctx.obj({ S: 'URI', URI: P.PDFString.of(encodeUri(uri)) });
+      page.node.addAnnot(ctx.register(ctx.obj({ Type: 'Annot', Subtype: 'Link', Rect: k.rect, Border: [0, 0, 0], A: act })));
+      n++;
+    });
+    return n;
+  }
+
   function buildPdf() {
     const src = st.src;
     if (!src) return Promise.reject(new Error('取り込んだPDFがありません'));
+    const linksP = loadLinks().catch(function () { return null; }); // 読めなければリンクなし
+    st.linkStat = null;
     return loadPdfLib().then(function () {
       const P = PDFLib;
       return Promise.all([P.PDFDocument.create(), P.PDFDocument.load(src.bytes, { ignoreEncryption: true })]).then(function (docs) {
@@ -637,9 +683,17 @@
         }).then(function (imgs) {
           // 予定表のページ: 台数の色を 製品名・重量・図番 にも塗った絵(元のページの向き=A4横)。塗れなければ元のページをそのまま
           if (!imgs) return out.copyPages(org, src.planPages).then(function (pages) { pages.forEach(function (p) { out.addPage(p); }); });
-          return imgs.reduce(function (pr, im) {
-            return pr.then(function () { return out.embedJpg(im.jpg); }).then(function (e) { out.addPage([im.w, im.h]).drawImage(e, { x: 0, y: 0, width: im.w, height: im.h }); });
-          }, Promise.resolve());
+          return linksP.then(function (links) {
+            const stat = { linked: 0, cells: 0, ok: !!links };
+            return imgs.reduce(function (pr, im) {
+              return pr.then(function () { return out.embedJpg(im.jpg); }).then(function (e) {
+                const pg = out.addPage([im.w, im.h]);
+                pg.drawImage(e, { x: 0, y: 0, width: im.w, height: im.h });
+                stat.cells += im.rects.length;
+                if (links) stat.linked += addLinks(out, pg, im.rects, links); // 図番・製品名のセルにリンク(見た目は変えない)
+              });
+            }, Promise.resolve()).then(function () { st.linkStat = stat; });
+          });
         }).then(function () {
           out.setTitle(title('late') + '・' + title('yesterday'));
           return out.save();
@@ -663,6 +717,7 @@
       a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
       sendLog('ダウンロード', fileName);
+      if (st.linkStat && !st.linkStat.ok) toast('図番・製品名のリンク表を読み込めなかったため、リンクなしでダウンロードしました');
     }).catch(function (e) { toast('PDFの作成に失敗しました: ' + e.message); });
   }
 
