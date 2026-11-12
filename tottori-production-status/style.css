@@ -1,5 +1,5 @@
 :root {
-  --bg: #f4f6f9;
+  --bg: #3a3f45; /* アプリの背景はかなり濃いグレー(2026-11-12 ユーザー指定) */
   --card: #ffffff;
   --ink: #1d2733;
   --muted: #5d6b7a;
@@ -26,8 +26,8 @@ body {
   line-height: 1.5;
 }
 .app-header {
-  background: var(--head);
-  color: #fff;
+  background: #c8ecc8; /* ヘッダー(上に固定の部分)は薄い緑・文字は黒(2026-11-12 ユーザー指定) */
+  color: #000;
   position: sticky;
   top: 0;
   z-index: 10;
@@ -53,10 +53,10 @@ body {
 .brand { display: flex; align-items: center; gap: 8px; }
 .logo { height: 34px; width: auto; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
 .logo-mark { fill: #ff4d5e; }
-.logo-text { fill: #ffffff; }
+.logo-text { fill: #000000; }
 .company { font-weight: 600; font-size: 14px; white-space: nowrap; }
-.hdr-meta { font-size: 13px; color: #c9d6e4; flex: 1; min-width: 200px; }
-.hdr-meta b { color: #fff; font-weight: 600; }
+.hdr-meta { font-size: 13px; color: #1d2733; flex: 1; min-width: 200px; }
+.hdr-meta b { color: #000; font-weight: 600; }
 
 .btn {
   font: inherit;
@@ -199,9 +199,9 @@ table.sheet td.days-cell { text-align: center; }
 .hdr-inner { display: grid; grid-template-columns: 1fr auto 1fr; flex-wrap: nowrap; }
 .app-header h1 { justify-self: center; text-align: center; }
 .hdr-side.right { justify-self: end; }
-/* 基準日・結果の日は白い背景側の右端 */
-.dates { text-align: right; font-size: 14px; color: var(--muted); margin: 0 2px 8px; }
-.dates b { color: var(--ink); font-weight: 700; }
+/* 基準日・結果の日は背景(濃いグレー)側の右端。背景が濃いので文字は明るく */
+.dates { text-align: right; font-size: 14px; color: #d5dbe2; margin: 0 2px 8px; }
+.dates b { color: #fff; font-weight: 700; }
 .dates:empty { display: none; }
 @media (max-width: 640px) {
   .hdr-inner { grid-template-columns: 0 auto 1fr; gap: 8px; }
