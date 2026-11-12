@@ -782,6 +782,43 @@
   $('noticeOk').addEventListener('click', closeNotice);
   $('dateClose').addEventListener('click', function () { $('dateModal').hidden = true; });
 
+  // ---- ダウンロードPDFの説明書をアプリの中で開く(2026-11-12 ユーザー指定) ----
+  // iPadのSafariは埋め込んだPDFを1ページ目しか出さないことがあるので、pdf.js で各ページを絵にして並べる(一度描いたら使い回す)
+  function openManual(ev) {
+    if (ev) ev.preventDefault();
+    if (st.busy) return;
+    $('manualView').hidden = false;
+    document.body.classList.add('manual-open');
+    $('manualView').scrollTop = 0;
+    if (st.manualDone || st.manualBusy) return;
+    if (typeof pdfjsLib === 'undefined') { $('manualLoading').textContent = '部品を読み込み中です。少し待ってからもう一度開いてください。'; return; }
+    st.manualBusy = true;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsLib.getDocument($('manualBtn').getAttribute('href')).promise.then(function (pdf) {
+      const list = [];
+      for (let i = 1; i <= pdf.numPages; i++) list.push(i);
+      return list.reduce(function (pr, i) {
+        return pr.then(function () { return pdf.getPage(i); }).then(function (pg) {
+          const w = Math.min(1600, $('manualPages').clientWidth - 24) * Math.min(2, window.devicePixelRatio || 1);
+          const vp0 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: w / vp0.width });
+          const cv = document.createElement('canvas');
+          cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+          cv.className = 'manual-page';
+          $('manualPages').appendChild(cv);
+          return pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        });
+      }, Promise.resolve());
+    }).then(function () { st.manualDone = true; $('manualLoading').hidden = true; })
+      .catch(function (e) { $('manualLoading').textContent = '説明書を開けませんでした: ' + e.message; })
+      .then(function () { st.manualBusy = false; });
+  }
+  function closeManual() {
+    $('manualView').hidden = true;
+    document.body.classList.remove('manual-open');
+  }
+  $('manualBtn').addEventListener('click', openManual);
+  $('manualClose').addEventListener('click', closeManual);
+
   init();
   sendLog('起動', '');
 })();
