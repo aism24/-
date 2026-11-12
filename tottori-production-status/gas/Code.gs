@@ -28,7 +28,7 @@
  * セットアップ手順は README.md を参照。
  */
 
-const CODE_VERSION = '2026-11-12b';
+const CODE_VERSION = '2026-11-12c';
 const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
@@ -235,7 +235,7 @@ function saveSchedule_(body) {
     cx_().plan = plan;
     // 加工結果の表(あれば)を保存する。このPDFに結果の表があるときだけ確かめる(前回のPDFの結果で、何度もポップアップを出さない)
     const results = (body.results || []).filter(function (x) { return x && x.mark; }).map(function (x) { return { name: String(x.name || ''), mark: String(x.mark), date: normalizeKey_(x.date) }; });
-    if (results.length) writeTable_(sheet_(SHEET_RESULT) || ensureSheet_(ss, SHEET_RESULT, HEAD_RESULT, true), HEAD_RESULT, results.map(function (x) { return [x.name, x.mark, x.date, now, fileName]; }), [0, 1, 2, 3, 4]);
+    if (results.length) { writeTable_(sheet_(SHEET_RESULT) || ensureSheet_(ss, SHEET_RESULT, HEAD_RESULT, true), HEAD_RESULT, results.map(function (x) { return [x.name, x.mark, x.date, now, fileName]; }), [0, 1, 2, 3, 4]); cx_().results = results; }
     writePdfRecord_(ss, now, fileName);
     // PDFの「MM.DD結果重量」の日付を控える(この日の結果を出す。結果の表が無いPDFなら今日を基準にする)
     propSet_('PDF_PREV', normalizeKey_(body.resultDate) || '');
@@ -269,9 +269,19 @@ function saveAbbr_(body) {
   }
 }
 
+// 加工結果の表に出てくる物件名(略称)。targetFiles_ に渡す形([略称])
+function resultNames_() {
+  const seen = {};
+  return readResults_().filter(function (x) { if (!x.name || seen[x.name]) return false; seen[x.name] = true; return true; }).map(function (x) { return [x.name]; });
+}
+
 function readResults_() {
-  const sh = sheet_(SHEET_RESULT);
-  return sh ? readTableRows_(sh, HEAD_RESULT.length).map(function (r) { return { name: String(r[0]), mark: String(r[1]), date: normalizeKey_(r[2]) }; }).filter(function (x) { return x.mark; }) : [];
+  const c = cx_();
+  if (!c.results) {
+    const sh = sheet_(SHEET_RESULT);
+    c.results = sh ? readTableRows_(sh, HEAD_RESULT.length).map(function (r) { return { name: String(r[0]), mark: String(r[1]), date: normalizeKey_(r[2]) }; }).filter(function (x) { return x.mark; }) : [];
+  }
+  return c.results;
 }
 
 // 対象ファイルを読んで一覧を作り(予定表が変わったので必ず作り直す)、加工結果を確かめる(2026-11-11 ユーザー指定)
@@ -418,7 +428,8 @@ function runRefresh_(opts) {
   const ss = cx_().ss;
   const site = String(infoGet_(INFO_SITE) || TARGET_SITE_DEFAULT).trim();
   const rows = indexRows_();
-  const fileIndex = targetFiles_(readFileIndex_(rows), planRows_(), userAbbr_());
+  // 読むファイル: 予定表に出てくる工事 + 加工結果の表に出てくる工事(予定表に無い工事を加工した日もあるため。2026-11-12 ユーザー指定)
+  const fileIndex = targetFiles_(readFileIndex_(rows), planRows_().concat(resultNames_()), userAbbr_());
   const calendar = readCalendar_(rows);
   const stateSh = sheet_(SHEET_STATE);
   const state = readState_(stateSh);
@@ -933,7 +944,7 @@ function toPayload_(b) {
   let workList = [];
   try { workList = JSON.parse(propGet_('WORKLIST') || '[]'); } catch (e) { workList = []; }
   const unknown = {};
-  planRows_().forEach(function (p) { if (p[0] && !abbr[p[0]]) unknown[p[0]] = true; });
+  planRows_().concat(resultNames_()).forEach(function (p) { if (p[0] && !abbr[p[0]]) unknown[p[0]] = true; }); // 加工結果の表だけに出てくる略称も選んでもらう
   return { abbr: abbr, workList: workList, unknown: Object.keys(unknown).sort(), plan: b.plan || null, lateBefore: b.baseDate ? weekStart_(b.baseDate) : '', baseDate: b.baseDate, prevDate: b.prevDate, lateFrom: b.baseDate ? lateCutoff_(b.baseDate) : '', updatedAt: b.updatedAt, pending: b.pending || 0, warnings: b.warnings || [], yesterday: b.yesterday, late: b.late, planDone: b.planDone || {} };
 }
 
