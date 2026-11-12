@@ -32,6 +32,7 @@ PDFは文字の読めるもの(Excelから書き出したもの)に限る。用�
 
 ## ファイル
 - `index.html` / `app.js` / `style.css`: 画面(静的ページ)。PDFはブラウザで作る(1ページ目は表をcanvasに300dpiで描いた画像、予定表のページは pdf-lib で元のPDFから写す)
+- `manual/manual.pdf`: ダウンロードPDFの説明書(A4横2ページ。開いた直後・リセット後の画面の黄色いボタンで開く)。元は `manual/manual.html`(表は架空の見本。公開リポジトリのため実データは載せない)。直したらPlaywrightで A4横・背景ありでPDFにし、index.html のリンクの `?v=` を上げる(2026-11-12)
 - `sample.json`: GASのURLが未設定のとき(または `?demo=1`)に出すサンプル(実データではない)
 - `gas/Code.gs`: GAS(新しいスプレッドシート「鳥取工場生産状況周知」に紐づけて使う)
 - `gas/appsscript.json`: GASの設定の参考(時間帯 Asia/Tokyo・Drive API v3)
