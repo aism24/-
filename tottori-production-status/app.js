@@ -355,7 +355,7 @@
         const dw = ts[i + 3] && colOf(ts[i + 3].x) === h && /-/.test(ts[i + 3].s) ? ts[i + 3].s : '';
         // cell: PDFの色付けに使う位置(台数・製品名・重量・図番の文字の位置。GASへは送らない)
         items.push({ date: h.date, name: curName[h.date] || '', mark: t.s, qty: +q.s, weight: +w.s, drawing: dw,
-          cell: { y: t.y, h: t.h || 6, qty: { x: q.x, w: q.w }, mark: t.s, dw: dw,
+          cell: { y: t.y, h: t.h || 6, qty: { x: q.x, w: q.w }, mark: t.s, dw: dw, name: curName[h.date] || '',
             paint: [[t, 'mark'], [w, 'weight']].concat(dw ? [[ts[i + 3], 'dw']] : []).map(function (z) { return { x: z[0].x, w: z[0].w, role: z[1] }; }) } });
         i += dw ? 3 : 2;
       }
@@ -413,8 +413,11 @@
       setData(res.data);
       const mt = missingText(res.data.plan);
       // 取込のお知らせは画面中央に出し、OKを押すまで消さない(2026-11-12 ユーザー指定)。OKの後に加工結果の確認を出す
-      notice('予定表を読み込みました(' + res.saved + '件)' + (mt ? '。' + mt : ''), function () { showResultCheck(res.resultCheck); });
-      return downloadPdf(); // 一覧が出たら、そのままPDFをダウンロード
+      // 一覧が出たら、そのままPDFをダウンロード。お知らせはPDFを作ったあとに出す(マスタで完了を確認して塗り直した件数を添えるため)
+      return downloadPdf().then(function () {
+        const fixed = st.linkStat ? st.linkStat.fixed : 0;
+        notice('予定表を読み込みました(' + res.saved + '件)' + (mt ? '。' + mt : '') + (fixed ? '\nマスタで完了を確認：' + fixed + '件' : ''), function () { showResultCheck(res.resultCheck); });
+      });
     }).catch(function (e) {
       if (!st.shown) landingState(false, '加工結果を送ってください', 'PDFを画面のどこかにドロップするか、フォルダから選んでください', '読み込めませんでした: ' + e.message);
       else showError('加工結果PDFの読み込みに失敗しました: ' + e.message);
@@ -540,6 +543,7 @@
   // セルの枠は絵の上で文字の左右・上下を枠線まで探して決める。文字(黒・赤など)は残し、背景の色だけを塗り替える。
   const PAINT_SCALE = 3; // 216dpi
   function paintedPlanPages(src) {
+    paintRow.fixed = 0;
     if (!src.cells || !src.cells.length) return Promise.resolve(null);
     return pdfjsLib.getDocument({ data: src.bytes.slice(0) }).promise.then(function (pdf) {
       return src.planPages.reduce(function (pr, pi) {
@@ -552,6 +556,8 @@
             return pg.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
               const im = ctx.getImageData(0, 0, cv.width, cv.height);
               const orig = new Uint8ClampedArray(im.data); // 色・枠は塗る前の絵で測る(先に塗った行に引きずられないように)
+              const pd = (st.data && st.data.planDone) || {};
+              src.cells.forEach(function (c) { c.done = pd[c.name + '\t' + c.mark] || ''; });
               src.cells.filter(function (c) { return c.page === pi; }).forEach(function (c) { paintRow(im, c, orig); });
               ctx.putImageData(im, 0, 0);
               // リンクの範囲をPDFの座標(左下が原点、単位pt)に直す
@@ -612,13 +618,19 @@
     c.rects = c.paint.filter(function (t) { return t.role !== 'weight'; }).map(function (t) { return { role: t.role, x0: t.x * S - 2, x1: (t.x + t.w) * S + 2, y0: (c.y - c.h) * S, y1: (c.y + c.h * 0.25) * S }; });
     const q = cellOf(c.qty);
     if (!q || q.x1 - q.x0 > 25 * S || q.y1 - q.y0 > 15 * S) { paintRow.miss = (paintRow.miss || 0) + 1; return; } // 台数のセルが大きすぎる=枠を取り違えた
-    const col = q.bg; // 台数のセルの色
+    let col = q.bg; // 台数のセルの色
+    // マスタでは加工済み(結果の日まで)なのに台数が青くない行は、台数も含めて薄い青で塗る(予定表の色付けの不足を補う。2026-11-12 ユーザー指定)
+    const fixDone = !!(c.done && dist(col, BLUE_LIGHT) > 80 && dist(col, BLUE_DARK) > 80);
+    if (fixDone) { col = BLUE_LIGHT; paintRow.fixed = (paintRow.fixed || 0) + 1; fill(q); }
     // 台数が色なし(白)なら 製品名・重量・図番 も白にする(重量・図番の元の色は消える)
     c.paint.forEach(function (t) {
       const r = cellOf(t, q);
       if (!r || r.x1 - r.x0 > 60 * S || r.y1 - r.y0 > 20 * S) { paintRow.miss = (paintRow.miss || 0) + 1; return; } // 枠が見つからない・大きすぎるときは塗らない
       paintRow.done = (paintRow.done || 0) + 1;
       c.rects.forEach(function (k) { if (k.role === t.role) { k.x0 = r.x0; k.x1 = r.x1; k.y0 = r.y0; k.y1 = r.y1; } });
+      fill(r);
+    });
+    function fill(r) {
       const lb = Math.max(1, lum(r.bg));
       for (let y = Math.round(r.y0) + 1; y < Math.round(r.y1); y++) {
         for (let x = Math.round(r.x0) + 1; x < Math.round(r.x1); x++) {
@@ -629,8 +641,9 @@
           for (let ch = 0; ch < 3; ch++) d[i + ch] = Math.min(255, Math.max(0, p[ch] + (col[ch] - r.bg[ch]) * (1 - a)));
         }
       }
-    });
+    }
   }
+  const BLUE_LIGHT = [0, 176, 240], BLUE_DARK = [0, 112, 192]; // 予定表の青(薄い青・濃い青。PDFの実際の色)
 
   // 実寸法師へのリンク表(shipping-list-link のマスタ。図番+TAB+製品名 → file://…tdf)を読む(2026-11-12 ユーザー指定)。
   // 読むだけ(向こうのアプリの記録・保存は動かない)。重複(リンクが複数)は付けない
@@ -693,7 +706,7 @@
                 stat.cells += im.rects.length;
                 if (links) stat.linked += addLinks(out, pg, im.rects, links); // 図番・製品名のセルにリンク(見た目は変えない)
               });
-            }, Promise.resolve()).then(function () { st.linkStat = stat; });
+            }, Promise.resolve()).then(function () { stat.fixed = paintRow.fixed || 0; st.linkStat = stat; });
           });
         }).then(function () {
           out.setTitle(title('late') + '・' + title('yesterday'));
