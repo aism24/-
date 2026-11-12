@@ -38,6 +38,22 @@
   // 物件ごとにまとめる(行の順はそのまま)
   // 前日出来高の備考(2026-11-12 ユーザー指定): 予定日より後に加工した(=遅れていた分を加工した)行だけ「11/5予定分対応」。それ以外は空欄
   // 行の形: [物件名, 製品名, 図番, 重量, 生産日, 部位, 数量, 工事番号, 予定日]
+  // 前日出来高の備考。マスタに無い製品(PDFの結果の表からそのまま入れた行)は赤字で「マスタが無い製品」
+  function noteOf(r) { return r[9] === 'nomaster' ? 'マスタが無い製品' : catchUp(r); }
+  // PDFの結果重量の表にあるのに案件マスターに見つからない製品を、PDFの数値・結果の日のまま結果の表に入れる(2026-11-12 ユーザー指定)。
+  // 行の形: [物件名, 製品名, 図番, 重量, 生産日, 部位, 数量, 工事番号, 予定日, 'nomaster']。並びは物件名ごと(同じ物件名の行のあと)。
+  // 入れた製品は「マスターデータに日付が入ってません」のポップアップからは外す(マスターにあって日付が無いものだけ出す)
+  function mergeNoMaster(d, rc) {
+    if (!d || !rc || !rc.missing) return rc;
+    const nf = {};
+    rc.missing.forEach(function (m) { if (!m.row) nf[m.name + '\t' + m.mark] = true; });
+    const add = (st.results || []).filter(function (x) { return nf[x.name + '\t' + x.mark]; });
+    if (add.length) {
+      const rows = (d.yesterday || []).concat(add.map(function (x) { return [x.name, x.mark, '', x.weight, x.date, x.part, x.qty, '', '', 'nomaster']; }));
+      d.yesterday = rows.map(function (r, i) { return [r, i]; }).sort(function (a, b) { return (a[0][0] < b[0][0] ? -1 : a[0][0] > b[0][0] ? 1 : 0) || (a[1] - b[1]); }).map(function (x) { return x[0]; });
+    }
+    return Object.assign({}, rc, { missing: rc.missing.filter(function (m) { return m.row; }) });
+  }
   function catchUp(r) {
     const plan = r[8], p = parts(plan);
     return p && r[4] && plan < r[4] ? p.m + '/' + p.d + '予定分対応' : '';
@@ -179,9 +195,10 @@
     fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'mapNames', map: map }) }).then(function (x) { return x.json(); }).then(function (res) {
       if (res.status !== 'success') throw new Error(res.message || '保存に失敗しました');
       $('abbrModal').hidden = true;
+      const rc = mergeNoMaster(res.data, res.resultCheck);
       setData(res.data);
       toast('略称の対応を保存しました');
-      showResultCheck(res.resultCheck);
+      showResultCheck(rc);
     }).catch(function (e) { toast('保存に失敗しました: ' + e.message); }).then(function () { btn.disabled = false; });
   }
 
@@ -200,12 +217,12 @@
     let html = '<thead><tr>' + head.map(function (h, i) { return '<th' + (i === 3 || i === 4 ? ' class="num"' : '') + '>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>';
     gs.forEach(function (g) {
       g.rows.forEach(function (r, i) {
-        const note = kind === 'yesterday' ? catchUp(r) : '';
-        html += '<tr' + (note ? ' class="catchup"' : '') + '><td class="work">' + (i === 0 ? esc(g.name) : '') + '</td><td class="part">' + esc(r[k.part]) + '</td><td class="mark">' + esc(r[1]) + '</td>'
+        const note = kind === 'yesterday' ? noteOf(r) : '', nm = r[9] === 'nomaster';
+        html += '<tr' + (note && !nm ? ' class="catchup"' : '') + '><td class="work">' + (i === 0 ? esc(g.name) : '') + '</td><td class="part">' + esc(r[k.part]) + '</td><td class="mark">' + esc(r[1]) + '</td>'
           + '<td class="num">' + esc(r[k.qty]) + '</td><td class="num">' + fmtW(r[3]) + '</td>';
         k.extra.forEach(function (e) {
           if (e.date) html += '<td class="date">' + esc(fmtDate(r[e.i])) + '</td>';
-          if (e.note) html += '<td class="note">' + esc(note) + '</td>';
+          if (e.note) html += '<td class="note' + (nm ? ' nomaster' : '') + '">' + esc(note) + '</td>';
           if (e.days) { const n = Number(r[e.i]) || 0; html += '<td class="days-cell"><span class="days ' + daysClass(n) + '">' + n + '日</span></td>'; }
         });
         html += '</tr>';
@@ -319,7 +336,8 @@
         if (q && w && /-/.test(t.s) && /^\d+$/.test(q.s) && /^\d+(\.\d+)?$/.test(w.s)) {
           // 物件名|部位|製品名… の行は、製品名の2つ左が物件名(「LP京都」のように日本語を含むこともある。2026-11-12 修正)。部位から始まる行は前の物件名のまま
           if (i >= 2) cur = ts[i - 2].s;
-          out.push({ date: date, name: cur, mark: t.s }); i += 2;
+          // 部位・数量・重量も控える(マスタに無い製品を結果の表にそのまま入れるため。2026-11-12)
+          out.push({ date: date, name: cur, mark: t.s, part: i >= 1 ? ts[i - 1].s : '', qty: +q.s, weight: +w.s }); i += 2;
         }
       }
     });
@@ -426,6 +444,7 @@
     file.arrayBuffer().then(function (buf) { bytes = buf.slice(0); return parsePlanPdf(buf, file.name); }).then(function (r) {
       planPages = r.planPages;
       cells = r.cells;
+      st.results = r.results;
       if (!st.shown) {
         landingState(true, '処理を実行中\n塗りつぶし＆ハイパーリンク付与', // 2行・中央揃え(2026-11-12 ユーザー指定)
           '予定表 ' + r.items.length + ' 件を案件マスターと照らし合わせています', '');
@@ -439,6 +458,7 @@
       clearInterval(progTimer);
       progress(80, 'PDFを作成中(塗りつぶし・リンク)');
       st.src = { bytes: bytes, planPages: planPages, cells: cells, name: file.name };
+      const rc = mergeNoMaster(res.data, res.resultCheck);
       setData(res.data); // 一覧は裏で作り、PDFができてから画面を切り替える(進捗バーを最後まで見せるため)
       const mt = missingText(res.data.plan);
       // 取込のお知らせは画面中央に出し、OKを押すまで消さない(2026-11-12 ユーザー指定)。OKの後に加工結果の確認を出す
@@ -449,7 +469,7 @@
         progress(null);
         if (!DEMO && (res.data.unknown || []).length && $('abbrModal').hidden) openAbbr(true); // 新しい略称があれば工事番号を選ぶ画面
         const fixed = st.linkStat ? st.linkStat.fixed : 0;
-        notice('予定表を読み込みました(' + res.saved + '件)' + (mt ? '。' + mt : '') + (fixed ? '\nマスタで完了を確認：' + fixed + '件' : ''), function () { showResultCheck(res.resultCheck); });
+        notice('予定表を読み込みました(' + res.saved + '件)' + (mt ? '。' + mt : '') + (fixed ? '\nマスタで完了を確認：' + fixed + '件' : ''), function () { showResultCheck(rc); });
       });
     }).catch(function (e) {
       progress(null);
@@ -558,13 +578,13 @@
       t.gs.forEach(function (g) {
         g.rows.forEach(function (r, i) {
           const cells = [{ i: 0, v: i === 0 ? g.name : '', bold: true }, { i: 1, v: r[kd.part] }, { i: 2, v: r[1] }, { i: 3, v: r[kd.qty] }, { i: 4, v: fmtW(r[3]), align: 'right' }];
-          const note = t.kind === 'yesterday' ? catchUp(r) : '';
+          const note = t.kind === 'yesterday' ? noteOf(r) : '', nm = r[9] === 'nomaster';
           kd.extra.forEach(function (e, j) {
-            if (e.note) cells.push({ i: 5 + j, v: note });
+            if (e.note) cells.push(nm ? { i: 5 + j, v: note, bold: true, color: '#d00000' } : { i: 5 + j, v: note });
             if (e.date) cells.push({ i: 5 + j, v: fmtDate(r[e.i]) });
             if (e.days) { const n = Number(r[e.i]) || 0; cells.push({ i: 5 + j, v: n + '日', bold: n >= 3, color: n >= 5 ? '#a3121c' : n >= 3 ? '#8a3d00' : '#1d2733' }); }
           });
-          line(cells, note ? CATCHUP_FILL : null);
+          line(cells, note && !nm ? CATCHUP_FILL : null);
         });
         subLine(subLabel(g.name, kd.sub), g.qty, g.weight);
       });
