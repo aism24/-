@@ -75,9 +75,7 @@ const PART_ORDER = ['柱', '大梁', '小梁']; // 一覧の並び: 物件名 �
 // ========== 1回のリクエストの中で読んだものを控える ==========
 
 let C_ = null;
-function begin_() { C_ = { ss: SpreadsheetApp.getActiveSpreadsheet(), sheets: {}, t0: Date.now(), timing: [] }; return C_; }
-// 【診断用・一時コード】区間ごとの時間(ms)。debug を付けた取込のときだけ応答に入れる。原因を確かめたら消す
-function mark_(label) { const c = cx_(); c.timing.push(label + ':' + (Date.now() - c.t0)); }
+function begin_() { C_ = { ss: SpreadsheetApp.getActiveSpreadsheet(), sheets: {} }; return C_; }
 function cx_() { return C_ || begin_(); }
 function sheet_(name) {
   const c = cx_();
@@ -219,7 +217,6 @@ function saveSchedule_(body) {
   if (!items.length) throw new Error('予定表の行がありません');
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(150000)) throw new Error('他の更新が終わらないため、受け付けられませんでした。1〜2分後にもう一度送ってください。');
-  mark_('lock');
   try {
     const ss = cx_().ss;
     const now = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss'); // 秒まで(「最後に読み込んだ予定表」を見分けるため)
@@ -239,7 +236,6 @@ function saveSchedule_(body) {
     const results = (body.results || []).filter(function (x) { return x && x.mark; }).map(function (x) { return { name: String(x.name || ''), mark: String(x.mark), date: normalizeKey_(x.date) }; });
     if (results.length) { writeTable_(sheet_(SHEET_RESULT) || ensureSheet_(ss, SHEET_RESULT, HEAD_RESULT, true), HEAD_RESULT, results.map(function (x) { return [x.name, x.mark, x.date, now, fileName]; }), [0, 1, 2, 3, 4]); cx_().results = results; }
     writePdfRecord_(ss, now, fileName);
-    mark_('saved');
     // PDFの「MM.DD結果重量」の日付を控える(この日の結果を出す。結果の表が無いPDFなら今日を基準にする)
     propSet_('PDF_PREV', normalizeKey_(body.resultDate) || '');
     const r = refreshAndCheck_(results);
@@ -292,8 +288,8 @@ function readResults_() {
 // 結果の製品に加工日が無いもの(製品名・行番号)を返す → 画面が「マスターデータに日付が入ってません」を出す。
 // 元のファイルを直接読み、更新日時が変わったものは runRefresh_ で読み直しているので、ここで更に読み直すことはしない
 // (以前は無ければ更新日時に関係なく読み直していたが、見つからない製品があると毎回 変換2回+作り直し が空振りしていた。2026-11-12)
-function refreshAndCheck_(results, force) {
-  const built = runRefresh_({ rebuild: true, force: force }).built;
+function refreshAndCheck_(results) {
+  const built = runRefresh_({ rebuild: true }).built;
   if (!results.length) return { built: built, check: null };
   const miss = findMissingDates_(dataRows_(), results, effectiveAbbr_());
   return { built: built, check: { date: results[0].date, checked: results.length, missing: miss } };
@@ -438,7 +434,6 @@ function runRefresh_(opts) {
   // 読むファイル: 予定表に出てくる工事 + 加工結果の表に出てくる工事(予定表に無い工事を加工した日もあるため。2026-11-12 ユーザー指定)
   const fileIndex = targetFiles_(readFileIndex_(rows), planRows_().concat(resultNames_()), userAbbr_());
   const calendar = readCalendar_(rows);
-  mark_('index');
   const stateSh = sheet_(SHEET_STATE);
   const state = readState_(stateSh);
 
@@ -474,7 +469,6 @@ function runRefresh_(opts) {
     state[entry.fileId] = { fileId: entry.fileId, workNo: entry.workNo, fileName: entry.fileName, mtime: mtime, importedAt: Date.now(), count: got ? got.length : (st ? st.count : 0), version: PARSE_VERSION, error: error };
   });
 
-  mark_('files' + fileIndex.length + '/changed' + changed);
   const live = {};
   fileIndex.forEach(function (e) { live[e.fileId] = e; });
   const removed = Object.keys(state).filter(function (id) { return !live[id]; }); // 対象から外れた・索引から消えたファイル
@@ -506,7 +500,6 @@ function runRefresh_(opts) {
     propSet_('WORKNAMES_SIG', namesSig);
   }
 
-  mark_('data' + allRows.length);
   saveWorkList_(rows);
   const built = buildLists_(allRows, calendar, today, planRows_(), effectiveAbbr_(), dates.prev);
   if (pending > 0) warnings.push('時間内に読み切れなかった案件が' + pending + '件あります。1分後に自動で続きを読みます。');
@@ -515,7 +508,6 @@ function runRefresh_(opts) {
   built.updatedAt = now;
   writeOutputs_(built);
   scheduleContinue_(pending > 0);
-  mark_('outputs');
   return { pending: pending, changed: changed, built: built };
 }
 
