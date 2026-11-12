@@ -176,7 +176,7 @@ table.sheet tr.total td { border-top: 2px solid #8a98a8; }
 .landing[hidden] { display: none; }
 .landing-box { text-align: center; padding: 48px 24px; width: min(640px, 100%); border: 3px dashed #b9c6d6; border-radius: 20px; background: var(--card); }
 .landing-icon { width: 72px; height: 72px; color: var(--accent); }
-.landing-title { margin: 12px 0 6px; font-size: 28px; }
+.landing-title { margin: 12px 0 6px; font-size: 28px; white-space: pre-line; text-align: center; line-height: 1.4; }
 .landing-sub { margin: 0 0 22px; color: var(--muted); font-size: 15px; }
 .landing-btn { font-size: 17px; padding: 12px 28px; }
 .landing-err { margin-top: 16px; color: #a3121c; font-size: 14px; white-space: pre-line; }
