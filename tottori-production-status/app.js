@@ -878,6 +878,7 @@
     document.body.classList.remove('manual-open');
   }
   $('manualBtn').addEventListener('click', openManual);
+  $('manualBtnHdr').addEventListener('click', openManual); // 一覧の画面ではヘッダーの左端のボタンから開く(2026-11-12 ユーザー指定)
   $('manualClose').addEventListener('click', closeManual);
 
   init();

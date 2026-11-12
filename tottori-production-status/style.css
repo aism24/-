@@ -253,6 +253,14 @@ table.sheet td.note { white-space: nowrap; font-size: 13px; }
 }
 @media (prefers-reduced-motion: reduce) { .manual-btn { animation: none; box-shadow: 0 0 10px 3px rgba(255, 196, 0, .6); } }
 .landing.busy .manual-wrap { display: none; }
+/* 一覧の画面では、同じボタンをヘッダー(アプリ名の帯)の左端に出す(2026-11-12 ユーザー指定)。最初の画面は枠の中のボタンだけ */
+.hdr-side.left { justify-self: start; min-width: 0; }
+.manual-btn-hdr { padding: 5px 14px; font-size: 14px; border-radius: 10px; white-space: nowrap; }
+.landing-mode .manual-btn-hdr { display: none; }
+@media (max-width: 640px) {
+  body:not(.landing-mode) .hdr-inner { grid-template-columns: auto auto 1fr; }
+  .manual-btn-hdr { padding: 4px 8px; font-size: 12px; }
+}
 
 /* 説明書の表示(アプリの中・全画面) */
 .manual-view { position: fixed; inset: 0; z-index: 50; background: #e9edf2; overflow: auto; -webkit-overflow-scrolling: touch; }
