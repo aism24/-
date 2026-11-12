@@ -5,7 +5,7 @@
 <title>鳥取工場 生産状況</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="style.css?v=20261112n">
+<link rel="stylesheet" href="style.css?v=20261112q">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body class="landing-mode">
@@ -25,7 +25,9 @@
     <div class="landing-box">
       <svg class="landing-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M14 4h14l10 10v28a2 2 0 0 1-2 2H14a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><path d="M28 4v10h10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><path d="M24 36V20m-6 6 6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <h2 class="landing-title" id="landingTitle">加工結果を送ってください</h2>
+      <p class="landing-sub landing-note" id="landingNote" hidden>※ﾏｽﾀｰﾃﾞｰﾀにある製品より実寸リンク作成</p>
       <p class="landing-sub" id="landingSub">PDFを画面のどこかにドロップするか、フォルダから選んでください</p>
+      <div class="progress" id="progress" hidden><div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div><div class="progress-text" id="progressText"></div></div>
       <label class="btn primary landing-btn" id="landingPick">フォルダから選ぶ<input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden></label>
       <div class="landing-err" id="landingErr" hidden></div>
     </div>
@@ -93,7 +95,7 @@
   </div>
 </div>
 
-<script src="app.js?v=20261112p"></script>
+<script src="app.js?v=20261112q"></script>
 <script>
 // 会社ロゴを5回続けて(1.5秒以内の間隔で)タップすると、この端末だけ「← アプリ一覧へ」が出る(ブラウザに記憶)。もう一度5回で消える
 // (2026-11-11、ユーザー指示。truck-fax・shipping-list-link と同じ仕組み)
