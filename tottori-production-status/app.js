@@ -790,7 +790,8 @@
           if (st.data) { sortLateNext(); render('late'); }
           // 遅れ・結果の表のページ(A4縦。行が多ければ複数ページ)
           return drawSummaryPages().reduce(function (pr, cv) {
-            return pr.then(function () { return out.embedPng(cv.toDataURL('image/png')); }).then(function (img) {
+            // 高画質のJPEGで入れる(PNGより作る時間が約1.7秒短い。2026-11-12)
+            return pr.then(function () { return out.embedJpg(cv.toDataURL('image/jpeg', 0.92)); }).then(function (img) {
               const pg = out.addPage([595.28, 841.89]);
               pg.drawImage(img, { x: 0, y: 0, width: 595.28, height: 841.89 });
             });
