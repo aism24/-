@@ -217,7 +217,8 @@
 
   function title(kind) {
     const d = st.data;
-    return kind === 'late' ? '鳥取工場' + fmtMD(d.baseDate) + '生産遅れ' : '鳥取工場' + fmtMD(d.prevDate) + '結果重量';
+    return kind === 'late' ? '現在遅れている物' : // 遅れの表の題名(2026-11-12 ユーザー指定)
+      '鳥取工場' + fmtMD(d.prevDate) + '結果重量';
   }
 
   function render(kind) {
