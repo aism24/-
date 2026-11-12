@@ -73,7 +73,7 @@ CLAUDE.md から分離(2026-10-21)。恒久ルールは CLAUDE.md、ここは詳
 
 **運用の原則**: 全アプリのGit連携を解除したままにする。連携が無ければpush・マージでデプロイは起きず、ユーザーが「デプロイして」と指示したアプリだけを `create_deployment` で1つずつデプロイする(連携は不要。Vercelプロジェクトの新規作成と連携の付け外しだけがユーザー操作)。連携が1件でも残っていたら、push・マージ前にユーザーへ解除を依頼する。
 
-**最新の確認**: 2026-11-12、`list_projects`(repoUrl=aism24/-)は0件(tottori-production-status の作成・初回デプロイ・連携解除の後)。
+**最新の確認**: 2026-11-12 10:53、`list_projects`(repoUrl=aism24/-)は0件(tottori-production-status の2回目の本番デプロイの前後)。
 
 **`vercel.json` の `git.deploymentEnabled=false` が無いフォルダ**(2026-10-19時点。2026-10-21に production-management・unso-check へ追加済み): pdf-diff-app(functionsの設定だけ)・tdf-master-web・jissun-master-jidokinyu・kozai-toriai・weld-heat-management。連携は0件なので今は自動デプロイされないが、これらのVercelプロジェクトを `aism24/-` に連携し直す前に、必ずそのフォルダへ置くこと(特に pdf-diff-app は1デプロイごとにFunctions Storageを消費する)。
 
@@ -203,3 +203,4 @@ Previewデプロイが発生する)
 - 2026-11-11(9回目): tdf-master-web の修正(梁モード: 設計符号 TH441 などをサイズと取り違えて行を読み飛ばす不具合(H形鋼系の接頭辞で始まり「x」が無い文字は設計符号)・行の範囲の結果の直線が範囲にかからないとき直線8本以上で範囲にかかる別の候補を全長にする(26-17 小梁 B1M2B-05・06・07)。scripts/tdf_app.py・tdf_master_extractor.py と index.html の埋め込み)(PR #1263。gas/Code.gs は変更なし)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。コミット ff6a684。dpl_CEn9RHjet8WBK8wEDkHRdRZhH37x、READY)。本番の画面に変更が入っていることを確認。
 - 2026-11-11(10回目): tdf-master-web の修正(梁モード: 主軸の判定が外れて向きを問わず長さを決めたとき、裏付けの直線の数を0本として扱い、行をまとめる処理が別の梁の長さに差し替える不具合(26-17 B1M3B-05 の B1M3TH489-3)。scripts/tdf_app.py と index.html の埋め込み)(PR #1265。gas/Code.gs は変更なし)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。コミット c67bf63。dpl_CNQW2PGaqMfeKg6vpBpUdVQ9dQHX、READY)。本番の画面に変更が入っていることを確認。
 - 2026-11-11(11回目): tdf-master-web の修正(梁モード(3項目パターン): 片側の継手もサイズも取れないとき、同じ長さの直線がある別の高さ(上の図・下の図)で継手・サイズを探し直す(26-17 B2M2B-08 の B2M2HB100z-1・3)。scripts/tdf_app.py と index.html の埋め込み)(PR #1267。gas/Code.gs は変更なし)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。コミット dc0a282。dpl_A8av29NXmSHVNgwiRSzQKtCR3nqs、READY)。本番の画面に変更が入っていることを確認。
+- 2026-11-12: tottori-production-status の「マスタに無い製品を結果の表に入れる(備考は赤字「マスタに無い製品」)」(PR #1306・#1307。app.js?v=20261112x)を、ユーザーの「デプロイして」で `create_deployment` により本番デプロイ(連携なし。project=prj_XFeczz1cHsriKxzA7muHtiJptvR2。コミット d337f9f。dpl_9G87kyBhVMjcxz3VPbTzMYHgcR2c=READY、alias `tottori-production-status.vercel.app`)。デプロイ前の直近24時間は全アプリ合計10回(Hobby上限100)、今回で11回。`https://tottori-production-status.vercel.app/` が200で `app.js?v=20261112x` を返し、app.js に「マスタに無い製品」が入っていることを確認。公開GASは `CODE_VERSION` 2026-11-12d(変更なし)。
