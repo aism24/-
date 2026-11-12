@@ -63,6 +63,14 @@
   // st.next は予定表のページを塗るとき(paintRow)に台数のセルの元の色から作る(物件名+TAB+製品名 → true)
   const NEXT_FILL = '#ffff00';
   function isNext(r) { return !!(st.next && st.next[r[0] + '\t' + r[1]]); }
+  // 遅れの並び: 工事(物件名)ごとに、次の加工予定(黄色)の行を先頭に。それ以外と黄色の行どうしは今までの並び(予定日の古い順→部位→案件マスターの行)のまま(2026-11-12 ユーザー指定)
+  function sortLateNext() {
+    const d = st.data;
+    if (!d || !d.late || !st.next) return;
+    d.late = d.late.map(function (r, i) { return [r, i]; }).sort(function (a, b) {
+      return (a[0][0] < b[0][0] ? -1 : a[0][0] > b[0][0] ? 1 : 0) || ((isNext(a[0]) ? 0 : 1) - (isNext(b[0]) ? 0 : 1)) || (a[1] - b[1]);
+    }).map(function (x) { return x[0]; });
+  }
   function isYellow(c) { return c[0] >= 200 && c[1] >= 200 && c[2] <= 100; } // 予定表の黄色(255,255,0)。橙(255,192,0)・薄い黄(255,255,204)は含めない
 
   // 工事別の合計行の見出し: 【ITM】　遅れ合計(2026-11-12 ユーザー指定)
@@ -519,85 +527,103 @@
   }
 
   // 1ページ目の絵(A4縦・300dpi)。単位はmm(ctx.scale で px に直す)
-  function drawSummaryPage() {
-    const d = st.data, PX = 300 / 25.4, W = 210, H = 297, M = 10, GAP = 5;
-    const cv = document.createElement('canvas');
-    cv.width = Math.round(W * PX); cv.height = Math.round(H * PX);
-    const c = cv.getContext('2d');
-    c.scale(PX, PX);
-    c.fillStyle = '#fff'; c.fillRect(0, 0, W, H);
+  // 行が多いときは SUMMARY_ROWS 行(見出しの行を除く。合計行を含む)ごとに次のページへ分ける。
+  // 2ページ目以降も、見出し(アプリ名・結果の日・基準日)・表の題名と合計重量・列の見出し(物件名…)は同じように入れる(2026-11-12 ユーザー指定)
+  const SUMMARY_ROWS = 60;
+  function drawSummaryPages() {
+    const d = st.data, PX = 300 / 25.4, W = 210, H = 297, M = 10, GAP = 5, top = M + 8;
     const FONT = '"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo","Noto Sans JP","Noto Sans CJK JP",sans-serif';
-    const font = function (size, bold) { c.font = (bold ? 'bold ' : '') + size + 'px ' + FONT; };
-    // 文字が枠に入らなければ横に縮める
-    const text = function (s, x, y, w, align, size, bold, color) {
-      s = String(s == null ? '' : s);
-      font(size, bold);
-      c.fillStyle = color || '#1d2733';
-      c.textBaseline = 'middle';
-      const tw = c.measureText(s).width, room = w - 1.2;
-      c.save();
-      let x0 = align === 'left' ? x + 0.6 : align === 'right' ? x + w - 0.6 : x + w / 2;
-      if (tw > room && room > 0) { const k = room / tw; c.translate(x0, y); c.scale(k, 1); x0 = 0; y = 0; }
-      c.textAlign = align || 'center';
-      c.fillText(s, x0, y);
-      c.restore();
-    };
-    // 見出し
-    text('鳥取工場 生産状況', M, M + 3, 100, 'left', 5.2, true);
-    text('結果の日 ' + fmtDateY(d.prevDate) + '・基準日 ' + fmtDateY(d.baseDate), W - M - 100, M + 3, 100, 'right', 3.2, false, '#5d6b7a');
-    let top = M + 8;
-    // 「…予定通り完了したものと考えます」はPDFに入れない(2026-11-12 ユーザー指定。読み込み時のお知らせにだけ出す)
     // 2つの表の列(mm)。遅れ: 物件名|部位|製品名|数量|重量|予定日|遅れ  結果: 物件名|部位|製品名|数量|重量|備考
-    const colsL = [12, 9, 27, 8, 13, 15, 10], colsR = [12, 9, 27, 8, 13, 28]; // 結果: …|備考
+    const colsL = [12, 9, 27, 8, 13, 15, 10], colsR = [12, 9, 27, 8, 13, 28];
     const sum = function (a) { return a.reduce(function (x, y) { return x + y; }, 0); };
     const k = (W - 2 * M - GAP) / (sum(colsL) + sum(colsR));
     const wl = colsL.map(function (v) { return v * k; }), wr = colsR.map(function (v) { return v * k; });
     const tables = [{ kind: 'late', x: M, w: wl }, { kind: 'yesterday', x: M + sum(wl) + GAP, w: wr }];
-    tables.forEach(function (t) { t.gs = groups(d[t.kind] || [], KIND[t.kind]); t.rows = t.gs.reduce(function (a, g) { return a + g.rows.length + 1; }, 0) + (t.gs.length ? 1 : 0); });
-    const maxRows = Math.max(1, tables[0].rows, tables[1].rows) + 1; // +見出し
-    const rh = Math.min(5.2, (H - M - top - 9) / maxRows), fs = Math.min(3.1, rh * 0.62);
-    const FILL = { late: '#cfe8f7', yesterday: '#fff2a8' }, FILL_TOTAL = { late: '#7fbbe6', yesterday: '#ffd23f' }; // 総合計は工事別合計より濃く
+    // 表ごとの行の並び(製品の行・工事別の合計・総合計)
     tables.forEach(function (t) {
-      const kd = KIND[t.kind], tw = sum(t.w), tt = totals(t.gs);
-      text(title(t.kind), t.x, top + 3.5, tw * 0.75, 'left', 4.2, true);
-      text(fmtW(tt.weight) + 't', t.x + tw * 0.6, top + 3.5, tw * 0.4, 'right', 4.2, true);
-      let y = top + 7;
-      const line = function (cells, fill, bold) {
-        let x = t.x;
-        if (fill) { c.fillStyle = fill; c.fillRect(t.x, y, tw, rh); }
-        c.strokeStyle = '#808080'; c.lineWidth = 0.15;
-        cells.forEach(function (cell) {
-          const w = cell.span ? t.w.slice(cell.i, cell.i + cell.span).reduce(function (a, b) { return a + b; }, 0) : t.w[cell.i];
-          c.strokeRect(x, y, w, rh);
-          text(cell.v, x, y + rh / 2, w, cell.align, fs, bold || cell.bold, cell.color);
-          x += w;
-        });
-        y += rh;
-      };
-      const head = ['物件名', '部位', '製品名', '数量', '重量'].concat(kd.extra.map(function (e) { return e.label; }));
-      line(head.map(function (h, i) { return { i: i, v: h }; }), '#eef2f7', true);
-      const subLine = function (label, qty, weight, isTotal) {
-        const cells = [{ i: 0, span: 3, v: label }, { i: 3, v: qty }, { i: 4, v: fmtW(weight), align: 'right' }];
-        if (t.w.length > 5) cells.push({ i: 5, span: t.w.length - 5, v: '' });
-        line(cells, (isTotal ? FILL_TOTAL : FILL)[t.kind], true);
-      };
+      t.gs = groups(d[t.kind] || [], KIND[t.kind]);
+      t.items = [];
       t.gs.forEach(function (g) {
-        g.rows.forEach(function (r, i) {
-          const cells = [{ i: 0, v: i === 0 ? g.name : '', bold: true }, { i: 1, v: r[kd.part] }, { i: 2, v: r[1] }, { i: 3, v: r[kd.qty] }, { i: 4, v: fmtW(r[3]), align: 'right' }];
+        g.rows.forEach(function (r) { t.items.push({ type: 'row', r: r, g: g }); });
+        t.items.push({ type: 'sub', g: g });
+      });
+      if (t.gs.length) t.items.push({ type: 'total' });
+    });
+    const most = Math.max(1, tables[0].items.length, tables[1].items.length);
+    const nPages = Math.ceil(most / SUMMARY_ROWS);
+    const perPage = Math.min(most, SUMMARY_ROWS);
+    const rh = Math.min(5.2, (H - M - top - 9) / (perPage + 1)), fs = Math.min(3.1, rh * 0.62); // +1 = 列の見出し
+    const FILL = { late: '#cfe8f7', yesterday: '#fff2a8' }, FILL_TOTAL = { late: '#7fbbe6', yesterday: '#ffd23f' }; // 総合計は工事別合計より濃く
+    const pages = [];
+    for (let pi = 0; pi < nPages; pi++) {
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(W * PX); cv.height = Math.round(H * PX);
+      const c = cv.getContext('2d');
+      c.scale(PX, PX);
+      c.fillStyle = '#fff'; c.fillRect(0, 0, W, H);
+      const font = function (size, bold) { c.font = (bold ? 'bold ' : '') + size + 'px ' + FONT; };
+      // 文字が枠に入らなければ横に縮める
+      const text = function (s, x, y, w, align, size, bold, color) {
+        s = String(s == null ? '' : s);
+        font(size, bold);
+        c.fillStyle = color || '#1d2733';
+        c.textBaseline = 'middle';
+        const tw = c.measureText(s).width, room = w - 1.2;
+        c.save();
+        let x0 = align === 'left' ? x + 0.6 : align === 'right' ? x + w - 0.6 : x + w / 2;
+        if (tw > room && room > 0) { const k = room / tw; c.translate(x0, y); c.scale(k, 1); x0 = 0; y = 0; }
+        c.textAlign = align || 'center';
+        c.fillText(s, x0, y);
+        c.restore();
+      };
+      // 見出し(どのページにも同じものを入れる)
+      text('鳥取工場 生産状況', M, M + 3, 100, 'left', 5.2, true);
+      text('結果の日 ' + fmtDateY(d.prevDate) + '・基準日 ' + fmtDateY(d.baseDate) + (nPages > 1 ? '(' + (pi + 1) + '/' + nPages + ')' : ''), W - M - 110, M + 3, 110, 'right', 3.2, false, '#5d6b7a');
+      // 「…予定通り完了したものと考えます」はPDFに入れない(2026-11-12 ユーザー指定。読み込み時のお知らせにだけ出す)
+      tables.forEach(function (t) {
+        const kd = KIND[t.kind], tw = sum(t.w), tt = totals(t.gs);
+        text(title(t.kind), t.x, top + 3.5, tw * 0.75, 'left', 4.2, true);
+        text(fmtW(tt.weight) + 't', t.x + tw * 0.6, top + 3.5, tw * 0.4, 'right', 4.2, true);
+        let y = top + 7;
+        const line = function (cells, fill, bold) {
+          let x = t.x;
+          if (fill) { c.fillStyle = fill; c.fillRect(t.x, y, tw, rh); }
+          c.strokeStyle = '#808080'; c.lineWidth = 0.15;
+          cells.forEach(function (cell) {
+            const w = cell.span ? t.w.slice(cell.i, cell.i + cell.span).reduce(function (a, b) { return a + b; }, 0) : t.w[cell.i];
+            c.strokeRect(x, y, w, rh);
+            text(cell.v, x, y + rh / 2, w, cell.align, fs, bold || cell.bold, cell.color);
+            x += w;
+          });
+          y += rh;
+        };
+        const head = ['物件名', '部位', '製品名', '数量', '重量'].concat(kd.extra.map(function (e) { return e.label; }));
+        line(head.map(function (h, i) { return { i: i, v: h }; }), '#eef2f7', true);
+        const subLine = function (label, qty, weight, isTotal) {
+          const cells = [{ i: 0, span: 3, v: label }, { i: 3, v: qty }, { i: 4, v: fmtW(weight), align: 'right' }];
+          if (t.w.length > 5) cells.push({ i: 5, span: t.w.length - 5, v: '' });
+          line(cells, (isTotal ? FILL_TOTAL : FILL)[t.kind], true);
+        };
+        const slice = t.items.slice(pi * SUMMARY_ROWS, (pi + 1) * SUMMARY_ROWS);
+        slice.forEach(function (it, j) {
+          if (it.type === 'sub') return subLine(subLabel(it.g.name, kd.sub), it.g.qty, it.g.weight);
+          if (it.type === 'total') return subLine(kd.total, tt.qty, tt.weight, true);
+          const r = it.r, prev = j > 0 ? slice[j - 1] : null;
+          const showName = !prev || prev.type !== 'row' || prev.g !== it.g; // 工事の最初の行と、ページの最初の行には物件名を出す
+          const cells = [{ i: 0, v: showName ? it.g.name : '', bold: true }, { i: 1, v: r[kd.part] }, { i: 2, v: r[1] }, { i: 3, v: r[kd.qty] }, { i: 4, v: fmtW(r[3]), align: 'right' }];
           const note = t.kind === 'yesterday' ? noteOf(r) : '', nm = r[9] === 'nomaster';
-          kd.extra.forEach(function (e, j) {
-            if (e.note) cells.push(nm ? { i: 5 + j, v: note, bold: true, color: '#d00000' } : { i: 5 + j, v: note });
-            if (e.date) cells.push({ i: 5 + j, v: fmtDate(r[e.i]) });
-            if (e.days) { const n = Number(r[e.i]) || 0; cells.push({ i: 5 + j, v: n + '日', bold: n >= 3, color: n >= 5 ? '#a3121c' : n >= 3 ? '#8a3d00' : '#1d2733' }); }
+          kd.extra.forEach(function (e, jj) {
+            if (e.note) cells.push(nm ? { i: 5 + jj, v: note, bold: true, color: '#d00000' } : { i: 5 + jj, v: note });
+            if (e.date) cells.push({ i: 5 + jj, v: fmtDate(r[e.i]) });
+            if (e.days) { const n = Number(r[e.i]) || 0; cells.push({ i: 5 + jj, v: n + '日', bold: n >= 3, color: n >= 5 ? '#a3121c' : n >= 3 ? '#8a3d00' : '#1d2733' }); }
           });
           line(cells, note && !nm ? CATCHUP_FILL : t.kind === 'late' && isNext(r) ? NEXT_FILL : null);
         });
-        subLine(subLabel(g.name, kd.sub), g.qty, g.weight);
+        if (!t.gs.length && pi === 0) text(t.kind === 'late' ? '遅れている製品はありません' : '結果の日の出来高はありません', t.x, y + rh / 2, tw, 'center', fs, false, '#5d6b7a');
       });
-      if (t.gs.length) subLine(kd.total, tt.qty, tt.weight, true);
-      else text(t.kind === 'late' ? '遅れている製品はありません' : '結果の日の出来高はありません', t.x, y + rh / 2, tw, 'center', fs, false, '#5d6b7a');
-    });
-    return cv;
+      pages.push(cv);
+    }
+    return pages;
   }
 
   // 予定表のページを絵にして、製品ごとに「台数」のセルの色を 製品名・重量・図番 のセルにも塗る(2026-11-12 ユーザー指定。どの製品がまだかを分かりやすく)。
@@ -760,11 +786,14 @@
         // 先に予定表のページを塗る(台数の色から、遅れのうち次の加工予定=黄色の製品が分かる)→ 遅れの表(画面・1ページ目)を黄色付きで作る
         return paintedPlanPages(src).then(function (x) {
           imgs = x;
-          if (st.data) render('late');
-          return out.embedPng(drawSummaryPage().toDataURL('image/png'));
-        }).then(function (img) {
-          const pg = out.addPage([595.28, 841.89]); // A4縦
-          pg.drawImage(img, { x: 0, y: 0, width: 595.28, height: 841.89 });
+          if (st.data) { sortLateNext(); render('late'); }
+          // 遅れ・結果の表のページ(A4縦。行が多ければ複数ページ)
+          return drawSummaryPages().reduce(function (pr, cv) {
+            return pr.then(function () { return out.embedPng(cv.toDataURL('image/png')); }).then(function (img) {
+              const pg = out.addPage([595.28, 841.89]);
+              pg.drawImage(img, { x: 0, y: 0, width: 595.28, height: 841.89 });
+            });
+          }, Promise.resolve());
         }).then(function () {
           // 予定表のページ: 台数の色を 製品名・重量・図番 にも塗った絵(元のページの向き=A4横)。塗れなければ元のページをそのまま
           if (!imgs) return out.copyPages(org, src.planPages).then(function (pages) { pages.forEach(function (p) { out.addPage(p); }); });
