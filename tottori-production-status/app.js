@@ -844,14 +844,101 @@
   $('dateClose').addEventListener('click', function () { $('dateModal').hidden = true; });
 
   // ---- ダウンロードPDFの説明書をアプリの中で開く(2026-11-12 ユーザー指定) ----
-  // iPadのSafariは埋め込んだPDFを1ページ目しか出さないことがあるので、pdf.js で各ページを絵にして並べる(一度描いたら使い回す)
+  // iPadのSafariは埋め込んだPDFを1ページ目しか出さないことがあるので、pdf.js で各ページを絵にする(一度描いたら使い回す)。
+  // 1ページずつ画面いっぱいに出し、ホイール(スクロール)・2本指でズーム、ドラッグで移動。「前へ」「次へ」でめくる
+  const MZ_Q = 3, MZ_MAX = 5; // 絵の細かさ(PDFの1ptあたりの画素)・ズームの上限(画面に合わせた大きさの何倍まで)
+  const mz = { page: 0, s: 1, fit: 1, x: 0, y: 0, ptrs: {}, pinch: null };
+  function mzPages() { return Array.prototype.slice.call($('manualPages').querySelectorAll('.manual-page')); }
+  function mzApply() {
+    const cv = mzPages()[mz.page];
+    if (!cv) return;
+    const st0 = $('manualPages'), W = st0.clientWidth, H = st0.clientHeight, w = cv.mzW * mz.s, h = cv.mzH * mz.s;
+    // はみ出さないように: 画面より小さければ中央、大きければ端が画面の内側に来ないように
+    mz.x = w <= W ? (W - w) / 2 : Math.min(0, Math.max(W - w, mz.x));
+    mz.y = h <= H ? (H - h) / 2 : Math.min(0, Math.max(H - h, mz.y));
+    cv.style.transform = 'translate(' + mz.x + 'px,' + mz.y + 'px) scale(' + mz.s + ')';
+  }
+  function mzFit() {
+    const cv = mzPages()[mz.page];
+    if (!cv) return;
+    const st0 = $('manualPages'), pad = 16;
+    mz.fit = Math.min((st0.clientWidth - pad * 2) / cv.mzW, (st0.clientHeight - pad * 2) / cv.mzH);
+    mz.s = mz.fit; mz.x = 0; mz.y = 0;
+    mzApply();
+  }
+  function mzShow(i) {
+    const pages = mzPages();
+    if (!pages.length) return;
+    mz.page = Math.max(0, Math.min(pages.length - 1, i));
+    pages.forEach(function (cv, k) { cv.hidden = k !== mz.page; });
+    $('manualPrev').classList.toggle('off', mz.page === 0);
+    $('manualNext').classList.toggle('off', mz.page >= pages.length - 1);
+    mzFit();
+  }
+  // (cx, cy) の点を動かさずに倍率を変える
+  function mzZoom(ns, cx, cy) {
+    ns = Math.max(mz.fit, Math.min(mz.fit * MZ_MAX, ns));
+    mz.x = cx - (cx - mz.x) * ns / mz.s;
+    mz.y = cy - (cy - mz.y) * ns / mz.s;
+    mz.s = ns;
+    mzApply();
+  }
+  (function () {
+    const st0 = $('manualPages');
+    const local = function (e) { const r = st0.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    st0.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      const p = local(e), dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      mzZoom(mz.s * Math.exp(-dy * 0.0015), p.x, p.y);
+    }, { passive: false });
+    st0.addEventListener('pointerdown', function (e) {
+      if (!mzPages().length) return;
+      st0.setPointerCapture(e.pointerId);
+      mz.ptrs[e.pointerId] = local(e);
+      const ids = Object.keys(mz.ptrs);
+      if (ids.length === 2) {
+        const a = mz.ptrs[ids[0]], b = mz.ptrs[ids[1]];
+        mz.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, s: mz.s };
+      }
+      st0.classList.add('dragging');
+    });
+    st0.addEventListener('pointermove', function (e) {
+      const prev = mz.ptrs[e.pointerId];
+      if (!prev) return;
+      const p = local(e);
+      mz.ptrs[e.pointerId] = p;
+      const ids = Object.keys(mz.ptrs);
+      if (ids.length >= 2 && mz.pinch) { // 2本指: 指の間の距離でズーム(中心はそのまま)
+        const a = mz.ptrs[ids[0]], b = mz.ptrs[ids[1]];
+        mzZoom(mz.pinch.s * Math.hypot(a.x - b.x, a.y - b.y) / mz.pinch.d, (a.x + b.x) / 2, (a.y + b.y) / 2);
+      } else if (ids.length === 1) { // 1本指・マウス: 移動
+        mz.x += p.x - prev.x; mz.y += p.y - prev.y;
+        mzApply();
+      }
+    });
+    const up = function (e) {
+      delete mz.ptrs[e.pointerId];
+      if (Object.keys(mz.ptrs).length < 2) mz.pinch = null;
+      if (!Object.keys(mz.ptrs).length) st0.classList.remove('dragging');
+    };
+    st0.addEventListener('pointerup', up);
+    st0.addEventListener('pointercancel', up);
+    st0.addEventListener('dblclick', function () { mzFit(); }); // ダブルクリックで元の大きさ
+    window.addEventListener('resize', function () { if (!$('manualView').hidden) mzFit(); });
+    document.addEventListener('keydown', function (e) {
+      if ($('manualView').hidden) return;
+      if (e.key === 'ArrowRight') mzShow(mz.page + 1);
+      if (e.key === 'ArrowLeft') mzShow(mz.page - 1);
+    });
+  })();
   function openManual(ev) {
     if (ev) ev.preventDefault();
     if (st.busy) return;
     $('manualView').hidden = false;
     document.body.classList.add('manual-open');
-    $('manualView').scrollTop = 0;
-    if (st.manualDone || st.manualBusy) return;
+    if (st.manualDone) { mzShow(0); return; }
+    $('manualPrev').classList.add('off'); $('manualNext').classList.add('off');
+    if (st.manualBusy) return;
     if (typeof pdfjsLib === 'undefined') { $('manualLoading').textContent = '部品を読み込み中です。少し待ってからもう一度開いてください。'; return; }
     st.manualBusy = true;
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -860,16 +947,18 @@
       for (let i = 1; i <= pdf.numPages; i++) list.push(i);
       return list.reduce(function (pr, i) {
         return pr.then(function () { return pdf.getPage(i); }).then(function (pg) {
-          const w = Math.min(1600, $('manualPages').clientWidth - 24) * Math.min(2, window.devicePixelRatio || 1);
-          const vp0 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: w / vp0.width });
+          const vp0 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: MZ_Q });
           const cv = document.createElement('canvas');
           cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+          cv.mzW = vp0.width; cv.mzH = vp0.height; // 画面上の大きさ(倍率1のとき)
+          cv.style.width = vp0.width + 'px'; cv.style.height = vp0.height + 'px';
           cv.className = 'manual-page';
+          cv.hidden = true;
           $('manualPages').appendChild(cv);
           return pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
         });
       }, Promise.resolve());
-    }).then(function () { st.manualDone = true; $('manualLoading').hidden = true; })
+    }).then(function () { st.manualDone = true; $('manualLoading').hidden = true; if (!$('manualView').hidden) mzShow(0); })
       .catch(function (e) { $('manualLoading').textContent = '説明書を開けませんでした: ' + e.message; })
       .then(function () { st.manualBusy = false; });
   }
@@ -877,6 +966,8 @@
     $('manualView').hidden = true;
     document.body.classList.remove('manual-open');
   }
+  $('manualPrev').addEventListener('click', function () { mzShow(mz.page - 1); });
+  $('manualNext').addEventListener('click', function () { mzShow(mz.page + 1); });
   $('manualBtn').addEventListener('click', openManual);
   $('manualBtnHdr').addEventListener('click', openManual); // 一覧の画面ではヘッダーの左端のボタンから開く(2026-11-12 ユーザー指定)
   $('manualClose').addEventListener('click', closeManual);
