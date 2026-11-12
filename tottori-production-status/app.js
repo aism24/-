@@ -402,7 +402,8 @@
     file.arrayBuffer().then(function (buf) { bytes = buf.slice(0); return parsePlanPdf(buf, file.name); }).then(function (r) {
       planPages = r.planPages;
       cells = r.cells;
-      if (!st.shown) landingState(true, '照らし合わせています…', '予定表 ' + r.items.length + ' 件を案件マスターと照らし合わせています(しばらくかかることがあります)', '');
+      if (!st.shown) landingState(true, '処理を実行中\n塗りつぶし＆ハイパーリンク付与', // 2行・中央揃え(2026-11-12 ユーザー指定)
+         '予定表 ' + r.items.length + ' 件を案件マスターと照らし合わせています(しばらくかかることがあります)', '');
       else toast('予定表から ' + r.items.length + ' 件を読み取りました。案件マスターと照らし合わせています…');
       return fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'schedule', fileName: file.name, items: r.items, results: r.results, resultDate: r.resultDate }) }).then(function (x) { return x.json(); });
     }).then(function (res) {
@@ -582,11 +583,11 @@
     };
     // 背景を測る高さ: 文字の上下のすき間の候補のうち、周り(左右・上下)が同じ色の所(=枠線や文字の上ではない)
     const bgAt = function (x) {
-      const cand = [0.9, 1.0, 0.8, 1.1, 0.7, -0.25, -0.35, -0.15];
+      const cand = [0.9, 1.0, 0.95, 0.85, 1.05, 0.8, 1.1, 0.7, -0.25, -0.3, -0.35, -0.2, -0.15]; // 行の間が狭い表もあるので細かく試す
       for (let n = 0; n < cand.length; n++) {
         const y = (c.y - c.h * cand[n]) * S, p = px(x, y);
         if (!p) continue;
-        const ok = [[-4, 0], [4, 0], [0, -2], [0, 2], [-4, -2], [4, 2]].every(function (o) { const z = px(x + o[0], y + o[1]); return z && dist(z, p) < 30; });
+        const ok = [[-4, 0], [4, 0], [0, -1], [0, 1], [-4, -1], [4, 1]].every(function (o) { const z = px(x + o[0], y + o[1]); return z && dist(z, p) < 30; });
         if (ok) return { y: y, bg: p };
       }
       return null;
