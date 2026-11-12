@@ -59,6 +59,11 @@
     return p && r[4] && plan < r[4] ? p.m + '/' + p.d + '予定分対応' : '';
   }
   const CATCHUP_FILL = '#d9f2d9'; // 薄い緑
+  // 遅れのうち、予定表で台数のセルが黄色(=次の加工予定)の製品は、遅れの表の行も黄色にする(2026-11-12 ユーザー指定)。
+  // st.next は予定表のページを塗るとき(paintRow)に台数のセルの元の色から作る(物件名+TAB+製品名 → true)
+  const NEXT_FILL = '#ffff00';
+  function isNext(r) { return !!(st.next && st.next[r[0] + '\t' + r[1]]); }
+  function isYellow(c) { return c[0] >= 200 && c[1] >= 200 && c[2] <= 100; } // 予定表の黄色(255,255,0)。橙(255,192,0)・薄い黄(255,255,204)は含めない
 
   // 工事別の合計行の見出し: 【ITM】　遅れ合計(2026-11-12 ユーザー指定)
   function subLabel(name, label) { return '【' + (name || '') + '】\u3000' + label; }
@@ -218,7 +223,8 @@
     gs.forEach(function (g) {
       g.rows.forEach(function (r, i) {
         const note = kind === 'yesterday' ? noteOf(r) : '', nm = r[9] === 'nomaster';
-        html += '<tr' + (note && !nm ? ' class="catchup"' : '') + '><td class="work">' + (i === 0 ? esc(g.name) : '') + '</td><td class="part">' + esc(r[k.part]) + '</td><td class="mark">' + esc(r[1]) + '</td>'
+        const cls = note && !nm ? 'catchup' : kind === 'late' && isNext(r) ? 'next' : '';
+        html += '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td class="work">' + (i === 0 ? esc(g.name) : '') + '</td><td class="part">' + esc(r[k.part]) + '</td><td class="mark">' + esc(r[1]) + '</td>'
           + '<td class="num">' + esc(r[k.qty]) + '</td><td class="num">' + fmtW(r[3]) + '</td>';
         k.extra.forEach(function (e) {
           if (e.date) html += '<td class="date">' + esc(fmtDate(r[e.i])) + '</td>';
@@ -394,7 +400,7 @@
   // リセット: 一覧を消して、開いた直後の「加工結果を送ってください」に戻す(2026-11-12 ユーザー指定。GASのデータには触れない)
   function reset() {
     if (st.busy) return;
-    st.data = null; st.src = null; st.shown = false; st.noticeOk = null;
+    st.data = null; st.src = null; st.next = null; st.shown = false; st.noticeOk = null;
     ['noticeModal', 'dateModal', 'abbrModal', 'warn', 'toast'].forEach(function (id) { $(id).hidden = true; });
     ['lateTable', 'yesterdayTable', 'meta', 'planInfo'].forEach(function (id) { $(id).innerHTML = ''; });
     $('resultView').hidden = true;
@@ -584,7 +590,7 @@
             if (e.date) cells.push({ i: 5 + j, v: fmtDate(r[e.i]) });
             if (e.days) { const n = Number(r[e.i]) || 0; cells.push({ i: 5 + j, v: n + '日', bold: n >= 3, color: n >= 5 ? '#a3121c' : n >= 3 ? '#8a3d00' : '#1d2733' }); }
           });
-          line(cells, note && !nm ? CATCHUP_FILL : null);
+          line(cells, note && !nm ? CATCHUP_FILL : t.kind === 'late' && isNext(r) ? NEXT_FILL : null);
         });
         subLine(subLabel(g.name, kd.sub), g.qty, g.weight);
       });
@@ -599,6 +605,7 @@
   const PAINT_SCALE = 3; // 216dpi
   function paintedPlanPages(src) {
     paintRow.fixed = 0;
+    st.next = {};
     if (!src.cells || !src.cells.length) return Promise.resolve(null);
     return pdfjsLib.getDocument({ data: src.bytes.slice(0) }).promise.then(function (pdf) {
       return src.planPages.reduce(function (pr, pi) {
@@ -675,6 +682,7 @@
     const q = cellOf(c.qty);
     if (!q || q.x1 - q.x0 > 25 * S || q.y1 - q.y0 > 15 * S) { paintRow.miss = (paintRow.miss || 0) + 1; return; } // 台数のセルが大きすぎる=枠を取り違えた
     let col = q.bg; // 台数のセルの色
+    if (isYellow(q.bg)) st.next[c.name + '\t' + c.mark] = true; // 次の加工予定(黄色)
     // マスタでは加工済み(結果の日まで)なのに台数が青くない行は、台数も含めて薄い青で塗る(予定表の色付けの不足を補う。2026-11-12 ユーザー指定)
     const fixDone = !!(c.done && dist(col, BLUE_LIGHT) > 80 && dist(col, BLUE_DARK) > 80);
     if (fixDone) { col = BLUE_LIGHT; paintRow.fixed = (paintRow.fixed || 0) + 1; fill(q); }
@@ -748,12 +756,16 @@
       const P = PDFLib;
       return Promise.all([P.PDFDocument.create(), P.PDFDocument.load(src.bytes, { ignoreEncryption: true })]).then(function (docs) {
         const out = docs[0], org = docs[1];
-        const png = drawSummaryPage().toDataURL('image/png');
-        return out.embedPng(png).then(function (img) {
+        let imgs = null;
+        // 先に予定表のページを塗る(台数の色から、遅れのうち次の加工予定=黄色の製品が分かる)→ 遅れの表(画面・1ページ目)を黄色付きで作る
+        return paintedPlanPages(src).then(function (x) {
+          imgs = x;
+          if (st.data) render('late');
+          return out.embedPng(drawSummaryPage().toDataURL('image/png'));
+        }).then(function (img) {
           const pg = out.addPage([595.28, 841.89]); // A4縦
           pg.drawImage(img, { x: 0, y: 0, width: 595.28, height: 841.89 });
-          return paintedPlanPages(src);
-        }).then(function (imgs) {
+        }).then(function () {
           // 予定表のページ: 台数の色を 製品名・重量・図番 にも塗った絵(元のページの向き=A4横)。塗れなければ元のページをそのまま
           if (!imgs) return out.copyPages(org, src.planPages).then(function (pages) { pages.forEach(function (p) { out.addPage(p); }); });
           return linksP.then(function (links) {
