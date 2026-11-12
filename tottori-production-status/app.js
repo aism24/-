@@ -315,9 +315,12 @@
       const ts = ln.ts.filter(function (t) { return t.x >= x0; });
       for (let i = 0; i < ts.length; i++) {
         const t = ts[i];
-        if (i === 0 && /^[A-Za-z][A-Za-z0-9]{1,9}$/.test(t.s)) { cur = t.s; continue; }
         const q = ts[i + 1], w = ts[i + 2];
-        if (q && w && /-/.test(t.s) && /^\d+$/.test(q.s) && /^\d+(\.\d+)?$/.test(w.s)) { out.push({ date: date, name: cur, mark: t.s }); i += 2; }
+        if (q && w && /-/.test(t.s) && /^\d+$/.test(q.s) && /^\d+(\.\d+)?$/.test(w.s)) {
+          // 物件名|部位|製品名… の行は、製品名の2つ左が物件名(「LP京都」のように日本語を含むこともある。2026-11-12 修正)。部位から始まる行は前の物件名のまま
+          if (i >= 2) cur = ts[i - 2].s;
+          out.push({ date: date, name: cur, mark: t.s }); i += 2;
+        }
       }
     });
     return out;
