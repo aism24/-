@@ -263,15 +263,31 @@ table.sheet td.note { white-space: nowrap; font-size: 13px; }
 }
 
 /* 説明書の表示(アプリの中・全画面) */
-.manual-view { position: fixed; inset: 0; z-index: 50; background: #e9edf2; overflow: auto; -webkit-overflow-scrolling: touch; }
+/* 1ページずつ画面いっぱいに表示。ホイール(スクロール)・2本指でズーム、ドラッグで移動。「前へ」「次へ」でページをめくる(2026-11-12 ユーザー指定) */
+.manual-view { position: fixed; inset: 0; z-index: 50; background: #e9edf2; overflow: hidden; display: flex; flex-direction: column; }
 .manual-view[hidden] { display: none; }
-.manual-bar { position: sticky; top: 0; z-index: 1; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: var(--head); color: #fff; }
+.manual-bar { position: relative; flex: none; z-index: 1; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: var(--head); color: #fff; }
 .manual-title { font-weight: 700; font-size: 18px; text-align: center; }
 .manual-bar .btn { justify-self: end; }
 .manual-bar .btn { font-size: 16px; padding: 10px 20px; }
-.manual-pages { max-width: 1640px; margin: 0 auto; padding: 16px 12px calc(24px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; gap: 16px; }
-.manual-page { width: 100%; max-width: 1600px; height: auto; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, .2); border-radius: 4px; }
-.manual-loading { padding: 40px; color: var(--muted); }
+.manual-pages { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none; cursor: grab; margin-bottom: env(safe-area-inset-bottom); }
+.manual-pages.dragging { cursor: grabbing; }
+.manual-page { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, .2); }
+.manual-page[hidden] { display: none; }
+.manual-nav { display: flex; align-items: center; gap: 14px; justify-self: center; }
+.manual-nav-btn { font: inherit; font-size: 16px; font-weight: 700; color: #000; background: #ffe14d; border: 2px solid #f5b400; border-radius: 10px; padding: 8px 16px; cursor: pointer; white-space: nowrap; }
+.manual-nav-btn:hover { background: #ffd61f; }
+.manual-nav-btn.off { visibility: hidden; } /* 1ページ目は「前へ」、最後のページは「次へ」を出さない(題名が中央からずれないよう場所は残す) */
+@media (max-width: 760px) {
+  .manual-bar { grid-template-columns: 0 1fr auto; gap: 8px; padding-left: 8px; padding-right: 8px; }
+  .manual-title { font-size: 14px; }
+  .manual-nav { gap: 6px; }
+  .manual-nav-btn { font-size: 14px; padding: 6px 10px; }
+  .manual-bar .btn { font-size: 14px; padding: 8px 12px; }
+  .manual-title { white-space: nowrap; }
+}
+@media (max-width: 560px) { .manual-title { display: none; } } /* スマホ幅では題名を出さず「前へ」「次へ」「閉じる」だけ */
+.manual-loading { padding: 40px; color: var(--muted); text-align: center; }
 body.manual-open { overflow: hidden; }
 
 /* マスタに無い製品(PDFの結果の表からそのまま入れた行)の備考は赤の太字(2026-11-12 ユーザー指定) */

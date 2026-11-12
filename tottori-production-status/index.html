@@ -5,7 +5,7 @@
 <title>鳥取工場 生産状況</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="style.css?v=20261112mb">
+<link rel="stylesheet" href="style.css?v=20261112mv">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body class="landing-mode">
@@ -63,7 +63,7 @@
 
 <!-- ダウンロードPDFの説明書(アプリの中で開く。「説明書を閉じる」で初期画面に戻る。2026-11-12 ユーザー指定) -->
 <div class="manual-view" id="manualView" hidden>
-  <div class="manual-bar"><span></span><span class="manual-title">ダウンロードPDFの説明書</span><button type="button" class="btn primary" id="manualClose">説明書を閉じる</button></div>
+  <div class="manual-bar"><span></span><div class="manual-nav"><button type="button" class="manual-nav-btn" id="manualPrev">◀ 前へ</button><span class="manual-title">ダウンロードPDFの説明書</span><button type="button" class="manual-nav-btn" id="manualNext">次へ ▶</button></div><button type="button" class="btn primary" id="manualClose">説明書を閉じる</button></div>
   <div class="manual-pages" id="manualPages"><div class="manual-loading" id="manualLoading">説明書を読み込んでいます…</div></div>
 </div>
 
@@ -102,7 +102,7 @@
   </div>
 </div>
 
-<script src="app.js?v=20261112mb"></script>
+<script src="app.js?v=20261112mv"></script>
 <script>
 // 会社ロゴを5回続けて(1.5秒以内の間隔で)タップすると、この端末だけ「← アプリ一覧へ」が出る(ブラウザに記憶)。もう一度5回で消える
 // (2026-11-11、ユーザー指示。truck-fax・shipping-list-link と同じ仕組み)
