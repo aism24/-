@@ -650,7 +650,10 @@
 
   function downloadPdf() {
     if (!st.data || !st.src) return Promise.resolve();
-    const fileName = '鳥取_生産状況_' + String(st.data.baseDate).replace(/-/g, '') + '.pdf';
+    // ファイル名: 取り込んだファイル名 + 「_新_」 + ダウンロードした日時(秒まで。重複を防ぐ)。例: 261110_加工結果_新_20261112_091530.pdf(2026-11-12 ユーザー指定)
+    const z = function (n) { return ('0' + n).slice(-2); }, now = new Date();
+    const base = String(st.src.name || '加工結果').replace(/\.pdf$/i, '').replace(/[\\/:*?"<>|]/g, '_');
+    const fileName = base + '_新_' + now.getFullYear() + z(now.getMonth() + 1) + z(now.getDate()) + '_' + z(now.getHours()) + z(now.getMinutes()) + z(now.getSeconds()) + '.pdf';
     return buildPdf().then(function (bytes) {
       const blob = new Blob([bytes], { type: 'application/pdf' });
       const a = document.createElement('a');
