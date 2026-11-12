@@ -226,3 +226,7 @@ table.sheet tfoot td { box-shadow: 0 -3px 8px rgba(0, 0, 0, .12); }
 @media (max-width: 760px) {
   .panel .table-wrap { max-height: calc(100vh - 160px); max-height: calc(100dvh - 160px); }
 }
+
+/* 前日出来高: 遅れていた分を加工した行(備考「m/d予定分対応」)は薄い緑(2026-11-12 ユーザー指定) */
+.done table.sheet tr.catchup td { background: #d9f2d9; }
+table.sheet td.note { white-space: nowrap; font-size: 13px; }
