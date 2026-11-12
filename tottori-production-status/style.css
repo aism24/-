@@ -197,6 +197,8 @@ table.sheet td.days-cell { text-align: center; }
 
 /* ヘッダー(2026-11-12 ユーザー指定): アプリ名=中央、会社ロゴと会社名=右端。スクロールしても上に残す(sticky) */
 .hdr-inner { display: grid; grid-template-columns: 1fr auto 1fr; flex-wrap: nowrap; }
+/* 最初の画面では、会社ロゴ・会社名の右端を下の「加工結果を送ってください」の枠(幅640px)の右端に合わせる(2026-11-12 ユーザー指定)。一覧の画面は表の右端(1200px)に合わせたまま */
+.landing-mode .hdr-inner { max-width: calc(640px + 32px); }
 .app-header h1 { justify-self: center; text-align: center; }
 .hdr-side.right { justify-self: end; }
 /* 基準日・結果の日は背景(濃いグレー)側の右端。背景が濃いので文字は明るく */
