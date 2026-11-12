@@ -215,6 +215,8 @@
     }).catch(function (e) { toast('保存に失敗しました: ' + e.message); }).then(function () { btn.disabled = false; });
   }
 
+  // 遅れの表の題名の後ろに小さく出す説明(2026-11-12 ユーザー指定)
+  const LATE_NOTE = '（黄色着色は次回加工予定を示す）';
   function title(kind) {
     const d = st.data;
     return kind === 'late' ? '現在遅れている物' : // 遅れの表の題名(2026-11-12 ユーザー指定)
@@ -224,7 +226,7 @@
   function render(kind) {
     const d = st.data, k = KIND[kind];
     const gs = groups(d[kind] || [], k), t = totals(gs);
-    $(kind + 'Title').textContent = title(kind);
+    $(kind + 'Title').innerHTML = esc(title(kind)) + (kind === 'late' ? '<small class="title-note">' + esc(LATE_NOTE) + '</small>' : '');
     $(kind + 'Total').textContent = fmtW(t.weight) + 't';
     $(kind + 'Note').hidden = true; // 表の説明文は出さない(2026-11-12 ユーザー指定)
     const head = ['物件名', '部位', '製品名', '数量', '重量'].concat(k.extra.map(function (e) { return e.label; }));
@@ -585,6 +587,11 @@
         const kd = KIND[t.kind], tw = sum(t.w), tt = totals(t.gs);
         text(title(t.kind), t.x, top + 3.5, tw * 0.75, 'left', 4.2, true);
         text(fmtW(tt.weight) + 't', t.x + tw * 0.6, top + 3.5, tw * 0.4, 'right', 4.2, true);
+        if (t.kind === 'late') { // 題名の後ろに小さく説明(合計重量と重ならない幅に収める)
+          font(4.2, true); const t1 = c.measureText(title(t.kind)).width + 1.2;
+          font(4.2, true); const t2 = c.measureText(fmtW(tt.weight) + 't').width + 2;
+          text(LATE_NOTE, t.x + t1, top + 3.7, tw - t1 - t2, 'left', 2.6, false);
+        }
         let y = top + 7;
         const line = function (cells, fill, bold) {
           let x = t.x;
