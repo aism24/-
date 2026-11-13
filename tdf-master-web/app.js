@@ -262,8 +262,16 @@ function inputRecOf(r) {
 //   { state: 'same' } = 図番・製品名が同じで、4項目も同じ(追記しない)
 //   { state: 'diff', diffs: [...] } = 図番・製品名は同じだが、4項目のどれかが違う(追記しない。違いを知らせる)
 // 同じ図番・製品名が入力データに複数あるときは、どれか1つと同じなら 'same'、どれとも違えば最後の行との違いを出す。
+// 本数で分けた行「X(2)」は、入力データに分ける前の書き方の「X・本数3」のように、本数が2以上ある行があれば、
+// すでにあるとみなす(本数は比べない。2026-11-13 ユーザー指示)。
 function inputStatus(rec) {
-  const list = inputBook.info.byKey.get(inputKey(rec.I, rec.J));
+  let list = inputBook.info.byKey.get(inputKey(rec.I, rec.J));
+  let skipM = false;
+  const pm = !list && String(rec.J).normalize('NFKC').trim().match(/^(.*)\((\d+)\)$/);
+  if (pm) {
+    const old = (inputBook.info.byKey.get(inputKey(rec.I, pm[1])) || []).filter(ex => (parseInt(ex.M) || 0) >= Number(pm[2]));
+    if (old.length) { list = old; skipM = true; }
+  }
   if (!list) return { state: 'none' };
   const nz = s => String(s ?? '').normalize('NFKC').replace(/\s/g, '');
   const size = s => nz(s).replace(/[×X*]/g, 'x');
@@ -274,7 +282,7 @@ function inputStatus(rec) {
     const exL = parseFloat(ex.L);
     // 図面から長さを読めなかった行(rec.L が空)は、長さを比べない
     if (rec.L != null && !(isFinite(exL) && Math.abs(exL - rec.L) <= 0.1 + 1e-6)) d.push(`長さ ${isFinite(exL) ? exL : '(空)'} → ${rec.L}`);
-    if ((parseInt(ex.M) || null) !== (rec.M ?? null)) d.push(`本数 ${show(ex.M)} → ${show(rec.M)}`);
+    if (!skipM && (parseInt(ex.M) || null) !== (rec.M ?? null)) d.push(`本数 ${show(ex.M)} → ${show(rec.M)}`);
     if (nz(ex.Y) !== nz(rec.Y)) d.push(`J若番 ${show(ex.Y)} → ${show(rec.Y)}`);
     if (nz(ex.AB) !== nz(rec.AB)) d.push(`J老番 ${show(ex.AB)} → ${show(rec.AB)}`);
     return d;
@@ -560,6 +568,28 @@ function countMarks(results) {
   return m;
 }
 
+// 本数(台数)で行を分ける(2026-11-13 ユーザー指示。帳票チェックで取り込むExcelもこの形)。
+// 本数が2以上の行は、本数の数だけ「製品マーク(1)」「製品マーク(2)」…の行にし、本数を1にする
+// (最後の数字が合計の本数)。本数1の行は製品マークに()を付けない。本数はどの行も数字だけ(「台」なし)。
+// ほかの項目(図番・サイズ・長さ・継手など)はすべて元の行と同じ。重量は本数1で計算するので1本あたり。
+// 本数を読めない行・製品マークが空の行は、そのまま残す。
+const PIECE_MARK_RE = /\((\d+)\)$/; // 製品マークの最後の「(数字)」= 何本目か
+function honsuNum(v) {
+  const m = String(v ?? '').normalize('NFKC').match(/^\s*(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+function splitByCount(rows) {
+  const out = [];
+  for (const r of rows) {
+    const n = honsuNum(r['本数']);
+    const mark = String(r['製品マーク'] ?? '').trim();
+    if (n == null || !mark) { out.push(r); continue; }
+    if (n <= 1) { out.push({ ...r, '本数': n }); continue; }
+    for (let i = 1; i <= n; i++) out.push({ ...r, '製品マーク': `${mark}(${i})`, '本数': 1 });
+  }
+  return out;
+}
+
 function processFiles(files) {
   return withBusy(() => processFilesInner(files));
 }
@@ -612,6 +642,10 @@ async function processFilesInner(files) {
 
   document.getElementById('btn-reset').disabled = false;
 
+  // ポップアップ(長さの確認・長さが不明瞭・製品マークの重複)は分ける前の行で出す(同じ製品が台数分並ばないように)
+  const baseRows = extractedResults;
+  extractedResults = splitByCount(baseRows);
+
   extractedResults.sort((a, b) => jaCompare(a['図番'], b['図番']) || jaCompare(a['製品マーク'], b['製品マーク']));
 
   const kojiRaw = kojiNo.replace(/-/g, '');
@@ -633,14 +667,14 @@ async function processFilesInner(files) {
   if (noTableFiles.length > 0) {
     showErrorDialog('製品情報が見つからなかったファイル', noTableFiles);
   }
-  const lengthChecks = extractedResults.filter(r => r['長さの確認']);
+  const lengthChecks = baseRows.filter(r => r['長さの確認']);
   if (lengthChecks.length > 0) showLengthCheckDialog(lengthChecks);
   // 長さを求められなかった行(製品の行はあるが、図から長さの範囲を決められなかった)
-  const lengthUnclear = extractedResults.filter(r => r['長さ'] == null && !r['長さの確認']);
+  const lengthUnclear = baseRows.filter(r => r['長さ'] == null && !r['長さの確認']);
   if (lengthUnclear.length > 0) showLengthUnclearDialog(lengthUnclear);
   // 同じ製品マークが2回以上ある(図面の書き間違いの可能性。26-16 WB3-EVMRB-01 で
   // WB32-PHESB250-1 が2回書かれていた)。行はそのまま残し、図面の確認を促す。
-  const dupMarks = [...countMarks(extractedResults).entries()].filter(([, rs]) => rs.length > 1);
+  const dupMarks = [...countMarks(baseRows).entries()].filter(([, rs]) => rs.length > 1);
   if (dupMarks.length > 0) showDuplicateMarkDialog(dupMarks);
 }
 
@@ -1102,6 +1136,18 @@ async function readDownloadedExcel(file) {
     });
   }
   if (rows.length === 0) throw new Error('製品行がありません');
+  // 本数で分ける前の書き方(製品マークに()が無く、本数が2以上)のExcelは、取り込むときに分ける
+  // (2026-11-13。新しい書き方のExcelと混ぜても同じ形になり、重複も見つけられるように)。重量は1本あたりにする。
+  const split = [];
+  for (const r of rows) {
+    const n = honsuNum(r.honsu);
+    const mark = String(r.mark).trim();
+    if (n == null || !mark) { split.push(r); continue; }
+    if (n <= 1 || PIECE_MARK_RE.test(mark.normalize('NFKC'))) { split.push({ ...r, honsu: n }); continue; }
+    const w = typeof r.weight === 'number' ? r.weight / n : r.weight;
+    for (let i = 1; i <= n; i++) split.push({ ...r, mark: `${mark}(${i})`, honsu: 1, weight: w });
+  }
+  rows.splice(0, rows.length, ...split);
   const kojis = rows.map(r => r.kojiNo).filter(Boolean);
   return { kojiNo: kojis[0] || '', rows, isColumn };
 }
