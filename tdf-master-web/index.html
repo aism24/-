@@ -1117,6 +1117,36 @@ def determine_length(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float,
     best = scored[0]
     debug = {"main_axis_deg": main_axis_deg, "candidates": scored,
               "threshold": threshold, "max_v": max_v}
+    if best[3] == 0 and best[1] <= 1 and len(scored) > 1:
+        # 傾いて描かれた梁で、寸法の文字の向きの多数決の主軸(0°)が梁と合わず、主軸に沿った直線が1本だけの
+        # 別の寸法(通り芯の間)を選ぶことがある(2026-11-13、26-17 EMRB-01 の EMRb2-1。6.9°傾いた 1419.5 の
+        # 直線が9本あるのに、0°の 1645.5(直線1本)になっていた。ユーザー確認: 1.4195・斜め梁)。
+        # 候補の寸法の文字自身の向きに沿った同じ長さの直線が4本以上、かつ選んだ候補の4倍以上あれば、
+        # その候補とその向きを使う。
+        own_rots: dict[float, set] = {}
+        for _t, v, _x, _y, rot, _xr, _yr in items:
+            own_rots.setdefault(round(v, 2), set()).add(round(math.degrees(rot) % 180.0, 1))
+        best_alt = None
+        for val, _a, _b, _p in scored[1:]:
+            for rdeg in own_rots.get(val, ()):
+                if min(abs(rdeg - main_axis_deg % 180.0), 180.0 - abs(rdeg - main_axis_deg % 180.0)) <= 5.0:
+                    continue
+                cnt = 0
+                for ln in tdf.lines:
+                    mid_x = (ln.x1 + ln.x2) / 2
+                    if not (x_min <= mid_x <= x_max and ln.y1 > y_ref and ln.y2 > y_ref
+                            and (y_max is None or (ln.y1 < y_max and ln.y2 < y_max))):
+                        continue
+                    if abs(ln.length - val) >= 0.5:
+                        continue
+                    dd = abs(line_angle_deg(ln.x1, ln.y1, ln.x2, ln.y2) - rdeg)
+                    if min(dd, 180 - dd) <= 5.0:
+                        cnt += 1
+                if cnt >= 4 and cnt >= 4 * max(best[1], 1) and (best_alt is None or cnt > best_alt[1]):
+                    best_alt = (val, cnt, rdeg)
+        if best_alt is not None:
+            debug["main_axis_deg"] = best_alt[2]
+            return best_alt[0], {**debug, "reason": "own-text-axis candidate used"}
     if best[3] == 0 and best[1] == 0:
         # フォールバック(2026-09-14追加): 小梁の斜め材で、寸法テキスト自身の
         # rotが部材の傾きと一致しないケース(EA2-1B-03のEA21-1b2)があり、
