@@ -14,6 +14,7 @@
   保存はlocalStorage(`appLauncherFavorites_v1`、アプリID=情報シートA列の配列)。ブラウザ・端末ごとに別々で、サーバーには保存しない。
   **固定のお気に入り**: `app.js` の `PINNED_HOSTS`(URLのホスト名)に入れたアプリは、常にお気に入り(オンオフ不可。localStorageには保存しない)。現在は `masamiz-production-management.vercel.app`。
   お気に入りが0件でも、見出しと「(右上の会社ロゴをオンオフすると追加できます)」の説明を常に表示。
+- **非表示(情報シートJ列、2026-11-13)**: J列が空欄なら表示、文字など何か入っていればそのアプリのボタンを出さない(空白だけ・チェックボックスのオフは空欄扱い)。判定はGASの `getAppGroups`。非表示にしても他のボタンの色は変わらない。
 - **一覧のキャッシュ**: localStorage(`appLauncherGroupsCache_v1`)に前回の一覧を保存し、先に表示してから裏で更新。
 - `index.html` の `?v=`(style.css・app.js)は、変更のたびに上げる。
 - `vercel.json` の `git.deploymentEnabled=false` でpush・マージでは自動デプロイしない。本番反映は「デプロイして」の指示時のみ。

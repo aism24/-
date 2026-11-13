@@ -12,16 +12,26 @@
 // A:ID  B:アプリ名  C:URL  D:説明  E:分類  F:ロゴ  (1行目はヘッダー、2行目以降がデータ)
 // 分類(E列)が同じ行はまとめて1つの行(セクション)として表示する
 // ロゴ(F列)はカード左上のアイコンに表示する文字(例:正光/阪和。未入力ならアプリ名の頭文字を使う)
+// J:非表示  空欄=表示する / 文字など何か入っている=そのアプリのボタンを表示しない
+//   (空白だけ・チェックボックスのオフ(FALSE)は空欄と同じ扱い。G〜I列は使わない)
 //
 // 【記録シートの想定列】
 // A:日時  B:アプリ名  (1行目はヘッダー。2行目に最新の記録を挿入していく=新しい順)
 // ============================================================
 
 // デプロイ後に doPost の ping で反映を確認するための版表記(コードを変えたら更新する)。
-const CODE_VERSION = '2026-10-21-lock2';
+const CODE_VERSION = '2026-11-13-hideJ';
 const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
 const SHEET_NAME = '情報';
 const LOG_SHEET_NAME = '記録';
+const HIDE_COL_INDEX = 9; // J列(0始まりで9)=非表示
+
+// J列(非表示)に何か入っていれば true。空欄・空白だけ・FALSE(チェックボックスのオフ)は false。
+function isHiddenRow_(row) {
+  const v = row.length > HIDE_COL_INDEX ? row[HIDE_COL_INDEX] : '';
+  if (v === false || v === null || v === undefined) return false;
+  return String(v).trim() !== '';
+}
 
 // HSL(0-360, 0-100, 0-100)をRGB(0-255)に変換する。
 function hslToRgb_(h, s, l) {
@@ -88,6 +98,10 @@ function getAppGroups() {
   for (let i = 1; i < rows.length; i++) {
     const [id, name, url, description, category, logo] = rows[i];
     if (!name || !url) continue;
+
+    // J列(非表示)に何か入っている行は表示しない。色の順番は数えておき、
+    // 非表示にしても他のアプリのボタンの色が変わらないようにする。
+    if (isHiddenRow_(rows[i])) { colorIndex++; continue; }
 
     const cat = category || 'その他';
     if (!groupsMap[cat]) {
