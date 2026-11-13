@@ -1084,6 +1084,14 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                             ended.append(c[0])
                     if len(ended) == 1:
                         g_value = ended[0]
+                if g_value is not None:
+                    # まとめた範囲で見つかった梁が、この行の範囲にかからないときは使わない(別の図の梁)
+                    # (2026-11-13、26-17 EMRB-43 の EMRSB24-14。同じ段の左の EMRTH441-6 の梁 10173.1 を使っていた。
+                    # ユーザー確認: H-248x124x5x8・0.543・BJ24 / BJ24)
+                    g_ep = exm._find_reference_line_endpoints(tdf, gx0, gx1, row.y, tier_y_max, g_value)
+                    if g_ep is not None and (max(g_ep[0][0], g_ep[1][0]) < row.x_mark
+                                             or min(g_ep[0][0], g_ep[1][0]) > row.x_next):
+                        g_value = None
                 if g_value is not None and own <= 4 and grp >= 8 and grp >= 2 * max(own, 1) and g_value != length_value:
                     length_value, debug = g_value, g_debug
                 else:
