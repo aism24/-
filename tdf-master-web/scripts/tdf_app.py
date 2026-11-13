@@ -1380,6 +1380,11 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
         joints_no_size[id(row)] = (left, right)
         if length_value is not None:
             row.size = ex.determine_size_no_size(tdf, endpoints, left_jobj, right_jobj)
+            if row.size and endpoints is not None and (left is not None or right is not None):
+                # サイズが決まったら、すぐ下に別のサイズが書かれた長丸(取り付く別の部材の継手)を除いて
+                # 継手を選び直す(2026-11-13、26-17 B2M4B-05 の B2M4TH489-5 の SSJ3)
+                joints_no_size[id(row)] = ex.determine_joints_no_size(
+                    tdf, row.y, length_value, endpoints, y_max=tier_y_max, row_size=row.size)[:2]
 
     # 3項目パターンの行はassign_joints_batch(既存の4項目パターン専用の
     # グルーピングロジック)には一切渡さない。
@@ -1409,7 +1414,7 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
         length_value_m = None if length_value is None else length_value / 1000.0
         out.append({
             "図番": drawing_number, "製品マーク": row.mark, "設計符号": row.design_code,
-            "サイズ": row.size, "本数": row.count, "長さ": length_value_m, "重量": row.weight,
+            "サイズ": row.size, "本数": row.count.strip() if row.count else row.count, "長さ": length_value_m, "重量": row.weight,
             "左継手": left, "右継手": right, "種別": beam_types[id(row)], "製品段": tier_label,
             "長さの確認": check,
         })
