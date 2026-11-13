@@ -259,8 +259,9 @@
         return;
       }
       var r = isXlsx ? await ShippingXlsx.linkXlsx(JSZip, buf, links, mapOpt()) : await ShippingCore.linkPdf(pdfjsLib, PDFLib, buf, links, mapOpt());
-      // 詳細図(図番・製品名が線で描かれたCAD図面。寸法などの文字データだけ入っていることもある): 文字から図番らしい語が1つも見つからないときだけ、画像として読み取る
-      if (!isXlsx && GAS_URL && r.stats.linked === 0 && r.stats.ng === 0) {
+      // 詳細図(図番・製品名が線で描かれたCAD図面。寸法などの文字データだけ入っていることもある): 文字データでリンクが1つも付かなかったときは、画像として読み取る。
+      // NGがあっても読む(2026-11-13〜。図面の注記「WA2-1G-05A図へ移動」などの文字が図番としてNGになり、画像読み取りに進まずリンク0件で終わっていたため)
+      if (!isXlsx && GAS_URL && r.stats.linked === 0) {
         var po = mapOpt() || {}, pt = '図面を画像として読み取り中…';
         busy(true, pt, 0);
         po.onProgress = function (done, total) { busy(true, pt + '\n' + done + '/' + total + 'ページ', done / (total + 1)); };
