@@ -4872,6 +4872,34 @@ def _in_side_member(tdf: tb.TdfData, cap, x1: float, x2: float, bottom: float, t
     return False
 
 
+SIZE_BELOW_CAP = 250.0  # 長丸のすぐ下とみなす範囲(梁モードの取り付く部材の継手と同じ)
+
+
+def _size_below_cap(tdf: tb.TdfData, cap, own_sizes) -> bool:
+    """水平の長丸のすぐ下(250以内)に、長丸と横に重なる別の部材のサイズの文字があるか。
+    柱の途中に取り付く梁の継手(梁のサイズが継手の下に書かれる)を見分けるため。
+    サイズの文字は x の入ったもので、製品の行のサイズ(own_sizes)と違うものだけ(間柱自身の
+    継手の下に間柱のサイズが書かれることがある: 26-16 の EB3-0P-02 の P300B と H-300x300x10x15)。
+    柱の端より内側の長丸だけに使う(2026-11-13、26-17 の B2M3C-12。上端の247下・横988に
+    左の梁 SB488 の継手 BJ488、その112下に H-488x300x11x18。梁のガセットのボルトが柱の
+    すぐ横にあり、上継手になっていた。柱の上継手は無し)。
+    文字の幅は 文字数×高さ×0.7 で見積もる(サイズの文字は左端が長丸より左に出ることがある)。"""
+    ax, ay, bx, by, r = cap[:5]
+    if abs(ay - by) > AXIS_TOL:
+        return False
+    cy = (ay + by) / 2
+    lo_x, hi_x = min(ax, bx) - r, max(ax, bx) + r
+    for t in tdf.texts:
+        if t.rot != 0 or not (0.0 < cy - t.y <= SIZE_BELOW_CAP):
+            continue
+        s = _norm(tdf.resolve_text(t))
+        if not s or not _is_size(s) or not re.search(r"\d\s*[xX×]\s*\d", s) or s.replace(" ", "") in own_sizes:
+            continue
+        if t.x <= hi_x and t.x + len(s) * max(t.h, 1.0) * 0.7 >= lo_x:
+            return True
+    return False
+
+
 def _joint_on_next_member(caps, by_x, x1: float, x2: float, y_end: float, direction: int) -> str | None:
     """端から700より遠い長丸のうち、端の先に描かれた隣の節の柱の外形線(端から700以内で
     始まる、同じ幅の縦線の組)の高さにあり、外形から横1000以内(_joint_near と同じ)に
@@ -5006,6 +5034,7 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
         return []
     by_x = _vertical_lines(tdf)
     caps = _capsules(tdf)
+    own_sizes = {_norm(r["size"]).replace(" ", "") for r in rows if r.get("size")}
     bolts = exm._bolt_marks(tdf)
     vals = _numeric_values(tdf)
     chains = _dim_chains(tdf)
@@ -5016,7 +5045,8 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
     def jcaps(b, got):
         key = (id(b), got[1], got[2])
         if key not in joint_caps:
-            joint_caps[key] = [c for c in caps if not _in_side_member(tdf, c, b["x1"], b["x2"], got[1], got[2])]
+            joint_caps[key] = [c for c in caps if not _in_side_member(tdf, c, b["x1"], b["x2"], got[1], got[2])
+                               and not (got[1] < (c[1] + c[3]) / 2 < got[2] and _size_below_cap(tdf, c, own_sizes))]
         return joint_caps[key]
 
     def measure(size, widths, h_in_drawing, owner):
