@@ -70,6 +70,12 @@ def find_rows(tdf: tb.TdfData) -> list[dict]:
              and r.x < dai.x and tdf.resolve_text(r)],
             key=lambda r: r.x,
         )
+        # 同じ高さに製品の表が横に並ぶ図面では、左隣の表の「N台」より右の文字だけを使う
+        # (2026-11-13、26-17 の間柱 D1M1P-01。D1M1P340-1|P340|1台 と D1M1P25-1|P25|1台 が並び、
+        # 右の行の製品マークが左の表の「1台」になっていた)
+        prev = [i for i, r in enumerate(left) if tb.is_dai_cell(tdf.resolve_text(r))]
+        if prev:
+            left = left[prev[-1] + 1:]
         cells = left[-3:]
         if len(cells) < 3:
             rest.append((dai, left))
@@ -274,6 +280,35 @@ def _size_below_code(tdf: tb.TdfData, code: str) -> str | None:
                 if _is_size(s):
                     found.add(s)
     return found.pop() if len(found) == 1 else None
+
+
+LEADER_JOIN_TOL = 3.0  # 引き出し線どうしがつながっているとみなす距離
+
+
+def _leader_sizes(tdf: tb.TdfData):
+    """引き出し線で部材を指すサイズの文字(x の入ったもの。□-・PL- は除く): [(サイズ, 先端X, 先端Y)]。
+    文字のすぐ下の水平線(下線)の端から斜めの線が出ていれば、その線のもう一方の端を先端とする。"""
+    out = []
+    for r in tdf.texts:
+        if r.rot != 0:
+            continue
+        s = _norm(tdf.resolve_text(r))
+        if not (s and _is_size(s) and re.search(r"\d\s*[xX×]\s*\d", s)
+                and not s.startswith("□") and not _PLATE_NAME.search(s)):
+            continue
+        h = max(r.h, 1.0)
+        for ln in tdf.lines:
+            if not (abs(ln.y1 - ln.y2) <= VERT_TOL and 0.0 <= r.y - ln.y1 <= h
+                    and min(ln.x1, ln.x2) <= r.x + LEADER_JOIN_TOL and max(ln.x1, ln.x2) >= r.x):
+                continue
+            for ex_, ey in ((ln.x1, ln.y1), (ln.x2, ln.y2)):
+                for m in tdf.lines:
+                    if m is ln or abs(m.y1 - m.y2) <= VERT_TOL:
+                        continue
+                    for (ax, ay), (bx, by) in (((m.x1, m.y1), (m.x2, m.y2)), ((m.x2, m.y2), (m.x1, m.y1))):
+                        if math.hypot(ax - ex_, ay - ey) <= LEADER_JOIN_TOL:
+                            out.append((s.replace(" ", ""), bx, by))
+    return out
 
 
 def _single_size_in_drawing(tdf: tb.TdfData) -> str | None:
@@ -1312,12 +1347,36 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
     multi = len(set(unit.values())) >= 2
     measured = {}
     out = []
+    leaders = None
+
+    def leader_size(row):
+        # 製品の行にサイズの欄が無く、図の中に「□-」も設計符号の下のサイズも無いとき、その
+        # 製品の柱本体の外形線を引き出し線で指しているサイズの文字(1種類のときだけ)を使う
+        # (2026-11-13、26-17 の間柱 D1M1P-01。D1M1P340-1 は H-340x250x9x14、D1M1P25-1 は
+        # H-250x250x9x14。図の中にはほかに梁の H-250x125x6x9 等もある)
+        nonlocal leaders
+        if leaders is None:
+            leaders = _leader_sizes(tdf)
+        got = set()
+        for sz, tx, ty in leaders:
+            widths = _widths_from_size(sz)
+            if not widths:
+                continue
+            for b in _bodies(tdf, widths, by_x, body_caps, _flange_thickness(sz)):
+                if multi and unit.get(_owner_row(b, rows)) != unit[id(row)]:
+                    continue
+                if (min(abs(tx - b["x1"]), abs(tx - b["x2"])) <= WIDTH_TOL
+                        and any(lo - WIDTH_TOL <= ty <= hi + WIDTH_TOL for lo, hi in b["segs"])):
+                    got.add(sz)
+        return got.pop() if len(got) == 1 else None
+
     for row in rows:
         h_in_drawing = False
         if row["zushi"]:
             size, widths = drawing_box_size(tdf)
             if size is None:
-                size = _size_below_code(tdf, row["code"]) or _single_size_in_drawing(tdf)
+                size = (_size_below_code(tdf, row["code"]) or leader_size(row)
+                        or _single_size_in_drawing(tdf))
                 widths = _widths_from_size(size)
                 h_in_drawing = size is not None
         else:
