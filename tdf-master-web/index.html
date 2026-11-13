@@ -4269,11 +4269,32 @@ def _capsule_text(tdf: tb.TdfData, cap) -> str | None:
     return None
 
 
+def _capsule_joint_name(tdf: tb.TdfData, cap) -> str | None:
+    """長丸の中の、2つ目以降の文字のうち継手名の形のもの(最初の文字が継手名の形でない
+    ときに使う)。"""
+    seen = False
+    for r in tdf.texts:
+        if ex._text_enclosed_by_capsule_no_size(tdf, r, cap):
+            s = _norm(tdf.resolve_text(r))
+            if not s:
+                continue
+            if seen and _JOINT_NAME.match(s) and not _PLATE_NAME.search(s):
+                return s
+            seen = True
+    return None
+
+
 def _capsules(tdf: tb.TdfData):
     """継手の長丸: 向きが水平か垂直で、中に継手名(英字で始まる2文字以上)があるもの。
 
     改訂の雲マークの円弧どうし(N4C-1)や、「N」等の1文字の丸囲みを除く。
-    戻り値: [(ax, ay, bx, by, r, 継手名), ...]
+    戻り値: [(ax, ay, bx, by, r, 継手名, 本体の区切りに使うか), ...]
+
+    長丸の中の最初の文字が継手名の形でなくても、ほかに継手名の形の文字があれば継手として
+    使う(2026-11-13、26-17 の D1M2C-07・08。上端の長丸 CJ2 に寸法「100」の文字の端が
+    かかり、100 を読んで長丸ごと捨てていた)。ただしこの長丸は継手名を探すときだけに使い、
+    柱本体の区切りや長さの確かめには使わない(従来の長さを変えないため。D1M2C-08 は外形線が
+    上端を越えてこの長丸までつながり、区切ると 6743 が 3640 になる)。
     """
     out = []
     for c in ex._find_stadium_capsules_no_size(tdf):
@@ -4283,7 +4304,11 @@ def _capsules(tdf: tb.TdfData):
         name = _capsule_text(tdf, c)
         # 「GPL-22」等の板の名前を囲んだ長丸(N3C-9)は継手ではない
         if name and _JOINT_NAME.match(name) and not _PLATE_NAME.search(name):
-            out.append((*c, name))
+            out.append((*c, name, True))
+        elif name:
+            other = _capsule_joint_name(tdf, c)
+            if other:
+                out.append((*c, other, False))
     return out
 
 
@@ -4506,9 +4531,14 @@ def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None =
             # 線は従来どおり使わない(継手の先に描かれた隣の部材の線のため)。ただし
             # split_main のときは切って使う(下の節の柱の線が継手をまたいで一続きに
             # 描かれる: 26-16 の WA2-4C-03 の下継手 zCJ700A)。
+            # 外形線の組とつながった区間でも、長丸より先の部分に外形線の組が無ければ切って使う
+            # (2026-11-13、26-17 の D1M2C-02。幅650の外形線の短い区間と、上の細い □-600 の部分の
+            # 線が一続きになり、細い部分の線が上端を越えて上の継手 CJ2 の長丸をまたいでいたため、
+            # まるごと除いて 3460 になっていた。正しくは 6743)
             part += [(max(s[0], lo_b), min(s[1], hi_b)) for s in segs
                      if (s[0] < lo_b or s[1] > hi_b) and min(s[1], hi_b) > max(s[0], lo_b)
-                     and (split_main or not _intersect([list(s)], [list(m) for m in p["segs"]]))]
+                     and (split_main or not _intersect(_subtract([list(s)], [[lo_b, hi_b]]),
+                                                       [list(m) for m in p["segs"]]))]
             cover = sum(s[1] - s[0] for s in part)
             if not part or cover < min_body:
                 continue
@@ -4562,7 +4592,6 @@ def _drop_extension_segs(tdf: tb.TdfData, x1: float, x2: float, segs):
     def has_pt(x, y):
         return any(abs(px - x) <= WIDTH_TOL and abs(py - y) <= DIM_POINT_TOL for px, py in pts)
     raw = _raw_vertical(tdf)
-
     def inner_end(x, outer, up):
         # 遠い側の端(outer)まで届く元の線の、もう一方の端(左右の線のうち一番内側)
         ends = [lo if up else hi for k, iv in raw.items() if abs(k - x) <= WIDTH_TOL
@@ -5056,6 +5085,7 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
         return []
     by_x = _vertical_lines(tdf)
     caps = _capsules(tdf)
+    body_caps = [c for c in caps if c[6]]  # 本体の区切り・長さの確かめに使う長丸(_capsules の説明)
     own_sizes = {_norm(r["size"]).replace(" ", "") for r in rows if r.get("size")}
     bolts = exm._bolt_marks(tdf)
     vals = _numeric_values(tdf)
@@ -5086,11 +5116,11 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
         tf = _flange_thickness(size)
         key = (tuple(widths), tf, split_main)
         if key not in found:
-            got = _bodies(tdf, widths, by_x, caps, tf, split_main=split_main) if widths else []
+            got = _bodies(tdf, widths, by_x, body_caps, tf, split_main=split_main) if widths else []
             if widths and not got:
                 # 柱本体が1つも無いときだけ、外形の幅以上・長さ1000未満の外形線の組も
                 # 本体の候補にする(長さ470の間柱: 26-12 の 1P-08)
-                got = _bodies(tdf, widths, by_x, caps, tf, min_body=widths[0], split_main=split_main)
+                got = _bodies(tdf, widths, by_x, body_caps, tf, min_body=widths[0], split_main=split_main)
             found[key] = got
         bodies = found[key]
         if owner is not None:
@@ -5101,7 +5131,7 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
                 # (26-16 の EB3-0P-02 の EB32-0P300B-2 は 685。同じ図面の -1・-3 は1000以上)
                 skey = key + ("short",)
                 if skey not in found:
-                    found[skey] = _bodies(tdf, widths, by_x, caps, tf, min_body=widths[0], split_main=split_main)
+                    found[skey] = _bodies(tdf, widths, by_x, body_caps, tf, min_body=widths[0], split_main=split_main)
                 bodies = [b for b in found[skey] if unit.get(_owner_row(b, rows)) == owner]
         bodies = _drop_minor(bodies)
         length = bottom = top = None
@@ -5118,8 +5148,8 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
             gots = [(b, got) for b, got in gots
                     if got is not None and (_is_flange_end(tdf, b["x1"], b["x2"], got[1], tf)
                                             or _is_flange_end(tdf, b["x1"], b["x2"], got[2], tf)
-                                            or (_joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[1], -1)
-                                                and _joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[2], +1)))]
+                                            or (_joint_near([c for c in jcaps(b, got) if c[6]], bolts, b["x1"], b["x2"], got[1], -1)
+                                                and _joint_near([c for c in jcaps(b, got) if c[6]], bolts, b["x1"], b["x2"], got[2], +1)))]
         # 上端に細い部材が立つ柱は、その部材の上端までを長さにし、上継手は探さない
         # (上の部材に付く別の部材の継手を拾うため: EA1-4C-04 の zB150)
         stub = set()
