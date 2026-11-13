@@ -4539,12 +4539,29 @@ def _drop_extension_segs(tdf: tb.TdfData, x1: float, x2: float, segs):
     pts = _dim_points(tdf)
     def has_pt(x, y):
         return any(abs(px - x) <= WIDTH_TOL and abs(py - y) <= DIM_POINT_TOL for px, py in pts)
+    raw = _raw_vertical(tdf)
+
+    def inner_end(x, outer, up):
+        # 遠い側の端(outer)まで届く元の線の、もう一方の端(左右の線のうち一番内側)
+        ends = [lo if up else hi for k, iv in raw.items() if abs(k - x) <= WIDTH_TOL
+                for lo, hi in iv if abs((hi if up else lo) - outer) <= WIDTH_TOL]
+        return (min(ends) if up else max(ends)) if ends else None
+
     main = max(segs, key=lambda s: s[1] - s[0])
     out = []
     for s in segs:
         if s is not main:
             outer = s[1] if s[0] >= main[1] else (s[0] if s[1] <= main[0] else None)
             if outer is not None and has_pt(x1, outer) and has_pt(x2, outer):
+                # 柱の外形線と引き出し線が一続きの区間は、引き出し線(遠い端まで届く元の線)
+                # だけを除く。左右の元の線が同じ高さから始まるときだけ(2026-11-13、26-17 の
+                # B1M1C-01: 上端 4839 の上に幅の寸法の引き出し線が 5379 まで続き、2462〜5379 を
+                # まるごと除いて 6770 になっていた。正しくは 9150)
+                up = outer == s[1]
+                a, b = inner_end(x1, outer, up), inner_end(x2, outer, up)
+                if (a is not None and b is not None and abs(a - b) <= WIDTH_TOL
+                        and s[0] + WIDTH_TOL < a < s[1] - WIDTH_TOL):
+                    out.append((s[0], a) if up else (a, s[1]))
                 continue
         out.append(s)
     return out
