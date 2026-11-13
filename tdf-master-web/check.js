@@ -4,8 +4,9 @@
 // (梁モード・柱モードの逆。2026-11-09 ユーザーの仕様)。
 //
 // - 図面は「①進行中工事」フォルダから、工事番号で始まるフォルダ → その中の「詳細図」
-//   フォルダの順に自動でたどる。ブラウザは利用者が選んだフォルダしか読めないので、
-//   「①進行中工事」を「フォルダを選ぶ」で選んでもらい、ブラウザごとに(IndexedDB に)覚える。
+//   フォルダの順に自動でたどる。帳票チェックを押すたびに鳥取サーバー/本社サーバーを選び、
+//   そのサーバーの「①進行中工事」から探す(ブラウザは利用者が選んだフォルダしか読めないので、
+//   各サーバーの「①進行中工事」は初回だけ「フォルダを選ぶ」で選んでもらい、ブラウザごとに IndexedDB に覚える)。
 //   工事フォルダ・詳細図フォルダを選んでもよい(下の「図面の保存場所」)。
 // - 梁で読むか柱で読むかは、図面のフォルダ名で決める(checkModeOfPath)。
 // - 比べるのはExcelにある列だけ(継手の列が無ければ継手は比べない)。サイズは書き方の違い
@@ -17,8 +18,7 @@ let checkOnlyNg = true;    // 一致しない行だけ表示
 
 const CHECK_DB = 'tdf-check';
 const CHECK_STORE = 'handles';
-const CHECK_ROOT_KEY = 'site-root';
-const CHECK_LINK_SERVER_KEY = 'check-link-server'; // 結果Excelのリンク用に最後に選んだサーバーのパス(localStorage。ブラウザごと)
+const CHECK_ROOT_KEY = 'site-root'; // 前の版で覚えた「①進行中工事」(サーバー別になる前。目印ファイルが合うサーバーへ引き継ぐ)
 const CHECK_SKIP_DIR = /旧|発行歴/;
 const CHECK_LEN_TOL_MM = 0.1; // 長さの許容差(±0.1mm。2026-11-09 ユーザー指定)
 
@@ -106,18 +106,26 @@ async function checkScriptsVersion() {
   return checkScriptsVer;
 }
 
-// 図面の保存場所(2026-11-10 ユーザー指示で、本社・鳥取サーバーのボタンをやめた)
-// - 「フォルダを選ぶ」で「①進行中工事」を選び、ブラウザごとに 'site-root' に覚える。
-// - 工事フォルダ・詳細図フォルダを直接選んでもよい(その工事の分として 'koji:工事番号' に覚え、
+// 図面の保存場所(2026-11-13 ユーザー指示: 帳票チェックを押すたびに、鳥取サーバー/本社サーバーを選ぶ)
+// - サーバーの一覧(名前とパス)は設定シートの H:I列(GAS の getServerPaths)。
+// - 各サーバーの「①進行中工事」は、初めて使うときだけ「フォルダを選ぶ」で選んでもらい、
+//   ブラウザごとに 'root:サーバー名' に覚える。以後はボタンを押すだけでそのフォルダから探す。
+// - ブラウザは選ばれたフォルダのサーバー(パス)を教えてくれないので、各サーバーの「①進行中工事」の
+//   直下に置いた目印ファイル(「_鳥取サーバー…」「_本社サーバー…」で始まる名前)で、押したボタンと
+//   合っているかを確かめる。違えば選び直してもらう。
+// - 結果Excelの図面へのリンクは、ここで選んだサーバーのパスで付ける(ダウンロード時のポップアップはやめた)。
+// - 工事フォルダ・詳細図フォルダを直接選んでもよい(サーバーと工事ごとに 'koji:サーバー名:工事番号' に覚え、
 //   ①進行中工事より先に使う)。
 // ブラウザは選ばれたフォルダの名前しか教えてくれない(上の階層のパスは読めない)ので、名前で見分ける。
 //   root  : ①進行中工事(名前に工事番号も「詳細図」も無い)
 //   koji  : 工事フォルダ(名前の先頭が工事番号)
 //   detail: 詳細図フォルダ(名前に「詳細図」。工事番号が無いので、照合のときにExcelの図番が
 //           どれだけ見つかるかで工事の違いを確かめる)
-let checkRoot = null;
-let checkRootLoaded = false;
-let checkKojiFolders = {}; // 工事番号 → 工事フォルダか詳細図フォルダ(無ければ null)
+const CHECK_DEFAULT_SERVERS = [['鳥取', ''], ['本社', '']]; // 設定シートを読めなかったとき(リンクは付けない)
+let checkServers = null;   // [[サーバー名, パス], ...]
+let checkServer = '';      // 今回選んだサーバー名
+let checkRoot = null;      // 今回選んだサーバーの「①進行中工事」
+let checkKojiFolders = {}; // 'サーバー名:工事番号' → 工事フォルダか詳細図フォルダ(無ければ null)
 
 function checkKojiOfName(name) {
   const m = String(name).normalize('NFKC').match(/^(\d{2}-\d{2})(?![0-9])/);
@@ -128,38 +136,226 @@ function checkFolderKind(h) {
   if (h.name.includes('詳細図')) return 'detail';
   return 'root';
 }
+function checkKojiKey() {
+  return checkServer + ':' + kojiNo;
+}
 function checkCurrentFolder() {
-  return checkKojiFolders[kojiNo] || checkRoot;
+  return checkKojiFolders[checkKojiKey()] || checkRoot;
+}
+function checkServerLabel(name) {
+  return /サーバー$/.test(name) ? name : name + 'サーバー';
+}
+function checkServerPath(name) {
+  const s = (checkServers || []).find(x => x[0] === name);
+  return s ? s[1] : '';
+}
+
+async function checkLoadServers() {
+  if (checkServers) return checkServers;
+  try {
+    const list = await apiGet('getServerPaths');
+    if (Array.isArray(list) && list.length) checkServers = list;
+  } catch (e) {
+    console.error('サーバー一覧を取得できませんでした', e);
+  }
+  return checkServers || CHECK_DEFAULT_SERVERS; // 読めなかったときは次回もう一度読む
+}
+
+// 目印ファイル: フォルダの直下にある「_○○サーバー」で始まるファイルの ○○ をすべて返す
+async function checkReadMarks(dir) {
+  const out = [];
+  try {
+    for await (const e of dir.values()) {
+      if (e.kind !== 'file') continue;
+      const m = e.name.normalize('NFKC').match(/^_(.+?)サーバー/);
+      if (m && !out.includes(m[1])) out.push(m[1]);
+    }
+  } catch (_) { /* 読めなければ目印なしと同じ */ }
+  return out;
+}
+
+// 選んだ「①進行中工事」が、押したサーバーのものかを目印ファイルで確かめる。
+//   'ok' = 合っている(または目印が無くても使うと答えた) / 'repick' = 選び直す / 'cancel' = やめる
+async function checkVerifyRoot(h, server) {
+  const marks = await checkReadMarks(h);
+  if (marks.length === 1 && marks[0] === server) return 'ok';
+  if (marks.length && !marks.includes(server)) {
+    const ok = await checkConfirm('サーバーが違います',
+      `選んだフォルダは${marks.map(checkServerLabel).join('・')}の「${h.name}」です(目印ファイルで確認)。`
+      + `いま選んでいるのは${checkServerLabel(server)}です。${checkServerLabel(server)}の「①進行中工事」を選び直してください。`,
+      '選び直す', 'やめる');
+    return ok ? 'repick' : 'cancel';
+  }
+  if (marks.length > 1) {
+    const ok = await checkConfirm('目印ファイルが複数あります',
+      `選んだフォルダに ${marks.map(m => '「_' + checkServerLabel(m) + '…」').join('と')} の目印ファイルがあり、どちらのサーバーか分かりません。`
+      + `${checkServerLabel(server)}の「①進行中工事」で合っていますか?`,
+      'このフォルダを使う', '選び直す');
+    return ok ? 'ok' : 'repick';
+  }
+  const ok = await checkConfirm('サーバーを確認できません',
+    `選んだフォルダ「${h.name}」に目印ファイル(「_${checkServerLabel(server)}…」で始まるファイル)がありません。`
+    + `${checkServerLabel(server)}の「①進行中工事」で合っていますか?`,
+    'このフォルダを使う', '選び直す');
+  return ok ? 'ok' : 'repick';
+}
+
+// 別のサーバーとして同じフォルダを覚えていれば、そのサーバー名を返す
+async function checkSameAsOther(h, server, saved) {
+  for (const [name, other] of Object.entries(saved)) {
+    if (name === server || !other) continue;
+    try { if (await h.isSameEntry(other)) return name; } catch (_) {}
+  }
+  return null;
+}
+
+// サーバーの「①進行中工事」を選んで覚える。成功すればフォルダ、やめたら null
+async function checkRegisterRoot(server, saved) {
+  for (;;) {
+    const h = await checkPickDir();
+    if (!h) return null;
+    if (checkFolderKind(h) !== 'root') {
+      const ok = await checkConfirm('「①進行中工事」を選んでください',
+        `選んだのは「${h.name}」です。${checkServerLabel(server)}の「①進行中工事」のフォルダを選んでください。`,
+        '選び直す', 'やめる');
+      if (ok) continue;
+      return null;
+    }
+    const same = await checkSameAsOther(h, server, saved);
+    if (same) {
+      const ok = await checkConfirm('同じフォルダです',
+        `このフォルダは${checkServerLabel(same)}の「①進行中工事」として覚えています。`
+        + `${checkServerLabel(server)}の「①進行中工事」を選び直してください。`,
+        '選び直す', 'やめる');
+      if (ok) continue;
+      return null;
+    }
+    const v = await checkVerifyRoot(h, server);
+    if (v === 'repick') continue;
+    if (v === 'cancel') return null;
+    await checkIdbSet('root:' + server, h);
+    saved[server] = h;
+    showToast(`${checkServerLabel(server)}の「${h.name}」を覚えました`, 'success');
+    return h;
+  }
+}
+
+// 帳票チェックを押したときのサーバー選択。戻り値: true = 選んだ / false = 戻る
+async function askCheckServer() {
+  const servers = await checkLoadServers();
+  const saved = {};
+  for (const [name] of servers) saved[name] = await checkIdbGet('root:' + name);
+  // 前の版で覚えた「①進行中工事」(site-root)は、目印ファイルが合うサーバーの分として使う
+  const legacy = await checkIdbGet(CHECK_ROOT_KEY);
+  return new Promise(resolve => {
+    const ov = document.getElementById('server-choice');
+    const list = document.getElementById('server-choice-list');
+    const msg = document.getElementById('server-choice-msg');
+    const back = document.getElementById('server-choice-back');
+    msg.textContent = '';
+    list.innerHTML = '';
+    let busy = false;
+    const done = v => {
+      ov.classList.remove('open');
+      list.innerHTML = '';
+      back.onclick = null;
+      resolve(v);
+    };
+    const choose = async name => {
+      if (busy) return;
+      busy = true;
+      msg.textContent = '';
+      try {
+        await chooseInner(name);
+      } catch (e) {
+        if (e.name === 'SecurityError') showPickAgain(name);
+        else showToast('フォルダを選べませんでした: ' + e.message, 'error');
+      } finally {
+        busy = false;
+      }
+    };
+    const chooseInner = async name => {
+      let h = saved[name];
+      if (h) {
+        // 覚えたフォルダ: 読む許可を確かめ(ブラウザを開き直したあとは許可の確認が出る)、目印を確かめる
+        if (!(await checkRootPermission(h))) {
+          msg.textContent = 'フォルダを読む許可がありません。もう一度ボタンを押して「許可」を押すか、フォルダを選び直してください。';
+          showPickAgain(name);
+          return;
+        }
+        const v = await checkVerifyRoot(h, name);
+        if (v === 'cancel') return;
+        if (v === 'repick') {
+          h = await checkRegisterRoot(name, saved);
+          if (!h) return;
+        }
+      } else {
+        if (legacy && (await checkRootPermission(legacy, false)) && (await checkReadMarks(legacy)).join() === name
+          && !(await checkSameAsOther(legacy, name, saved))) {
+          h = legacy;
+          await checkIdbSet('root:' + name, h);
+          saved[name] = h;
+        } else {
+          msg.textContent = `${checkServerLabel(name)}の「①進行中工事」を選んでください(初回だけ。このブラウザに覚えます)`;
+          h = await checkRegisterRoot(name, saved);
+          if (!h) return;
+        }
+      }
+      checkServer = name;
+      checkRoot = h;
+      done(true);
+    };
+    // 許可の確認のあとはブラウザがフォルダ選択を開かせないことがあるので、選び直しのボタンを出す
+    const showPickAgain = name => {
+      if (document.getElementById('server-choice-repick')) return;
+      const b = document.createElement('button');
+      b.type = 'button'; b.id = 'server-choice-repick'; b.className = 'header-btn';
+      b.textContent = `📁 ${checkServerLabel(name)}の「①進行中工事」を選ぶ`;
+      b.onclick = async () => {
+        if (busy) return;
+        busy = true;
+        try {
+          const h = await checkRegisterRoot(name, saved);
+          if (h) { checkServer = name; checkRoot = h; done(true); }
+        } catch (e) {
+          showToast('フォルダを選べませんでした: ' + e.message, 'error');
+        } finally { busy = false; }
+      };
+      list.after(b);
+    };
+    document.getElementById('server-choice-repick')?.remove();
+    for (const [name] of servers) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'server-choice-btn';
+      const sub = saved[name] ? `「${saved[name].name}」から探します` : '初回はフォルダを選びます';
+      b.innerHTML = `<span class="input-choice-name"></span><span class="input-choice-sub"></span>`;
+      b.firstChild.textContent = checkServerLabel(name);
+      b.lastChild.textContent = sub;
+      b.onclick = () => choose(name);
+      list.appendChild(b);
+    }
+    back.onclick = () => { if (!busy) done(false); };
+    ov.classList.add('open');
+  });
 }
 
 async function loadCheckRoot() {
-  if (!checkRootLoaded) {
-    let saved = await checkIdbGet(CHECK_ROOT_KEY);
-    if (!saved) {
-      // 前の版(本社・鳥取サーバーのボタン)で覚えたものがあれば、最後に使ったサーバーの分を引き継ぐ
-      const sel = await checkIdbGet('server-sel');
-      for (const k of [sel, 'honsha', 'tottori']) {
-        if (!saved && k) saved = await checkIdbGet('server:' + k);
-      }
-      if (saved) await checkIdbSet(CHECK_ROOT_KEY, saved);
-    }
-    if (!checkRoot) checkRoot = saved; // 読んでいる間に選ばれたときはそちらを使う
-    checkRootLoaded = true;
-  }
-  if (kojiNo && !(kojiNo in checkKojiFolders)) {
-    const saved = await checkIdbGet('koji:' + kojiNo);
-    if (!(kojiNo in checkKojiFolders)) checkKojiFolders[kojiNo] = saved;
+  const key = checkKojiKey();
+  if (checkServer && kojiNo && !(key in checkKojiFolders)) {
+    const saved = await checkIdbGet('koji:' + key);
+    if (!(key in checkKojiFolders)) checkKojiFolders[key] = saved;
   }
   renderCheckFolder();
 }
 
 function renderCheckFolder() {
   const name = document.getElementById('check-folder-name');
-  const own = checkKojiFolders[kojiNo];
+  const own = checkKojiFolders[checkKojiKey()];
+  const srv = checkServer ? checkServerLabel(checkServer) + ': ' : '';
   if (own) {
-    name.textContent = `${kojiNo} 用: ${own.name}(${checkFolderKind(own) === 'koji' ? '工事フォルダ' : '詳細図フォルダ'})`;
+    name.textContent = `${srv}${kojiNo} 用: ${own.name}(${checkFolderKind(own) === 'koji' ? '工事フォルダ' : '詳細図フォルダ'})`;
   } else if (checkRoot) {
-    name.textContent = `「${checkRoot.name}」から探します`;
+    name.textContent = `${srv}「${checkRoot.name}」から探します`;
   } else {
     name.textContent = '「①進行中工事」が未設定です(「フォルダを選ぶ」で選んでください)';
   }
@@ -177,22 +373,34 @@ async function checkPickDir() {
   } catch (e) {
     // 画面を閉じた(取り消した)ときも知らせる。Claude アプリの中のブラウザでは、選んでも
     // 取り消し扱いで返ってくる(2026-11-09 確認)
-    if (e.name === 'AbortError') showToast('フォルダが選ばれませんでした', 'error');
-    else showToast('フォルダを選べませんでした: ' + e.message, 'error');
+    if (e.name === 'AbortError') { showToast('フォルダが選ばれませんでした', 'error'); return null; }
+    if (e.name === 'SecurityError') throw e; // クリックの直後でないと開けない(呼び出し元でボタンを出し直す)
+    showToast('フォルダを選べませんでした: ' + e.message, 'error');
     return null;
   }
 }
 
-// 「フォルダを選ぶ」: ①進行中工事・工事フォルダ・詳細図フォルダ
+// 「フォルダを選ぶ」: ①進行中工事(今のサーバーの分を選び直す)・工事フォルダ・詳細図フォルダ
 async function pickCheckRoot() {
-  const h = await checkPickDir();
+  if (!checkServer) return;
+  let h;
+  try { h = await checkPickDir(); } catch (e) { showToast('フォルダを選べませんでした: ' + e.message, 'error'); return; }
   if (!h) return;
   const kind = checkFolderKind(h);
+  const key = checkKojiKey();
   if (kind === 'root') {
+    const saved = {};
+    for (const [name] of await checkLoadServers()) saved[name] = await checkIdbGet('root:' + name);
+    const same = await checkSameAsOther(h, checkServer, saved);
+    if (same) {
+      showErrorDialog('同じフォルダです', [`このフォルダは${checkServerLabel(same)}の「①進行中工事」として覚えています。${checkServerLabel(checkServer)}の「①進行中工事」を選んでください`]);
+      return;
+    }
+    if ((await checkVerifyRoot(h, checkServer)) !== 'ok') return;
     checkRoot = h;
-    await checkIdbSet(CHECK_ROOT_KEY, h);
-    if (checkKojiFolders[kojiNo]) { checkKojiFolders[kojiNo] = null; await checkIdbSet('koji:' + kojiNo, null); }
-    showToast(`「${h.name}」を覚えました`, 'success');
+    await checkIdbSet('root:' + checkServer, h);
+    if (checkKojiFolders[key]) { checkKojiFolders[key] = null; await checkIdbSet('koji:' + key, null); }
+    showToast(`${checkServerLabel(checkServer)}の「${h.name}」を覚えました`, 'success');
   } else {
     if (kind === 'koji') {
       const no = checkKojiOfName(h.name);
@@ -202,8 +410,8 @@ async function pickCheckRoot() {
         if (!ok) return;
       }
     }
-    checkKojiFolders[kojiNo] = h;
-    await checkIdbSet('koji:' + kojiNo, h);
+    checkKojiFolders[key] = h;
+    await checkIdbSet('koji:' + key, h);
     showToast(`「${h.name}」を ${kojiNo} 用に覚えました` + (kind === 'detail' ? '(照合のときに、Excelの図番が見つかるかで工事を確かめます)' : ''), 'success');
   }
   renderCheckFolder();
@@ -211,8 +419,9 @@ async function pickCheckRoot() {
 
 // 工事ごとに覚えたフォルダをやめて、①進行中工事から探す
 async function clearKojiFolder() {
-  checkKojiFolders[kojiNo] = null;
-  await checkIdbSet('koji:' + kojiNo, null);
+  const key = checkKojiKey();
+  checkKojiFolders[key] = null;
+  await checkIdbSet('koji:' + key, null);
   renderCheckFolder();
 }
 
@@ -532,9 +741,9 @@ async function processCheckFileInner(files) {
     if (kind === 'root') {
       showStatus('工事のフォルダを探しています', kojiNo);
       const kojiDir = await checkFindKojiDir(folder, kojiNo);
-      if (!kojiDir) throw new Error(`「${folder.name}」の中に、${kojiNo} で始まるフォルダが見つかりません。「フォルダを選ぶ」で、この工事の入っている「①進行中工事」(または工事フォルダ)を選んでください`);
+      if (!kojiDir) throw new Error(`${checkServerLabel(checkServer)}の「${folder.name}」の中に、${kojiNo} で始まるフォルダが見つかりません。サーバーを間違えていませんか?(帳票チェックを押し直すと、サーバーを選び直せます)`);
       detailDirs = await checkFindDetailDirs(kojiDir);
-      if (!detailDirs.length) throw new Error(`「${kojiDir.name}」の中に「詳細図」フォルダが見つかりません`);
+      if (!detailDirs.length) throw new Error(`${checkServerLabel(checkServer)}の「${kojiDir.name}」の中に「詳細図」フォルダが見つかりません。サーバーを間違えていませんか?(帳票チェックを押し直すと、サーバーを選び直せます)`);
       label = kojiDir.name;
       linkBase = [kojiDir.name];
     } else if (kind === 'koji') {
@@ -556,7 +765,7 @@ async function processCheckFileInner(files) {
     if (need.size && found.size < need.size * 0.5) {
       hideStatus();
       const ok = await checkConfirm('図面があまり見つかりません',
-        `Excelの図番 ${need.size} 件のうち、「${label}」で見つかったのは ${found.size} 件です。工事やフォルダが違う可能性があります。`,
+        `Excelの図番 ${need.size} 件のうち、${checkServerLabel(checkServer)}の「${label}」で見つかったのは ${found.size} 件です。工事・フォルダ・サーバーが違う可能性があります。`,
         'このまま続ける', 'やめる');
       if (!ok) return;
     }
@@ -611,6 +820,7 @@ async function processCheckFileInner(files) {
     checkResult = checkCompare(xl, found, res);
     checkResult.fileName = file.name;
     checkResult.linkBase = linkBase;
+    checkResult.server = checkServer; // 結果Excelのリンクはこのサーバーのパスで付ける
     checkResult.kojiDir = label;
     checkResult.times = { find: (t1 - t0) / 1000, extract: (t2 - t1) / 1000, files: files.length, reused };
     hideStatus();
@@ -835,23 +1045,11 @@ async function downloadCheckExcel() {
   if (!checkResult) return;
   const { rows, extra } = checkResult;
   // 図面へのハイパーリンク(2026-11-10 ユーザー指示。リンクの形は「実寸法師ハイパーリンク付与」と同じ
-  // file://サーバー/…/図面.tdf)。ブラウザはサーバーのパスを教えてくれないので、設定シートの
-  // サーバー一覧(H:I列)から選ぶポップアップで、図面のあるサーバー(パスは伏せ字)を選んでもらう。
-  // 詳細図フォルダを直接選んだとき(上の階層が分からない)は、リンクなし。
-  let linkServer = '';
-  if (checkResult.linkBase) {
-    let servers = [];
-    try { servers = await apiGet('getServerPaths'); } catch (e) { console.error('サーバー一覧を取得できませんでした', e); }
-    let initial = '';
-    try { initial = localStorage.getItem(CHECK_LINK_SERVER_KEY) || ''; } catch (_) { /* 覚えられなくてもよい */ }
-    linkServer = await askBasePath({
-      servers, initial,
-      label: '図面があるサーバーを選択してください',
-      hint: 'サーバーを選んで「OK」を押すと、製品マークに図面へのリンクを付けて保存します。<br>'
-        + '「スキップ」を押すと、リンクなしで保存します。',
-    });
-    if (linkServer) { try { localStorage.setItem(CHECK_LINK_SERVER_KEY, linkServer); } catch (_) { /* 同上 */ } }
-  }
+  // file://サーバー/…/図面.tdf)。ブラウザはサーバーのパスを教えてくれないので、帳票チェックを押したときに
+  // 選んだサーバーのパス(設定シートの H:I列)を使う(2026-11-13 ユーザー指示。以前はここでポップアップで選んでいた)。
+  // 詳細図フォルダを直接選んだとき(上の階層が分からない)と、設定シートを読めずパスが無いときは、リンクなし。
+  const linkServer = checkResult.linkBase ? checkServerPath(checkResult.server) : '';
+  if (checkResult.linkBase && !linkServer) showToast('サーバーのパスが分からないので、図面へのリンクなしで保存します', 'error');
   const links = new Map(); // セル番地 → file://リンク
   const head = ['判定', 'Excelの行', '図番', '製品マーク', '違う項目', 'サイズ(Excel)', 'サイズ(図面)', '長さ(Excel)', '長さ(図面)', '本数(Excel)', '本数(図面)',
     '継手(Excel)', '継手(図面)', 'メモ', '図面', '図面の更新日'];
