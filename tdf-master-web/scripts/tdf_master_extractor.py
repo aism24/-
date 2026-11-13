@@ -452,7 +452,8 @@ def _axis_key(rot_deg: float, xr: float, yr: float) -> tuple[str, float]:
 
 
 def determine_length(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float,
-                      min_value: float = 300.0, y_max: float | None = None) -> tuple[float | None, dict]:
+                      min_value: float = 300.0, y_max: float | None = None,
+                      line_backed_max: bool = False) -> tuple[float | None, dict]:
     """製品のX範囲・Y範囲内から「長さ」を1つに絞り込む。
 
     `y_max`を指定すると、Y範囲の上限をそこで打ち切る(1枚の図面に梁の
@@ -500,6 +501,16 @@ def determine_length(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float,
     # 範囲内の最大値の1/5未満の値は「取付ピッチ」等の小さい寸法とみなし、
     # 長さ候補から除外する(小さすぎる値がスコアリングで誤って勝つのを防ぐ)。
     max_v = max(v for _t, v, *_ in items)
+    if line_backed_max:
+        # 下の「どの候補にも向きの合う直線が無い」ときのやり直し用: 同じ長さの直線が範囲に1本も無い
+        # 寸法の文字は、1/5の基準の最大値に使わない
+        def _has_any_line(val):
+            return any(abs(ln.length - val) < 0.5 and x_min <= (ln.x1 + ln.x2) / 2 <= x_max
+                       and ln.y1 > y_ref and ln.y2 > y_ref
+                       and (y_max is None or (ln.y1 < y_max and ln.y2 < y_max)) for ln in tdf.lines)
+        backed = [v for _t, v, *_ in items if _has_any_line(v)]
+        if backed:
+            max_v = max(backed)
     threshold = max_v / 5.0
     items = [it for it in items if it[1] >= threshold]
     if not items:
@@ -639,6 +650,14 @@ def determine_length(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float,
         fallback_best = any_angle_scored[0]
         debug["any_angle_candidates"] = any_angle_scored
         if fallback_best[3] == 0 and fallback_best[1] == 0:
+            if not line_backed_max:
+                # 範囲の中の最大の寸法の文字に直線が無く(別の図と同じ書き込み等)、その1/5未満の本当の長さが
+                # 候補から外れていることがある(2026-11-13、26-17 EMRB-43 の EMRSB24-14。図の中の「10140」の
+                # 1/5 = 2028 で、フランジの直線が8本以上ある 543 が外れていた)。直線のある値だけで基準を作り直す。
+                lv2, dbg2 = determine_length(tdf, x_min, x_max, y_ref, min_value=min_value, y_max=y_max,
+                                             line_backed_max=True)
+                if lv2 is not None:
+                    return lv2, {**dbg2, "reason": "line-backed 1/5 filter retry"}
             return None, {**debug, "reason": "no direction-matched line for any candidate"}
 
         # 採用した値に実際に一致した直線自身の角度を、真の主軸として
