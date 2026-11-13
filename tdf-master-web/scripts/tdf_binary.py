@@ -246,5 +246,7 @@ def is_dai_cell(text: str | None) -> bool:
     """「N台」形式のセルかどうか(全角/半角ゆれを吸収)。"""
     if not text:
         return False
-    normalized = unicodedata.normalize("NFKC", text)
+    # 前後の空白は無視する(2026-11-13、26-17 B2M4B-05 の B2M4TH489-5A。本数が「 1台」と
+    # 先頭に空白付きで書かれていて、行ごと抜けていた)
+    normalized = unicodedata.normalize("NFKC", text).strip()
     return bool(DAI_PATTERN.match(normalized))

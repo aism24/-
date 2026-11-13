@@ -781,7 +781,7 @@ def _text_enclosed_by_capsule_no_size(tdf: tb.TdfData, rec, capsule) -> bool:
 
 
 def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float, endpoints,
-                              y_max: float | None = None):
+                              y_max: float | None = None, row_size: str | None = None):
     """3項目パターン専用の継手判定。確定した長さに一致する参照直線の実端点
     (endpoints、左右端点の(x, y))
     それぞれについて、**実際に長丸(カプセル)に囲まれているテキスト**だけを
@@ -817,12 +817,31 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
         if (c[1] + c[3]) / 2 > y_ref and (y_max is None or (c[1] + c[3]) / 2 < y_max)
     ]
     candidates = []  # (mid_x, mid_y, text)
+    cand_text_pos = {}  # 候補 -> 長丸の中の文字の位置
     for ax, ay, bx, by, r in capsules:
         for rec in tdf.texts:
             if not _text_enclosed_by_capsule_no_size(tdf, rec, (ax, ay, bx, by, r)):
                 continue
             candidates.append(((ax + bx) / 2, (ay + by) / 2, tdf.resolve_text(rec)))
+            cand_text_pos[candidates[-1]] = (rec.x, rec.y)
             break  # 1つのカプセルには通常1つのテキストしか描かれていない
+
+    if row_size and candidates:
+        # 長丸のすぐ下(縦250以内・横250以内)に行と違うサイズの文字があれば、梁に取り付く別の部材の
+        # 継手として使わない(4項目パターンの assign_joints_batch の other_size_caps と同じ条件。
+        # 2026-11-13、26-17 B2M4B-05 の B2M4TH489-5・5A。右端の90内側の SSJ3 の下に、シャッター下地の
+        # □-100x100x2.3 が書かれている。正しい右継手は端の外の THJ489)
+        size_texts = [(rec.x, rec.y, st) for rec in tdf.texts
+                      for st in [tdf.resolve_text(rec)] if st and SIZE_PATTERN.match(st)]
+
+        # 距離は長丸の中の文字の位置から測る(B2M4B-05 では長丸の中心から282、文字から240)
+        def _other_size_below(c) -> bool:
+            tx, ty = cand_text_pos.get(c, (c[0], c[1]))
+            below = [(ty - sy, st) for sx, sy, st in size_texts
+                     if 0 < ty - sy <= 250 and abs(sx - tx) <= 250]
+            return bool(below) and min(below)[1] != row_size
+
+        candidates = [c for c in candidates if not _other_size_below(c)]
 
     if not candidates:
         return None, None, None, None
@@ -907,6 +926,7 @@ def _char_multiset_overlap_no_size(a: str, b: str) -> int:
 # 継手と同じ高さとみなす幅(3つ目の方法。2026-11-13、26-17 D1MM2B-03・04 の下の図は継手の文字から313・314下に
 # 梁のサイズが書かれていた)
 _SIZE_NEAR_JOINT_Y_BAND = 400.0
+_SIZE_WIDE_Y_BAND = 700.0  # 最後の方法: 長さの基準線からこの上下の範囲・長さのX範囲の中のサイズの文字
 
 
 def _has_dims(text: str) -> bool:
@@ -962,11 +982,23 @@ def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
                 found.add(text)
         return next(iter(found)) if len(found) == 1 else None
 
+    def _wide_band():
+        # ほかの方法で決まらないとき、長さのX範囲の中・基準線の上下700以内に、寸法の書かれたサイズの文字が
+        # 1種類だけあればそれを使う(2026-11-13、26-17 D1M2B-14 の D1M2TH441-9。長さ1061の短い梁で、
+        # TH-441x199x6x9.5 が梁の上に引き出し線付きで基準線から626上に書かれていた)
+        found = set()
+        for r in tdf.texts:
+            text = tdf.resolve_text(r)
+            if (text and _looks_like_size(text) and _has_dims(text) and x_lo <= r.x <= x_hi
+                    and abs(r.y - (_ly + _ry) / 2.0) <= _SIZE_WIDE_Y_BAND):
+                found.add(text)
+        return next(iter(found)) if len(found) == 1 else None
+
     size_l = _nearest_size_text_no_size(tdf, left_jobj["cx"], left_jobj["cy"]) if left_jobj else None
     size_r = _nearest_size_text_no_size(tdf, right_jobj["cx"], right_jobj["cy"]) if right_jobj else None
     refs = [p for p in (size_l, size_r) if p is not None and _is_joint_size(p)]
     if not refs:
-        return _near_joints_in_range()
+        return _near_joints_in_range() or _wide_band()
 
     y_lo = min(p[1] for p in refs) - _SIZE_JOINT_Y_BAND
     y_hi = max(p[1] for p in refs) + _SIZE_JOINT_Y_BAND
@@ -998,7 +1030,7 @@ def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
         if len(scored) >= 2 and scored[0][0] == scored[1][0]:
             return None
         return scored[0][1]
-    return _near_joints_in_range()
+    return _near_joints_in_range() or _wide_band()
 
 
 # ---------------------------------------------------------------------------

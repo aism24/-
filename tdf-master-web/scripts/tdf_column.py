@@ -1189,7 +1189,7 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
         length, bottom, top = measured[key]
         out.append({
             "図番": drawing_number, "製品マーク": row["mark"], "設計符号": row["code"],
-            "サイズ": size, "本数": row["count"],
+            "サイズ": size, "本数": row["count"].strip() if row["count"] else row["count"],
             "長さ": None if length is None else length / 1000.0, "重量": None,
             "下継手": bottom if length is not None else None,
             "上継手": top if length is not None else None,
