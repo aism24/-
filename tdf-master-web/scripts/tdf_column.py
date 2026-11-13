@@ -221,13 +221,35 @@ def _size_code_labels(tdf: tb.TdfData) -> set[str]:
     return codes
 
 
+_MARK_LETTER = re.compile(r"^[A-Z]$")
+
+
+def _has_material_mark(tdf: tb.TdfData, r) -> bool:
+    """「□-」のサイズの文字のすぐ左(同じ行、文字の高さ4つ分以内)の文字が英字1文字か。"""
+    h = max(r.h, 1.0)
+    left = [q for q in tdf.texts if q is not r and q.rot == r.rot and abs(q.y - r.y) <= h * 0.5
+            and 0.0 < r.x - q.x <= h * 4.0]
+    if not left:
+        return False
+    nearest = max(left, key=lambda q: q.x)
+    return bool(_MARK_LETTER.match(_norm(tdf.resolve_text(nearest))))
+
+
 def drawing_box_size(tdf: tb.TdfData) -> tuple[str | None, list[float]]:
     """図の中の「□-」のサイズを板厚を除いてまとめる(下の位置から上へ)。
 
     戻り値: (サイズの文字, 外形の幅の一覧[線から本体を探すため])
     """
     groups: dict[tuple[float, float], list[float]] = {}
-    for r, m in _box_labels(tdf):
+    labels = _box_labels(tdf)
+    # 左隣(同じ行・文字4つ分以内)に英字1文字(材質の印 B・P・R・C 等)がある「□-」が図面に
+    # あれば、それだけを柱のサイズとする。印の無い「□-」は胴縁受け・シャッター下地などの
+    # 小物のサイズ(2026-11-13 ユーザー指示。26-17 の B1M1C-01 の □-100x100x2.3、
+    # EM4C-22 の □-100x100x3.2)。印のある「□-」が1つも無い図面は従来どおりすべて使う。
+    marked = [(r, m) for r, m in labels if _has_material_mark(tdf, r)]
+    if marked:
+        labels = marked
+    for r, m in labels:
         key = (float(m.group(1)), float(m.group(2)))
         groups.setdefault(key, []).append(r.y)
     if not groups:
