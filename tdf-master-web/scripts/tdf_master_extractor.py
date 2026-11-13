@@ -875,7 +875,11 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
         # 上の別の部材の HVJ4z を選んでいた)。
         left_pool, right_pool = left_near, right_near
     else:
-        left_pool = right_pool = candidates
+        # 基準線の近くに長丸が無いときも、梁の端より内側に200以上入った長丸はその端の継手にしない
+        # (2026-11-13、26-17 B2M4B-07 の B2M4SB39z-1。梁の端より約2200内側の、斜めのブレース HV4z の
+        # 継手 HVJ4z を左右の継手に選んでいた。ユーザー確認: 継手は無し)
+        left_pool = [c for c in candidates if _rotate_x(c[0], c[1]) <= lx_r + _JOINT_IN_MAX]
+        right_pool = [c for c in candidates if _rotate_x(c[0], c[1]) >= rx_r - _JOINT_IN_MAX]
 
     def _nearest(target_xr: float, pool):
         if not pool:
