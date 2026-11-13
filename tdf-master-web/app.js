@@ -415,7 +415,7 @@ window.addEventListener('resize', () => {
   if (document.getElementById('manual-overlay').classList.contains('open')) positionManualLink();
 });
 
-const manualPageSrc = n => `assets/manual/page${n}.png?v=20261110a`;
+const manualPageSrc = n => `assets/manual/page${n}.png?v=20261113a`;
 const manualPreloaded = new Set();
 function renderManualPage() {
   document.getElementById('manual-image').src = manualPageSrc(manualPage);
