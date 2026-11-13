@@ -853,11 +853,24 @@ function checkCompare(xl, found, res) {
     }
   }
   const used = new Set();
-  const honsuSum = new Map(); // 切断リスト: 図番+製品名 → 本数の合計
-  if (xl.cut) {
-    for (const x of xl.rows) {
-      const k = checkZnorm(x.zuban) + '\u0000' + x.mark;
-      honsuSum.set(k, (honsuSum.get(k) || 0) + (checkQty(x.honsu) ?? 0));
+  // 本数で分けた行(2026-11-13 ユーザー指示): 製品マークの最後の「(数字)」は何本目か。外した名前(base)で
+  // 図面と照合し、同じ図番・製品マークの行の本数を合計して図面の台数と比べる(切断リストと同じ考え方)。
+  // 図面の製品マークがそのまま「…(数字)」のとき(実データには無い)は、外さずに照合する。
+  for (const x of xl.rows) {
+    const m = x.mark.match(/^(.+)\((\d+)\)$/);
+    x.base = m ? m[1] : x.mark;
+    x.seq = m ? Number(m[2]) : null;
+    if (m && (byZuban.get(checkZnorm(x.zuban)) || []).some(c => checkNorm(c.row['製品マーク']) === x.mark)) { x.base = x.mark; x.seq = null; }
+  }
+  const groupKey = x => checkZnorm(x.zuban) + '\u0000' + x.base;
+  const honsuSum = new Map(); // 図番+製品マーク(base) → 本数の合計(切断リストと、本数で分けた行で使う)
+  const pieces = new Map();   // 図番+製品マーク(base) → [何本目, ...](本数で分けた行)
+  for (const x of xl.rows) {
+    const k = groupKey(x);
+    honsuSum.set(k, (honsuSum.get(k) || 0) + (checkQty(x.honsu) ?? 0));
+    if (x.seq != null) {
+      if (!pieces.has(k)) pieces.set(k, []);
+      pieces.get(k).push(x.seq);
     }
   }
   const rows = xl.rows.map(x => {
@@ -866,7 +879,7 @@ function checkCompare(xl, found, res) {
     // 切断リストには柱仕口・大梁付などの部材の行もあるので、一致しない行は「対象外」として照合しない。
     const files = found.get(checkZnorm(x.zuban)) || [];
     if (files.length) out.file = res.get(files[0].path.join('\\'));
-    const cand = (byZuban.get(checkZnorm(x.zuban)) || []).filter(c => checkNorm(c.row['製品マーク']) === x.mark);
+    const cand = (byZuban.get(checkZnorm(x.zuban)) || []).filter(c => checkNorm(c.row['製品マーク']) === x.base);
     if (!cand.length) {
       out.judge = '対象外';
       out.memo.push(!files.length ? '図番の図面が見つからない'
@@ -874,7 +887,7 @@ function checkCompare(xl, found, res) {
       return out;
     }
     const { key, mode, row } = cand[0];
-    used.add(key + '\u0000' + x.mark);
+    used.add(key + '\u0000' + x.base);
     out.dw = row;
     out.file = res.get(key);
     if (xl.hasSize && !checkSizeSame(x.size, row['サイズ'], xl.cut)) {
@@ -887,10 +900,20 @@ function checkCompare(xl, found, res) {
     }
     if (row['長さの確認']) out.memo.push(`図面の長さは「${row['長さの確認']}」`);
     if (xl.hasHonsu) {
-      // 切断リストは製品1本ごとに1行(本数1)なので、同じ図番・製品名の行の本数を合計して図面の台数と比べる
-      const xq = xl.cut ? (honsuSum.get(checkZnorm(x.zuban) + '\u0000' + x.mark) ?? null) : checkQty(x.honsu);
-      if (xl.cut) out.honsuSum = xq;
-      if (xq !== checkQty(row['本数'])) out.bad.push('本数');
+      // 切断リストと本数で分けた行は製品1本ごとに1行(本数1)なので、同じ図番・製品名の行の本数を合計して図面の台数と比べる
+      const perPiece = xl.cut || pieces.has(groupKey(x));
+      const xq = perPiece ? (honsuSum.get(groupKey(x)) ?? null) : checkQty(x.honsu);
+      if (perPiece) out.honsuSum = xq;
+      const dq = checkQty(row['本数']);
+      if (xq !== dq) out.bad.push('本数');
+      // 何本目かの数字が、図面の台数を超える・同じ数字が2行ある(抜けは「図面にあってExcelに無い」に出す)
+      if (x.seq != null) {
+        const same = pieces.get(groupKey(x)).filter(n => n === x.seq).length;
+        const over = dq != null && (x.seq < 1 || x.seq > dq);
+        if ((over || same > 1) && !out.bad.includes('本数')) out.bad.push('本数');
+        if (over) out.memo.push(`(${x.seq})は図面の台数${dq}を超える`);
+        if (same > 1) out.memo.push(`(${x.seq})が${same}行ある`);
+      }
     }
     // 図面から長さを読めなかった行は継手も空になるので、継手は比べない(長さの不一致は残す)
     if (xl.hasJoint && row['長さ'] != null && !checkJointSame(x, row, mode, xl)) out.bad.push('継手');
@@ -906,7 +929,14 @@ function checkCompare(xl, found, res) {
   for (const z of xl.cut ? [] : zubanOnce.values()) {
     for (const c of byZuban.get(checkZnorm(z)) || []) {
       const m = checkNorm(c.row['製品マーク']);
-      if (!used.has(c.key + '\u0000' + m)) extra.push({ zuban: z, row: c.row, file: res.get(c.key) });
+      if (!used.has(c.key + '\u0000' + m)) { extra.push({ zuban: z, row: c.row, file: res.get(c.key) }); continue; }
+      // 本数で分けた行: 図面の台数のうち、Excelに無い何本目か(例: 3台なのに(3)が無い)
+      const seqs = pieces.get(checkZnorm(z) + '\u0000' + m);
+      const dq = checkQty(c.row['本数']);
+      if (!seqs || dq == null) continue;
+      for (let i = 1; i <= dq; i++) {
+        if (!seqs.includes(i)) extra.push({ zuban: z, row: { ...c.row, '製品マーク': `${m}(${i})`, '本数': 1 }, file: res.get(c.key) });
+      }
     }
   }
   const judged = rows.filter(r => r.judge !== '対象外');
