@@ -163,6 +163,8 @@ async function startApp(mode) {
       inputBook = null;
     }
   }
+  // 帳票チェックは、押すたびに図面のあるサーバー(鳥取/本社)を選ぶ(2026-11-13 ユーザー指示)
+  if (mode === 'check' && !(await askCheckServer())) return; // 戻る
   // 利用記録シートへ日時・工場・モードを記録する(失敗してもアプリ利用は継続させる)。
   apiPost('logUsageStart', { factory: FACTORY_NAMES[selectedFactory] || selectedFactory, mode: MODE_NAMES[mode] }).catch(() => {});
   moveManualButtonToHeader();
@@ -182,7 +184,7 @@ async function startApp(mode) {
     // 帳票チェック: Excelを取り込み、図面を探して抽出するのでPyodideも使う
     if (mergeMode) { mergeMode = false; document.getElementById('merge-area').classList.remove('open'); }
     if (!checkMode) openCheck();
-    else loadCheckRoot(); // 工事を変えたときは、その工事用に覚えたフォルダを表示し直す
+    else loadCheckRoot(); // サーバー・工事を選び直したときは、そのフォルダを表示し直す(結果のリンクは照合したときのサーバーで付ける)
     if (!pyodide) await initPyodide();
     return;
   }

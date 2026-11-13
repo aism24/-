@@ -390,7 +390,7 @@ table#check-table td.judge.gray { background: #e0e0e0; color: #444; }
 table#check-table td.all-ok { color: #1e7b34; font-weight: bold; padding: 18px; }
 #check-extra { display: none; max-width: 100%; }
 .check-extra-title { color: #ffe08a; font-size: 13px; font-weight: bold; text-align: center; margin: 6px 0; }
-#check-confirm { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000; align-items: center; justify-content: center; }
+#check-confirm { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 5800; align-items: center; justify-content: center; }
 #check-confirm.open { display: flex; }
 #check-confirm-box { background: #c0392b; color: #fff; border-radius: 10px; padding: 22px 28px; max-width: 520px; box-shadow: 0 6px 24px rgba(0,0,0,.4); }
 #check-confirm-title { font-size: 18px; font-weight: bold; margin-bottom: 10px; }
@@ -425,3 +425,15 @@ table#result-table.input-mode td:nth-child(7), table#result-table.input-mode td:
 table#result-table tbody tr.in-input-row:not(.row-checked) { background: #e3e3e3 !important; color: #888; }
 /* すでに入力データにあるが、サイズ・長さ・本数・継手のどれかが違う行(追記しない)は薄い紫 */
 table#result-table tbody tr.in-input-diff:not(.row-checked) { background: #e8dcff !important; }
+
+/* 帳票チェックを押したときの「鳥取サーバー / 本社サーバー」の選択(2026-11-13) */
+#server-choice { display: none; position: fixed; inset: 0; z-index: 5200; background: rgba(20,30,40,.55); align-items: center; justify-content: center; }
+#server-choice.open { display: flex; }
+#server-choice-box { background: #fff; border-radius: 12px; padding: 26px 30px; width: 92%; max-width: 440px; box-shadow: 0 12px 40px rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 12px; }
+#server-choice-title { font-size: 16px; font-weight: bold; text-align: center; margin-bottom: 4px; }
+#server-choice-list { display: flex; flex-direction: column; gap: 12px; }
+.server-choice-btn { display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; padding: 14px 18px; border: 2px solid #1a73e8; border-radius: 10px; background: #e3f0ff; cursor: pointer; text-align: center; font-family: inherit; }
+.server-choice-btn:hover { background: #cfe3ff; }
+#server-choice-msg { font-size: 12px; color: #1a73e8; min-height: 1em; text-align: center; }
+#server-choice-back { background: #e6e8eb; border: 2px solid #8a949c; color: #3b4650; font-weight: bold; padding: 10px; border-radius: 10px; }
+#server-choice-back:hover { background: #d5d9dd; }
