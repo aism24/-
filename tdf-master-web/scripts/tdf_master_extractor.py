@@ -900,6 +900,18 @@ def _char_multiset_overlap_no_size(a: str, b: str) -> int:
     return sum((ca & cb).values())
 
 
+# 継手と同じ高さとみなす幅(3つ目の方法。2026-11-13、26-17 D1MM2B-03・04 の下の図は継手の文字から313・314下に
+# 梁のサイズが書かれていた)
+_SIZE_NEAR_JOINT_Y_BAND = 400.0
+
+
+def _has_dims(text: str) -> bool:
+    """「H-200x200x8x12」のように寸法が x でつながった文字か。「C100」のような部材の名前だけの文字は
+    梁本体のサイズに使わない(2026-11-13、26-17 D1MM2B-03 の D1MM2HB11-1 が上の図の C100 になっていた。
+    正解Excelのサイズに x の無いものは無い)。"""
+    return bool(re.search(r"\d\s*[xX×*]\s*\d", unicodedata.normalize("NFKC", text)))
+
+
 def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
     """3項目パターン専用のサイズ判定。左右継手位置に最も近いサイズ文字列を
     探し、それが長さのX範囲(endpointsのX最小〜最大)の外側にあれば
@@ -922,7 +934,7 @@ def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
     near_ref = set()
     for r in tdf.texts:
         text = tdf.resolve_text(r)
-        if (text and _looks_like_size(text) and x_lo <= r.x <= x_hi
+        if (text and _looks_like_size(text) and _has_dims(text) and x_lo <= r.x <= x_hi
                 and abs(r.y - (_ly + _ry) / 2.0) <= _SIZE_JOINT_Y_BAND):
             near_ref.add(text)
     if len(near_ref) == 1:
@@ -931,7 +943,7 @@ def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
     def _is_joint_size(pos) -> bool:
         return not (x_lo <= pos[0] <= x_hi)
 
-    # 上の2つで決まらないとき: 継手と同じ高さ(上下300以内)・長さのX範囲の中に、サイズの文字がちょうど
+    # 上の2つで決まらないとき: 継手と同じ高さ(上下400以内)・長さのX範囲の中に、サイズの文字がちょうど
     # 1種類だけあれば、それが梁本体のサイズ(2026-11-13、26-17 B2M4B-09 の B2M4HB100z-3。短い梁で、
     # 継手にいちばん近いサイズの文字が梁自身の上の文字になり、隣の部材のサイズとみなされず空になっていた)
     def _near_joints_in_range():
@@ -941,8 +953,8 @@ def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
         found = set()
         for r in tdf.texts:
             text = tdf.resolve_text(r)
-            if (text and _looks_like_size(text) and x_lo <= r.x <= x_hi
-                    and any(abs(r.y - y) <= _SIZE_JOINT_Y_BAND for y in ys)):
+            if (text and _looks_like_size(text) and _has_dims(text) and x_lo <= r.x <= x_hi
+                    and any(abs(r.y - y) <= _SIZE_NEAR_JOINT_Y_BAND for y in ys)):
                 found.add(text)
         return next(iter(found)) if len(found) == 1 else None
 
