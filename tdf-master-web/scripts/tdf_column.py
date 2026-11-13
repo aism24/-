@@ -276,6 +276,19 @@ def _size_below_code(tdf: tb.TdfData, code: str) -> str | None:
     return found.pop() if len(found) == 1 else None
 
 
+def _single_size_in_drawing(tdf: tb.TdfData) -> str | None:
+    """図の中の部材のサイズの文字(x の入ったもの。□-・PL- は除く)が1種類だけならそれ。
+    製品の行にサイズの欄が無く、図の中に「□-」も設計符号の下のサイズも無いときに使う
+    (2026-11-13、26-17 の間柱 B2M2P-01。2L-65x65x6 が引き出し線で書かれているだけ)。"""
+    found = set()
+    for r in tdf.texts:
+        s = _norm(tdf.resolve_text(r))
+        if (s and _is_size(s) and re.search(r"\d\s*[xX×]\s*\d", s)
+                and not s.startswith("□") and not _PLATE_NAME.search(s)):
+            found.add(s.replace(" ", ""))
+    return found.pop() if len(found) == 1 else None
+
+
 def _widths_from_size(size: str | None) -> list[float]:
     m = _BOX_SIZE.match(_norm(size)) or _DIMS.search(_norm(size))
     if not m:
@@ -1304,7 +1317,7 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
         if row["zushi"]:
             size, widths = drawing_box_size(tdf)
             if size is None:
-                size = _size_below_code(tdf, row["code"])
+                size = _size_below_code(tdf, row["code"]) or _single_size_in_drawing(tdf)
                 widths = _widths_from_size(size)
                 h_in_drawing = size is not None
         else:
