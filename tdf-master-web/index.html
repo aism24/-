@@ -4002,6 +4002,15 @@ def find_rows(tdf: tb.TdfData) -> list[dict]:
                          "count": _norm(tdf.resolve_text(dai)), "pos": pos})
         else:
             rest.append((dai, left))
+    if not rows:
+        # サイズの欄が無い表(製品マーク | 設計符号 | 本数)。図示と同じく図の中の「□-」でサイズを決める
+        # (2026-11-13、26-17 の柱詳細図 B1M1C-01(9H) 等。ほかに製品の行が無い図面だけ)
+        two = [(dai, left) for dai, left in rest if len(left) == 2]
+        for dai, left in two:
+            a, b = (_norm(tdf.resolve_text(r)) for r in left)
+            rows.append({"mark": a, "code": b, "size": None, "zushi": True,
+                         "count": _norm(tdf.resolve_text(dai)), "pos": (left[0].x, dai.x, dai.y)})
+        rest = [x for x in rest if x not in two]
     rows = rows + _zushi_followers(tdf, rows, rest)
     rows = rows + _shared_rows(tdf, rows)
     # ×印(削除マーク)の付いた行は除く。製品マークか本数のセルが×印の範囲に入る行
@@ -4765,7 +4774,14 @@ def _bolts_on_member(bolts, x1: float, x2: float, y_end: float, direction: int) 
 
 
 def _joint_near(caps, bolts, x1: float, x2: float, y_end: float, direction: int) -> str | None:
+    """柱の端の近くにある継手の長丸の名前(判定は _joint_near_found)。"""
+    found = _joint_near_found(caps, bolts, x1, x2, y_end, direction)
+    return found[1] if found else None
+
+
+def _joint_near_found(caps, bolts, x1: float, x2: float, y_end: float, direction: int):
     """柱の端(direction=-1 下端、+1 上端)の近くにある継手の長丸。
+    見つかったときは (端より内側の長丸か, 継手名) を返す。
 
     長丸は柱の幅の中か、端の横に描かれる(N1C-1のCJ1は幅の中、N1P-1のPJ200W・
     N4C-1のCJ350Kは横)。外形から横1000以内、端から上下700以内で一番近いもの。
@@ -4795,7 +4811,7 @@ def _joint_near(caps, bolts, x1: float, x2: float, y_end: float, direction: int)
             d = (inward > 0.0, math.hypot(dx, dy))  # 端の外側の長丸を先に
             if best is None or d < best[0]:
                 best = (d, c[5])
-    return best[1] if best else None
+    return (best[0][0], best[1]) if best else None
 
 
 def _in_side_member(tdf: tb.TdfData, cap, x1: float, x2: float, bottom: float, top: float) -> bool:
@@ -5055,6 +5071,11 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
         # 同じものどうしは従来の順番(外形線の長い順)のまま。
         gots.sort(key=lambda bg: (bg[1] is not None and _on_dim_chain(chains, bg[1][1], bg[1][2]),
                                   bg[1][0] if bg[1] is not None else -1.0), reverse=True)
+        # 同じ製品の図が複数あるとき(正面と横から見た図など)は、端の外側の長丸を、別の図の
+        # 端より内側の長丸より先に使う(2026-11-13、26-14 の N2P-15・17。横から見た図の
+        # 下端の110上にブレースの継手 BRJ32K、正面の図の下端の89下に間柱の継手 PJ100WK)。
+        # どちらも同じ側なら、従来どおり先に調べた図のもの。
+        bottoms, tops = [], []
         for b, got in gots:
             if got is None:
                 continue
@@ -5062,9 +5083,16 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
                 length = got[0]
             elif abs(got[0] - length) > 0.6:
                 continue
-            bottom = bottom or _joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[1], -1)
+            f = _joint_near_found(jcaps(b, got), bolts, b["x1"], b["x2"], got[1], -1)
+            if f:
+                bottoms.append(f)
             if id(b) not in stub:
-                top = top or _joint_near(jcaps(b, got), bolts, b["x1"], b["x2"], got[2], +1)
+                f = _joint_near_found(jcaps(b, got), bolts, b["x1"], b["x2"], got[2], +1)
+                if f:
+                    tops.append(f)
+        pick = lambda fs: min(fs, key=lambda f: f[0])[1] if fs else None  # min は同じ値なら先のもの
+        bottom = bottom or pick(bottoms)
+        top = top or pick(tops)
         for b, got in gots:
             if got is None or length is None or abs(got[0] - length) > 0.6:
                 continue
