@@ -1425,11 +1425,26 @@ def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
     def _is_joint_size(pos) -> bool:
         return not (x_lo <= pos[0] <= x_hi)
 
+    # 上の2つで決まらないとき: 継手と同じ高さ(上下300以内)・長さのX範囲の中に、サイズの文字がちょうど
+    # 1種類だけあれば、それが梁本体のサイズ(2026-11-13、26-17 B2M4B-09 の B2M4HB100z-3。短い梁で、
+    # 継手にいちばん近いサイズの文字が梁自身の上の文字になり、隣の部材のサイズとみなされず空になっていた)
+    def _near_joints_in_range():
+        ys = [j["cy"] for j in (left_jobj, right_jobj) if j]
+        if not ys:
+            return None
+        found = set()
+        for r in tdf.texts:
+            text = tdf.resolve_text(r)
+            if (text and _looks_like_size(text) and x_lo <= r.x <= x_hi
+                    and any(abs(r.y - y) <= _SIZE_JOINT_Y_BAND for y in ys)):
+                found.add(text)
+        return next(iter(found)) if len(found) == 1 else None
+
     size_l = _nearest_size_text_no_size(tdf, left_jobj["cx"], left_jobj["cy"]) if left_jobj else None
     size_r = _nearest_size_text_no_size(tdf, right_jobj["cx"], right_jobj["cy"]) if right_jobj else None
     refs = [p for p in (size_l, size_r) if p is not None and _is_joint_size(p)]
     if not refs:
-        return None
+        return _near_joints_in_range()
 
     y_lo = min(p[1] for p in refs) - _SIZE_JOINT_Y_BAND
     y_hi = max(p[1] for p in refs) + _SIZE_JOINT_Y_BAND
@@ -1461,7 +1476,7 @@ def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
         if len(scored) >= 2 and scored[0][0] == scored[1][0]:
             return None
         return scored[0][1]
-    return None
+    return _near_joints_in_range()
 
 
 # ---------------------------------------------------------------------------
