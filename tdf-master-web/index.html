@@ -1183,6 +1183,7 @@ _JOINT_END_X = 1200.0  # 継手の高さを比べるとき、梁の端からX方
 _JOINT_LEVEL_TOL = 60.0  # 継手の長丸の高さの違いがこれ以内なら、同じ高さに描かれたものとみなす
 _JOINT_IN_MAX = 200.0  # 梁の端より内側に、継手の長丸の中心がこれ以上入っていたら、その端の継手にしない
 _JOINT_Y_NEAR = 600.0  # 継手の長丸を、長さの基準線のこの上下の範囲から優先して選ぶ
+_JOINT_NEAR_OUT_MAX = 1500.0  # 基準線の近くの長丸として数えるのは、梁の端から外へX方向にこの範囲まで(26-17 B1M2B-01 の BGJ8003A は1202外)
 
 
 def _nearest_size_text_no_size(tdf: tb.TdfData, cx: float, cy: float):
@@ -1366,7 +1367,11 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
     # (全長の寸法線が離れた位置に描かれた図面。S-1 R1G-14〜16)。
     mid_xr = (lx_r + rx_r) / 2.0
     ref_y = (ly + ry) / 2.0
-    near = [c for c in candidates if abs(c[1] - ref_y) <= _JOINT_Y_NEAR]
+    # 梁の端から外へX方向に1500(_JOINT_NEAR_OUT_MAX)より離れた長丸は、基準線の近くにあっても隣の部材の継手と
+    # みなし、ここでは数えない(2026-11-13、26-17 D2M2B-12 の D2M2HB100z-2。基準線の近くには右端の
+    # 2177外の、隣の D2M2SB24az-3 の BJ24az しか無く、左継手が空・右継手が BJ24az になっていた)
+    near = [c for c in candidates if abs(c[1] - ref_y) <= _JOINT_Y_NEAR
+            and lx_r - _JOINT_NEAR_OUT_MAX <= _rotate_x(c[0], c[1]) <= rx_r + _JOINT_NEAR_OUT_MAX]
     # 梁の端より内側に200以上入った長丸は、その端の継手にしない(2026-11-11、26-17 D1MM2G-01。
     # 右端より559内側にある別の梁の PJ340 を、右端の継手に選んでいた。正しい継手は端の外側に付く)
     left_near = [c for c in near if _rotate_x(c[0], c[1]) < mid_xr and _rotate_x(c[0], c[1]) <= lx_r + _JOINT_IN_MAX]
@@ -1399,7 +1404,9 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
     def _nearest(target_xr: float, pool):
         if not pool:
             return None, None, None
-        c = min(pool, key=lambda c: abs(_rotate_x(c[0], c[1]) - target_xr))
+        # X方向の近さが同じ(上の図と下の図で同じ位置に描かれた長丸)なら、基準線に近い高さのものを選ぶ
+        # (2026-11-13、26-17 D2M2B-12 の D2M2HB100z-2)
+        c = min(pool, key=lambda c: (round(abs(_rotate_x(c[0], c[1]) - target_xr), 1), abs(c[1] - ref_y)))
         return c
 
     left_cx, left_cy, left_text = _nearest(lx_r, left_pool)
