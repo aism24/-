@@ -283,6 +283,7 @@ def _size_below_code(tdf: tb.TdfData, code: str) -> str | None:
 
 
 LEADER_JOIN_TOL = 3.0  # 引き出し線どうしがつながっているとみなす距離
+LEADER_TIP_TOL = 20.0  # 引き出し線の先端が柱の外形線を指しているとみなす距離
 
 
 def _leader_sizes(tdf: tb.TdfData):
@@ -627,6 +628,20 @@ def _cut_splice_plates(tdf: tb.TdfData, x1: float, x2: float, segs):
     return [list(v) for v in segs]
 
 
+SEPARATE_GAP = 3000.0  # 外形線の組の切れ目がこれより長ければ別の図とみなす
+
+
+def _split_far(segs):
+    """区間の並びを、SEPARATE_GAP より長い切れ目で分ける。"""
+    out = []
+    for s in sorted(segs):
+        if out and s[0] - out[-1][-1][1] <= SEPARATE_GAP:
+            out[-1].append(s)
+        else:
+            out.append([s])
+    return out
+
+
 def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None = None,
             min_body: float = MIN_BODY, split_main: bool = False):
     """柱本体の候補(立面図が2つあれば2つ以上)と、その上下の端の候補のY。
@@ -656,58 +671,62 @@ def _bodies(tdf: tb.TdfData, widths: list[float], by_x, caps, tf: float | None =
         segs = _cut_splice_plates(tdf, x1, x2, segs)
         reach = (x2 - x1) / 2 + WIDTH_TOL
         cuts = sorted((c[1] + c[3]) / 2 for c in caps if x1 - reach <= (c[0] + c[2]) / 2 <= x2 + reach)
-        bounds = [-1e18] + cuts + [1e18]
-        best = None
-        for k in range(len(bounds) - 1):
-            lo_b, hi_b = bounds[k], bounds[k + 1]
-            part = [s for s in segs if s[0] >= lo_b and s[1] <= hi_b]
-            # 外形線の組と重ならない細い部分の線が長丸をまたぐときは、長丸の位置で
-            # 切って使う(上の節の柱の線が細い部分の線と一続きに描かれ、上の継手の
-            # 長丸をまたぐことがある: 26-12 の 2C-06 の □-650)。外形線の組をまたぐ
-            # 線は従来どおり使わない(継手の先に描かれた隣の部材の線のため)。ただし
-            # split_main のときは切って使う(下の節の柱の線が継手をまたいで一続きに
-            # 描かれる: 26-16 の WA2-4C-03 の下継手 zCJ700A)。
-            # 外形線の組とつながった区間でも、長丸より先の部分に外形線の組が無ければ切って使う
-            # (2026-11-13、26-17 の D1M2C-02。幅650の外形線の短い区間と、上の細い □-600 の部分の
-            # 線が一続きになり、細い部分の線が上端を越えて上の継手 CJ2 の長丸をまたいでいたため、
-            # まるごと除いて 3460 になっていた。正しくは 6743)
-            part += [(max(s[0], lo_b), min(s[1], hi_b)) for s in segs
-                     if (s[0] < lo_b or s[1] > hi_b) and min(s[1], hi_b) > max(s[0], lo_b)
-                     and (split_main or not _intersect(_subtract([list(s)], [[lo_b, hi_b]]),
-                                                       [list(m) for m in p["segs"]]))]
-            cover = sum(s[1] - s[0] for s in part)
-            if not part or cover < min_body:
-                continue
-            lo, hi = min(s[0] for s in part), max(s[1] for s in part)
-            ends = {y for s in part for y in s}
-            # 外形線の外の端の候補のうち、一点鎖線だけの高さは使わない(床・レベルの線。
-            # 26-16 の EB2-0P-01 は間柱の下端の20下にガセットPLの取り合いの一点鎖線が
-            # あり、1370 になっていた。正しくは 1350)。同じ高さに実線が重なるときは使う
-            # (26-12 の 1P-17 はベースPL の下の線(折れ線)が一点鎖線に重なる: 5760)。
-            ends.update(y for y in _spanning_ys(tdf, x1, x2, max(lo - END_PLATE_REACH, lo_b), min(hi + END_PLATE_REACH, hi_b))
-                        if lo <= y <= hi or _solid_at(tdf, y, x1 + WIDTH_TOL, x2 - WIDTH_TOL))
-            cx = (x1 + x2) / 2
-            ends.update(y for y in _center_ys(tdf, cx, max(lo - END_PLATE_REACH, lo_b), lo) if _solid_at(tdf, y, cx - 1.0, cx + 1.0))
-            ends.update(y for y in _center_ys(tdf, cx, hi, min(hi + END_PLATE_REACH, hi_b)) if _solid_at(tdf, y, cx - 1.0, cx + 1.0))
-            if tf is not None:
-                # H形の柱は、端の面の線(左右のフランジの厚さで区切られた水平線)も端の
-                # 候補にする。添え板で継ぐ柱は外形線が継手の先まで一続きに描かれ、
-                # 端に切れ目ができない(26-16 の EA1-4C-01 の下端 5750)。
-                y_lo, y_hi = max(lo - END_PLATE_REACH, lo_b), min(hi + END_PLATE_REACH, hi_b)
-                ends.update(y for y, a, b_ in _hlines(tdf, y_lo, y_hi)
-                            if abs(a - x1) <= WIDTH_TOL and abs(b_ - (x1 + tf)) <= WIDTH_TOL
-                            and _is_flange_end(tdf, x1, x2, y, tf))
-            # 外形線の無い区間(細い部分)の中で柱の中心を覆う水平線も端の候補にする
-            # (細い部分の上端の板。2C-06 の □-650 の上端)
-            main = _intersect([list(s) for s in p["segs"]], [[lo, hi]])
-            for lo_n, hi_n in _subtract([[lo, hi]], main):
-                ends.update(_center_ys(tdf, cx, lo_n, hi_n))
-            cand = {"x1": x1, "x2": x2, "ends": sorted(ends), "cover": cover,
-                    "main_cover": p["cover"], "segs": part}
-            if best is None or cand["cover"] > best["cover"]:
-                best = cand
-        if best is not None:
-            found.append(best)
+        # 同じ横位置に別の図(別の製品)が上下に描かれているときは、外形線の組の大きな切れ目
+        # (SEPARATE_GAP より長い)で分けて、それぞれを本体の候補にする(2026-11-16、26-17 の
+        # 間柱 D1M1P-06。D1M1P1-1 と D1M1P1-2 の図が上下に並び、1本の本体になっていた)
+        for segs in _split_far(segs):
+            bounds = [-1e18] + cuts + [1e18]
+            best = None
+            for k in range(len(bounds) - 1):
+                lo_b, hi_b = bounds[k], bounds[k + 1]
+                part = [s for s in segs if s[0] >= lo_b and s[1] <= hi_b]
+                # 外形線の組と重ならない細い部分の線が長丸をまたぐときは、長丸の位置で
+                # 切って使う(上の節の柱の線が細い部分の線と一続きに描かれ、上の継手の
+                # 長丸をまたぐことがある: 26-12 の 2C-06 の □-650)。外形線の組をまたぐ
+                # 線は従来どおり使わない(継手の先に描かれた隣の部材の線のため)。ただし
+                # split_main のときは切って使う(下の節の柱の線が継手をまたいで一続きに
+                # 描かれる: 26-16 の WA2-4C-03 の下継手 zCJ700A)。
+                # 外形線の組とつながった区間でも、長丸より先の部分に外形線の組が無ければ切って使う
+                # (2026-11-13、26-17 の D1M2C-02。幅650の外形線の短い区間と、上の細い □-600 の部分の
+                # 線が一続きになり、細い部分の線が上端を越えて上の継手 CJ2 の長丸をまたいでいたため、
+                # まるごと除いて 3460 になっていた。正しくは 6743)
+                part += [(max(s[0], lo_b), min(s[1], hi_b)) for s in segs
+                         if (s[0] < lo_b or s[1] > hi_b) and min(s[1], hi_b) > max(s[0], lo_b)
+                         and (split_main or not _intersect(_subtract([list(s)], [[lo_b, hi_b]]),
+                                                           [list(m) for m in p["segs"]]))]
+                cover = sum(s[1] - s[0] for s in part)
+                if not part or cover < min_body:
+                    continue
+                lo, hi = min(s[0] for s in part), max(s[1] for s in part)
+                ends = {y for s in part for y in s}
+                # 外形線の外の端の候補のうち、一点鎖線だけの高さは使わない(床・レベルの線。
+                # 26-16 の EB2-0P-01 は間柱の下端の20下にガセットPLの取り合いの一点鎖線が
+                # あり、1370 になっていた。正しくは 1350)。同じ高さに実線が重なるときは使う
+                # (26-12 の 1P-17 はベースPL の下の線(折れ線)が一点鎖線に重なる: 5760)。
+                ends.update(y for y in _spanning_ys(tdf, x1, x2, max(lo - END_PLATE_REACH, lo_b), min(hi + END_PLATE_REACH, hi_b))
+                            if lo <= y <= hi or _solid_at(tdf, y, x1 + WIDTH_TOL, x2 - WIDTH_TOL))
+                cx = (x1 + x2) / 2
+                ends.update(y for y in _center_ys(tdf, cx, max(lo - END_PLATE_REACH, lo_b), lo) if _solid_at(tdf, y, cx - 1.0, cx + 1.0))
+                ends.update(y for y in _center_ys(tdf, cx, hi, min(hi + END_PLATE_REACH, hi_b)) if _solid_at(tdf, y, cx - 1.0, cx + 1.0))
+                if tf is not None:
+                    # H形の柱は、端の面の線(左右のフランジの厚さで区切られた水平線)も端の
+                    # 候補にする。添え板で継ぐ柱は外形線が継手の先まで一続きに描かれ、
+                    # 端に切れ目ができない(26-16 の EA1-4C-01 の下端 5750)。
+                    y_lo, y_hi = max(lo - END_PLATE_REACH, lo_b), min(hi + END_PLATE_REACH, hi_b)
+                    ends.update(y for y, a, b_ in _hlines(tdf, y_lo, y_hi)
+                                if abs(a - x1) <= WIDTH_TOL and abs(b_ - (x1 + tf)) <= WIDTH_TOL
+                                and _is_flange_end(tdf, x1, x2, y, tf))
+                # 外形線の無い区間(細い部分)の中で柱の中心を覆う水平線も端の候補にする
+                # (細い部分の上端の板。2C-06 の □-650 の上端)
+                main = _intersect([list(s) for s in p["segs"]], [[lo, hi]])
+                for lo_n, hi_n in _subtract([[lo, hi]], main):
+                    ends.update(_center_ys(tdf, cx, lo_n, hi_n))
+                cand = {"x1": x1, "x2": x2, "ends": sorted(ends), "cover": cover,
+                        "main_cover": p["cover"], "segs": part}
+                if best is None or cand["cover"] > best["cover"]:
+                    best = cand
+            if best is not None:
+                found.append(best)
     # 本体の長さの順(立面図の片方が取り付く梁の長丸で区切られることがある: S3C-06)
     found.sort(key=lambda b: -b["cover"])
     return found
@@ -1100,7 +1119,10 @@ def _joint_on_next_member(caps, by_x, x1: float, x2: float, y_end: float, direct
         for lo, hi in near_lines(x):
             if lo <= cy <= hi:
                 near_end = hi if direction < 0 else lo
-                if (y_end - near_end) * direction <= JOINT_DY or lo <= y_end <= hi:
+                # 隣の部材の線は端から外へ JOINT_DY 以内で始まるもの(2026-11-16、26-17 の間柱
+                # D1M1P-06。以前は向きが逆で、端より先にある線なら遠くても通り、上に描かれた別の図
+                # (D1M1P1-2)の下継手 PJ1 を D1M1P1-1 の上継手にしていた)
+                if (-JOINT_DY <= (near_end - y_end) * direction <= JOINT_DY) or lo <= y_end <= hi:
                     return True
         return False
 
@@ -1365,7 +1387,9 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
             for b in _bodies(tdf, widths, by_x, body_caps, _flange_thickness(sz)):
                 if multi and unit.get(_owner_row(b, rows)) != unit[id(row)]:
                     continue
-                if (min(abs(tx - b["x1"]), abs(tx - b["x2"])) <= WIDTH_TOL
+                # 先端は外形線か、その内側の板厚の線(外形線から8: D1M1P-04 の D1M1P340-2)
+                if ((b["x1"] - LEADER_TIP_TOL <= tx <= b["x1"] + LEADER_TIP_TOL
+                        or b["x2"] - LEADER_TIP_TOL <= tx <= b["x2"] + LEADER_TIP_TOL)
                         and any(lo - WIDTH_TOL <= ty <= hi + WIDTH_TOL for lo, hi in b["segs"])):
                     got.add(sz)
         return got.pop() if len(got) == 1 else None
