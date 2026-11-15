@@ -1292,13 +1292,21 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
             alt = measure_with(size, widths, h_in_drawing, owner, True)
             if alt[0] is not None:
                 return alt
+            # それでも求まらなかったときだけ、外形の幅以上・長さ1000未満の外形線の組も本体の
+            # 候補にして測り直す(2026-11-16、26-17 の間柱 EM4P-04・05。立面図の間柱は幅175の
+            # 外形線が梁の外の短い線だけで、梁の間は幅153の線。上の断面図(長さ1467)が本体に
+            # なるため、本体が無いときの探し方に進まず長さが空になっていた)
+            alt = measure_with(size, widths, h_in_drawing, owner, False, short=True)
+            if alt[0] is not None:
+                return alt
         return res
 
-    def measure_with(size, widths, h_in_drawing, owner, split_main):
+    def measure_with(size, widths, h_in_drawing, owner, split_main, short=False):
         tf = _flange_thickness(size)
-        key = (tuple(widths), tf, split_main)
+        key = (tuple(widths), tf, split_main, short)
         if key not in found:
-            got = _bodies(tdf, widths, by_x, body_caps, tf, split_main=split_main) if widths else []
+            kw = {"min_body": widths[0]} if short else {}
+            got = _bodies(tdf, widths, by_x, body_caps, tf, split_main=split_main, **kw) if widths else []
             if widths and not got:
                 # 柱本体が1つも無いときだけ、外形の幅以上・長さ1000未満の外形線の組も
                 # 本体の候補にする(長さ470の間柱: 26-12 の 1P-08)
@@ -1315,6 +1323,11 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
                 if skey not in found:
                     found[skey] = _bodies(tdf, widths, by_x, body_caps, tf, min_body=widths[0], split_main=split_main)
                 bodies = [b for b in found[skey] if unit.get(_owner_row(b, rows)) == owner]
+        if short:
+            # 短い組も入れた測り直しでは、長さの求まらない本体(断面図など)と比べて除かない
+            # (EM4P-04 の立面図の外形線の組は 708、上の断面図は 1942)
+            bodies = [b for b in bodies
+                      if determine_length(b, vals, chains) or determine_length_by_chain(tdf, b, chains, size)]
         bodies = _drop_minor(bodies)
         # 長さ1000未満の短い部材は、外形線の端より外の端の候補を、間の距離が図面の板の厚さ
         # (PL-t の t)と同じものだけにする(2026-11-16、26-17 の D1M1P-03 の D1M1T2-1。上下の梁の
