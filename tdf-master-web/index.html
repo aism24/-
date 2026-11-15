@@ -4685,6 +4685,29 @@ def _drop_extension_segs(tdf: tb.TdfData, x1: float, x2: float, segs):
     return out
 
 
+_PLATE_T = re.compile(r"PL-(\d+(?:\.\d+)?)")
+
+
+def _plate_thicknesses(tdf: tb.TdfData) -> set[float]:
+    """図面に書かれた板の厚さ(「PL-12x250x150」の 12 など)。"""
+    out = set()
+    for r in tdf.texts:
+        m = _PLATE_T.search(_norm(tdf.resolve_text(r)))
+        if m:
+            out.add(float(m.group(1)))
+    return out
+
+
+def _ends_by_plate(body, plates):
+    """外形線の端より外の端の候補を、外形線の端からの距離が板の厚さと同じ(差0.6未満)ものに絞る。"""
+    lo = min(s[0] for s in body["segs"])
+    hi = max(s[1] for s in body["segs"])
+    keep = [e for e in body["ends"]
+            if lo - WIDTH_TOL <= e <= hi + WIDTH_TOL
+            or any(abs(abs(e - (lo if e < lo else hi)) - t) < 0.6 for t in plates)]
+    return dict(body, ends=keep)
+
+
 def _drop_minor(bodies):
     """外形線の組そのものが、一番長い組の半分に満たないものは除く(たまたま外形の幅だけ
     離れた別の線の組が、内側にある本物の柱の線を足して長くなることがある: N3C-8)。"""
@@ -4945,8 +4968,9 @@ def _joint_near_found(caps, bolts, x1: float, x2: float, y_end: float, direction
         if -reach_out <= inward <= (exm.BOLT_REACH if inward_ok else 0.0) and dx <= JOINT_DX:
             d = (inward > 0.0, math.hypot(dx, dy))  # 端の外側の長丸を先に
             if best is None or d < best[0]:
-                best = (d, c[5])
-    return (best[0][0], best[1]) if best else None
+                best = (d, c[5], (cx, cy))
+    # 3つ目は (長丸の中心, 端からの距離)。上下の端で同じ長丸を選んだときに近い方へ付けるため
+    return (best[0][0], best[1], (best[2], best[0][1])) if best else None
 
 
 def _in_side_member(tdf: tb.TdfData, cap, x1: float, x2: float, bottom: float, top: float) -> bool:
@@ -5204,6 +5228,10 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
                     found[skey] = _bodies(tdf, widths, by_x, body_caps, tf, min_body=widths[0], split_main=split_main)
                 bodies = [b for b in found[skey] if unit.get(_owner_row(b, rows)) == owner]
         bodies = _drop_minor(bodies)
+        # 長さ1000未満の短い部材は、外形線の端より外の端の候補を、間の距離が図面の板の厚さ
+        # (PL-t の t)と同じものだけにする(2026-11-16、26-17 の D1M1P-03 の D1M1T2-1。上下の梁の
+        # 線どうしの 540 を選んでいた。正しくは下の板 PL-12 を含めた 425.5)
+        bodies = [_ends_by_plate(b, plates) if b["cover"] < MIN_BODY else b for b in bodies]
         length = bottom = top = None
         # 長さは外形線の一番長い立面図で求める。継手の長丸は立面図の片方にだけ
         # 描かれることがある(N1P-1のPJ200W)ので、同じ長さになる立面図から順に探す
@@ -5259,9 +5287,17 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
                 f = _joint_near_found(jcaps(b, got), bolts, b["x1"], b["x2"], got[2], +1)
                 if f:
                     tops.append(f)
-        pick = lambda fs: min(fs, key=lambda f: f[0])[1] if fs else None  # min は同じ値なら先のもの
-        bottom = bottom or pick(bottoms)
-        top = top or pick(tops)
+        pick = lambda fs: min(fs, key=lambda f: f[0]) if fs else None  # min は同じ値なら先のもの
+        fb, ft = pick(bottoms), pick(tops)
+        # 上下の端で同じ長丸(端より内側)を選んだときは、近い方の端だけの継手にする(2026-11-16、
+        # 26-17 の D1M1P-03 の D1M1T2-1。長さ425.5の部材の上端の100下にある TJ2 が下継手にもなっていた)
+        if fb and ft and fb[0] and ft[0] and fb[2][0] == ft[2][0]:
+            if fb[2][1] <= ft[2][1]:
+                ft = None
+            else:
+                fb = None
+        bottom = bottom or (fb[1] if fb else None)
+        top = top or (ft[1] if ft else None)
         for b, got in gots:
             if got is None or length is None or abs(got[0] - length) > 0.6:
                 continue
@@ -5282,6 +5318,7 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
     measured = {}
     out = []
     leaders = None
+    plates = _plate_thicknesses(tdf)
 
     def leader_size(row):
         # 製品の行にサイズの欄が無く、図の中に「□-」も設計符号の下のサイズも無いとき、その
@@ -5292,18 +5329,24 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
         if leaders is None:
             leaders = _leader_sizes(tdf)
         got = set()
-        for sz, tx, ty in leaders:
-            widths = _widths_from_size(sz)
-            if not widths:
-                continue
-            for b in _bodies(tdf, widths, by_x, body_caps, _flange_thickness(sz)):
-                if multi and unit.get(_owner_row(b, rows)) != unit[id(row)]:
+        for short in (False, True):
+            # 長さ1000以上の部材で見つからなければ、短い部材も候補にする(2026-11-16、26-17 の
+            # D1M1P-03 の D1M1T2-1。[-100x50x5x7.5 の 413.5)
+            if got:
+                break
+            for sz, tx, ty in leaders:
+                widths = _widths_from_size(sz)
+                if not widths:
                     continue
-                # 先端は外形線か、その内側の板厚の線(外形線から8: D1M1P-04 の D1M1P340-2)
-                if ((b["x1"] - LEADER_TIP_TOL <= tx <= b["x1"] + LEADER_TIP_TOL
-                        or b["x2"] - LEADER_TIP_TOL <= tx <= b["x2"] + LEADER_TIP_TOL)
-                        and any(lo - WIDTH_TOL <= ty <= hi + WIDTH_TOL for lo, hi in b["segs"])):
-                    got.add(sz)
+                kw = {"min_body": widths[0]} if short else {}
+                for b in _bodies(tdf, widths, by_x, body_caps, _flange_thickness(sz), **kw):
+                    if multi and unit.get(_owner_row(b, rows)) != unit[id(row)]:
+                        continue
+                    # 先端は外形線か、その内側の板厚の線(外形線から8: D1M1P-04 の D1M1P340-2)
+                    if ((b["x1"] - LEADER_TIP_TOL <= tx <= b["x1"] + LEADER_TIP_TOL
+                            or b["x2"] - LEADER_TIP_TOL <= tx <= b["x2"] + LEADER_TIP_TOL)
+                            and any(lo - WIDTH_TOL <= ty <= hi + WIDTH_TOL for lo, hi in b["segs"])):
+                        got.add(sz)
         return got.pop() if len(got) == 1 else None
 
     for row in rows:
