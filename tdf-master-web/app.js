@@ -85,6 +85,35 @@ function updateStartBtn() {
 // モーダルを表示することで、工場・工事名を選択できる時点で工事名
 // プルダウンが既に使える状態にする。2つのAPI呼び出しは互いに依存
 // しないので並列実行し、直列実行した場合に比べて待ち時間を短縮する。
+// Excel を扱う部品(SheetJS・JSZip、合わせて約1MB)。以前は起動時に読み込み、読み終わるまでアプリの
+// 起動処理(工事情報の取得・Pyodide の読み込み)が始まらなかった。起動後に裏で読み込み、使う処理の
+// 先頭で読み終わるのを待つ(2026-11-16)
+const LIB_URLS = [
+  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+];
+let libsPromise = null;
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('読み込めませんでした: ' + src));
+    document.head.appendChild(s);
+  });
+}
+function ensureLibs() {
+  if (window.XLSX && window.JSZip) return Promise.resolve();
+  if (!libsPromise) {
+    libsPromise = Promise.all(LIB_URLS.map(loadScript)).catch(e => {
+      libsPromise = null; // 次に使うときにもう一度読む
+      showToast('Excelを扱う部品を読み込めませんでした。通信を確かめてもう一度お試しください', 'error');
+      throw e;
+    });
+  }
+  return libsPromise;
+}
+
 async function loadMasterData() {
   const [weightResult, kojiResult] = await Promise.allSettled([
     apiGet('getWeightTable'),
@@ -151,7 +180,27 @@ function switchResults(mode) {
   if (extractedResults.length > 0) renderTable(extractedResults);
 }
 
+// ファイル名に付ける日時(yyyyMMddHHmmss)。日本時間(端末の時刻)で付ける(2026-11-16。以前は
+// toISOString の UTC で、9時間前の時刻になっていた)
+function localStamp() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+// モードを選んだ直後の確認画面(サーバー選択など)を待つ間に、もう一度ボタンが押されても
+// 二重に始めない(2026-11-16)
+let startingApp = false;
 async function startApp(mode) {
+  if (startingApp) return;
+  startingApp = true;
+  try {
+    await startAppInner(mode);
+  } finally {
+    startingApp = false;
+  }
+}
+
+async function startAppInner(mode) {
   // 本社・夢前の梁・柱モードだけ、TDF選択の前に「入力データの取り込み / 単純にExcelデータ作成」を選ぶ
   // (2026-11-10 ユーザー指示。鳥取は今までどおり)
   if (mode === 'beam' || mode === 'column') {
@@ -232,6 +281,7 @@ function askInputChoice() {
       msg.textContent = '読み込んでいます…';
       try {
         const buf = await file.arrayBuffer();
+        await ensureLibs();
         const info = await inputXlsm.inspect(JSZip, buf);
         done({ name: file.name, buf, info });
       } catch (e) {
@@ -344,7 +394,7 @@ async function saveToInputBook(recordRows) {
   }
   // 続けて抽出・保存するときは、いま書き込んだ内容の続きから追記する
   book.buf = res.bytes;
-  book.info = await inputXlsm.inspect(JSZip, res.bytes);
+  book.info = res.info;
   renderInputNote(currentMode);
   renderTable(extractedResults); // 追記した行も、入力データにある行(グレー)になる
   showToast(`「ﾃﾞｰﾀ」の${res.firstRow}行目から ${res.count} 行を追記しました` + ((dup.length + diff.length) ? `(すでにある ${dup.length + diff.length} 行は追記しませんでした)` : ''), 'success');
@@ -815,56 +865,19 @@ function buildFileUrl(basePath, fileName) {
 // ファイルの実際の絶対パスを取得できないため、フォルダのパスだけユーザーに貼って
 // もらい、既に判明しているファイル名(_filename)と組み合わせてリンクを作る。
 // 案件ごとにフォルダが変わるため、前回値は記憶せず毎回空欄から始める。
-// opts(帳票チェックの結果Excel用。省略すると今までと同じ):
-//   label / hint … 見出しと説明の差し替え、initial … 欄の初期値、
-//   servers … [[サーバー名, パス], ...](サーバー名のボタンで選ぶ。パスは伏せ字で表示。空なら貼り付け入力)
-function askBasePath(opts) {
-  opts = opts || {};
+function askBasePath() {
   return new Promise(resolve => {
     const overlay = document.getElementById('basepath-overlay');
     const textarea = document.getElementById('basepath-textarea');
     const pasteBtn = document.getElementById('basepath-paste-btn');
     const okBtn = document.getElementById('basepath-ok-btn');
     const skipBtn = document.getElementById('basepath-skip-btn');
-    const labelEl = overlay.querySelector('.basepath-label');
-    const hintEl = overlay.querySelector('.basepath-hint');
-    const srvEl = document.getElementById('basepath-servers');
-    const orig = { label: labelEl.innerHTML, hint: hintEl.innerHTML };
-    if (opts.label) labelEl.textContent = opts.label;
-    if (opts.hint) hintEl.innerHTML = opts.hint;
-    srvEl.innerHTML = '';
-    // サーバー一覧があるとき(帳票チェック): サーバー名のボタンで選ぶ。貼り付けボタンと入力欄は隠し、
-    // 選んだパスは伏せ字(●)で表示する。サーバー一覧が取れなかったときは今までどおり貼り付けで入力する。
-    const servers = opts.servers || [];
-    const pick = servers.length > 0;
-    const maskEl = document.getElementById('basepath-mask');
-    let chosen = '';
-    const maskText = () => { maskEl.value = chosen ? '●'.repeat(12) : ''; };
-    const choose = (path, btn) => {
-      chosen = path;
-      srvEl.querySelectorAll('button').forEach(x => x.classList.toggle('selected', x === btn));
-      maskText();
-    };
-    servers.forEach(([name, path]) => {
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'header-btn';
-      b.textContent = /サーバー$/.test(name) ? name : name + 'サーバー';
-      b.addEventListener('click', () => choose(path, b));
-      srvEl.appendChild(b);
-      if (opts.initial && stripQuotes(opts.initial.trim()) === path) choose(path, b);
-    });
-    textarea.style.display = pick ? 'none' : '';
-    pasteBtn.style.display = pick ? 'none' : '';
-    maskEl.style.display = pick ? '' : 'none';
-    maskText();
-    textarea.value = pick ? '' : (opts.initial || '');
+    textarea.value = '';
     overlay.classList.add('open');
-    if (!pick) textarea.focus();
+    textarea.focus();
 
     function cleanup() {
       overlay.classList.remove('open');
-      labelEl.innerHTML = orig.label; hintEl.innerHTML = orig.hint; srvEl.innerHTML = '';
-      textarea.style.display = ''; pasteBtn.style.display = ''; maskEl.style.display = 'none';
       pasteBtn.removeEventListener('click', onPaste);
       okBtn.removeEventListener('click', onOk);
       skipBtn.removeEventListener('click', onSkip);
@@ -878,8 +891,7 @@ function askBasePath(opts) {
       }
     }
     function onOk() {
-      if (pick && !chosen) { showToast('サーバーを選んでください(リンクなしで保存するときは「スキップ」)', 'error'); return; }
-      const val = pick ? chosen : stripQuotes(textarea.value.trim());
+      const val = stripQuotes(textarea.value.trim());
       cleanup();
       resolve(val);
     }
@@ -956,6 +968,7 @@ function downloadBlob(blob, filename) {
 }
 
 async function downloadExcel() {
+  await ensureLibs();
   if (mergeMode) return downloadMergedExcel();
   if (checkMode) return downloadCheckExcel();
   if (extractedResults.length === 0) return;
@@ -1008,7 +1021,7 @@ async function downloadExcel() {
   }
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '製品情報');
-  const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  const ts = localStamp();
   // ファイル名は「工事番号_図番(枝番を除く)_日時」とする。枝番は図番末尾の
   // 「-数字」または「-数字+英数字」(例: -11 / -11A)なので、それを取り除いた
   // 部分を使う。複数図番が含まれる場合は先頭行の図番を代表として使う。
@@ -1103,6 +1116,7 @@ async function readSheetLinks(arrayBuf) {
 // ダウンロード済みExcel(downloadExcelの出力と同じ列)を読み、行データにする。
 // 列は見出し文字で探す(列順が変わっても読める)。図番セルのハイパーリンクも保持する。
 async function readDownloadedExcel(file) {
+  await ensureLibs();
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
   let links = {};
@@ -1349,7 +1363,7 @@ async function downloadMergedExcel() {
   });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '製品情報');
-  const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  const ts = localStamp();
   const filename = (baseKoji || 'TDF') + '_' + ts + '.xlsx';
 
   if (hyperlinkRefs.length > 0) {
@@ -1580,5 +1594,6 @@ document.body.addEventListener('drop', e => {
   showStatus('読込中', '工事情報を取得しています…');
   await loadMasterData();
   hideStatus();
+  ensureLibs().catch(() => {}); // Excel の部品は、工事情報の取得のあとに裏で読み込んでおく
   document.getElementById('beam-modal').classList.remove('hidden');
 })();

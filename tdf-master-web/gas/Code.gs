@@ -35,7 +35,23 @@ const SHEET_USAGE = "利用記録";
 //   noZubanHead: true … 記録シートのF列「図番頭」を空欄にする
 //   highlight  : { yellowRows: [データ行の番号(0始まり)...], redCells: [[データ行, 列](0始まり)...] }
 //                … データシートの行を黄色(見出しと同じ列数ぶん)、セルを赤の太字にする
+// 同時に記録が来ても行が混ざらないよう、ほかの記録が終わるまで待ってから書く(2026-11-16)
 function onExcelDownload(kojiNo, productCount, rows, opts) {
+  return withLock_(() => onExcelDownloadInner_(kojiNo, productCount, rows, opts));
+}
+
+// ほかの記録(onExcelDownload・logUsageStart)が終わるまで最大30秒待ってから fn を実行する
+function withLock_(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function onExcelDownloadInner_(kojiNo, productCount, rows, opts) {
   opts = opts || {};
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -73,7 +89,13 @@ function addDataSheet_(ss, rows, highlight) {
     ss.deleteSheet(dataSheets.shift());
   }
 
-  const sheetName = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd_HHmmss');
+  let sheetName = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd_HHmmss');
+  // 同じ秒に2回記録すると同じ名前のシートを作れず記録が失われていたので、名前が空くまで
+  // 1秒待って付け直す(名前の形は変えない。古いシートの削除は名前の形で探すため。2026-11-16)
+  while (ss.getSheetByName(sheetName)) {
+    Utilities.sleep(1000);
+    sheetName = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd_HHmmss');
+  }
   const newSheet = ss.insertSheet(sheetName, ss.getSheets().length);
 
   if (rows && rows.length > 0) {
@@ -141,13 +163,15 @@ function getServerPaths() {
   return out;
 }
 
-// 利用記録: モードボタン(梁モード/結合モード)を押したときに呼び出し(日時・工場・モードを記録)。
+// 利用記録: モードボタン(梁・柱・結合・帳票チェック)を押したときに呼び出し(日時・工場・モードを記録)。
 // 時間の記録は行わない。常に見出し行の直下(2行目)に挿入し、既存の記録は下にずらす(=2行目が常に最新)。
 function logUsageStart(factory, mode) {
-  const sheet = sheet_(SHEET_USAGE);
-  sheet.insertRowBefore(2);
-  sheet.getRange(2, 1, 1, 3).setValues([[new Date(), factory || '', mode || '']]);
-  return {};
+  return withLock_(() => {
+    const sheet = sheet_(SHEET_USAGE);
+    sheet.insertRowBefore(2);
+    sheet.getRange(2, 1, 1, 3).setValues([[new Date(), factory || '', mode || '']]);
+    return {};
+  });
 }
 
 // 設定シートの重量表を初期化する手動ユーティリティ(必要であればApps Scriptエディタから

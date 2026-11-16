@@ -1076,7 +1076,7 @@ def _extract_small_beam(tdf: tb.TdfData, filename: str | None = None) -> list[di
                     if joint_caps is None:
                         joint_caps = [((c[0] + c[2]) / 2, (c[1] + c[3]) / 2)
                                       for c in ex._find_stadium_capsules_no_size(tdf)
-                                      if any(ex._text_enclosed_by_capsule_no_size(tdf, rec, c) for rec in tdf.texts)]
+                                      if ex.texts_in_capsule(tdf, c)]
                     ended = []
                     for c in tops:
                         ep = exm._find_reference_line_endpoints(tdf, gx0, gx1, row.y, tier_y_max, c[0])

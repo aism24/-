@@ -398,11 +398,10 @@ AXIS_TOL = 1.0
 
 
 def _capsule_text(tdf: tb.TdfData, cap) -> str | None:
-    for r in tdf.texts:
-        if ex._text_enclosed_by_capsule_no_size(tdf, r, cap):
-            s = _norm(tdf.resolve_text(r))
-            if s:
-                return s
+    for r in ex.texts_in_capsule(tdf, cap):
+        s = _norm(tdf.resolve_text(r))
+        if s:
+            return s
     return None
 
 
@@ -410,14 +409,13 @@ def _capsule_joint_name(tdf: tb.TdfData, cap) -> str | None:
     """長丸の中の、2つ目以降の文字のうち継手名の形のもの(最初の文字が継手名の形でない
     ときに使う)。"""
     seen = False
-    for r in tdf.texts:
-        if ex._text_enclosed_by_capsule_no_size(tdf, r, cap):
-            s = _norm(tdf.resolve_text(r))
-            if not s:
-                continue
-            if seen and _JOINT_NAME.match(s) and not _PLATE_NAME.search(s):
-                return s
-            seen = True
+    for r in ex.texts_in_capsule(tdf, cap):
+        s = _norm(tdf.resolve_text(r))
+        if not s:
+            continue
+        if seen and _JOINT_NAME.match(s) and not _PLATE_NAME.search(s):
+            return s
+        seen = True
     return None
 
 

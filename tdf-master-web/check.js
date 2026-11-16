@@ -150,16 +150,24 @@ function checkServerPath(name) {
   return s ? s[1] : '';
 }
 
-async function checkLoadServers() {
-  if (checkServers) return checkServers;
-  try {
-    const list = await apiGet('getServerPaths');
-    if (Array.isArray(list) && list.length) checkServers = list;
-  } catch (e) {
-    console.error('サーバー一覧を取得できませんでした', e);
+// サーバー一覧は起動時に先に取り始める(2026-11-16。以前は帳票チェックを押してから取り、
+// 選択画面が出るまで最大15秒何も表示されなかった)。取得中に押されたら同じ取得を待つ
+let checkServersLoading = null;
+function checkLoadServers() {
+  if (checkServers) return Promise.resolve(checkServers);
+  if (!checkServersLoading) {
+    checkServersLoading = apiGet('getServerPaths').then(list => {
+      if (Array.isArray(list) && list.length) checkServers = list;
+    }, e => {
+      console.error('サーバー一覧を取得できませんでした', e);
+    }).then(() => {
+      checkServersLoading = null;
+      return checkServers || CHECK_DEFAULT_SERVERS; // 読めなかったときは次回もう一度読む
+    });
   }
-  return checkServers || CHECK_DEFAULT_SERVERS; // 読めなかったときは次回もう一度読む
+  return checkServersLoading;
 }
+checkLoadServers();
 
 // 目印ファイル: フォルダの直下にある「_○○サーバー」で始まるファイルの ○○ をすべて返す
 async function checkReadMarks(dir) {
@@ -242,7 +250,13 @@ async function checkRegisterRoot(server, saved) {
 
 // 帳票チェックを押したときのサーバー選択。戻り値: true = 選んだ / false = 戻る
 async function askCheckServer() {
-  const servers = await checkLoadServers();
+  if (!checkServers) showStatus('読込中', 'サーバーの一覧を取得しています…');
+  let servers;
+  try {
+    servers = await checkLoadServers();
+  } finally {
+    hideStatus();
+  }
   const saved = {};
   for (const [name] of servers) saved[name] = await checkIdbGet('root:' + name);
   // 前の版で覚えた「①進行中工事」(site-root)は、目印ファイルが合うサーバーの分として使う
@@ -555,16 +569,20 @@ function checkReadExcel(buf) {
   for (const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];
     if (!ws || !ws['!ref']) continue;
-    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
-    const top = XLSX.utils.decode_range(ws['!ref']).s.r; // 表がA1から始まらないとき、Excelの行番号に直す
-    for (let h = 0; h < Math.min(30, aoa.length); h++) {
-      const head = aoa[h].map(checkHead);
+    const ref = XLSX.utils.decode_range(ws['!ref']);
+    const top = ref.s.r; // 表がA1から始まらないとき、Excelの行番号に直す
+    // 見出しは先頭30行だけを変換して探し、見出しのあるシートだけ全部の行を変換する(2026-11-16。
+    // 以前は全部のシートをまるごと変換していた。切断リストはシートが多い)
+    const headAoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '', range: { s: ref.s, e: { r: Math.min(ref.e.r, ref.s.r + 29), c: ref.e.c } } });
+    for (let h = 0; h < Math.min(30, headAoa.length); h++) {
+      const head = headAoa[h].map(checkHead);
       const col = (...keys) => head.findIndex(v => keys.some(k => v === k || v.startsWith(k + '(')));
       const exact = (...keys) => head.findIndex(v => keys.includes(v));
       const lastExact = (...keys) => head.map((v, i) => keys.includes(v) ? i : -1).filter(i => i >= 0).pop() ?? -1; // 入力データは「J若番」「J老番」が2列ずつ(1列目は計算式の表示、2列目が入力)。入力の2列目を使う
       const zubanCol = exact('図番');
       const markCol = [col('製品マーク', '製品名'), col('製品番号')].find(i => i >= 0) ?? -1; // 出荷リストは「製品番号」
       if (zubanCol < 0 || markCol < 0) continue;
+      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
       // マスターデータ(見出しの P1:R1 が結合セルの「SPL・方杖」)は、P列=左(下)継手、Q列=右(上)継手
       // (2026-11-10 ユーザー指示)。ほかの継手の見出しが無いときだけ、この列を継手として使う。
       const spl = exact('SPL・方杖');
@@ -587,7 +605,10 @@ function checkReadExcel(buf) {
           let v = row[i];
           if (CHECK_DITTO.has(checkNorm(v))) v = prev[k]; // 「,,」は上の行と同じ
           prev[k] = v;
-          if ((k === 'ja' || k === 'jb') && typeof v === 'string') v = v.replace(/[【】◎★☆]/g, ''); if (checkNorm(v) === '保留') v = ''; // 入力データの「保留」は継手名ではない(2026-11-11 ユーザー指示) // 継手名が【CJ1】や IJ250K◎★ の形(【】◎★☆は印。名前ではない)
+          if ((k === 'ja' || k === 'jb') && typeof v === 'string') {
+            v = v.replace(/[【】◎★☆]/g, ''); // 継手名が【CJ1】や IJ250K◎★ の形(【】◎★☆は印。名前ではない)
+            if (checkNorm(v) === '保留') v = ''; // 入力データの「保留」は継手名ではない(2026-11-11 ユーザー指示。継手の列だけ)
+          }
           return v;
         };
         rows.push({ rowNo: top + r + 1, zuban, mark, rawMarkTail: String(row[ci.mark] ?? '').trim().endsWith('㋱'), size: g('size', ci.size), len: g('len', ci.len), honsu: g('honsu', ci.honsu), ja: g('ja', ci.ja), jb: g('jb', ci.jb) });
@@ -690,8 +711,6 @@ function checkQty(v) {
   return m ? Number(m[1]) : null;
 }
 
-const checkFmtLen = fmtLen; // 長さの表示(app.js と同じ書き方)
-
 function checkFmtDate(ms) {
   if (!ms) return '';
   const d = new Date(ms), p = n => String(n).padStart(2, '0');
@@ -732,6 +751,7 @@ async function processCheckFileInner(files) {
   checkSkippedDirs = [];
   try {
     showStatus('Excelを読んでいます', file.name);
+    await ensureLibs();
     const xl = checkReadExcel(await file.arrayBuffer());
     const need = new Set(xl.rows.map(r => checkZnorm(r.zuban)).filter(Boolean));
 
@@ -1004,7 +1024,7 @@ function renderCheck() {
     td(tr, r.x.mark);
     td(tr, r.x.size, bad('サイズ')); td(tr, dw['サイズ'], bad('サイズ'));
     const xlen = r.x.len == null || r.x.len === '' ? '' : (isFinite(Number(r.x.len)) ? String(Number(Number(r.x.len).toFixed(4))) : String(r.x.len));
-    td(tr, xlen, 'num ' + bad('長さ')); td(tr, checkFmtLen(dw['長さ']), 'num ' + bad('長さ'));
+    td(tr, xlen, 'num ' + bad('長さ')); td(tr, fmtLen(dw['長さ']), 'num ' + bad('長さ'));
     // 切断リストで同じ製品の行が複数あるときだけ、合計を「1(計7)」のように出す
     const hs = r.honsuSum != null && r.honsuSum !== checkQty(r.x.honsu) ? `${r.x.honsu ?? ''}(計${r.honsuSum})` : r.x.honsu;
     td(tr, hs, bad('本数')); td(tr, dw['本数'], bad('本数'));
@@ -1031,7 +1051,7 @@ function renderCheck() {
   for (const e of extra) {
     const tr = document.createElement('tr');
     const z = td(tr, e.zuban); z.title = e.file.path.join('\\');
-    td(tr, e.row['製品マーク']); td(tr, e.row['サイズ']); td(tr, checkFmtLen(e.row['長さ']), 'num'); td(tr, e.row['本数']);
+    td(tr, e.row['製品マーク']); td(tr, e.row['サイズ']); td(tr, fmtLen(e.row['長さ']), 'num'); td(tr, e.row['本数']);
     td(tr, checkFmtDate(e.file.mtime));
     exBody.appendChild(tr);
   }
@@ -1090,7 +1110,7 @@ async function downloadCheckExcel() {
     const dw = r.dw || {};
     const [ka, kb] = r.file && r.file.mode === 'column' ? ['下継手', '上継手'] : ['左継手', '右継手'];
     const j = checkExcelJudge(r);
-    const line = [j.judge, r.x.rowNo, r.x.zuban, r.x.mark, r.bad.join('・'), r.x.size ?? '', dw['サイズ'] ?? '', r.x.len ?? '', dw['長さ'] ?? '', r.honsuSum != null ? `${r.x.honsu ?? ''}(計${r.honsuSum})` : (r.x.honsu ?? ''), dw['本数'] ?? '',
+    const line = [j.judge, r.x.rowNo, r.x.zuban, r.x.mark, r.bad.join('・'), r.x.size ?? '', dw['サイズ'] ?? '', r.x.len ?? '', dw['長さ'] ?? '', r.honsuSum != null && r.honsuSum !== checkQty(r.x.honsu) ? `${r.x.honsu ?? ''}(計${r.honsuSum})` : (r.x.honsu ?? ''), dw['本数'] ?? '',
       checkJointText(r.x.ja, r.x.jb), r.dw ? checkJointText(dw[ka], dw[kb]) : ''];
     line.push(r.memo.join(' / '), r.file ? r.file.path.join('\\') : '', r.file ? checkFmtDate(r.file.mtime) : '');
     aoa.push(line);
