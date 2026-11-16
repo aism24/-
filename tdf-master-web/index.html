@@ -5366,6 +5366,13 @@ def extract_column(tdf: tb.TdfData, filename: str | None = None) -> list[dict]:
         h_in_drawing = False
         if row["zushi"]:
             size, widths = drawing_box_size(tdf)
+            if size is not None and not any(_has_material_mark(tdf, r) for r, _m in _box_labels(tdf)):
+                # 材質の印のある「□-」が無い図面は、製品の柱本体を引き出し線で指すサイズを先に使う
+                # (2026-11-16、26-17 の間柱 EMRP-01・02。印の無い □-100x100x3.2 は胴縁受けで、
+                # 本体は H-244x175x7x11・H-300x300x10x15)。無ければ従来どおり「□-」を使う。
+                ls = leader_size(row)
+                if ls:
+                    size, widths, h_in_drawing = ls, _widths_from_size(ls), True
             if size is None:
                 size = (_size_below_code(tdf, row["code"]) or leader_size(row)
                         or _single_size_in_drawing(tdf))
