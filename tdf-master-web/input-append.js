@@ -70,8 +70,13 @@
     const path = await findDataSheet(zip);
     const sst = await readSharedStrings(zip);
     const { rows } = splitRows(await zip.file(path).async('string'));
+    return infoOf(rows, sst, path);
+  }
+
+  // 行の一覧から inspect の結果を作る(append のあとも、書き込んだ行からそのまま作る。2026-11-16。
+  // 以前は追記のあとに保存したファイルをもう一度開いて読み直していた)
+  function infoOf(rows, sst, path) {
     let lastRow = HEAD_ROW;
-    const keys = new Set();
     const byKey = new Map(); // 図番|製品名 → 既存の行の値 [{ row, K, L, M, Y, AB }](同じ組み合わせが複数あれば全部)
     for (const r of rows) {
       if (r.n <= HEAD_ROW) continue;
@@ -80,12 +85,11 @@
       if (j.trim() !== '') {
         lastRow = Math.max(lastRow, r.n);
         const key = nfkc(cellText(by('I'), sst)).replace(/\s/g, '') + '|' + nfkc(j).replace(/\s/g, '');
-        keys.add(key);
         if (!byKey.has(key)) byKey.set(key, []);
         byKey.get(key).push({ row: r.n, K: cellText(by('K'), sst), L: cellText(by('L'), sst), M: cellText(by('M'), sst), Y: cellText(by('Y'), sst), AB: cellText(by('AB'), sst) });
       }
     }
-    return { lastRow, keys, byKey, path };
+    return { lastRow, byKey, path };
   }
 
   // rows: [{ H, I, J, K, L, M, Y, AB }]。L・M は数、ほかは文字。空は書かない。
@@ -147,9 +151,9 @@
       Number(d) >= maxRow ? m : `<dimension ref="${a}${b}:${c}${maxRow}"/>`);
     zip.file(path, out, { createFolders: false });
     const bytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
-    return { bytes, firstRow: lastRow + 1, lastRowBefore: lastRow, count: rowsToAdd.length };
+    return { bytes, firstRow: lastRow + 1, count: rowsToAdd.length, info: infoOf(rows, sst, path) };
   }
 
-  const api = { inspect, append, COLS };
+  const api = { inspect, append };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.inputXlsm = api;
 })(typeof window !== 'undefined' ? window : globalThis);

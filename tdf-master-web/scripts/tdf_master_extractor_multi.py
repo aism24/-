@@ -506,7 +506,7 @@ def assign_joints_batch(tdf: tb.TdfData, rows: list, tier_info: dict, lengths: d
             # 継手名が長丸の中心から少しずれて書かれていることがある(2026-11-04、
             # 26-12 の 1B-47。左の長丸の VJNV3ｇ が中心から8ずれていて、左継手が
             # 空欄になっていた)。中心に文字が無いときだけ、長丸の中に入っている文字を使う。
-            near = [rec for rec in tdf.texts if ex._text_enclosed_by_capsule_no_size(tdf, rec, cap)]
+            near = list(ex.texts_in_capsule(tdf, cap))
         for rec in near:
             t = tdf.resolve_text(rec)
             if t:

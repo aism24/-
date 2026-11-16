@@ -86,8 +86,6 @@ class ProductRow:
     x_next: float  # 本数セルのX座標(長さ判定のX範囲右端に使う)
     y: float
     length: float | None = None
-    left_joint: str | None = None
-    right_joint: str | None = None
     drawing_number: str | None = None
     # True: find_product_rows_no_size(「マーク|設計符号|本数」3項目パターン)由来の行。
     # この行だけ、継手・サイズの判定を別の専用ロジック(determine_joints_no_size等)に
@@ -769,6 +767,15 @@ def _find_stadium_capsules_no_size(tdf: tb.TdfData, angle_tol_deg: float = 1.0,
 
     Returns: [(ax, ay, bx, by, r), ...]
     """
+    # 同じ図面で何度も呼ばれる(梁の行ごと・柱)ので、結果は tdf に覚えておく(2026-11-16)
+    key = (angle_tol_deg, radius_tol, max_dist_factor)
+    cache = tdf.__dict__.setdefault("_capsule_cache", {})
+    if key not in cache:
+        cache[key] = _find_stadium_capsules_uncached(tdf, angle_tol_deg, radius_tol, max_dist_factor)
+    return list(cache[key])
+
+
+def _find_stadium_capsules_uncached(tdf, angle_tol_deg, radius_tol, max_dist_factor):
     arcs = [a for a in tdf.arcs if a.a1 is not None]
     pairs = []
     used = set()
@@ -812,22 +819,44 @@ def _point_in_capsule_no_size(px: float, py: float, ax: float, ay: float,
     return math.hypot(px - cx, py - cy) <= r
 
 
-def _text_enclosed_by_capsule_no_size(tdf: tb.TdfData, rec, capsule) -> bool:
-    """テキストの開始点・終了点(幅×文字数から計算)のどちらかがカプセルの
-    中に入っていればTrue(2026-09-16、ユーザー指摘: テキストは点ではなく
-    範囲を持つため、開始点だけ/終了点だけがカプセルに入っているケースも
-    正しく拾う必要がある)。"""
-    text = tdf.resolve_text(rec)
-    if not text:
-        return False
-    ax, ay, bx, by, r = capsule
-    if _point_in_capsule_no_size(rec.x, rec.y, ax, ay, bx, by, r):
-        return True
-    rot = tdf.resolve_rot(rec)
-    total_w = rec.w * len(text)
-    end_x = rec.x + total_w * math.cos(rot)
-    end_y = rec.y + total_w * math.sin(rot)
-    return _point_in_capsule_no_size(end_x, end_y, ax, ay, bx, by, r)
+def _text_ends(tdf):
+    """文字ごとの (rec, 始点x, 始点y, 終点x, 終点y)。文字の無いものは除く。終点は幅×文字数と
+    回転から求める(テキストは点ではなく範囲を持つため、開始点だけ/終了点だけがカプセルに
+    入っているケースも拾う。2026-09-16 ユーザー指摘)。1ファイルで1回だけ求めて tdf に覚えておく。"""
+    te = tdf.__dict__.get("_text_ends")
+    if te is None:
+        te = []
+        for rec in tdf.texts:
+            text = tdf.resolve_text(rec)
+            if not text:
+                continue
+            rot = tdf.resolve_rot(rec)
+            total_w = rec.w * len(text)
+            te.append((rec, rec.x, rec.y, rec.x + total_w * math.cos(rot), rec.y + total_w * math.sin(rot)))
+        tdf._text_ends = te
+    return te
+
+
+def texts_in_capsule(tdf, capsule):
+    """長丸(カプセル)の中に入っている文字の一覧(tdf.texts の順)。文字の開始点か終了点の
+    どちらかがカプセルの中にあるもの。
+
+    以前は製品の行ごとに全部の文字と全部の長丸を比べ直していた(梁の抽出時間の約1/4)。
+    長丸ごとの結果を tdf に覚え、長丸を囲む四角の外の点は先に除く。判定と結果の順番は
+    以前と同じ(2026-11-16)。"""
+    cache = tdf.__dict__.setdefault("_capsule_texts", {})
+    got = cache.get(capsule)
+    if got is None:
+        ax, ay, bx, by, r = capsule
+        x0, x1 = min(ax, bx) - r - 1e-6, max(ax, bx) + r + 1e-6
+        y0, y1 = min(ay, by) - r - 1e-6, max(ay, by) + r + 1e-6
+        got = []
+        for rec, sx, sy, ex_, ey in _text_ends(tdf):
+            if ((x0 <= sx <= x1 and y0 <= sy <= y1 and _point_in_capsule_no_size(sx, sy, ax, ay, bx, by, r))
+                    or (x0 <= ex_ <= x1 and y0 <= ey <= y1 and _point_in_capsule_no_size(ex_, ey, ax, ay, bx, by, r))):
+                got.append(rec)
+        cache[capsule] = got
+    return got
 
 
 def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float, endpoints,
@@ -858,7 +887,7 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
     # 2026-09-16、S-1 R1G-06(屋根梁、主軸が約0.6度傾いている)で、継手ラベル
     # 自身も同じ0.6度回転して描かれていたため「回転角がちょうど0度」という
     # 事前フィルタに一致せず、無関係な回転0度の別継手(BJ12)が誤って採用
-    # されていた。カプセル内包判定(_text_enclosed_by_capsule_no_size)自体は
+    # されていた。カプセル内包判定(texts_in_capsule)自体は
     # テキストの回転を考慮して始点・終点を計算する実装のため、この事前
     # フィルタ自体が不要かつ有害(ユーザー承認済み、N-1 2G回帰11行に影響
     # ないことを確認済み)。
@@ -869,9 +898,7 @@ def determine_joints_no_size(tdf: tb.TdfData, y_ref: float, length_value: float,
     candidates = []  # (mid_x, mid_y, text)
     cand_text_pos = {}  # 候補 -> 長丸の中の文字の位置
     for ax, ay, bx, by, r in capsules:
-        for rec in tdf.texts:
-            if not _text_enclosed_by_capsule_no_size(tdf, rec, (ax, ay, bx, by, r)):
-                continue
+        for rec in texts_in_capsule(tdf, (ax, ay, bx, by, r)):
             candidates.append(((ax + bx) / 2, (ay + by) / 2, tdf.resolve_text(rec)))
             cand_text_pos[candidates[-1]] = (rec.x, rec.y)
             break  # 1つのカプセルには通常1つのテキストしか描かれていない

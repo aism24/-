@@ -118,13 +118,13 @@ def _occurrences(data: bytes, pat: bytes, end: int):
 
 
 def _find_all_text_markers(data: bytes) -> list[int]:
-    """「00 N (2*N) 00」(N は 1〜MAX_N)の位置を小さい順に返す。"""
-    idxs = []
-    end = len(data) - 3
-    for b1 in range(1, MAX_N + 1):
-        idxs.extend(_occurrences(data, bytes((0, b1, b1 * 2, 0)), end))
-    idxs.sort()
-    return idxs
+    """「00 N (2*N) 00」(N は 1〜MAX_N)の位置を小さい順に返す。
+    以前は N ごとにファイル全体を探していた(63回)。1回の正規表現の走査で、重なりも含めて
+    同じ位置を同じ順番で返す(2026-11-16)。"""
+    return [m.start() for m in _TEXT_MARKER_RE.finditer(data)]
+
+
+_TEXT_MARKER_RE = re.compile(b"(?=\x00(?:" + b"|".join(re.escape(bytes((n, n * 2))) for n in range(1, MAX_N + 1)) + b")\x00)")
 
 
 def _parse_texts(data: bytes) -> list[TextRecord]:
