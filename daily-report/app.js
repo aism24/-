@@ -242,12 +242,13 @@ function getClosingPeriodLabel(prefix){
 
 /* ===================== チップ・スペックトグル共通挙動 ===================== */
 
-/* チップを全て選択したら「指定:する」を自動で「しない」に戻す(全選択=フィルタなしと同じ意味のため) */
+/* チップを全て選択したら「指定:する」を自動で「しない」に戻す(全選択=フィルタなしと同じ意味のため)。
+   「全て」は検索や絞り込みで隠れているチップも含めた全部。見えているものだけで判定すると、
+   氏名を検索して1人だけチェックしたときに「しない」(=全員)に戻ってしまっていた(2026-11-16修正)。 */
 function maybeAutoSwitchToNo(fieldEl){
   const checkGroup = fieldEl.querySelector('.checkGroup');
   if(!checkGroup) return;
-  const boxes = Array.from(checkGroup.querySelectorAll('input[type=checkbox]'))
-    .filter(b => b.closest('.checkBtn').style.display !== 'none');
+  const boxes = Array.from(checkGroup.querySelectorAll('input[type=checkbox]'));
   if(boxes.length === 0 || !boxes.every(b=>b.checked)) return;
   const noRadio = fieldEl.querySelector('.specToggle input[value="no"]');
   if(!noRadio || noRadio.checked) return;
@@ -262,7 +263,9 @@ function applyChipVisibility(groupId){
   document.querySelectorAll(`#${groupId} .checkBtn`).forEach(label=>{
     const matchesSearch = !q || label.textContent.includes(q);
     const available = label.dataset.available !== 'false';
-    label.style.display = (matchesSearch && available) ? '' : 'none';
+    // 選択中のチップは、今の条件で該当データが無くても隠さない(選択を残すため。noDataで薄く表示)
+    const checked = label.querySelector('input').checked;
+    label.style.display = (matchesSearch && (available || checked)) ? '' : 'none';
   });
 }
 
@@ -951,6 +954,9 @@ function filteredRows(cfg, excludeKey){
   return ALL_ROWS.filter(pred);
 }
 
+/* 期間などを変えて、選択中の工事・社員・チップが今の条件で0件になっても、選択は外さない
+   (以前は自動で外していたため、期間を調整し直すたびに工事などを選び直す必要があった。
+   2026-11-16 ユーザー指摘で修正)。0件のものは noData で薄く表示し、プレビューは「該当なし」になる。 */
 function updateDimAvailability(cfg){
   cfg.dims.forEach(dim=>{
     const rowsExcl = filteredRows(cfg, dim.key);
@@ -959,10 +965,7 @@ function updateDimAvailability(cfg){
       const label = cb.closest('.checkBtn');
       const isAvailable = available.has(cb.value);
       label.dataset.available = isAvailable ? 'true' : 'false';
-      if(!isAvailable && cb.checked){
-        cb.checked = false;
-        label.classList.remove('checked');
-      }
+      label.classList.toggle('noData', !isAvailable && cb.checked);
     });
     applyChipVisibility(dim.groupId);
   });
@@ -974,11 +977,11 @@ function updatePrimaryAvailability(cfg){
   const sel = document.getElementById(cfg.primary.id);
   Array.from(sel.options).forEach(opt=>{
     if(!opt.value) return;
-    const ok = available.has(opt.value);
+    const ok = available.has(opt.value) || opt.value === sel.value; // 選択中は0件でも残す
     opt.disabled = !ok;
     opt.style.display = ok ? '' : 'none';
   });
-  if(sel.value && !available.has(sel.value)) sel.value = '';
+  sel.classList.toggle('noData', !!sel.value && !available.has(sel.value));
 }
 
 function recomputeScreen(screenKey){
@@ -2267,6 +2270,9 @@ const REPORT_ACTION = { r1: 'generateReport1', r2: 'generateReport2', r3: 'gener
 async function downloadReport(kind){
   if(kind === 'r1' && !document.getElementById('r1-construction').value){ showToast('工事を選択してください'); return; }
   if(kind === 'r2' && !document.getElementById('r2-operator').value){ showToast('社員を選択してください'); return; }
+  if((kind === 'r1' || kind === 'r2') && filteredRows(SCREEN_CONFIG[kind], null).length === 0){
+    showToast('この条件では該当するデータがありません'); return;
+  }
   if(kind === 'r3' && checkedValues('r3-locations').length === 0){ showToast('拠点を1つ以上選択してください'); return; }
   if(kind === 'r4'){
     const grid = computeR4Grid();
