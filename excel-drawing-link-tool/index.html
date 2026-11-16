@@ -12,7 +12,7 @@
 // ブラウザの仕様上キャッシュを制御できないため何もしない。
 // 修正をpushするたびに、このAPP_VERSIONの値を更新すること。
 (function () {
-  var APP_VERSION = '2026-09-09.1';
+  var APP_VERSION = '2026-11-16.1';
   if (location.protocol === 'file:') return;
   try {
     var reloadedFor = sessionStorage.getItem('appVersionReloadedFor');
@@ -1407,11 +1407,37 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return false;
   }
 
+  // 図番が3桁・ファイル名が2桁の書き方違いを吸収するための別名
+  // （例: 図番「B2M1C-001」→ ファイル「B2M1C-01(9K)」。2026-11-16、26-17 ランドポート北伊丹）。
+  // 末尾が「-0」+2桁の数字（後ろに英字が付いてもよい）の図番だけ、頭の0を1つ外した図番を返す。
+  // 外した図番がマスタに別の図番として実在する場合は、別図面と取り違えないよう使わない（null）。
+  // 照合では、名前どおり（完全一致・部分一致）で1件も見つからない場合にだけ使う。
+  // マスタの図番そのものは一切書き換えない。
+  var drawingNoAltCache = { rows: null, length: -1, altByDn: null };
+  function drawingNoWithoutLeadingZero(dn) {
+    var c = drawingNoAltCache;
+    if (c.rows !== state.rows || c.length !== state.rows.length) {
+      var dnSet = new Set();
+      state.rows.forEach(function (r) { if (r.drawingNo !== '') dnSet.add(r.drawingNo); });
+      var altByDn = new Map();
+      dnSet.forEach(function (d) {
+        var m = /^(.*-)0(\d{2}[A-Za-z]*)$/.exec(d);
+        if (!m) return;
+        var alt = m[1] + m[2];
+        if (!dnSet.has(alt)) altByDn.set(d, alt);
+      });
+      c.rows = state.rows; c.length = state.rows.length; c.altByDn = altByDn;
+    }
+    return c.altByDn.get(dn) || null;
+  }
+
   function fileMatchesAnyRow(baseName) {
     for (var i = 0; i < state.rows.length; i++) {
       var dn = state.rows[i].drawingNo;
       if (dn === '') continue;
       if (baseName === dn || nameContainsDrawingNo(baseName, dn)) return true;
+      var alt = drawingNoWithoutLeadingZero(dn);
+      if (alt && (baseName === alt || nameContainsDrawingNo(baseName, alt))) return true;
     }
     return false;
   }
@@ -1633,6 +1659,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         candidates = exact;
       } else {
         candidates = state.filePool.filter(function (f) { return nameContainsDrawingNo(f.baseName, row.drawingNo); });
+        if (candidates.length === 0) {
+          // 名前どおりで見つからない時だけ、頭の0を外した図番で探し直す（B2M1C-001 → B2M1C-01）
+          var alt = drawingNoWithoutLeadingZero(row.drawingNo);
+          if (alt) {
+            candidates = exactMap.get(alt) || [];
+            if (candidates.length === 0) {
+              candidates = state.filePool.filter(function (f) { return nameContainsDrawingNo(f.baseName, alt); });
+            }
+          }
+        }
       }
 
       if (candidates.length === 0) {
