@@ -379,6 +379,9 @@ table.dataTable.r5Table th:nth-child(4), table.dataTable.r5Table td:nth-child(4)
 .checkBtn.checked{ background:#2a6fd6; color:#fff; border-color:#2a6fd6; }
 .checkBtn.retired{ color:#c33; }
 .checkBtn.retired.checked{ color:#fff; }
+/* 選択中だが、今の条件(期間など)では該当データが0件のチップ・工事/社員(選択は残す) */
+.checkBtn.checked.noData{ background:#9db7e0; border-color:#9db7e0; text-decoration:line-through; }
+select.noData{ color:#888; text-decoration:line-through; }
 /* .fieldの上padding(10px)と合わせて上下の余白を揃えるため、上マージンは
    持たせない(常に.fieldの先頭で使われており、上に何か別の要素が
    続くケースはない)。 */
