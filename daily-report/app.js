@@ -264,7 +264,7 @@ function applyChipVisibility(groupId){
     const matchesSearch = !q || label.textContent.includes(q);
     const available = label.dataset.available !== 'false';
     // 選択中のチップは、今の条件で該当データが無くても隠さない(選択を残すため。noDataで薄く表示)
-    const checked = label.querySelector('input').checked;
+    const checked = label.firstElementChild.checked; // <label class="checkBtn"><input …>
     label.style.display = (matchesSearch && (available || checked)) ? '' : 'none';
   });
 }
@@ -930,16 +930,45 @@ function periodRestriction(prefix, specName){
   return { start: new Date(from), end: end };
 }
 
-function buildPredicate(cfg, excludeKey){
+/* 候補(選択肢・チップの表示)を絞るときに使う選択。0件になった選択(期間・工事/社員だけで
+   見てデータが無いもの)は、選択として残すが、ほかの候補の絞り込みには使わない
+   (残った0件のチェックのせいで、ほかの候補が何も出なくなるのを防ぐ。2026-11-16 ユーザー承認)。
+   集計結果(プレビュー・Excel)は従来どおり全ての選択で絞る。0件の選択が無ければ全選択と同じ。 */
+function candidateSelections_(cfg){
+  const range = periodRestriction(cfg.periodPrefix, cfg.periodSpecName);
+  const inRange = range ? (r => r._date >= range.start && r._date <= range.end) : (() => true);
+  const pv = document.getElementById(cfg.primary.id).value;
+  let primary = '';
+  let base = null;
+  if(pv){
+    // 工事(社員)で先に絞ってから期間を見る(全行の日付比較を避けて速くするため)
+    const withPrimary = ALL_ROWS.filter(r => String(r[cfg.primary.field]) === pv && inRange(r));
+    if(withPrimary.length){ primary = pv; base = withPrimary; }
+  }
+  if(!base) base = range ? ALL_ROWS.filter(inRange) : ALL_ROWS;
+  const dimsUsed = cfg.dims.filter(dim => dimSelectedValues(dim));
+  const presentByDim = {};
+  dimsUsed.forEach(dim => { presentByDim[dim.key] = new Set(); });
+  if(dimsUsed.length) base.forEach(r => dimsUsed.forEach(dim => presentByDim[dim.key].add(String(r[dim.field]))));
+  const dims = {};
+  cfg.dims.forEach(dim=>{
+    const vals = dimSelectedValues(dim);
+    if(!vals){ dims[dim.key] = null; return; }
+    const ok = vals.filter(v => presentByDim[dim.key].has(v));
+    dims[dim.key] = ok.length ? ok : null;
+  });
+  return { primary: primary, dims: dims };
+}
+
+function buildPredicate(cfg, excludeKey, candSel){
   const checks = [];
   if(excludeKey !== 'primary'){
-    const sel = document.getElementById(cfg.primary.id);
-    const pv = sel.value;
+    const pv = candSel ? candSel.primary : document.getElementById(cfg.primary.id).value;
     if(pv) checks.push(r => String(r[cfg.primary.field]) === pv);
   }
   cfg.dims.forEach(dim=>{
     if(dim.key === excludeKey) return;
-    const vals = dimSelectedValues(dim);
+    const vals = candSel ? candSel.dims[dim.key] : dimSelectedValues(dim);
     if(vals) checks.push(r => vals.indexOf(String(r[dim.field])) !== -1);
   });
   if(excludeKey !== 'period'){
@@ -949,30 +978,31 @@ function buildPredicate(cfg, excludeKey){
   return row => checks.every(fn => fn(row));
 }
 
-function filteredRows(cfg, excludeKey){
-  const pred = buildPredicate(cfg, excludeKey);
+function filteredRows(cfg, excludeKey, candSel){
+  const pred = buildPredicate(cfg, excludeKey, candSel);
   return ALL_ROWS.filter(pred);
 }
 
 /* 期間などを変えて、選択中の工事・社員・チップが今の条件で0件になっても、選択は外さない
    (以前は自動で外していたため、期間を調整し直すたびに工事などを選び直す必要があった。
    2026-11-16 ユーザー指摘で修正)。0件のものは noData で薄く表示し、プレビューは「該当なし」になる。 */
-function updateDimAvailability(cfg){
+function updateDimAvailability(cfg, candSel){
   cfg.dims.forEach(dim=>{
-    const rowsExcl = filteredRows(cfg, dim.key);
+    const rowsExcl = filteredRows(cfg, dim.key, candSel);
     const available = new Set(rowsExcl.map(r => String(r[dim.field])));
     document.querySelectorAll(`#${dim.groupId} input[type=checkbox]`).forEach(cb=>{
       const label = cb.closest('.checkBtn');
       const isAvailable = available.has(cb.value);
       label.dataset.available = isAvailable ? 'true' : 'false';
-      label.classList.toggle('noData', !isAvailable && cb.checked);
+      const noData = !isAvailable && cb.checked;
+      if(label.classList.contains('noData') !== noData) label.classList.toggle('noData', noData); // 変わるときだけ触る(速度)
     });
     applyChipVisibility(dim.groupId);
   });
 }
 
-function updatePrimaryAvailability(cfg){
-  const rowsExclPrimary = filteredRows(cfg, 'primary');
+function updatePrimaryAvailability(cfg, candSel){
+  const rowsExclPrimary = filteredRows(cfg, 'primary', candSel);
   const available = new Set(rowsExclPrimary.map(r => String(r[cfg.primary.field])));
   const sel = document.getElementById(cfg.primary.id);
   Array.from(sel.options).forEach(opt=>{
@@ -986,9 +1016,10 @@ function updatePrimaryAvailability(cfg){
 
 function recomputeScreen(screenKey){
   const cfg = SCREEN_CONFIG[screenKey];
-  updateDimAvailability(cfg);
-  updateDimAvailability(cfg); // 相互カスケードを収束させるため2回実施
-  updatePrimaryAvailability(cfg);
+  // 選択はここでは変わらない(0件でも外さない)ため、候補用の選択は1回だけ求めて使い回す
+  const candSel = candidateSelections_(cfg);
+  updateDimAvailability(cfg, candSel);
+  updatePrimaryAvailability(cfg, candSel);
   if(screenKey === 'r1') renderR1Preview();
   if(screenKey === 'r2') renderR2Preview();
 }
