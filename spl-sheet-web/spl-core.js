@@ -32,7 +32,8 @@
   const NOT_NAME_RE = /^(?:SN|SM|SS|STK|STKN|STKR|BCP|BCR|TMCP|SNR|SHN|SWH|SD)[0-9]{3}[A-Z]{0,2}$|^M[0-9]{2}$/;
   const isName = s => { const t = String(s).normalize('NFKC'); return NAME_RE.test(t) && !NOT_NAME_RE.test(t); };
   // 板厚は「※」のこともある(26-14 NJ-13 BD446X「2 SPL-※x320x170」。Excel も ※ と書く)
-  const SPL_RE = /^(\d+)\s*SPL-(\d+(?:\.\d+)?|※)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/;
+  // 「SPL- 9x300x350」のように SPL- の後に空白があることもある(26-17 GJ-01 J482)
+  const SPL_RE = /^(\d+)\s*SPL-\s*(\d+(?:\.\d+)?|※)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/;
   // 「SPLは取り付けない」の注記がある継手は、SPL列(U)を「有」にしない(26-14 BD446X。Excel も空)
   const NO_SPL_RE = /SPLは取り?付け?ない/;
   const FILL_RE = /^(\d+)\s*fill\.PL-(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/;
@@ -202,8 +203,10 @@
     const order = names.slice().sort((a, b) => a.y - b.y || a.x - b.x);
     const joints = new Map();
     for (const n of order) joints.set(n, { A: zuban, B: n.s, tdf: path || '', file: fileName, bolts: [], warn: [] });
-    // 「上FLG」「下FLG」(上下でSPLを分けた継手。26-14 NJ-05)も FLG として見る
-    const labels = ts.filter(t => /^(上|下)?FLG$/.test(t.s) || t.s === 'WEB');
+    // 「上FLG」「下FLG」(上下でSPLを分けた継手。26-14 NJ-05)も FLG として見る。
+    // 「上 FLG」のような空白は除いて見る(26-17 GJ-03 J340NA)
+    const labels = ts.map(t => ({ x: t.x, y: t.y, s: t.s.replace(/\s/g, '') }))
+      .filter(l => /^(上|下)?FLG$/.test(l.s) || l.s === 'WEB');
     // 上の行から順に見る(「FLG の行の下の行 = Fr内」を、ファイル内の文字の順番に左右されずに決めるため)
     const byPos = ts.slice().sort((a, b) => a.y - b.y || a.x - b.x);
     const splInfo = new Map(); // 継手ごとの SPL の行数と、FLG/WEB の見出しがあったか
@@ -218,15 +221,29 @@
       if (mb) { j.bolts.push(t.s); continue; }
       if (mf) { j.S = 'PL' + fmt(Number(mf[2])); continue; }
       const cnt = Number(ms[1]), th = ms[2] === '※' ? '※' : Number(ms[2]), a = Number(ms[3]), b = Number(ms[4]);
-      const lab = labels.find(l => Math.abs(l.y - t.y) < 20 * scale && t.x - l.x > 0 && t.x - l.x < 400 * scale);
-      const info = splInfo.get(j) || { lines: 0, labeled: false, side: null, split: null };
+      // 同じ高さで、左のいちばん近い見出し(26-17 J340NA は見出しと文字の間が少し広い)
+      let lab = null;
+      for (const l of labels) {
+        const dx = t.x - l.x;
+        if (Math.abs(l.y - t.y) < 20 * scale && dx > 0 && dx < 600 * scale && (!lab || dx < t.x - lab.x)) lab = l;
+      }
+      const info = splInfo.get(j) || { lines: 0, labeled: false, side: null, split: null, all: [] };
       info.lines++; if (lab) info.labeled = true;
+      info.all.push({ cnt, th, a, b });
       splInfo.set(j, info);
       // SPL分割(「上FLG」「下FLG」の見出し。26-14 NGF488DK など): 上下のフランジの行を別にためて、下でまとめる
       if (lab) info.side = /^(上|下)FLG$/.test(lab.s) ? lab.s[0] : null;
-      if (info.side) {
+      if (lab && info.side) { info.sideX = info.sideX || {}; info.sideX[info.side] = lab.x; }
+      // 見出しの無い行は、上FLG・下FLG が左右に並ぶ図(26-17 J340NA)なら、左のいちばん近い見出しの列の側にする。
+      // 上下に重なる図(26-14 NGF488DK)は列が同じなので、直前の見出しの側のまま
+      let side = info.side;
+      if (!lab && side && info.sideX && info.sideX.上 != null && info.sideX.下 != null && Math.abs(info.sideX.上 - info.sideX.下) > 200 * scale) {
+        const left = ['上', '下'].filter(s => info.sideX[s] < t.x).sort((p, q) => info.sideX[q] - info.sideX[p]);
+        if (left.length) side = left[0];
+      }
+      if (side) {
         if (!info.split) info.split = { 上: [], 下: [] };
-        info.split[info.side].push({ cnt, th, a, b });
+        info.split[side].push({ cnt, th, a, b });
         continue;
       }
       let kind;
@@ -246,6 +263,13 @@
         j.H *= 4;
         j.warn.push('エレクションピース(4方向)として読みました: Fr外 枚数 = 図の数字×4');
       }
+      // FLG/WEB の見出しが無く SPL が3行の区画(26-17 GJ-01 J482): 上から Fr外・Fr内・Web とする
+      if (info && !info.labeled && info.lines === 3) {
+        for (const c of ['E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'O', 'P', 'Q', 'R']) delete j[c];
+        j.warn = j.warn.filter(w => !/が2つあります/.test(w));
+        ['Fr外', 'Fr内', 'Web'].forEach((k, i) => { const p = info.all[i]; [p.th, p.a, p.b, p.cnt].forEach((v, m) => { j[GROUP_COLS[k][m]] = v; }); });
+        j.warn.push('FLG/WEB の見出しが無いので、上から Fr外・Fr内・Web として読みました');
+      }
       // SPL分割: 行は上から重なる順(上FLG は 外→内、下FLG は 内→外)。
       // 外が内と同じ寸法なら「分割した外」。分割した外は Fr内 に数え、Fr外 には大きい外だけを入れる
       // (DK・UK: Fr外 300x1 / Fr内 110x6、UDK: Fr外 なし / Fr内 110x8。2026-11-17 ユーザー指示)
@@ -261,6 +285,7 @@
         const sum = list => list.reduce((s, p) => s + p.cnt, 0);
         const put = (cols, p, n) => { if (p) [p.th, p.a, p.b, n].forEach((v, i) => { j[cols[i]] = v; }); };
         if (bigOuter.length === 2 && !same(bigOuter[0], bigOuter[1])) j.warn.push('上下の外のSPLの寸法が違います');
+        if (inners.some(p => !same(p, inner))) j.warn.push('内のSPLの寸法が上下で違います(図面を確かめてください)');
         if (bigOuter.length) put(GROUP_COLS['Fr外'], bigOuter[0], sum(bigOuter));
         put(GROUP_COLS['Fr内'], inner, sum(inners) + sum(splitOuter));
         j.warn.push('SPL分割として読みました(上下の枚数を合計)');
