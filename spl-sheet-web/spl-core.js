@@ -123,9 +123,25 @@
     return best == null ? Infinity : best;
   }
 
+  // ファイル名から図番。「24.J-03(継手基準図).tdf」→ J-03、「70CJ-01.tdf」→ CJ-01(26-17)
   function zubanOf(fileName) {
     const m = String(fileName).match(ZUBAN_RE);
-    return m ? m[1] : String(fileName).replace(/\.[^.]*$/, '');
+    if (m) return m[1];
+    const stem = String(fileName).replace(/\.[^.]*$/, '');
+    const m2 = stem.match(/^\d+\.?([A-Z]{1,3}-\d+[A-Z]?)$/);
+    return m2 ? m2[1] : stem;
+  }
+
+  // 図面の中に書かれた図番(いちばん大きい「CJ-01」の形の文字。本文より大きいものだけ)
+  const DRAWING_NO_RE = /^[A-Z]{1,3}-\d+[A-Z]?$/;
+  function zubanInDrawing(ts, bodyH) {
+    let best = null;
+    for (const t of ts) {
+      const s = nfkc(t.s);
+      if (!DRAWING_NO_RE.test(s) || /^G?PL-/.test(s) || t.h <= bodyH * 1.2) continue;
+      if (!best || t.h > best.h) best = { s, h: t.h };
+    }
+    return best ? best.s : null;
   }
 
   function sortDrawings(names) {
@@ -144,11 +160,28 @@
   // 1枚の継手基準図から継手の一覧を作る。path は図面の場所(リンク用。無くてもよい)
   function extractDrawing(fileName, bytes, path) {
     const ts = parseTdfTexts(bytes);
-    const nameH = ts.filter(t => isName(t.s)).map(t => t.h);
-    if (!nameH.length) return [];
-    const hmax = Math.max(...nameH);
+    // 本文の文字の高さ(いちばん多い高さ。SPL の無い GPL だけの図面もあるので全部の文字で見る)
+    const hc = new Map();
+    for (const t of ts) { const k = Math.round(t.h); hc.set(k, (hc.get(k) || 0) + 1); }
+    let bodyH = 0, bc = 0;
+    for (const [k, c] of hc) if (c > bc) { bodyH = k; bc = c; }
+    // 継手名が表の文字より大きい図面(25-19・26-14・26-16)は、いちばん大きい名前の形の文字を継手名にする。
+    // 全部同じ大きさの図面(26-17 阪和)は大きさで見分けられないので、名前に「J」を含むものだけを継手名にする
+    // (同じ区画に部材名「P17」と継手名「PJ17」が並ぶため)
+    let cand = ts.filter(t => isName(t.s));
+    if (!cand.length) return [];
+    let hmax = Math.max(...cand.map(t => t.h));
+    if (bodyH && hmax <= bodyH * 1.05) {
+      cand = ts.filter(t => { const s = nfkc(t.s); return (isName(s) || /^[A-Z]{1,4}J[A-Z]{1,2}$/.test(s)) && s.includes('J'); });
+      if (!cand.length) return [];
+      hmax = Math.max(...cand.map(t => t.h));
+    }
     const scale = hmax / 80;
-    const names = ts.filter(t => isName(t.s) && t.h >= hmax * 0.99);
+    // 同じ継手名が1枚に2回以上あるときは、いちばん上(左)の区画の見出しだけを使う
+    // (26-17 の DCJ1 などは、区画の見出しと、その中の図の書き込みに同じ名前がある)
+    const seen = new Set();
+    const names = cand.filter(t => t.h >= hmax * 0.99).sort((a, b) => a.y - b.y || a.x - b.x)
+      .filter(t => { const k = nfkc(t.s); if (seen.has(k)) return false; seen.add(k); return true; });
     const cw = step(names.map(n => n.x), 3148 * scale);
     const ch = step(names.map(n => n.y), 3453 * scale);
     const left = 450 * scale; // 表の文字は名前より少し右から始まる。この分だけ左へ余裕を持たせる
@@ -162,7 +195,7 @@
       return best;
     };
 
-    const zuban = zubanOf(fileName);
+    const zuban = zubanInDrawing(ts, bodyH || hmax) || zubanOf(fileName);
     const order = names.slice().sort((a, b) => a.y - b.y || a.x - b.x);
     const joints = new Map();
     for (const n of order) joints.set(n, { A: zuban, B: n.s, tdf: path || '', file: fileName, bolts: [], warn: [] });
