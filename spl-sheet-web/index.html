@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>継手基準図からSPLシート作成</title>
-<link rel="stylesheet" href="style.css?v=20261117man">
+<link rel="stylesheet" href="style.css?v=20261118card">
 </head>
 <!-- loading-settings: 設定シート(工事・サーバーの一覧)を読み終えるまで、ほかの部品をグレーアウトする(2026-11-17 ユーザー指示) -->
 <body class="loading-settings">
@@ -60,7 +60,11 @@
     <span class="hint" title="黄=最新図と違う / 緑=図面にだけある(行を追加) / 灰=図面に無い(そのまま残す)&#10;図番・継手名をクリック → 実寸法師で図面を開く&#10;ほかのセルをダブルクリック → 編集">ⓘ 使い方</span>
   </section>
 
-  <div id="empty-state">① 工事名を選んでExcelを取り込み、② 図面(TDF)を選ぶと、ここに表が出ます。図番と継手名より実寸法師が開けます。</div>
+  <!-- 表が出たら案内文とカードをまとめて隠す(app.js render)。カードは2026-11-18 ユーザー指示 -->
+  <div id="empty-state">
+    <div>① 工事名を選んでExcelを取り込み、② 図面(TDF)を選ぶと、ここに表が出ます。図番と継手名より実寸法師が開けます。</div>
+    <div id="usage-card">このアプリは、本社夢前の【入力データ】内にあるSPLシート作成チェック用です</div>
+  </div>
 
   <section id="table-wrap" hidden>
     <table id="spl-table">
@@ -121,9 +125,9 @@
 <div id="toast"></div>
 
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script defer src="spl-core.js?v=20261117man"></script>
-<script defer src="xlsm-spl.js?v=20261117man"></script>
-<script defer src="app.js?v=20261117man"></script>
+<script defer src="spl-core.js?v=20261118card"></script>
+<script defer src="xlsm-spl.js?v=20261118card"></script>
+<script defer src="app.js?v=20261118card"></script>
 <script src="to-launcher.js?v=20261117" data-target="#header-right" data-mode="in" data-url="https://tdf-master-web.vercel.app/" data-label="← 最新図で情報抽出へ"></script>
 </body>
 </html>
