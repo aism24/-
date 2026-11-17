@@ -25,7 +25,12 @@
     S: 'フィラー', T: '丁番', U: 'SPL', V: 'ボルト',
   };
 
-  const NAME_RE = /^[A-Z]{1,5}[0-9]{1,3}[A-Z]{0,3}$/;
+  // 継手名(NFKC で揃えてから見る)。英字か□で始まり、数字を含む。
+  // 26-16 の形(zGJ70・b2・zb3G・V3z・B24-16・CG1000A・TB587AGP・□100・EP□100)も受ける(2026-11-17)
+  const NAME_RE = /^[A-Za-z□][A-Za-z]{0,5}□?[0-9]{1,4}[A-Za-z]{0,4}(?:-[0-9]{1,2})?$/;
+  // 継手名の形でも、材質・ボルトの文字は継手名にしない(26-16 J-01A の BCP325・STKN490B、26-17 の SN490C・M16 など)
+  const NOT_NAME_RE = /^(?:SN|SM|SS|STK|STKN|STKR|BCP|BCR|TMCP|SNR|SHN|SWH|SD)[0-9]{3}[A-Z]{0,2}$|^M[0-9]{2}$/;
+  const isName = s => { const t = String(s).normalize('NFKC'); return NAME_RE.test(t) && !NOT_NAME_RE.test(t); };
   const SPL_RE = /^(\d+)\s*SPL-(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/;
   const FILL_RE = /^(\d+)\s*fill\.PL-(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/;
   const BOLT_RE = /^(\d+)-M(\d+)$/;
@@ -137,11 +142,11 @@
   // 1枚の継手基準図から継手の一覧を作る。path は図面の場所(リンク用。無くてもよい)
   function extractDrawing(fileName, bytes, path) {
     const ts = parseTdfTexts(bytes);
-    const nameH = ts.filter(t => NAME_RE.test(t.s)).map(t => t.h);
+    const nameH = ts.filter(t => isName(t.s)).map(t => t.h);
     if (!nameH.length) return [];
     const hmax = Math.max(...nameH);
     const scale = hmax / 80;
-    const names = ts.filter(t => NAME_RE.test(t.s) && t.h >= hmax * 0.99);
+    const names = ts.filter(t => isName(t.s) && t.h >= hmax * 0.99);
     const cw = step(names.map(n => n.x), 3148 * scale);
     const ch = step(names.map(n => n.y), 3453 * scale);
     const left = 450 * scale; // 表の文字は名前より少し右から始まる。この分だけ左へ余裕を持たせる
@@ -175,11 +180,16 @@
       else kind = 'E' in j ? 'Fr内' : 'Web';
       const cols = GROUP_COLS[kind];
       if (cols[0] in j) { j.warn.push(`${kind}が2つあります: ${t.s}`); continue; }
-      const nPl = kind !== 'Web' ? cnt * 2 : cnt; // フランジは上下2か所
-      [th, a, b, nPl].forEach((v, i) => { j[cols[i]] = v; });
+      [th, a, b, cnt].forEach((v, i) => { j[cols[i]] = v; }); // フランジの枚数は下で決める
     }
     return order.map(n => {
       const j = joints.get(n);
+      // フランジの枚数: 図の数字が片側1か所ぶん(外1枚・内2枚。25-19)なら上下で×2、
+      // 上下の合計(外2枚・内4枚。26-16)ならそのまま。外の数字が1か(外が無ければ内が2以下か)で見分ける
+      if ('H' in j || 'M' in j) {
+        const perFlange = 'H' in j ? j.H === 1 : j.M <= 2;
+        if (perFlange) { if ('H' in j) j.H *= 2; if ('M' in j) j.M *= 2; }
+      }
       if ('E' in j || 'J' in j || 'O' in j) j.U = '有';
       return j;
     });
