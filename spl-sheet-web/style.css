@@ -41,6 +41,10 @@ main { padding: 14px 16px 40px; }
 .step-info { font-size: 13px; color: #333; word-break: break-all; }
 .step-info.warn { color: #c0392b; }
 .server-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.koji-label { font-size: 13px; font-weight: bold; color: #222; }
+.koji-note { font-size: 11px; font-weight: bold; color: #c0392b; margin-left: 4px; }
+#koji-select { font: inherit; font-size: 14px; padding: 5px 6px; border: 1px solid #999; border-radius: 4px; width: 100%; max-width: 360px; }
+#koji-select.unset { border-color: #c0392b; background: #fff5f5; }
 
 .btn {
   background: #fff; color: #333; border: 1px solid #bbb; border-radius: 4px;

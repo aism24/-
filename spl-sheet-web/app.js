@@ -27,7 +27,8 @@
     rows: [],
     selected: new Set(),
     dirty: false,
-    kojiList: null,
+    kojiList: null,  // [[工事番号, 工事名]](設定シート)。読めなければ null
+    koji: '',        // リストから選んだ工事番号
   };
 
   // ------------------------------------------------------------ 共通の部品
@@ -132,8 +133,8 @@
       return;
     }
     busy(false);
-    $('step-excel').classList.add('done');
     renderExcelInfo();
+    await reconcileKoji();
     if (state.joints) buildRows();
     else {
       state.rows = state.excel.rows.map(r => sc.refreshStatus(Object.assign({}, r, { drawing: null })));
@@ -150,8 +151,70 @@
   function renderExcelInfo() {
     const ex = state.excel;
     if (!ex) return;
-    const k = ex.kojiNo ? `工事番号 ${ex.kojiNo}${kojiNameOf(ex.kojiNo) ? ' ' + kojiNameOf(ex.kojiNo) : ''}` : '工事番号: 読めませんでした(ﾃﾞｰﾀシートのE1・F1)';
+    const k = ex.kojiNo ? `Excelの工事番号 ${ex.kojiNo}` : 'Excelの工事番号: 読めませんでした(ﾃﾞｰﾀシートのE1・F1)';
     $('excel-info').innerHTML = `${esc(ex.name)}<br>${esc(k)} / SPLシート ${ex.rows.length}行`;
+    $('step-excel').classList.toggle('done', !!currentKoji());
+  }
+
+  // ------------------------------------------------------------ 工事名(設定シートの一覧から選ぶ。2026-11-17 ユーザー指示)
+
+  // 今の工事番号。一覧を読めなかったときだけ Excel の工事番号を使う
+  function currentKoji() {
+    if (state.kojiList) return state.koji;
+    return state.excel ? state.excel.kojiNo : '';
+  }
+  const kojiLabel = no => no ? `${no}${kojiNameOf(no) ? ' ' + kojiNameOf(no) : ''}` : '';
+
+  function renderKojiSelect() {
+    const sel = $('koji-select');
+    if (!state.kojiList) {
+      sel.innerHTML = '<option value="">工事の一覧を読めませんでした(Excelの工事番号を使います)</option>';
+      sel.disabled = true;
+      sel.classList.remove('unset');
+      return;
+    }
+    sel.disabled = false;
+    sel.innerHTML = '<option value="">選択してください</option>'
+      + state.kojiList.map(k => `<option value="${esc(k[0])}">${esc(k[0] + ' ' + k[1])}</option>`).join('');
+    sel.value = state.koji;
+    sel.classList.toggle('unset', !state.koji);
+  }
+
+  function setKoji(no) {
+    state.koji = no || '';
+    renderKojiSelect();
+    renderExcelInfo();
+  }
+
+  // 選んだ工事と Excel の工事番号(ﾃﾞｰﾀ E1・F1)を合わせる。未選択なら Excel の工事を選ぶ。
+  // 違うときはどちらにするか聞く
+  async function reconcileKoji() {
+    const ex = state.excel;
+    if (!ex || !state.kojiList || !ex.kojiNo) { renderExcelInfo(); return; }
+    const inList = state.kojiList.some(k => k[0] === ex.kojiNo);
+    if (!state.koji) {
+      if (inList) setKoji(ex.kojiNo);
+      else await dialog('工事名を選んでください', `Excelの工事番号 ${esc(ex.kojiNo)} は工事の一覧にありません。工事名をリストから選んでください。`);
+      return;
+    }
+    if (state.koji === ex.kojiNo) return;
+    const v = await dialog('工事番号が違います',
+      `選んだ工事は <b>${esc(kojiLabel(state.koji))}</b> です。<br>取り込んだExcelの工事番号(ﾃﾞｰﾀシートのE1・F1)は <b>${esc(ex.kojiNo)}</b> です。`,
+      [{ label: '選んだ工事のまま進める', value: 'keep', cls: 'primary' }].concat(inList ? [{ label: `${ex.kojiNo} にする`, value: 'excel' }] : []));
+    if (v === 'excel') setKoji(ex.kojiNo);
+  }
+
+  async function onKojiChange() {
+    const prev = state.koji;
+    const no = $('koji-select').value;
+    setKoji(no);
+    const ex = state.excel;
+    if (no && ex && ex.kojiNo && no !== ex.kojiNo) {
+      const ok = await dialog('工事番号が違います',
+        `選んだ工事は <b>${esc(kojiLabel(no))}</b> です。<br>取り込んだExcelの工事番号(ﾃﾞｰﾀシートのE1・F1)は <b>${esc(ex.kojiNo)}</b> です。この工事で進めますか?`,
+        [{ label: 'この工事で進める', value: true, cls: 'primary' }, { label: '元に戻す', value: false }]);
+      if (!ok) setKoji(prev);
+    }
   }
 
   // ------------------------------------------------------------ ② サーバーとフォルダ
@@ -241,6 +304,7 @@
 
   async function chooseFolder(server) {
     if (!state.excel) { await dialog('先にExcelを取り込んでください', '① 入力データーのExcelを取り込んでから、フォルダを選んでください。'); return; }
+    if (!currentKoji()) { await dialog('工事名を選んでください', '① の「工事名」をリストから選んでから、フォルダを選んでください。'); return; }
     if (!window.showDirectoryPicker) { await dialog('このブラウザでは使えません', 'Edge か Chrome で開いてください(フォルダを選ぶ機能を使います)。'); return; }
     if (state.dirty && !(await dialog('読み直しますか?', '表で直した内容はまだ保存していません。図面を読み直すと消えます。',
       [{ label: '読み直す', value: true, cls: 'primary' }, { label: 'やめる', value: false }]))) return;
@@ -257,11 +321,12 @@
       if (!root) return;
 
       // 前回この工事で選んだフォルダ
-      const key = 'jf:' + server + ':' + (state.excel.kojiNo || '');
-      const last = state.excel.kojiNo ? await idbGet(key) : null;
+      const koji = currentKoji();
+      const key = 'jf:' + server + ':' + koji;
+      const last = await idbGet(key);
       let dir = null, rel = null;
       if (last && last.dir) {
-        const v = await dialog('継手基準図のフォルダ', `前回 ${esc(state.excel.kojiNo)} で選んだフォルダ<br><b>${esc(last.rel.join('\\'))}</b><br>を使いますか?`,
+        const v = await dialog('継手基準図のフォルダ', `前回 ${esc(kojiLabel(koji))} で選んだフォルダ<br><b>${esc(last.rel.join('\\'))}</b><br>を使いますか?`,
           [{ label: 'このフォルダを使う', value: 'use', cls: 'primary' }, { label: '別のフォルダを選ぶ', value: 'pick' }, { label: 'やめる', value: 'stop' }]);
         if (v === 'stop') return;
         if (v === 'use' && (await hasPermission(last.dir))) { dir = last.dir; rel = last.rel; }
@@ -281,7 +346,7 @@
         dir = h; rel = r;
       }
       await loadFolder(server, dir, rel);
-      if (rel && state.excel.kojiNo) idbSet(key, { dir, rel });
+      if (rel) idbSet(key, { dir, rel });
     } catch (e) {
       busy(false);
       console.error(e);
@@ -526,7 +591,7 @@
       return { status: r.status, diff: Object.keys(r.diff || {}), vals, note };
     });
     apiPost('onSave', {
-      kojiNo: ex.kojiNo, excelName: ex.name, zubanRange: zs.length ? `${zs[0]}〜${zs[zs.length - 1]}(${zs.length}枚)` : '',
+      kojiNo: currentKoji(), excelName: ex.name, zubanRange: zs.length ? `${zs[0]}〜${zs[zs.length - 1]}(${zs.length}枚)` : '',
       counts: sc.counts(state.rows), applied: state.rows.filter(r => r.applied).length, rows,
     }).catch(() => {});
   }
@@ -598,7 +663,13 @@
       state.servers = DEFAULT_SERVERS;
     }
     renderServerButtons();
-    apiGet('getKojiList').then(l => { state.kojiList = l; renderExcelInfo(); }).catch(() => {});
+    $('koji-select').onchange = onKojiChange;
+    apiGet('getKojiList').then(l => {
+      state.kojiList = Array.isArray(l) && l.length ? l : null;
+    }).catch(() => { state.kojiList = null; }).then(() => {
+      renderKojiSelect();
+      reconcileKoji();
+    });
     apiPost('logUsageStart', {}).catch(() => {});
   }
 
