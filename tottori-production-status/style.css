@@ -88,15 +88,18 @@ body {
   font-size: 14px;
 }
 .banner { background: #e6f0ff; color: #12407a; border: 1px solid #b9d2f5; }
-/* 特記コメント: 「取込 ◯/◯結果」と同じ行の左側。薄いピンク・黒の太字(「案件マスター(鳥取)に見つかりませんでした」だけ赤)・縁がピンクに光って点滅。長文は折り返す(2026-11-17 ユーザー指定) */
-.warn { background: #ffe4ec; color: #000; font-weight: 700; border: 2px solid #ff6fa3; white-space: pre-line; overflow-wrap: anywhere; animation: warn-glow 1.2s ease-in-out infinite; }
+/* 特記コメント: 「取込 ◯/◯結果」と同じ行の左側。黄色(2026-11-18。以前は薄いピンク)・黒の太字(「案件マスター(鳥取)に見つかりませんでした」だけ赤)・縁がピンクに光って点滅。長文は折り返す(2026-11-17 ユーザー指定) */
+.warn { background: #fff176; color: #000; font-weight: 700; font-size: 28px; line-height: 1.4; border: 2px solid #ff6fa3; white-space: pre-line; overflow-wrap: anywhere; animation: warn-glow 1.2s ease-in-out infinite, warn-bg 2.4s ease-in-out infinite; }
+/* 黄色の背景がゆっくり点滅(2026-11-18 ユーザー指定。文字は2倍=28px) */
+@keyframes warn-bg { 0%, 100% { background-color: #fff176; } 50% { background-color: #fffbd6; } }
+@media (max-width: 640px) { .warn { font-size: 20px; } }
 .warn-red { color: #d1001f; }
 .warn.error { color: #c8102e; } /* 読み込めなかったときのエラーは赤のまま */
 @keyframes warn-glow {
   0%, 100% { border-color: #ff9fc2; box-shadow: 0 0 0 0 rgba(255, 79, 145, 0); }
   50% { border-color: #ff2f7d; box-shadow: 0 0 12px 4px rgba(255, 79, 145, .85); }
 }
-@media (prefers-reduced-motion: reduce) { .warn { animation: none; box-shadow: 0 0 10px 3px rgba(255, 79, 145, .6); } }
+@media (prefers-reduced-motion: reduce) { .warn { animation: none; background: #fff176; box-shadow: 0 0 10px 3px rgba(255, 79, 145, .6); } }
 
 .file-btn { display: inline-flex; align-items: center; }
 .btn:not(.primary) { background: #fff; color: var(--ink); border-color: var(--line); font-weight: 600; }
