@@ -118,8 +118,11 @@
 
   // ------------------------------------------------------------ ① Excel の取り込み
 
+  // 設定シート(工事・サーバーの一覧)を読み込み中か。読み込み中は他の操作を受け付けない
+  const settingsLoading = () => document.body.classList.contains('loading-settings');
+
   async function loadExcel(file) {
-    if (!file) return;
+    if (!file || settingsLoading()) return;
     if (!/\.xls[xm]$/i.test(file.name)) { toast('.xlsm か .xlsx を選んでください', 'error'); return; }
     if (state.dirty && !(await dialog('取り込み直しますか?', '表で直した内容はまだ保存していません。取り込み直すと消えます。',
       [{ label: '取り込み直す', value: true, cls: 'primary' }, { label: 'やめる', value: false }]))) return;
@@ -175,6 +178,7 @@
 
   function renderKojiSelect() {
     const sel = $('koji-select');
+    sel.classList.remove('loading');
     if (!state.kojiList) {
       sel.innerHTML = '<option value="">工事の一覧を読めませんでした(Excelの工事番号を使います)</option>';
       sel.disabled = true;
@@ -188,8 +192,17 @@
     sel.classList.toggle('unset', !state.koji);
   }
 
+  // 前回選んだ工事(このブラウザに覚える)を、次に開いたとき・リセットしたときの初期値にする(2026-11-17 ユーザー指示)
+  const LAST_KOJI_KEY = 'spl-sheet-web:lastKoji';
+  function lastKoji() {
+    let no = '';
+    try { no = localStorage.getItem(LAST_KOJI_KEY) || ''; } catch (_) { /* 覚えられない環境では初期値なし */ }
+    return (state.kojiList || []).some(k => k[0] === no) ? no : '';
+  }
+
   function setKoji(no) {
     state.koji = no || '';
+    if (state.koji) { try { localStorage.setItem(LAST_KOJI_KEY, state.koji); } catch (_) { /* 覚えられなくてもよい */ } }
     renderKojiSelect();
     renderExcelInfo();
   }
@@ -625,7 +638,7 @@ ${t}`;
     state.rows = [];
     state.selected.clear();
     state.dirty = false;
-    state.koji = '';
+    state.koji = lastKoji();
     $('only-diff').checked = false;
     renderKojiSelect();
     renderExcelInfo();
@@ -732,7 +745,7 @@ ${t}`;
 
     // ドロップで Excel を取り込む
     let depth = 0;
-    window.addEventListener('dragenter', e => { if ([...(e.dataTransfer.types || [])].includes('Files')) { depth++; $('drop-overlay').classList.add('active'); } });
+    window.addEventListener('dragenter', e => { if (!settingsLoading() && [...(e.dataTransfer.types || [])].includes('Files')) { depth++; $('drop-overlay').classList.add('active'); } });
     window.addEventListener('dragleave', () => { if (--depth <= 0) { depth = 0; $('drop-overlay').classList.remove('active'); } });
     window.addEventListener('dragover', e => e.preventDefault());
     window.addEventListener('drop', e => {
@@ -758,8 +771,10 @@ ${t}`;
     $('koji-select').onchange = onKojiChange;
     apiGet('getKojiList').then(l => {
       state.kojiList = Array.isArray(l) && l.length ? l : null;
+      if (!state.koji) state.koji = lastKoji();
     }).catch(() => { state.kojiList = null; }).then(() => {
       renderKojiSelect();
+      document.body.classList.remove('loading-settings'); // 読み終えた(読めなかったときも)ので操作できるようにする
       reconcileKoji();
     });
     apiPost('logUsageStart', {}).catch(() => {});
