@@ -123,3 +123,6 @@ main { padding: 14px 16px 40px; }
 }
 #toast.show { opacity: .95; }
 #toast.error { background: #c0392b; }
+.file-tools { margin: 6px 0; display: flex; gap: 6px; flex-wrap: wrap; }
+.file-list { border: 1px solid #ccc; border-radius: 4px; max-height: 46vh; overflow: auto; padding: 4px 8px; }
+.file-item { display: block; font-size: 13px; padding: 2px 0; cursor: pointer; }

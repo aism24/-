@@ -235,7 +235,7 @@
       b.className = 'btn server';
       b.innerHTML = `<span></span><span class="sub"></span>`;
       b.firstChild.textContent = '📁 ' + serverLabel(name);
-      b.lastChild.textContent = saved[name] ? '「①進行中工事」から選びます' : '初回は「①進行中工事」を選びます';
+      b.lastChild.textContent = 'ファイルのあるフォルダを指定します';
       b.onclick = () => chooseFolder(name);
       box.appendChild(b);
     }
@@ -273,10 +273,14 @@
   // サーバーの「①進行中工事」を選んで覚える(目印ファイルで確認)
   async function registerRoot(server) {
     for (;;) {
-      await dialog(`${serverLabel(server)}の「①進行中工事」を選んでください`,
-        'このあと出る画面で、サーバーの「①進行中工事」のフォルダを選んでください。<br>最初の1回だけです(このブラウザに覚えます)。',
-        [{ label: 'フォルダを選ぶ', value: true, cls: 'primary' }]);
-      const h = await pickDir({ id: 'spl-root-' + server });
+      const go = await dialog(`${serverLabel(server)}の「①進行中工事」を1回だけ選んでください`,
+        '図面へのリンクと、実寸法師で開く機能のために、図面の場所を知る必要があります。<br>'
+        + 'ブラウザは選んだフォルダの場所を教えてくれないので、最初の1回だけサーバーの「①進行中工事」を選んでください(このブラウザに覚えます)。<br>'
+        + '<b>「①進行中工事」の中を探すことはしません。</b>図面は、このあと指定するフォルダの中から選んだファイルだけを読みます。',
+        [{ label: '「①進行中工事」を選ぶ', value: true, cls: 'primary' }, { label: '今回はリンク無しで進める', value: false }]);
+      if (!go) return null;
+      // フォルダ選択の id は英数字だけ(日本語のサーバー名を入れると showDirectoryPicker がエラーになる)
+      const h = await pickDir({ id: 'spl-root-' + Math.max(0, state.servers.findIndex(x => x[0] === server)) });
       if (!h) return null;
       if (kojiOfName(h.name) || h.name.includes('一般図')) {
         if (await dialog('「①進行中工事」を選んでください', `選んだのは「${esc(h.name)}」です。工事フォルダより1つ上の「①進行中工事」を選んでください。`,
@@ -317,8 +321,7 @@
         if (v === 'retry' && !(await hasPermission(root))) return;
         if (v === 'repick') root = null;
       }
-      if (!root) root = await registerRoot(server);
-      if (!root) return;
+      if (!root) root = await registerRoot(server); // 選ばなければ null(リンク無しで進める)
 
       // 前回この工事で選んだフォルダ
       const koji = currentKoji();
@@ -326,17 +329,17 @@
       const last = await idbGet(key);
       let dir = null, rel = null;
       if (last && last.dir) {
-        const v = await dialog('継手基準図のフォルダ', `前回 ${esc(kojiLabel(koji))} で選んだフォルダ<br><b>${esc(last.rel.join('\\'))}</b><br>を使いますか?`,
+        const v = await dialog('ファイルのあるフォルダ', `前回 ${esc(kojiLabel(koji))} で指定したフォルダ<br><b>${esc(last.rel.join('\\'))}</b><br>を使いますか?`,
           [{ label: 'このフォルダを使う', value: 'use', cls: 'primary' }, { label: '別のフォルダを選ぶ', value: 'pick' }, { label: 'やめる', value: 'stop' }]);
         if (v === 'stop') return;
         if (v === 'use' && (await hasPermission(last.dir))) { dir = last.dir; rel = last.rel; }
       }
       while (!dir) {
-        const h = await pickDir({ id: 'spl-joint', startIn: root });
+        const h = await pickDir(root ? { id: 'spl-joint', startIn: root } : { id: 'spl-joint' });
         if (!h) return;
         let r = null;
-        try { r = await root.resolve(h); } catch (_) { r = null; }
-        if (!r) {
+        if (root) { try { r = await root.resolve(h); } catch (_) { r = null; } }
+        if (root && !r) {
           const v = await dialog('「①進行中工事」の中のフォルダではありません',
             `選んだ「${esc(h.name)}」は、${esc(serverLabel(server))}の「${esc(root.name)}」の中のフォルダとして確認できませんでした。<br>このままだと、図面へのリンクと実寸法師で開く機能が使えません。`,
             [{ label: '選び直す', value: 'again', cls: 'primary' }, { label: 'リンク無しで使う', value: 'nolink' }, { label: 'やめる', value: 'stop' }]);
@@ -355,15 +358,18 @@
   }
 
   async function loadFolder(server, dir, rel) {
-    const files = [];
-    for await (const e of dir.values()) if (e.kind === 'file' && sc.isJointDrawing(e.name)) files.push(e);
-    if (!files.length) {
-      await dialog('継手基準図がありません', `「${esc(dir.name)}」には、名前に「継手基準図」を含む .tdf がありません。`);
+    const all = [];
+    for await (const e of dir.values()) if (e.kind === 'file' && /\.tdf$/i.test(e.name)) all.push(e);
+    if (!all.length) {
+      await dialog('図面がありません', `「${esc(dir.name)}」には .tdf がありません。ファイルのあるフォルダを指定してください。`);
       return;
     }
+    const chosen = await chooseFiles(dir.name, sc.sortDrawings(all.map(f => f.name)));
+    if (!chosen) return;
+    const files = all.filter(f => chosen.includes(f.name));
     const base = serverPath(server);
     const unc = rel && base ? base.replace(/[\\/]+$/, '') + '\\' + rel.join('\\') : '';
-    busy(true, `継手基準図を読んでいます…(${files.length}枚)`);
+    busy(true, `図面を読んでいます…(${files.length}枚)`);
     const names = sc.sortDrawings(files.map(f => f.name));
     let joints = [];
     const failed = [];
@@ -387,6 +393,21 @@
     $('folder-info').classList.toggle('warn', !unc);
     if (failed.length) await dialog('読めなかった図面', esc(failed.join('\n')).replace(/\n/g, '<br>'));
     buildRows();
+  }
+
+  // 抽出するファイルを選ぶ。名前に「継手基準図」を含むものに最初から印を付ける。選んだ名前の配列(やめたら null)
+  async function chooseFiles(folderName, names) {
+    for (;;) {
+      const items = names.map((n, i) => `<label class="file-item"><input type="checkbox" class="file-chk" data-i="${i}"${sc.isJointDrawing(n) ? ' checked' : ''}> ${esc(n)}</label>`).join('');
+      const html = `<p>「${esc(folderName)}」の図面(${names.length}ファイル)から、抽出するファイルを選んでください。</p>`
+        + '<div class="file-tools"><button type="button" class="btn" data-files="all">全部選ぶ</button><button type="button" class="btn" data-files="none">全部外す</button><button type="button" class="btn" data-files="joint">継手基準図だけ</button></div>'
+        + `<div class="file-list">${items}</div>`;
+      const ok = await dialog('抽出するファイルを選ぶ', html, [{ label: '抽出する', value: true, cls: 'primary' }, { label: 'やめる', value: false }]);
+      if (!ok) return null;
+      const picked = [...$('modal-body').querySelectorAll('.file-chk')].filter(c => c.checked).map(c => names[Number(c.dataset.i)]);
+      if (picked.length) return picked;
+      await dialog('ファイルを選んでください', '抽出するファイルを1つ以上選んでください。');
+    }
   }
 
   // ------------------------------------------------------------ 突き合わせと表
@@ -599,6 +620,16 @@
   // ------------------------------------------------------------ イベント
 
   function bind() {
+    // ファイル選択のダイアログの「全部選ぶ」「全部外す」「継手基準図だけ」
+    $('modal-body').addEventListener('click', e => {
+      const t = e.target.closest('[data-files]');
+      if (!t) return;
+      const box = $('modal-body');
+      const names = [...box.querySelectorAll('.file-item')].map(l => l.textContent.trim());
+      box.querySelectorAll('.file-chk').forEach((c, i) => {
+        c.checked = t.dataset.files === 'all' || (t.dataset.files === 'joint' && sc.isJointDrawing(names[i]));
+      });
+    });
     $('btn-excel').onclick = () => $('excel-input').click();
     $('excel-input').onchange = e => { loadExcel(e.target.files[0]); e.target.value = ''; };
     $('btn-save').onclick = save;
