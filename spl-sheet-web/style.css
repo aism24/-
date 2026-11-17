@@ -150,3 +150,17 @@ main { padding: 8px 10px; flex: 1; min-height: 0; display: flex; flex-direction:
 .step-done { font-size: 14px; color: #222; line-height: 1.7; word-break: break-all; }
 .step-done b { color: #1e7e45; }
 .step-done .warn { color: #c0392b; }
+/* 右上(リセットの左。2026-11-17 ユーザー指示)の「← 最新図で情報抽出へ」: 背景は黄色、文字はピンクの太字、金色に光る(2026-11-17 ユーザー指示)。
+   共通部品 to-launcher.js の色の変化を、このアプリだけ上書きする */
+#header-right .to-launcher, #header-right .to-launcher.on-light {
+  background: #ffeb3b !important; color: #e4007f !important; font-weight: 800 !important;
+  border: 2px solid #d4a017 !important; margin: 0 4px 0 0 !important;
+  animation: spl-gold-glow 1.8s ease-in-out infinite !important;
+}
+@keyframes spl-gold-glow {
+  0%, 100% { box-shadow: 0 0 4px 0 rgba(255, 200, 40, .6), 0 0 10px 2px rgba(255, 190, 0, .35); }
+  50% { box-shadow: 0 0 10px 3px rgba(255, 200, 40, .95), 0 0 24px 8px rgba(255, 190, 0, .6); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #header-right .to-launcher { animation: none !important; box-shadow: 0 0 8px 2px rgba(255, 200, 40, .8) !important; }
+}
