@@ -1,9 +1,9 @@
 // 継手基準図からSPLシート作成(画面)。
-// 流れ: ① 入力データーの .xlsm を取り込む → ② サーバーを押して継手基準図のフォルダを選ぶ
-//       → 最新図と違いがあればポップアップ → ③ 表で直して Excel に保存(ダウンロード)
-// 図面の場所: ブラウザは選んだフォルダの場所を教えてくれないので、サーバーごとに「①進行中工事」を
+// 流れ: ① 工事名を選び、入力データーの .xlsm を取り込む → ② サーバーを押して継手基準図(TDF)ファイルを選ぶ
+//       (別のフォルダの図面も追加できる)→ 最新図と違いがあればポップアップ → 表で直して Excel に保存(ダウンロード)
+// 図面の場所: ブラウザは選んだファイルの場所を教えてくれないので、サーバーごとに「①進行中工事」を
 //   1回だけ選んで覚え(目印ファイルでサーバーを確認。tdf-master-web の帳票チェックと同じ)、
-//   継手基準図のフォルダはその中から選ぶ。①進行中工事からの道筋(resolve)とサーバーのパス
+//   TDFファイルはその中から選ぶ。①進行中工事からの道筋(resolve)とサーバーのパス
 //   (スプレッドシートの設定シート)をつないで、図面の場所(リンク・実寸法師を開く)を作る。
 (function () {
   'use strict';
@@ -16,6 +16,8 @@
   const sc = window.splCore;
   const $ = id => document.getElementById(id);
   const NUM_COLS = new Set('EFGHJKLMOPQR'.split(''));
+  // 板厚の列。数字のほか「※」も入れられる(26-14 BD446X。2026-11-17 ユーザー指示)
+  const THICK_COLS = new Set(['E', 'J', 'O']);
   const TABLE_COLS = ['A', 'B', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V'];
   const LEFT_COLS = new Set(['S', 'T', 'U', 'V']);
   const CENTER_COLS = new Set(['A', 'B']); // 図番・継手名は中央揃え(2026-11-17 ユーザー指示)
@@ -23,7 +25,7 @@
   const state = {
     excel: null,     // { name, buf, rows, kojiNo }
     servers: null,   // [[名前, パス]]
-    folder: null,    // { server, names:[選んだファイル名], unc:全部の場所が分かったか, summary:帯の1行 }
+    folder: null,    // { server, names:[選んだファイル名], summary:帯の1行 }
     joints: null,
     rows: [],
     selected: new Set(),
@@ -399,8 +401,7 @@
           // ①進行中工事から各ファイルまでの道筋(図面の場所)
           let rels = files.map(() => null);
           if (root && !noLink) {
-            rels = [];
-            for (const f of files) { let r = null; try { r = await root.resolve(f); } catch (_) { r = null; } rels.push(r); }
+            rels = await Promise.all(files.map(f => root.resolve(f).catch(() => null))); // 全部同時に問い合わせる(順番は files のまま)
             if (rels.some(r => !r)) {
               const v = await dialog(`${sv}のファイルではありません`,
                 `選んだファイルは、${sv}の「${esc(root.name)}」の中にありませんでした(別のサーバーの図面かもしれません)。<br>サーバーのボタンを確かめてください。このまま使うと、図面へのリンクと実寸法師で開く機能が使えません。`,
@@ -410,10 +411,14 @@
               noLink = true;
             }
           }
-          // 同じファイルを2回選んだときは1回だけにする
+          // 同じファイルを2回選んだときは1回だけにする。同じファイルなら名前も同じなので、
+          // 名前が同じものだけブラウザに問い合わせる(全部の組み合わせを聞くと、N棟・S棟の約90枚で数千回になっていた)
           for (let i = 0; i < files.length; i++) {
             let dup = false;
-            for (const p of picked) { try { if (await p.h.isSameEntry(files[i])) { dup = true; break; } } catch (_) { /* 比べられなければ別とみなす */ } }
+            for (const p of picked) {
+              if (p.h.name !== files[i].name) continue;
+              try { if (await p.h.isSameEntry(files[i])) { dup = true; break; } } catch (_) { /* 比べられなければ別とみなす */ }
+            }
             if (!dup) picked.push({ h: files[i], rel: rels[i], folder: rels[i] ? rels[i].slice(0, -1).join('\\') : '' });
           }
         }
@@ -460,18 +465,20 @@
     busy(true, `図面を読んでいます…(${names.length}枚)`);
     const joints = [];
     const failed = [];
-    for (const it of items) {
+    // サーバーからの読み込みは同時に行い(1枚ずつ待つと枚数分かかる)、抽出は図番の順に行う
+    const datas = await Promise.all(items.map(it => it.h.getFile().then(f => f.arrayBuffer()).catch(e => e)));
+    items.forEach((it, i) => {
       try {
-        const bytes = new Uint8Array(await (await it.h.getFile()).arrayBuffer());
-        joints.push(...sc.extractDrawing(it.name, bytes, pathOf(it)));
+        if (datas[i] instanceof Error) throw datas[i];
+        joints.push(...sc.extractDrawing(it.name, new Uint8Array(datas[i]), pathOf(it)));
       } catch (e) {
         console.error(it.name, e);
         failed.push(it.name);
       }
-    }
+    });
     busy(false);
     const unc = items.every(it => pathOf(it));
-    state.folder = { server, names, unc };
+    state.folder = { server, names };
     state.joints = joints;
     // ② 選び終わったら文字だけにする(変えるときはリセット)
     $('step-folder').classList.add('done');
@@ -642,9 +649,10 @@ ${t}`;
       if (save) {
         const txt = inp.value.trim();
         let v = txt === '' ? null : txt;
-        if (v != null && NUM_COLS.has(c)) {
+        if (v != null && THICK_COLS.has(c) && v.normalize('NFKC') === '※') v = '※'; // 板厚は「※」も可(図面・Excel と同じ書き方)
+        else if (v != null && NUM_COLS.has(c)) {
           const n = Number(v.normalize('NFKC'));
-          if (!Number.isFinite(n)) { toast(`${sc.COL_LABEL[c]} には数字を入れてください`, 'error'); rerenderRow(i); return; }
+          if (!Number.isFinite(n)) { toast(`${sc.COL_LABEL[c]} には数字を入れてください${THICK_COLS.has(c) ? '(「※」も可)' : ''}`, 'error'); rerenderRow(i); return; }
           v = n;
         }
         if (sc.normVal(v) !== sc.normVal(r[c])) {
@@ -782,7 +790,7 @@ ${t}`;
         tr.classList.toggle('sel', e.target.checked);
         renderCounts();
       }
-      if (!e.target.closest('input[type=text], td input:not(.sel)')) showDetail(i);
+      if (!e.target.closest('td input:not(.sel)')) showDetail(i); // 編集中の入力欄のクリックでは詳細を出し直さない
     });
     tbody.addEventListener('dblclick', e => {
       const td = e.target.closest('td[data-c]');
@@ -823,12 +831,7 @@ ${t}`;
     try {
       const d = await apiGet('getSettings');
       return d && Array.isArray(d.servers) && Array.isArray(d.koji) ? d : null;
-    } catch (e) {
-      // GAS が前の版(getSettings が無い)のときだけ、前の2つを同時に読む
-      if (!/不明なaction/.test(e.message)) return null;
-      const [servers, koji] = await Promise.all(['getServerPaths', 'getKojiList'].map(a => apiGet(a).catch(() => null)));
-      return { servers: Array.isArray(servers) ? servers : [], koji: Array.isArray(koji) ? koji : [] };
-    }
+    } catch (_) { return null; }
   }
 
   function applySettings(s) {

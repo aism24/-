@@ -7,7 +7,8 @@
 // 図面の読み方(25-19 の J-01〜J-12 で確認、2026-11-17):
 // - 継手名 = 図面の中でいちばん大きい英数字の文字(例 GJ194)。名前1つを1区画とし、区画の大きさは名前の並びの間隔で決める
 // - 「FLG」の行の「1 SPL-9x150x290」→ Fr外、その下の行 → Fr内、「WEB」の行 → Web
-// - 枚数はフランジが図の数字×2(上下)、Webは図の数字のまま
+// - 枚数: フランジは図の数字が片側(外1枚)なら×2、上下の合計(26-16)ならそのまま。Webは図の数字のまま
+//   (柱のエレクションピース・SPL分割・見出しの無い3行などの読み方は extractDrawing の中に書いた)
 // - 「2fill.PL-1.6x200x80」→ S列「PL1.6」。SPLがある継手は U列「有」
 // - GPL(ガセット)だけの継手は継手名だけの行
 (function (root) {
@@ -202,7 +203,7 @@
     };
 
     const zuban = zubanInDrawing(ts, bodyH || hmax) || zubanOf(fileName);
-    const order = names.slice().sort((a, b) => a.y - b.y || a.x - b.x);
+    const order = names; // 上の行から(同じ高さは左から)。names は並べ替え済み
     const joints = new Map();
     for (const n of order) joints.set(n, { A: zuban, B: n.s, tdf: path || '', file: fileName, bolts: [], warn: [] });
     // 「上FLG」「下FLG」(上下でSPLを分けた継手。26-14 NJ-05)も FLG として見る。
@@ -240,8 +241,8 @@
       // 上下に重なる図(26-14 NGF488DK)は列が同じなので、直前の見出しの側のまま
       let side = info.side;
       if (!lab && side && info.sideX && info.sideX.上 != null && info.sideX.下 != null && Math.abs(info.sideX.上 - info.sideX.下) > 200 * scale) {
-        const left = ['上', '下'].filter(s => info.sideX[s] < t.x).sort((p, q) => info.sideX[q] - info.sideX[p]);
-        if (left.length) side = left[0];
+        const leftSides = ['上', '下'].filter(s => info.sideX[s] < t.x).sort((p, q) => info.sideX[q] - info.sideX[p]);
+        if (leftSides.length) side = leftSides[0];
       }
       if (side) {
         if (!info.split) info.split = { 上: [], 下: [] };

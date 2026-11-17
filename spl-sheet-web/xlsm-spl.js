@@ -82,6 +82,30 @@
     return Number.isFinite(n) ? n : unescXml(v);
   }
 
+  // シートの XML を、最初の行(<row>)が閉じるところまでだけ展開して返す。
+  // 行は番号の順に並ぶので、1行目があれば必ず最初の行。ﾃﾞｰﾀシートは 30MB あることがあり(25-19・26-16)、
+  // E1・F1 のために全部を展開すると取り込みの約8割(Node で 198ms → 1ms)を使っていた(2026-11-17)
+  function headOfSheet(file) {
+    if (typeof file.internalStream !== 'function') return file.async('string');
+    return new Promise((resolve, reject) => {
+      const dec = new TextDecoder('utf-8');
+      let txt = '', done = false;
+      const st = file.internalStream('uint8array');
+      const finish = () => { if (done) return; done = true; st.pause(); resolve(txt); };
+      st.on('data', chunk => {
+        if (done) return;
+        txt += dec.decode(chunk, { stream: true });
+        const a = txt.search(/<row[\s/>]/);
+        if (a >= 0) {
+          const rest = txt.slice(a);
+          if (/^<row\b[^>]*?\/>/.test(rest) || rest.includes('</row>')) finish();
+        } else if (/<\/sheetData>|<sheetData\/>/.test(txt)) finish();
+      }).on('error', e => { if (!done) { done = true; reject(e); } })
+        .on('end', () => { if (!done) { txt += dec.decode(); finish(); } })
+        .resume();
+    });
+  }
+
   // SPLシートを読む: { rows: [{xrow, A..V}], kojiNo, lastRow }
   async function read(JSZip, buf) {
     const zip = await JSZip.loadAsync(buf);
@@ -109,7 +133,7 @@
     let kojiNo = '';
     const dpath = await findSheet(zip, DATA_SHEET);
     if (dpath) {
-      const dxml = await zip.file(dpath).async('string');
+      const dxml = await headOfSheet(zip.file(dpath));
       const r1 = (dxml.match(/<row\b[^>]*?r="1"[^>]*?(?:\/>|>[\s\S]*?<\/row>)/) || [])[0];
       if (r1) {
         const cs = cellsOf(r1), by = c => cs.find(x => x.col === c);
@@ -267,8 +291,8 @@
       out.push(`<row r="${n}"${attrs}>${cells.join('')}</row>`);
     }
     const before = oldRows.filter(r => r.n < FIRST_ROW).map(r => (origRowOf && r.n === FIRST_ROW - 1 ? addOrigHead(r.xml) : r.xml));
-    const after = oldRows.filter(r => r.n > lastRow).map(r => r.xml);
-    let sheet = head + before.join('') + out.join('') + after.join('') + tail;
+    // lastRow は元の最後の行以上なので、書き込む範囲より下に元の行は残らない
+    let sheet = head + before.join('') + out.join('') + tail;
 
     // 範囲を広げる(dimension・オートフィルター)
     const widen = (m, pre, a, b, c, d, post) => Number(d) >= lastRow ? m : `${pre}${a}${b}:${c}${lastRow}${post}`;
