@@ -100,8 +100,6 @@
 
   // ---------------------------------------------------------------- 継手基準図を読む
 
-  const num = s => { const v = Number(s); return v; };
-
   // 名前の並び(x または y)から1区画の大きさを求める。いちばん多い間隔を使う
   function step(values, fallback) {
     const vs = [...new Set(values.map(v => Math.round(v)))].sort((a, b) => a - b);
@@ -121,10 +119,6 @@
   function zubanOf(fileName) {
     const m = String(fileName).match(ZUBAN_RE);
     return m ? m[1] : String(fileName).replace(/\.[^.]*$/, '');
-  }
-
-  function isJointDrawing(fileName) {
-    return /\.tdf$/i.test(fileName) && String(fileName).includes('継手基準図');
   }
 
   function sortDrawings(names) {
@@ -173,8 +167,8 @@
       if (!n) continue;
       const j = joints.get(n);
       if (mb) { j.bolts.push(t.s); continue; }
-      if (mf) { j.S = 'PL' + fmt(num(mf[2])); continue; }
-      const cnt = Number(ms[1]), th = num(ms[2]), a = num(ms[3]), b = num(ms[4]);
+      if (mf) { j.S = 'PL' + fmt(Number(mf[2])); continue; }
+      const cnt = Number(ms[1]), th = Number(ms[2]), a = Number(ms[3]), b = Number(ms[4]);
       const lab = labels.find(l => Math.abs(l.y - t.y) < 20 * scale && t.x - l.x > 0 && t.x - l.x < 400 * scale);
       let kind;
       if (lab) kind = lab.s === 'WEB' ? 'Web' : 'Fr外';
@@ -298,7 +292,7 @@
 
   const api = {
     VALUE_COLS, CMP_COLS, COL_LABEL, nfkc, normName, normVal, fmt,
-    parseTdfTexts, extractDrawing, zubanOf, isJointDrawing, sortDrawings,
+    parseTdfTexts, extractDrawing, zubanOf, sortDrawings,
     diffOf, refreshStatus, applyDrawing, merge, counts, diffList,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.splCore = api;
