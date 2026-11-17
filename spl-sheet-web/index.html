@@ -4,16 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>継手基準図からSPLシート作成</title>
-<link rel="stylesheet" href="style.css?v=20261117f">
+<link rel="stylesheet" href="style.css?v=20261117h">
 </head>
 <body>
 
 <header>
+  <div id="header-left"></div>
   <div id="header-brand">
     <img class="side-icon" src="assets/jissun-icon.png" width="48" height="48" alt="">
     <div class="logo-frame"><div class="logo-inner"><img class="header-logo" src="assets/logo.svg" alt="正光ロゴ"><span class="company-name">株式会社　正光&nbsp;</span></div></div>
     <h1>継手基準図からSPLシート作成</h1>
     <img class="side-icon side-icon-flip" src="assets/jissun-icon.png" width="48" height="48" alt="">
+  </div>
+  <div id="header-right">
+    <button type="button" class="btn" id="btn-reset">↺ リセット</button>
+    <button type="button" class="btn excel" id="btn-save" disabled>⬇ Excelダウンロード</button>
   </div>
 </header>
 
@@ -21,28 +26,22 @@
   <section id="steps">
     <div class="step" id="step-excel">
       <div class="step-title"><span class="step-no">①</span>工事名を選び、入力データーのExcelを取り込む</div>
-      <div class="step-body">
+      <div class="step-body" id="excel-body">
         <label class="koji-label" for="koji-select">工事名 <span class="koji-note">リストから選択</span></label>
         <select id="koji-select"><option value="">工事の一覧を読み込み中…</option></select>
         <button type="button" class="btn primary" id="btn-excel">📄 Excelを選ぶ</button>
         <input type="file" id="excel-input" accept=".xlsm,.xlsx" hidden>
         <div class="step-note">ここにドロップしても取り込めます</div>
-        <div class="step-info" id="excel-info">未選択</div>
+        <div class="step-info" id="excel-info"></div>
       </div>
+      <div class="step-done" id="excel-done" hidden></div>
     </div>
     <div class="step" id="step-folder">
       <div class="step-title"><span class="step-no">②</span>サーバーを選び、図面(TDF)ファイルを選んで抽出</div>
-      <div class="step-body">
+      <div class="step-body" id="folder-body">
         <div id="server-btns" class="server-btns"><span class="step-note">サーバーの一覧を読み込み中…</span></div>
-        <div class="step-info" id="folder-info">未選択</div>
       </div>
-    </div>
-    <div class="step" id="step-save">
-      <div class="step-title"><span class="step-no">③</span>表を確かめて、Excelに保存</div>
-      <div class="step-body">
-        <button type="button" class="btn excel" id="btn-save" disabled>⬇ Excelに保存(ダウンロード)</button>
-        <div class="step-note">取り込んだExcelのSPLシートを表の内容にして、別名でダウンロードします</div>
-      </div>
+      <div class="step-done" id="folder-done" hidden></div>
     </div>
   </section>
 
@@ -54,7 +53,7 @@
     <button type="button" class="btn" id="btn-apply-all">違いを全部図面の値にする</button>
   </section>
 
-  <div id="empty-state">① Excelを取り込み、② 継手基準図のフォルダを選ぶと、ここに表が出ます。</div>
+  <div id="empty-state">① 工事名を選んでExcelを取り込み、② 図面(TDF)を選ぶと、ここに表が出ます。</div>
 
   <section id="table-wrap" hidden>
     <table id="spl-table">
@@ -109,9 +108,9 @@
 <div id="toast"></div>
 
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script defer src="spl-core.js?v=20261117f"></script>
-<script defer src="xlsm-spl.js?v=20261117f"></script>
-<script defer src="app.js?v=20261117f"></script>
-<script src="to-launcher.js?v=20261019" data-target="#header-brand .side-icon" data-mode="before"></script>
+<script defer src="spl-core.js?v=20261117h"></script>
+<script defer src="xlsm-spl.js?v=20261117h"></script>
+<script defer src="app.js?v=20261117h"></script>
+<script src="to-launcher.js?v=20261019" data-target="#header-left" data-mode="in"></script>
 </body>
 </html>

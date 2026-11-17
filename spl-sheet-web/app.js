@@ -148,12 +148,19 @@
     const hit = (state.kojiList || []).find(k => k[0] === no);
     return hit ? hit[1] : '';
   }
+  // ① 工事名と Excel がそろったら、選ぶ部品を隠して文字だけにする(2026-11-17 ユーザー指示。変えるときはリセット)
   function renderExcelInfo() {
     const ex = state.excel;
-    if (!ex) return;
+    const done = !!ex && !!currentKoji();
+    $('excel-body').hidden = done;
+    $('excel-done').hidden = !done;
+    $('step-excel').classList.toggle('done', done);
+    if (!ex) { $('excel-info').textContent = ''; return; }
     const k = ex.kojiNo ? `Excelの工事番号 ${ex.kojiNo}` : 'Excelの工事番号: 読めませんでした(ﾃﾞｰﾀシートのE1・F1)';
     $('excel-info').innerHTML = `${esc(ex.name)}<br>${esc(k)} / SPLシート ${ex.rows.length}行`;
-    $('step-excel').classList.toggle('done', !!currentKoji());
+    if (done) {
+      $('excel-done').innerHTML = `工事名: <b>${esc(kojiLabel(currentKoji()))}</b><br>Excel: ${esc(ex.name)}(SPLシート ${ex.rows.length}行)`;
+    }
   }
 
   // ------------------------------------------------------------ 工事名(設定シートの一覧から選ぶ。2026-11-17 ユーザー指示)
@@ -271,40 +278,46 @@
   }
 
   // サーバーの「①進行中工事」を選んで覚える(サーバーの確認と、図面の場所を知るためだけ。中は探さない)。
-  // そのサーバーを覚えていないときだけ聞く(サーバーごとに1回。2026-11-17 ユーザー確定)
+  // そのサーバーを覚えていないときだけ聞く(サーバーごとに1回。2026-11-17 ユーザー確定)。
+  // 選ぶ前に注意のポップアップ、間違えたらもう一度「①進行中工事」を選ぶよう催促する(2026-11-17 ユーザー指示)。
+  // 戻り値: フォルダ / null(リンク無しで進める) / 'cancel'(やめる)
   async function registerRoot(server) {
-    const go = await dialog(`${esc(serverLabel(server))}の確認(このブラウザで初めてのときだけ)`,
-      `<b>1回目: ${esc(serverLabel(server))}の「①進行中工事」</b>のフォルダを選んでください(01.一般図ではありません)。<br>`
-      + 'サーバーの確認と、図面へのリンク・実寸法師で開く機能のために使います。中を探すことはしません。<br>'
-      + '<b>2回目:</b> そのあと、図面(TDF)のあるフォルダまで下がって、TDFファイルを選びます。<br>'
-      + `次からは${esc(serverLabel(server))}のボタンを押すと、2回目(TDFファイルを選ぶ)だけになります。`,
-      [{ label: '「①進行中工事」を選ぶ', value: true, cls: 'primary' }, { label: '今回はリンク無しで進める', value: false }]);
-    if (!go) return null;
+    const sv = esc(serverLabel(server));
+    const go = await dialog(`⚠ 1回目は「①進行中工事」を選んでください(${sv}・初回だけ)`,
+      `<div class="warn-box">次の画面では、<b>${sv}の「①進行中工事」</b>のフォルダを選んでください。<br>`
+      + '<b>工事フォルダや「01.一般図」など、図面のあるフォルダではありません。</b></div>'
+      + 'サーバーの確認と、図面へのリンク・実寸法師で開く機能のために使います(中を探すことはしません)。<br>'
+      + `2回目に、図面(TDF)のあるフォルダまで下がってTDFファイルを選びます。次からは${sv}のボタンを押すと、TDFファイルを選ぶだけになります。`,
+      [{ label: '「①進行中工事」を選ぶ', value: 'go', cls: 'primary' }, { label: '今回はリンク無しで進める', value: 'nolink' }, { label: 'やめる', value: 'cancel' }]);
+    if (go === 'nolink') return null;
+    if (go !== 'go') return 'cancel';
     for (;;) {
       // フォルダ選択の id は英数字だけ(日本語のサーバー名を入れると showDirectoryPicker がエラーになる)
       const h = await pickDir({ id: 'spl-root-' + Math.max(0, state.servers.findIndex(x => x[0] === server)) });
-      if (!h) return null;
-      const again = async msg => dialog('「①進行中工事」を選んでください', msg,
-        [{ label: '選び直す', value: true, cls: 'primary' }, { label: 'リンク無しで進める', value: false }]);
+      if (!h) return 'cancel';
+      // 間違えたときの催促
+      const again = async msg => (await dialog('⚠ 「①進行中工事」ではありません',
+        `<div class="warn-box">${msg}</div>もう一度、${sv}の「①進行中工事」を選んでください。`,
+        [{ label: '「①進行中工事」を選び直す', value: true, cls: 'primary' }, { label: 'やめる', value: false }]));
       let hasTdf = false;
       try { for await (const e of h.values()) if (e.kind === 'file' && /\.tdf$/i.test(e.name)) { hasTdf = true; break; } } catch (_) { /* 読めなければ確かめない */ }
       if (kojiOfName(h.name) || hasTdf || h.name.includes('一般図')) {
-        if (await again(`選んだのは「${esc(h.name)}」です。1回目は、工事フォルダより上の「①進行中工事」を選んでください(図面のフォルダは2回目に選びます)。`)) continue;
-        return null;
+        if (await again(`選んだのは「${esc(h.name)}」です。${kojiOfName(h.name) ? '工事フォルダ' : '図面のあるフォルダ'}ではなく、その上の階層にある「①進行中工事」を選んでください。`)) continue;
+        return 'cancel';
       }
       const marks = await readMarks(h);
       if (marks.length && !marks.includes(server)) {
-        if (await again(`選んだフォルダは${esc(marks.map(serverLabel).join('・'))}の「${esc(h.name)}」です(目印ファイルで確認)。押したボタンは${esc(serverLabel(server))}です。${esc(serverLabel(server))}の「①進行中工事」を選んでください。`)) continue;
-        return null;
+        if (await again(`選んだのは${esc(marks.map(serverLabel).join('・'))}の「${esc(h.name)}」です(目印ファイルで確認)。押したボタンは${sv}です。`)) continue;
+        return 'cancel';
       }
       if (!marks.length) {
-        const v = await dialog('サーバーを確認できません', `選んだフォルダ「${esc(h.name)}」に目印ファイル(「_${esc(serverLabel(server))}…」で始まるファイル)がありません。${esc(serverLabel(server))}の「①進行中工事」で合っていますか?`,
-          [{ label: 'このフォルダを使う', value: 'ok', cls: 'primary' }, { label: '選び直す', value: 'again' }, { label: 'リンク無しで進める', value: 'stop' }]);
+        const v = await dialog('サーバーを確認できません', `選んだフォルダ「${esc(h.name)}」に目印ファイル(「_${sv}…」で始まるファイル)がありません。${sv}の「①進行中工事」で合っていますか?`,
+          [{ label: 'このフォルダを使う', value: 'ok', cls: 'primary' }, { label: '「①進行中工事」を選び直す', value: 'again' }, { label: 'やめる', value: 'stop' }]);
         if (v === 'again') continue;
-        if (v === 'stop') return null;
+        if (v !== 'ok') return 'cancel';
       }
       await idbSet('root:' + server, h);
-      toast(`${serverLabel(server)}の「${h.name}」を覚えました。続けて図面(TDF)を選んでください`);
+      toast(`${serverLabel(server)}の「${h.name}」を覚えました`);
       return h;
     }
   }
@@ -329,29 +342,56 @@
     if (state.dirty && !(await dialog('読み直しますか?', '表で直した内容はまだ保存していません。図面を読み直すと消えます。',
       [{ label: '読み直す', value: true, cls: 'primary' }, { label: 'やめる', value: false }]))) return;
     try {
+      const sv = esc(serverLabel(server));
       let root = await idbGet('root:' + server);
+      let first = false;
       if (root && !(await hasPermission(root))) root = null; // 許可が無ければ、場所の確認には使わない
-      if (!(await idbGet('root:' + server))) root = await registerRoot(server);
+      if (!(await idbGet('root:' + server))) {
+        const r = await registerRoot(server);
+        if (r === 'cancel') return;
+        root = r;
+        first = true;
+      }
 
       // 選ぶ画面は、この工事で前回選んだ図面のフォルダ → ①進行中工事 の順に始める
       const key = 'jf:' + server + ':' + currentKoji();
       const last = await idbGet(key);
       const idx = Math.max(0, state.servers.findIndex(x => x[0] === server));
+      let startIn = (last && last.file) || root || undefined;
       for (;;) {
-        const startIn = (last && last.file) || root || undefined;
+        // 下層フォルダ(TDFのある場所)を選ぶ前の案内(2026-11-17 ユーザー指示)
+        const go = await dialog(`${first ? '2回目: ' : ''}図面(TDF)ファイルを選んでください(${sv})`,
+          '<div class="info-box">次の画面で、<b>図面(TDF)のあるフォルダ</b>(例: 工事フォルダ\\①-正光施工図\\01.一般図)<b>まで下がって</b>、'
+          + '抽出するTDFファイルを選び「開く」を押してください。</div>'
+          + '複数選ぶときは Ctrl+A(全部)か、Ctrl を押しながらクリックします。<br>選んだあとに確認が出るので、間違えたら「フォルダ選択に戻る」で選び直せます。',
+          [{ label: 'TDFファイルを選ぶ', value: true, cls: 'primary' }, { label: 'やめる', value: false }]);
+        if (!go) return;
         const files = await pickFiles(startIn ? { id: 'spl-files-' + idx, startIn } : { id: 'spl-files-' + idx });
         if (!files || !files.length) return;
+        startIn = files[0]; // 戻ったときは、今選んだフォルダから始める
         // ①進行中工事から各ファイルまでの道筋(図面の場所)
-        const rels = [];
+        let rels = [];
         if (root) for (const f of files) { let r = null; try { r = await root.resolve(f); } catch (_) { r = null; } rels.push(r); }
         if (root && rels.some(r => !r)) {
-          const v = await dialog(`${esc(serverLabel(server))}のファイルではありません`,
-            `選んだファイルは、${esc(serverLabel(server))}の「${esc(root.name)}」の中にありませんでした(別のサーバーの図面かもしれません)。<br>サーバーのボタンを確かめてください。このまま使うと、図面へのリンクと実寸法師で開く機能が使えません。`,
-            [{ label: '選び直す', value: 'again', cls: 'primary' }, { label: 'リンク無しで使う', value: 'nolink' }, { label: 'やめる', value: 'stop' }]);
+          const v = await dialog(`${sv}のファイルではありません`,
+            `選んだファイルは、${sv}の「${esc(root.name)}」の中にありませんでした(別のサーバーの図面かもしれません)。<br>サーバーのボタンを確かめてください。このまま使うと、図面へのリンクと実寸法師で開く機能が使えません。`,
+            [{ label: 'フォルダ選択に戻る', value: 'again', cls: 'primary' }, { label: 'リンク無しで使う', value: 'nolink' }, { label: 'やめる', value: 'stop' }]);
           if (v === 'again') continue;
-          if (v === 'stop') return;
-          rels.length = 0;
+          if (v !== 'nolink') return;
+          rels = [];
         }
+        // 選んだファイルの確認(間違えたら「フォルダ選択に戻る」。2026-11-17 ユーザー指示)
+        const names = sc.sortDrawings(files.map(f => f.name));
+        const joint = names.filter(sc.isJointDrawing).length;
+        const folder = rels.length ? rels[0].slice(0, -1).join('\\') : '';
+        const v = await dialog('選んだ図面の確認',
+          (folder ? `フォルダ: <b>${esc(folder)}</b><br>` : '')
+          + `${names.length}ファイル(うち名前に「継手基準図」を含むもの ${joint}件)`
+          + (joint < names.length ? '<div class="warn-box">名前に「継手基準図」を含まないファイルがあります。そのまま抽出してもよいか確かめてください。</div>' : '')
+          + `<div class="name-list">${names.map(n => esc(n)).join('<br>')}</div>`,
+          [{ label: 'この図面で抽出する', value: 'ok', cls: 'primary' }, { label: 'フォルダ選択に戻る', value: 'back' }, { label: 'やめる', value: 'stop' }]);
+        if (v === 'back') continue;
+        if (v !== 'ok') return;
         await loadFiles(server, files, rels.length ? rels : null);
         if (rels.length) idbSet(key, { file: files[0] });
         return;
@@ -387,12 +427,14 @@
     const unc = items.every(it => pathOf(it));
     state.folder = { server, names, unc };
     state.joints = joints;
+    // ② 選び終わったら文字だけにする(変えるときはリセット)
     $('step-folder').classList.add('done');
+    $('folder-body').hidden = true;
+    $('folder-done').hidden = false;
     const zs = names.map(sc.zubanOf);
     const where = folders[0] ? folders.join(' / ') : '(場所は不明)';
-    $('folder-info').innerHTML = `${esc(serverLabel(server))}: ${esc(where)}<br>${names.length}枚(${esc(zs[0])}〜${esc(zs[zs.length - 1])}) ${joints.length}継手`
+    $('folder-done').innerHTML = `<b>${esc(serverLabel(server))}</b>: ${esc(where)}<br>${names.length}枚(${esc(zs[0])}〜${esc(zs[zs.length - 1])}) ${joints.length}継手`
       + (unc ? '' : '<br><span class="warn">図面の場所が分からないため、リンクは付きません</span>');
-    $('folder-info').classList.toggle('warn', !unc);
     if (failed.length) await dialog('読めなかった図面', esc(failed.join('\n')).replace(/\n/g, '<br>'));
     if (!joints.length) {
       await dialog('継手が見つかりませんでした', '選んだ図面から継手を読めませんでした。継手基準図(J-01 など)を選んでいるか確かめてください。');
@@ -470,7 +512,6 @@
     $('btn-apply-sel').disabled = ![...state.selected].some(i => state.rows[i] && Object.keys(state.rows[i].diff || {}).length);
     $('btn-apply-all').disabled = !state.rows.some(r => r.drawing && Object.keys(r.diff || {}).length);
     $('btn-save').disabled = !state.excel || !state.rows.length;
-    $('step-save').classList.toggle('done', !!state.excel && !!state.joints);
   }
 
   function showDetail(i) {
@@ -556,6 +597,30 @@
     return n;
   }
 
+  // ------------------------------------------------------------ リセット(初期状態に戻る。覚えたサーバーのフォルダはそのまま)
+
+  async function resetAll() {
+    const any = state.excel || state.joints || state.koji;
+    if (!any) return;
+    const msg = state.dirty ? '表で直した内容はまだ保存していません。リセットすると消えます。' : '取り込んだExcelと図面を外して、最初の状態に戻します。';
+    if (!(await dialog('リセットしますか?', msg, [{ label: 'リセットする', value: true, cls: 'primary' }, { label: 'やめる', value: false }]))) return;
+    state.excel = null;
+    state.folder = null;
+    state.joints = null;
+    state.rows = [];
+    state.selected.clear();
+    state.dirty = false;
+    state.koji = '';
+    $('only-diff').checked = false;
+    renderKojiSelect();
+    renderExcelInfo();
+    $('folder-body').hidden = false;
+    $('folder-done').hidden = true;
+    $('folder-done').textContent = '';
+    $('step-folder').classList.remove('done');
+    render();
+  }
+
   // ------------------------------------------------------------ ③ 保存
 
   function stamp() {
@@ -613,6 +678,7 @@
     $('btn-excel').onclick = () => $('excel-input').click();
     $('excel-input').onchange = e => { loadExcel(e.target.files[0]); e.target.value = ''; };
     $('btn-save').onclick = save;
+    $('btn-reset').onclick = resetAll;
     $('btn-diff').onclick = showDiffList;
     $('only-diff').onchange = render;
     $('btn-apply-sel').onclick = () => {
