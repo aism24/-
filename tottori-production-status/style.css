@@ -51,6 +51,13 @@ body {
   gap: 10px;
 }
 .brand { display: flex; align-items: center; gap: 8px; }
+/* 略称設定・リセットは会社ロゴの左(一覧の画面だけ)。略称設定=薄い黄色、リセット=黄色(2026-11-17 ユーザー指定) */
+.hdr-btns { display: flex; gap: 8px; margin-right: 6px; }
+.landing-mode .hdr-btns { display: none; }
+.btn.hdr-btn.hdr-btn { padding: 5px 14px; font-size: 14px; white-space: nowrap; color: #000; font-weight: 700; }
+.btn.hdr-btn.abbr-btn { background: #fff6bf; border-color: #e6d36a; }
+.btn.hdr-btn.reset-btn { background: #ffd400; border-color: #d9b400; }
+@media (max-width: 640px) { .btn.hdr-btn.hdr-btn { padding: 4px 8px; font-size: 12px; } }
 .logo { height: 34px; width: auto; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
 .logo-mark { fill: #ff4d5e; }
 .logo-text { fill: #000000; }
@@ -81,24 +88,18 @@ body {
   font-size: 14px;
 }
 .banner { background: #e6f0ff; color: #12407a; border: 1px solid #b9d2f5; }
-.warn { background: #fff6e0; color: #6b4b00; border: 1px solid #f0d58f; white-space: pre-line; }
-.warn.error { background: #ffe8e8; color: #8a1018; border-color: #f2b5b5; }
-
-.toolbar-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 10px 14px;
-  margin-bottom: 12px;
+/* 特記コメント: 「取込 ◯/◯結果」と同じ行の左側。薄いピンク・黒の太字(「案件マスター(鳥取)に見つかりませんでした」だけ赤)・縁がピンクに光って点滅。長文は折り返す(2026-11-17 ユーザー指定) */
+.warn { background: #ffe4ec; color: #000; font-weight: 700; border: 2px solid #ff6fa3; white-space: pre-line; overflow-wrap: anywhere; animation: warn-glow 1.2s ease-in-out infinite; }
+.warn-red { color: #d1001f; }
+.warn.error { color: #c8102e; } /* 読み込めなかったときのエラーは赤のまま */
+@keyframes warn-glow {
+  0%, 100% { border-color: #ff9fc2; box-shadow: 0 0 0 0 rgba(255, 79, 145, 0); }
+  50% { border-color: #ff2f7d; box-shadow: 0 0 12px 4px rgba(255, 79, 145, .85); }
 }
+@media (prefers-reduced-motion: reduce) { .warn { animation: none; box-shadow: 0 0 10px 3px rgba(255, 79, 145, .6); } }
+
 .file-btn { display: inline-flex; align-items: center; }
 .btn:not(.primary) { background: #fff; color: var(--ink); border-color: var(--line); font-weight: 600; }
-.plan-info { flex: 1; min-width: 220px; font-size: 13px; color: var(--muted); }
-.plan-info b { color: var(--ink); }
 
 /* 左=生産遅れ、右=前日出来高(見本のPDFと同じく、2つを同時に見る) */
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
@@ -152,7 +153,7 @@ table.sheet tr.total td { border-top: 2px solid #8a98a8; }
 }
 @media print {
   .app-header { position: static; }
-  .btn, .toolbar-card { display: none !important; }
+  .btn { display: none !important; }
 }
 .file-btn.busy { opacity: .6; pointer-events: none; }
 
@@ -203,9 +204,14 @@ table.sheet td.days-cell { text-align: center; }
 .app-header h1 { justify-self: center; text-align: center; }
 .hdr-side.right { justify-self: end; }
 /* 基準日・結果の日は背景(濃いグレー)側の右端。背景が濃いので文字は明るく */
-.dates { text-align: right; font-size: 14px; color: #d5dbe2; margin: 0 2px 8px; }
+.meta-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.meta-row .warn { flex: 1; min-width: 0; margin: 0; }
+.dates { margin-left: auto; text-align: right; white-space: nowrap; font-size: 14px; color: #d5dbe2; padding: 0 2px; }
 .dates b { color: #fff; font-weight: 700; }
 .dates:empty { display: none; }
+.meta-row:has(> .warn[hidden]) { margin-bottom: 8px; } /* コメントが無いときは前と同じ間隔 */
+.meta-row:has(> .warn[hidden]):has(> .dates:empty) { display: none; }
+@media (max-width: 640px) { .meta-row { flex-direction: column-reverse; align-items: stretch; } }
 @media (max-width: 640px) {
   .hdr-inner { grid-template-columns: 0 auto 1fr; gap: 8px; }
   .app-header h1 { justify-self: start; }
@@ -293,3 +299,9 @@ body.manual-open { overflow: hidden; }
 
 /* マスタに無い製品(PDFの結果の表からそのまま入れた行)の備考は赤の太字(2026-11-12 ユーザー指定) */
 table.sheet td.note.nomaster { color: #d00000; font-weight: 700; }
+/* スマホ幅の一覧の画面: 略称設定・リセットはヘッダーの2段目の右端(1段目に入りきらず題名と重なるため。2026-11-17) */
+@media (max-width: 640px) {
+  body:not(.landing-mode) .brand { display: contents; }
+  body:not(.landing-mode) .logo { grid-column: 3; grid-row: 1; justify-self: end; }
+  body:not(.landing-mode) .hdr-btns { grid-column: 1 / -1; grid-row: 2; justify-self: end; margin: 0; }
+}

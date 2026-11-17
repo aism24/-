@@ -138,13 +138,16 @@
       return (a[0][0] < b[0][0] ? -1 : a[0][0] > b[0][0] ? 1 : 0) || (a[0][4] < b[0][4] ? -1 : a[0][4] > b[0][4] ? 1 : 0) || (a[1] - b[1]);
     }).map(function (x) { return x[0]; });
     st.data = d;
-    $('meta').innerHTML = '基準日 <b>' + esc(fmtDateY(d.baseDate)) + '</b>・結果の日 <b>' + esc(fmtDateY(d.prevDate)) + '</b>';
+    // 取り込んだ結果の日だけ出す(2026-11-17 ユーザー指定。基準日は出さない)
+    $('meta').innerHTML = d.prevDate ? '取込 <b>' + esc(fmtDate(d.prevDate)) + '</b>結果' : '';
     const w = $('warn');
-    w.classList.remove('error'); w.hidden = !(d.warnings && d.warnings.length); w.textContent = (d.warnings || []).join('\n');
+    w.classList.remove('error'); w.hidden = !(d.warnings && d.warnings.length);
+    // 特記コメントは黒の太字、「案件マスター(鳥取)に見つかりませんでした」だけ赤の太字(2026-11-17 ユーザー指定)
+    w.innerHTML = esc((d.warnings || []).join('\n')).split(esc('案件マスター(鳥取)に見つかりませんでした')).join('<span class="warn-red">' + esc('案件マスター(鳥取)に見つかりませんでした') + '</span>');
     render('late');
     render('yesterday');
     const p = d.plan;
-    if (p && p.count) $('planInfo').innerHTML = '読み込んだ予定表: <b>' + esc(p.fileName || '(名前なし)') + '</b>(' + esc(fmtDate(p.from)) + '〜' + esc(fmtDate(p.to)) + '、読込 ' + esc(String(p.loadedAt).slice(0, 16)) + ')・保存済みの予定 ' + p.count + '件';
+    // 「読み込んだ予定表: …」の表示はやめた(2026-11-17 ユーザー指定)
     const mt = missingText(p);
     $('abbrBtn').disabled = DEMO || !((d.unknown || []).length || Object.keys(d.abbr || {}).length);
     // 新しい略称があれば、工事番号を選ぶ画面を出す(前回の表示からは出さない)
@@ -413,7 +416,7 @@
     if (st.busy) return;
     st.data = null; st.src = null; st.next = null; st.shown = false; st.noticeOk = null;
     ['noticeModal', 'dateModal', 'abbrModal', 'warn', 'toast'].forEach(function (id) { $(id).hidden = true; });
-    ['lateTable', 'yesterdayTable', 'meta', 'planInfo'].forEach(function (id) { $(id).innerHTML = ''; });
+    ['lateTable', 'yesterdayTable', 'meta'].forEach(function (id) { $(id).innerHTML = ''; });
     $('resultView').hidden = true;
     $('landing').hidden = false;
     document.body.classList.add('landing-mode');
