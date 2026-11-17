@@ -194,3 +194,12 @@ body.loading-settings #empty-state {
 .server-btns { justify-content: center; }
 .btn.server { min-width: 0; padding: 5px 12px; text-align: center; }
 .step-done { text-align: center; }
+/* アプリ説明書(ロゴ・アプリ名の左のボタン。tdf-dim-count の説明書と同じ見た目。2026-11-17 ユーザー指示) */
+.btn.manual-btn { background: #fff3b0; border: 1px solid #d4b800; color: #222; font-weight: bold; white-space: nowrap; }
+.btn.manual-btn:hover { background: #ffe98a; }
+#manual { display: none; position: fixed; inset: 0; z-index: 1200; background: rgba(0,0,0,.85); flex-direction: column; align-items: center; }
+#manual.open { display: flex; }
+#manual-img { flex: 1; min-height: 0; max-width: calc(100% - 24px); object-fit: contain; background: #fff; margin: 12px 12px 0; }
+#manual-bar { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 10px; color: #fff; font-size: 16px; }
+#manual-bar .btn { font-size: 16px; padding: 6px 18px; }
+#manual-bar .btn:disabled { opacity: .4; }

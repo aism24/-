@@ -759,7 +759,33 @@ ${t}`;
 
   // ------------------------------------------------------------ イベント
 
+  // ------------------------------------------------------------ アプリ説明書(manual/p-1.jpg〜。PDFをページごとの画像にしたもの)
+  // ページ数を変えたら MANUAL_PAGES も直す(作り方は docs/manual-draft-spl/README.md)
+  const MANUAL_PAGES = 14;
+  let manualPage = 1;
+  function showManualPage(n) {
+    manualPage = Math.max(1, Math.min(MANUAL_PAGES, n));
+    $('manual-img').src = `manual/p-${manualPage}.jpg?v=20261117`;
+    $('manual-page').textContent = `${manualPage} / ${MANUAL_PAGES}`;
+    $('manual-prev').disabled = manualPage === 1;
+    $('manual-next').disabled = manualPage === MANUAL_PAGES;
+    if (manualPage < MANUAL_PAGES) new Image().src = `manual/p-${manualPage + 1}.jpg?v=20261117`; // 次のページを先に読んでおく
+  }
+  const manualOpen = () => $('manual').classList.contains('open');
+  function openManual() { $('manual').classList.add('open'); showManualPage(1); }
+  function closeManual() { $('manual').classList.remove('open'); }
+
   function bind() {
+    $('btn-manual').onclick = openManual;
+    $('manual-close').onclick = closeManual;
+    $('manual-prev').onclick = () => showManualPage(manualPage - 1);
+    $('manual-next').onclick = () => showManualPage(manualPage + 1);
+    document.addEventListener('keydown', e => {
+      if (!manualOpen()) return;
+      if (e.key === 'ArrowLeft') showManualPage(manualPage - 1);
+      else if (e.key === 'ArrowRight') showManualPage(manualPage + 1);
+      else if (e.key === 'Escape') closeManual();
+    });
     $('btn-excel').onclick = () => $('excel-input').click();
     $('excel-input').onchange = e => { loadExcel(e.target.files[0]); e.target.value = ''; };
     $('btn-save').onclick = save;
