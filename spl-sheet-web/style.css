@@ -115,6 +115,7 @@ body.loading-settings #empty-state {
 #spl-table td.c { text-align: center; }
 #spl-table th .th-note { font-size: 10px; font-weight: normal; color: #555; }
 #spl-table td.c-row { text-align: center; color: #555; min-width: 40px; }
+#modal-body .hint-small { font-size: 12px; color: #666; margin-top: -4px; }
 #spl-table td.c-sel, #spl-table th.c-sel { width: 26px; min-width: 26px; text-align: center; }
 #spl-table tbody tr { cursor: default; }
 #spl-table tbody tr.sel td { outline: 2px solid #1a73e8; outline-offset: -2px; }
@@ -178,3 +179,18 @@ body.loading-settings #empty-state {
 @media (prefers-reduced-motion: reduce) {
   #header-right .to-launcher { animation: none !important; box-shadow: 0 0 8px 2px rgba(255, 200, 40, .8) !important; }
 }
+/* ①②のカードを低くして中央揃えにする(2026-11-17 ユーザー指示):
+   ① は「工事名・リスト・Excelを選ぶ・ドロップの案内」を1行に、② は見出しの右にサーバーのボタンを並べる */
+.step { padding: 8px 14px; text-align: center; }
+.step-title { margin-bottom: 6px; }
+#excel-body { flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 10px; }
+#excel-body #koji-select { width: auto; min-width: 240px; max-width: 340px; }
+#excel-body .btn.primary { padding: 6px 14px; }
+#excel-body .step-info { flex-basis: 100%; }
+#step-folder { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 14px; }
+#step-folder .step-title { margin-bottom: 0; }
+#folder-body { align-items: center; }
+#step-folder .step-done { flex-basis: 100%; }
+.server-btns { justify-content: center; }
+.btn.server { min-width: 0; padding: 5px 12px; text-align: center; }
+.step-done { text-align: center; }
