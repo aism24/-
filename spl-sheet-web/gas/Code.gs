@@ -16,7 +16,7 @@
  *
  * 初回: 関数 setupSpreadsheet を1回実行 → デプロイ(ウェブアプリ・実行=自分・アクセス=全員)
  */
-const CODE_VERSION = 'spl-20261117b';
+const CODE_VERSION = 'spl-20261117c';
 const SHEET_RECORD = '記録';
 const SHEET_SETTING = '設定';
 const SHEET_USAGE = '利用記録';
@@ -36,6 +36,8 @@ function doGet(e) {
   try {
     const p = (e && e.parameter) || {};
     if (p.action === 'ping') return ok_({ version: CODE_VERSION });
+    // アプリを開いたときはこれ1回(設定シートを1回読んで両方返す。2回呼ぶと4〜5秒かかっていた)
+    if (p.action === 'getSettings') return ok_(getSettings());
     if (p.action === 'getServerPaths') return ok_(getServerPaths());
     if (p.action === 'getKojiList') return ok_(getKojiList());
     return errRes_('不明なaction: ' + p.action);
@@ -81,17 +83,23 @@ function settingTable_() {
   };
 }
 
-// [[サーバー名, パス], ...]
-function getServerPaths() {
+// { servers: [[サーバー名, パス], ...], koji: [[工事番号, 工事名], ...] }
+function getSettings() {
   const t = settingTable_();
+  return { servers: serverPathsOf_(t), koji: kojiListOf_(t) };
+}
+
+// [[サーバー名, パス], ...](前の版の画面用に残す)
+function getServerPaths() { return serverPathsOf_(settingTable_()); }
+// [[工事番号, 工事名], ...]
+function getKojiList() { return kojiListOf_(settingTable_()); }
+
+function serverPathsOf_(t) {
   return t.rows
     .map(r => [String(r[t.server] || '').trim(), String(r[t.path] || '').trim()])
     .filter(r => r[0] && r[1]);
 }
-
-// [[工事番号, 工事名], ...]
-function getKojiList() {
-  const t = settingTable_();
+function kojiListOf_(t) {
   return t.rows
     .map(r => [String(r[t.koji] || '').trim(), String(r[t.kojiName] || '').trim()])
     .filter(r => r[0]);
@@ -132,7 +140,7 @@ function addDetailSheet_(ss, name, rows) {
     return [r.status || ''].concat(DETAIL_COLS.map(col => v[col] == null ? '' : v[col])).concat([r.note || '']);
   }));
   sh.getRange(1, 1, values.length, DETAIL_HEAD.length).setValues(values);
-  sh.getRange(1, 1, 1, DETAIL_HEAD.length).setFontWeight('bold').setBackground('#d9e1f2');
+  sh.getRange(1, 1, 1, DETAIL_HEAD.length).setFontWeight('bold'); // 見出しの色は下の setBackgrounds で塗る
   sh.setFrozenRows(1);
 
   // 色: 新規の行は薄い緑、手入力の行は薄い灰色、最新図と違うセルは黄色

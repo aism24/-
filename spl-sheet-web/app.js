@@ -23,7 +23,7 @@
   const state = {
     excel: null,     // { name, buf, rows, kojiNo }
     servers: null,   // [[名前, パス]]
-    folder: null,    // { server, dir, rel:[...], unc }
+    folder: null,    // { server, names:[選んだファイル名], unc:全部の場所が分かったか, summary:帯の1行 }
     joints: null,
     rows: [],
     selected: new Set(),
@@ -174,7 +174,7 @@
     if (state.kojiList) return state.koji;
     return state.excel ? state.excel.kojiNo : '';
   }
-  const kojiLabel = no => no ? `${no}${kojiNameOf(no) ? ' ' + kojiNameOf(no) : ''}` : '';
+  const kojiLabel = no => { const nm = no ? kojiNameOf(no) : ''; return no ? no + (nm ? ' ' + nm : '') : ''; };
 
   function renderKojiSelect() {
     const sel = $('koji-select');
@@ -357,10 +357,10 @@
       [{ label: '読み直す', value: true, cls: 'primary' }, { label: 'やめる', value: false }]))) return;
     try {
       const sv = esc(serverLabel(server));
-      let root = await idbGet('root:' + server);
+      const saved = await idbGet('root:' + server);
+      let root = saved && (await hasPermission(saved)) ? saved : null; // 許可が無ければ、場所の確認には使わない
       let first = false;
-      if (root && !(await hasPermission(root))) root = null; // 許可が無ければ、場所の確認には使わない
-      if (!(await idbGet('root:' + server))) {
+      if (!saved) {
         const r = await registerRoot(server);
         if (r === 'cancel') return;
         root = r;
@@ -395,13 +395,12 @@
           rels = [];
         }
         // 選んだファイルの確認(間違えたら「フォルダ選択に戻る」。2026-11-17 ユーザー指示)
+        // ファイル名に「継手基準図」が入っていることは珍しいので、名前では確かめない(2026-11-17 ユーザー指示)
         const names = sc.sortDrawings(files.map(f => f.name));
-        const joint = names.filter(sc.isJointDrawing).length;
         const folder = rels.length ? rels[0].slice(0, -1).join('\\') : '';
         const v = await dialog('選んだ図面の確認',
           (folder ? `フォルダ: <b>${esc(folder)}</b><br>` : '')
-          + `${names.length}ファイル(うち名前に「継手基準図」を含むもの ${joint}件)`
-          + (joint < names.length ? '<div class="warn-box">名前に「継手基準図」を含まないファイルがあります。そのまま抽出してもよいか確かめてください。</div>' : '')
+          + `${names.length}ファイル`
           + `<div class="name-list">${names.map(n => esc(n)).join('<br>')}</div>`,
           [{ label: 'この図面で抽出する', value: 'ok', cls: 'primary' }, { label: 'フォルダ選択に戻る', value: 'back' }, { label: 'やめる', value: 'stop' }]);
         if (v === 'back') continue;
@@ -424,13 +423,14 @@
     const pathOf = it => (it.rel && base ? base + '\\' + it.rel.join('\\') : '');
     const names = sc.sortDrawings(items.map(it => it.name));
     busy(true, `図面を読んでいます…(${names.length}枚)`);
-    let joints = [];
+    const joints = [];
     const failed = [];
+    const byName = new Map(items.map(it => [it.name, it]));
     for (const name of names) {
-      const it = items.find(x => x.name === name);
+      const it = byName.get(name);
       try {
         const bytes = new Uint8Array(await (await it.h.getFile()).arrayBuffer());
-        joints = joints.concat(sc.extractDrawing(name, bytes, pathOf(it)));
+        joints.push(...sc.extractDrawing(name, bytes, pathOf(it)));
       } catch (e) {
         console.error(name, e);
         failed.push(name);
@@ -758,26 +758,58 @@ ${t}`;
     window.addEventListener('beforeunload', e => { if (state.dirty) { e.preventDefault(); e.returnValue = ''; } });
   }
 
+  // ------------------------------------------------------------ 設定シート(サーバー一覧・工事一覧)
+  // 前回読んだ一覧をこのブラウザに覚えておき、開いた瞬間に出す。裏で読み直して、変わっていれば入れ替える。
+  // 覚えた一覧が無い(初めて)ときだけ、読み終えるまでグレーアウトする(2026-11-17 ユーザー承認)
+  const SETTINGS_KEY = 'spl-sheet-web:settings';
+  const validSettings = s => !!s && Array.isArray(s.servers) && s.servers.length > 0 && Array.isArray(s.koji) && s.koji.length > 0;
+
+  function cachedSettings() {
+    try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); return validSettings(s) ? s : null; } catch (_) { return null; }
+  }
+
+  // { servers, koji }。読めなければ null
+  async function fetchSettings() {
+    try {
+      const d = await apiGet('getSettings');
+      return d && Array.isArray(d.servers) && Array.isArray(d.koji) ? d : null;
+    } catch (e) {
+      // GAS が前の版(getSettings が無い)のときだけ、前の2つを同時に読む
+      if (!/不明なaction/.test(e.message)) return null;
+      const [servers, koji] = await Promise.all(['getServerPaths', 'getKojiList'].map(a => apiGet(a).catch(() => null)));
+      return { servers: Array.isArray(servers) ? servers : [], koji: Array.isArray(koji) ? koji : [] };
+    }
+  }
+
+  function applySettings(s) {
+    state.servers = s && s.servers.length ? s.servers : DEFAULT_SERVERS;
+    state.kojiList = s && s.koji.length ? s.koji : null;
+    if (state.koji && !(state.kojiList || []).some(k => k[0] === state.koji)) state.koji = '';
+    if (!state.koji) state.koji = lastKoji();
+    renderServerButtons();
+    renderKojiSelect();
+    renderExcelInfo();
+  }
+
   async function init() {
     bind();
-    // サーバー一覧・工事一覧(設定シート)
-    try {
-      const list = await apiGet('getServerPaths');
-      state.servers = Array.isArray(list) && list.length ? list : DEFAULT_SERVERS;
-    } catch (e) {
-      state.servers = DEFAULT_SERVERS;
-    }
-    renderServerButtons();
     $('koji-select').onchange = onKojiChange;
-    apiGet('getKojiList').then(l => {
-      state.kojiList = Array.isArray(l) && l.length ? l : null;
-      if (!state.koji) state.koji = lastKoji();
-    }).catch(() => { state.kojiList = null; }).then(() => {
-      renderKojiSelect();
-      document.body.classList.remove('loading-settings'); // 読み終えた(読めなかったときも)ので操作できるようにする
-      reconcileKoji();
-    });
+    const cached = cachedSettings();
+    if (cached) {
+      applySettings(cached);
+      document.body.classList.remove('loading-settings');
+    }
     apiPost('logUsageStart', {}).catch(() => {});
+    const fresh = await fetchSettings();
+    if (validSettings(fresh)) { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(fresh)); } catch (_) { /* 覚えられなくてもよい */ } }
+    if (cached) {
+      // 読み直せなかった・変わっていなければそのまま
+      if (fresh && (fresh.servers.length || fresh.koji.length) && JSON.stringify(fresh) !== JSON.stringify(cached)) applySettings(fresh);
+      return;
+    }
+    applySettings(fresh);
+    document.body.classList.remove('loading-settings'); // 読み終えた(読めなかったときも)ので操作できるようにする
+    reconcileKoji();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

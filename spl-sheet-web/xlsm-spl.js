@@ -202,10 +202,10 @@
     const links = []; // [{ref, url}]
     const linkStyleIds = new Set();
     const plan = [];
+    const tcs = cellsOf(tmplRow.xml); // ひな形の行のセル(行ごとに読み直さない)
     for (let n = FIRST_ROW; n <= lastRow; n++) {
       const base = byNum.get(n) || tmplRow;
-      const cs = cellsOf(base.xml);
-      const tcs = cellsOf(tmplRow.xml);
+      const cs = base === tmplRow ? tcs : cellsOf(base.xml);
       const sOf = c => { const s = cellStyle(cs.find(x => x.col === c)); return s != null ? s : cellStyle(tcs.find(x => x.col === c)); };
       const rec = rows[n - FIRST_ROW] || null;
       const url = rec && linkOf ? linkOf(rec) : null;
