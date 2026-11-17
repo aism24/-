@@ -118,7 +118,8 @@
   // (最新の加工日の確認もそのときに行うので、開いた時点ではGASを呼ばない)
   function init() {
     if (!DEMO) return;
-    // 「サンプル表示です…」の水色の帯は出さない(2026-11-18 ユーザー指定)
+    $('banner').hidden = false;
+    $('banner').textContent = GAS_URL ? 'サンプル表示です(?demo=1)。実際のデータではありません。' : 'サンプル表示です(GASのURLが未設定のため)。実際のデータではありません。';
     showResult();
     fetchJson('sample.json?v=20261111d').then(function (d) { setData(d); }).catch(function (e) { showError('サンプルの読み込みに失敗しました: ' + e.message); });
   }
