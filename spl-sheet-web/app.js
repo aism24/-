@@ -270,39 +270,44 @@
     }
   }
 
-  // サーバーの「①進行中工事」を選んで覚える(目印ファイルで確認)
-  async function registerRoot(server) {
+  // 指定したフォルダ(target)の上の階層にある「①進行中工事」を選んで覚える(図面の場所を知るためだけ。中は探さない)。
+  // 選ぶ画面は target から始まるので、上の階層へ戻って選んでもらう。target がその中にあることも確かめる。
+  // 戻り値 { root, rel }(やめた・リンク無しなら null)
+  async function registerRoot(server, target) {
+    let first = true;
     for (;;) {
-      const go = await dialog(`${serverLabel(server)}の「①進行中工事」を1回だけ選んでください`,
-        '図面へのリンクと、実寸法師で開く機能のために、図面の場所を知る必要があります。<br>'
-        + 'ブラウザは選んだフォルダの場所を教えてくれないので、最初の1回だけサーバーの「①進行中工事」を選んでください(このブラウザに覚えます)。<br>'
-        + '<b>「①進行中工事」の中を探すことはしません。</b>図面は、このあと指定するフォルダの中から選んだファイルだけを読みます。',
-        [{ label: '「①進行中工事」を選ぶ', value: true, cls: 'primary' }, { label: '今回はリンク無しで進める', value: false }]);
-      if (!go) return null;
+      if (first) {
+        const go = await dialog(`図面の場所を確かめます(${esc(serverLabel(server))}・初回だけ)`,
+          `図面へのリンクと、実寸法師で開く機能のために、指定したフォルダ「<b>${esc(target.name)}</b>」の場所を知る必要があります。<br>`
+          + 'ブラウザはフォルダの場所を教えてくれないので、<b>このフォルダの上の階層にある「①進行中工事」</b>を1回だけ選んでください(このブラウザに覚えます。次からは聞きません)。<br>'
+          + `次の画面は「${esc(target.name)}」から始まります。上の階層へ戻って「①進行中工事」を選んでください。「①進行中工事」の中を探すことはしません。`,
+          [{ label: '「①進行中工事」を選ぶ', value: true, cls: 'primary' }, { label: '今回はリンク無しで進める', value: false }]);
+        if (!go) return null;
+        first = false;
+      }
       // フォルダ選択の id は英数字だけ(日本語のサーバー名を入れると showDirectoryPicker がエラーになる)
-      const h = await pickDir({ id: 'spl-root-' + Math.max(0, state.servers.findIndex(x => x[0] === server)) });
+      const h = await pickDir({ id: 'spl-root-' + Math.max(0, state.servers.findIndex(x => x[0] === server)), startIn: target });
       if (!h) return null;
-      if (kojiOfName(h.name) || h.name.includes('一般図')) {
-        if (await dialog('「①進行中工事」を選んでください', `選んだのは「${esc(h.name)}」です。工事フォルダより1つ上の「①進行中工事」を選んでください。`,
-          [{ label: '選び直す', value: true, cls: 'primary' }, { label: 'やめる', value: false }])) continue;
+      let rel = null;
+      try { rel = await h.resolve(target); } catch (_) { rel = null; }
+      const again = async msg => dialog('「①進行中工事」を選んでください', msg,
+        [{ label: '選び直す', value: true, cls: 'primary' }, { label: 'リンク無しで進める', value: false }]);
+      if (!rel || !rel.length) {
+        if (await again(`選んだ「${esc(h.name)}」は、指定したフォルダ「${esc(target.name)}」の上の階層ではありません。上の階層にある「①進行中工事」を選んでください。`)) continue;
+        return null;
+      }
+      if (kojiOfName(h.name) || !kojiOfName(rel[0])) {
+        if (await again(`選んだのは「${esc(h.name)}」です。工事フォルダ(「${esc(kojiOfName(h.name) ? h.name : rel[0])}」)より1つ上の「①進行中工事」を選んでください。`)) continue;
         return null;
       }
       const marks = await readMarks(h);
       if (marks.length && !marks.includes(server)) {
-        if (await dialog('サーバーが違います', `選んだフォルダは${esc(marks.map(serverLabel).join('・'))}の「${esc(h.name)}」です(目印ファイルで確認)。${esc(serverLabel(server))}の「①進行中工事」を選び直してください。`,
-          [{ label: '選び直す', value: true, cls: 'primary' }, { label: 'やめる', value: false }])) continue;
+        if (await again(`選んだフォルダは${esc(marks.map(serverLabel).join('・'))}の「${esc(h.name)}」です(目印ファイルで確認)。押したボタンは${esc(serverLabel(server))}です。サーバーのボタンを押し直すか、${esc(serverLabel(server))}の「①進行中工事」を選んでください。`)) continue;
         return null;
-      }
-      if (!marks.length) {
-        const v = await dialog('サーバーを確認できません', `選んだフォルダ「${esc(h.name)}」に目印ファイル(「_${esc(serverLabel(server))}…」で始まるファイル)がありません。${esc(serverLabel(server))}の「①進行中工事」で合っていますか?`,
-          [{ label: 'このフォルダを使う', value: 'ok', cls: 'primary' }, { label: '選び直す', value: 'again' }, { label: 'やめる', value: 'stop' }]);
-        if (v === 'again') continue;
-        if (v === 'stop') return null;
       }
       await idbSet('root:' + server, h);
       toast(`${serverLabel(server)}の「${h.name}」を覚えました`);
-      renderServerButtons();
-      return h;
+      return { root: h, rel };
     }
   }
 
@@ -313,40 +318,32 @@
     if (state.dirty && !(await dialog('読み直しますか?', '表で直した内容はまだ保存していません。図面を読み直すと消えます。',
       [{ label: '読み直す', value: true, cls: 'primary' }, { label: 'やめる', value: false }]))) return;
     try {
+      // 覚えている「①進行中工事」(読む許可が無ければ、聞かずに使わない。場所の確認にだけ使う)
       let root = await idbGet('root:' + server);
-      if (root && !(await hasPermission(root))) {
-        const v = await dialog('フォルダを読む許可がありません', `覚えている${esc(serverLabel(server))}の「${esc(root.name)}」を読む許可がありませんでした。もう一度許可するか、選び直してください。`,
-          [{ label: 'もう一度許可する', value: 'retry', cls: 'primary' }, { label: '選び直す', value: 'repick' }, { label: 'やめる', value: 'stop' }]);
-        if (v === 'stop') return;
-        if (v === 'retry' && !(await hasPermission(root))) return;
-        if (v === 'repick') root = null;
-      }
-      if (!root) root = await registerRoot(server); // 選ばなければ null(リンク無しで進める)
+      if (root && !(await hasPermission(root))) root = null;
 
-      // 前回この工事で選んだフォルダ
+      // 前回この工事で指定したフォルダ
       const koji = currentKoji();
       const key = 'jf:' + server + ':' + koji;
       const last = await idbGet(key);
       let dir = null, rel = null;
       if (last && last.dir) {
         const v = await dialog('ファイルのあるフォルダ', `前回 ${esc(kojiLabel(koji))} で指定したフォルダ<br><b>${esc(last.rel.join('\\'))}</b><br>を使いますか?`,
-          [{ label: 'このフォルダを使う', value: 'use', cls: 'primary' }, { label: '別のフォルダを選ぶ', value: 'pick' }, { label: 'やめる', value: 'stop' }]);
+          [{ label: 'このフォルダを使う', value: 'use', cls: 'primary' }, { label: '別のフォルダを指定する', value: 'pick' }, { label: 'やめる', value: 'stop' }]);
         if (v === 'stop') return;
         if (v === 'use' && (await hasPermission(last.dir))) { dir = last.dir; rel = last.rel; }
       }
-      while (!dir) {
+      if (!dir) {
+        // まずファイルのあるフォルダを指定してもらう
         const h = await pickDir(root ? { id: 'spl-joint', startIn: root } : { id: 'spl-joint' });
         if (!h) return;
-        let r = null;
-        if (root) { try { r = await root.resolve(h); } catch (_) { r = null; } }
-        if (root && !r) {
-          const v = await dialog('「①進行中工事」の中のフォルダではありません',
-            `選んだ「${esc(h.name)}」は、${esc(serverLabel(server))}の「${esc(root.name)}」の中のフォルダとして確認できませんでした。<br>このままだと、図面へのリンクと実寸法師で開く機能が使えません。`,
-            [{ label: '選び直す', value: 'again', cls: 'primary' }, { label: 'リンク無しで使う', value: 'nolink' }, { label: 'やめる', value: 'stop' }]);
-          if (v === 'again') continue;
-          if (v === 'stop') return;
+        dir = h;
+        if (root) { try { rel = await root.resolve(h); } catch (_) { rel = null; } }
+        // 場所が分からなければ(初回・別のサーバーの中など)、上の階層の「①進行中工事」を1回だけ選んでもらう
+        if (!rel) {
+          const r = await registerRoot(server, h);
+          if (r) rel = r.rel;
         }
-        dir = h; rel = r;
       }
       await loadFolder(server, dir, rel);
       if (rel) idbSet(key, { dir, rel });
