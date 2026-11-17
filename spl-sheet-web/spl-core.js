@@ -203,6 +203,7 @@
     const labels = ts.filter(t => /^(上|下)?FLG$/.test(t.s) || t.s === 'WEB');
     // 上の行から順に見る(「FLG の行の下の行 = Fr内」を、ファイル内の文字の順番に左右されずに決めるため)
     const byPos = ts.slice().sort((a, b) => a.y - b.y || a.x - b.x);
+    const splInfo = new Map(); // 継手ごとの SPL の行数と、FLG/WEB の見出しがあったか
     for (const t of byPos) {
       const ms = t.s.match(SPL_RE), mf = t.s.match(FILL_RE), mb = t.s.match(BOLT_RE);
       if (!ms && !mf && !mb) continue;
@@ -213,6 +214,9 @@
       if (mf) { j.S = 'PL' + fmt(Number(mf[2])); continue; }
       const cnt = Number(ms[1]), th = Number(ms[2]), a = Number(ms[3]), b = Number(ms[4]);
       const lab = labels.find(l => Math.abs(l.y - t.y) < 20 * scale && t.x - l.x > 0 && t.x - l.x < 400 * scale);
+      const info = splInfo.get(j) || { lines: 0, labeled: false };
+      info.lines++; if (lab) info.labeled = true;
+      splInfo.set(j, info);
       let kind;
       if (lab) kind = lab.s === 'WEB' ? 'Web' : 'Fr外';
       else kind = 'E' in j ? 'Fr内' : 'Web';
@@ -222,6 +226,14 @@
     }
     return order.map(n => {
       const j = joints.get(n);
+      // 柱のエレクションピース: FLG/WEB の見出しが無く SPL が1行だけの区画(26-16 J-01 CJ1「2 SPL-12x100x455」)。
+      // 4方向に付き、図の数字は1か所ぶんなので、Fr外 に 図の数字×4 を入れる(Excel の書き方。2026-11-17 ユーザー確認)
+      const info = splInfo.get(j);
+      if (info && !info.labeled && info.lines === 1 && 'O' in j) {
+        [['E', 'O'], ['F', 'P'], ['G', 'Q'], ['H', 'R']].forEach(([to, from]) => { j[to] = j[from]; delete j[from]; });
+        j.H *= 4;
+        j.warn.push('エレクションピース(4方向)として読みました: Fr外 枚数 = 図の数字×4');
+      }
       // フランジの枚数: 図の数字が片側1か所ぶん(外1枚・内2枚。25-19)なら上下で×2、
       // 上下の合計(外2枚・内4枚。26-16)ならそのまま。外の数字が1か(外が無ければ内が2以下か)で見分ける
       if ('H' in j || 'M' in j) {
