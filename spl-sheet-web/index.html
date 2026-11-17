@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>継手基準図からSPLシート作成</title>
-<link rel="stylesheet" href="style.css?v=20261117h">
+<link rel="stylesheet" href="style.css?v=20261117i">
 </head>
 <body>
 
@@ -45,12 +45,15 @@
     </div>
   </section>
 
+  <!-- 表が出たら①②の枠は隠し、この1本の帯にまとめる(表をできるだけ広く見せる。2026-11-17 ユーザー指示) -->
   <section id="toolbar" hidden>
+    <div id="summary-line"></div>
     <div id="count-chips"></div>
     <label class="chk"><input type="checkbox" id="only-diff"> 違い・新規だけ表示</label>
     <button type="button" class="btn" id="btn-diff">違いの一覧</button>
     <button type="button" class="btn" id="btn-apply-sel" disabled>選んだ行を図面の値にする</button>
     <button type="button" class="btn" id="btn-apply-all">違いを全部図面の値にする</button>
+    <span class="hint" title="黄=最新図と違う / 緑=図面にだけある(行を追加) / 灰=図面に無い(そのまま残す)&#10;図番・継手名をクリック → 実寸法師で図面を開く&#10;ほかのセルをダブルクリック → 編集">ⓘ 使い方</span>
   </section>
 
   <div id="empty-state">① 工事名を選んでExcelを取り込み、② 図面(TDF)を選ぶと、ここに表が出ます。</div>
@@ -85,12 +88,6 @@
     <div id="detail-text"></div>
   </section>
 
-  <div id="legend" hidden>
-    <span class="lg st-違い">最新図と違う</span>
-    <span class="lg st-新規">図面にだけある(行を追加)</span>
-    <span class="lg st-手入力">図面に無い(そのまま残す)</span>
-    <span class="lg-text">図番・継手名をクリック → 実寸法師で図面を開く / ほかのセルをダブルクリック → 編集</span>
-  </div>
 </main>
 
 <div id="drop-overlay">Excelをここにドロップ</div>
@@ -108,9 +105,9 @@
 <div id="toast"></div>
 
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script defer src="spl-core.js?v=20261117h"></script>
-<script defer src="xlsm-spl.js?v=20261117h"></script>
-<script defer src="app.js?v=20261117h"></script>
+<script defer src="spl-core.js?v=20261117i"></script>
+<script defer src="xlsm-spl.js?v=20261117i"></script>
+<script defer src="app.js?v=20261117i"></script>
 <script src="to-launcher.js?v=20261019" data-target="#header-left" data-mode="in"></script>
 </body>
 </html>
