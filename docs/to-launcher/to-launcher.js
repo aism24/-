@@ -4,6 +4,7 @@
  *   before     … target要素の直前に入れる
  *   beforePrev … target要素の直前の兄弟がロゴ(img/svg/小さいdiv)ならその前、違えばtargetの直前に入れる
  *   after      … target要素の直後(右側)に入れる(truck-fax。会社名の右側。2026-10-28)
+ * 任意: data-url="行き先" data-label="ボタンの文字"(省略時はアプリ一覧へ。spl-sheet-web は「← 最新図で情報抽出へ」。2026-11-17)
  * 正本は docs/to-launcher/to-launcher.js。各アプリのフォルダへ同じファイルをコピーして使う(Vercelはフォルダ単位で配信するため)。
  * - 背景が暗いアプリ: 明るいボタン+濃い文字+金色の光 / 明るいアプリ: 暗いボタン+明るい文字+濃い赤・ピンクの光
  * - 背景色(7秒周期)と文字色(3秒周期)は別のリズムで変化。どの組み合わせもコントラスト比6.7以上
@@ -13,6 +14,8 @@
   var cur = document.currentScript;
   var TARGET = cur && cur.getAttribute('data-target');
   var MODE = (cur && cur.getAttribute('data-mode')) || 'in';
+  var URL_TO = (cur && cur.getAttribute('data-url')) || LAUNCHER_URL;
+  var LABEL = (cur && cur.getAttribute('data-label')) || '← アプリ一覧へ';
   if (!TARGET) return;
 
   var css = [
@@ -93,8 +96,8 @@
     if (!el) return false;
     var a = document.createElement('a');
     a.className = 'to-launcher';
-    a.href = LAUNCHER_URL;
-    a.textContent = '← アプリ一覧へ';
+    a.href = URL_TO;
+    a.textContent = LABEL;
     if (MODE === 'in') el.insertBefore(a, el.firstChild);
     else if (MODE === 'beforePrev') {
       var pv = el.previousElementSibling;
