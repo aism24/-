@@ -435,6 +435,8 @@
     const where = folders[0] ? folders.join(' / ') : '(場所は不明)';
     $('folder-done').innerHTML = `<b>${esc(serverLabel(server))}</b>: ${esc(where)}<br>${names.length}枚(${esc(zs[0])}〜${esc(zs[zs.length - 1])}) ${joints.length}継手`
       + (unc ? '' : '<br><span class="warn">図面の場所が分からないため、リンクは付きません</span>');
+    // 表の上の1行用
+    state.folder.summary = `${serverLabel(server)}: ${where} ${names.length}枚(${zs[0]}〜${zs[zs.length - 1]}) ${joints.length}継手` + (unc ? '' : '(リンク無し)');
     if (failed.length) await dialog('読めなかった図面', esc(failed.join('\n')).replace(/\n/g, '<br>'));
     if (!joints.length) {
       await dialog('継手が見つかりませんでした', '選んだ図面から継手を読めませんでした。継手基準図(J-01 など)を選んでいるか確かめてください。');
@@ -484,7 +486,16 @@
     $('empty-state').hidden = has;
     $('table-wrap').hidden = !has;
     $('toolbar').hidden = !has;
-    $('legend').hidden = !has;
+    // ①②がそろって表が出たら、枠を隠して1行にまとめる
+    const compact = has && !!state.excel && !!state.joints && !!currentKoji();
+    $('steps').hidden = compact;
+    $('summary-line').hidden = !compact;
+    if (compact) {
+      const t = `① ${state.excel.name}　② ${state.folder ? state.folder.summary : ''}`;
+      $('summary-line').textContent = t;
+      $('summary-line').title = `工事名: ${kojiLabel(currentKoji())}
+${t}`;
+    }
     $('detail').hidden = true;
     const only = $('only-diff').checked;
     const html = [];
