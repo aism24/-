@@ -95,6 +95,8 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
   background: #fff; border-radius: 14px; padding: 36px 40px; width: 92%; max-width: 480px;
   box-shadow: 0 12px 40px rgba(0,0,0,.35); text-align: center;
 }
+#beam-box .app-jump-row { display: flex; justify-content: center; margin: 0 0 14px; }
+#beam-box .app-jump-row .app-jump-btn { font-size: 16px; padding: 9px 26px; }
 #beam-box .logo-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 0 0 18px; }
 #beam-box .logo-frame { margin: 0; width: fit-content; }
 #beam-box .logo-frame img { width: 56px; height: 56px; }
@@ -428,3 +430,24 @@ table#result-table tbody tr.in-input-diff:not(.row-checked) { background: #e8dcf
 #server-choice-msg { font-size: 12px; color: #1a73e8; min-height: 1em; text-align: center; }
 #server-choice-back { background: #e6e8eb; border: 2px solid #8a949c; color: #3b4650; font-weight: bold; padding: 10px; border-radius: 10px; }
 #server-choice-back:hover { background: #d5d9dd; }
+
+/* 継手基準図からSPLシート作成(spl-sheet-web)へ移るボタン(ヘッダーの右のアイコンの右と、起動画面の社名の上)。
+   黄色の背景・ピンクの太字・金色に光る縁(2026-11-17 ユーザー指示)。色は spl-sheet-web の「← 最新図で情報抽出へ」と同じ */
+.app-jump-btn {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  padding: 7px 16px; border: 2px solid #d4a017; border-radius: 999px;
+  background: #ffeb3b; color: #e4007f; font-size: 14px; font-weight: 900; line-height: 1.2;
+  text-decoration: none; white-space: nowrap; cursor: pointer;
+  box-shadow: 0 0 6px 1px rgba(255, 196, 0, .75), inset 0 0 4px rgba(255, 215, 0, .8);
+  animation: app-jump-glow 1.6s ease-in-out infinite;
+  transition: transform .15s;
+}
+.app-jump-btn:hover { transform: translateY(-1px) scale(1.04); color: #c8006f; }
+.app-jump-btn:focus-visible { outline: 3px solid #e4007f; outline-offset: 2px; }
+@keyframes app-jump-glow {
+  0%, 100% { border-color: #d4a017; box-shadow: 0 0 6px 1px rgba(255, 196, 0, .7), inset 0 0 4px rgba(255, 215, 0, .8); }
+  50% { border-color: #ffd700; box-shadow: 0 0 16px 5px rgba(255, 215, 0, .95), inset 0 0 6px rgba(255, 236, 120, 1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-jump-btn { animation: none; box-shadow: 0 0 10px 3px rgba(255, 215, 0, .9); }
+}
