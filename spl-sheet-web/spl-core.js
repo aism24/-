@@ -105,20 +105,22 @@
 
   // ---------------------------------------------------------------- 継手基準図を読む
 
-  // 名前の並び(x または y)から1区画の大きさを求める。いちばん多い間隔を使う
-  function step(values, fallback) {
+  // 名前の並び(x または y)から1区画の大きさを求める。いちばん多い間隔を使う。
+  // 名前が1列(1行)だけで間隔が無いときは、区切らない(Infinity)。
+  // 26-14 は1行だけの図面が多く、表の文字が名前の4,650下にあって、25-19 の大きさ(3,453)では区画の外になっていた
+  function step(values, typical) {
     const vs = [...new Set(values.map(v => Math.round(v)))].sort((a, b) => a - b);
     const cnt = new Map();
     for (let i = 1; i < vs.length; i++) {
       const g = vs[i] - vs[i - 1];
-      if (g > fallback * 0.3) {
+      if (g > typical * 0.3) {
         const k = Math.round(g / 10) * 10;
         cnt.set(k, (cnt.get(k) || 0) + 1);
       }
     }
     let best = null, bc = 0;
     for (const [k, c] of cnt) if (c > bc) { best = k; bc = c; }
-    return best == null ? fallback : best;
+    return best == null ? Infinity : best;
   }
 
   function zubanOf(fileName) {
@@ -164,8 +166,11 @@
     const order = names.slice().sort((a, b) => a.y - b.y || a.x - b.x);
     const joints = new Map();
     for (const n of order) joints.set(n, { A: zuban, B: n.s, tdf: path || '', file: fileName, bolts: [], warn: [] });
-    const labels = ts.filter(t => t.s === 'FLG' || t.s === 'WEB');
-    for (const t of ts) {
+    // 「上FLG」「下FLG」(上下でSPLを分けた継手。26-14 NJ-05)も FLG として見る
+    const labels = ts.filter(t => /^(上|下)?FLG$/.test(t.s) || t.s === 'WEB');
+    // 上の行から順に見る(「FLG の行の下の行 = Fr内」を、ファイル内の文字の順番に左右されずに決めるため)
+    const byPos = ts.slice().sort((a, b) => a.y - b.y || a.x - b.x);
+    for (const t of byPos) {
       const ms = t.s.match(SPL_RE), mf = t.s.match(FILL_RE), mb = t.s.match(BOLT_RE);
       if (!ms && !mf && !mb) continue;
       const n = owner(t.x, t.y);
