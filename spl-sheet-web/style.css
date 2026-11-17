@@ -57,6 +57,19 @@ main { padding: 8px 10px; flex: 1; min-height: 0; display: flex; flex-direction:
 .koji-note { font-size: 11px; font-weight: bold; color: #c0392b; margin-left: 4px; }
 #koji-select { font: inherit; font-size: 14px; padding: 5px 6px; border: 1px solid #999; border-radius: 4px; width: 100%; max-width: 360px; }
 #koji-select.unset { border-color: #c0392b; background: #fff5f5; }
+/* 設定シートを読み込み中(数秒): 工事名のリストだけ目立たせ、ほかはグレーアウトして押せなくする(2026-11-17 ユーザー指示) */
+#koji-select.loading { opacity: 1; color: #d00000; font-weight: bold; border: 2px solid #d00000; background: #ffeb3b; animation: note-blink 1.2s ease-in-out infinite; cursor: progress; }
+body.loading-settings { cursor: progress; }
+body.loading-settings #header-right .btn,
+body.loading-settings #header-right .to-launcher,
+body.loading-settings .koji-label,
+body.loading-settings #btn-excel,
+body.loading-settings #excel-body .step-note,
+body.loading-settings #step-folder,
+body.loading-settings #empty-state {
+  opacity: .35 !important; filter: grayscale(1); pointer-events: none !important; animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) { #koji-select.loading { animation: none; } }
 
 .btn {
   background: #fff; color: #333; border: 1px solid #bbb; border-radius: 4px;
