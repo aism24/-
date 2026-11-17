@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>継手基準図からSPLシート作成</title>
+<link rel="stylesheet" href="style.css?v=20261117a">
+</head>
+<body>
+
+<header>
+  <div id="header-brand">
+    <img class="side-icon" src="assets/jissun-icon.png" width="48" height="48" alt="">
+    <div class="logo-frame"><div class="logo-inner"><img class="header-logo" src="assets/logo.svg" alt="正光ロゴ"><span class="company-name">株式会社　正光&nbsp;</span></div></div>
+    <h1>継手基準図からSPLシート作成</h1>
+    <img class="side-icon side-icon-flip" src="assets/jissun-icon.png" width="48" height="48" alt="">
+  </div>
+</header>
+
+<main>
+  <section id="steps">
+    <div class="step" id="step-excel">
+      <div class="step-title"><span class="step-no">①</span>入力データーのExcelを取り込む</div>
+      <div class="step-body">
+        <button type="button" class="btn primary" id="btn-excel">📄 Excelを選ぶ</button>
+        <input type="file" id="excel-input" accept=".xlsm,.xlsx" hidden>
+        <div class="step-note">ここにドロップしても取り込めます</div>
+        <div class="step-info" id="excel-info">未選択</div>
+      </div>
+    </div>
+    <div class="step" id="step-folder">
+      <div class="step-title"><span class="step-no">②</span>継手基準図のフォルダを選ぶ</div>
+      <div class="step-body">
+        <div id="server-btns" class="server-btns"><span class="step-note">サーバーの一覧を読み込み中…</span></div>
+        <div class="step-info" id="folder-info">未選択</div>
+      </div>
+    </div>
+    <div class="step" id="step-save">
+      <div class="step-title"><span class="step-no">③</span>表を確かめて、Excelに保存</div>
+      <div class="step-body">
+        <button type="button" class="btn excel" id="btn-save" disabled>⬇ Excelに保存(ダウンロード)</button>
+        <div class="step-note">取り込んだExcelのSPLシートを表の内容にして、別名でダウンロードします</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="toolbar" hidden>
+    <div id="count-chips"></div>
+    <label class="chk"><input type="checkbox" id="only-diff"> 違い・新規だけ表示</label>
+    <button type="button" class="btn" id="btn-diff">違いの一覧</button>
+    <button type="button" class="btn" id="btn-apply-sel" disabled>選んだ行を図面の値にする</button>
+    <button type="button" class="btn" id="btn-apply-all">違いを全部図面の値にする</button>
+  </section>
+
+  <div id="empty-state">① Excelを取り込み、② 継手基準図のフォルダを選ぶと、ここに表が出ます。</div>
+
+  <section id="table-wrap" hidden>
+    <table id="spl-table">
+      <thead>
+        <tr class="head1">
+          <th rowspan="2" class="c-sel"></th>
+          <th rowspan="2">状態</th>
+          <th rowspan="2">図番</th>
+          <th rowspan="2">継手名</th>
+          <th colspan="4">Fr外</th>
+          <th colspan="4">Fr内</th>
+          <th colspan="4">Web</th>
+          <th rowspan="2">フィラー</th>
+          <th rowspan="2">丁番</th>
+          <th rowspan="2">SPL</th>
+          <th rowspan="2">ボルト</th>
+        </tr>
+        <tr class="head2">
+          <th>板厚</th><th>幅</th><th>長さ</th><th>枚数</th>
+          <th>板厚</th><th>幅</th><th>長さ</th><th>枚数</th>
+          <th>板厚</th><th>幅</th><th>長さ</th><th>枚数</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section id="detail" hidden>
+    <div id="detail-text"></div>
+  </section>
+
+  <div id="legend" hidden>
+    <span class="lg st-違い">最新図と違う</span>
+    <span class="lg st-新規">図面にだけある(行を追加)</span>
+    <span class="lg st-手入力">図面に無い(そのまま残す)</span>
+    <span class="lg-text">図番・継手名をクリック → 実寸法師で図面を開く / ほかのセルをダブルクリック → 編集</span>
+  </div>
+</main>
+
+<div id="drop-overlay">Excelをここにドロップ</div>
+
+<!-- 汎用のダイアログ -->
+<div id="modal" class="modal-bg">
+  <div class="modal-box">
+    <h2 id="modal-title"></h2>
+    <div id="modal-body"></div>
+    <div class="modal-btns" id="modal-btns"></div>
+  </div>
+</div>
+
+<div id="busy" class="modal-bg"><div class="busy-box"><div class="spinner"></div><div id="busy-text">処理中…</div></div></div>
+<div id="toast"></div>
+
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script defer src="spl-core.js?v=20261117a"></script>
+<script defer src="xlsm-spl.js?v=20261117a"></script>
+<script defer src="app.js?v=20261117a"></script>
+<script src="to-launcher.js?v=20261019" data-target="#header-brand .side-icon" data-mode="before"></script>
+</body>
+</html>
