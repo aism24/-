@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>継手基準図からSPLシート作成</title>
-<link rel="stylesheet" href="style.css?v=20261117i">
+<link rel="stylesheet" href="style.css?v=20261117j">
 </head>
 <body>
 
@@ -49,6 +49,7 @@
   <section id="toolbar" hidden>
     <div id="summary-line"></div>
     <div id="count-chips"></div>
+    <div id="edit-note">セルをダブルクリックして編集ができます</div>
     <label class="chk"><input type="checkbox" id="only-diff"> 違い・新規だけ表示</label>
     <button type="button" class="btn" id="btn-diff">違いの一覧</button>
     <button type="button" class="btn" id="btn-apply-sel" disabled>選んだ行を図面の値にする</button>
@@ -64,8 +65,8 @@
         <tr class="head1">
           <th rowspan="2" class="c-sel"></th>
           <th rowspan="2">状態</th>
-          <th rowspan="2">図番</th>
-          <th rowspan="2">継手名</th>
+          <th rowspan="2">図番<br><span class="th-note">(実寸が開けます)</span></th>
+          <th rowspan="2">継手名<br><span class="th-note">(実寸が開けます)</span></th>
           <th colspan="4">Fr外</th>
           <th colspan="4">Fr内</th>
           <th colspan="4">Web</th>
@@ -105,9 +106,9 @@
 <div id="toast"></div>
 
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script defer src="spl-core.js?v=20261117i"></script>
-<script defer src="xlsm-spl.js?v=20261117i"></script>
-<script defer src="app.js?v=20261117i"></script>
+<script defer src="spl-core.js?v=20261117j"></script>
+<script defer src="xlsm-spl.js?v=20261117j"></script>
+<script defer src="app.js?v=20261117j"></script>
 <script src="to-launcher.js?v=20261019" data-target="#header-left" data-mode="in"></script>
 </body>
 </html>

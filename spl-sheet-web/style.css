@@ -76,8 +76,10 @@ main { padding: 8px 10px; flex: 1; min-height: 0; display: flex; flex-direction:
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none;
 }
 #toolbar .btn { padding: 4px 10px; font-size: 12px; }
-#summary-line { flex: 1 1 380px; min-width: 0; font-size: 13px; font-weight: bold; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#summary-line { flex: 0 1 auto; max-width: 45%; min-width: 0; font-size: 13px; font-weight: bold; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #count-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+/* 帯の中央の空き: 編集の案内(2026-11-17 ユーザー指示) */
+#edit-note { flex: 1 1 200px; text-align: center; font-size: 13px; font-weight: bold; color: #1a73e8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hint { font-size: 12px; color: #1a73e8; cursor: help; white-space: nowrap; }
 .chip { font-size: 12px; padding: 3px 9px; border-radius: 12px; border: 1px solid #ccc; background: #fff; }
 .chk { font-size: 13px; display: flex; align-items: center; gap: 4px; cursor: pointer; }
@@ -92,6 +94,8 @@ main { padding: 8px 10px; flex: 1; min-height: 0; display: flex; flex-direction:
 #spl-table thead .head2 th { top: 25px; }
 #spl-table td { text-align: right; min-width: 46px; height: 26px; }
 #spl-table td.l { text-align: left; }
+#spl-table td.c { text-align: center; }
+#spl-table th .th-note { font-size: 10px; font-weight: normal; color: #555; }
 #spl-table td.c-sel, #spl-table th.c-sel { width: 26px; min-width: 26px; text-align: center; }
 #spl-table tbody tr { cursor: default; }
 #spl-table tbody tr.sel td { outline: 2px solid #1a73e8; outline-offset: -2px; }
