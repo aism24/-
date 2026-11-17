@@ -17,7 +17,8 @@
   const $ = id => document.getElementById(id);
   const NUM_COLS = new Set('EFGHJKLMOPQR'.split(''));
   const TABLE_COLS = ['A', 'B', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V'];
-  const LEFT_COLS = new Set(['A', 'B', 'S', 'T', 'U', 'V']);
+  const LEFT_COLS = new Set(['S', 'T', 'U', 'V']);
+  const CENTER_COLS = new Set(['A', 'B']); // 図番・継手名は中央揃え(2026-11-17 ユーザー指示)
 
   const state = {
     excel: null,     // { name, buf, rows, kojiNo }
@@ -475,7 +476,7 @@
     const tds = [`<td class="c-sel"><input type="checkbox" class="sel" ${state.selected.has(i) ? 'checked' : ''}></td>`,
       `<td class="st-cell">${esc(r.status)}</td>`];
     for (const c of TABLE_COLS) {
-      const cls = [LEFT_COLS.has(c) ? 'l' : '', r.diff && c in r.diff ? 'diff' : ''].filter(Boolean).join(' ');
+      const cls = [LEFT_COLS.has(c) ? 'l' : CENTER_COLS.has(c) ? 'c' : '', r.diff && c in r.diff ? 'diff' : ''].filter(Boolean).join(' ');
       tds.push(`<td data-c="${c}"${cls ? ` class="${cls}"` : ''}>${cellHtml(r, c)}</td>`);
     }
     return `<tr data-i="${i}" class="st-${r.status}${state.selected.has(i) ? ' sel' : ''}">${tds.join('')}</tr>`;
@@ -504,6 +505,9 @@ ${t}`;
       html.push(rowHtml(r, i));
     });
     $('spl-table').tBodies[0].innerHTML = html.join('');
+    // 見出し2段目(板厚・幅…)は、1段目の実際の高さの下で止める(1段目に注記が入り2行になったため)
+    const h1 = $('spl-table').querySelector('.head1');
+    if (h1 && h1.offsetHeight) $('spl-table').querySelectorAll('.head2 th').forEach(th => { th.style.top = h1.offsetHeight + 'px'; });
     renderCounts();
   }
 
