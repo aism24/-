@@ -173,9 +173,26 @@
     return `<c r="${ref}"${sa} t="inlineStr"><is><t xml:space="preserve">${escXml(v)}</t></is></c>`;
   }
 
+  // 元の行の列(V列の右。3行目に見出し。2026-11-17 ユーザー指示: どの行が違うかを見るため)
+  const ORIG_COL = 'W', ORIG_HEAD = '元の行';
+
+  // 3行目(見出し)に「元の行」の見出しを入れる。書式は V3 と同じ
+  function addOrigHead(rowXml) {
+    const ref = ORIG_COL + (FIRST_ROW - 1);
+    const cs = cellsOf(rowXml);
+    const s = cellStyle(cs.find(x => x.col === 'V'));
+    const cell = `<c r="${ref}"${s != null ? ` s="${s}"` : ''} t="inlineStr"><is><t>${ORIG_HEAD}</t></is></c>`;
+    let xml = rowXml.replace(/^(<row\b[^>]*?)\s*\/>$/, '$1></row>');
+    const old = cs.find(x => x.col === ORIG_COL);
+    if (old) return xml.replace(old.xml, cell);
+    const after = cs.find(x => colNum(x.col) > colNum(ORIG_COL));
+    return after ? xml.replace(after.xml, cell + after.xml) : xml.replace(/<\/row>$/, cell + '</row>');
+  }
+
   // 表の行を書き込んだ .xlsm を返す。
   //   rows: [{A..V}] 書き込む順。linkOf(row) → 図面のファイルURL(file:///…)か null
-  async function write(JSZip, buf, rows, linkOf) {
+  //   origRowOf(row) → W列「元の行」に書く値(取り込んだExcelの行番号。無ければ null)。省略すると W列は書かない
+  async function write(JSZip, buf, rows, linkOf, origRowOf) {
     const zip = await JSZip.loadAsync(buf);
     const path = await findSheet(zip, SHEET);
     if (!path) throw new Error('「SPL」シートが見つかりません');
@@ -243,18 +260,20 @@
         }
         cells.push(valueCell(ref, s, v));
       }
-      // V列より右に元から何かあれば残す
-      for (const x of cs) if (colNum(x.col) > 22) cells.push(x.xml);
+      if (origRowOf) cells.push(valueCell(ORIG_COL + n, sOf('V'), rec ? origRowOf(rec) : null));
+      // V列より右に元から何かあれば残す(元の行を書くときの W列は除く)
+      for (const x of cs) if (colNum(x.col) > 22 && !(origRowOf && x.col === ORIG_COL)) cells.push(x.xml);
       let attrs = (base.xml.match(/^<row\b([^>]*?)\/?>/) || [, ''])[1].replace(/\/$/, '').replace(/\s*\br="\d+"/, '');
       out.push(`<row r="${n}"${attrs}>${cells.join('')}</row>`);
     }
-    const before = oldRows.filter(r => r.n < FIRST_ROW).map(r => r.xml);
+    const before = oldRows.filter(r => r.n < FIRST_ROW).map(r => (origRowOf && r.n === FIRST_ROW - 1 ? addOrigHead(r.xml) : r.xml));
     const after = oldRows.filter(r => r.n > lastRow).map(r => r.xml);
     let sheet = head + before.join('') + out.join('') + after.join('') + tail;
 
     // 範囲を広げる(dimension・オートフィルター)
     const widen = (m, pre, a, b, c, d, post) => Number(d) >= lastRow ? m : `${pre}${a}${b}:${c}${lastRow}${post}`;
     sheet = sheet.replace(/(<dimension ref=")([A-Z]+)(\d+):([A-Z]+)(\d+)(")/, widen);
+    if (origRowOf) sheet = sheet.replace(/(<dimension ref="[A-Z]+\d+:)([A-Z]+)(\d+")/, (m, a, c, b) => colNum(c) < colNum(ORIG_COL) ? a + ORIG_COL + b : m);
     sheet = sheet.replace(/(<autoFilter\b[^>]*?\bref=")([A-Z]+)(\d+):([A-Z]+)(\d+)(")/, widen);
 
     // ハイパーリンク: 前に付けたもの(このシートの分)を外してから付け直す

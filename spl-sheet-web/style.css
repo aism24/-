@@ -114,6 +114,7 @@ body.loading-settings #empty-state {
 #spl-table td.l { text-align: left; }
 #spl-table td.c { text-align: center; }
 #spl-table th .th-note { font-size: 10px; font-weight: normal; color: #555; }
+#spl-table td.c-row { text-align: center; color: #555; min-width: 40px; }
 #spl-table td.c-sel, #spl-table th.c-sel { width: 26px; min-width: 26px; text-align: center; }
 #spl-table tbody tr { cursor: default; }
 #spl-table tbody tr.sel td { outline: 2px solid #1a73e8; outline-offset: -2px; }

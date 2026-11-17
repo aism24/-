@@ -486,7 +486,9 @@
   }
 
   function rowHtml(r, i) {
+    // 元の行: 取り込んだExcelのSPLシートの行番号(図面から足した行は空。どの行が違うかを見るため。2026-11-17 ユーザー指示)
     const tds = [`<td class="c-sel"><input type="checkbox" class="sel" ${state.selected.has(i) ? 'checked' : ''}></td>`,
+      `<td class="c-row">${r.xrow || ''}</td>`,
       `<td class="st-cell">${esc(r.status)}</td>`];
     for (const c of TABLE_COLS) {
       const cls = [LEFT_COLS.has(c) ? 'l' : CENTER_COLS.has(c) ? 'c' : '', r.diff && c in r.diff ? 'diff' : ''].filter(Boolean).join(' ');
@@ -561,9 +563,9 @@ ${t}`;
     let html = `<p>一致 ${c['一致']}件 / <span class="dv">違い ${c['違い']}件</span> / 図面にだけある ${c['新規']}件 / 手入力(図面に無い・そのまま残す) ${c['手入力']}件</p>`;
     const dl = sc.diffList(state.rows);
     if (dl.length) {
-      html += '<h3>最新図と違う継手(表の値はExcelのまま。「図面の値にする」で入れ替えできます)</h3><table><tr><th>図番</th><th>継手名</th><th>項目</th><th>Excel</th><th>最新図</th></tr>';
+      html += '<h3>最新図と違う継手(表の値はExcelのまま。「図面の値にする」で入れ替えできます)</h3><table><tr><th>元の行</th><th>図番</th><th>継手名</th><th>項目</th><th>Excel</th><th>最新図</th></tr>';
       for (const d of dl) d.items.forEach((it, k) => {
-        html += `<tr>${k === 0 ? `<td rowspan="${d.items.length}">${esc(sc.fmt(d.row.A))}</td><td rowspan="${d.items.length}">${esc(sc.fmt(d.row.B))}</td>` : ''}`
+        html += `<tr>${k === 0 ? `<td rowspan="${d.items.length}">${d.row.xrow || ''}</td><td rowspan="${d.items.length}">${esc(sc.fmt(d.row.A))}</td><td rowspan="${d.items.length}">${esc(sc.fmt(d.row.B))}</td>` : ''}`
           + `<td>${esc(it.label)}</td><td>${esc(sc.fmt(it.excel) || '空')}</td><td class="dv">${esc(sc.fmt(it.drawing) || '空')}</td></tr>`;
       });
       html += '</table>';
@@ -571,7 +573,7 @@ ${t}`;
     const nw = state.rows.filter(r => r.status === '新規');
     if (nw.length) html += '<h3>図面にあってExcelに無い継手(図面の値で行を追加しました)</h3><p>' + nw.map(r => esc(`${sc.fmt(r.A)} ${sc.fmt(r.B)}`)).join('、') + '</p>';
     const warns = state.rows.filter(r => r.drawing && r.drawing.warn.length);
-    if (warns.length) html += '<h3>図面の読み取りで気になった所</h3><p>' + warns.map(r => esc(`${sc.fmt(r.A)} ${sc.fmt(r.B)}: ${r.drawing.warn.join(' / ')}`)).join('<br>') + '</p>';
+    if (warns.length) html += '<h3>図面の読み取りで気になった所</h3><p>' + warns.map(r => esc(`${r.xrow ? r.xrow + '行 ' : ''}${sc.fmt(r.A)} ${sc.fmt(r.B)}:${r.drawing.warn.join(' / ')}`)).join('<br>') + '</p>';
     return dialog('最新図との食い違い', html, [{ label: '閉じる', value: true, cls: 'primary' }]);
   }
 
@@ -663,7 +665,8 @@ ${t}`;
     busy(true, 'Excelを作っています…');
     try {
       const w = await window.splXlsm.write(window.JSZip, state.excel.buf, state.rows,
-        r => r.drawing && r.drawing.tdf ? window.splXlsm.fileUrl(r.drawing.tdf) : null);
+        r => r.drawing && r.drawing.tdf ? window.splXlsm.fileUrl(r.drawing.tdf) : null,
+        r => r.xrow || null); // W列「元の行」
       const base = state.excel.name.replace(/\.[^.]+$/, '');
       const fname = `${base}_SPL作成_${stamp()}.xlsm`;
       const blob = new Blob([w.bytes], { type: 'application/vnd.ms-excel.sheet.macroEnabled.12' });
