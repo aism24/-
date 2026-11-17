@@ -214,9 +214,16 @@
       if (mf) { j.S = 'PL' + fmt(Number(mf[2])); continue; }
       const cnt = Number(ms[1]), th = Number(ms[2]), a = Number(ms[3]), b = Number(ms[4]);
       const lab = labels.find(l => Math.abs(l.y - t.y) < 20 * scale && t.x - l.x > 0 && t.x - l.x < 400 * scale);
-      const info = splInfo.get(j) || { lines: 0, labeled: false };
+      const info = splInfo.get(j) || { lines: 0, labeled: false, side: null, split: null };
       info.lines++; if (lab) info.labeled = true;
       splInfo.set(j, info);
+      // SPL分割(「上FLG」「下FLG」の見出し。26-14 NGF488DK など): 上下のフランジの行を別にためて、下でまとめる
+      if (lab) info.side = /^(上|下)FLG$/.test(lab.s) ? lab.s[0] : null;
+      if (info.side) {
+        if (!info.split) info.split = { 上: [], 下: [] };
+        info.split[info.side].push({ cnt, th, a, b });
+        continue;
+      }
       let kind;
       if (lab) kind = lab.s === 'WEB' ? 'Web' : 'Fr外';
       else kind = 'E' in j ? 'Fr内' : 'Web';
@@ -234,9 +241,29 @@
         j.H *= 4;
         j.warn.push('エレクションピース(4方向)として読みました: Fr外 枚数 = 図の数字×4');
       }
+      // SPL分割: 行は上から重なる順(上FLG は 外→内、下FLG は 内→外)。
+      // 外が内と同じ寸法なら「分割した外」。分割した外は Fr内 に数え、Fr外 には大きい外だけを入れる
+      // (DK・UK: Fr外 300x1 / Fr内 110x6、UDK: Fr外 なし / Fr内 110x8。2026-11-17 ユーザー指示)
+      const sp = info && info.split;
+      if (sp && sp.上.length && sp.下.length) {
+        const up = sp.上, lo = sp.下;
+        const outers = [up[0], lo[lo.length - 1]];
+        const inners = up.slice(1).concat(lo.slice(0, -1));
+        const same = (p, q) => p && q && p.th === q.th && p.a === q.a && p.b === q.b;
+        const inner = inners[0];
+        const splitOuter = outers.filter(o => same(o, inner));
+        const bigOuter = outers.filter(o => !same(o, inner));
+        const sum = list => list.reduce((s, p) => s + p.cnt, 0);
+        const put = (cols, p, n) => { if (p) [p.th, p.a, p.b, n].forEach((v, i) => { j[cols[i]] = v; }); };
+        if (bigOuter.length === 2 && !same(bigOuter[0], bigOuter[1])) j.warn.push('上下の外のSPLの寸法が違います');
+        if (bigOuter.length) put(GROUP_COLS['Fr外'], bigOuter[0], sum(bigOuter));
+        put(GROUP_COLS['Fr内'], inner, sum(inners) + sum(splitOuter));
+        j.warn.push('SPL分割として読みました(上下の枚数を合計)');
+      }
       // フランジの枚数: 図の数字が片側1か所ぶん(外1枚・内2枚。25-19)なら上下で×2、
       // 上下の合計(外2枚・内4枚。26-16)ならそのまま。外の数字が1か(外が無ければ内が2以下か)で見分ける
-      if ('H' in j || 'M' in j) {
+      // (SPL分割は上下を足した枚数なのでそのまま)
+      if (!(sp && sp.上.length && sp.下.length) && ('H' in j || 'M' in j)) {
         const perFlange = 'H' in j ? j.H === 1 : j.M <= 2;
         if (perFlange) { if ('H' in j) j.H *= 2; if ('M' in j) j.M *= 2; }
       }
