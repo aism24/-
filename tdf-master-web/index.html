@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>最新図(tdf)で情報抽出＆チェック</title>
-<link rel="stylesheet" href="style.css?v=20261116a">
+<link rel="stylesheet" href="style.css?v=20261117a">
 <script defer src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 </head>
 <body>
@@ -13,6 +13,8 @@
 
 <div id="beam-modal" class="hidden">
   <div id="beam-box">
+    <!-- 継手基準図からSPLシート作成へ移るボタン(2026-11-17 ユーザー指示。社名の上) -->
+    <div class="app-jump-row"><a class="app-jump-btn" href="https://spl-sheet-web.vercel.app/" title="継手基準図からSPLシート作成へ移ります">SPL作成チェックへ</a></div>
     <!-- ロゴの左右に実寸法師のアイコン(shipping-list-linkと同じ画像)。右は左右反転して向かい合わせ -->
     <div class="logo-row"><img class="side-icon" src="assets/jissun-icon.png" width="48" height="48" alt=""><div class="logo-frame"><div class="logo-inner"><img class="header-logo" src="assets/logo.svg" alt="正光ロゴ"><span class="company-name">株式会社　正光&nbsp;</span></div></div><img class="side-icon side-icon-flip" src="assets/jissun-icon.png" width="48" height="48" alt=""></div>
     <button type="button" id="manual-btn" class="manual-btn" onclick="openManual()">📖 アプリ使用方法説明書</button>
@@ -53,6 +55,7 @@
     <div class="logo-frame"><div class="logo-inner"><img class="header-logo" src="assets/logo.svg" alt="正光ロゴ"><span class="company-name">株式会社　正光&nbsp;</span></div></div>
     <h1>最新図(tdf)で情報抽出＆チェック</h1>
     <img class="side-icon side-icon-flip" src="assets/jissun-icon.png" width="48" height="48" alt="">
+    <a class="app-jump-btn" href="https://spl-sheet-web.vercel.app/" title="継手基準図からSPLシート作成へ移ります">SPL作成チェックへ</a>
   </div>
   <div id="header-right">
     <span id="beam-type-label" style="font-size:12px;font-weight:bold;color:#1a73e8;"></span>
