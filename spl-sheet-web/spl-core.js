@@ -31,7 +31,10 @@
   // 継手名の形でも、材質・ボルトの文字は継手名にしない(26-16 J-01A の BCP325・STKN490B、26-17 の SN490C・M16 など)
   const NOT_NAME_RE = /^(?:SN|SM|SS|STK|STKN|STKR|BCP|BCR|TMCP|SNR|SHN|SWH|SD)[0-9]{3}[A-Z]{0,2}$|^M[0-9]{2}$/;
   const isName = s => { const t = String(s).normalize('NFKC'); return NAME_RE.test(t) && !NOT_NAME_RE.test(t); };
-  const SPL_RE = /^(\d+)\s*SPL-(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/;
+  // 板厚は「※」のこともある(26-14 NJ-13 BD446X「2 SPL-※x320x170」。Excel も ※ と書く)
+  const SPL_RE = /^(\d+)\s*SPL-(\d+(?:\.\d+)?|※)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/;
+  // 「SPLは取り付けない」の注記がある継手は、SPL列(U)を「有」にしない(26-14 BD446X。Excel も空)
+  const NO_SPL_RE = /SPLは取り?付け?ない/;
   const FILL_RE = /^(\d+)\s*fill\.PL-(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/;
   const BOLT_RE = /^(\d+)-M(\d+)$/;
   const ZUBAN_RE = /([A-Z]{1,2}-\d+[A-Z]?)\s*[(（]/;
@@ -204,7 +207,9 @@
     // 上の行から順に見る(「FLG の行の下の行 = Fr内」を、ファイル内の文字の順番に左右されずに決めるため)
     const byPos = ts.slice().sort((a, b) => a.y - b.y || a.x - b.x);
     const splInfo = new Map(); // 継手ごとの SPL の行数と、FLG/WEB の見出しがあったか
+    const noSpl = new Set();   // 「SPLは取り付けない」の継手
     for (const t of byPos) {
+      if (NO_SPL_RE.test(t.s)) { const n0 = owner(t.x, t.y); if (n0) noSpl.add(joints.get(n0)); continue; }
       const ms = t.s.match(SPL_RE), mf = t.s.match(FILL_RE), mb = t.s.match(BOLT_RE);
       if (!ms && !mf && !mb) continue;
       const n = owner(t.x, t.y);
@@ -212,7 +217,7 @@
       const j = joints.get(n);
       if (mb) { j.bolts.push(t.s); continue; }
       if (mf) { j.S = 'PL' + fmt(Number(mf[2])); continue; }
-      const cnt = Number(ms[1]), th = Number(ms[2]), a = Number(ms[3]), b = Number(ms[4]);
+      const cnt = Number(ms[1]), th = ms[2] === '※' ? '※' : Number(ms[2]), a = Number(ms[3]), b = Number(ms[4]);
       const lab = labels.find(l => Math.abs(l.y - t.y) < 20 * scale && t.x - l.x > 0 && t.x - l.x < 400 * scale);
       const info = splInfo.get(j) || { lines: 0, labeled: false, side: null, split: null };
       info.lines++; if (lab) info.labeled = true;
@@ -267,7 +272,8 @@
         const perFlange = 'H' in j ? j.H === 1 : j.M <= 2;
         if (perFlange) { if ('H' in j) j.H *= 2; if ('M' in j) j.M *= 2; }
       }
-      if ('E' in j || 'J' in j || 'O' in j) j.U = '有';
+      if (noSpl.has(j)) j.warn.push('「SPLは取り付けない」の注記があるので、SPL列は空にしました');
+      else if ('E' in j || 'J' in j || 'O' in j) j.U = '有';
       return j;
     });
   }
