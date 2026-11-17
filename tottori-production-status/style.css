@@ -88,8 +88,8 @@ body {
   font-size: 14px;
 }
 .banner { background: #e6f0ff; color: #12407a; border: 1px solid #b9d2f5; }
-/* 特記コメント: 「取込 ◯/◯結果」と同じ行の左側。薄いピンク・黒の太字(「案件マスター(鳥取)に見つかりませんでした」だけ赤)・縁がピンクに光って点滅。長文は折り返す(2026-11-17 ユーザー指定) */
-.warn { background: #ffe4ec; color: #000; font-weight: 700; border: 2px solid #ff6fa3; white-space: pre-line; overflow-wrap: anywhere; animation: warn-glow 1.2s ease-in-out infinite; }
+/* 特記コメント: 「取込 ◯/◯結果」と同じ行の左側。薄いピンク(#fff4f8。2026-11-18にもっと薄く)・黒の太字(「案件マスター(鳥取)に見つかりませんでした」だけ赤)・縁がピンクに光って点滅。長文は折り返す(2026-11-17 ユーザー指定) */
+.warn { background: #fff4f8; color: #000; font-weight: 700; border: 2px solid #ff6fa3; white-space: pre-line; overflow-wrap: anywhere; animation: warn-glow 1.2s ease-in-out infinite; }
 .warn-red { color: #d1001f; }
 .warn.error { color: #c8102e; } /* 読み込めなかったときのエラーは赤のまま */
 @keyframes warn-glow {
