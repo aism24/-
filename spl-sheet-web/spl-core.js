@@ -148,17 +148,19 @@
     return best ? best.s : null;
   }
 
-  function sortDrawings(names) {
+  // 図面の並び順(図番の英字 → 番号 → 枝番)
+  function compareDrawings(a, b) {
     const key = n => {
       const z = zubanOf(n);
       const m = z.match(/^([A-Z]+)-(\d+)([A-Z]?)/);
       return m ? [m[1], Number(m[2]), m[3]] : [z, 0, ''];
     };
-    return names.slice().sort((a, b) => {
-      const ka = key(a), kb = key(b);
-      for (let i = 0; i < 3; i++) if (ka[i] !== kb[i]) return ka[i] < kb[i] ? -1 : 1;
-      return 0;
-    });
+    const ka = key(a), kb = key(b);
+    for (let i = 0; i < 3; i++) if (ka[i] !== kb[i]) return ka[i] < kb[i] ? -1 : 1;
+    return 0;
+  }
+  function sortDrawings(names) {
+    return names.slice().sort(compareDrawings);
   }
 
   // 1枚の継手基準図から継手の一覧を作る。path は図面の場所(リンク用。無くてもよい)
@@ -379,31 +381,85 @@
   }
 
   // Excelの並びはそのまま残し、図面にしか無い継手は図面の順で直前の継手の行の後ろへ差し込む。
-  // 組み方: 1回目は図番と継手名が両方合う行どうし、2回目は残りを継手名だけで(同じ名前は上から順)
+  // 組み方: 1回目は図番と継手名が両方合う行どうし、2回目は残りを継手名だけで。
+  // 2回目で同じ名前の継手が別の図番(N棟 NJ-11 と S棟 SJ-08 など)にあるときは、選んだ順やExcelの行の順に頼らず、
+  //   ① Excelの行の値がいちばん合う継手 ② 値で決まらなければ、前後の行が組んだ図面と同じ図番(同じ棟)の継手
+  // と組み、row.pairNote に理由を残す(2026-11-17 ユーザー指示: どちらを先に取り込んでも正しく)
   function merge(excelRows, joints) {
     joints.forEach((j, i) => { j.dorder = i; });
-    const rows = excelRows.map(x => Object.assign({}, x, { drawing: null }));
+    const rows = excelRows.map(x => Object.assign({}, x, { drawing: null, pairNote: null }));
     const used = new Set();
-    const pair = (keyRow, keyJoint) => {
-      const free = new Map();
-      for (const j of joints) {
-        if (used.has(j)) continue;
-        const k = keyJoint(j);
-        if (!free.has(k)) free.set(k, []);
-        free.get(k).push(j);
+    const link = (r, j) => { r.drawing = j; used.add(j); };
+    // 1回目: 図番+継手名
+    const byKey = new Map();
+    for (const j of joints) { const k = normName(j.A) + '|' + normName(j.B); if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(j); }
+    for (const r of rows) {
+      if (normVal(r.A) == null || normVal(r.B) == null) continue;
+      const list = byKey.get(normName(r.A) + '|' + normName(r.B));
+      const j = list && list.find(x => !used.has(x));
+      if (j) link(r, j);
+    }
+    // 2回目: 継手名だけ。名前ごとに、残りの行と残りの継手を集める
+    const groups = new Map();
+    const g = k => { if (!groups.has(k)) groups.set(k, { rows: [], joints: [] }); return groups.get(k); };
+    rows.forEach((r, i) => { if (!r.drawing && normName(r.B)) g(normName(r.B)).rows.push(i); });
+    for (const j of joints) if (!used.has(j)) { const k = normName(j.B); if (groups.has(k)) groups.get(k).joints.push(j); }
+    const ambiguous = [];
+    for (const grp of groups.values()) {
+      if (!grp.joints.length) continue;
+      if (new Set(grp.joints.map(j => normName(j.A))).size <= 1) {
+        grp.rows.forEach((ri, n) => { if (grp.joints[n]) link(rows[ri], grp.joints[n]); }); // 図番が1つだけなら上から順
+      } else ambiguous.push(grp);
+    }
+    const prefix = z => (String(z || '').match(/^[A-Za-z]+/) || [''])[0];
+    const neighbors = ri => {
+      const out = [];
+      for (const dir of [-1, 1]) {
+        for (let i = ri + dir; i >= 0 && i < rows.length; i += dir) {
+          const d = rows[i].drawing;
+          if (d) { out.push(normName(d.A)); break; }
+        }
       }
-      for (const r of rows) {
-        if (r.drawing) continue;
-        const k = keyRow(r);
-        if (k == null || !free.get(k) || !free.get(k).length) continue;
-        const j = free.get(k).shift();
-        r.drawing = j;
-        used.add(j);
-      }
+      return out;
     };
-    pair(r => (normVal(r.A) != null && normVal(r.B) != null) ? normName(r.A) + '|' + normName(r.B) : null,
-      j => normName(j.A) + '|' + normName(j.B));
-    pair(r => normName(r.B) || null, j => normName(j.B));
+    const valueScore = (r, j) => CMP_COLS.reduce((s, c) => s + (normVal(r[c]) === normVal(j[c]) ? 1 : 0), 0);
+    for (const grp of ambiguous) {
+      // 行と継手の組み合わせごとの点数: 値の一致(重い) > 前後の行と同じ図番・同じ棟 > Excelの行と図面の順の近さ
+      const score = grp.rows.map((ri, rn) => {
+        const nb = neighbors(ri);
+        return grp.joints.map((j, jn) => {
+          const ctx = nb.reduce((s, z) => s + (z === normName(j.A) ? 2 : prefix(z) === prefix(j.A) ? 1 : 0), 0);
+          return 10000 + valueScore(rows[ri], j) * 100 + ctx * 10 - Math.abs(rn - jn);
+        });
+      });
+      // 全体の点数がいちばん高い組み合わせを選ぶ(1つずつ決めると、先に決めた行が後の行の正しい相手を取ってしまう)。
+      // 同じ名前の行・継手は数個なので全部試す。多いときだけ1つずつ決める
+      let best = null;
+      const k = grp.rows.length, m = grp.joints.length;
+      if (Math.pow(m + 1, k) <= 50000) {
+        const pick = new Array(k).fill(-1), taken = new Array(m).fill(false);
+        const walk = (i, s) => {
+          if (i === k) { if (!best || s > best.s) best = { s, pick: pick.slice() }; return; }
+          for (let jn = 0; jn < m; jn++) if (!taken[jn]) { taken[jn] = true; pick[i] = jn; walk(i + 1, s + score[i][jn]); taken[jn] = false; }
+          pick[i] = -1; walk(i + 1, s);
+        };
+        walk(0, 0);
+      } else {
+        const pick = new Array(k).fill(-1), taken = new Array(m).fill(false);
+        const all = [];
+        score.forEach((row, i) => row.forEach((s, jn) => all.push({ i, jn, s })));
+        all.sort((p, q) => q.s - p.s);
+        for (const p of all) if (pick[p.i] < 0 && !taken[p.jn]) { pick[p.i] = p.jn; taken[p.jn] = true; }
+        best = { pick };
+      }
+      const zs = [...new Set(grp.joints.map(j => j.A))].join('・');
+      best.pick.forEach((jn, i) => {
+        if (jn < 0) return;
+        const r = rows[grp.rows[i]], j = grp.joints[jn];
+        link(r, j);
+        r.pairNote = `同じ名前の継手が ${zs} にあります。Excelの値と前後の行から ${j.A} と組みました`;
+      });
+    }
     for (const r of rows) {
       if (r.drawing && normVal(r.A) == null) r.A = r.drawing.A; // 図番が空なら図面から入れる
       refreshStatus(r);
@@ -443,7 +499,7 @@
 
   const api = {
     VALUE_COLS, CMP_COLS, COL_LABEL, nfkc, normName, normVal, fmt,
-    parseTdfTexts, extractDrawing, zubanOf, sortDrawings,
+    parseTdfTexts, extractDrawing, zubanOf, sortDrawings, compareDrawings,
     diffOf, refreshStatus, applyDrawing, merge, counts, diffList, outerWeight,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.splCore = api;

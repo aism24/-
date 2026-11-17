@@ -372,41 +372,74 @@
       const last = await idbGet(key);
       const idx = Math.max(0, state.servers.findIndex(x => x[0] === server));
       let startIn = (last && last.file) || root || undefined;
+      // 選んだ図面(複数のフォルダから足せる。N棟・S棟など。2026-11-17 ユーザー指示 A案)
+      //   picked: [{ h, rel(①進行中工事からの道筋。分からなければ null), folder }]
+      let picked = [];
+      let noLink = !root;
       for (;;) {
+        const adding = picked.length > 0;
         // 下層フォルダ(TDFのある場所)を選ぶ前の案内(2026-11-17 ユーザー指示)
-        const go = await dialog(`${first ? '2回目: ' : ''}図面(TDF)ファイルを選んでください(${sv})`,
-          '<div class="info-box">次の画面で、<b>図面(TDF)のあるフォルダ</b>(例: 工事フォルダ\\①-正光施工図\\01.一般図)<b>まで下がって</b>、'
-          + '抽出するTDFファイルを選び「開く」を押してください。</div>'
-          + '複数選ぶときは Ctrl+A(全部)か、Ctrl を押しながらクリックします。<br>選んだあとに確認が出るので、間違えたら「フォルダ選択に戻る」で選び直せます。',
-          [{ label: 'TDFファイルを選ぶ', value: true, cls: 'primary' }, { label: 'やめる', value: false }]);
-        if (!go) return;
-        const files = await pickFiles(startIn ? { id: 'spl-files-' + idx, startIn } : { id: 'spl-files-' + idx });
-        if (!files || !files.length) return;
-        startIn = files[0]; // 戻ったときは、今選んだフォルダから始める
-        // ①進行中工事から各ファイルまでの道筋(図面の場所)
-        let rels = [];
-        if (root) for (const f of files) { let r = null; try { r = await root.resolve(f); } catch (_) { r = null; } rels.push(r); }
-        if (root && rels.some(r => !r)) {
-          const v = await dialog(`${sv}のファイルではありません`,
-            `選んだファイルは、${sv}の「${esc(root.name)}」の中にありませんでした(別のサーバーの図面かもしれません)。<br>サーバーのボタンを確かめてください。このまま使うと、図面へのリンクと実寸法師で開く機能が使えません。`,
-            [{ label: 'フォルダ選択に戻る', value: 'again', cls: 'primary' }, { label: 'リンク無しで使う', value: 'nolink' }, { label: 'やめる', value: 'stop' }]);
-          if (v === 'again') continue;
-          if (v !== 'nolink') return;
-          rels = [];
+        const go = await dialog(adding ? `追加する図面(TDF)ファイルを選んでください(${sv})` : `${first ? '2回目: ' : ''}図面(TDF)ファイルを選んでください(${sv})`,
+          (adding
+            ? '<div class="info-box">次の画面で、<b>追加する図面(TDF)のあるフォルダ</b>(例: 01.一般図\\02.S棟)<b>まで移って</b>、TDFファイルを選び「開く」を押してください。</div>'
+              + '前に選んだ図面はそのまま残ります。'
+            : '<div class="info-box">次の画面で、<b>図面(TDF)のあるフォルダ</b>(例: 工事フォルダ\\①-正光施工図\\01.一般図)<b>まで下がって</b>、'
+              + '抽出するTDFファイルを選び「開く」を押してください。</div>'
+              + '複数選ぶときは Ctrl+A(全部)か、Ctrl を押しながらクリックします。<br>選んだあとに確認が出るので、間違えたら「選び直す」、'
+              + 'N棟・S棟のように<b>別のフォルダの図面も使うときは「別のフォルダの図面を追加」</b>を押します。'),
+          [{ label: 'TDFファイルを選ぶ', value: true, cls: 'primary' }, { label: adding ? '追加しないで確認に戻る' : 'やめる', value: false }]);
+        let files = null;
+        if (go) {
+          files = await pickFiles(startIn ? { id: 'spl-files-' + idx, startIn } : { id: 'spl-files-' + idx });
+          if (files && files.length) startIn = files[0]; // 次に選ぶときは、今選んだフォルダから始める
         }
-        // 選んだファイルの確認(間違えたら「フォルダ選択に戻る」。2026-11-17 ユーザー指示)
+        if (!files || !files.length) {
+          if (!adding) return;
+        } else {
+          // ①進行中工事から各ファイルまでの道筋(図面の場所)
+          let rels = files.map(() => null);
+          if (root && !noLink) {
+            rels = [];
+            for (const f of files) { let r = null; try { r = await root.resolve(f); } catch (_) { r = null; } rels.push(r); }
+            if (rels.some(r => !r)) {
+              const v = await dialog(`${sv}のファイルではありません`,
+                `選んだファイルは、${sv}の「${esc(root.name)}」の中にありませんでした(別のサーバーの図面かもしれません)。<br>サーバーのボタンを確かめてください。このまま使うと、図面へのリンクと実寸法師で開く機能が使えません。`,
+                [{ label: 'フォルダ選択に戻る', value: 'again', cls: 'primary' }, { label: 'リンク無しで使う', value: 'nolink' }, { label: 'やめる', value: 'stop' }]);
+              if (v === 'again') continue;
+              if (v !== 'nolink') return;
+              noLink = true;
+            }
+          }
+          // 同じファイルを2回選んだときは1回だけにする
+          for (let i = 0; i < files.length; i++) {
+            let dup = false;
+            for (const p of picked) { try { if (await p.h.isSameEntry(files[i])) { dup = true; break; } } catch (_) { /* 比べられなければ別とみなす */ } }
+            if (!dup) picked.push({ h: files[i], rel: rels[i], folder: rels[i] ? rels[i].slice(0, -1).join('\\') : '' });
+          }
+        }
+        if (noLink) picked.forEach(p => { p.rel = null; });
+        // 選んだファイルの確認(フォルダごと。間違えたら「選び直す」。2026-11-17 ユーザー指示)
         // ファイル名に「継手基準図」が入っていることは珍しいので、名前では確かめない(2026-11-17 ユーザー指示)
-        const names = sc.sortDrawings(files.map(f => f.name));
-        const folder = rels.length ? rels[0].slice(0, -1).join('\\') : '';
-        const v = await dialog('選んだ図面の確認',
-          (folder ? `フォルダ: <b>${esc(folder)}</b><br>` : '')
-          + `${names.length}ファイル`
-          + `<div class="name-list">${names.map(n => esc(n)).join('<br>')}</div>`,
-          [{ label: 'この図面で抽出する', value: 'ok', cls: 'primary' }, { label: 'フォルダ選択に戻る', value: 'back' }, { label: 'やめる', value: 'stop' }]);
-        if (v === 'back') continue;
+        const byFolder = new Map();
+        for (const p of picked) { if (!byFolder.has(p.folder)) byFolder.set(p.folder, []); byFolder.get(p.folder).push(p.h.name); }
+        // 同じ図番の図面が2つ以上(同じ図面を別のフォルダからも選んだ、など)
+        const zc = new Map();
+        for (const p of picked) { const z = sc.zubanOf(p.h.name); zc.set(z, (zc.get(z) || 0) + 1); }
+        const dupZ = [...zc].filter(([, n]) => n > 1).map(([z]) => z);
+        let html = `${picked.length}ファイル`;
+        for (const [folder, list] of byFolder) {
+          html += `<div style="margin-top:6px">フォルダ: <b>${esc(folder || '(場所は不明)')}</b>(${list.length}ファイル)</div>`
+            + `<div class="name-list">${sc.sortDrawings(list).map(n => esc(n)).join('<br>')}</div>`;
+        }
+        if (dupZ.length) html += `<div class="warn-box">同じ図番の図面が2つ以上あります: ${esc(dupZ.join('、'))}<br>同じ図面を2回選んでいないか確かめてください(同じ継手が「新規」で重なって出ます)。</div>`;
+        const v = await dialog('選んだ図面の確認', html,
+          [{ label: 'この図面で抽出する', value: 'ok', cls: 'primary' }, { label: '別のフォルダの図面を追加', value: 'add' },
+            { label: '選び直す', value: 'back' }, { label: 'やめる', value: 'stop' }]);
+        if (v === 'add') continue;
+        if (v === 'back') { picked = []; noLink = !root; continue; }
         if (v !== 'ok') return;
-        await loadFiles(server, files, rels.length ? rels : null);
-        if (rels.length) idbSet(key, { file: files[0] });
+        await loadFiles(server, picked);
+        if (picked[0] && picked[0].rel) idbSet(key, { file: picked[picked.length - 1].h });
         return;
       }
     } catch (e) {
@@ -416,28 +449,27 @@
     }
   }
 
-  // 選んだ TDF ファイルを読む。rels: ①進行中工事から各ファイルまでの道筋(分からなければ null)
-  async function loadFiles(server, handles, rels) {
+  // 選んだ TDF ファイルを読む。picked: [{ h, rel(①進行中工事から各ファイルまでの道筋。分からなければ null), folder }]
+  // 別のフォルダに同じ名前のファイルがあっても取り違えないよう、ファイル名ではなく1つずつ持って読む
+  async function loadFiles(server, picked) {
     const base = serverPath(server).replace(/[\\/]+$/, '');
-    const items = handles.map((h, i) => ({ h, name: h.name, rel: rels ? rels[i] : null }));
+    const items = picked.map(p => ({ h: p.h, name: p.h.name, rel: p.rel, folder: p.folder }))
+      .sort((x, y) => sc.compareDrawings(x.name, y.name));
     const pathOf = it => (it.rel && base ? base + '\\' + it.rel.join('\\') : '');
-    const names = sc.sortDrawings(items.map(it => it.name));
+    const names = items.map(it => it.name);
     busy(true, `図面を読んでいます…(${names.length}枚)`);
     const joints = [];
     const failed = [];
-    const byName = new Map(items.map(it => [it.name, it]));
-    for (const name of names) {
-      const it = byName.get(name);
+    for (const it of items) {
       try {
         const bytes = new Uint8Array(await (await it.h.getFile()).arrayBuffer());
-        joints.push(...sc.extractDrawing(name, bytes, pathOf(it)));
+        joints.push(...sc.extractDrawing(it.name, bytes, pathOf(it)));
       } catch (e) {
-        console.error(name, e);
-        failed.push(name);
+        console.error(it.name, e);
+        failed.push(it.name);
       }
     }
     busy(false);
-    const folders = [...new Set(items.map(it => it.rel ? it.rel.slice(0, -1).join('\\') : ''))];
     const unc = items.every(it => pathOf(it));
     state.folder = { server, names, unc };
     state.joints = joints;
@@ -445,12 +477,17 @@
     $('step-folder').classList.add('done');
     $('folder-body').hidden = true;
     $('folder-done').hidden = false;
-    const zs = names.map(sc.zubanOf);
-    const where = folders[0] ? folders.join(' / ') : '(場所は不明)';
-    $('folder-done').innerHTML = `<b>${esc(serverLabel(server))}</b>: ${esc(where)}<br>${names.length}枚(${esc(zs[0])}〜${esc(zs[zs.length - 1])}) ${joints.length}継手`
+    // フォルダごとの枚数と図番の範囲(N棟・S棟など、フォルダが複数のときも全部出す)
+    const folderOrder = [...new Set(items.map(it => it.folder))];
+    const parts = folderOrder.map(f => {
+      const zs = items.filter(it => it.folder === f).map(it => sc.zubanOf(it.name));
+      return { where: f || '(場所は不明)', text: `${zs.length}枚(${zs[0]}〜${zs[zs.length - 1]})` };
+    });
+    $('folder-done').innerHTML = `<b>${esc(serverLabel(server))}</b>: ` + parts.map(p => `${esc(p.where)} ${esc(p.text)}`).join('<br>')
+      + `<br>計 ${names.length}枚 ${joints.length}継手`
       + (unc ? '' : '<br><span class="warn">図面の場所が分からないため、リンクは付きません</span>');
     // 表の上の1行用
-    state.folder.summary = `${serverLabel(server)}: ${where} ${names.length}枚(${zs[0]}〜${zs[zs.length - 1]}) ${joints.length}継手` + (unc ? '' : '(リンク無し)');
+    state.folder.summary = `${serverLabel(server)}: ${parts.map(p => `${p.where} ${p.text}`).join(' / ')} ${joints.length}継手` + (unc ? '' : '(リンク無し)');
     if (failed.length) await dialog('読めなかった図面', esc(failed.join('\n')).replace(/\n/g, '<br>'));
     if (!joints.length) {
       await dialog('継手が見つかりませんでした', '選んだ図面から継手を読めませんでした。継手基準図(J-01 など)を選んでいるか確かめてください。');
@@ -552,6 +589,7 @@ ${t}`;
       lines.push('図面: ' + (r.drawing.tdf || r.drawing.file));
       if (r.drawing.bolts.length) lines.push('図面のボルト: ' + r.drawing.bolts.join(' / '));
       if (r.drawing.warn.length) lines.push('読み取りで気になった所: ' + r.drawing.warn.join(' / '));
+      if (r.pairNote) lines.push(r.pairNote); // 同じ名前の継手が別の図番にもあるとき、どれと組んだか
       // 外の板が2種類の継手は Fr外 を重量で比べる(26-17 J340NA。2026-11-17 ユーザー確認)
       const ow = sc.outerWeight(r);
       if (ow) lines.push(`Fr外の重量: 表 ${Number.isFinite(ow.excel) ? ow.excel.toFixed(3) : '—'} kg / 図面 ${ow.drawing.toFixed(3)} kg → ${ow.same ? '重量で一致' : '重量が違います'}`);
@@ -575,6 +613,12 @@ ${t}`;
     }
     const nw = state.rows.filter(r => r.status === '新規');
     if (nw.length) html += '<h3>図面にあってExcelに無い継手(図面の値で行を追加しました)</h3><p>' + nw.map(r => esc(`${sc.fmt(r.A)} ${sc.fmt(r.B)}`)).join('、') + '</p>';
+    const paired = state.rows.filter(r => r.pairNote);
+    if (paired.length) {
+      html += `<h3>同じ名前の継手が別の図番にもある行(${paired.length}行。Excelの値と前後の行から組みました)</h3><p>`
+        + paired.map(r => esc(`${r.xrow ? r.xrow + '行 ' : ''}${sc.fmt(r.B)} → ${sc.fmt(r.drawing.A)}`)).join('、')
+        + '</p><p class="hint-small">Excelの図番(A列)を入れておくと、図番で確実に組みます。</p>';
+    }
     const warns = state.rows.filter(r => r.drawing && r.drawing.warn.length);
     if (warns.length) html += '<h3>図面の読み取りで気になった所</h3><p>' + warns.map(r => esc(`${r.xrow ? r.xrow + '行 ' : ''}${sc.fmt(r.A)} ${sc.fmt(r.B)}:${r.drawing.warn.join(' / ')}`)).join('<br>') + '</p>';
     return dialog('最新図との食い違い', html, [{ label: '閉じる', value: true, cls: 'primary' }]);
