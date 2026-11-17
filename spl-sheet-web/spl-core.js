@@ -270,23 +270,42 @@
         ['Fr外', 'Fr内', 'Web'].forEach((k, i) => { const p = info.all[i]; [p.th, p.a, p.b, p.cnt].forEach((v, m) => { j[GROUP_COLS[k][m]] = v; }); });
         j.warn.push('FLG/WEB の見出しが無いので、上から Fr外・Fr内・Web として読みました');
       }
-      // SPL分割: 行は上から重なる順(上FLG は 外→内、下FLG は 内→外)。
-      // 外が内と同じ寸法なら「分割した外」。分割した外は Fr内 に数え、Fr外 には大きい外だけを入れる
-      // (DK・UK: Fr外 300x1 / Fr内 110x6、UDK: Fr外 なし / Fr内 110x8。2026-11-17 ユーザー指示)
+      // SPL分割(上FLG・下FLG で SPL が違う継手)。各フランジは「外」と「内」の2行。
+      // 内 = 上下のフランジに共通する寸法の行、外 = もう一方の行(行の順番は図によって違うので使わない。
+      // 26-14 は下FLG が 内→外、26-17 J340NA は 外→内)。上下とも同じ寸法なら外=分割した外(内と同じ寸法)。
+      // 外が内と同じ寸法(分割した外)なら Fr内 に数え、Fr外 には内と違う外だけを入れる
+      // (26-14 DK・UK: Fr外 300x1 / Fr内 110x6、UDK: Fr外 なし / Fr内 110x8。2026-11-17 ユーザー指示)。
+      // 内と違う外が2種類(26-17 J340NA: 12x250x1 と 19x100x2)は、Fr外 に幅の広い方を入れ、
+      // 全部を outerAlt に残して Excel とは Fr外 の重量で比べる(Excel は重量が合う1組にまとめて書く。2026-11-17 ユーザー確認)
       const sp = info && info.split;
       if (sp && sp.上.length && sp.下.length) {
-        const up = sp.上, lo = sp.下;
-        const outers = [up[0], lo[lo.length - 1]];
-        const inners = up.slice(1).concat(lo.slice(0, -1));
-        const same = (p, q) => p && q && p.th === q.th && p.a === q.a && p.b === q.b;
+        const key = p => `${p.th}x${p.a}x${p.b}`;
+        const same = (p, q) => p && q && key(p) === key(q);
+        const loKeys = new Set(sp.下.map(key));
+        const common = sp.上.map(key).filter(k => loKeys.has(k));
+        const innerKey = common[0];
+        const pick = (lines, outerFirst) => {
+          if (lines.length < 2) return { outer: lines[0], inner: [] };
+          const diff = lines.filter(p => key(p) !== innerKey);
+          if (innerKey && diff.length === 1) return { outer: diff[0], inner: lines.filter(p => p !== diff[0]) };
+          const o = outerFirst ? lines[0] : lines[lines.length - 1]; // 見分けられないときは行の順番(上FLG は先頭、下FLG は最後)
+          return { outer: o, inner: lines.filter(p => p !== o) };
+        };
+        const u = pick(sp.上, true), l = pick(sp.下, false);
+        const outers = [u.outer, l.outer].filter(Boolean);
+        const inners = u.inner.concat(l.inner);
         const inner = inners[0];
         const splitOuter = outers.filter(o => same(o, inner));
         const bigOuter = outers.filter(o => !same(o, inner));
         const sum = list => list.reduce((s, p) => s + p.cnt, 0);
         const put = (cols, p, n) => { if (p) [p.th, p.a, p.b, n].forEach((v, i) => { j[cols[i]] = v; }); };
-        if (bigOuter.length === 2 && !same(bigOuter[0], bigOuter[1])) j.warn.push('上下の外のSPLの寸法が違います');
         if (inners.some(p => !same(p, inner))) j.warn.push('内のSPLの寸法が上下で違います(図面を確かめてください)');
-        if (bigOuter.length) put(GROUP_COLS['Fr外'], bigOuter[0], sum(bigOuter));
+        if (bigOuter.length === 2 && !same(bigOuter[0], bigOuter[1])) {
+          const wide = bigOuter[0].a >= bigOuter[1].a ? bigOuter[0] : bigOuter[1];
+          put(GROUP_COLS['Fr外'], wide, wide.cnt);
+          j.outerAlt = bigOuter.map(p => ({ th: p.th, a: p.a, b: p.b, cnt: p.cnt }));
+          j.warn.push(`外の板が2種類: ${bigOuter.map(p => `${fmt(p.th)}×${fmt(p.a)}×${fmt(p.b)}×${p.cnt}枚`).join(' ＋ ')}(Excel とは Fr外 の重量で比べます)`);
+        } else if (bigOuter.length) put(GROUP_COLS['Fr外'], bigOuter[0], sum(bigOuter));
         put(GROUP_COLS['Fr内'], inner, sum(inners) + sum(splitOuter));
         j.warn.push('SPL分割として読みました(上下の枚数を合計)');
       }
@@ -311,11 +330,25 @@
     return typeof s === 'string' && !/^PL\d+(\.\d+)?$/.test(s);
   }
 
+  // 外の板が2種類ある継手(j.outerAlt)の Fr外 の重量(kg)。表(Excel)は E×F×G×H、図面は全部の外の板の合計。
+  // 比重 7.85。{ excel, drawing, same } を返す(外が1種類の継手は null)
+  const STEEL = 7.85e-6;
+  function outerWeight(row) {
+    const j = row.drawing;
+    if (!j || !j.outerAlt) return null;
+    const n = c => { const v = normVal(row[c]); return typeof v === 'number' ? v : NaN; };
+    const ex = n('E') * n('F') * n('G') * n('H') * STEEL;
+    const dw = j.outerAlt.reduce((s, p) => s + p.th * p.a * p.b * p.cnt, 0) * STEEL;
+    return { excel: ex, drawing: dw, same: Number.isFinite(ex) && Math.abs(ex - dw) < 0.0005 };
+  }
+
   function diffOf(row) {
     const j = row.drawing;
     if (!j) return {};
     const out = {};
+    const ow = outerWeight(row);
     for (const c of CMP_COLS) {
+      if (ow && ow.same && GROUP_COLS['Fr外'].includes(c)) continue; // 外が2種類で重量が同じなら Fr外 は一致とする
       if (c === 'S' && j.S == null && isNote(row.S)) continue;
       const a = normVal(row[c]), b = normVal(j[c]);
       if (a !== b) out[c] = [row[c], j[c]];
@@ -411,7 +444,7 @@
   const api = {
     VALUE_COLS, CMP_COLS, COL_LABEL, nfkc, normName, normVal, fmt,
     parseTdfTexts, extractDrawing, zubanOf, sortDrawings,
-    diffOf, refreshStatus, applyDrawing, merge, counts, diffList,
+    diffOf, refreshStatus, applyDrawing, merge, counts, diffList, outerWeight,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.splCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -552,6 +552,9 @@ ${t}`;
       lines.push('図面: ' + (r.drawing.tdf || r.drawing.file));
       if (r.drawing.bolts.length) lines.push('図面のボルト: ' + r.drawing.bolts.join(' / '));
       if (r.drawing.warn.length) lines.push('読み取りで気になった所: ' + r.drawing.warn.join(' / '));
+      // 外の板が2種類の継手は Fr外 を重量で比べる(26-17 J340NA。2026-11-17 ユーザー確認)
+      const ow = sc.outerWeight(r);
+      if (ow) lines.push(`Fr外の重量: 表 ${Number.isFinite(ow.excel) ? ow.excel.toFixed(3) : '—'} kg / 図面 ${ow.drawing.toFixed(3)} kg → ${ow.same ? '重量で一致' : '重量が違います'}`);
     }
     for (const k of Object.keys(r.diff || {})) lines.push(`  ${sc.COL_LABEL[k]}: 表 ${sc.fmt(r.diff[k][0]) || '空'} / 図面 ${sc.fmt(r.diff[k][1]) || '空'}`);
     $('detail-text').textContent = lines.join('\n');
