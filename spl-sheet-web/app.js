@@ -9,7 +9,7 @@
   'use strict';
 
   // GAS ウェブアプリの URL(スプレッドシート「SPLシート作成」の Apps Script をデプロイして得た /exec)
-  const GAS_API_URL = '';
+  const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbz1zfHjlpatacJ-dwlDOV1-sj6hJjV5Q4UfZvzodAkK-PAFlYSWBm-TBRflGO4SE4n9/exec';
   const API_TIMEOUT_MS = 15000;
   const DEFAULT_SERVERS = [['本社', ''], ['鳥取', '']]; // 設定シートを読めなかったとき(リンクは付かない)
 

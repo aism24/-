@@ -9,14 +9,14 @@
  * GAS が動かなくても、Excel の作成は止まらない(リンクの場所が分からないだけ)。
  *
  * シート:
- *   設定   A 工事番号 / B 工事名 / C サーバー / D ファイルパス(1行目は見出し。C・D はサーバーの数だけ)
+ *   設定   1行目の見出し「工事番号」「工事名」「サーバー」「ファイルパス」で列を探す(今は A・B と E・F)
  *   記録   保存のたびに1行(見出しは setupSpreadsheet で作る)
  *   利用記録 アプリを開いた日時
  *   yyyyMMdd_HHmmss_工事番号 … 保存した表の中身(新しい10枚だけ残す)
  *
  * 初回: 関数 setupSpreadsheet を1回実行 → デプロイ(ウェブアプリ・実行=自分・アクセス=全員)
  */
-const CODE_VERSION = 'spl-20261117a';
+const CODE_VERSION = 'spl-20261117b';
 const SHEET_RECORD = '記録';
 const SHEET_SETTING = '設定';
 const SHEET_USAGE = '利用記録';
@@ -68,25 +68,33 @@ function withLock_(fn) {
 
 // ---------- 設定 ----------
 
-function settingValues_() {
+// 設定シートの全体と、1行目の見出しから探した列の位置(見つからなければ既定の列)
+function settingTable_() {
   const sh = sheet_(SHEET_SETTING);
-  const n = sh.getLastRow();
-  if (n < 2) return [];
-  return sh.getRange(2, 1, n - 1, 4).getDisplayValues();
+  const values = sh.getDataRange().getDisplayValues();
+  const head = (values[0] || []).map(v => String(v).trim());
+  const col = (name, def) => { const i = head.indexOf(name); return i >= 0 ? i : def; };
+  return {
+    rows: values.slice(1),
+    koji: col('工事番号', 0), kojiName: col('工事名', 1),
+    server: col('サーバー', 2), path: col('ファイルパス', 3),
+  };
 }
 
 // [[サーバー名, パス], ...]
 function getServerPaths() {
-  return settingValues_()
-    .filter(r => String(r[2]).trim() && String(r[3]).trim())
-    .map(r => [String(r[2]).trim(), String(r[3]).trim()]);
+  const t = settingTable_();
+  return t.rows
+    .map(r => [String(r[t.server] || '').trim(), String(r[t.path] || '').trim()])
+    .filter(r => r[0] && r[1]);
 }
 
 // [[工事番号, 工事名], ...]
 function getKojiList() {
-  return settingValues_()
-    .filter(r => String(r[0]).trim())
-    .map(r => [String(r[0]).trim(), String(r[1]).trim()]);
+  const t = settingTable_();
+  return t.rows
+    .map(r => [String(r[t.koji] || '').trim(), String(r[t.kojiName] || '').trim()])
+    .filter(r => r[0]);
 }
 
 function kojiName_(kojiNo) {
