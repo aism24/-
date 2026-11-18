@@ -914,12 +914,17 @@ var a2hsDeferredPrompt = null;
 var A2HS_SHARE_SVG = '<svg class="a2hs-share" viewBox="0 0 24 24" fill="none" stroke="#4fc3f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>';
 
 function a2hsIsStandalone() {
-  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  // iPhone/iPad(WebKit)は navigator.standalone で判定する。アプリ内の画面(WKWebView等)では
+  // display-mode が standalone と判定されることがあり、ボタンが消えてしまうため matchMedia は使わない。
+  if ('standalone' in window.navigator) return window.navigator.standalone === true;
+  return !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
 }
 function a2hsIsIOS() {
   var ua = navigator.userAgent;
   // iPadOS 13以降はMacとして名乗るため、タッチ対応かどうかで判定する(MacのSafariは0)
-  return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 0);
+  // 'standalone' in navigator は iPhone/iPad の WebKit だけにある(アプリ内の画面でUAが変わっていても判定できる)
+  return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 0) ||
+    ('standalone' in navigator && !/Macintosh/.test(ua) && !/Android/i.test(ua));
 }
 function a2hsIsIPad() {
   var ua = navigator.userAgent;
@@ -932,7 +937,8 @@ function a2hsIsInAppBrowser() {
 function a2hsUpdateButton() {
   var btn = document.getElementById('a2hs-btn');
   if (!btn) return;
-  btn.style.display = (!a2hsIsStandalone() && (a2hsIsIOS() || a2hsIsAndroid() || a2hsDeferredPrompt)) ? '' : 'none';
+  // 端末の判定が外れてもボタンが消えないよう、ホーム画面から開いているとき以外は常に出す
+  btn.style.display = a2hsIsStandalone() ? 'none' : '';
 }
 function a2hsShowGuide(html) {
   document.getElementById('a2hs-body').innerHTML = html;
@@ -978,7 +984,20 @@ function onAddToHomeTap() {
       '<li>メニューを下にスクロールして <b>「ホーム画面に追加」</b> を押す</li>' +
       '<li>右上の <b>「追加」</b> を押す</li>' +
       '</ol>' +
-      '<p class="a2hs-note">ホーム画面に白い「HOT」のアイコンができます。次からはそこから開けます。</p>'
+      '<p class="a2hs-note">ホーム画面に白い「HOT」のアイコンができます。次からはそこから開けます。</p>' +
+      '<p class="a2hs-note"><b>「ホーム画面に追加」が無いとき</b>は、チャットやLINEなどのアプリの中で開いています。' +
+      '下のボタンでURLをコピーし、<b>Safari</b>で開き直してから、もう一度このボタンを押してください。' +
+      '（画面の端の <b>コンパス</b> や <b>「Safariで開く」</b> を押しても開き直せます）</p>' +
+      '<button class="a2hs-copy" onclick="a2hsCopyUrl(this)">🔗 URLをコピー</button>'
+    );
+    return;
+  }
+  if (!a2hsIsAndroid()) {
+    // パソコン等: スマホ・iPadで開いてもらう
+    a2hsShowGuide(
+      '<p>ホーム画面への追加は、<b>iPhone・iPad・Android</b> で行います。</p>' +
+      '<p>下のボタンでURLをコピーし、スマホやiPadに送って開いてから、もう一度このボタンを押してください。</p>' +
+      '<button class="a2hs-copy" onclick="a2hsCopyUrl(this)">🔗 URLをコピー</button>'
     );
     return;
   }
