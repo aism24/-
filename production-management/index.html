@@ -13,7 +13,7 @@
   // →「ようやくGASへfetch開始」という直列待ちになり、体感の起動時間がその分そのまま延びてしまう。
   // ここで得たPromiseはapp.js側のloadData(false)が初回だけ使い回す。
   // Vercel版(*.vercel.app)では、まず中継API(api/data。GASの結果をCDNに保存して返す)から読み、
-  // 失敗したときや、この端末で「現時点のデータを取得」した結果より古いとき(CDNの保存は最大5分
+  // 失敗したときや、この端末で「最新に更新」した結果より古いとき(CDNの保存は最大5分
   // 古いことがある)はGASへ直接取りに行く。raw.githack等の確認用URLには中継APIが無いのでGASへ直接。
   window.__initialDataPromise = (function () {
     function fetchJson(url, timeoutMs) {
@@ -42,7 +42,7 @@
     });
   })();
 </script>
-<link rel="stylesheet" href="style.css?v=20261118a">
+<link rel="stylesheet" href="style.css?v=20261118b">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <!-- PDF用のhtml2canvas・jspdfは、画面の表示後に app.js が読み込む(loadPdfLibs_)。 -->
@@ -60,8 +60,8 @@
   <button class="btn-pdf-print" id="btnPdfAll">3工場PDF</button>
   <button class="btn-pdf-print" id="btnPdfSite">工場別PDF</button>
   <a class="btn-manual" id="btnManual" href="manual.html" target="_blank" rel="noopener"><span class="blink-text">説明書</span></a>
-  <div class="refresh-note">※少し時間がかかります</div>
-  <button class="btn-refresh-header" id="btnRefresh">現時点のデータを取得</button>
+  <button class="btn-qr" id="btnQr">QRコード</button>
+  <button class="btn-refresh-header" id="btnRefresh">最新に更新</button>
 </header>
 
 <div class="toolbar">
@@ -130,6 +130,16 @@
   </div>
 </div>
 
+<!-- 「QRコード」ボタン: 他の端末(iPad・スマホ)のカメラで読み取ると、このアプリ(Vercel版)が開く。 -->
+<div class="mismatch-overlay" id="qrOverlay" hidden>
+  <div class="mismatch-modal qr-modal">
+    <div class="mismatch-title">このアプリを別の端末で開く</div>
+    <img class="qr-image" src="qr.png?v=20261118b" alt="生産管理ダッシュボードのQRコード" width="256" height="256">
+    <div class="qr-note">iPad・スマホのカメラで読み取ると、同じアプリが開きます。</div>
+    <button class="mismatch-close" id="qrClose">閉じる</button>
+  </div>
+</div>
+
 <div class="mismatch-overlay" id="dayDetailOverlay" hidden>
   <div class="mismatch-modal day-detail-modal">
     <div id="dayDetailContent">
@@ -143,7 +153,7 @@
   </div>
 </div>
 
-<script src="app.js?v=20261118a"></script>
+<script src="app.js?v=20261118b"></script>
 <script src="to-launcher.js?v=20261019" data-target=".app-header h1" data-mode="beforePrev"></script>
 </body>
 </html>

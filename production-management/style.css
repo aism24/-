@@ -43,7 +43,19 @@ body {
 .app-logo { height: 36px; }
 .updated-at { color: var(--text); font-size: 0.85rem; }
 
-.refresh-note { margin-left: auto; color: var(--text); font-size: 0.78rem; max-width: 360px; text-align: right; }
+/* 「QRコード」ボタン(説明書の右)。背景白・黒の太字。 */
+.btn-qr {
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-qr:hover { transform: translateY(-2px); box-shadow: 0 0 8px 2px rgba(255, 255, 255, 0.45); }
 
 .btn-pdf-print {
   background: #ffd6e8;
@@ -79,6 +91,7 @@ body {
 .btn-manual .blink-text { animation: blink-slow 2.6s ease-in-out infinite; }
 
 .btn-refresh-header {
+  margin-left: auto; /* ヘッダーの右端に寄せる */
   background: #ffd400;
   color: #0b3fae;
   font-weight: 800;
@@ -227,6 +240,20 @@ select option.prev-fy { color: var(--tottori); }
   padding: 8px 20px;
   cursor: pointer;
 }
+
+/* 「QRコード」ボタンで出すポップアップ。QRは読み取りやすいよう白い台紙の上に大きめに出す。 */
+.qr-modal { text-align: center; }
+.qr-image {
+  display: block;
+  width: min(72vw, 300px);
+  height: auto;
+  margin: 4px auto 12px;
+  padding: 12px;
+  background: #ffffff;
+  border-radius: 8px;
+  image-rendering: pixelated;
+}
+.qr-note { font-size: 0.85rem; color: var(--text); margin-bottom: 14px; }
 
 /* 工程表のセルクリックで出す、拠点×日付の生産結果明細ポップアップ。
    本数が多い日でも1列に縦長へ詰め込まないよう、DAY_DETAIL_ROWS_PER_COLUMN行を超えるごとに
@@ -420,7 +447,7 @@ footer.warnings { color: var(--warn); font-size: 0.8rem; margin-top: 10px; white
     --text: #111111;
     --muted: #444444;
   }
-  .btn-pdf-print, .btn-manual, .btn-refresh-header, .refresh-note, .msg { display: none !important; }
+  .btn-pdf-print, .btn-manual, .btn-qr, .btn-refresh-header, .msg { display: none !important; }
   .app-header, .toolbar { position: static; }
   .table-scroll, .chart-scroll { overflow: visible !important; }
   .schedule-site-block { break-inside: avoid; }
@@ -439,8 +466,8 @@ body.pdf-export {
 }
 body.pdf-export .btn-pdf-print,
 body.pdf-export .btn-manual,
+body.pdf-export .btn-qr,
 body.pdf-export .btn-refresh-header,
-body.pdf-export .refresh-note,
 body.pdf-export .period-nav-btn,
 body.pdf-export .msg { display: none !important; }
 body.pdf-export .app-header, body.pdf-export .toolbar { position: static; }
