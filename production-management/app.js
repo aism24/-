@@ -1,5 +1,8 @@
-// デプロイ済みGAS WebアプリのURL(/exec で終わるURL)。デプロイ後にここへ差し替えてください。
-const GAS_API_URL = "https://script.google.com/macros/s/AKfycbya0wgwbTuBN1laM8tWFGTJhJw--pTAOBAYVyrsOoXbrOXZgs9q3ZsErTSQZwJFT2c2/exec";
+// GAS WebアプリのURL。index.html の <head> で設定した値を使う(URLはindex.htmlの1か所だけに書く)。
+const GAS_API_URL = window.PM_GAS_API_URL;
+// この端末で最後に表示したデータの作成日時を覚えておくキー(index.htmlの<head>の処理と同じ名前)。
+// Vercel版で中継API(CDNの保存)が「現時点のデータを取得」の結果より古いとき、GASへ直接取りに行くために使う。
+const LAST_GENERATED_AT_KEY = 'pm_lastGeneratedAt';
 
 Chart.defaults.color = '#e7ebf3'; // 軸目盛り・タイトル・ツールチップ本文の既定色(グレーは見にくいため白系に)
 Chart.register(ChartDataLabels); // 累積実績の折れ線上に数値を出すためのプラグイン(グラフ全体の既定はplugins.datalabels.display:falseにし、累積実績データセットだけで個別に有効化する)
@@ -27,6 +30,7 @@ let state = {
   period: null,
   targets: {},
   chart: null,
+  dailyMaps: {}, // buildDailyMaps_ の結果(データを受け取った時に作る)
   dayDetail: null, // 生産結果明細ポップアップで開いている{site, dateKey}(PDF出力のファイル名生成用)
 };
 
@@ -78,9 +82,34 @@ async function initialApiGet_() {
   return apiGet('getData');
 }
 
-// 現在の画面表示(ヘッダー・ツールバー・グラフ・拠点ごとの工程表)を、そのままPDFとして
-// ダウンロードする。jsPDF単体は日本語フォントを持たないため、html2canvasで各セクションを
-// 画像化してPDFに貼り付ける方式にしている。キャプチャ中だけ.pdf-exportクラスを付け、
+// ---------- PDF ----------
+// PDF用のライブラリ(html2canvas・jspdf)は、ページを開く時の読み込みを軽くするため<head>では
+// 読まず、画面の表示後(loadDataの後)に裏で読み込む。PDFボタンがそれより先に押された場合は、
+// 読み込み終わるのを待ってから作る。読み込みに失敗したら次に押した時にもう一度読む。
+const PDF_LIB_URLS = [
+  'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',
+  'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js',
+];
+let pdfLibsPromise = null;
+function loadScript_(src) {
+  return new Promise(function (resolve, reject) {
+    const el = document.createElement('script');
+    el.src = src;
+    el.onload = function () { resolve(); };
+    el.onerror = function () { el.remove(); reject(new Error('PDF用のライブラリを読み込めませんでした(' + src.split('/npm/')[1].split('/')[0] + ')')); };
+    document.head.appendChild(el);
+  });
+}
+function loadPdfLibs_() {
+  if (!pdfLibsPromise) {
+    pdfLibsPromise = Promise.all(PDF_LIB_URLS.map(loadScript_)).catch(function (err) {
+      pdfLibsPromise = null;
+      throw err;
+    });
+  }
+  return pdfLibsPromise;
+}
+
 // html2canvasは<select>/<input>の中身(選択中のテキストや入力値)を正しく描画できず、
 // 見えなくなったり途切れたりすることがある。PDFキャプチャ中だけ、同じ内容を表示する
 // 読み取り専用のspanに差し替え、キャプチャ後に元へ戻す。
@@ -110,6 +139,9 @@ function restoreControlsAfterCapture_(swaps) {
   });
 }
 
+// 現在の画面表示(ヘッダー・ツールバー・グラフ・拠点ごとの工程表)を、そのままPDFとして
+// ダウンロードする。jsPDF単体は日本語フォントを持たないため、html2canvasで各セクションを
+// 画像化してPDFに貼り付ける方式にしている。キャプチャ中だけ.pdf-exportクラスを付け、
 // 印刷用と同じ明るい配色・ボタン非表示にして読みやすい見た目にする。
 // opts.includeHeaderToolbar: アプリ行・ツールバー(拠点/締日/目標日産量)を含めるか
 // opts.scheduleAlwaysNewPage: 工程表を新しいページから始めるか(3工場PDFはtrue、
@@ -119,6 +151,15 @@ async function buildPdf_(btn, opts) {
   const originalLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'PDF作成中…';
+  try {
+    await loadPdfLibs_();
+  } catch (err) {
+    console.error(err);
+    showMessage('PDF作成でエラーが発生しました: ' + err.message, 'err');
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+    return;
+  }
   document.body.classList.add('pdf-export');
   // クラス切り替えによるレイアウト確定を待つ
   await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
@@ -315,7 +356,16 @@ function eraLabel(d) {
 function fiscalYear(d) {
   return (d.getMonth() + 1) >= 12 ? d.getFullYear() : d.getFullYear() - 1;
 }
+// 期間内の日付キーの一覧。グラフ・工程表・営業日数の表示で同じ期間を何度も使うため、
+// 直前と同じ期間(state.periodの同じオブジェクト)なら作り直さず使い回す(呼び出し側は配列を書き換えない)。
+let datesCache = { period: null, dates: null };
 function datesInPeriod(period) {
+  if (datesCache.period === period) return datesCache.dates;
+  const dates = buildDatesInPeriod_(period);
+  datesCache = { period: period, dates: dates };
+  return dates;
+}
+function buildDatesInPeriod_(period) {
   const dates = [];
   const cur = new Date(period.start);
   while (cur <= period.end) {
@@ -495,11 +545,12 @@ async function loadData(forceRefresh) {
   btn.disabled = true;
   showMessage(forceRefresh ? '最新のExcelを読み込んで再集計しています…(数十秒かかる場合があります) ボタン操作などは現状の記録で操作反映できます' : '読み込み中…', forceRefresh ? 'loading' : '');
   try {
-    if (GAS_API_URL.indexOf('PASTE_YOUR_GAS_WEB_APP_URL_HERE') >= 0) {
-      throw new Error('app.js の GAS_API_URL がまだ設定されていません。');
-    }
     const data = forceRefresh ? await apiGet('refresh') : await initialApiGet_();
     state.data = data;
+    state.dailyMaps = buildDailyMaps_(data);
+    try {
+      if (data.generatedAt) localStorage.setItem(LAST_GENERATED_AT_KEY, data.generatedAt);
+    } catch (e) { /* 保存できない環境でも表示は続ける */ }
     SITES.forEach(function (site) {
       if (state.targets[site] === undefined) {
         state.targets[site] = (data.targets && data.targets[site] !== undefined) ? data.targets[site] : 0;
@@ -526,6 +577,8 @@ async function loadData(forceRefresh) {
     }
   } finally {
     btn.disabled = false;
+    // 画面を出し終えてから、PDF用のライブラリを裏で読み込んでおく(失敗してもPDFボタンを押した時に読み直す)。
+    loadPdfLibs_().catch(function () {});
   }
 }
 
@@ -554,6 +607,18 @@ function renderAll() {
   document.getElementById('periodEndBadge').textContent = eraLabel(state.period.end);
 }
 
+// 拠点ごとの { 日付キー: その日の合計生産重量 }。データを受け取った時に1回だけ作り、
+// グラフ・工程表の合計行で共用する。
+function buildDailyMaps_(data) {
+  const maps = {};
+  Object.keys(data.dailyBySite || {}).forEach(function (site) {
+    const m = {};
+    data.dailyBySite[site].forEach(function (r) { m[r.date] = r.weight; });
+    maps[site] = m;
+  });
+  return maps;
+}
+
 // 選択中の締め期間について、カレンダー(会社カレンダーの出勤/休日)から
 // 営業日数を数えて期間セレクトの横に表示する。
 function renderWorkdayBadge() {
@@ -571,25 +636,27 @@ function renderChart() {
 
   // 平均生産重量の分母(営業日数)。進行中の期間(今日を含む/未来)は「経過営業日数
   // (今日を含まない)」、既に終わった期間は「期間全体の営業日数」で割る。
+  // 日付キー("yyyy-MM-dd")は文字列のまま大小を比べられるので、今日の日付キーと比べる
+  // (日付ごとにDateへ変換しない)。
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayKey = dateKey(today);
   const isOngoingPeriod = !(period.end < today);
   const workdays = dates.filter(function (d) { return data.calendar[d] === true; });
   const avgDenom = isOngoingPeriod
-    ? workdays.filter(function (d) { return parseDateKey(d) < today; }).length
+    ? workdays.filter(function (d) { return d < todayKey; }).length
     : workdays.length;
 
   // 累積実績が累積目標ラインを下回っている区間を赤く塗る判定(下記cumActualDataset.segment)
   // で、まだ実績が出ていないだけの未来日を「目標未達」扱いにしないための日付ごとのフラグ。
   // 未来日は実績がその日以降ずっと横ばいのまま、目標だけ積み上がり続けるため、
   // 除外しないと期間後半が全部赤くなってしまう。
-  const isFutureDate = dates.map(function (d) { return parseDateKey(d) > today; });
+  const isFutureDate = dates.map(function (d) { return d > todayKey; });
 
   const datasets = [];
   const cumStats = [];
   selected.forEach(function (site, siteIndex) {
-    const dailyMap = {};
-    (data.dailyBySite[site] || []).forEach(function (r) { dailyMap[r.date] = r.weight; });
+    const dailyMap = state.dailyMaps[site] || {};
     const color = SITE_COLOR[site];
     // 「工場別PDF」(拠点1つだけ)は棒グラフ(日次実績)だけ黒一色にする。1拠点しか
     // 出力しないため色分けする意味が無く、白背景のPDF上でも濃く見やすいことを優先した。
@@ -610,7 +677,10 @@ function renderChart() {
     let avgWeight = totalWeight;
     if (isOngoingPeriod) {
       avgWeight = 0;
-      dates.forEach(function (d, i) { if (parseDateKey(d) < today) avgWeight = cumActual[i]; });
+      // 今日より前の最後の日の累積(期間の初日が今日以降なら0のまま)。
+      for (let i = dates.length - 1; i >= 0; i--) {
+        if (dates[i] < todayKey) { avgWeight = cumActual[i]; break; }
+      }
     }
     const avg = avgDenom > 0 ? avgWeight / avgDenom : null;
     const belowTarget = target > 0 && avg !== null && avg < target;
@@ -953,8 +1023,7 @@ function renderSchedule() {
       });
     });
 
-    const dailyMap = {};
-    (data.dailyBySite[site] || []).forEach(function (r) { dailyMap[r.date] = r.weight; });
+    const dailyMap = state.dailyMaps[site] || {};
     const totalTr = document.createElement('tr');
     totalTr.className = 'total-row';
     const totalLabelTd = document.createElement('td');
@@ -1104,6 +1173,15 @@ async function downloadDayDetailPdf() {
   const originalLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'PDF作成中…';
+  try {
+    await loadPdfLibs_();
+  } catch (err) {
+    console.error(err);
+    showMessage('PDF作成でエラーが発生しました: ' + err.message, 'err');
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+    return;
+  }
   document.body.classList.add('pdf-export');
 
   // 画面表示用のスクロール制限(day-detail-body の max-height/overflow、および
