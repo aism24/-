@@ -160,7 +160,7 @@ const MODE_NAMES = { beam: '梁モード', column: '柱モード', merge: '結�
 const JOINT_HEADERS = { beam: ['左継手', '右継手'], column: ['下継手', '上継手'] };
 let currentMode = null;
 let resultsMode = 'beam'; // extractedResults がどちらのモードの結果か
-const savedResults = { beam: { rows: [], info: '' }, column: { rows: [], info: '' } };
+const savedResults = { beam: { rows: [], info: '', batches: [] }, column: { rows: [], info: '', batches: [] } };
 let appliedFactory = null; // 最後にモードボタンを押したときの工場・工事名(キャンセルで戻す)
 let appliedKoji = '';
 let resultsInfo = ''; // 今の抽出結果の件数表示(帳票チェック・結合モードから戻ったときに表示し直す)
@@ -170,14 +170,16 @@ function jointKeys() { return JOINT_HEADERS[resultsMode]; }
 // 梁モード⇔柱モードの切り替えで、抽出結果・件数表示・表の継手の見出しを入れ替える。
 function switchResults(mode) {
   if (mode === resultsMode) return;
-  savedResults[resultsMode] = { rows: extractedResults, info: resultsInfo };
+  savedResults[resultsMode] = { rows: extractedResults, info: resultsInfo, batches: extractBatches };
   resultsMode = mode;
   extractedResults = savedResults[mode].rows;
   resultsInfo = savedResults[mode].info;
+  extractBatches = savedResults[mode].batches;
   document.getElementById('file-info').textContent = resultsInfo;
   applyResultHead();
   document.getElementById('file-input').value = '';
   if (extractedResults.length > 0) renderTable(extractedResults);
+  renderBatches();
 }
 
 // ファイル名に付ける日時(yyyyMMddHHmmss)。日本時間(端末の時刻)で付ける(2026-11-16。以前は
@@ -409,9 +411,11 @@ async function saveToInputBook(recordRows) {
 
 // 梁モード・柱モードの抽出結果を両方とも消す(工事を変えたとき)
 function clearExtractResults() {
-  savedResults.beam = { rows: [], info: '' };
-  savedResults.column = { rows: [], info: '' };
+  savedResults.beam = { rows: [], info: '', batches: [] };
+  savedResults.column = { rows: [], info: '', batches: [] };
   extractedResults = [];
+  extractBatches = [];
+  renderBatches();
   resultsInfo = '';
   document.getElementById('file-info').textContent = '';
   document.getElementById('result-tbody').innerHTML = '';
@@ -640,75 +644,88 @@ function splitByCount(rows) {
   return out;
 }
 
+// ---------- 取り込み(何回でも足していく。2026-11-18 ユーザー指示) ----------
+// 以前は取り込むたびに前の結果を消していた。今は、TDFファイルを選ぶ・ドロップする・フォルダを選ぶ、の
+// どれでも前の結果に足していく。取り込んだ単位(ファイル選択1回、またはフォルダ選択で見つかった
+// フォルダ1つ)を extractBatches に1つずつ持ち、表の上の一覧から1つずつ取り消せる。全部消すのはリセット。
+// batch: { id, label, files:[ファイル名], rows:[本数で分けた行], pick:{ id, name, isFolder } }
+//   pick は図番のリンクの起点(Excelダウンロードで、選んだフォルダごとに絶対パスを聞く)。
+//   行の _filename は pick のフォルダからの相対パス(ファイル選択ならファイル名だけ)。
+let extractBatches = [];
+let batchSeq = 0;
+let pickSeq = 0;
+
 function processFiles(files) {
-  return withBusy(() => processFilesInner(files));
+  const list = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.tdf'));
+  if (list.length === 0) { showToast('TDFファイルを選択してください', 'error'); return; }
+  const sorted = list.slice().sort((a, b) => jaCompare(a.name, b.name));
+  const first = sorted[0].name.replace(/\.tdf$/i, ''), last = sorted[sorted.length - 1].name.replace(/\.tdf$/i, '');
+  const label = sorted.length === 1 ? first : `${first} 〜 ${last}`;
+  const pick = { id: ++pickSeq, name: label, isFolder: false };
+  return withBusy(() => processFilesInner([{ label, pick, entries: sorted.map(f => ({ file: f, rel: f.name })) }]));
 }
 
-async function processFilesInner(files) {
-  const tdfFiles = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.tdf'));
-  if (tdfFiles.length === 0) { showToast('TDFファイルを選択してください', 'error'); return; }
+// groups: [{ label, pick, entries:[{ file | handle, rel }] }]。groups 1つが取り込みの単位1つになる
+async function processFilesInner(groups) {
   if (!pyodide) { showToast('準備中です。しばらくお待ちください', 'error'); return; }
+  const total = groups.reduce((s, g) => s + g.entries.length, 0);
+  if (total === 0) { showToast('TDFファイルがありません', 'error'); return; }
 
-  document.getElementById('result-area').classList.remove('visible');
-  extractedResults = [];
   const errors = [];
   const noTableFiles = [];
+  const newBase = []; // 今回足した行(分ける前)。お知らせのポップアップは今回の分だけ出す
+  const before = new Map(); // 前に取り込んだファイル名 → どの取り込みか(同じ名前の知らせ用)
+  extractBatches.forEach(b => b.files.forEach(n => { if (!before.has(n)) before.set(n, b.label); }));
+  const sameName = [];
+  let done = 0;
 
-  for (let i = 0; i < tdfFiles.length; i++) {
-    const file = tdfFiles[i];
-    showStatus('TDF解析中...', `(${i + 1}/${tdfFiles.length}) ${file.name}`);
-    try {
-      const uint8 = new Uint8Array(await file.arrayBuffer());
-      pyodide.FS.writeFile('/input.tdf', uint8);
-      // 柱モードは柱・間柱用の別のPython(tdf_column.py)で抽出する
-      const pyModule = resultsMode === 'column' ? 'tdf_column' : 'tdf_app';
-      // 図番はファイル名の先頭と一致する図面の文字を優先するので、元のファイル名も渡す
-      pyodide.globals.set('tdf_filename', file.name);
-      const pyResult = await pyodide.runPythonAsync(`${pyModule}.extract_file('/input.tdf', tdf_filename)`);
-      const rows = pyResult.toJs({ dict_converter: Object.fromEntries });
-      pyResult.destroy();
-      if (rows.length === 0) {
-        noTableFiles.push(file.name);
-      } else {
-        rows.forEach(r => r['_filename'] = file.name);
-        extractedResults.push(...rows);
+  for (const g of groups) {
+    const baseRows = [];
+    const names = [];
+    for (const ent of g.entries) {
+      done++;
+      const name = ent.file ? ent.file.name : ent.handle.name;
+      showStatus('TDF解析中...', `(${done}/${total}) ${ent.rel}`);
+      names.push(name);
+      if (before.has(name)) sameName.push(`${ent.rel}(前に取り込んだ「${before.get(name)}」にも同じ名前があります)`);
+      try {
+        const file = ent.file || await ent.handle.getFile();
+        const uint8 = new Uint8Array(await file.arrayBuffer());
+        pyodide.FS.writeFile('/input.tdf', uint8);
+        // 柱モードは柱・間柱用の別のPython(tdf_column.py)で抽出する
+        const pyModule = resultsMode === 'column' ? 'tdf_column' : 'tdf_app';
+        // 図番はファイル名の先頭と一致する図面の文字を優先するので、元のファイル名も渡す
+        pyodide.globals.set('tdf_filename', name);
+        const pyResult = await pyodide.runPythonAsync(`${pyModule}.extract_file('/input.tdf', tdf_filename)`);
+        const rows = pyResult.toJs({ dict_converter: Object.fromEntries });
+        pyResult.destroy();
+        if (rows.length === 0) {
+          noTableFiles.push(ent.rel);
+        } else {
+          rows.forEach(r => { r['_filename'] = ent.rel; r._pick = g.pick; });
+          baseRows.push(...rows);
+        }
+      } catch (e) {
+        errors.push(ent.rel + ': ' + e.message);
+        console.error(e);
       }
-    } catch (e) {
-      errors.push(file.name + ': ' + e.message);
-      console.error(e);
     }
+    if (baseRows.length === 0) continue; // 製品の行が1つも無いフォルダ(表紙だけ等)は一覧に足さない
+    newBase.push(...baseRows);
+    // 本数で行を分けるのは取り込んだときに1回だけ(行の「確認した」印を、あとで足しても消さないため)
+    extractBatches.push({ id: ++batchSeq, label: g.label, files: names, rows: splitByCount(baseRows), base: baseRows, pick: g.pick });
   }
 
   hideStatus();
+  rebuildResults();
 
-  if (extractedResults.length === 0) {
-    // 前の結果の表は消えているので、空の画面(ファイルを入れる案内)に戻す(2026-11-10)
-    resultsInfo = '';
-    document.getElementById('file-info').textContent = '';
-    showExtractView();
+  if (newBase.length === 0) {
     showErrorDialog('製品情報が見つかりませんでした' + (errors.length ? '。エラーになったファイル' : ''), errors);
     return;
   }
 
-  document.getElementById('btn-reset').disabled = false;
-
-  // ポップアップ(長さの確認・長さが不明瞭・製品マークの重複)は分ける前の行で出す(同じ製品が台数分並ばないように)
-  const baseRows = extractedResults;
-  extractedResults = splitByCount(baseRows);
-
-  extractedResults.sort((a, b) => jaCompare(a['図番'], b['図番']) || jaCompare(a['製品マーク'], b['製品マーク']));
-
-  const kojiRaw = kojiNo.replace(/-/g, '');
-  extractedResults.forEach((r, i) => { r._id = kojiRaw + String(i + 1).padStart(4, '0'); });
-
-  renderTable(extractedResults);
-  resultsInfo = tdfFiles.length + ' ファイル  /  ' + extractedResults.length + ' 件';
-  document.getElementById('file-info').textContent = resultsInfo;
-  document.getElementById('result-area').classList.add('visible');
-  document.getElementById('empty-state').style.display = 'none';
-  document.getElementById('btn-excel').disabled = false;
-
-  let msg = extractedResults.length + ' 件を抽出しました';
+  const addedRows = splitByCount(newBase).length;
+  let msg = addedRows < extractedResults.length ? `${addedRows} 件を追加しました(合計 ${extractedResults.length} 件)` : extractedResults.length + ' 件を抽出しました';
   if (errors.length) msg += '（' + errors.length + ' ファイルでエラー）';
   showToast(msg, errors.length ? '' : 'success');
 
@@ -717,15 +734,214 @@ async function processFilesInner(files) {
   if (noTableFiles.length > 0) {
     showErrorDialog('製品情報が見つからなかったファイル', noTableFiles);
   }
-  const lengthChecks = baseRows.filter(r => r['長さの確認']);
+  if (sameName.length > 0) showErrorDialog('前に取り込んだファイルと同じ名前のファイルがあります(両方とも表に残しています)', sameName);
+  const lengthChecks = newBase.filter(r => r['長さの確認']);
   if (lengthChecks.length > 0) showLengthCheckDialog(lengthChecks);
   // 長さを求められなかった行(製品の行はあるが、図から長さの範囲を決められなかった)
-  const lengthUnclear = baseRows.filter(r => r['長さ'] == null && !r['長さの確認']);
+  const lengthUnclear = newBase.filter(r => r['長さ'] == null && !r['長さの確認']);
   if (lengthUnclear.length > 0) showLengthUnclearDialog(lengthUnclear);
   // 同じ製品マークが2回以上ある(図面の書き間違いの可能性。26-16 WB3-EVMRB-01 で
   // WB32-PHESB250-1 が2回書かれていた)。行はそのまま残し、図面の確認を促す。
-  const dupMarks = [...countMarks(baseRows).entries()].filter(([, rs]) => rs.length > 1);
+  // 前に取り込んだ分との重なりも出す(今回の行が入っているものだけ)。
+  const newSet = new Set(newBase);
+  const allBase = extractBatches.flatMap(b => b.base);
+  const dupMarks = [...countMarks(allBase).entries()].filter(([, rs]) => rs.length > 1 && rs.some(r => newSet.has(r)));
   if (dupMarks.length > 0) showDuplicateMarkDialog(dupMarks);
+}
+
+// 取り込みの一覧から、表・件数表示を作り直す
+function rebuildResults() {
+  extractedResults = [];
+  extractBatches.forEach(b => extractedResults.push(...b.rows));
+  extractedResults.sort((a, b) => jaCompare(a['図番'], b['図番']) || jaCompare(a['製品マーク'], b['製品マーク']));
+  const kojiRaw = kojiNo.replace(/-/g, '');
+  extractedResults.forEach((r, i) => { r._id = kojiRaw + String(i + 1).padStart(4, '0'); });
+
+  const nFiles = extractBatches.reduce((s, b) => s + b.files.length, 0);
+  resultsInfo = extractedResults.length === 0 ? '' :
+    (extractBatches.length > 1 ? extractBatches.length + ' か所  /  ' : '') + nFiles + ' ファイル  /  ' + extractedResults.length + ' 件';
+  renderBatches();
+  if (extractedResults.length === 0) {
+    document.getElementById('result-tbody').innerHTML = '';
+    showExtractView();
+    return;
+  }
+  renderTable(extractedResults);
+  showExtractView();
+}
+
+// 表の上の「取り込んだもの」の一覧。1つずつ取り消せる
+function renderBatches() {
+  const list = document.getElementById('batch-list');
+  if (!list) return;
+  list.innerHTML = '';
+  extractBatches.forEach((b, i) => {
+    const row = document.createElement('div');
+    row.className = 'batch-row';
+    const no = document.createElement('span');
+    no.className = 'batch-no';
+    no.textContent = (i + 1);
+    const name = document.createElement('span');
+    name.className = 'batch-name';
+    name.textContent = b.label;
+    name.title = b.files.join('\n');
+    const cnt = document.createElement('span');
+    cnt.className = 'batch-count';
+    cnt.textContent = `${b.files.length} ファイル / ${b.rows.length} 件`;
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'batch-del';
+    del.textContent = '取り消し';
+    del.addEventListener('click', () => removeBatch(b.id));
+    row.append(no, name, cnt, del);
+    list.appendChild(row);
+  });
+}
+
+function removeBatch(id) {
+  if (busy) { showToast('処理中です。終わってから取り消してください', 'error'); return; }
+  const b = extractBatches.find(x => x.id === id);
+  if (!b) return;
+  if (!confirm(`「${b.label}」の ${b.rows.length} 件を表から外しますか?(TDFファイル自体は消えません)`)) return;
+  extractBatches = extractBatches.filter(x => x.id !== id);
+  rebuildResults();
+  showToast(`「${b.label}」を外しました`, 'success');
+}
+
+// ---------- フォルダを選んで、その下の最新図だけを抽出する(2026-11-18 ユーザー指示) ----------
+// 選んだフォルダの下を全部たどり、名前に「旧」「発行歴」を含むフォルダは飛ばす(帳票チェックと同じ決まり
+// = それ以外が最新図)。TDFのあるフォルダを一覧にして、チェックしたフォルダだけ抽出する。
+// フォルダを選ぶ機能(showDirectoryPicker)は Edge・Chrome だけ。表紙など製品の無いTDFは、
+// 今までどおり「製品情報が見つからなかったファイル」に出るだけで、表・Excelには入らない。
+const LATEST_SKIP_DIR = /旧|発行歴/;
+
+async function pickTdfFolder() {
+  if (busy) { showToast('処理中です。終わってからもう一度押してください', 'error'); return; }
+  if (!pyodide) { showToast('準備中です。しばらくお待ちください', 'error'); return; }
+  if (!window.showDirectoryPicker) {
+    showErrorDialog('このブラウザではフォルダを選べません', ['Microsoft Edge または Google Chrome で開いてください(TDFファイルを選ぶ方法は使えます)']);
+    return;
+  }
+  let root;
+  try {
+    root = await window.showDirectoryPicker({ id: 'tdf-extract-folder', mode: 'read' });
+  } catch (e) {
+    if (e.name === 'AbortError') { showToast('フォルダが選ばれませんでした', 'error'); return; }
+    showToast('フォルダを選べませんでした: ' + e.message, 'error');
+    return;
+  }
+  const found = await withBusy(() => scanLatestFolders(root));
+  if (!found) return;
+  const { groups, skipped, unreadable } = found;
+  if (unreadable.length) showErrorDialog('読めなかったフォルダ(飛ばしました)', unreadable);
+  if (groups.length === 0) {
+    showErrorDialog(`「${root.name}」の下に最新図のTDFがありません`, skipped.length ? ['旧・発行歴のフォルダは外しています:', ...skipped] : []);
+    return;
+  }
+  const chosen = await askFolderChoice(root.name, groups, skipped);
+  if (!chosen || chosen.length === 0) return;
+  const pick = { id: ++pickSeq, name: root.name, isFolder: true };
+  await withBusy(() => processFilesInner(chosen.map(g => ({ label: g.label, pick, entries: g.entries }))));
+}
+
+// 選んだフォルダの下をたどり、TDFのあるフォルダごとにまとめる(8フォルダずつ並べて読む)
+async function scanLatestFolders(root) {
+  const byDir = new Map(); // 相対パス('' は選んだフォルダ自身) → [{ handle, rel }]
+  const skipped = [];
+  const unreadable = [];
+  let seen = 0;
+  const queue = [[root, '']];
+  const walk = async ([dir, path]) => {
+    seen++;
+    showStatus('フォルダを調べています...', `${seen} フォルダ目: ${root.name}${path ? '\\' + path : ''}`);
+    try {
+      for await (const [name, child] of dir.entries()) {
+        const rel = path ? path + '/' + name : name;
+        if (child.kind === 'directory') {
+          if (LATEST_SKIP_DIR.test(name)) skipped.push(root.name + '\\' + rel.replace(/\//g, '\\'));
+          else queue.push([child, rel]);
+        } else if (name.toLowerCase().endsWith('.tdf')) {
+          if (!byDir.has(path)) byDir.set(path, []);
+          byDir.get(path).push({ handle: child, rel });
+        }
+      }
+    } catch (e) {
+      unreadable.push((root.name + (path ? '\\' + path.replace(/\//g, '\\') : '')) + ': ' + e.message);
+    }
+  };
+  try {
+    while (queue.length) {
+      const batch = queue.splice(0, 8);
+      await Promise.all(batch.map(walk));
+    }
+  } finally {
+    hideStatus();
+  }
+  const groups = [...byDir.entries()].map(([path, entries]) => ({
+    path,
+    label: root.name + (path ? '\\' + path.replace(/\//g, '\\') : ''),
+    entries: entries.sort((a, b) => jaCompare(a.rel, b.rel)),
+  })).sort((a, b) => jaCompare(a.path, b.path));
+  return { groups, skipped: skipped.sort(jaCompare), unreadable };
+}
+
+// 見つかったフォルダの一覧(チェックしたものだけ抽出)。前に取り込んだのと同じフォルダは最初からチェックを外す
+function askFolderChoice(rootName, groups, skipped) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('folder-pick-overlay');
+    const list = document.getElementById('folder-pick-list');
+    const title = document.getElementById('folder-pick-title');
+    const note = document.getElementById('folder-pick-skipped');
+    const okBtn = document.getElementById('folder-pick-ok');
+    const cancelBtn = document.getElementById('folder-pick-cancel');
+    const allBtn = document.getElementById('folder-pick-all');
+    const noneBtn = document.getElementById('folder-pick-none');
+    const taken = new Set(extractBatches.map(b => b.label));
+    title.textContent = `「${rootName}」の下で最新図のTDFがあるフォルダ(${groups.length} か所)`;
+    note.textContent = skipped.length ? `名前に「旧」「発行歴」を含むフォルダ ${skipped.length} か所は外しました` : '';
+    note.title = skipped.join('\n');
+    list.innerHTML = '';
+    const boxes = groups.map(g => {
+      const lab = document.createElement('label');
+      lab.className = 'folder-pick-row';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !taken.has(g.label);
+      const nm = document.createElement('span');
+      nm.className = 'folder-pick-name';
+      nm.textContent = g.path ? g.path.replace(/\//g, '\\') : '(選んだフォルダの直下)';
+      const ct = document.createElement('span');
+      ct.className = 'folder-pick-count';
+      ct.textContent = g.entries.length + ' ファイル' + (taken.has(g.label) ? '(取り込み済み)' : '');
+      lab.append(cb, nm, ct);
+      list.appendChild(lab);
+      return cb;
+    });
+    const update = () => {
+      const n = groups.reduce((s, g, i) => s + (boxes[i].checked ? g.entries.length : 0), 0);
+      okBtn.textContent = `抽出する(${n} ファイル)`;
+      okBtn.disabled = n === 0;
+    };
+    boxes.forEach(cb => cb.addEventListener('change', update));
+    update();
+    overlay.classList.add('open');
+
+    function cleanup() {
+      overlay.classList.remove('open');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      allBtn.removeEventListener('click', onAll);
+      noneBtn.removeEventListener('click', onNone);
+    }
+    function onOk() { cleanup(); resolve(groups.filter((g, i) => boxes[i].checked)); }
+    function onCancel() { cleanup(); resolve(null); }
+    function onAll() { boxes.forEach(cb => { cb.checked = true; }); update(); }
+    function onNone() { boxes.forEach(cb => { cb.checked = false; }); update(); }
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+    allBtn.addEventListener('click', onAll);
+    noneBtn.addEventListener('click', onNone);
+  });
 }
 
 // 重量(t)を求める。TDFファイル自身に重量セル(kg)があればそれをt換算して使い
@@ -865,14 +1081,16 @@ function buildFileUrl(basePath, fileName) {
 // ファイルの実際の絶対パスを取得できないため、フォルダのパスだけユーザーに貼って
 // もらい、既に判明しているファイル名(_filename)と組み合わせてリンクを作る。
 // 案件ごとにフォルダが変わるため、前回値は記憶せず毎回空欄から始める。
-function askBasePath() {
+// label: 何のフォルダの絶対パスか(取り込んだ場所が2か所以上のとき、場所ごとに聞く。2026-11-18)
+function askBasePath(label, initial) {
   return new Promise(resolve => {
     const overlay = document.getElementById('basepath-overlay');
     const textarea = document.getElementById('basepath-textarea');
+    document.querySelector('#basepath-box .basepath-label').textContent = label || '図面フォルダの絶対パスを入力してください';
     const pasteBtn = document.getElementById('basepath-paste-btn');
     const okBtn = document.getElementById('basepath-ok-btn');
     const skipBtn = document.getElementById('basepath-skip-btn');
-    textarea.value = '';
+    textarea.value = initial || '';
     overlay.classList.add('open');
     textarea.focus();
 
@@ -973,7 +1191,24 @@ async function downloadExcel() {
   if (checkMode) return downloadCheckExcel();
   if (extractedResults.length === 0) return;
   const useInputBook = !!inputBook && (currentMode === 'beam' || currentMode === 'column');
-  const basePath = useInputBook ? '' : await askBasePath();
+  // 図番のリンクの起点。取り込んだ場所(ファイル選択1回・フォルダ選択1回)ごとに絶対パスを聞く。
+  // フォルダを選んだときは、そのフォルダの絶対パス+下のフォルダの相対パス+ファイル名でリンクにする。
+  const basePaths = new Map(); // pick.id → 絶対パス(空ならリンクなし)
+  if (!useInputBook) {
+    // 取り込んだ順に聞く。同じ名前のフォルダをもう一度選んでいたら、前に入れたパスを最初から入れておく
+    const picks = [...new Map(extractedResults.filter(r => r._pick).map(r => [r._pick.id, r._pick])).values()].sort((a, b) => a.id - b.id);
+    const byName = new Map();
+    for (let i = 0; i < picks.length; i++) {
+      const p = picks[i];
+      const label = picks.length === 1 && !p.isFolder ? '' :
+        (p.isFolder ? `選んだフォルダ「${p.name}」の絶対パスを入力してください` : `「${p.name}」のTDFが入っているフォルダの絶対パスを入力してください`) +
+        (picks.length > 1 ? `(${i + 1}/${picks.length})` : '');
+      const nameKey = (p.isFolder ? 'D:' : 'F:') + p.name;
+      const val = await askBasePath(label, byName.get(nameKey) || '');
+      basePaths.set(p.id, val);
+      if (val) byName.set(nameKey, val);
+    }
+  }
 
   const [ja, jb] = jointKeys(); // 梁モードは左継手・右継手、柱モードは下継手・上継手
   const headers = ['ID', '工事番号', '図番', '製品マーク', '設計符号', 'サイズ', '本数', '長さ(m)', '重量(t)', ja, jb];
@@ -1008,17 +1243,16 @@ async function downloadExcel() {
   // ハイパーリンクを付与する(そのファイル名は抽出時点で既に判明しているため、
   // フォルダの絶対パスとファイル名を組み合わせるだけで済む)。
   const hyperlinkRefs = [];
-  if (basePath) {
-    extractedResults.forEach((r, i) => {
-      if (!r._filename) return;
-      const cellRef = XLSX.utils.encode_cell({ r: i + 1, c: ZUBAN_COL });
-      const cell = ws[cellRef];
-      if (cell) {
-        cell.l = { Target: buildFileUrl(basePath, r._filename) };
-        hyperlinkRefs.push(cellRef);
-      }
-    });
-  }
+  extractedResults.forEach((r, i) => {
+    const basePath = r._pick ? basePaths.get(r._pick.id) : '';
+    if (!basePath || !r._filename) return;
+    const cellRef = XLSX.utils.encode_cell({ r: i + 1, c: ZUBAN_COL });
+    const cell = ws[cellRef];
+    if (cell) {
+      cell.l = { Target: buildFileUrl(basePath, r._filename) };
+      hyperlinkRefs.push(cellRef);
+    }
+  });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '製品情報');
   const ts = localStamp();
@@ -1057,7 +1291,10 @@ function resetApp() {
     }
     return;
   }
+  if (extractBatches.length > 1 && !confirm('取り込んだ ' + extractBatches.length + ' か所の抽出結果をすべて消しますか?')) return;
   extractedResults = [];
+  extractBatches = [];
+  renderBatches();
   resultsInfo = '';
   document.getElementById('result-area').classList.remove('visible');
   document.getElementById('empty-state').style.display = 'flex';
@@ -1557,7 +1794,9 @@ document.addEventListener('keydown', e => {
 });
 
 document.getElementById('file-input').addEventListener('change', e => {
-  if (e.target.files.length) processFiles(e.target.files);
+  const files = Array.from(e.target.files);
+  e.target.value = ''; // 同じファイルをもう一度選んでも取り込めるように
+  if (files.length) processFiles(files);
 });
 
 ['dragenter', 'dragover'].forEach(ev => {

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>最新図(tdf)で情報抽出＆チェック</title>
-<link rel="stylesheet" href="style.css?v=20261117a">
+<link rel="stylesheet" href="style.css?v=20261118a">
 <script defer src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 </head>
 <body>
@@ -76,7 +76,8 @@
     <div>
       <p style="margin-bottom:14px;">TDFファイルを選択、またはこの画面にドラッグ&amp;ドロップしてください</p>
       <div class="folder-path-warn-wrap">
-        <div class="upload-bar" onclick="document.getElementById('file-input').click()">📂 クリックしてTDFファイルを選択(複数可)</div>
+        <div class="upload-bar" onclick="document.getElementById('file-input').click()">📄 クリックしてTDFファイルを選択(複数可)</div>
+        <div class="upload-bar folder-bar" onclick="pickTdfFolder()">📂 フォルダを選んで、その下の最新図をまとめて抽出(「旧」「発行歴」のフォルダは除く。Edge・Chrome)</div>
         <div class="folder-path-warn">
           該当ファイルがあるフォルダ絶対パスを事前コピー必要<br>
           フォルダパスを起点に図番にハイパーリンクが付与されます。<br>
@@ -139,6 +140,14 @@
   </div>
 
   <div id="result-area">
+    <!-- 取り込んだもの(何回でも足せる。1つずつ取り消し、全部消すのはリセット。2026-11-18) -->
+    <div id="batch-bar">
+      <div id="batch-list"></div>
+      <div id="batch-actions">
+        <button type="button" class="batch-add" onclick="pickTdfFolder()">📂 フォルダから追加(最新図のみ)</button>
+        <button type="button" class="batch-add" onclick="document.getElementById('file-input').click()">📄 TDFファイルを追加</button>
+      </div>
+    </div>
     <div id="result-table-wrap">
       <table id="result-table">
         <thead id="result-thead">
@@ -157,6 +166,22 @@
   <div id="status-box">
     <div class="msg" id="status-msg"></div>
     <div class="sub" id="status-sub"></div>
+  </div>
+</div>
+
+<div id="folder-pick-overlay">
+  <div id="folder-pick-box">
+    <div id="folder-pick-title" class="basepath-label"></div>
+    <div id="folder-pick-skipped"></div>
+    <div id="folder-pick-tools">
+      <button type="button" id="folder-pick-all" class="header-btn">すべて選ぶ</button>
+      <button type="button" id="folder-pick-none" class="header-btn">すべて外す</button>
+    </div>
+    <div id="folder-pick-list"></div>
+    <div class="basepath-actions">
+      <button type="button" id="folder-pick-cancel" class="header-btn">キャンセル</button>
+      <button type="button" id="folder-pick-ok" class="header-action-btn orange">抽出する</button>
+    </div>
   </div>
 </div>
 
@@ -5435,7 +5460,7 @@ def extract_file(path: str, filename: str | None = None) -> list[dict]:
 </script>
 
 <script defer src="input-append.js?v=20261116a"></script>
-<script defer src="app.js?v=20261116a"></script>
+<script defer src="app.js?v=20261118a"></script>
 <script defer src="check.js?v=20261116a"></script>
 <!-- 「← アプリ一覧へ」ボタンは非表示(2026-10-30、ユーザー指示)。復活するときは下の行のコメントを外すだけ(to-launcher.js はそのまま残している)
 <script src="to-launcher.js?v=20261019" data-target="#header-brand .side-icon" data-mode="before"></script>
