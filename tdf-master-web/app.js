@@ -435,7 +435,7 @@ function closeModeSelect() {
 
 // ---------- 操作マニュアル(説明書) ----------
 
-const MANUAL_PAGE_COUNT = 14;
+const MANUAL_PAGE_COUNT = 15;
 let manualPage = 1;
 
 // 1ページ目の「実際のアプリを開く」ボタンの矩形を、ページ全体に対する割合で
@@ -469,7 +469,7 @@ window.addEventListener('resize', () => {
   if (document.getElementById('manual-overlay').classList.contains('open')) positionManualLink();
 });
 
-const manualPageSrc = n => `assets/manual/page${n}.png?v=20261113a`;
+const manualPageSrc = n => `assets/manual/page${n}.png?v=20261118a`;
 const manualPreloaded = new Set();
 function renderManualPage() {
   document.getElementById('manual-image').src = manualPageSrc(manualPage);
