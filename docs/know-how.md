@@ -244,6 +244,12 @@
 - 本番を1つ前に戻すときは request_rollback でなく revert の PR → create_deployment(Vercel の instant rollback は以後の本番デプロイの自動切り替えを止めるため)。
 - 使ったアプリ: shipping-list-link
 
+### 「ホーム画面に追加」ボタンは端末で出し分ける(hot-heart、2026-11-18)
+- 効果: Android=確認画面(beforeinstallprompt)、iPhone/iPad=共有→「ホーム画面に追加」の案内、LINE等=URLコピー案内。Playwrightで6端末を再現し出し分け6/6・CDPのインストール可否エラー0件。iOSはWebから自動追加できない(Appleの制限)
+- iPadはMacのUAを名乗るので `maxTouchPoints` で判定。Playwrightの再現では値が1のため `>1` だとiPadを見逃した(0/1→`>0`で1/1)
+- 必要なもの: manifest.json・sw.js(キャッシュなしの素通しでよい)・apple-touch-icon(180px)・192/512px。アイコンは画面内のbase64ロゴのα値を黒で塗って白地に置くと数秒で作れる
+- 注意点: ホーム画面のアイコンは公開URLを覚えるので、公開場所を移すと利用者は追加し直し
+
 ## ユーザーがよく出す指示(繰り返し・訂正が多いもの)
 - アプリは完全無料で実装し、URLで配布する(常に最新版)。
 - Geminiを使うときのモデル名は `gemini-3.5-flash-lite` に固定。
