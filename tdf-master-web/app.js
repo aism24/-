@@ -398,12 +398,15 @@ async function saveToInputBook(recordRows) {
   book.buf = res.bytes;
   book.info = res.info;
   renderInputNote(currentMode);
-  renderTable(extractedResults); // 追記した行も、入力データにある行(グレー)になる
-  showToast(`「ﾃﾞｰﾀ」の${res.firstRow}行目から ${res.count} 行を追記しました` + ((dup.length + diff.length) ? `(すでにある ${dup.length + diff.length} 行は追記しませんでした)` : ''), 'success');
+  // 保存したら、リセットしたときと同じ最初の画面に戻す(2026-11-18 ユーザー指示。以前は表を残して
+  // 追記した行をグレーにしていた)。選んだ入力データは残すので、次に抽出した分は続きから追記する。
+  const productCount = extractedResults.length;
+  clearExtractView();
+  showToast(`「ﾃﾞｰﾀ」の${res.firstRow}行目から ${res.count} 行を追記しました(表はリセットしました)` + ((dup.length + diff.length) ? `(すでにある ${dup.length + diff.length} 行は追記しませんでした)` : ''), 'success');
   if (dup.length) showErrorDialog('すでに入力データにあるため追記しませんでした', dup);
   showDiff();
   try {
-    await apiPost('onExcelDownload', { kojiNo, productCount: extractedResults.length, rows: recordRows });
+    await apiPost('onExcelDownload', { kojiNo, productCount, rows: recordRows });
   } catch (e) {
     console.error('GAS記録エラー', e);
   }
@@ -469,7 +472,7 @@ window.addEventListener('resize', () => {
   if (document.getElementById('manual-overlay').classList.contains('open')) positionManualLink();
 });
 
-const manualPageSrc = n => `assets/manual/page${n}.png?v=20261118b`;
+const manualPageSrc = n => `assets/manual/page${n}.png?v=20261118c`;
 const manualPreloaded = new Set();
 function renderManualPage() {
   document.getElementById('manual-image').src = manualPageSrc(manualPage);
@@ -1300,8 +1303,13 @@ async function downloadExcel() {
     XLSX.writeFile(wb, filename);
   }
 
+  // ダウンロードしたら、リセットしたときと同じ最初の画面に戻す(2026-11-18 ユーザー指示)
+  const productCount = extractedResults.length;
+  clearExtractView();
+  showToast('Excelをダウンロードしました。表はリセットしました', 'success');
+
   try {
-    await apiPost('onExcelDownload', { kojiNo, productCount: extractedResults.length, rows: recordExcelRows });
+    await apiPost('onExcelDownload', { kojiNo, productCount, rows: recordExcelRows });
   } catch (e) {
     console.error('GAS記録エラー', e);
   }
@@ -1317,6 +1325,13 @@ function resetApp() {
     return;
   }
   if (extractBatches.length > 1 && !confirm('取り込んだ ' + extractBatches.length + ' か所の抽出結果をすべて消しますか?')) return;
+  clearExtractView();
+}
+
+// 梁・柱モードの抽出結果(表と取り込んだものの一覧)を消して、最初の画面に戻す。
+// リセットと、Excelダウンロード・入力データへの保存のあと(2026-11-18 ユーザー指示)に使う。
+// 入力データの取り込みで選んだExcel(inputBook)は消さない(次に抽出した分も続きから追記する)。
+function clearExtractView() {
   extractedResults = [];
   extractBatches = [];
   renderBatches();
