@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>最新図(tdf)で情報抽出＆チェック</title>
-<link rel="stylesheet" href="style.css?v=20261118a">
+<link rel="stylesheet" href="style.css?v=20261118b">
 <script defer src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 </head>
 <body>
@@ -74,14 +74,15 @@
 <main>
   <div id="empty-state">
     <div>
-      <p style="margin-bottom:14px;">TDFファイルを選択、またはこの画面にドラッグ&amp;ドロップしてください</p>
+      <p style="margin-bottom:14px;">TDFファイルを選択、またはこの画面にドラッグ&amp;ドロップしてください(フォルダを選んでまとめて抽出もできます。あとから何回でも追加できます)</p>
       <div class="folder-path-warn-wrap">
         <div class="upload-bar" onclick="document.getElementById('file-input').click()">📄 クリックしてTDFファイルを選択(複数可)</div>
         <div class="upload-bar folder-bar" onclick="pickTdfFolder()">📂 フォルダを選んで、その下の最新図をまとめて抽出(「旧」「発行歴」のフォルダは除く。Edge・Chrome)</div>
         <div class="folder-path-warn">
           該当ファイルがあるフォルダ絶対パスを事前コピー必要<br>
+          (フォルダを選んで抽出するときは、選んだフォルダの絶対パス)<br>
           フォルダパスを起点に図番にハイパーリンクが付与されます。<br>
-          ※ファイル選択時のアドレスをコピーする
+          ※ファイル(フォルダ)選択時のアドレスをコピーする
         </div>
         <div class="address-copy-preview">
           <img loading="lazy" src="assets/address-copy-guide.jpg" alt="アドレスバーのアドレスをコピーする例">
@@ -189,7 +190,7 @@
   <div id="basepath-box">
     <div class="basepath-label">図面フォルダの絶対パスを入力してください</div>
     <div class="basepath-hint">
-      エクスプローラーで、TDFファイルが入っているフォルダを右クリック→「パスのコピー」してから、
+      エクスプローラーで、<span class="basepath-target">TDFファイルが入っているフォルダ</span>を右クリック→「パスのコピー」してから、
       下の「クリップボードから貼り付け」を押すか、テキスト欄に直接貼り付けてください
       (前後の &quot; は自動的に取り除きます)。<br>
       未入力のまま「スキップ」を押した場合は、図番へのハイパーリンクなしでダウンロードします。
@@ -5460,7 +5461,7 @@ def extract_file(path: str, filename: str | None = None) -> list[dict]:
 </script>
 
 <script defer src="input-append.js?v=20261116a"></script>
-<script defer src="app.js?v=20261118a"></script>
+<script defer src="app.js?v=20261118b"></script>
 <script defer src="check.js?v=20261116a"></script>
 <!-- 「← アプリ一覧へ」ボタンは非表示(2026-10-30、ユーザー指示)。復活するときは下の行のコメントを外すだけ(to-launcher.js はそのまま残している)
 <script src="to-launcher.js?v=20261019" data-target="#header-brand .side-icon" data-mode="before"></script>

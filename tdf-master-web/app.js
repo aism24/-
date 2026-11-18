@@ -584,7 +584,7 @@ async function initPyodide() {
     pyodide = await preparePyodide();
 
     hideStatus();
-    showToast('準備完了 — ' + (currentMode === 'check' ? 'チェックするExcel' : 'TDFファイル') + 'を選択してください', 'success');
+    showToast('準備完了 — ' + (currentMode === 'check' ? 'チェックするExcel' : 'TDFファイルまたはフォルダ') + 'を選択してください', 'success');
   } catch (e) {
     hideStatus();
     showToast('初期化エラー: ' + e.message, 'error');
@@ -657,12 +657,19 @@ let pickSeq = 0;
 
 function processFiles(files) {
   const list = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.tdf'));
-  if (list.length === 0) { showToast('TDFファイルを選択してください', 'error'); return; }
+  // フォルダをドロップしたときもここに来る(フォルダの中は読めない)ので、フォルダの選び方を案内する
+  if (list.length === 0) { showToast('TDFファイルを選択してください(フォルダは「📂 フォルダを選んで…」のボタンから選べます)', 'error'); return; }
   const sorted = list.slice().sort((a, b) => jaCompare(a.name, b.name));
-  const first = sorted[0].name.replace(/\.tdf$/i, ''), last = sorted[sorted.length - 1].name.replace(/\.tdf$/i, '');
-  const label = sorted.length === 1 ? first : `${first} 〜 ${last}`;
-  const pick = { id: ++pickSeq, name: label, isFolder: false };
-  return withBusy(() => processFilesInner([{ label, pick, entries: sorted.map(f => ({ file: f, rel: f.name })) }]));
+  // 名前(一覧・絶対パスを聞く画面に出す)は、抽出のあとで製品の行が出たファイルの最初〜最後から付ける
+  // (表紙「00.表紙」などが名前の先頭に来ないように)。fileLabel を参照。
+  const pick = { id: ++pickSeq, name: '', isFolder: false };
+  return withBusy(() => processFilesInner([{ label: '', pick, entries: sorted.map(f => ({ file: f, rel: f.name })) }]));
+}
+
+// ファイル選択の取り込みの名前: 製品の行が出たファイルの名前の最初〜最後+「(ファイル選択)」
+function fileLabel(names) {
+  const s = names.map(n => n.replace(/\.tdf$/i, '')).sort(jaCompare);
+  return (s.length === 1 ? s[0] : `${s[0]} 〜 ${s[s.length - 1]}`) + '(ファイル選択)';
 }
 
 // groups: [{ label, pick, entries:[{ file | handle, rel }] }]。groups 1つが取り込みの単位1つになる
@@ -676,7 +683,7 @@ async function processFilesInner(groups) {
   const newBase = []; // 今回足した行(分ける前)。お知らせのポップアップは今回の分だけ出す
   const before = new Map(); // 前に取り込んだファイル名 → どの取り込みか(同じ名前の知らせ用)
   extractBatches.forEach(b => b.files.forEach(n => { if (!before.has(n)) before.set(n, b.label); }));
-  const sameName = [];
+  const sameName = new Map(); // 前の取り込みの名前 → 同じ名前だった今回のファイル
   let done = 0;
 
   for (const g of groups) {
@@ -687,7 +694,11 @@ async function processFilesInner(groups) {
       const name = ent.file ? ent.file.name : ent.handle.name;
       showStatus('TDF解析中...', `(${done}/${total}) ${ent.rel}`);
       names.push(name);
-      if (before.has(name)) sameName.push(`${ent.rel}(前に取り込んだ「${before.get(name)}」にも同じ名前があります)`);
+      if (before.has(name)) {
+        const k = before.get(name);
+        if (!sameName.has(k)) sameName.set(k, []);
+        sameName.get(k).push(ent.rel);
+      }
       try {
         const file = ent.file || await ent.handle.getFile();
         const uint8 = new Uint8Array(await file.arrayBuffer());
@@ -711,9 +722,15 @@ async function processFilesInner(groups) {
       }
     }
     if (baseRows.length === 0) continue; // 製品の行が1つも無いフォルダ(表紙だけ等)は一覧に足さない
+    if (!g.label) {
+      g.label = fileLabel([...new Set(baseRows.map(r => r._filename))]);
+      g.pick.name = g.label;
+    }
+    const batchId = ++batchSeq;
+    baseRows.forEach(r => { r._batch = batchId; }); // 製品名の重複が、取り込みどうしの重なりかを見分ける
     newBase.push(...baseRows);
     // 本数で行を分けるのは取り込んだときに1回だけ(行の「確認した」印を、あとで足しても消さないため)
-    extractBatches.push({ id: ++batchSeq, label: g.label, files: names, rows: splitByCount(baseRows), base: baseRows, pick: g.pick });
+    extractBatches.push({ id: batchId, label: g.label, files: names, rows: splitByCount(baseRows), base: baseRows, pick: g.pick });
   }
 
   hideStatus();
@@ -734,7 +751,9 @@ async function processFilesInner(groups) {
   if (noTableFiles.length > 0) {
     showErrorDialog('製品情報が見つからなかったファイル', noTableFiles);
   }
-  if (sameName.length > 0) showErrorDialog('前に取り込んだファイルと同じ名前のファイルがあります(両方とも表に残しています)', sameName);
+  for (const [prev, rels] of sameName) {
+    showErrorDialog(`前に取り込んだ「${prev}」と同じ名前のファイル(両方とも表に残しています)`, rels);
+  }
   const lengthChecks = newBase.filter(r => r['長さの確認']);
   if (lengthChecks.length > 0) showLengthCheckDialog(lengthChecks);
   // 長さを求められなかった行(製品の行はあるが、図から長さの範囲を決められなかった)
@@ -746,7 +765,11 @@ async function processFilesInner(groups) {
   const newSet = new Set(newBase);
   const allBase = extractBatches.flatMap(b => b.base);
   const dupMarks = [...countMarks(allBase).entries()].filter(([, rs]) => rs.length > 1 && rs.some(r => newSet.has(r)));
-  if (dupMarks.length > 0) showDuplicateMarkDialog(dupMarks);
+  if (dupMarks.length > 0) {
+    // 別の取り込みどうしで重なっているときは、同じ図面を2回取り込んだ可能性もある(図面の書き間違いとは限らない)
+    const cross = dupMarks.some(([, rs]) => new Set(rs.map(r => r._batch)).size > 1);
+    showDuplicateMarkDialog(dupMarks, cross ? '図面を確認してください。同じ図面を2回取り込んだときは、表の上の一覧から片方を取り消してください' : '');
+  }
 }
 
 // 取り込みの一覧から、表・件数表示を作り直す
@@ -1082,11 +1105,13 @@ function buildFileUrl(basePath, fileName) {
 // もらい、既に判明しているファイル名(_filename)と組み合わせてリンクを作る。
 // 案件ごとにフォルダが変わるため、前回値は記憶せず毎回空欄から始める。
 // label: 何のフォルダの絶対パスか(取り込んだ場所が2か所以上のとき、場所ごとに聞く。2026-11-18)
-function askBasePath(label, initial) {
+// target: 説明文の「右クリックするフォルダ」(フォルダを選んで抽出した分は、選んだフォルダ)
+function askBasePath(label, initial, target) {
   return new Promise(resolve => {
     const overlay = document.getElementById('basepath-overlay');
     const textarea = document.getElementById('basepath-textarea');
     document.querySelector('#basepath-box .basepath-label').textContent = label || '図面フォルダの絶対パスを入力してください';
+    document.querySelector('#basepath-box .basepath-target').textContent = target || 'TDFファイルが入っているフォルダ';
     const pasteBtn = document.getElementById('basepath-paste-btn');
     const okBtn = document.getElementById('basepath-ok-btn');
     const skipBtn = document.getElementById('basepath-skip-btn');
@@ -1204,7 +1229,7 @@ async function downloadExcel() {
         (p.isFolder ? `選んだフォルダ「${p.name}」の絶対パスを入力してください` : `「${p.name}」のTDFが入っているフォルダの絶対パスを入力してください`) +
         (picks.length > 1 ? `(${i + 1}/${picks.length})` : '');
       const nameKey = (p.isFolder ? 'D:' : 'F:') + p.name;
-      const val = await askBasePath(label, byName.get(nameKey) || '');
+      const val = await askBasePath(label, byName.get(nameKey) || '', p.isFolder ? `抽出のときに選んだフォルダ「${p.name}」` : '');
       basePaths.set(p.id, val);
       if (val) byName.set(nameKey, val);
     }
@@ -1744,7 +1769,7 @@ function showLengthUnclearDialog(rows) {
 }
 // 同じ製品マークが複数ある製品を、製品マーク・図番・件数の表で知らせる。
 // dupMarks: [[製品マーク, 行の配列], ...]
-function showDuplicateMarkDialog(dupMarks) {
+function showDuplicateMarkDialog(dupMarks, noteText) {
   const body = document.getElementById('error-dialog-body');
   const sec = document.createElement('div');
   sec.className = 'error-dialog-section';
@@ -1754,7 +1779,7 @@ function showDuplicateMarkDialog(dupMarks) {
   sec.appendChild(h);
   const note = document.createElement('div');
   note.className = 'error-dialog-note';
-  note.textContent = '図面を確認してください';
+  note.textContent = noteText || '図面を確認してください';
   sec.appendChild(note);
   const table = document.createElement('table');
   table.className = 'error-dialog-table';
