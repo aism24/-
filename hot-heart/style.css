@@ -656,3 +656,19 @@
     .hot-controls { margin-top: 16px; gap: 14px; }
     .hot-btn { padding: 8px 20px; font-size: 0.85rem; min-width: 90px; border-width: 3px; border-radius: 10px; }
   }
+
+    /* ===== ホーム画面に追加(ボタン・案内) ===== */
+    .a2hs-btn { width: 100%; max-width: 500px; padding: 18px 20px; background: rgba(255,255,255,0.08); color: #fff; border: 2px solid rgba(255,255,255,0.45); border-radius: 16px; font-size: clamp(18px, 5vw, 26px); font-weight: bold; cursor: pointer; letter-spacing: 1px; }
+    .a2hs-btn:active { opacity: 0.7; }
+    #a2hs-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .a2hs-box { width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; background: #1a1a2e; border: 2px solid #3a3a5a; border-radius: 20px; padding: 24px 20px; text-align: center; color: #fff; }
+    .a2hs-icon { width: 72px; height: 72px; border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+    .a2hs-title { font-size: clamp(22px, 6vw, 30px); font-weight: bold; margin: 10px 0 16px; }
+    .a2hs-body { text-align: left; font-size: clamp(16px, 4.5vw, 22px); line-height: 1.6; }
+    .a2hs-body ol { padding-left: 1.4em; margin: 0 0 12px; }
+    .a2hs-body li { margin-bottom: 12px; }
+    .a2hs-body b { color: #ffd700; }
+    .a2hs-note { font-size: 0.85em; color: #aaa; margin-top: 8px; }
+    .a2hs-share { display: inline-block; vertical-align: middle; width: 1.3em; height: 1.3em; }
+    .a2hs-copy { display: block; width: 100%; margin-top: 12px; padding: 14px; background: #1565c0; color: #fff; border: none; border-radius: 12px; font-size: clamp(16px, 4.5vw, 22px); font-weight: bold; cursor: pointer; }
+    .a2hs-close { margin-top: 18px; width: 100%; padding: 14px; background: #333; color: #fff; border: none; border-radius: 12px; font-size: clamp(18px, 5vw, 24px); font-weight: bold; cursor: pointer; }
