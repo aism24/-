@@ -9,10 +9,14 @@
 
 ```
 production-management/
-  index.html     … フロントエンドのHTML(画面構造のみ。初回のgetDataを先に開始する)
+  index.html     … フロントエンドのHTML(画面構造。GASのURLはここ1か所(PM_GAS_API_URL)。
+                   初回のgetDataを先に開始する。Vercel版は中継API→失敗時GAS直接)
   style.css      … スタイル
   app.js         … 画面ロジック + グラフ描画(Chart.jsをCDNから読み込み) + 工程表描画
                    + GAS APIとの通信処理(fetchでGET、キャッシュ済みデータの取得と手動更新)
+                   + PDF出力(html2canvas・jspdfは画面の表示後に読み込む)
+  api/data.js    … Vercelの中継API。GASのgetDataを取得し、CDNに5分保存して返す
+                   (GASのURLは index.html と同じ値にする)
   manual.html    … 説明書(ヘッダーの「説明書」ボタンで別タブ表示)
   to-launcher.js … 「← アプリ一覧へ」ボタン(正本 docs/to-launcher/to-launcher.js のコピー)
   vercel.json    … {"git":{"deploymentEnabled":false}}(push・マージで自動デプロイしない)
@@ -78,10 +82,10 @@ production-management/
    - **次のユーザーとして実行**: 「自分」
    - **アクセスできるユーザー**: **「全員」**(フロントエンドから匿名でアクセスするため必須)
 8. 「デプロイ」をクリックし、表示される **新しいウェブアプリのURL**(`https://script.google.com/macros/s/xxxxx/exec`)をコピーします。
-9. **このURLをClaudeとのチャットに貼り付けてください。** `app.js` の `GAS_API_URL` と、`index.html` の
-   初回取得用のURL(同じ値)に反映してGitHubにpushします。
+9. **このURLをClaudeとのチャットに貼り付けてください。** `index.html` の `PM_GAS_API_URL` と
+   `api/data.js` の `GAS_API_URL`(同じ値)に反映してGitHubにpushします。
 10. コードを修正した場合は、この新規デプロイを編集し「新バージョン」として更新すればURLは
-    変わりません。
+    変わりません。修正したら `CODE_VERSION` を更新し、反映後に `<URL>?action=ping` で版を確かめます。
 
 ### 注意点
 
@@ -91,6 +95,10 @@ production-management/
   済みの結果を使い回し、変換・再読み込み自体をスキップすることで更新を高速化する)は、索引
   スプレッドシートと同じGoogleドライブフォルダ内に作成され、更新のたびに同じファイルへ上書き
   されます(フォルダ内が増え続けることはありません)。
+- `_cache_dashboard.json` のファイルIDはスクリプトプロパティ `CACHE_FILE_ID` に覚え、getDataは
+  名前で探さずに直接開く(開けない・ゴミ箱にある場合は従来どおり名前で探す)。
+- 案件ごとの読み込み結果を使い回すときも、今のカレンダーの範囲で絞り直して集計する(範囲外の
+  古い記録は画面用のデータに入れない)。Excelが1つも変わっていなければ `_records_cache.json` は書き直さない。
 - レスポンスは常にHTTP 200で返り、成否は返却JSONの `status` フィールド(`success`/`error`)で
   判定します。
 
@@ -98,14 +106,17 @@ production-management/
 
 ## 3. フロントエンド(Vercel)の公開
 
-1. `production-management/app.js` の先頭にある `GAS_API_URL` と、`index.html` の初回取得用のURLを、
-   手順2で取得したウェブアプリのURLに書き換えます(2か所とも同じ値)。
+1. `index.html` の `PM_GAS_API_URL` と `api/data.js` の `GAS_API_URL` を、手順2で取得した
+   ウェブアプリのURLに書き換えます(2か所とも同じ値)。
 2. 変更をリポジトリにコミット・プッシュし、mainブランチに反映します。
 3. Vercelとの Git連携はしない(`vercel.json` で自動デプロイも停止)。本番への反映は、ユーザーが
    「デプロイして」と指示したときだけ `create_deployment` で行う(運用はリポジトリの `CLAUDE.md` と
    `docs/vercel-status.md`)。GitHub Pages は使わない。
 4. 開発中の画面確認は raw.githack(`https://raw.githack.com/aism24/-/<コミットSHA>/production-management/index.html`)。
-   `index.html` の `app.js?v=` を変更のたびに更新する。
+   `index.html` の `app.js?v=`・`style.css?v=` を変更のたびに更新する。raw.githack には中継API
+   (`api/data`)が無いので、GASへ直接つなぐ(Vercel版だけ中継を使う)。
+5. 中継APIはCDNに5分保存するため、他の人が「現時点のデータを取得」した直後は、最大5分(その後も
+   1回)前のデータが表示されることがある。押した本人の端末は、覚えている作成日時より古ければGASへ直接取りに行く。
 
 ---
 
@@ -130,7 +141,7 @@ production-management/
 
 ## トラブルシューティング
 
-- **データが表示されない/エラーになる**: `GAS_API_URL` が正しいか、GASデプロイの
+- **データが表示されない/エラーになる**: `PM_GAS_API_URL` が正しいか、GASデプロイの
   「アクセスできるユーザー」が「全員」になっているか確認してください。
 - **「現時点のデータを取得」が失敗する、または特定案件が工程表に出ない**: Apps Scriptエディタで
   「サービス」に「Drive API」が追加されているか、索引シートのファイルURLが正しいか、GASを

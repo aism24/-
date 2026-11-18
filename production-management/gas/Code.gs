@@ -40,12 +40,17 @@
 
 // ========== 設定 ==========
 
+// コードの版。Code.gsを直したら更新し、貼り替え・デプロイ後に ?action=ping で版を確かめる。
+const CODE_VERSION = '2026-11-18a';
+
 const IGNORE_WORK_NO = '00-00';
 const MAIN_PARTS = ['柱', '大梁', '小梁'];
 const OTHER_PART = '他';
-const WEIGHT_ROW_KEY = '生産重量';
 const CACHE_FILE_NAME = '_cache_dashboard.json';
 const RECORDS_CACHE_FILE_NAME = '_records_cache.json';
+// _cache_dashboard.json のファイルIDを覚えておくスクリプトプロパティの名前(getDataのたびに
+// フォルダの中を名前で探す手間を省くため)。
+const CACHE_FILE_ID_PROP = 'CACHE_FILE_ID';
 // records(案件ごとの読み込み結果キャッシュ)の形式を変える際にインクリメントする。
 // 保存済みキャッシュのバージョンがこれと違えば、mtimeが同じでも再解析する(古い形式の
 // recordsを誤って使い回して、新しく追加したフィールドが欠けたまま表示されるのを防ぐ)。
@@ -60,6 +65,7 @@ function doGet(e) {
     const action = (e && e.parameter && e.parameter.action) || 'getData';
     if (action === 'getData') return getDataResponse_();
     if (action === 'refresh') return userRefresh_();
+    if (action === 'ping') return ok_({ version: CODE_VERSION });
     return errRes_('不明なaction: ' + action);
   } catch (err) {
     return errRes_(err.message);
@@ -78,14 +84,20 @@ function busyRes_(message) { return jsonResponse_({ status: 'busy', message: mes
 // ok_()が改めてJSON.stringifyし直す、という2度目のシリアライズを省略することで、
 // GAS側の処理時間を削減する。壊れていないかの確認だけはJSON.parseで行う)。
 // キャッシュが無ければ(初回のみ)集計する。
+// 保存ファイルはスクリプトプロパティに覚えたファイルIDで直接開く(フォルダの取得・名前での
+// 検索を省く)。IDが無い・開けない場合だけ、従来どおりフォルダの中を名前で探す。
 function getDataResponse_() {
+  const cachedText = loadCacheTextById_();
+  if (cachedText !== null) return cachedTextResponse_(cachedText);
   const folder = getCacheFolder_();
-  const cachedText = loadCacheText_(folder);
-  if (cachedText !== null) {
-    return ContentService.createTextOutput('{"status":"success","data":' + cachedText + '}')
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+  const textInFolder = loadCacheText_(folder);
+  if (textInFolder !== null) return cachedTextResponse_(textInFolder);
   return ok_(refreshAndGetData_(folder));
+}
+
+function cachedTextResponse_(cachedText) {
+  return ContentService.createTextOutput('{"status":"success","data":' + cachedText + '}')
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 // getDataResponse_(初回・キャッシュが無い場合のみ)、および毎日の自動トリガー
@@ -444,6 +456,9 @@ function runFullAggregation_(folder) {
   const nameMismatches = [];
   const recordsCache = loadRecordsCache_(folder);
   const newRecordsCache = {};
+  // 今回読み直した案件があればtrue。無く、案件の顔ぶれも前回と同じなら、保存ファイル
+  // (_records_cache.json)の書き直しを省く(中身が前回と同じになるため)。
+  let recordsCacheChanged = false;
 
   fileIndex.forEach(function (entry) {
     let driveFile;
@@ -471,10 +486,16 @@ function runFullAggregation_(folder) {
     // 一度も再解析されていない旧キャッシュ)は、mtimeが同じでも再解析する。そうしないと、
     // 二度と更新されない旧工事のファイルなどで、新しく追加したフィールド(製品マーク等)が
     // 欠けたままの古い形式のrecordsを永遠に使い回してしまう。
+    // 使い回すrecordsは、読み取った時点のカレンダーの範囲で絞られている。今のカレンダーの
+    // 範囲で絞り直してから集計する(カレンダーの範囲を変えたあとも、読み直した場合と同じ結果に
+    // なるように。保存するrecords自体は読み取った時のまま)。
     const cached = recordsCache[entry.fileId];
     let records;
     if (cached && cached.mtime === currentMtime && cached.v === RECORDS_CACHE_VERSION) {
-      records = cached.records;
+      newRecordsCache[entry.fileId] = cached;
+      records = cached.records.filter(function (rec) {
+        return rec.dateKey >= calendarMinKey && rec.dateKey <= calendarMaxKey;
+      });
     } else {
       try {
         const convertedId = resolveSheetId_(entry, folder, currentMtime, driveFile);
@@ -483,8 +504,9 @@ function runFullAggregation_(folder) {
         warnings.push('「' + entry.fileName + '」の読み込みに失敗しました: ' + err.message);
         return;
       }
+      recordsCacheChanged = true;
+      newRecordsCache[entry.fileId] = { mtime: currentMtime, v: RECORDS_CACHE_VERSION, records: records };
     }
-    newRecordsCache[entry.fileId] = { mtime: currentMtime, v: RECORDS_CACHE_VERSION, records: records };
 
     if (!worksMap[entry.workNo]) {
       worksMap[entry.workNo] = {
@@ -517,7 +539,9 @@ function runFullAggregation_(folder) {
 
   // 索引シートから消えた案件のキャッシュは持ち越さない(newRecordsCacheには今回処理した
   // 案件のfileIdしか入っていないため、そのまま保存するだけで自然に整理される)。
-  saveRecordsCache_(folder, newRecordsCache);
+  if (recordsCacheChanged || !sameKeys_(recordsCache, newRecordsCache)) {
+    saveRecordsCache_(folder, newRecordsCache);
+  }
 
   const dailyBySiteArray = {};
   Object.keys(dailyBySite).forEach(function (site) {
@@ -541,29 +565,72 @@ function runFullAggregation_(folder) {
   };
 }
 
+function sameKeys_(a, b) {
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  return ka.every(function (k) { return Object.prototype.hasOwnProperty.call(b, k); });
+}
+
 // ========== キャッシュの保存/読み込み(共有フォルダ内、毎回上書き) ==========
 
+// 保存先は、覚えておいたファイルID(ゴミ箱に入っていないもの)→ フォルダ内の同名ファイル
+// → 新規作成 の順に決め、使ったファイルのIDを覚えておく(getDataが名前で探さずに済むように)。
 function saveCache_(folder, data) {
   const content = JSON.stringify(data);
+  const props = PropertiesService.getScriptProperties();
+  const savedId = props.getProperty(CACHE_FILE_ID_PROP);
+  if (savedId) {
+    try {
+      const saved = DriveApp.getFileById(savedId);
+      if (!saved.isTrashed()) {
+        saved.setContent(content);
+        return;
+      }
+    } catch (e) {
+      // 削除済み等。下の名前で探す方法へ。
+    }
+  }
   const files = folder.getFilesByName(CACHE_FILE_NAME);
-  if (files.hasNext()) {
-    files.next().setContent(content);
+  const file = files.hasNext() ? files.next() : null;
+  if (file) {
+    file.setContent(content);
+    props.setProperty(CACHE_FILE_ID_PROP, file.getId());
   } else {
-    folder.createFile(CACHE_FILE_NAME, content, MimeType.PLAIN_TEXT);
+    const created = folder.createFile(CACHE_FILE_NAME, content, MimeType.PLAIN_TEXT);
+    props.setProperty(CACHE_FILE_ID_PROP, created.getId());
+  }
+}
+
+// 中身がJSONのオブジェクトの形(先頭が「{」・末尾が「}」)かだけを確かめる。この保存ファイルは
+// saveCache_がJSON.stringifyで書いたものなので、数MBを丸ごとJSON.parseして確かめるのは省く。
+function looksLikeJsonObject_(text) {
+  const t = String(text || '').trim();
+  return t.charAt(0) === '{' && t.charAt(t.length - 1) === '}';
+}
+
+// 覚えておいたファイルIDで保存ファイルを直接読む(getDataの通常の経路)。IDが無い・開けない・
+// ゴミ箱にある・中身が壊れている場合はnull(呼び出し元が名前で探す方法へ切り替える)。
+function loadCacheTextById_() {
+  const id = PropertiesService.getScriptProperties().getProperty(CACHE_FILE_ID_PROP);
+  if (!id) return null;
+  try {
+    const file = DriveApp.getFileById(id);
+    if (file.isTrashed()) return null; // ゴミ箱に入れた場合は、従来どおり保存ファイルが無い扱い
+    const text = file.getBlob().getDataAsString();
+    return looksLikeJsonObject_(text) ? text : null;
+  } catch (e) {
+    return null;
   }
 }
 
 // キャッシュファイルの中身を、JSON.parseでJSオブジェクトへ復元せず生の文字列のまま返す
-// (getDataResponse_がレスポンス文字列へそのまま埋め込むため)。JSON.parseは内容が
-// 壊れていないかの検証のためだけに行い、パース結果自体は使い捨てる。
+// (getDataResponse_がレスポンス文字列へそのまま埋め込むため)。見つけたファイルのIDを覚えておく。
 function loadCacheText_(folder) {
   const files = folder.getFilesByName(CACHE_FILE_NAME);
   if (!files.hasNext()) return null;
-  const text = files.next().getBlob().getDataAsString();
-  try {
-    JSON.parse(text);
-  } catch (e) {
-    return null;
-  }
+  const file = files.next();
+  const text = file.getBlob().getDataAsString();
+  if (!looksLikeJsonObject_(text)) return null;
+  PropertiesService.getScriptProperties().setProperty(CACHE_FILE_ID_PROP, file.getId());
   return text;
 }
