@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-title" content="試合記録">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="theme-color" content="#0a0a1a">
-  <link rel="stylesheet" href="style.css?v=a2hs1">
+  <link rel="stylesheet" href="style.css?v=a2hs2">
 </head>
 <body>
 <div id="home-screen">
@@ -25,7 +25,7 @@
   <button class="home-btn home-btn-list" onclick="showScreen('gender-select')">📊 結果一覧</button>
   <hr class="home-divider">
   <button class="home-btn home-btn-hot" onclick="showScreen('hot')">🔥 Hotタイマー起動</button>
-  <button class="a2hs-btn" id="a2hs-btn" onclick="onAddToHomeTap()" style="display:none;">📲 ホーム画面に追加</button>
+  <button class="a2hs-btn" id="a2hs-btn" onclick="onAddToHomeTap()" style="display:none;">ホットアイコンをホームに追加</button>
 </div>
 <div id="a2hs-overlay" style="display:none;" onclick="if(event.target===this)closeA2hsGuide()">
   <div class="a2hs-box">
@@ -307,6 +307,6 @@
     <button class="reset-btn" id="bg-custom-confirm-btn" onclick="onBgCustomConfirm()" disabled>➕ この写真を追加する</button>
   </div>
 </div>
-<script src="app.js?v=a2hs1"></script>
+<script src="app.js?v=a2hs2"></script>
 </body>
 </html>

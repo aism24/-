@@ -956,7 +956,7 @@ function onAddToHomeTap() {
       '<p>LINEなどのアプリの中で開いているため、ここからは追加できません。</p>' +
       '<ol><li>下のボタンでURLをコピー</li>' +
       '<li><b>' + (a2hsIsIOS() ? 'Safari' : 'Chrome') + '</b>を開いて、アドレス欄に貼り付けて開く</li>' +
-      '<li>もう一度「📲 ホーム画面に追加」を押す</li></ol>' +
+      '<li>もう一度「ホットアイコンをホームに追加」を押す</li></ol>' +
       '<p class="a2hs-note">右上（または右下）の「…」メニューに「ブラウザで開く」があれば、それでもOKです。</p>' +
       '<button class="a2hs-copy" onclick="a2hsCopyUrl(this)">🔗 URLをコピー</button>'
     );
