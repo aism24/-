@@ -17,7 +17,8 @@ production-management/
                    + PDF出力(html2canvas・jspdfは画面の表示後に読み込む)
   api/data.js    … Vercelの中継API。GASのgetDataを取得し、CDNに5分保存して返す
                    (GASのURLは index.html と同じ値にする)
-  manual.html    … 説明書(ヘッダーの「説明書」ボタンで別タブ表示)
+  manual.html    … 説明書(ヘッダーの「説明書」ボタンで別タブ表示。全8枚: 目次+STEP01〜07。画像はbase64埋め込み。
+                   2026-11-18にヘッダーの画面写真4枚を撮り直し、STEP07「QRコード」を追加。リンクに ?v= を付ける)
   qr.png         … 「QRコード」ボタンで出すQR(読み取るとVercel版 https://masamiz-production-management.vercel.app/ が開く)
   to-launcher.js … 「← アプリ一覧へ」ボタン(正本 docs/to-launcher/to-launcher.js のコピー)
   vercel.json    … {"git":{"deploymentEnabled":false}}(push・マージで自動デプロイしない)
