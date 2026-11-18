@@ -235,6 +235,37 @@ table#result-table tbody tr.row-checked { background: #dcecff !important; outlin
   box-shadow: 0 12px 40px rgba(0,0,0,.35);
 }
 .basepath-label { font-size: 15px; font-weight: bold; margin-bottom: 10px; }
+/* フォルダを選んで抽出: 見つかったフォルダの一覧(2026-11-18) */
+#folder-pick-overlay {
+  display: none; position: fixed; inset: 0; z-index: 5500;
+  background: rgba(20,30,40,0.55); align-items: center; justify-content: center;
+}
+#folder-pick-overlay.open { display: flex; }
+#folder-pick-box {
+  background: #fff; border-radius: 12px; padding: 24px 28px; width: 92%; max-width: 640px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.35); display: flex; flex-direction: column; max-height: 86vh;
+}
+#folder-pick-skipped { font-size: 12px; color: #666; margin-bottom: 8px; }
+#folder-pick-tools { display: flex; gap: 8px; margin-bottom: 8px; }
+#folder-pick-list { overflow: auto; border: 1px solid #d6dbe1; border-radius: 6px; flex: 1; min-height: 80px; }
+.folder-pick-row { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-bottom: 1px solid #eef0f3; cursor: pointer; font-size: 13px; }
+.folder-pick-row:hover { background: #f2f7ff; }
+.folder-pick-name { flex: 1; word-break: break-all; }
+.folder-pick-count { color: #555; white-space: nowrap; }
+#folder-pick-ok:disabled { opacity: .5; cursor: default; }
+/* 抽出画面: フォルダを選ぶバー・取り込んだものの一覧 */
+.upload-bar.folder-bar { margin-top: 10px; border-color: #e0a800; }
+#batch-bar { align-self: center; display: flex; flex-direction: column; gap: 6px; width: fit-content; max-width: 100%; }
+#batch-list { display: flex; flex-direction: column; gap: 4px; max-height: 24vh; overflow: auto; }
+.batch-row { display: flex; align-items: center; gap: 12px; background: #fff; border-radius: 6px; padding: 5px 10px; font-size: 13px; }
+.batch-no { background: #1f5fbf; color: #fff; border-radius: 10px; min-width: 20px; text-align: center; font-size: 12px; padding: 1px 6px; }
+.batch-name { flex: 1; word-break: break-all; }
+.batch-count { color: #555; white-space: nowrap; }
+.batch-del { border: 1px solid #c0392b; color: #c0392b; background: #fff; border-radius: 4px; padding: 2px 10px; cursor: pointer; font-size: 12px; }
+.batch-del:hover { background: #fdecea; }
+#batch-actions { display: flex; gap: 8px; justify-content: center; }
+.batch-add { border: 2px dashed #b7c2cf; background: #fff; border-radius: 8px; padding: 6px 16px; cursor: pointer; font-size: 13px; color: #333; }
+.batch-add:hover { border-color: #1a73e8; color: #1a73e8; }
 .basepath-hint { font-size: 12px; color: #666; line-height: 1.6; margin-bottom: 12px; }
 #basepath-paste-btn {
   width: 100%; margin-bottom: 8px;
