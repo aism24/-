@@ -1,7 +1,7 @@
 // GAS WebアプリのURL。index.html の <head> で設定した値を使う(URLはindex.htmlの1か所だけに書く)。
 const GAS_API_URL = window.PM_GAS_API_URL;
 // この端末で最後に表示したデータの作成日時を覚えておくキー(index.htmlの<head>の処理と同じ名前)。
-// Vercel版で中継API(CDNの保存)が「現時点のデータを取得」の結果より古いとき、GASへ直接取りに行くために使う。
+// Vercel版で中継API(CDNの保存)が「最新に更新」の結果より古いとき、GASへ直接取りに行くために使う。
 const LAST_GENERATED_AT_KEY = 'pm_lastGeneratedAt';
 
 Chart.defaults.color = '#e7ebf3'; // 軸目盛り・タイトル・ツールチップ本文の既定色(グレーは見にくいため白系に)
@@ -498,6 +498,14 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('alertClose').addEventListener('click', function () {
     document.getElementById('alertOverlay').hidden = true;
   });
+  // 「QRコード」ボタン: 他の端末で同じアプリを開くためのQRコードを画面中央に出す。
+  // 閉じるボタンか、背景の暗い部分のクリックで閉じる。
+  const qrOverlay = document.getElementById('qrOverlay');
+  document.getElementById('btnQr').addEventListener('click', function () { qrOverlay.hidden = false; });
+  document.getElementById('qrClose').addEventListener('click', function () { qrOverlay.hidden = true; });
+  qrOverlay.addEventListener('click', function (e) {
+    if (e.target === e.currentTarget) qrOverlay.hidden = true;
+  });
 
   // 工程表の日付列(部位の行・生産重量の行・合計行・日付見出し、いずれのセルでも)を
   // クリックすると、その拠点・その日の生産結果明細ポップアップを開く。工程表全体は
@@ -672,7 +680,7 @@ function renderChart() {
 
     const target = state.targets[site] || 0;
     // 平均の分子は分母(営業日数)と同じ範囲にそろえる。進行中の期間は「今日より前」の累積
-    // (「現時点のデータを取得」で今日の途中までの生産が入っても、分母に今日を含めないので分子からも除く)。
+    // (「最新に更新」で今日の途中までの生産が入っても、分母に今日を含めないので分子からも除く)。
     // 経過した営業日が0日(期間の初日など)は平均を出さず(null=「−」表示)、目標未達の赤にもしない。
     let avgWeight = totalWeight;
     if (isOngoingPeriod) {

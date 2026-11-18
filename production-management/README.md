@@ -18,6 +18,7 @@ production-management/
   api/data.js    … Vercelの中継API。GASのgetDataを取得し、CDNに5分保存して返す
                    (GASのURLは index.html と同じ値にする)
   manual.html    … 説明書(ヘッダーの「説明書」ボタンで別タブ表示)
+  qr.png         … 「QRコード」ボタンで出すQR(読み取るとVercel版 https://masamiz-production-management.vercel.app/ が開く)
   to-launcher.js … 「← アプリ一覧へ」ボタン(正本 docs/to-launcher/to-launcher.js のコピー)
   vercel.json    … {"git":{"deploymentEnabled":false}}(push・マージで自動デプロイしない)
   gas/Code.gs    … GAS側に貼り付けるバックエンドコード(集計処理専用のJSON API)
@@ -115,7 +116,7 @@ production-management/
 4. 開発中の画面確認は raw.githack(`https://raw.githack.com/aism24/-/<コミットSHA>/production-management/index.html`)。
    `index.html` の `app.js?v=`・`style.css?v=` を変更のたびに更新する。raw.githack には中継API
    (`api/data`)が無いので、GASへ直接つなぐ(Vercel版だけ中継を使う)。
-5. 中継APIはCDNに5分保存するため、他の人が「現時点のデータを取得」した直後は、最大5分(その後も
+5. 中継APIはCDNに5分保存するため、他の人が「最新に更新」した直後は、最大5分(その後も
    1回)前のデータが表示されることがある。押した本人の端末は、覚えている作成日時より古ければGASへ直接取りに行く。
 
 ---
@@ -133,17 +134,18 @@ production-management/
       表示される。休日の列が色分けされる
 - [ ] 同じ工事番号が複数拠点にある場合、それぞれの拠点ブロックに同じ工事名で表示される(合算では
       なく拠点ごとの内訳として表示)
-- [ ] 「現時点のデータを取得」ボタンを押すと、Excelから再集計され、完了後に画面が更新される(数十秒かかる
+- [ ] 「最新に更新」ボタン(旧「現時点のデータを取得」)を押すと、Excelから再集計され、完了後に画面が更新される(数十秒かかる
       場合があります)
 - [ ] 一部のマスターExcelが読み込めない場合でも、画面下部に警告が表示されつつ他のデータは
       問題なく表示される
+- [ ] 「QRコード」ボタン(説明書の右)でQRが画面中央に出て、閉じる・背景クリックで閉じる
 - [ ] スマホ・iPadで開いても、表が横スクロールでき、レイアウトが崩れない
 
 ## トラブルシューティング
 
 - **データが表示されない/エラーになる**: `PM_GAS_API_URL` が正しいか、GASデプロイの
   「アクセスできるユーザー」が「全員」になっているか確認してください。
-- **「現時点のデータを取得」が失敗する、または特定案件が工程表に出ない**: Apps Scriptエディタで
+- **「最新に更新」が失敗する、または特定案件が工程表に出ない**: Apps Scriptエディタで
   「サービス」に「Drive API」が追加されているか、索引シートのファイルURLが正しいか、GASを
   実行するGoogleアカウントがそのExcelファイル・フォルダを閲覧できるか確認してください。
 - **列が見つからないエラー**: マスターExcel側に「部位」「加工先」「本数」「重量」「加工」の
