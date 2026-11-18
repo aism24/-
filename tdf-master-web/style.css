@@ -254,7 +254,11 @@ table#result-table tbody tr.row-checked { background: #dcecff !important; outlin
 .folder-pick-count { color: #555; white-space: nowrap; }
 #folder-pick-ok:disabled { opacity: .5; cursor: default; }
 /* 抽出画面: フォルダを選ぶバー・取り込んだものの一覧 */
-.upload-bar.folder-bar { margin-top: 10px; border-color: #e0a800; }
+/* フォルダ指定でまとめて抽出: 上のTDFファイル選択(白)と見分けるため水色の背景・水色の枠(2026-11-18 ユーザー指示) */
+.upload-bar.folder-bar { margin-top: 10px; background: #dff3ff; border-color: #4fb3e8; }
+.upload-bar.folder-bar:hover { border-color: #1a73e8; }
+.folder-bar-text { color: #000; font-weight: bold; }
+.folder-bar-warn { color: #d00000; font-weight: bold; }
 #batch-bar { align-self: center; display: flex; flex-direction: column; gap: 6px; width: fit-content; max-width: 100%; }
 #batch-list { display: flex; flex-direction: column; gap: 4px; max-height: 24vh; overflow: auto; }
 .batch-row { display: flex; align-items: center; gap: 12px; background: #fff; border-radius: 6px; padding: 5px 10px; font-size: 13px; }
