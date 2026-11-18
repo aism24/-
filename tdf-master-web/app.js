@@ -469,7 +469,7 @@ window.addEventListener('resize', () => {
   if (document.getElementById('manual-overlay').classList.contains('open')) positionManualLink();
 });
 
-const manualPageSrc = n => `assets/manual/page${n}.png?v=20261118a`;
+const manualPageSrc = n => `assets/manual/page${n}.png?v=20261118b`;
 const manualPreloaded = new Set();
 function renderManualPage() {
   document.getElementById('manual-image').src = manualPageSrc(manualPage);
@@ -658,7 +658,7 @@ let pickSeq = 0;
 function processFiles(files) {
   const list = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.tdf'));
   // フォルダをドロップしたときもここに来る(フォルダの中は読めない)ので、フォルダの選び方を案内する
-  if (list.length === 0) { showToast('TDFファイルを選択してください(フォルダは「📂 フォルダを選んで…」のボタンから選べます)', 'error'); return; }
+  if (list.length === 0) { showToast('TDFファイルを選択してください(フォルダは「📂 フォルダ指定でまとめて抽出」のボタンから選べます)', 'error'); return; }
   const sorted = list.slice().sort((a, b) => jaCompare(a.name, b.name));
   // 名前(一覧・絶対パスを聞く画面に出す)は、抽出のあとで製品の行が出たファイルの最初〜最後から付ける
   // (表紙「00.表紙」などが名前の先頭に来ないように)。fileLabel を参照。
