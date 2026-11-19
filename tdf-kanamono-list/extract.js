@@ -164,12 +164,32 @@
       if (stop) same = same.filter(function (u) { return u.x > stop.x; });
       var fugo = same.find(function (u) { return RE_FUGO.test(u.text); });
       var name = same.find(function (u) { return RE_PNAME.test(u.text) && !RE_FUGO.test(u.text) && !RE_MAIN.test(u.text) && (!fugo || u.x < fugo.x); });
-      if (!name) return;
+      if (!name) {
+        // 上の読み方で製品名が見つからない行は、tdf-master-web(製品情報の抽出)と同じ読み方で読み直す(2026-11-19)
+        var mw = masterWebRow(same, t, parseInt(m[1], 10));
+        if (mw) rows.push(mw);
+        return;
+      }
       var main = same.find(function (u) { return RE_MAIN.test(u.text) && u.x > name.x; });
       var rec = { name: name.text, fugo: fugo ? fugo.text : '', dai: parseInt(m[1], 10), x: name.x, xr: t.x, y: t.y, main: main ? main.text : '' };
       if (fugo) rows.push(rec); else onSite.push(rec);
     });
     return { rows: rows, onSite: onSite };
+  }
+
+  // tdf-master-web の find_product_rows と同じ読み方(index.html の py-tdf-master-extractor):
+  // 「N台」の左の直近3つを、左から 製品マーク・設計符号・サイズ とみなす。サイズだけは形で確かめる(SIZE_PATTERN)。
+  // 設計符号とサイズの間に1文字の書き込みがあれば飛ばす。製品マークの文字の形は問わない(2Gc41A-CX1CY8・2G31-W内9 など)
+  var RE_MW_SIZE = /^(2LS|2L|BBOX|BCP|BCR|BOX|BH|BT|CT|C|MHY|HFT|HYT|HF|HY|H|I|LH|L|P|SH|TH|[0-9]+φ|\[|角|□)[\-‐]?\s*[0-9]/;
+  function masterWebRow(sameDesc, dai, nDai) {
+    var row = sameDesc.slice().sort(function (a, b) { return a.x - b.x; });
+    if (row.length < 3) return null;
+    var sizeT = row[row.length - 1], codeT = row[row.length - 2], markT = row[row.length - 3];
+    var before = row.slice(0, -1).filter(function (u) { return u.text.trim().length > 1; });
+    if (before.length >= 2 && before.length < row.length - 1) { codeT = before[before.length - 1]; markT = before[before.length - 2]; }
+    if (!RE_MW_SIZE.test(sizeT.text.normalize('NFKC').trim())) return null;
+    if (RE_DAI.test(markT.text.normalize('NFKC').trim())) return null;
+    return { name: markT.text, fugo: codeT.text, dai: nDai, x: markT.x, xr: dai.x, y: dai.y, main: sizeT.text };
   }
 
   // 断面の見出し「A SEC」
@@ -308,6 +328,60 @@
     if (T.some(function (t) { return /サヤ管/.test(t.text); })) excluded.add('サヤ管');
     if (T.some(function (t) { return /^G?J[0-9]+[A-Z]?$/.test(t.text) || /スプライス/.test(t.text); })) excluded.add('スプライスPL');
 
+    function onPt(l, p) { return Math.hypot(l[0] - p[0], l[1] - p[1]) < 3 ? [l[2], l[3]] : (Math.hypot(l[2] - p[0], l[3] - p[1]) < 3 ? [l[0], l[1]] : null); }
+    function segDist(p, l) {
+      var dx = l[2] - l[0], dy = l[3] - l[1], len2 = dx * dx + dy * dy;
+      var k = len2 ? Math.max(0, Math.min(1, ((p[0] - l[0]) * dx + (p[1] - l[1]) * dy) / len2)) : 0;
+      return Math.hypot(p[0] - (l[0] + k * dx), p[1] - (l[1] + k * dy));
+    }
+    function lineLen(l) { return Math.hypot(l[2] - l[0], l[3] - l[1]); }
+    var notes = T.filter(function (t) { return /^(現場取付|デッキ受け)$/.test(t.text); });
+    function leaderShapes(v) {
+      var labs = T.filter(function (t) { return inView(v, t) && RE_SHAPE.test(t.text); });
+      var leads = [];
+      labs.forEach(function (t) {
+        var p = [t.x, t.y];
+        // 引出線 = 表記の左下から左へ伸びる、横に近い線
+        var lead = L.filter(function (l) { var o = onPt(l, p); return o && o[0] < t.x - 200 && Math.abs(o[1] - t.y) < (t.x - o[0]) * 0.25; })
+          .sort(function (a, b) { return lineLen(b) - lineLen(a); })[0];
+        if (!lead) return;
+        var far = onPt(lead, p);
+        // 指示線の先
+        var ptr = null;
+        L.forEach(function (l) {
+          if (l === lead || ptr) return;
+          var o = onPt(l, p) || onPt(l, far);
+          if (o && lineLen(l) > 50 && lineLen(l) < 1500) ptr = o;
+        });
+        if (!ptr) return;
+        leads.push({ t: t, lead: lead, ptr: ptr, notes: [] });
+      });
+      // 「現場取付」「デッキ受け」は一番近い引出線のもの(250以内)
+      notes.forEach(function (n) {
+        var best = null, bd = 250;
+        leads.forEach(function (o) { var d = segDist([n.x, n.y], o.lead); if (d < bd) { bd = d; best = o; } });
+        if (best) best.notes.push(n.text);
+      });
+      var out = [];
+      leads.forEach(function (o) {
+        // 指示線の先に一番近い線と、それと同じ長さで平行・近くの線が合わせて3本以上
+        var cand = L.filter(function (l) { var n = lineLen(l); return n >= 100 && n <= 15000 && segDist(o.ptr, l) < 60; })
+          .sort(function (a, b) { return segDist(o.ptr, a) - segDist(o.ptr, b); });
+        for (var i = 0; i < cand.length; i++) {
+          var a = cand[i], n = lineLen(a), ux = (a[2] - a[0]) / n, uy = (a[3] - a[1]) / n;
+          var mates = L.filter(function (c) {
+            if (Math.abs(lineLen(c) - n) > 0.5) return false;
+            var vx = (c[2] - c[0]) / n, vy = (c[3] - c[1]) / n;
+            if (Math.abs(ux * vy - uy * vx) > 0.01) return false;
+            var cx = (c[0] + c[2]) / 2 - (a[0] + a[2]) / 2, cy = (c[1] + c[3]) / 2 - (a[1] + a[3]) / 2;
+            return Math.abs(cx * ux + cy * uy) < 5 && Math.abs(cx * uy - cy * ux) < 150;
+          });
+          if (mates.length >= 3) { out.push({ shape: o.t.text, len: n, onSite: o.notes.indexOf('現場取付') >= 0, note: o.notes.indexOf('デッキ受け') >= 0 ? 'デッキ受け' : '' }); break; }
+        }
+      });
+      return out;
+    }
+
     var fbDims = [];
     T.forEach(function (t) { var m = RE_FB.exec(t.text); if (m) { var k = m[1] + 'x' + m[2] + 'x' + m[3]; if (!fbDims.some(function (f) { return f.key === k; })) fbDims.push({ key: k, t: m[1], w: parseFloat(m[2]), l: parseFloat(m[3]) }); } });
 
@@ -324,7 +398,7 @@
       // 本体の鋼材(左に「B」の文字があるもの=柱側のブラケットは除く)
       var mains = T.filter(function (t) { return inView(v, t) && RE_MAIN.test(t.text) && !T.some(function (u) { return u.text === 'B' && Math.abs(u.y - t.y) < 15 && t.x - u.x > 0 && t.x - u.x < 300; }); });
       var main = (v.products[0] && v.products[0].main) || (mains[0] ? mains[0].text : '');
-      var depth = main ? parseFloat(/H-([0-9]+)/.exec(main)[1]) : 0;
+      var dm = /H-([0-9]+)/.exec(main), depth = dm ? parseFloat(dm[1]) : 0;   // H形鋼以外(BT・□など)は梁成なし
       // 長さ: 寸法の行で「10」(柱との隙間)2つの間にある一番大きい数。梁が傾いていると寸法の行も傾くので、2つの「10」を結ぶ線のそばで探す
       var length = 0;
       var tens = T.filter(function (t) { return inView(v, t) && t.text === '10'; });
@@ -474,6 +548,16 @@
             });
           }
         });
+      });
+
+      // 図に引出線で直接書かれた形鋼(別の書き方の図面。例 WR-2G-2 の「デッキ受け L-65x65x6」。2026-11-19)
+      // 表記の左下が引出線の端。引出線のどちらかの端から出る線(指示線)の先にある形鋼を1本と数える。
+      // 形鋼 = 同じ長さの平行な線が3本以上(梁が傾いていてもよい)。長さ = その線の長さ(小数第2位を四捨五入)
+      // 引出線のそばに「現場取付」とあるものは拾わない(お知らせに出す)
+      leaderShapes(v).forEach(function (o) {
+        if (o.onSite) { excluded.add('現場取付の形鋼'); return; }
+        if (doneShape[o.shape]) return;   // 断面図の表記から拾った形鋼とは重ねない
+        add(o.shape, Math.round(o.len * 10) / 10, 1, o.note);
       });
 
       var list = Object.keys(items).map(function (k) {
