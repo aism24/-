@@ -103,8 +103,9 @@ function idb() {
 async function idbGet(k) { const d = await idb(); return new Promise(res => { const q = d.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(undefined); }); }
 async function idbSet(k, v) { const d = await idb(); return new Promise(res => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(); t.onerror = () => res(); }); }
 
-function chooseServer() {
+function chooseServer(title) {
   return new Promise(resolve => {
+    document.querySelector('#server-modal .dialog-title').textContent = title || '図面があるサーバーを選んでください';
     const list = $('server-list');
     list.innerHTML = '';
     if (!state.servers.length) $('server-msg').textContent = 'スプレッドシートの設定シート(E列・F列)にサーバーがありません。';
@@ -236,9 +237,30 @@ async function importFiles(files) {
   if (!state.started) { toast('先に工場と工事を選んでください', 'error'); return; }
   files = Array.from(files).filter(f => /\.tdf$/i.test(f.name));
   if (!files.length) return;
+  const names = files.map(f => f.name);
   let paths = new Map();
-  try { paths = await findPaths(files.map(f => f.name)); } catch (e) { /* 見つからなければリンクなし */ }
+  try { paths = await findPaths(names); } catch (e) { /* 次で聞く */ }
+  // 覚えたサーバーで見つからなければ、サーバーを選んでもらう(初回は①進行中工事を選んで覚える)
+  if (names.some(n => !paths.has(n)) && window.showDirectoryPicker && state.servers.length) {
+    const sv = await chooseServer('リンクを付けるため、このTDFがあるサーバーを選んでください(「戻る」でリンクなし)');
+    if (sv) {
+      const root = await getRoot(sv, true);
+      if (root) {
+        const kojiDir = await findKojiDir(root, state.kojiNo);
+        if (kojiDir) {
+          state.lastServer = sv.name;
+          let groups; try { groups = await scanTdf(kojiDir); } finally { idle(); }
+          const kojiPath = sv.path.replace(/[\\/]+$/, '') + '\\' + kojiDir.name;
+          groups.forEach(g => g.files.forEach(f => { if (names.includes(f.name) && !paths.has(f.name)) paths.set(f.name, [kojiPath].concat(g.rel).join('\\')); }));
+        } else {
+          await notice('工事のフォルダが見つかりません', `${sv.name}の「${root.name}」の中に、${state.kojiNo} で始まるフォルダがありません。覚えたフォルダが「①進行中工事」でなければ、「📁 サーバーの工事フォルダから選ぶ」から選び直してください。`);
+        }
+      }
+    }
+  }
+  const noLink = names.filter(n => !paths.has(n));
   await importItems(files.map(f => ({ file: f, path: paths.get(f.name) || '' })));
+  if (noLink.length) await notice('リンクを付けられなかったTDF', noLink.join('\n') + '\n\n選んだ工事のフォルダの中に、同じ名前のTDFが見つかりませんでした。図番を押しても実寸法師は開きません(Excelにもリンクは付きません)。');
 }
 async function importItems(items) {
   busy('TDFを読み込んでいます…');
@@ -290,8 +312,8 @@ function render() {
   let html = '';
   allProducts().forEach(({ t, p }, pi) => {
     const link = jissunUrl(t.path, t.fileName);
-    const zb = link ? `<a href="${esc(link)}" title="実寸法師で開く">${esc(p.zuban)}</a>` : `<span class="nolink" title="フォルダの場所が無いので開けません">${esc(p.zuban)}</span>`;
-    const nm = link ? `<a href="${esc(link)}" title="実寸法師で開く">${esc(p.name)}</a>` : `<span class="nolink">${esc(p.name)}</span>`;
+    const zb = link ? `<a href="${esc(link)}" title="実寸法師で開く">${esc(p.zuban)}</a>` : `<span class="nolink" title="サーバーの場所が分からないため、リンクはありません">${esc(p.zuban)}</span>`;
+    const nm = link ? `<a href="${esc(link)}" title="実寸法師で開く">${esc(p.name)}</a>` : `<span class="nolink" title="サーバーの場所が分からないため、リンクはありません">${esc(p.name)}</span>`;
     const items = p.items.slice().sort(KanamonoExtract.cmpItem);
     const sum = items.reduce((a, it) => a + (it.n > 0 ? it.n : 0), 0);
     html += `<div class="prod-card"><table class="kl">
