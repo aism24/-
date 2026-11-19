@@ -103,7 +103,8 @@
     }
     cands.forEach(function (r) { if (r.id in bodyById) { r.text = bodyById[r.id]; texts.push(r); } });
     texts = texts.filter(function (t) { return t.text && t.text.trim() !== ''; });
-    texts.forEach(function (t) { t.text = t.text.trim(); });
+    // 文字は全角・半角を区別しない(ＰＬ－９ も PL-9)。読んだ文字はすべて半角にそろえてから判別・出力する(NFKC。2026-11-19 ユーザー指示)
+    texts.forEach(function (t) { t.text = t.text.normalize('NFKC').trim(); });
     // 同じ文字・同じ位置の重複を除く
     var seen = {};
     texts = texts.filter(function (t) { var k = t.text + '@' + Math.round(t.x) + ',' + Math.round(t.y); if (seen[k]) return false; seen[k] = 1; return true; });
@@ -126,7 +127,7 @@
   var RE_FB = /^FB-([0-9.]+)x([0-9.]+)x([0-9.]+)$/;     // FB-6x65x255
   var RE_FUGO = /^[0-9]+G[0-9]+[A-Z]*$/;                // 2G2 / 3G1B
   var RE_DAI = /^([0-9]+)台$/;
-  var RE_MAIN = /^S?H-[0-9]+(～[0-9]+)?x[0-9]+x[0-9.]+x[0-9.]+$/;
+  var RE_MAIN = /^S?H-[0-9]+([～~][0-9]+)?x[0-9]+x[0-9.]+x[0-9.]+$/;
   var RE_ZUBAN = /^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+)+$/;   // B1M2G-001 / WR-2G-1
   var RE_JOINT = /J[0-9]/;                              // PJ25・TSPJ9・DCJ1・J588(継手・ボルト接合の部材)
   function near(a, b, dx, dy) { return Math.abs(a.x - b.x) <= dx && Math.abs(a.y - b.y) <= dy; }
