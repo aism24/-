@@ -510,7 +510,9 @@
       positions.forEach(function (p) {
         if (p.secs.length) return;
         var same = positions.filter(function (q) { return q.secs.length && q.ts.length === p.ts.length && q.ts.every(function (t, i) { return Math.abs(t - p.ts[i]) <= 1.6; }); });
-        if (same.length) p.secs = same[0].secs.slice();
+        // 同じ板厚の旗の場所が別々の断面なら、どの断面か決められないので当てはめない
+        // (2G-01: 厚さ9の断面が C・D・E・F・DK1 とあり、方杖の取り付きの板を C とみなしていた。2026-11-19)
+        if (same.length && same.every(function (q) { return q.secs.join(',') === same[0].secs.join(','); })) p.secs = same[0].secs.slice();
       });
 
       // 板の数
