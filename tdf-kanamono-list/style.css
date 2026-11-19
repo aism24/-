@@ -87,8 +87,9 @@ table.kl { border-collapse: collapse; font-size: 13px; min-width: 620px; }
 table.kl th, table.kl td { border: 1px solid #999; padding: 4px 12px; text-align: center; white-space: nowrap; }
 table.kl tr.phead td { background: #ffffcc; }
 table.kl tr.pval td { background: #ffffcc; height: 34px; font-weight: normal; }
-table.kl tr.pval a, table.kl tr.pval .nolink { color: #0000ff; font-weight: bold; text-decoration: underline; }
-table.kl tr.pval .nolink { cursor: help; }
+table.kl tr.pval a { color: #0000ff; font-weight: bold; text-decoration: underline; }
+/* リンクが無いときは普通の文字(リンクに見えないように) */
+table.kl tr.pval .nolink { color: #222; font-weight: bold; text-decoration: none; cursor: default; }
 table.kl tr.lhead td, table.kl tr.shead td { background: #ddebf7; font-weight: bold; }
 table.kl tr.gpl td.b { font-weight: bold; }
 table.kl tr.sub td { background: #f2f2f2; font-weight: bold; }
