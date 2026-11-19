@@ -152,7 +152,10 @@ async function getRoot(sv, ask) {
   } catch (e) { root = null; }
   if (root || !ask) return root || null;
   await notice(`${sv.name}の「①進行中工事」を覚えます`, `次の画面で、${sv.name}サーバーの「①進行中工事」フォルダを選んでください(最初の1回だけ)。`);
-  try { root = await window.showDirectoryPicker({ id: 'root-' + sv.name, mode: 'read' }); } catch (e) { return null; }
+  // id は英数字・_・- だけ(32文字まで)。日本語を入れると開かずにエラーになる(2026-11-19、「root-本社」で開かなかった)
+  const pid = 'root' + Math.max(0, state.servers.findIndex(x => x.name === sv.name));
+  try { root = await window.showDirectoryPicker({ id: pid, mode: 'read' }); }
+  catch (e) { if (e && e.name !== 'AbortError') toast('フォルダを選ぶ画面を開けませんでした: ' + e.message, 'error'); return null; }
   await idbSet('root:' + sv.name, root);
   return root;
 }
@@ -253,7 +256,7 @@ async function importFiles(files) {
           const kojiPath = sv.path.replace(/[\\/]+$/, '') + '\\' + kojiDir.name;
           groups.forEach(g => g.files.forEach(f => { if (names.includes(f.name) && !paths.has(f.name)) paths.set(f.name, [kojiPath].concat(g.rel).join('\\')); }));
         } else {
-          await notice('工事のフォルダが見つかりません', `${sv.name}の「${root.name}」の中に、${state.kojiNo} で始まるフォルダがありません。覚えたフォルダが「①進行中工事」でなければ、「📁 サーバーの工事フォルダから選ぶ」から選び直してください。`);
+          await notice('工事のフォルダが見つかりません', `${sv.name}の「${root.name}」の中に、${state.kojiNo} で始まるフォルダがありません。覚えたフォルダが「①進行中工事」でなければ、「① サーバー選択」から選び直してください。`);
         }
       }
     }
