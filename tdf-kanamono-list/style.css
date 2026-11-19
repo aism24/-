@@ -70,8 +70,14 @@ header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrin
 body.app-started #start-cancel-btn { display: inline-block; }
 
 main { flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 16px 20px 40px; }
-#server-label { color: #ddd; font-size: 13px; }
-#import-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px; }
+/* ボタンは下の表の幅に合わせて均等に並べる(自身は幅を広げない) */
+#import-bar { display: flex; gap: 12px; width: 0; min-width: 100%; }
+#server-btns { display: contents; }
+#import-bar .big-btn { flex: 1 1 0; min-width: 0; padding: 12px 6px; font-size: 14px; }
+.big-btn.server { border-style: solid; background: #eaf2fe; }
+.big-btn.server.selected { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+.big-btn.server:disabled { background: #bbb; color: #666; border-color: #999; cursor: not-allowed; }
+.big-btn.files { border-style: solid; border-color: #6cc06c; background: #d8f5d8; }
 .big-btn { background: #fff; color: #222; border: 2px dashed #4285f4; border-radius: 8px; padding: 12px 18px; font-size: 15px; font-weight: bold; cursor: pointer; }
 .big-btn.folder { border-style: solid; background: #eaf2fe; }
 
@@ -83,7 +89,7 @@ main { flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 16px 
 #tdf-list th, #tdf-list td { padding: 4px 10px; border-bottom: 1px solid #eee; text-align: left; white-space: nowrap; }
 .rm-btn { border: 1px solid #e0a0a0; color: #c0392b; background: #fff; border-radius: 4px; cursor: pointer; padding: 2px 8px; }
 
-#content { align-self: center; width: fit-content; max-width: 100%; display: flex; flex-direction: column; gap: 16px; }
+#content { align-self: center; width: fit-content; min-width: min(640px, 100%); max-width: 100%; display: flex; flex-direction: column; gap: 16px; }
 #result { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
 #result:empty { display: none; }
 .prod-card table.kl, #tdf-list table { width: 100%; }
@@ -113,7 +119,6 @@ table.kl input.note-in { width: 160px; font-size: 13px; padding: 2px 4px; }
 .dialog-title { font-size: 16px; font-weight: bold; margin-bottom: 12px; }
 .dialog-note { font-size: 12px; color: #555; margin: 8px 0; line-height: 1.7; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
-#server-list { display: flex; flex-wrap: wrap; gap: 12px; }
 .server-btn { padding: 12px 24px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; background: #1a73e8; color: #fff; cursor: pointer; }
 .dialog.wide { max-width: 760px; }
 .pick-tools { display: flex; gap: 8px; margin: 6px 0; }
@@ -138,3 +143,4 @@ table.kl input.note-in { width: 160px; font-size: 13px; padding: 2px 4px; }
   .side-icon { display: none; }
   table.kl { min-width: 0; }
 }
+.big-btn .btn-sub { display: block; font-size: 12px; font-weight: normal; }
