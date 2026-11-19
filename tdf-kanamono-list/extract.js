@@ -638,6 +638,33 @@
       // 旗は一部の山形鋼にしか無いので、平面図・立面図に描かれた山形鋼(長さ d の平行な3本 = 0・厚さ・脚 か 0・脚-厚さ・脚)をすべて数え、
       // 旗のある山形鋼から各断面の「長さ」と「背の向き」を覚えて、旗のない山形鋼を長さと向きが同じ断面に入れる
       var angleSecs = {}, doneShapeAngles = {};
+      // 断面 L1 の山形鋼の表記から引出線(表記の下の横線)→ 指示線 → 指す線、とたどり、その線の長さ(小数第1位)を返す。main と同じ長さは除く
+      function angleOthers(L1, main) {
+        var segD = function (pt, l) {
+          var dx = l[2] - l[0], dy = l[3] - l[1], nn = dx * dx + dy * dy, k = nn ? ((pt[0] - l[0]) * dx + (pt[1] - l[1]) * dy) / nn : 0;
+          k = Math.max(0, Math.min(1, k)); return Math.hypot(pt[0] - l[0] - k * dx, pt[1] - l[1] - k * dy);
+        };
+        var lenOf = function (l) { return Math.hypot(l[2] - l[0], l[3] - l[1]); };
+        var out = [];
+        T.forEach(function (t) {
+          if (!/^L-/.test(t.text) || !RE_SHAPE.test(t.text.replace(/X/g, 'x')) || (sectionOf(t, titles) || {}).letter !== L1) return;
+          var lead = L.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[1] - t.y) < 3 && Math.min(l[0], l[2]) < t.x + 5 && Math.min(l[0], l[2]) > t.x - 60; })
+            .sort(function (a, b) { return lenOf(b) - lenOf(a); })[0];
+          if (!lead) return;
+          [[lead[0], lead[1]], [lead[2], lead[3]]].forEach(function (e) {
+            L.forEach(function (m) {
+              if (m === lead) return;
+              var o = Math.hypot(m[0] - e[0], m[1] - e[1]) < 3 ? [m[2], m[3]] : (Math.hypot(m[2] - e[0], m[3] - e[1]) < 3 ? [m[0], m[1]] : null);
+              if (!o) return;
+              var tg = L.filter(function (z) { return z !== m && lenOf(z) > 100 && lenOf(z) < 3000; }).sort(function (a, b) { return segD(o, a) - segD(o, b); })[0];
+              if (!tg || segD(o, tg) > 5) return;
+              var len2 = Math.round(lenOf(tg) * 10) / 10;
+              if (Math.abs(len2 - main) > 1 && out.indexOf(len2) < 0) out.push(len2);
+            });
+          });
+        });
+        return out;
+      }
       Object.keys(secInfo).forEach(function (L1) {
         var si = secInfo[L1];
         if (si.joint || !flagsBySec[L1]) return;
@@ -678,7 +705,10 @@
         });
         Object.keys(learned).forEach(function (L1) {
           var n = pieces.filter(function (q) { return q.sec === L1; }).length;
-          if (n) { add(angleSecs[L1].size, learned[L1].len, n, secInfo[L1].title.sub || ''); doneShapeAngles[L1] = 1; }
+          if (!n) return;
+          add(angleSecs[L1].size, learned[L1].len, n, secInfo[L1].title.sub || ''); doneShapeAngles[L1] = 1;
+          // 断面図の山形鋼の表記が指す材が跳ね出し材と別の長さなら、それも同じ本数ずつ(DK の 290.5。平面図では梁に隠れて数えにくい。2026-11-19 ユーザー説明)
+          angleOthers(L1, learned[L1].len).forEach(function (len2) { add(angleSecs[L1].size, len2, n, secInfo[L1].title.sub || ''); });
         });
       }
 
