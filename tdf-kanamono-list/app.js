@@ -11,7 +11,7 @@ const state = {
   factory: '', kojiNo: '', kojiName: '',
   kojiList: [], servers: [],
   tdfs: [],          // {id, fileName, path, res}
-  lastServer: '',
+  server: null, root: null,   // ① サーバー選択で決めたサーバーと、その「①進行中工事」
   started: false,
 };
 let nextId = 1;
@@ -69,6 +69,13 @@ async function loadSettings() {
   }
   updateStartBtn();
 }
+async function restoreServer() {
+  let name = ''; try { name = localStorage.getItem(LS_KEY + ':server') || ''; } catch (e) { /* なし */ }
+  const sv = state.servers.find(x => x.name === name); if (!sv) { renderServer(); return; }
+  const root = await idbGet('root:' + sv.name);
+  if (root) { state.server = sv; state.root = root; }
+  renderServer();
+}
 $('start-btn').addEventListener('click', () => {
   const no = $('koji-select').value, k = state.kojiList.find(x => x.no === no);
   state.kojiNo = no; state.kojiName = k ? k.name : '';
@@ -77,6 +84,7 @@ $('start-btn').addEventListener('click', () => {
   $('koji-label').textContent = `${state.factory}工場 / ${state.kojiNo} ${state.kojiName}`;
   $('start-modal').classList.add('hidden');
   document.body.classList.add('app-started'); state.started = true;
+  restoreServer();
   render();
 });
 $('btn-change').addEventListener('click', () => { $('start-modal').classList.remove('hidden'); });
@@ -118,28 +126,6 @@ function chooseServer(title) {
     $('server-modal').classList.add('open');
   });
 }
-const SKIP_DIR = /旧|発行歴/;
-async function listDir(dir) { const out = []; try { for await (const e of dir.values()) out.push(e); } catch (e) { /* 読めないフォルダは飛ばす */ } return out; }
-// ①進行中工事の中で、名前が工事番号で始まるフォルダ(26-17 と 26-170 は区別する)
-async function findKojiDir(root, no) {
-  return (await listDir(root)).find(d => d.kind === 'directory' && (d.name === no || (d.name.startsWith(no) && !/[0-9]/.test(d.name.charAt(no.length))))) || null;
-}
-// 工事フォルダの下を全部たどり、TDFのあるフォルダごとにまとめる(旧・発行歴は除く)
-async function scanTdf(kojiDir) {
-  const groups = new Map(); const queue = [{ dir: kojiDir, rel: [] }]; let seen = 0;
-  while (queue.length) {
-    const batch = queue.splice(0, 8);
-    await Promise.all(batch.map(async ({ dir, rel }) => {
-      seen++; busy(`TDFを探しています…(${seen} フォルダ目)`);
-      for (const e of await listDir(dir)) {
-        if (e.kind === 'directory') { if (!SKIP_DIR.test(e.name)) queue.push({ dir: e, rel: rel.concat(e.name) }); }
-        else if (/\.tdf$/i.test(e.name)) { const k = rel.join('\\'); if (!groups.has(k)) groups.set(k, { rel, files: [] }); groups.get(k).files.push(e); }
-      }
-    }));
-  }
-  const ja = (a, b) => a.localeCompare(b, 'ja', { numeric: true });
-  return [...groups.values()].map(g => (g.files.sort((a, b) => ja(a.name, b.name)), g)).sort((a, b) => ja(a.rel.join('\\'), b.rel.join('\\')));
-}
 // サーバーの「①進行中工事」(初回だけ選んで、ブラウザに覚える)
 async function getRoot(sv, ask) {
   let root = await idbGet('root:' + sv.name);
@@ -159,112 +145,56 @@ async function getRoot(sv, ask) {
   await idbSet('root:' + sv.name, root);
   return root;
 }
-function choosePick(title, note, groups, taken) {
-  return new Promise(resolve => {
-    $('pick-title').textContent = title; $('pick-note').textContent = note;
-    const list = $('pick-list'); list.innerHTML = '';
-    const boxes = [];
-    groups.forEach((g, gi) => {
-      const det = document.createElement('details');
-      const sum = document.createElement('summary');
-      const cb = document.createElement('input'); cb.type = 'checkbox';
-      sum.append(cb, Object.assign(document.createElement('span'), { className: 'pick-dir', textContent: ' ' + (g.rel.join('\\') || '(工事フォルダの直下)') }),
-        Object.assign(document.createElement('span'), { className: 'pick-count', textContent: g.files.length + ' ファイル' }));
-      det.appendChild(sum);
-      const fcs = g.files.map(f => {
-        const lab = document.createElement('label'); lab.className = 'pick-file';
-        const fc = document.createElement('input'); fc.type = 'checkbox';
-        const isTaken = taken.has(g.rel.join('\\') + '\\' + f.name);
-        lab.append(fc, document.createTextNode(' ' + f.name + (isTaken ? '(取り込み済み)' : '')));
-        det.appendChild(lab); boxes.push({ fc, g, f, isTaken });
-        fc.addEventListener('change', update);
-        return fc;
-      });
-      cb.addEventListener('click', e => e.stopPropagation());
-      cb.addEventListener('change', () => { fcs.forEach((fc, i) => { fc.checked = cb.checked && !boxes.find(b => b.fc === fc).isTaken; }); update(); });
-      list.appendChild(det);
-    });
-    function update() { const n = boxes.filter(b => b.fc.checked).length; $('pick-ok').textContent = `取り込む(${n} ファイル)`; $('pick-ok').disabled = n === 0; }
-    update();
-    $('pick-all').onclick = () => { boxes.forEach(b => { b.fc.checked = !b.isTaken; }); update(); };
-    $('pick-none').onclick = () => { boxes.forEach(b => { b.fc.checked = false; }); update(); };
-    const close = v => { $('pick-modal').classList.remove('open'); resolve(v); };
-    $('pick-cancel').onclick = () => close(null);
-    $('pick-ok').onclick = () => close(boxes.filter(b => b.fc.checked));
-    $('pick-modal').classList.add('open');
-  });
+// ① サーバー選択: 使うサーバーを決め、その「①進行中工事」を覚える(フォルダはたどらない)
+async function selectServer(title) {
+  const sv = await chooseServer(title); if (!sv) return false;
+  const root = await getRoot(sv, true); if (!root) return false;
+  state.server = sv; state.root = root;
+  try { localStorage.setItem(LS_KEY + ':server', sv.name); } catch (e) { /* なし */ }
+  renderServer();
+  return true;
 }
-async function pickFolder() {
+function renderServer() {
+  $('server-label').textContent = state.server ? `サーバー: ${state.server.name}(${state.root ? state.root.name : '未選択'})` : 'サーバー: 未選択';
+}
+// 選んだファイルが ①進行中工事 のどこにあるかを受け取り、設定シートF列のパスとつなぐ(①進行中工事 の外なら '')
+async function pathOf(handle) {
+  if (!state.root || !handle) return '';
+  let rel = null;
+  try { rel = await state.root.resolve(handle); } catch (e) { rel = null; }
+  if (!rel) return '';
+  return [state.server.path.replace(/[\\/]+$/, '')].concat(rel.slice(0, -1)).join('\\');
+}
+async function ensureRootPermission() {
+  if (!state.root) return false;
+  try {
+    if ((await state.root.queryPermission({ mode: 'read' })) === 'granted') return true;
+    return (await state.root.requestPermission({ mode: 'read' })) === 'granted';
+  } catch (e) { return false; }
+}
+// ② ファイル選択: ①進行中工事 から開くファイル選択の画面でTDFを選ぶ
+async function pickFiles() {
   if (!state.started) { toast('先に工場と工事を選んでください', 'error'); return; }
-  if (!window.showDirectoryPicker) { toast('このブラウザはフォルダを読めません(Edge・Chromeで使ってください)', 'error'); return; }
-  const sv = await chooseServer(); if (!sv) return;
-  let root = await getRoot(sv, true); if (!root) return;
-  let kojiDir = await findKojiDir(root, state.kojiNo);
-  if (!kojiDir) {
-    await notice('工事のフォルダが見つかりません', `${sv.name}の「${root.name}」の中に、${state.kojiNo} で始まるフォルダがありません。\nサーバーが違うか、覚えたフォルダが「①進行中工事」ではない可能性があります。次の画面で、${sv.name}の「①進行中工事」を選び直してください。`);
-    await idbSet('root:' + sv.name, null);
-    root = await getRoot(sv, true); if (!root) return;
-    kojiDir = await findKojiDir(root, state.kojiNo);
-    if (!kojiDir) { toast(`${state.kojiNo} で始まるフォルダが見つかりませんでした`, 'error'); return; }
-  }
-  state.lastServer = sv.name;
-  let groups;
-  try { groups = await scanTdf(kojiDir); } finally { idle(); }
-  if (!groups.length) { toast(`「${kojiDir.name}」の下にTDFがありません`, 'error'); return; }
-  const kojiPath = sv.path.replace(/[\\/]+$/, '') + '\\' + kojiDir.name;
-  const taken = new Set(state.tdfs.filter(t => t.path.startsWith(kojiPath)).map(t => t.path.slice(kojiPath.length + 1) + '\\' + t.fileName).map(s => s.replace(/^\\/, '')));
-  const picked = await choosePick(`${sv.name} ／ ${kojiDir.name} の下でTDFがあるフォルダ(${groups.length} か所)`,
-    'フォルダ名の左のチェックでそのフォルダのTDFをまとめて選べます。▶を押すとファイルを1つずつ選べます。名前に「旧」「発行歴」を含むフォルダは外しています。', groups, taken);
-  if (!picked || !picked.length) return;
+  if (!window.showOpenFilePicker) { $('file-input').click(); return; }  // 古いブラウザ: リンクなしで取り込む
+  if (!state.server || !state.root) { if (!(await selectServer('先にサーバーを選んでください(リンクに使います)'))) return; }
+  if (!(await ensureRootPermission())) { toast('「①進行中工事」を読む許可がありません。① サーバー選択からやり直してください', 'error'); return; }
+  let handles;
+  try {
+    handles = await window.showOpenFilePicker({ id: 'tdf' + Math.max(0, state.servers.findIndex(x => x.name === state.server.name)), startIn: state.root, multiple: true,
+      types: [{ description: 'TDFファイル', accept: { 'application/octet-stream': ['.tdf'] } }], excludeAcceptAllOption: false });
+  } catch (e) { if (e && e.name !== 'AbortError') toast('ファイルを選ぶ画面を開けませんでした: ' + e.message, 'error'); return; }
   const items = [];
-  for (const b of picked) items.push({ file: await b.f.getFile(), path: [kojiPath].concat(b.g.rel).join('\\') });
-  await importItems(items);
+  for (const h of handles) items.push({ file: await h.getFile(), path: await pathOf(h) });
+  await importWithNotice(items);
 }
-// ファイル選択・ドラッグ&ドロップのTDFは、覚えたサーバーの工事フォルダで同じ名前のTDFを探してリンクの場所にする(見つからなければリンクなし)
-async function findPaths(names) {
-  const out = new Map();
-  const svs = state.servers.slice().sort((a, b) => (a.name === state.lastServer ? -1 : 0) - (b.name === state.lastServer ? -1 : 0));
-  for (const sv of svs) {
-    if (out.size === names.length) break;
-    const root = await getRoot(sv, false); if (!root) continue;
-    const kojiDir = await findKojiDir(root, state.kojiNo); if (!kojiDir) continue;
-    let groups; try { groups = await scanTdf(kojiDir); } finally { idle(); }
-    const kojiPath = sv.path.replace(/[\\/]+$/, '') + '\\' + kojiDir.name;
-    groups.forEach(g => g.files.forEach(f => { if (names.includes(f.name) && !out.has(f.name)) out.set(f.name, [kojiPath].concat(g.rel).join('\\')); }));
-  }
-  return out;
+async function importWithNotice(items) {
+  items = items.filter(it => /\.tdf$/i.test(it.file.name));
+  if (!items.length) return;
+  const noLink = items.filter(it => !it.path).map(it => it.file.name);
+  await importItems(items);
+  if (noLink.length) await notice('リンクを付けられなかったTDF', noLink.join('\n') + '\n\n選んだサーバーの「①進行中工事」の中のファイルではないため、場所が分かりません。図番を押しても実寸法師は開きません(Excelにもリンクは付きません)。\n「① サーバー選択」で正しいサーバーを選び、「② ファイル選択」から選び直してください。');
 }
 
-// ---------- 取り込み ----------
-async function importFiles(files) {
-  if (!state.started) { toast('先に工場と工事を選んでください', 'error'); return; }
-  files = Array.from(files).filter(f => /\.tdf$/i.test(f.name));
-  if (!files.length) return;
-  const names = files.map(f => f.name);
-  let paths = new Map();
-  try { paths = await findPaths(names); } catch (e) { /* 次で聞く */ }
-  // 覚えたサーバーで見つからなければ、サーバーを選んでもらう(初回は①進行中工事を選んで覚える)
-  if (names.some(n => !paths.has(n)) && window.showDirectoryPicker && state.servers.length) {
-    const sv = await chooseServer('リンクを付けるため、このTDFがあるサーバーを選んでください(「戻る」でリンクなし)');
-    if (sv) {
-      const root = await getRoot(sv, true);
-      if (root) {
-        const kojiDir = await findKojiDir(root, state.kojiNo);
-        if (kojiDir) {
-          state.lastServer = sv.name;
-          let groups; try { groups = await scanTdf(kojiDir); } finally { idle(); }
-          const kojiPath = sv.path.replace(/[\\/]+$/, '') + '\\' + kojiDir.name;
-          groups.forEach(g => g.files.forEach(f => { if (names.includes(f.name) && !paths.has(f.name)) paths.set(f.name, [kojiPath].concat(g.rel).join('\\')); }));
-        } else {
-          await notice('工事のフォルダが見つかりません', `${sv.name}の「${root.name}」の中に、${state.kojiNo} で始まるフォルダがありません。覚えたフォルダが「①進行中工事」でなければ、「① サーバー選択」から選び直してください。`);
-        }
-      }
-    }
-  }
-  const noLink = names.filter(n => !paths.has(n));
-  await importItems(files.map(f => ({ file: f, path: paths.get(f.name) || '' })));
-  if (noLink.length) await notice('リンクを付けられなかったTDF', noLink.join('\n') + '\n\n選んだ工事のフォルダの中に、同じ名前のTDFが見つかりませんでした。図番を押しても実寸法師は開きません(Excelにもリンクは付きません)。');
-}
 async function importItems(items) {
   busy('TDFを読み込んでいます…');
   const errors = [], excluded = new Set(), warns = [];
@@ -287,14 +217,24 @@ async function importItems(items) {
   if (excluded.size) await notice('お知らせ', Array.from(excluded).join('・') + 'は抽出していません');
   if (errors.length || warns.length) await notice('取り込めなかったTDF・確認が必要なこと', errors.concat(warns).join('\n'));
 }
-$('btn-files').addEventListener('click', () => $('file-input').click());
-$('file-input').addEventListener('change', e => { const fs = Array.from(e.target.files); e.target.value = ''; importFiles(fs); });
-$('btn-folder').addEventListener('click', pickFolder);
+$('btn-folder').addEventListener('click', () => selectServer().then(ok => { if (ok) toast(`${state.server.name}を選びました。「② ファイル選択」でTDFを選んでください`); }));
+$('btn-files').addEventListener('click', pickFiles);
+$('file-input').addEventListener('change', e => { const fs = Array.from(e.target.files); e.target.value = ''; importWithNotice(fs.map(f => ({ file: f, path: '' }))); });
 let dragDepth = 0;
 document.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; $('drop-overlay').classList.add('active'); });
 document.addEventListener('dragleave', e => { e.preventDefault(); if (--dragDepth <= 0) { dragDepth = 0; $('drop-overlay').classList.remove('active'); } });
 document.addEventListener('dragover', e => e.preventDefault());
-document.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('drop-overlay').classList.remove('active'); importFiles(e.dataTransfer.files); });
+// ドロップしたファイルも、①進行中工事 の中なら場所が分かる(getAsFileSystemHandle)
+document.addEventListener('drop', async e => {
+  e.preventDefault(); dragDepth = 0; $('drop-overlay').classList.remove('active');
+  if (!state.started) { toast('先に工場と工事を選んでください', 'error'); return; }
+  const its = Array.from(e.dataTransfer.items || []).filter(i => i.kind === 'file');
+  const pend = its.map(i => ({ file: i.getAsFile(), hp: i.getAsFileSystemHandle ? i.getAsFileSystemHandle() : null }));
+  if (state.root) await ensureRootPermission();
+  const items = [];
+  for (const x of pend) { const h = x.hp ? await x.hp.catch(() => null) : null; items.push({ file: x.file, path: h && h.kind === 'file' ? await pathOf(h) : '' }); }
+  await importWithNotice(items);
+});
 
 // ---------- 表示 ----------
 function allProducts() {
