@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>製品別金物リスト(tdf)</title>
-<link rel="stylesheet" href="style.css?v=20261119f">
+<link rel="stylesheet" href="style.css?v=20261119g">
 </head>
 <body>
 
@@ -58,6 +58,7 @@
   <div id="import-bar">
     <button type="button" class="big-btn folder" id="btn-folder">① サーバー選択</button>
     <button type="button" class="big-btn" id="btn-files">② ファイル選択</button>
+    <span id="server-label"></span>
   </div>
   <!-- 取り込んだTDFの一覧と製品のカードを中央にそろえ、同じ幅(一番広い表の幅)にする -->
   <div id="content">
@@ -76,20 +77,6 @@
   </div>
 </div>
 
-<!-- 工事フォルダの下で、TDFがあるフォルダ・ファイルを選ぶ -->
-<div id="pick-modal" class="overlay">
-  <div class="dialog wide">
-    <div class="dialog-title" id="pick-title"></div>
-    <div class="dialog-note" id="pick-note"></div>
-    <div class="pick-tools"><button type="button" class="header-btn" id="pick-all">すべて選ぶ</button><button type="button" class="header-btn" id="pick-none">すべて外す</button></div>
-    <div id="pick-list"></div>
-    <div class="dialog-actions">
-      <button type="button" class="header-btn" id="pick-cancel">キャンセル</button>
-      <button type="button" class="header-action-btn orange" id="pick-ok">取り込む</button>
-    </div>
-  </div>
-</div>
-
 <!-- お知らせ(除外したもの・取り込めなかったTDF) -->
 <div id="notice-modal" class="overlay">
   <div class="dialog">
@@ -102,9 +89,9 @@
 <div id="status-overlay" class="overlay"><div class="status-box"><div class="spinner"></div><div id="status-text">処理中…</div></div></div>
 <div id="toast"></div>
 
-<script src="extract.js?v=20261119f"></script>
-<script src="excel.js?v=20261119f"></script>
-<script src="app.js?v=20261119f"></script>
-<script src="to-launcher.js?v=20261119f" data-target="header h1" data-mode="beforePrev"></script>
+<script src="extract.js?v=20261119g"></script>
+<script src="excel.js?v=20261119g"></script>
+<script src="app.js?v=20261119g"></script>
+<script src="to-launcher.js?v=20261119g" data-target="header h1" data-mode="beforePrev"></script>
 </body>
 </html>
