@@ -126,7 +126,7 @@
   function plateCount(t) { var m = /^([0-9]+)(?=G?PL-)/.exec(t); return m ? parseInt(m[1], 10) : 1; }
   function plateSize(t) { return t.replace(/^[0-9]+(?=G?PL-)/, ''); }
   // 板の符号: KG1・KGR63・KGEVG1(阪和)/ KK-5・PRG14(別の書き方)。小梁・継手などの名前(SB588・BJ35・PJ25・J588 など)は除く
-  var RE_MARK = /^(?:KG[0-9A-Z]+|[A-Z]{2,4}-?[0-9]+[A-Z]?)$/;
+  var RE_MARK = /^(?:KG[0-9A-Z]+|[A-Z]{2,5}-?[0-9]+[A-Z]?)$/;   // OGALR7(英字5文字。2026-11-19)
   var RE_NOT_MARK = /^(?:SB|BJ|THJ?|TS?PJ|EPJ?|PJ|DCJ|GJ|CL|BT|BTJ?B?|RB|KB|BCR|BCP|SN|SM|SS|STK|TMCP)[0-9]/;
   var RE_SHAPE = /^([LC])-[0-9.]+x[0-9.x]+$/;           // L-50x50x6 / C-60x30x10x2.3
   var RE_FB = /^FB-([0-9.]+)x([0-9.]+)x([0-9.]+)$/;     // FB-6x65x255
@@ -286,6 +286,9 @@
       v.x1 = i < row.length - 1 ? (v.xr + row[i + 1].x) / 2 : Infinity;
       // 図の右端は英字1文字の断面(A SEC など)で決める(DK・カタカナの断面は2026-11-19に追加したもので、図の範囲は今までどおり)
       titles.forEach(function (s) { if (/^[A-Za-z]$/.test(s.letter) && s.y > v.yMin && s.y < v.yMax && s.x > v.xr) v.x1 = Math.min(v.x1, s.x - 1200); });
+      // すべての断面(DK・カタカナも)で決めた右端。名前だけの断面図(外装ALC下地)を探すときだけ使う
+      v.x1s = v.x1;
+      titles.forEach(function (s) { if (s.y > v.yMin && s.y < v.yMax && s.x > v.xr) v.x1s = Math.min(v.x1s, s.x - 1200); });
     });
     // 上の段から順、同じ段(高さの差600以内)は左から
     views.sort(function (a, b) { return Math.abs(a.labelY - b.labelY) >= 600 ? b.labelY - a.labelY : a.x - b.x; });
@@ -357,6 +360,55 @@
         if (!si.plates[m]) si.plates[m] = { size: 'PL-' + x[1], n: 1, mekki: false };
       });
     });
+
+    // 名前だけの断面図(「A SEC」の見出しが無く、図の下に「外装ALC下地」とだけ書いた図。2G-01)を1つだけ探す。
+    // 使うのは、旗がなくどの断面か決められない板があるときだけ(上の views の中で判断)
+    var outsideStrict = function (o) { return !views.some(function (v) { return o.y > v.yMin && o.y < v.yMax && o.x > v.x0 && o.x < v.x1s; }); };
+    var named = null;
+    (function () {
+      var cands = [];
+      T.forEach(function (t) {
+        if (!/[ぁ-んァ-ヶ一-龠]/.test(t.text) || /[0-9\s]/.test(t.text) || t.text.length < 3 || /SEC/.test(t.text) || !outsideStrict(t)) return;
+        if (titles.some(function (s) { return s.y - t.y > 60 && s.y - t.y < 320 && Math.abs(t.x - (s.x + s.sx) / 2) < 400; })) return;   // 断面の副題
+        // 断面図の名前は単独で書かれている。すぐ近くに文字がある注記(「デッキ受け」の横の BT-640… など)は除く
+        if (T.some(function (u) { return u !== t && Math.abs(u.y - t.y) < 150 && Math.abs(u.x - t.x) < 600; })) return;
+        var cx = t.x + 18 * t.text.length;
+        var mine = function (o) {
+          var dy = o.y - t.y, dx = Math.abs(o.x + 18 * (o.text || '').length - cx);
+          if (dy < 100 || dy > 2600 || dx > 1900 || !outsideStrict(o)) return false;
+          var s = sectionOf(o, titles); if (!s) return true;
+          var sdy = o.y - s.y, sdx = Math.abs(o.x + 18 * (o.text || '').length - (s.x + s.sx) / 2);
+          return dy + 2 * dx < sdy + 2 * sdx;
+        };
+        var lbs = labels.filter(function (lb) { return mine({ x: lb.x, y: lb.y, text: lb.mark }); });
+        if (lbs.length < 2) return;
+        cands.push({ t: t, mine: mine, lbs: lbs });
+      });
+      if (cands.length !== 1) return;
+      var c = cands[0], seen = {};
+      var sizesIn = T.filter(function (u) { return RE_PLATE.test(u.text) && c.mine(u); });
+      var ms = [];
+      T.forEach(function (u) {
+        if (!RE_MARK.test(u.text) || RE_NOT_MARK.test(u.text) || RE_PLATE.test(u.text) || !c.mine(u) || seen[u.text]) return;
+        var lb = c.lbs.find(function (l) { return l.mark === u.text; });
+        var size, cnt = 1;
+        if (lb) { size = lb.size; cnt = lb.cnt; }
+        else {   // 表記を2つの符号で共用している(PL-9 に OGALR3・OGALR2)→ 一番近い板の表記
+          var near1 = sizesIn.slice().sort(function (a, b) { return dist(a, u) - dist(b, u); })[0];
+          if (!near1 || dist(near1, u) > 600) return;
+          size = plateSize(near1.text); cnt = plateCount(near1.text);
+        }
+        seen[u.text] = 1; ms.push({ mark: u.text, size: size, cnt: cnt });
+      });
+      var shapes = [];
+      T.forEach(function (u) {
+        var sz = u.text.replace(/X/g, 'x'); if (!RE_SHAPE.test(sz) || !c.mine(u) || shapes.some(function (q) { return q.size === sz; })) return;
+        var lt = T.filter(function (w) { return /^L=[0-9.]+$/.test(w.text) && c.mine(w); }).sort(function (a, b) { return dist(a, u) - dist(b, u); })[0];
+        if (!lt) return;
+        shapes.push({ size: sz, len: parseFloat(lt.text.slice(2)), leg: parseFloat(/-([0-9.]+)/.exec(sz)[1]) });
+      });
+      named = { title: c.t.text, marks: ms, shapes: shapes, used: new Set(c.lbs) };
+    })();
 
     // 旗(断面記号): 文字の右に縦線(長さ250〜450)がある
     // 旗の縦線(梁が傾いた図面では少し傾いている。傾き1割まで)
@@ -513,6 +565,7 @@
         // 同じ板厚の旗の場所が別々の断面なら、どの断面か決められないので当てはめない
         // (2G-01: 厚さ9の断面が C・D・E・F・DK1 とあり、方杖の取り付きの板を C とみなしていた。2026-11-19)
         if (same.length && same.every(function (q) { return q.secs.join(',') === same[0].secs.join(','); })) p.secs = same[0].secs.slice();
+        else if (same.length) p.ambiguous = true;
       });
 
       // 板の数
@@ -549,7 +602,23 @@
       }
       Object.keys(secInfo).forEach(function (L1) { if (secCount[L1]) addNested(L1, secCount[L1], 0); });
       // 立面図に直接書かれた板の表記(例: PL-12 / KGR64)
-      elevLabels.forEach(function (lb) { if (inView(v, lb)) add(lb.size, lb.mark, lb.cnt, ''); });
+      // 旗がなく、どの断面か決められない板がある場所 → 名前だけの断面図(例「外装ALC下地」)があれば、その断面とみなす(2026-11-19 ユーザー説明、2G-01)
+      // 切板は符号ごとに 場所の数 だけ。形鋼(L-90X90X7 と L=110)は、図に並ぶ「長さ×脚」の箱の数
+      var amb = positions.filter(function (p) { return p.ambiguous; }).length;
+      if (amb && named) {
+        named.marks.forEach(function (m) { add(m.size, m.mark, m.cnt * amb, named.title); });
+        named.shapes.forEach(function (sh) {
+          var hs = hlines.filter(function (h) { return inView(v, { x: (h.x0 + h.x1) / 2, y: h.y }) && Math.abs(h.x1 - h.x0 - sh.len) < 0.6; });
+          var byY = {};
+          hs.forEach(function (a) {
+            if (!hs.some(function (b) { return Math.abs(b.y - a.y - sh.leg) < 1 && Math.abs(b.x0 - a.x0) < 1 && Math.abs(b.x1 - a.x1) < 1; })) return;
+            var k = a.y.toFixed(0); byY[k] = (byY[k] || 0) + 1;
+          });
+          var n = Math.max.apply(null, [0].concat(Object.keys(byY).map(function (k) { return byY[k]; })));
+          add(sh.size, sh.len, n || amb, named.title);
+        });
+      }
+      elevLabels.forEach(function (lb) { if (inView(v, lb) && !(named && amb && named.used.has(lb))) add(lb.size, lb.mark, lb.cnt, ''); });
 
       // FB: 表記の寸法の□(長さ×幅)を数える。梁が傾いていると□も傾くので、向きを問わず「長さLの平行な2本の線が幅Wだけ離れている」組を数える
       fbDims.forEach(function (fb) {
