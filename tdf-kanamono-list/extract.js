@@ -423,12 +423,21 @@
         }
         seen[u.text] = 1; ms.push({ mark: u.text, size: size, cnt: cnt });
       });
+      // 形鋼の表記は1つずつ見る(L-90X90X7 が2つ: L=110 の横材と、長さ313の縦材。2026-11-19 ユーザー説明)
+      //  - そばに「L=110」があればその長さ(箱の数で数える)
+      //  - 無ければ、断面図の寸法のうち、立面図に同じ長さの山形鋼(脚・厚さの3本組)が描かれているもの(その組の数で数える)
+      var lts = T.filter(function (w) { return /^L=[0-9.]+$/.test(w.text) && c.mine(w); });
+      var shapeLabels = T.filter(function (u) { return RE_SHAPE.test(u.text.replace(/X/g, 'x')) && c.mine(u); });
+      var dims = T.filter(function (w) { return /^[0-9]+(\.[0-9]+)?$/.test(w.text) && c.mine(w); }).map(function (w) { return parseFloat(w.text); })
+        .filter(function (d, i, a) { return d >= 50 && d <= 3000 && a.indexOf(d) === i; });
       var shapes = [];
-      T.forEach(function (u) {
-        var sz = u.text.replace(/X/g, 'x'); if (!RE_SHAPE.test(sz) || !c.mine(u) || shapes.some(function (q) { return q.size === sz; })) return;
-        var lt = T.filter(function (w) { return /^L=[0-9.]+$/.test(w.text) && c.mine(w); }).sort(function (a, b) { return dist(a, u) - dist(b, u); })[0];
-        if (!lt) return;
-        shapes.push({ size: sz, len: parseFloat(lt.text.slice(2)), leg: parseFloat(/-([0-9.]+)/.exec(sz)[1]) });
+      shapeLabels.forEach(function (u) {
+        var sz = u.text.replace(/X/g, 'x'), m = /^L-([0-9.]+)x([0-9.]+)x([0-9.]+)$/.exec(sz);
+        var lt = lts.filter(function (w) { return dist(w, u) < 600 && shapeLabels.every(function (o) { return dist(w, u) <= dist(w, o); }); })
+          .sort(function (a, b) { return dist(a, u) - dist(b, u); })[0];
+        if (lt) { shapes.push({ size: sz, len: parseFloat(lt.text.slice(2)), leg: parseFloat(/-([0-9.]+)/.exec(sz)[1]), kind: 'box' }); return; }
+        if (!m) return;
+        shapes.push({ size: sz, dims: dims, leg: parseFloat(m[1]), th: parseFloat(m[3]), kind: 'angle' });
       });
       named = { title: c.t.text, marks: ms, shapes: shapes, used: new Set(c.lbs) };
     })();
@@ -631,6 +640,27 @@
       if (amb && named) {
         named.marks.forEach(function (m) { add(m.size, m.mark, m.cnt * amb, named.title); });
         named.shapes.forEach(function (sh) {
+          if (sh.kind === 'angle') {
+            // 立面図の山形鋼: 長さ d の平行な線が 0・厚さ・脚 の位置に3本(縦でも横でも)
+            var best = null;
+            sh.dims.forEach(function (d) {
+              var vs = vlines.filter(function (l) { return Math.abs(l.y1 - l.y0 - d) < 0.6 && inView(v, { x: l.x, y: (l.y0 + l.y1) / 2 }); });
+              var hs2 = hlines.filter(function (h) { return Math.abs(h.x1 - h.x0 - d) < 0.6 && inView(v, { x: (h.x0 + h.x1) / 2, y: h.y }); });
+              function groups(ls, pos, s0, s1) {
+                var cnt = 0;
+                ls.forEach(function (a) {
+                  var same = function (off) { return ls.some(function (b) { return Math.abs(pos(b) - pos(a) - off) < 1 && Math.abs(s0(b) - s0(a)) < 1 && Math.abs(s1(b) - s1(a)) < 1; }); };
+                  if (same(sh.th) && same(sh.leg)) cnt++;
+                });
+                return cnt;
+              }
+              var n = groups(vs, function (l) { return l.x; }, function (l) { return l.y0; }, function (l) { return l.y1; }) +
+                groups(hs2, function (h) { return h.y; }, function (h) { return h.x0; }, function (h) { return h.x1; });
+              if (n && (!best || n > best.n)) best = { d: d, n: n };
+            });
+            if (best) add(sh.size, best.d, best.n, named.title);
+            return;
+          }
           var hs = hlines.filter(function (h) { return inView(v, { x: (h.x0 + h.x1) / 2, y: h.y }) && Math.abs(h.x1 - h.x0 - sh.len) < 0.6; });
           var byY = {};
           hs.forEach(function (a) {
