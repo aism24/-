@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>製品別金物リスト(tdf)</title>
-<link rel="stylesheet" href="style.css?v=20261119d">
+<link rel="stylesheet" href="style.css?v=20261119e">
 </head>
 <body>
 
@@ -58,10 +58,12 @@
   <div id="import-bar">
     <button type="button" class="big-btn folder" id="btn-folder">📁 サーバーの工事フォルダから選ぶ</button>
     <button type="button" class="big-btn" id="btn-files">📄 TDFファイルを選ぶ(複数可)</button>
-    <span class="import-hint">ドラッグ&amp;ドロップでも取り込めます(リンクは、覚えたサーバーの工事フォルダで同じ名前のTDFを探して付けます)。何回でも追加できます(同じ工事のTDFだけ)。</span>
   </div>
-  <div id="tdf-list"></div>
-  <div id="result"></div>
+  <!-- 取り込んだTDFの一覧と製品のカードを中央にそろえ、同じ幅(一番広い表の幅)にする -->
+  <div id="content">
+    <div id="tdf-list"></div>
+    <div id="result"></div>
+  </div>
 </main>
 
 <!-- サーバーを選ぶ -->
@@ -100,9 +102,9 @@
 <div id="status-overlay" class="overlay"><div class="status-box"><div class="spinner"></div><div id="status-text">処理中…</div></div></div>
 <div id="toast"></div>
 
-<script src="extract.js?v=20261119d"></script>
-<script src="excel.js?v=20261119d"></script>
-<script src="app.js?v=20261119d"></script>
-<script src="to-launcher.js?v=20261119d" data-target="header h1" data-mode="beforePrev"></script>
+<script src="extract.js?v=20261119e"></script>
+<script src="excel.js?v=20261119e"></script>
+<script src="app.js?v=20261119e"></script>
+<script src="to-launcher.js?v=20261119e" data-target="header h1" data-mode="beforePrev"></script>
 </body>
 </html>

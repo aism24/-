@@ -73,15 +73,19 @@ main { flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 16px 
 #import-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .big-btn { background: #fff; color: #222; border: 2px dashed #4285f4; border-radius: 8px; padding: 12px 18px; font-size: 15px; font-weight: bold; cursor: pointer; }
 .big-btn.folder { border-style: solid; background: #eaf2fe; }
-.import-hint { color: #ccc; font-size: 13px; }
 
 #tdf-list:empty { display: none; }
-#tdf-list { background: #fff; border-radius: 8px; padding: 10px 14px; font-size: 13px; }
+/* 幅は下の表に合わせる(一覧自身は幅を広げない。width:0 + min-width:100%)。長いフォルダ名は折り返す */
+#tdf-list { background: #fff; border-radius: 8px; padding: 10px 14px; font-size: 13px; width: 0; min-width: 100%; }
+#tdf-list td.path { white-space: normal; word-break: break-all; }
 #tdf-list table { border-collapse: collapse; }
 #tdf-list th, #tdf-list td { padding: 4px 10px; border-bottom: 1px solid #eee; text-align: left; white-space: nowrap; }
 .rm-btn { border: 1px solid #e0a0a0; color: #c0392b; background: #fff; border-radius: 4px; cursor: pointer; padding: 2px 8px; }
 
-#result { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+#content { align-self: center; width: fit-content; max-width: 100%; display: flex; flex-direction: column; gap: 16px; }
+#result { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
+#result:empty { display: none; }
+.prod-card table.kl, #tdf-list table { width: 100%; }
 .prod-card { background: #fff; border-radius: 8px; padding: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
 table.kl { border-collapse: collapse; font-size: 13px; min-width: 620px; }
 table.kl th, table.kl td { border: 1px solid #999; padding: 4px 12px; text-align: center; white-space: nowrap; }
