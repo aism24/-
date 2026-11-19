@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>製品別金物リスト(tdf)</title>
-<link rel="stylesheet" href="style.css?v=20261119b">
+<link rel="stylesheet" href="style.css?v=20261119c">
 </head>
 <body>
 
@@ -56,9 +56,9 @@
 
 <main>
   <div id="import-bar">
-    <button type="button" class="big-btn folder" id="btn-folder">📁 フォルダを選ぶ(サーバー)</button>
+    <button type="button" class="big-btn folder" id="btn-folder">📁 サーバーの工事フォルダから選ぶ</button>
     <button type="button" class="big-btn" id="btn-files">📄 TDFファイルを選ぶ(複数可)</button>
-    <span class="import-hint">ドラッグ&amp;ドロップでも取り込めます。別のフォルダから追加もできます(同じ工事のTDFだけ)。</span>
+    <span class="import-hint">ドラッグ&amp;ドロップでも取り込めます(リンクは、覚えたサーバーの工事フォルダで同じ名前のTDFを探して付けます)。何回でも追加できます(同じ工事のTDFだけ)。</span>
   </div>
   <div id="tdf-list"></div>
   <div id="result"></div>
@@ -74,16 +74,16 @@
   </div>
 </div>
 
-<!-- フォルダの場所(パス)を聞く -->
-<div id="path-modal" class="overlay">
-  <div class="dialog">
-    <div class="dialog-title" id="path-title">TDFが入っているフォルダの場所(パス)を入力してください</div>
-    <div class="dialog-note">Excelのリンクと、図番から実寸法師を開くのに使います。エクスプローラーでフォルダを右クリック→「パスのコピー」→ 下の欄に貼り付け。</div>
-    <button type="button" class="header-btn" id="path-paste">📋 クリップボードから貼り付け</button>
-    <textarea id="path-text" placeholder="例: \\server\share\①進行中工事\工事名\詳細図"></textarea>
+<!-- 工事フォルダの下で、TDFがあるフォルダ・ファイルを選ぶ -->
+<div id="pick-modal" class="overlay">
+  <div class="dialog wide">
+    <div class="dialog-title" id="pick-title"></div>
+    <div class="dialog-note" id="pick-note"></div>
+    <div class="pick-tools"><button type="button" class="header-btn" id="pick-all">すべて選ぶ</button><button type="button" class="header-btn" id="pick-none">すべて外す</button></div>
+    <div id="pick-list"></div>
     <div class="dialog-actions">
-      <button type="button" class="header-btn" id="path-skip">スキップ(リンクなし)</button>
-      <button type="button" class="header-action-btn orange" id="path-ok">OK</button>
+      <button type="button" class="header-btn" id="pick-cancel">キャンセル</button>
+      <button type="button" class="header-action-btn orange" id="pick-ok">取り込む</button>
     </div>
   </div>
 </div>
@@ -100,9 +100,9 @@
 <div id="status-overlay" class="overlay"><div class="status-box"><div class="spinner"></div><div id="status-text">処理中…</div></div></div>
 <div id="toast"></div>
 
-<script src="extract.js?v=20261119b"></script>
-<script src="excel.js?v=20261119b"></script>
-<script src="app.js?v=20261119b"></script>
-<script src="to-launcher.js?v=20261119b" data-target="header h1" data-mode="beforePrev"></script>
+<script src="extract.js?v=20261119c"></script>
+<script src="excel.js?v=20261119c"></script>
+<script src="app.js?v=20261119c"></script>
+<script src="to-launcher.js?v=20261119c" data-target="header h1" data-mode="beforePrev"></script>
 </body>
 </html>
