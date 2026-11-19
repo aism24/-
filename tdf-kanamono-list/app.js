@@ -3,7 +3,7 @@
 'use strict';
 
 // GASのウェブアプリURL(スプレッドシート「製品別金物一覧アプリ」の gas/Code.gs をデプロイしたもの)。空の間は工事リストを読めない
-const GAS_URL = '';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyKURzPEeCi9kQ7Pfb_WXBJ7ntKNCwSzK9cWkT_YWGrHdAyF4SVBgix4VlSUlVVKUktzg/exec';
 const EXCELJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
 const LS_KEY = 'tdf-kanamono-list:last';
 
