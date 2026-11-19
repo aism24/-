@@ -69,13 +69,6 @@ async function loadSettings() {
   }
   updateStartBtn();
 }
-async function restoreServer() {
-  let name = ''; try { name = localStorage.getItem(LS_KEY + ':server') || ''; } catch (e) { /* なし */ }
-  const sv = state.servers.find(x => x.name === name); if (!sv) { renderServer(); return; }
-  const root = await idbGet('root:' + sv.name);
-  if (root) { state.server = sv; state.root = root; }
-  renderServer();
-}
 $('start-btn').addEventListener('click', () => {
   const no = $('koji-select').value, k = state.kojiList.find(x => x.no === no);
   state.kojiNo = no; state.kojiName = k ? k.name : '';
@@ -84,7 +77,7 @@ $('start-btn').addEventListener('click', () => {
   $('koji-label').textContent = `${state.factory}工場 / ${state.kojiNo} ${state.kojiName}`;
   $('start-modal').classList.add('hidden');
   document.body.classList.add('app-started'); state.started = true;
-  restoreServer();
+  renderServer();
   render();
 });
 $('btn-change').addEventListener('click', () => { $('start-modal').classList.remove('hidden'); });
@@ -111,21 +104,6 @@ function idb() {
 async function idbGet(k) { const d = await idb(); return new Promise(res => { const q = d.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(undefined); }); }
 async function idbSet(k, v) { const d = await idb(); return new Promise(res => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(); t.onerror = () => res(); }); }
 
-function chooseServer(title) {
-  return new Promise(resolve => {
-    document.querySelector('#server-modal .dialog-title').textContent = title || '図面があるサーバーを選んでください';
-    const list = $('server-list');
-    list.innerHTML = '';
-    if (!state.servers.length) $('server-msg').textContent = 'スプレッドシートの設定シート(E列・F列)にサーバーがありません。';
-    state.servers.forEach(s => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'server-btn'; b.textContent = s.name;
-      b.onclick = () => { $('server-modal').classList.remove('open'); resolve(s); };
-      list.appendChild(b);
-    });
-    $('server-back').onclick = () => { $('server-modal').classList.remove('open'); resolve(null); };
-    $('server-modal').classList.add('open');
-  });
-}
 // サーバーの「①進行中工事」(初回だけ選んで、ブラウザに覚える)
 async function getRoot(sv, ask) {
   let root = await idbGet('root:' + sv.name);
@@ -145,17 +123,26 @@ async function getRoot(sv, ask) {
   await idbSet('root:' + sv.name, root);
   return root;
 }
-// ① サーバー選択: 使うサーバーを決め、その「①進行中工事」を覚える(フォルダはたどらない)
-async function selectServer(title) {
-  const sv = await chooseServer(title); if (!sv) return false;
+// ① サーバーのボタン: 使うサーバーを決め、その「①進行中工事」を覚える(フォルダはたどらない)。
+// 選んだら、もう一方のボタンはリセットするまで押せない
+async function selectServer(sv) {
+  if (state.server) return false;
   const root = await getRoot(sv, true); if (!root) return false;
   state.server = sv; state.root = root;
-  try { localStorage.setItem(LS_KEY + ':server', sv.name); } catch (e) { /* なし */ }
-  renderServer();
+  renderServer(); render();
   return true;
 }
 function renderServer() {
-  $('server-label').textContent = state.server ? `サーバー: ${state.server.name}(${state.root ? state.root.name : '未選択'})` : 'サーバー: 未選択';
+  const box = $('server-btns');
+  box.innerHTML = '';
+  state.servers.forEach(sv => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'big-btn server' + (state.server && state.server.name === sv.name ? ' selected' : '');
+    b.textContent = `① ${sv.name}サーバー`;
+    b.disabled = !!state.server && state.server.name !== sv.name;
+    b.addEventListener('click', () => { if (!state.server) selectServer(sv); });
+    box.appendChild(b);
+  });
 }
 // 選んだファイルが ①進行中工事 のどこにあるかを受け取り、設定シートF列のパスとつなぐ(①進行中工事 の外なら '')
 async function pathOf(handle) {
@@ -176,7 +163,7 @@ async function ensureRootPermission() {
 async function pickFiles() {
   if (!state.started) { toast('先に工場と工事を選んでください', 'error'); return; }
   if (!window.showOpenFilePicker) { $('file-input').click(); return; }  // 古いブラウザ: リンクなしで取り込む
-  if (!state.server || !state.root) { if (!(await selectServer('先にサーバーを選んでください(リンクに使います)'))) return; }
+  if (!state.server || !state.root) { toast('先に ① でサーバーを選んでください', 'error'); return; }
   if (!(await ensureRootPermission())) { toast('「①進行中工事」を読む許可がありません。① サーバー選択からやり直してください', 'error'); return; }
   let handles;
   try {
@@ -217,7 +204,6 @@ async function importItems(items) {
   if (excluded.size) await notice('お知らせ', Array.from(excluded).join('・') + 'は抽出していません');
   if (errors.length || warns.length) await notice('取り込めなかったTDF・確認が必要なこと', errors.concat(warns).join('\n'));
 }
-$('btn-folder').addEventListener('click', () => selectServer().then(ok => { if (ok) toast(`${state.server.name}を選びました。「② ファイル選択」でTDFを選んでください`); }));
 $('btn-files').addEventListener('click', pickFiles);
 $('file-input').addEventListener('change', e => { const fs = Array.from(e.target.files); e.target.value = ''; importWithNotice(fs.map(f => ({ file: f, path: '' }))); });
 let dragDepth = 0;
@@ -247,7 +233,7 @@ function allProducts() {
 }
 function render() {
   const has = state.tdfs.length > 0;
-  $('btn-excel').disabled = !has; $('btn-reset').disabled = !has;
+  $('btn-excel').disabled = !has; $('btn-reset').disabled = !has && !state.server;
   $('tdf-list').innerHTML = has ? '<table><tr><th>図面番号</th><th>工事名(図面)</th><th>ファイル名</th><th></th></tr>' +
     state.tdfs.map(t => `<tr><td>${esc(t.res.zuban)}</td><td>${esc(t.res.koji)}</td><td title="${esc(t.path || 'リンクなし')}">${esc(t.fileName)}${t.path ? '' : '(リンクなし)'}</td><td><button type="button" class="rm-btn" data-rm="${t.id}">外す</button></td></tr>`).join('') + '</table>' : '';
   const R = $('result');
@@ -296,7 +282,7 @@ document.addEventListener('change', e => {
   if (el.classList.contains('note-in')) it.note = el.value.trim();
   render();
 });
-$('btn-reset').addEventListener('click', () => { if (confirm('取り込んだTDFと修正をすべて消します。よろしいですか?')) { state.tdfs = []; render(); } });
+$('btn-reset').addEventListener('click', () => { if (confirm('取り込んだTDF・修正・選んだサーバーをすべて消します。よろしいですか?')) { state.tdfs = []; state.server = null; state.root = null; renderServer(); render(); } });
 
 // ---------- Excel ----------
 function buildExportProducts() {

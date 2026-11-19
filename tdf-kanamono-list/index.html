@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>製品別金物リスト(tdf)</title>
-<link rel="stylesheet" href="style.css?v=20261119h">
+<link rel="stylesheet" href="style.css?v=20261119i">
 </head>
 <body>
 
@@ -55,27 +55,16 @@
 <input type="file" id="file-input" accept=".tdf" multiple style="display:none">
 
 <main>
-  <div id="import-bar">
-    <button type="button" class="big-btn folder" id="btn-folder">① サーバー選択</button>
-    <button type="button" class="big-btn" id="btn-files">② ファイル選択</button>
-    <span id="server-label"></span>
-  </div>
-  <!-- 取り込んだTDFの一覧と製品のカードを中央にそろえ、同じ幅(一番広い表の幅)にする -->
+  <!-- 取込ボタン・取り込んだTDFの一覧・製品のカードを中央にそろえ、同じ幅(一番広い表の幅)にする -->
   <div id="content">
+    <div id="import-bar">
+      <span id="server-btns"></span>
+      <button type="button" class="big-btn files" id="btn-files">② ファイル選択<span class="btn-sub">（何度でも可能）</span></button>
+    </div>
     <div id="tdf-list"></div>
     <div id="result"></div>
   </div>
 </main>
-
-<!-- サーバーを選ぶ -->
-<div id="server-modal" class="overlay">
-  <div class="dialog">
-    <div class="dialog-title">図面があるサーバーを選んでください</div>
-    <div id="server-list"></div>
-    <div id="server-msg" class="dialog-note"></div>
-    <div class="dialog-actions"><button type="button" class="header-btn" id="server-back">戻る</button></div>
-  </div>
-</div>
 
 <!-- お知らせ(除外したもの・取り込めなかったTDF) -->
 <div id="notice-modal" class="overlay">
@@ -89,9 +78,9 @@
 <div id="status-overlay" class="overlay"><div class="status-box"><div class="spinner"></div><div id="status-text">処理中…</div></div></div>
 <div id="toast"></div>
 
-<script src="extract.js?v=20261119h"></script>
-<script src="excel.js?v=20261119h"></script>
-<script src="app.js?v=20261119h"></script>
-<script src="to-launcher.js?v=20261119h" data-target="header h1" data-mode="beforePrev"></script>
+<script src="extract.js?v=20261119i"></script>
+<script src="excel.js?v=20261119i"></script>
+<script src="app.js?v=20261119i"></script>
+<script src="to-launcher.js?v=20261119i" data-target="header h1" data-mode="beforePrev"></script>
 </body>
 </html>
