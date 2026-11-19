@@ -329,6 +329,19 @@
       // 断面図の中の断面記号(例: C断面の中の E)
       if (RE_SECKEY.test(t.text) && secInfo[t.text] && t.text !== s.letter && !titles.some(function (x) { return x.letter === t.text && Math.abs(x.y - t.y) < 10; })) si.nested.push(t.text);
     });
+    // 断面図の上に書かれた断面記号(C断面の上の H・J。見出しから約3060上。2026-11-19 ユーザー説明、2G-01)は、
+    // 上の探し方(見出しから2600まで)で親が見つからないときだけ、見出しから上へ3500まで探す
+    T.forEach(function (t) {
+      if (isLeft(t) || !RE_SECKEY.test(t.text) || !secInfo[t.text] || sectionOf(t, titles) || titles.some(function (x) { return x.letter === t.text && Math.abs(x.y - t.y) < 10; })) return;
+      var best = null, bs = Infinity, cx = t.x + 18 * t.text.length;
+      titles.forEach(function (s) {
+        var dy = t.y - s.y, dx = Math.abs(cx - (s.x + s.sx) / 2);
+        if (dy <= 0 || dy > 3500 || dx > 1900 || s.letter === t.text) return;
+        var sc = dy + 2 * dx;
+        if (sc < bs) { bs = sc; best = s; }
+      });
+      if (best) secInfo[best.letter].nested.push(t.text);
+    });
 
     // 断面の中の組立H(BH-396x199x9x16)。そばに符号が3つ縦に並んでいれば、上から 上フランジ・ウェブ・下フランジ(2026-11-19 ユーザー説明。2G-01 の OGAR3K・OGAR5・OGAR4K)。
     // ウェブは BH のウェブ厚の板で拾う。フランジは、ほかの断面図(ア・イなど)で板として拾えていれば重ねない(拾えていなければフランジ厚の板)
