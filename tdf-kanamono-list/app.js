@@ -226,13 +226,26 @@ async function pickFiles() {
   if (!state.server || !state.root) { toast('先に ① でサーバーを選んでください', 'error'); return; }
   if (!(await ensureRootPermission())) { toast('「①進行中工事」を読む許可がありません。① サーバー選択からやり直してください', 'error'); return; }
   let handles;
+  const startIn = await lastPickDir();
   try {
-    handles = await window.showOpenFilePicker({ id: 'tdf' + Math.max(0, state.servers.findIndex(x => x.name === state.server.name)), startIn: state.root, multiple: true,
+    handles = await window.showOpenFilePicker({ id: 'tdf' + Math.max(0, state.servers.findIndex(x => x.name === state.server.name)), startIn, multiple: true,
       types: [{ description: 'TDFファイル', accept: { 'application/octet-stream': ['.tdf'] } }], excludeAcceptAllOption: false });
   } catch (e) { if (e && e.name !== 'AbortError') toast('ファイルを選ぶ画面を開けませんでした: ' + e.message, 'error'); return; }
   const items = [];
   for (const h of handles) items.push({ file: await h.getFile(), path: await pathOf(h) });
+  // 前回開いたところを覚える(①進行中工事 の中のファイルだけ。サーバーごとではなく最後の1つ)
+  if (handles.length && items[0].path) await idbSet('lastPick', { server: state.server.name, handle: handles[0] });
   await importWithNotice(items);
+}
+// ② の画面を開く場所(2026-11-19 ユーザー指示): 前回選んだファイルのフォルダ。
+// ただし前回と選んだサーバーが違う・前回のファイルが今の ①進行中工事 の外のときは、今までどおり ①進行中工事
+async function lastPickDir() {
+  try {
+    const last = await idbGet('lastPick');
+    if (!last || !last.handle || last.server !== state.server.name) return state.root;
+    if (!(await state.root.resolve(last.handle))) return state.root;
+    return last.handle;   // ファイルを渡すと、そのファイルのあるフォルダから開く
+  } catch (e) { return state.root; }
 }
 async function importWithNotice(items) {
   items = items.filter(it => /\.tdf$/i.test(it.file.name));
