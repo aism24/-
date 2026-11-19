@@ -32,6 +32,16 @@ function notice(title, body) {
     $('notice-ok').onclick = () => { $('notice-modal').classList.remove('open'); resolve(); };
   });
 }
+// 2つのボタンの確認。戻り値 true = okLabel / false = cancelLabel
+function confirm2(title, body, okLabel, cancelLabel) {
+  return new Promise(resolve => {
+    $('notice-title').textContent = title; $('notice-body').textContent = body;
+    $('notice-ok').textContent = okLabel; $('notice-cancel').textContent = cancelLabel; $('notice-cancel').style.display = '';
+    $('notice-modal').classList.add('open');
+    const done = v => { $('notice-modal').classList.remove('open'); $('notice-ok').textContent = 'OK'; $('notice-cancel').style.display = 'none'; resolve(v); };
+    $('notice-ok').onclick = () => done(true); $('notice-cancel').onclick = () => done(false);
+  });
+}
 async function apiGet(action) {
   if (!GAS_URL) throw new Error('GASのURLが未設定です');
   const r = await fetch(GAS_URL + '?action=' + encodeURIComponent(action));
@@ -105,8 +115,23 @@ async function idbGet(k) { const d = await idb(); return new Promise(res => { co
 async function idbSet(k, v) { const d = await idb(); return new Promise(res => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(); t.onerror = () => res(); }); }
 
 // サーバーの「①進行中工事」(初回だけ選んで、ブラウザに覚える)
-async function getRoot(sv, ask) {
-  let root = await idbGet('root:' + sv.name);
+// 目印ファイル: ①進行中工事 の直下にある「_○○サーバー…」のファイルの ○○ (tdf-master-web と同じ)
+async function readMarks(dir) {
+  const out = [];
+  try { for await (const e of dir.values()) { if (e.kind !== 'file') continue; const m = e.name.normalize('NFKC').match(/^_(.+?)サーバー/); if (m && !out.includes(m[1])) out.push(m[1]); } } catch (e) { /* 読めなければ目印なし */ }
+  return out;
+}
+// 覚えている(または選んだ)フォルダが、そのサーバーの ①進行中工事 か。'ok' / 'wrong'(別のサーバーの目印) / 'unknown'(目印なし)
+async function checkRoot(h, sv) {
+  const marks = await readMarks(h);
+  if (marks.includes(sv.name)) return 'ok';
+  return marks.length ? 'wrong' : 'unknown';
+}
+// サーバーの「①進行中工事」(初回だけ選んで、ブラウザに覚える)。
+// 2026-11-19: 本社を覚えたあと鳥取を選ぶと、選ぶ画面が本社の①進行中工事から開き、同じ名前なので本社を鳥取として覚えてしまうことがあった。
+// 目印ファイルと「別のサーバーとして覚えたフォルダと同じでないか」で確かめる
+async function getRoot(sv, ask, forcePick) {
+  let root = forcePick ? null : await idbGet('root:' + sv.name);
   try {
     if (root) {
       let perm = await root.queryPermission({ mode: 'read' });
@@ -114,14 +139,40 @@ async function getRoot(sv, ask) {
       if (perm !== 'granted') root = ask ? null : undefined;
     }
   } catch (e) { root = null; }
+  if (root && (await checkRoot(root, sv)) === 'wrong') {
+    await notice('覚えているフォルダが違います', `${sv.name}サーバーとして覚えていたフォルダは、目印ファイルを見ると別のサーバーの「${root.name}」でした。${sv.name}サーバーの「①進行中工事」を選び直してください。`);
+    await idbSet('root:' + sv.name, null); root = null;
+    if (!ask) return null;
+  }
   if (root || !ask) return root || null;
-  await notice(`${sv.name}の「①進行中工事」を覚えます`, `次の画面で、${sv.name}サーバーの「①進行中工事」フォルダを選んでください(最初の1回だけ)。`);
+  await notice(`${sv.name}サーバーの「①進行中工事」を覚えます`, `次の画面で、${sv.name}サーバーの「①進行中工事」フォルダを選んでください(最初の1回だけ)。\n画面は前に開いた場所から開くので、別のサーバーのフォルダを選ばないよう、場所を確かめてください。`);
   // id は英数字・_・- だけ(32文字まで)。日本語を入れると開かずにエラーになる(2026-11-19、「root-本社」で開かなかった)
   const pid = 'root' + Math.max(0, state.servers.findIndex(x => x.name === sv.name));
-  try { root = await window.showDirectoryPicker({ id: pid, mode: 'read' }); }
-  catch (e) { if (e && e.name !== 'AbortError') toast('フォルダを選ぶ画面を開けませんでした: ' + e.message, 'error'); return null; }
-  await idbSet('root:' + sv.name, root);
-  return root;
+  for (;;) {
+    let h;
+    try { h = await window.showDirectoryPicker({ id: pid, mode: 'read' }); }
+    catch (e) { if (e && e.name !== 'AbortError') toast('フォルダを選ぶ画面を開けませんでした: ' + e.message, 'error'); return null; }
+    // 別のサーバーとして覚えたフォルダと同じなら選び直し
+    let same = '';
+    for (const o of state.servers) {
+      if (o.name === sv.name) continue;
+      const oh = await idbGet('root:' + o.name);
+      try { if (oh && await h.isSameEntry(oh)) same = o.name; } catch (e) { /* 比べられなければ別とみなす */ }
+    }
+    if (same) {
+      if (await confirm2('同じフォルダです', `このフォルダは${same}サーバーの「①進行中工事」として覚えています。${sv.name}サーバーの「①進行中工事」を選んでください。`, '選び直す', 'やめる')) continue;
+      return null;
+    }
+    const v = await checkRoot(h, sv);
+    if (v === 'wrong') {
+      if (await confirm2('サーバーが違います', `選んだ「${h.name}」は、目印ファイルを見ると${sv.name}サーバーのものではありません。${sv.name}サーバーの「①進行中工事」を選び直してください。`, '選び直す', 'やめる')) continue;
+      return null;
+    }
+    if (v === 'unknown' && !(await confirm2('サーバーを確認できません', `選んだ「${h.name}」に目印ファイル(「_${sv.name}サーバー…」で始まるファイル)がありません。${sv.name}サーバーの「①進行中工事」で合っていますか?`, 'このフォルダを使う', '選び直す'))) continue;
+    await idbSet('root:' + sv.name, h);
+    toast(`${sv.name}サーバーの「${h.name}」を覚えました`);
+    return h;
+  }
 }
 // ① サーバーのボタン: 使うサーバーを決め、その「①進行中工事」を覚える(フォルダはたどらない)。
 // 選んだら、もう一方のボタンはリセットするまで押せない
@@ -143,7 +194,14 @@ function renderServer() {
     b.addEventListener('click', () => { if (!state.server) selectServer(sv); });
     box.appendChild(b);
   });
+  $('repick-root').style.display = state.server ? '' : 'none';
 }
+// 覚えている ①進行中工事 を選び直す(選んでいるサーバーの分)
+$('repick-root').addEventListener('click', async () => {
+  if (!state.server) return;
+  const root = await getRoot(state.server, true, true);
+  if (root) { state.root = root; renderServer(); }
+});
 // 選んだファイルが ①進行中工事 のどこにあるかを受け取り、設定シートF列のパスとつなぐ(①進行中工事 の外なら '')
 async function pathOf(handle) {
   if (!state.root || !handle) return '';
