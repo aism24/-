@@ -159,6 +159,37 @@
     return p.missing.map(fmtDate).join('と') + 'の予定が含まれていないので、予定通り完了したものと考えます';
   }
 
+  // 取り込んだPDFの予定表の最初の週より前が予定日の遅れがあれば、その週(月〜土)を返す(2026-11-19 ユーザー指定)
+  // 例: 予定表 11/9〜11/28 の PDF で、遅れに 11/5 予定の製品 → ['11/2～11/7']
+  function weekMon(key) {
+    const p = parts(key);
+    if (!p) return '';
+    const t = Date.UTC(p.y, p.m - 1, p.d), dow = new Date(t).getUTCDay();
+    return new Date(t - ((dow + 6) % 7) * 86400000).toISOString().slice(0, 10);
+  }
+  function lateOutsideWeeks(d) {
+    const start = d && d.plan && d.plan.from ? weekMon(d.plan.from) : '';
+    if (!start) return [];
+    const wk = {};
+    (d.late || []).forEach(function (r) { const k = String(r[4] || ''); if (parts(k) && k < start) wk[weekMon(k)] = true; });
+    return Object.keys(wk).sort().map(function (m) {
+      const p = parts(m), s = new Date(Date.UTC(p.y, p.m - 1, p.d + 5));
+      return p.m + '/' + p.d + '～' + (s.getUTCMonth() + 1) + '/' + s.getUTCDate();
+    });
+  }
+  // 黄色のお知らせ(ゆっくり点滅・赤の太字・中央揃え。「閉じる」を押すまで消えない)
+  function yellowNotice(weeks, onClose) {
+    $('yellowText').textContent = weeks.join('・') + 'の予定表が含まれていません\n遅れリストには、表示しています';
+    $('yellowModal').hidden = false;
+    st.yellowClose = onClose || null;
+    $('yellowClose').focus();
+  }
+  function closeYellow() {
+    $('yellowModal').hidden = true;
+    const f = st.yellowClose; st.yellowClose = null;
+    if (f) f();
+  }
+
   // ---- 略称の対応(新しい略称が出たら、工事番号を選んでもらう) ----
   function openAbbr(auto) {
     const d = st.data;
@@ -414,8 +445,8 @@
   // リセット: 一覧を消して、開いた直後の「加工結果を送ってください」に戻す(2026-11-12 ユーザー指定。GASのデータには触れない)
   function reset() {
     if (st.busy) return;
-    st.data = null; st.src = null; st.next = null; st.shown = false; st.noticeOk = null;
-    ['noticeModal', 'dateModal', 'abbrModal', 'warn', 'toast'].forEach(function (id) { $(id).hidden = true; });
+    st.data = null; st.src = null; st.next = null; st.shown = false; st.noticeOk = null; st.yellowClose = null;
+    ['yellowModal', 'noticeModal','dateModal', 'abbrModal', 'warn', 'toast'].forEach(function (id) { $(id).hidden = true; });
     ['lateTable', 'yesterdayTable', 'meta'].forEach(function (id) { $(id).innerHTML = ''; });
     $('resultView').hidden = true;
     $('landing').hidden = false;
@@ -489,7 +520,10 @@
         progress(null);
         if (!DEMO && (res.data.unknown || []).length && $('abbrModal').hidden) openAbbr(true); // 新しい略称があれば工事番号を選ぶ画面
         const fixed = st.linkStat ? st.linkStat.fixed : 0;
-        notice('予定表を読み込みました(' + res.saved + '件)' + (mt ? '。' + mt : '') + (fixed ? '\nマスタで完了を確認：' + fixed + '件' : ''), function () { showResultCheck(rc); });
+        const pink = function () { notice('予定表を読み込みました(' + res.saved + '件)' + (mt ? '。' + mt : '') + (fixed ? '\nマスタで完了を確認：' + fixed + '件' : ''), function () { showResultCheck(rc); }); };
+        // PDFに無い週の遅れがあれば、黄色のお知らせを先に出す →「閉じる」→ ピンクのお知らせ(2026-11-19 ユーザー指定)
+        const weeks = lateOutsideWeeks(st.data);
+        if (weeks.length) yellowNotice(weeks, pink); else pink();
       });
     }).catch(function (e) {
       progress(null);
@@ -853,6 +887,7 @@
   $('abbrCancel').addEventListener('click', function () { $('abbrModal').hidden = true; });
   $('abbrSave').addEventListener('click', saveAbbr);
   $('noticeOk').addEventListener('click', closeNotice);
+  $('yellowClose').addEventListener('click', closeYellow);
   $('dateClose').addEventListener('click', function () { $('dateModal').hidden = true; });
 
   // ---- ダウンロードPDFの説明書をアプリの中で開く(2026-11-12 ユーザー指定) ----

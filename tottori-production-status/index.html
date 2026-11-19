@@ -5,7 +5,7 @@
 <title>鳥取工場 生産状況</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="style.css?v=20261118b">
+<link rel="stylesheet" href="style.css?v=20261119a">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body class="landing-mode">
@@ -67,6 +67,14 @@
 
 <div class="toast" id="toast" hidden></div>
 
+<!-- PDFに無い週の遅れのお知らせ(黄色・ゆっくり点滅・赤の太字。「閉じる」を押すまで消えない) -->
+<div class="modal yellow-modal" id="yellowModal" hidden>
+  <div class="yellow-box" role="alertdialog" aria-modal="true" aria-labelledby="yellowText">
+    <p class="yellow-text" id="yellowText"></p>
+    <div class="notice-actions"><button type="button" class="btn yellow-close" id="yellowClose">閉じる</button></div>
+  </div>
+</div>
+
 <!-- 取込のお知らせ(画面中央・OKを押すまで消えない) -->
 <div class="modal notice-modal" id="noticeModal" hidden>
   <div class="notice-box" role="alertdialog" aria-modal="true" aria-labelledby="noticeText">
@@ -98,7 +106,7 @@
   </div>
 </div>
 
-<script src="app.js?v=20261117a"></script>
+<script src="app.js?v=20261119a"></script>
 <script>
 // 会社ロゴを5回続けて(1.5秒以内の間隔で)タップすると、この端末だけ「← アプリ一覧へ」が出る(ブラウザに記憶)。もう一度5回で消える
 // (2026-11-11、ユーザー指示。truck-fax・shipping-list-link と同じ仕組み)

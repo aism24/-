@@ -194,6 +194,13 @@ table.sheet tr.total td { border-top: 2px solid #8a98a8; }
 .notice-text { margin: 0; color: #000; font-weight: 700; font-size: 18px; line-height: 1.6; text-align: center; white-space: pre-wrap; }
 .notice-actions { display: flex; justify-content: center; margin-top: 16px; }
 .notice-ok { min-width: 120px; font-size: 17px; }
+/* PDFに無い週の遅れのお知らせ(2026-11-19 ユーザー指定: 黄色背景・ゆっくり点滅・赤の太字・中央揃え) */
+.yellow-modal { z-index: 41; }
+.yellow-box { background: #fff200; border: 3px solid #e0a800; border-radius: 14px; width: min(720px, 100%); padding: 28px 22px 18px; box-shadow: 0 12px 32px rgba(0, 0, 0, .3); animation: yellow-blink 2.4s ease-in-out infinite; }
+@keyframes yellow-blink { 0%, 100% { background: #fff200; } 50% { background: #fffbc2; } }
+@media (prefers-reduced-motion: reduce) { .yellow-box { animation: none; } }
+.yellow-text { margin: 0; color: #d00000; font-weight: 700; font-size: 22px; line-height: 1.7; text-align: center; white-space: pre-wrap; }
+.btn.yellow-close { min-width: 120px; font-size: 17px; font-weight: 700; background: #fff; color: #000; border: 2px solid #d00000; }
 /* 遅れ日数は中央揃え(2026-11-12 ユーザー指定) */
 table.sheet td.days-cell { text-align: center; }
 
