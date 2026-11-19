@@ -179,7 +179,7 @@ async function importWithNotice(items) {
   if (!items.length) return;
   const noLink = items.filter(it => !it.path).map(it => it.file.name);
   await importItems(items);
-  if (noLink.length) await notice('リンクを付けられなかったTDF', noLink.join('\n') + '\n\n選んだサーバーの「①進行中工事」の中のファイルではないため、場所が分かりません。図番を押しても実寸法師は開きません(Excelにもリンクは付きません)。\n「① サーバー選択」で正しいサーバーを選び、「② ファイル選択」から選び直してください。');
+  if (noLink.length) await notice('リンクを付けられなかったTDF', noLink.join('\n') + '\n\n選んだサーバーの「①進行中工事」の中のファイルではないため、場所が分かりません。図番を押しても実寸法師は開きません(Excelにもリンクは付きません)。\n「リセット」を押してから ① で正しいサーバー(このTDFがあるサーバー)を選び、「② ファイル選択」から選び直してください。');
 }
 
 async function importItems(items) {
@@ -195,6 +195,7 @@ async function importItems(items) {
         if (base && base.res.koji !== res.koji) { errors.push(`${f.name}: 工事名が違うため取り込みません(「${res.koji || '不明'}」。取り込み済みは「${base.res.koji}」)`); continue; }
         res.products.forEach(p => p.items.forEach(it => { it.n0 = it.n; }));
         state.tdfs.push({ id: nextId++, fileName: f.name, path: path || '', res });
+        if (res.kojiNo && res.kojiNo !== state.kojiNo) warns.push(`${f.name}: 図面の工事番号(${res.kojiNo})が、選んだ工事(${state.kojiNo})と違います`);
         res.excluded.forEach(x => excluded.add(x));
         res.warnings.forEach(w => warns.push(`${f.name}: ${w}`));
       } catch (e) { errors.push(`${f.name}: 読めませんでした(${e.message})`); }
