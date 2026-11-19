@@ -186,7 +186,9 @@ async function selectServer(sv) {
 function renderServer() {
   const box = $('server-btns');
   box.innerHTML = '';
-  state.servers.forEach(sv => {
+  // 並びは本社 → 夢前 → 鳥取(ユーザー指定。設定シートの順には左右されない)、それ以外は後ろ
+  const ORDER = ['本社', '夢前', '鳥取'], rank = n => { const i = ORDER.indexOf(n); return i < 0 ? 99 : i; };
+  state.servers.slice().sort((a, b) => rank(a.name) - rank(b.name)).forEach(sv => {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'big-btn server' + (state.server && state.server.name === sv.name ? ' selected' : '');
     b.textContent = `① ${sv.name}サーバー`;
