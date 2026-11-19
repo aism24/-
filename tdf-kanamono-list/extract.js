@@ -237,12 +237,8 @@
     // 図の範囲: 縦 = 製品の行より上で、上の図の行まで。横 = 左右に並ぶ図の間で分け、右に断面図があればその手前まで
     var prods = pr.rows.slice().sort(function (a, b) { return b.y - a.y || a.x - b.x; });
     var views = [];
-    // ただし同じ高さの行で、別の製品の「N台」より右にある製品は、左右に並ぶ別の図(図の間が5000より狭い図面がある。WR-2G-9)
     prods.forEach(function (p) {
-      var v = views.find(function (v) {
-        if (v.products.some(function (q) { return Math.abs(q.y - p.y) < 15 && (p.x > q.xr || q.x > p.xr); })) return false;
-        return Math.abs(v.labelY - p.y) < 600 && p.x - v.xr < 5000 && v.x - p.xr < 5000;
-      });
+      var v = views.find(function (v) { return Math.abs(v.labelY - p.y) < 600 && p.x - v.xr < 5000 && v.x - p.xr < 5000; });
       if (v) { v.products.push(p); v.labelY = Math.min(v.labelY, p.y); v.labelTop = Math.max(v.labelTop, p.y); v.x = Math.min(v.x, p.x); v.xr = Math.max(v.xr, p.xr); }
       else views.push({ products: [p], labelY: p.y, labelTop: p.y, x: p.x, xr: p.xr });
     });
@@ -296,8 +292,8 @@
     });
 
     // 旗(断面記号): 文字の右に縦線(長さ250〜450)がある
-    // 旗の縦線(梁が傾いた図面では少し傾いている。傾き2割まで。WR-2G-9 は勾配12.9%)
-    var flagLines = L.filter(function (l) { var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]); return dy > 200 && dy < 500 && dx <= dy * 0.2; })
+    // 旗の縦線(梁が傾いた図面では少し傾いている。傾き1割まで)
+    var flagLines = L.filter(function (l) { var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]); return dy > 200 && dy < 500 && dx <= dy * 0.1; })
       .map(function (l) { return { x: (l[0] + l[2]) / 2, y0: Math.min(l[1], l[3]), y1: Math.max(l[1], l[3]) }; });
     function flagLineX(t) {
       var c = flagLines.filter(function (v) { return v.x - t.x > 50 && v.x - t.x < 180 && v.y0 <= t.y + 20 && v.y1 >= t.y; });
@@ -333,8 +329,8 @@
       var length = 0;
       var tens = T.filter(function (t) { return inView(v, t) && t.text === '10'; });
       tens.forEach(function (a) {
-        // 右で一番近い「10」(傾き2割以内)だけを相手にする(通り芯の番号「10」と組にしない)
-        var b = tens.filter(function (c) { return c.x > a.x + 1000 && Math.abs(c.y - a.y) <= (c.x - a.x) * 0.2; }).sort(function (p, q) { return p.x - q.x; })[0];
+        // 右で一番近い「10」(傾き1割以内)だけを相手にする(通り芯の番号「10」と組にしない)
+        var b = tens.filter(function (c) { return c.x > a.x + 1000 && Math.abs(c.y - a.y) <= (c.x - a.x) * 0.1; }).sort(function (p, q) { return p.x - q.x; })[0];
         if (!b) return;
         T.forEach(function (u) {
           if (!inView(v, u) || !/^[0-9]+(\.[0-9]+)?$/.test(u.text) || u.x <= a.x || u.x >= b.x) return;
