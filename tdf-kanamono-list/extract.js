@@ -151,8 +151,8 @@
   }
 
   // 「製品名 符号 N台」の行。符号が無い行(現場付けの製品)は onSite に入れる
-  // 製品名: B1M2GJ9・B1M2G001-1・2G21-W9・2G31-W内9 など(英字を含む、記号は - だけ。- の後ろは漢字も可=「内」「外」)
-  var RE_PNAME = /^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+(?:-[A-Z0-9\u4E00-\u9FFF]+)*$/;
+  // 製品名: B1M2GJ9・B1M2G001-1・2G21-W9 など(英字を含む、記号は - だけ)
+  var RE_PNAME = /^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+)*$/;
   function productRows(texts) {
     var rows = [], onSite = [];
     texts.forEach(function (t) {
