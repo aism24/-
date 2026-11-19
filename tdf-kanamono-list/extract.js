@@ -319,8 +319,10 @@
       si.plateT.add(thickOf(lb.size));
       if (lb.mekki) si.plates[lb.mark].mekki = true;
     });
+    var outsideStrict = function (o) { return !views.some(function (v) { return o.y > v.yMin && o.y < v.yMax && o.x > v.x0 && o.x < v.x1s; }); };
     T.forEach(function (t) {
-      if (isLeft(t)) return;
+      // DK・カタカナの断面に入る文字は、図の範囲の中でも断面の文字として読む(英字1文字の断面は今までどおり)
+      if (isLeft(t) && /^[A-Za-z]$/.test((sectionOf(t, titles) || {}).letter || 'A')) return;
       var s = sectionOf(t, titles); if (!s) return;
       var si = secInfo[s.letter];
       if (RE_SHAPE.test(t.text)) si.shapes.push(t.text);
@@ -386,7 +388,6 @@
 
     // 名前だけの断面図(「A SEC」の見出しが無く、図の下に「外装ALC下地」とだけ書いた図。2G-01)を1つだけ探す。
     // 使うのは、旗がなくどの断面か決められない板があるときだけ(上の views の中で判断)
-    var outsideStrict = function (o) { return !views.some(function (v) { return o.y > v.yMin && o.y < v.yMax && o.x > v.x0 && o.x < v.x1s; }); };
     var named = null;
     (function () {
       var cands = [];
@@ -633,6 +634,54 @@
         secInfo[L1].nested.forEach(function (N) { addSecPlatesOnce([N], cnt); addNested(N, cnt, depth + 1); });
       }
       Object.keys(secInfo).forEach(function (L1) { if (secCount[L1]) addNested(L1, secCount[L1], 0); });
+      // 跳ね出しの山形鋼(2G-01 の DK2・DK3・DK4 の L-65x65x6。2026-11-19 ユーザー説明):
+      // 旗は一部の山形鋼にしか無いので、平面図・立面図に描かれた山形鋼(長さ d の平行な3本 = 0・厚さ・脚 か 0・脚-厚さ・脚)をすべて数え、
+      // 旗のある山形鋼から各断面の「長さ」と「背の向き」を覚えて、旗のない山形鋼を長さと向きが同じ断面に入れる
+      var angleSecs = {}, doneShapeAngles = {};
+      Object.keys(secInfo).forEach(function (L1) {
+        var si = secInfo[L1];
+        if (si.joint || !flagsBySec[L1]) return;
+        var sh = si.shapes.map(function (x) { return /^L-([0-9.]+)x([0-9.]+)x([0-9.]+)$/.exec(x); }).filter(Boolean)[0];
+        if (!sh || doneShapeAngles[L1]) return;
+        angleSecs[L1] = { size: sh[0], leg: parseFloat(sh[1]), th: parseFloat(sh[3]), dims: si.dims };
+      });
+      if (Object.keys(angleSecs).length) {
+        var pieces = [];   // {x, len, dir}
+        var addPieces = function (ls, pos, s0, s1, mid) {
+          ls.forEach(function (a) {
+            Object.keys(angleSecs).forEach(function (L1) {
+              var A = angleSecs[L1], d = s1(a) - s0(a);
+              if (A.dims.indexOf(Math.round(d)) < 0 || Math.abs(d - Math.round(d)) > 0.6) return;
+              var same = function (off) { return ls.some(function (b) { return Math.abs(pos(b) - pos(a) - off) < 1 && Math.abs(s0(b) - s0(a)) < 1 && Math.abs(s1(b) - s1(a)) < 1; }); };
+              var dir = same(A.leg) ? (same(A.th) ? 'A' : (same(A.leg - A.th) ? 'B' : null)) : null;
+              if (!dir) return;
+              var c = mid(a);
+              if (!pieces.some(function (q) { return Math.abs(q.c - c) < 50 && q.len === Math.round(d) && q.size === A.size; })) pieces.push({ c: c, len: Math.round(d), dir: dir, size: A.size });
+            });
+          });
+        };
+        addPieces(vlines.filter(function (l) { return inView(v, { x: l.x, y: (l.y0 + l.y1) / 2 }); }), function (l) { return l.x; }, function (l) { return l.y0; }, function (l) { return l.y1; }, function (l) { return l.x + 32; });
+        // 旗のある山形鋼 → 断面の長さと向き
+        var learned = {};
+        T.forEach(function (t) {
+          if (!inView(v, t) || !angleSecs[t.text]) return;
+          var fx = flagLineX(t); if (fx === null) return;
+          var near1 = pieces.slice().sort(function (a, b) { return Math.abs(a.c - fx) - Math.abs(b.c - fx); })[0];
+          if (!near1 || Math.abs(near1.c - fx) > 400) return;
+          near1.sec = t.text;
+          learned[t.text] = learned[t.text] || { len: near1.len, dir: near1.dir };
+        });
+        pieces.forEach(function (q) {
+          if (q.sec) return;
+          var cand = Object.keys(learned).filter(function (L1) { return learned[L1].len === q.len && learned[L1].dir === q.dir; });
+          if (cand.length === 1) q.sec = cand[0];
+        });
+        Object.keys(learned).forEach(function (L1) {
+          var n = pieces.filter(function (q) { return q.sec === L1; }).length;
+          if (n) { add(angleSecs[L1].size, learned[L1].len, n, secInfo[L1].title.sub || ''); doneShapeAngles[L1] = 1; }
+        });
+      }
+
       // 立面図に直接書かれた板の表記(例: PL-12 / KGR64)
       // 旗がなく、どの断面か決められない板がある場所 → 名前だけの断面図(例「外装ALC下地」)があれば、その断面とみなす(2026-11-19 ユーザー説明、2G-01)
       // 切板は符号ごとに 場所の数 だけ。形鋼(L-90X90X7 と L=110)は、図に並ぶ「長さ×脚」の箱の数
@@ -700,7 +749,7 @@
         if (!si.shapes.length || si.joint) return;
         Array.from(new Set(si.shapes)).forEach(function (shape) {
           if (doneShape[shape]) return;
-          if (shape.charAt(0) === 'L' && elev && flagsBySec[L1]) {
+          if (shape.charAt(0) === 'L' && elev && flagsBySec[L1] && !doneShapeAngles[L1]) {
             doneShape[shape] = 1;
             // 山形鋼: 立面図の梁の中で、同じ高さに3本以上並ぶ水平の線
             var segs = hlines.filter(function (h) { return h.x0 >= elev.x0 - 1 && h.x1 <= elev.x1 + 1 && h.y < elev.top + 450 && h.y > elev.bot && h.x1 - h.x0 >= 100 && h.x1 - h.x0 <= 1000; });
