@@ -119,13 +119,15 @@
 
   // ---------- 小道具 ----------
   var RE_PLATE = /^(G?PL)-([0-9.]+)(x[0-9.]+)?$/;      // GPL-9 / PL-12 / PL-12x199
-  var RE_MARK = /^KG[0-9A-Z]+$/;                        // KG1 / KGR63 / KGEVG1
+  // 板の符号: KG1・KGR63・KGEVG1(阪和)/ KK-5・PRG14(別の書き方)。小梁・継手などの名前(SB588・BJ35・PJ25・J588 など)は除く
+  var RE_MARK = /^(?:KG[0-9A-Z]+|[A-Z]{2,4}-?[0-9]+[A-Z]?)$/;
+  var RE_NOT_MARK = /^(?:SB|BJ|THJ?|TS?PJ|EPJ?|PJ|DCJ|GJ|CL|BT|BTJ?B?|RB|KB|BCR|BCP|SN|SM|SS|STK|TMCP)[0-9]/;
   var RE_SHAPE = /^([LC])-[0-9.]+x[0-9.x]+$/;           // L-50x50x6 / C-60x30x10x2.3
   var RE_FB = /^FB-([0-9.]+)x([0-9.]+)x([0-9.]+)$/;     // FB-6x65x255
   var RE_FUGO = /^[0-9]+G[0-9]+[A-Z]*$/;                // 2G2 / 3G1B
   var RE_DAI = /^([0-9]+)台$/;
   var RE_MAIN = /^S?H-[0-9]+(～[0-9]+)?x[0-9]+x[0-9.]+x[0-9.]+$/;
-  var RE_ZUBAN = /^[A-Z0-9]+-[0-9]{3}[A-Z]?$/;          // B1M2G-001
+  var RE_ZUBAN = /^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+)+$/;   // B1M2G-001 / WR-2G-1
   var RE_JOINT = /J[0-9]/;                              // PJ25・TSPJ9・DCJ1・J588(継手・ボルト接合の部材)
   function near(a, b, dx, dy) { return Math.abs(a.x - b.x) <= dx && Math.abs(a.y - b.y) <= dy; }
   function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
@@ -137,22 +139,35 @@
     var koji = '';
     texts.forEach(function (t) { if (/工事$/.test(t.text) && t.text.length > koji.length && !/^工事/.test(t.text)) koji = t.text; });
     var zuban = '', best = -Infinity;
-    texts.forEach(function (t) { if (RE_ZUBAN.test(t.text)) { var s = t.x - t.y; if (s > best) { best = s; zuban = t.text; } } });
-    return { koji: koji, zuban: zuban };
+    // 表題欄(右下)にあるもの。工事番号(26-11)・形鋼・板の表記は除く
+    texts.forEach(function (t) { if (RE_ZUBAN.test(t.text) && !/^[0-9]+-[0-9]+$/.test(t.text) && !RE_PLATE.test(t.text) && !/^(?:S?H|BT|FB|L|C)-/.test(t.text)) { var s = t.x - t.y; if (s > best) { best = s; zuban = t.text; } } });
+    // 工事番号(表題欄にある図面だけ。例 26-11)
+    // 「工事番号」の文字は線で描かれていて読めない図面があるので、表題欄(図面の右下の隅)にある「26-11」の形の文字を使う
+    var kojiNo = '', corner = -Infinity;
+    texts.forEach(function (t) { corner = Math.max(corner, t.x - t.y); });
+    var kc = texts.filter(function (t) { return /^[0-9]{2}-[0-9]{1,3}$/.test(t.text) && t.x - t.y > corner - 3000; }).sort(function (a, b) { return (b.x - b.y) - (a.x - a.y); })[0];
+    if (kc) kojiNo = kc.text;
+    return { koji: koji, zuban: zuban, kojiNo: kojiNo };
   }
 
   // 「製品名 符号 N台」の行。符号が無い行(現場付けの製品)は onSite に入れる
+  // 製品名: B1M2GJ9・B1M2G001-1・2G21-W9 など(英字を含む、記号は - だけ)
+  var RE_PNAME = /^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+)*$/;
   function productRows(texts) {
     var rows = [], onSite = [];
     texts.forEach(function (t) {
       var m = RE_DAI.exec(t.text); if (!m) return;
-      var same = texts.filter(function (u) { return Math.abs(u.y - t.y) < 15 && u.x < t.x && t.x - u.x < 2500; })
+      var same = texts.filter(function (u) { return Math.abs(u.y - t.y) < 15 && u.x < t.x && t.x - u.x < 6000; })
         .sort(function (a, b) { return b.x - a.x; });
+      // 左隣の「N台」より左は別の製品
+      var stop = same.find(function (u) { return RE_DAI.test(u.text); });
+      if (stop) same = same.filter(function (u) { return u.x > stop.x; });
       var fugo = same.find(function (u) { return RE_FUGO.test(u.text); });
-      var name = same.find(function (u) { return /^[A-Z0-9]+G[A-Z]*[0-9]+(-[0-9]+)?$/.test(u.text) && !RE_FUGO.test(u.text) && (!fugo || u.x < fugo.x); });
+      var name = same.find(function (u) { return RE_PNAME.test(u.text) && !RE_FUGO.test(u.text) && !RE_MAIN.test(u.text) && (!fugo || u.x < fugo.x); });
       if (!name) return;
-      var rec = { name: name.text, fugo: fugo ? fugo.text : '', dai: parseInt(m[1], 10), x: name.x, y: t.y };
-      if (fugo && t.x - fugo.x < 1500) rows.push(rec); else onSite.push(rec);
+      var main = same.find(function (u) { return RE_MAIN.test(u.text) && u.x > name.x; });
+      var rec = { name: name.text, fugo: fugo ? fugo.text : '', dai: parseInt(m[1], 10), x: name.x, xr: t.x, y: t.y, main: main ? main.text : '' };
+      if (fugo) rows.push(rec); else onSite.push(rec);
     });
     return { rows: rows, onSite: onSite };
   }
@@ -195,7 +210,7 @@
       return Math.hypot(p.x - cx, p.y - h.y);
     }
     var sizes = texts.filter(function (t) { return RE_PLATE.test(t.text); }).map(function (s) { return { t: s, h: leader(s) }; });
-    var marks = texts.filter(function (t) { return RE_MARK.test(t.text); });
+    var marks = texts.filter(function (t) { return RE_MARK.test(t.text) && !RE_NOT_MARK.test(t.text) && !RE_PLATE.test(t.text); });
     var mekkis = texts.filter(function (t) { return /めっき/.test(t.text); });
     var pairs = [];
     sizes.forEach(function (s) { marks.forEach(function (m) { var d = dSeg(center(m), s.h, s.t); if (d < 420) pairs.push({ s: s, m: m, d: d }); }); });
@@ -217,23 +232,29 @@
     var P = parse(buf), T = P.texts, L = P.lines;
     var info = titleInfo(T);
     var titles = sectionTitles(T);
-    var secXmin = titles.length ? Math.min.apply(null, titles.map(function (s) { return s.x; })) : Infinity;
-    var leftMax = secXmin - 1200;                           // これより左が平面図・立面図
-    var isLeft = function (o) { return o.x < leftMax; };
-
     var pr = productRows(T);
-    var prods = pr.rows.filter(isLeft);
-    // 製品の行を、図(立面図・平面図)ごとにまとめる(行の高さが近いもの)
-    prods.sort(function (a, b) { return b.y - a.y; });
+    // 製品の行を、図(立面図・平面図)ごとにまとめる。行の高さが近く(600以内)、横にも近い(5000以内)ものは同じ図。
+    // 図の範囲: 縦 = 製品の行より上で、上の図の行まで。横 = 左右に並ぶ図の間で分け、右に断面図があればその手前まで
+    var prods = pr.rows.slice().sort(function (a, b) { return b.y - a.y || a.x - b.x; });
     var views = [];
     prods.forEach(function (p) {
-      var v = views.find(function (v) { return Math.abs(v.labelY - p.y) < 600; });
-      if (v) { v.products.push(p); v.labelY = Math.min(v.labelY, p.y); v.labelTop = Math.max(v.labelTop, p.y); }
-      else views.push({ products: [p], labelY: p.y, labelTop: p.y });
+      var v = views.find(function (v) { return Math.abs(v.labelY - p.y) < 600 && p.x - v.xr < 5000 && v.x - p.xr < 5000; });
+      if (v) { v.products.push(p); v.labelY = Math.min(v.labelY, p.y); v.labelTop = Math.max(v.labelTop, p.y); v.x = Math.min(v.x, p.x); v.xr = Math.max(v.xr, p.xr); }
+      else views.push({ products: [p], labelY: p.y, labelTop: p.y, x: p.x, xr: p.xr });
     });
-    views.sort(function (a, b) { return b.labelY - a.labelY; });
-    views.forEach(function (v, i) { v.yMin = v.labelTop; v.yMax = i === 0 ? Infinity : views[i - 1].labelY; });
-    var inView = function (v, o) { return o.y > v.yMin && o.y < v.yMax; };
+    views.forEach(function (v) {
+      var above = views.filter(function (u) { return u !== v && u.labelY > v.labelTop + 600 && u.x < v.xr + 5000 && u.xr > v.x - 5000; });
+      v.yMin = v.labelTop; v.yMax = above.length ? Math.min.apply(null, above.map(function (u) { return u.labelY; })) : Infinity;
+      var row = views.filter(function (u) { return Math.abs(u.labelY - v.labelY) < 600; }).sort(function (a, b) { return a.x - b.x; });
+      var i = row.indexOf(v);
+      v.x0 = i > 0 ? (row[i - 1].xr + v.x) / 2 : -Infinity;
+      v.x1 = i < row.length - 1 ? (v.xr + row[i + 1].x) / 2 : Infinity;
+      titles.forEach(function (s) { if (s.y > v.yMin && s.y < v.yMax && s.x > v.xr) v.x1 = Math.min(v.x1, s.x - 1200); });
+    });
+    // 上の段から順、同じ段(高さの差600以内)は左から
+    views.sort(function (a, b) { return Math.abs(a.labelY - b.labelY) >= 600 ? b.labelY - a.labelY : a.x - b.x; });
+    var inView = function (v, o) { return o.y > v.yMin && o.y < v.yMax && o.x > v.x0 && o.x < v.x1; };
+    var isLeft = function (o) { return views.some(function (v) { return inView(v, o); }); };
 
     // 断面の副題「(EV鉄骨取合)」
     titles.forEach(function (s) {
@@ -251,7 +272,7 @@
     titles.forEach(function (s) { secInfo[s.letter] = { title: s, plates: {}, plateT: new Set(), shapes: [], joint: false, dims: [], nested: [] }; });
     var elevLabels = [];
     labels.forEach(function (lb) {
-      if (lb.x < leftMax && lb.sx < leftMax) { elevLabels.push(lb); return; }
+      if (isLeft(lb) && isLeft({ x: lb.sx, y: lb.sy })) { elevLabels.push(lb); return; }
       var s = sectionOf({ x: lb.x, y: lb.y, text: lb.mark }, titles); if (!s) return;
       var si = secInfo[s.letter];
       si.plates[lb.mark] = si.plates[lb.mark] || { size: lb.size, n: 0, mekki: false };
@@ -271,23 +292,26 @@
     });
 
     // 旗(断面記号): 文字の右に縦線(長さ250〜450)がある
+    // 旗の縦線(梁が傾いた図面では少し傾いている。傾き1割まで)
+    var flagLines = L.filter(function (l) { var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]); return dy > 200 && dy < 500 && dx <= dy * 0.1; })
+      .map(function (l) { return { x: (l[0] + l[2]) / 2, y0: Math.min(l[1], l[3]), y1: Math.max(l[1], l[3]) }; });
     function flagLineX(t) {
-      var c = vlines.filter(function (v) { return v.x - t.x > 50 && v.x - t.x < 180 && v.y0 <= t.y + 20 && v.y1 >= t.y && v.y1 - v.y0 > 200 && v.y1 - v.y0 < 500; });
+      var c = flagLines.filter(function (v) { return v.x - t.x > 50 && v.x - t.x < 180 && v.y0 <= t.y + 20 && v.y1 >= t.y; });
       return c.length ? c[0].x : null;
     }
 
     var excluded = new Set();
     if (pr.onSite.length || T.some(function (t) { return /現場付/.test(t.text); })) excluded.add('現場付けの製品');
     if (T.some(function (t) { return /フィラー/.test(t.text); })) excluded.add('フィラーPL');
-    if (T.some(function (t) { return /吊りピース/.test(t.text); })) excluded.add('吊りピース');
+    if (T.some(function (t) { return /吊り?ピース/.test(t.text); })) excluded.add('吊りピース');
     if (T.some(function (t) { return /ネット受け|^K8\s*[(（]/.test(t.text); })) excluded.add('ネット受けピース');
     if (T.some(function (t) { return /サヤ管/.test(t.text); })) excluded.add('サヤ管');
-    if (T.some(function (t) { return /^J[0-9]+[A-Z]?$/.test(t.text) || /スプライス/.test(t.text); })) excluded.add('スプライスPL');
+    if (T.some(function (t) { return /^G?J[0-9]+[A-Z]?$/.test(t.text) || /スプライス/.test(t.text); })) excluded.add('スプライスPL');
 
     var fbDims = [];
     T.forEach(function (t) { var m = RE_FB.exec(t.text); if (m) { var k = m[1] + 'x' + m[2] + 'x' + m[3]; if (!fbDims.some(function (f) { return f.key === k; })) fbDims.push({ key: k, t: m[1], w: parseFloat(m[2]), l: parseFloat(m[3]) }); } });
 
-    var result = { fileName: fileName || '', koji: info.koji, zuban: info.zuban, products: [], excluded: [], warnings: [] };
+    var result = { fileName: fileName || '', koji: info.koji, kojiNo: info.kojiNo, zuban: info.zuban, products: [], excluded: [], warnings: [] };
 
     views.forEach(function (v) {
       var items = {};   // key → {size, name, n, notes:Set}
@@ -298,20 +322,27 @@
         if (note !== undefined) items[k].notes.push(note);
       }
       // 本体の鋼材(左に「B」の文字があるもの=柱側のブラケットは除く)
-      var mains = T.filter(function (t) { return isLeft(t) && inView(v, t) && RE_MAIN.test(t.text) && !T.some(function (u) { return u.text === 'B' && Math.abs(u.y - t.y) < 15 && t.x - u.x > 0 && t.x - u.x < 300; }); });
-      var main = mains[0] ? mains[0].text : '';
+      var mains = T.filter(function (t) { return inView(v, t) && RE_MAIN.test(t.text) && !T.some(function (u) { return u.text === 'B' && Math.abs(u.y - t.y) < 15 && t.x - u.x > 0 && t.x - u.x < 300; }); });
+      var main = (v.products[0] && v.products[0].main) || (mains[0] ? mains[0].text : '');
       var depth = main ? parseFloat(/H-([0-9]+)/.exec(main)[1]) : 0;
-      // 長さ: 「10」の文字2つと同じ高さにある一番大きい数
+      // 長さ: 寸法の行で「10」(柱との隙間)2つの間にある一番大きい数。梁が傾いていると寸法の行も傾くので、2つの「10」を結ぶ線のそばで探す
       var length = 0;
-      T.filter(function (t) { return isLeft(t) && inView(v, t) && t.text === '10'; }).forEach(function (t) {
-        var row = T.filter(function (u) { return isLeft(u) && Math.abs(u.y - t.y) < 15 && /^[0-9]+$/.test(u.text); });
-        if (row.filter(function (u) { return u.text === '10'; }).length >= 2) row.forEach(function (u) { var n = parseInt(u.text, 10); if (n > length && n < 30000) length = n; });
+      var tens = T.filter(function (t) { return inView(v, t) && t.text === '10'; });
+      tens.forEach(function (a) {
+        // 右で一番近い「10」(傾き1割以内)だけを相手にする(通り芯の番号「10」と組にしない)
+        var b = tens.filter(function (c) { return c.x > a.x + 1000 && Math.abs(c.y - a.y) <= (c.x - a.x) * 0.1; }).sort(function (p, q) { return p.x - q.x; })[0];
+        if (!b) return;
+        T.forEach(function (u) {
+          if (!inView(v, u) || !/^[0-9]+(\.[0-9]+)?$/.test(u.text) || u.x <= a.x || u.x >= b.x) return;
+          var yl = a.y + (b.y - a.y) * (u.x - a.x) / (b.x - a.x);
+          if (Math.abs(u.y - yl) < 40) { var n = parseFloat(u.text); if (n > length && n < 30000) length = n; }
+        });
       });
 
       // 立面図の梁(フランジの線の間隔=梁成)
       var elev = null;
       if (depth) {
-        var longH = hlines.filter(function (h) { return h.x0 < leftMax && inView(v, { y: h.y }) && h.x1 - h.x0 > 3000; });
+        var longH = hlines.filter(function (h) { return inView(v, { x: (h.x0 + h.x1) / 2, y: h.y }) && h.x1 - h.x0 > 3000; });
         for (var i = 0; i < longH.length && !elev; i++) for (var j = 0; j < longH.length; j++) {
           var a = longH[i], b = longH[j];
           if (Math.abs(a.y - b.y - depth) < 1.5 && Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > 2000) { elev = { top: a.y, bot: b.y, x0: Math.max(a.x0, b.x0), x1: Math.min(a.x1, b.x1) }; break; }
@@ -340,7 +371,7 @@
       // 旗 → 場所。旗は左向き(左の板を見る)を優先し、板厚が断面の表記と合う板だけ
       var flagsBySec = {};
       T.forEach(function (t) {
-        if (!isLeft(t) || !inView(v, t) || !/^[A-Za-z]$/.test(t.text) || !secInfo[t.text]) return;
+        if (!inView(v, t) || !/^[A-Za-z]$/.test(t.text) || !secInfo[t.text]) return;
         var fx = flagLineX(t); if (fx === null) return;
         var si = secInfo[t.text];
         flagsBySec[t.text] = flagsBySec[t.text] || { matched: [], unmatched: 0 };
@@ -392,15 +423,23 @@
         secInfo[L1].nested.forEach(function (N) { if (secCount[L1]) addSecPlatesOnce([N], secCount[L1]); });
       });
       // 立面図に直接書かれた板の表記(例: PL-12 / KGR64)
-      elevLabels.forEach(function (lb) { if (inView(v, { y: lb.y })) add(lb.size, lb.mark, 1, ''); });
+      elevLabels.forEach(function (lb) { if (inView(v, lb)) add(lb.size, lb.mark, 1, ''); });
 
-      // FB: 表記の寸法の□(長さ×幅)を数える
+      // FB: 表記の寸法の□(長さ×幅)を数える。梁が傾いていると□も傾くので、向きを問わず「長さLの平行な2本の線が幅Wだけ離れている」組を数える
       fbDims.forEach(function (fb) {
-        var hs = hlines.filter(function (h) { return h.x0 < leftMax && inView(v, { y: h.y }) && Math.abs(h.x1 - h.x0 - fb.l) < 0.6; });
+        var ls = L.filter(function (l) { return Math.abs(Math.hypot(l[2] - l[0], l[3] - l[1]) - fb.l) < 0.6 && inView(v, { x: (l[0] + l[2]) / 2, y: (l[1] + l[3]) / 2 }); });
         var cnt = 0, used = new Set();
-        hs.forEach(function (a) {
+        ls.forEach(function (a) {
           if (used.has(a)) return;
-          var b = hs.find(function (h) { return h !== a && !used.has(h) && Math.abs(h.x0 - a.x0) < 0.6 && Math.abs(Math.abs(h.y - a.y) - fb.w) < 0.6; });
+          var ux = (a[2] - a[0]) / fb.l, uy = (a[3] - a[1]) / fb.l, mx = (a[0] + a[2]) / 2, my = (a[1] + a[3]) / 2;
+          var b = ls.find(function (c) {
+            if (c === a || used.has(c)) return false;
+            var vx = (c[2] - c[0]) / fb.l, vy = (c[3] - c[1]) / fb.l;
+            if (Math.abs(ux * vy - uy * vx) > 0.01) return false;              // 平行
+            var cx = (c[0] + c[2]) / 2 - mx, cy = (c[1] + c[3]) / 2 - my;
+            var along = cx * ux + cy * uy, across = Math.abs(cx * uy - cy * ux);
+            return Math.abs(along) < 1 && Math.abs(across - fb.w) < 0.8;
+          });
           if (b) { used.add(a); used.add(b); cnt++; }
         });
         if (cnt) add('FB-' + fb.t + 'x' + fb.w, fb.l, cnt, 'デッキ受け');
@@ -428,7 +467,7 @@
             // 溝形鋼: 平面図で、断面の寸法と同じ長さの縦線の組
             si.dims.forEach(function (len) {
               if (doneShape[shape + '@' + len]) return; doneShape[shape + '@' + len] = 1;
-              var vs = vlines.filter(function (l) { return l.x < leftMax && inView(v, { y: (l.y0 + l.y1) / 2 }) && Math.abs(l.y1 - l.y0 - len) < 0.6; }).sort(function (a, b) { return a.x - b.x; });
+              var vs = vlines.filter(function (l) { return inView(v, { x: l.x, y: (l.y0 + l.y1) / 2 }) && Math.abs(l.y1 - l.y0 - len) < 0.6; }).sort(function (a, b) { return a.x - b.x; });
               var used = new Set(), cnt = 0;
               vs.forEach(function (a) { if (used.has(a)) return; var b = vs.find(function (l) { return l !== a && !used.has(l) && l.x - a.x > 0 && l.x - a.x <= 40 && Math.abs(l.y0 - a.y0) < 0.6; }); if (b) { used.add(a); used.add(b); cnt++; } });
               if (cnt) add(shape, len, cnt, si.title.sub || '');
