@@ -423,6 +423,86 @@
       named = { title: c.t.text, marks: ms, shapes: shapes, used: new Set(c.lbs) };
     })();
 
+    // 断面の中の組立H(BH-396x199x9x16)。そばに符号が3つ縦に並んでいれば、上から 上フランジ・ウェブ・下フランジ(2026-11-19 ユーザー説明。2G-01 の OGAR3K・OGAR5・OGAR4K)。
+    // ウェブは BH のウェブ厚の板で拾う。フランジは、ほかの断面図(ア・イなど)で板として拾えていれば重ねない(拾えていなければフランジ厚の板)
+    var labeled = new Set(labels.map(function (lb) { return lb.mark + '@' + Math.round(lb.x) + ',' + Math.round(lb.y); }));
+    var plateMarks = new Set();
+    Object.keys(secInfo).forEach(function (k) { Object.keys(secInfo[k].plates).forEach(function (m) { plateMarks.add(m); }); });
+    T.forEach(function (t) {
+      var bh = /^BH-([0-9.]+)x([0-9.]+)x([0-9.]+)x([0-9.]+)$/.exec(t.text);
+      if (!bh || isLeft(t)) return;
+      var s = sectionOf(t, titles); if (!s) return;
+      var si = secInfo[s.letter];
+      var ms = T.filter(function (u) {
+        // 符号は BH の表記の近く(1500以内)で探す(断面の見出しとの距離では隣の断面に入ることがある)
+        return RE_MARK.test(u.text) && !RE_NOT_MARK.test(u.text) && !RE_PLATE.test(u.text) && !labeled.has(u.text + '@' + Math.round(u.x) + ',' + Math.round(u.y)) &&
+          !isLeft(u) && dist(u, t) < 1500;
+      });
+      var best = null, bd = Infinity;
+      ms.forEach(function (a) {
+        var g = ms.filter(function (b) { return Math.abs(b.x - a.x) < 80 && b.y <= a.y && a.y - b.y < 400; }).sort(function (p, q) { return q.y - p.y; });
+        if (g.length !== 3) return;
+        var d = dist(g[1], t);
+        if (d < bd) { bd = d; best = g; }
+      });
+      if (!best) return;
+      var tw = bh[3], tf = bh[4];
+      [[best[0], tf], [best[1], tw], [best[2], tf]].forEach(function (x, i) {
+        var m = x[0].text;
+        if (i !== 1 && plateMarks.has(m)) return;
+        if (!si.plates[m]) si.plates[m] = { size: 'PL-' + x[1], n: 1, mekki: false };
+      });
+    });
+
+    // 名前だけの断面図(「A SEC」の見出しが無く、図の下に「外装ALC下地」とだけ書いた図。2G-01)を1つだけ探す。
+    // 使うのは、旗がなくどの断面か決められない板があるときだけ(上の views の中で判断)
+    var outsideStrict = function (o) { return !views.some(function (v) { return o.y > v.yMin && o.y < v.yMax && o.x > v.x0 && o.x < v.x1s; }); };
+    var named = null;
+    (function () {
+      var cands = [];
+      T.forEach(function (t) {
+        if (!/[ぁ-んァ-ヶ一-龠]/.test(t.text) || /[0-9\s]/.test(t.text) || t.text.length < 3 || /SEC/.test(t.text) || !outsideStrict(t)) return;
+        if (titles.some(function (s) { return s.y - t.y > 60 && s.y - t.y < 320 && Math.abs(t.x - (s.x + s.sx) / 2) < 400; })) return;   // 断面の副題
+        // 断面図の名前は単独で書かれている。すぐ近くに文字がある注記(「デッキ受け」の横の BT-640… など)は除く
+        if (T.some(function (u) { return u !== t && Math.abs(u.y - t.y) < 150 && Math.abs(u.x - t.x) < 600; })) return;
+        var cx = t.x + 18 * t.text.length;
+        var mine = function (o) {
+          var dy = o.y - t.y, dx = Math.abs(o.x + 18 * (o.text || '').length - cx);
+          if (dy < 100 || dy > 2600 || dx > 1900 || !outsideStrict(o)) return false;
+          var s = sectionOf(o, titles); if (!s) return true;
+          var sdy = o.y - s.y, sdx = Math.abs(o.x + 18 * (o.text || '').length - (s.x + s.sx) / 2);
+          return dy + 2 * dx < sdy + 2 * sdx;
+        };
+        var lbs = labels.filter(function (lb) { return mine({ x: lb.x, y: lb.y, text: lb.mark }); });
+        if (lbs.length < 2) return;
+        cands.push({ t: t, mine: mine, lbs: lbs });
+      });
+      if (cands.length !== 1) return;
+      var c = cands[0], seen = {};
+      var sizesIn = T.filter(function (u) { return RE_PLATE.test(u.text) && c.mine(u); });
+      var ms = [];
+      T.forEach(function (u) {
+        if (!RE_MARK.test(u.text) || RE_NOT_MARK.test(u.text) || RE_PLATE.test(u.text) || !c.mine(u) || seen[u.text]) return;
+        var lb = c.lbs.find(function (l) { return l.mark === u.text; });
+        var size, cnt = 1;
+        if (lb) { size = lb.size; cnt = lb.cnt; }
+        else {   // 表記を2つの符号で共用している(PL-9 に OGALR3・OGALR2)→ 一番近い板の表記
+          var near1 = sizesIn.slice().sort(function (a, b) { return dist(a, u) - dist(b, u); })[0];
+          if (!near1 || dist(near1, u) > 600) return;
+          size = plateSize(near1.text); cnt = plateCount(near1.text);
+        }
+        seen[u.text] = 1; ms.push({ mark: u.text, size: size, cnt: cnt });
+      });
+      var shapes = [];
+      T.forEach(function (u) {
+        var sz = u.text.replace(/X/g, 'x'); if (!RE_SHAPE.test(sz) || !c.mine(u) || shapes.some(function (q) { return q.size === sz; })) return;
+        var lt = T.filter(function (w) { return /^L=[0-9.]+$/.test(w.text) && c.mine(w); }).sort(function (a, b) { return dist(a, u) - dist(b, u); })[0];
+        if (!lt) return;
+        shapes.push({ size: sz, len: parseFloat(lt.text.slice(2)), leg: parseFloat(/-([0-9.]+)/.exec(sz)[1]) });
+      });
+      named = { title: c.t.text, marks: ms, shapes: shapes, used: new Set(c.lbs) };
+    })();
+
     // 旗(断面記号): 文字の右に縦線(長さ250〜450)がある
     // 旗の縦線(梁が傾いた図面では少し傾いている。傾き1割まで)
     var flagLines = L.filter(function (l) { var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]); return dy > 200 && dy < 500 && dx <= dy * 0.1; })
