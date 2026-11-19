@@ -164,12 +164,32 @@
       if (stop) same = same.filter(function (u) { return u.x > stop.x; });
       var fugo = same.find(function (u) { return RE_FUGO.test(u.text); });
       var name = same.find(function (u) { return RE_PNAME.test(u.text) && !RE_FUGO.test(u.text) && !RE_MAIN.test(u.text) && (!fugo || u.x < fugo.x); });
-      if (!name) return;
+      if (!name) {
+        // 上の読み方で製品名が見つからない行は、tdf-master-web(製品情報の抽出)と同じ読み方で読み直す(2026-11-19)
+        var mw = masterWebRow(same, t, parseInt(m[1], 10));
+        if (mw) rows.push(mw);
+        return;
+      }
       var main = same.find(function (u) { return RE_MAIN.test(u.text) && u.x > name.x; });
       var rec = { name: name.text, fugo: fugo ? fugo.text : '', dai: parseInt(m[1], 10), x: name.x, xr: t.x, y: t.y, main: main ? main.text : '' };
       if (fugo) rows.push(rec); else onSite.push(rec);
     });
     return { rows: rows, onSite: onSite };
+  }
+
+  // tdf-master-web の find_product_rows と同じ読み方(index.html の py-tdf-master-extractor):
+  // 「N台」の左の直近3つを、左から 製品マーク・設計符号・サイズ とみなす。サイズだけは形で確かめる(SIZE_PATTERN)。
+  // 設計符号とサイズの間に1文字の書き込みがあれば飛ばす。製品マークの文字の形は問わない(2Gc41A-CX1CY8・2G31-W内9 など)
+  var RE_MW_SIZE = /^(2LS|2L|BBOX|BCP|BCR|BOX|BH|BT|CT|C|MHY|HFT|HYT|HF|HY|H|I|LH|L|P|SH|TH|[0-9]+φ|\[|角|□)[\-‐]?\s*[0-9]/;
+  function masterWebRow(sameDesc, dai, nDai) {
+    var row = sameDesc.slice().sort(function (a, b) { return a.x - b.x; });
+    if (row.length < 3) return null;
+    var sizeT = row[row.length - 1], codeT = row[row.length - 2], markT = row[row.length - 3];
+    var before = row.slice(0, -1).filter(function (u) { return u.text.trim().length > 1; });
+    if (before.length >= 2 && before.length < row.length - 1) { codeT = before[before.length - 1]; markT = before[before.length - 2]; }
+    if (!RE_MW_SIZE.test(sizeT.text.normalize('NFKC').trim())) return null;
+    if (RE_DAI.test(markT.text.normalize('NFKC').trim())) return null;
+    return { name: markT.text, fugo: codeT.text, dai: nDai, x: markT.x, xr: dai.x, y: dai.y, main: sizeT.text };
   }
 
   // 断面の見出し「A SEC」
@@ -378,7 +398,7 @@
       // 本体の鋼材(左に「B」の文字があるもの=柱側のブラケットは除く)
       var mains = T.filter(function (t) { return inView(v, t) && RE_MAIN.test(t.text) && !T.some(function (u) { return u.text === 'B' && Math.abs(u.y - t.y) < 15 && t.x - u.x > 0 && t.x - u.x < 300; }); });
       var main = (v.products[0] && v.products[0].main) || (mains[0] ? mains[0].text : '');
-      var depth = main ? parseFloat(/H-([0-9]+)/.exec(main)[1]) : 0;
+      var dm = /H-([0-9]+)/.exec(main), depth = dm ? parseFloat(dm[1]) : 0;   // H形鋼以外(BT・□など)は梁成なし
       // 長さ: 寸法の行で「10」(柱との隙間)2つの間にある一番大きい数。梁が傾いていると寸法の行も傾くので、2つの「10」を結ぶ線のそばで探す
       var length = 0;
       var tens = T.filter(function (t) { return inView(v, t) && t.text === '10'; });
