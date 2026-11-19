@@ -263,7 +263,9 @@ async function importItems(items) {
   } finally { idle(); }
   render();
   if (excluded.size) await notice('お知らせ', Array.from(excluded).join('・') + 'は抽出していません');
-  if (errors.length || warns.length) await notice('取り込めなかったTDF・確認が必要なこと', errors.concat(warns).join('\n'));
+  // 取り込めなかったTDFがあるときは、対象外の図面の説明を添える(2026-11-19 ユーザー指示。2G-07A のような断面だけの補助図面は対象外)
+  const NOTE_UNSUPPORTED = '断面だけの補助図面がある場合（a付など）は、抽出できません';
+  if (errors.length || warns.length) await notice('取り込めなかったTDF・確認が必要なこと', errors.concat(warns).join('\n') + (errors.length ? '\n\n' + NOTE_UNSUPPORTED : ''));
 }
 $('btn-files').addEventListener('click', pickFiles);
 $('file-input').addEventListener('change', e => { const fs = Array.from(e.target.files); e.target.value = ''; importWithNotice(fs.map(f => ({ file: f, path: '' }))); });

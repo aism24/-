@@ -327,16 +327,26 @@
       if (RE_JOINT.test(t.text) && /^[A-Z]+J[0-9]/.test(t.text)) si.joint = true;
       if (/^[0-9]+$/.test(t.text) && parseInt(t.text, 10) >= 100) si.dims.push(parseInt(t.text, 10));
       // 断面図の中の断面記号(例: C断面の中の E)
-      if (RE_SECKEY.test(t.text) && secInfo[t.text] && t.text !== s.letter && !titles.some(function (x) { return x.letter === t.text && Math.abs(x.y - t.y) < 10; })) si.nested.push(t.text);
     });
-    // 断面図の上に書かれた断面記号(C断面の上の H・J。見出しから約3060上。2026-11-19 ユーザー説明、2G-01)は、
-    // 上の探し方(見出しから2600まで)で親が見つからないときだけ、見出しから上へ3500まで探す
+    // 断面図の中の断面記号 → どの断面図の中か(親)。2026-11-19 ユーザー説明(2G-01)で見直し:
+    //  - 見出しから上へ3500まで探す(C断面の上の H・J は見出しから約3060上、G断面の上の L は約2660上)
+    //  - 左に棒がある旗(ア・ク・ケ・コ。棒の上から右へ横線)は右向き = 断面図は旗の右。親は記号より右に見出しがある断面だけ
+    //    (これが無いと、G断面の左のケ・コを左隣の DK3断面のものとしていた)
+    // 記号は断面図の右に書かれることもある(検証図面B の C の中の E)ので、右向きの旗でなければ左右の条件は付けない
+    function rightFlag(t) {
+      return L.some(function (l) {
+        var x0 = Math.min(l[0], l[2]) - t.x, x1 = Math.max(l[0], l[2]) - t.x, y0 = Math.min(l[1], l[3]) - t.y, y1 = Math.max(l[1], l[3]) - t.y;
+        return x1 - x0 < 1 && x0 > -260 && x0 < -100 && y0 < 10 && y1 > 60 && L.some(function (h) {
+          return Math.abs(h[1] - h[3]) < 1 && Math.abs(Math.min(h[0], h[2]) - t.x - x0) < 2 && Math.max(h[0], h[2]) - t.x > 100 && Math.abs(h[1] - t.y - y1) < 2;
+        });
+      });
+    }
     T.forEach(function (t) {
-      if (isLeft(t) || !RE_SECKEY.test(t.text) || !secInfo[t.text] || sectionOf(t, titles) || titles.some(function (x) { return x.letter === t.text && Math.abs(x.y - t.y) < 10; })) return;
-      var best = null, bs = Infinity, cx = t.x + 18 * t.text.length;
+      if (isLeft(t) || !RE_SECKEY.test(t.text) || !secInfo[t.text] || titles.some(function (x) { return x.letter === t.text && Math.abs(x.y - t.y) < 10; })) return;
+      var best = null, bs = Infinity, cx = t.x + 18 * t.text.length, rf = rightFlag(t);
       titles.forEach(function (s) {
-        var dy = t.y - s.y, dx = Math.abs(cx - (s.x + s.sx) / 2);
-        if (dy <= 0 || dy > 3500 || dx > 1900 || s.letter === t.text) return;
+        var c = (s.x + s.sx) / 2, dy = t.y - s.y, dx = Math.abs(cx - c);
+        if (dy <= 0 || dy > 3500 || dx > 1900 || s.letter === t.text || (rf && c < t.x)) return;
         var sc = dy + 2 * dx;
         if (sc < bs) { bs = sc; best = s; }
       });
