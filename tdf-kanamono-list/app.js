@@ -248,8 +248,8 @@ function allProducts() {
 function render() {
   const has = state.tdfs.length > 0;
   $('btn-excel').disabled = !has; $('btn-reset').disabled = !has;
-  $('tdf-list').innerHTML = has ? '<table><tr><th>図面番号</th><th>工事名(図面)</th><th>ファイル名</th><th>フォルダ</th><th></th></tr>' +
-    state.tdfs.map(t => `<tr><td>${esc(t.res.zuban)}</td><td>${esc(t.res.koji)}</td><td>${esc(t.fileName)}</td><td class="path">${esc(t.path || '(リンクなし)')}</td><td><button type="button" class="rm-btn" data-rm="${t.id}">外す</button></td></tr>`).join('') + '</table>' : '';
+  $('tdf-list').innerHTML = has ? '<table><tr><th>図面番号</th><th>工事名(図面)</th><th>ファイル名</th><th></th></tr>' +
+    state.tdfs.map(t => `<tr><td>${esc(t.res.zuban)}</td><td>${esc(t.res.koji)}</td><td title="${esc(t.path || 'リンクなし')}">${esc(t.fileName)}${t.path ? '' : '(リンクなし)'}</td><td><button type="button" class="rm-btn" data-rm="${t.id}">外す</button></td></tr>`).join('') + '</table>' : '';
   const R = $('result');
   if (!has) { R.innerHTML = state.started ? '<div class="empty-msg">TDFを取り込むと、製品ごとの金物リストがここに出ます。<br>枚数(本数)と備考は直してからExcelに出せます。</div>' : ''; return; }
   let html = '';
