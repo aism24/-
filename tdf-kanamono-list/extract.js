@@ -348,7 +348,7 @@
           if (Math.abs(a.y - b.y - depth) < 1.5 && Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > 2000) { elev = { top: a.y, bot: b.y, x0: Math.max(a.x0, b.x0), x1: Math.min(a.x1, b.x1) }; break; }
         }
       }
-      if (!elev) result.warnings.push((v.products[0] || {}).name + ': 立面図の梁が見つかりませんでした(板の数を確認してください)');
+      // 立面図の梁が見つからない(傾いた梁など)ときは、旗の数×断面の表記の数で数える(お知らせは出さない。2026-11-19)
 
       // 立面図で、梁の中に描かれた板(縦線の組。間隔=板厚)
       var positions = [];

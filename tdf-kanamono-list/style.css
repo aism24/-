@@ -144,3 +144,5 @@ table.kl input.note-in { width: 160px; font-size: 13px; padding: 2px 4px; }
   table.kl { min-width: 0; }
 }
 .big-btn .btn-sub { display: block; font-size: 12px; font-weight: normal; }
+#repick-row { text-align: right; margin-top: -8px; }
+.link-btn { background: none; border: none; color: #8ab4f8; text-decoration: underline; cursor: pointer; font-size: 12px; }
