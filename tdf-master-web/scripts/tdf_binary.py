@@ -236,10 +236,22 @@ def load(path: str) -> TdfData:
             body_text_by_id.setdefault(r.id_field, r.text)
             body_rot_by_id.setdefault(r.id_field, r.rot)
 
-    return TdfData(
+    tdf = TdfData(
         path=path, raw=raw, texts=texts, lines=lines, arcs=arcs, polylines=polylines,
         body_text_by_id=body_text_by_id, body_rot_by_id=body_rot_by_id,
     )
+    # 同じ文字が同じ位置・同じ向きに2つ重ねて書かれているときは1つにする(2026-11-20、26-17 D2ML-01。
+    # 図面全体が同じ位置に2回重ねて描かれていて、製品マークの行が2つずつになり、製品マークが取れなかった)
+    seen = set()
+    uniq = []
+    for r in texts:
+        key = (tdf.resolve_text(r), round(r.x, 1), round(r.y, 1), round(tdf.resolve_rot(r), 4))
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(r)
+    tdf.texts = uniq
+    return tdf
 
 
 def is_dai_cell(text: str | None) -> bool:

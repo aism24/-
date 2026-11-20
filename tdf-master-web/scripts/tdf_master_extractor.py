@@ -616,6 +616,45 @@ def determine_length(tdf: tb.TdfData, x_min: float, x_max: float, y_ref: float,
     # 候補は自然と後順位になる(2026-09-14、鳥取現場図面での検証で確立)。
     scored.sort(key=lambda x: (-x[3], -x[1], -x[2]))
 
+    # 直線の本数で勝った候補の直線が、すべて別のもっと長い候補の外形線(3本以上)の内側に収まっているときは、
+    # 梁に付く別の部材(胴縁受けの部品等)の長さとみなし、長い方を使う(2026-11-20、26-17 D2ML-06 の D2M3L-3。
+    # 梁 4130 の上に付く 1200 の部材の直線が7本あり、4130(4本)より多くて 1200 になっていた)。
+    if scored and scored[0][3] == 0:
+        def _matched(val):
+            out = []
+            for ln in tdf.lines:
+                mid_x = (ln.x1 + ln.x2) / 2
+                if not (x_min <= mid_x <= x_max and ln.y1 > y_ref and ln.y2 > y_ref
+                        and (y_max is None or (ln.y1 < y_max and ln.y2 < y_max))):
+                    continue
+                if abs(ln.length - val) >= 0.5:
+                    continue
+                ang = line_angle_deg(ln.x1, ln.y1, ln.x2, ln.y2)
+                diff = abs(ang - main_axis_deg)
+                if min(diff, 180 - diff) <= 5.0:
+                    out.append(ln)
+            return out
+        _ca, _sa = math.cos(math.radians(main_axis_deg)), math.sin(math.radians(main_axis_deg))
+        def _span(ln):
+            a, b = ln.x1 * _ca + ln.y1 * _sa, ln.x2 * _ca + ln.y2 * _sa
+            return min(a, b), max(a, b)
+        top = scored[0]
+        top_lines = _matched(top[0])
+        # 外形線の種類(ref0 の下1バイトが 3)の直線を、勝った候補は1本も持たず、長い方は3本以上持つときだけ
+        if top_lines and not any((ln.ref0 & 0xFF) == 3 for ln in top_lines):
+            for cand in scored[1:]:
+                if cand[0] <= top[0]:
+                    continue
+                c_lines = [ln for ln in _matched(cand[0]) if (ln.ref0 & 0xFF) == 3]
+                if len(c_lines) < 3:
+                    continue
+                spans = [_span(ln) for ln in c_lines]
+                if all(any(lo - 1.0 <= _span(ln)[0] and _span(ln)[1] <= hi + 1.0 for lo, hi in spans)
+                       for ln in top_lines):
+                    scored.remove(cand)
+                    scored.insert(0, cand)
+                    break
+
     best = scored[0]
     debug = {"main_axis_deg": main_axis_deg, "candidates": scored,
               "threshold": threshold, "max_v": max_v}
@@ -1047,6 +1086,19 @@ def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
     if len(near_ref) == 1:
         return next(iter(near_ref))
 
+    def _between_joint_and_end(pos, jobj) -> bool:
+        # 長さのX範囲の外でも、継手の印と梁の端の間にあるサイズの文字は、継手の先の部材ではなく梁自身のもの
+        # (2026-11-20、26-17 D1ML-02 の D1M2L-4。梁の左端の88外側から書き出した L-200x90x9x14 が
+        # 継手側のサイズとみなされて空になっていた)
+        if jobj is None:
+            return False
+        jx = jobj["cx"]
+        if jx < x_lo:
+            return jx < pos[0] < x_lo
+        if jx > x_hi:
+            return x_hi < pos[0] < jx
+        return False
+
     def _is_joint_size(pos) -> bool:
         return not (x_lo <= pos[0] <= x_hi)
 
@@ -1079,6 +1131,11 @@ def determine_size_no_size(tdf: tb.TdfData, endpoints, left_jobj, right_jobj):
 
     size_l = _nearest_size_text_no_size(tdf, left_jobj["cx"], left_jobj["cy"]) if left_jobj else None
     size_r = _nearest_size_text_no_size(tdf, right_jobj["cx"], right_jobj["cy"]) if right_jobj else None
+    own = {p[2] for p, j in ((size_l, left_jobj), (size_r, right_jobj))
+           if p is not None and _has_dims(p[2]) and _between_joint_and_end(p, j)
+           and abs(p[1] - (_ly + _ry) / 2.0) <= _SIZE_JOINT_Y_BAND}
+    if len(own) == 1:
+        return next(iter(own))
     refs = [p for p in (size_l, size_r) if p is not None and _is_joint_size(p)]
     if not refs:
         return _near_joints_in_range() or _wide_band()
