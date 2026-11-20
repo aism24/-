@@ -88,7 +88,8 @@ PDFは文字の読めるもの(Excelから書き出したもの)に限る。用�
 GASを直したら `CODE_VERSION` を上げ、「デプロイを管理 → 編集 → 新バージョン」。反映は `?action=ping` の版で確認する。
 
 ## 本番URL
-- Vercel: https://tottori-production-status.vercel.app/ (2026-11-12 初回デプロイ。Git連携は解除済み。以降の反映は「デプロイして」の指示時のみ)
+- Vercel: https://tottori-production-status.vercel.app/ (2026-11-12 初回デプロイ。Git連携は解除済み)
+- **本番(Vercel)へのデプロイは絶対にしない(2026-11-20 ユーザー指示)。** 修正は GitHub の main まで。確認は raw.githack。デプロイしてよいかはユーザーが改めて明示したときだけ(ほかのアプリの「デプロイして」はこのアプリに含まない)
 
 ## 確認用URL
 - GitHub(raw.githack): `https://raw.githack.com/aism24/-/main/tottori-production-status/index.html`
