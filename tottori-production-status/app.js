@@ -874,7 +874,9 @@
     const src = st.src, abbr = (st.data && st.data.abbr) || {}, links = st.links || {};
     if (!src || !src.items) return [];
     const seen = {};
-    return src.items.filter(function (it) { return it.cell && it.cell.next; }).filter(function (it) {
+    // items は GAS へ送るため cell を外してある。cells は items と同じ順番(parsePlanPdf)なので、番号で対応させる
+    const cells = src.cells || [];
+    return src.items.filter(function (it, i) { return cells[i] && cells[i].next; }).filter(function (it) {
       const k = it.name + '\t' + it.mark; if (seen[k]) return false; seen[k] = 1; return true;
     }).map(function (it) {
       const lk = links[(it.drawing || '') + '\t' + it.mark];
