@@ -2,6 +2,7 @@
 
 TDF(実寸法師)の鉄骨図面から、製品ごとの金物(切板・山形鋼)リストを作り、Excelで出すアプリ。
 2026-11-19にユーザーと様式・拾い出しルールを決め、同日に `tdf-kanamono-list/` を実装(構成・セットアップは `tdf-kanamono-list/README.md`)。
+回帰テスト: 非公開リポジトリ `aism24/test-tdf` の `kanamono/`(7図面と前回値)。`node kanamono/run.js <aism24/->/tdf-kanamono-list/extract.js` で全件OKを確かめてからマージする。
 公開リポジトリのため、工事名・工事番号・実図面はここに書かない(検証図面は「検証図面A」と呼ぶ)。
 
 ## 構成・機能(ユーザーの要件)
