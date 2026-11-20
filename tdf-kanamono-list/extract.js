@@ -121,7 +121,7 @@
   // ---------- 小道具 ----------
   var RE_PLATE = /^(?:[0-9]+)?(G?PL)-([0-9.]+)((?:x[0-9.]+){0,2})$/;      // GPL-9 / PL-12 / PL-12x199 / PL-9x456x456(1G-01) / 2PL-9(2枚)
   // 断面の記号: A・B…(英字1文字)、ア・イ…(カタカナ1文字)、DK1…(英字+数字)。2026-11-19、2G-01(C断面の中にア・イ・ウ、アの中にエ)
-  var RE_SECKEY = /^(?:[A-Za-z]|[ァ-ヶ]|[A-Z]{1,3}[0-9]{1,2})$/;
+  var RE_SECKEY = /^(?:[A-Za-z]|[ァ-ヶ]|[ぁ-ゖ]|[A-Z]{1,3}[0-9]{1,2})$/;   // ひらがな(「あ SEC」LGS下地。EA1-3G-01)は 2026-11-20
   // 「2PL-9」の 2 = 枚数。無ければ1枚
   function plateCount(t) { var m = /^([0-9]+)(?=G?PL-)/.exec(t); return m ? parseInt(m[1], 10) : 1; }
   function plateSize(t) { return t.replace(/^[0-9]+(?=G?PL-)/, ''); }
@@ -932,7 +932,15 @@
               var used = new Set(), cnt = 0;
               vs.forEach(function (a) { if (used.has(a)) return; var b = vs.find(function (l) { return l !== a && !used.has(l) && l.x - a.x > 0 && l.x - a.x <= 40 && Math.abs(l.y0 - a.y0) < 0.6; }); if (b) { used.add(a); used.add(b); cnt++; } });
               if (cnt) add(shape, len, cnt, si.title.sub || '');
+              if (cnt) doneShape[shape + '#plan'] = 1;
             });
+            // 平面図で数えられないとき(梁の下に付く LGS下地。EA1-3G-01・EA1-3B-01、2026-11-20 ユーザー指示「サイズと長さと本数が図面より見れる」):
+            // 長さ = 断面図の寸法の一番大きい数(「あ SEC」の 225+225=450)、本数 = 立面図の旗の数 × 断面図の表記の数
+            var fl = flagsBySec[L1], nFlag = fl ? fl.matched.length + fl.unmatched : 0;
+            if (!doneShape[shape + '#plan'] && nFlag && si.dims.length) {
+              var nLab = si.shapes.filter(function (x) { return x === shape; }).length;
+              add(shape, Math.max.apply(null, si.dims), nFlag * nLab, si.title.sub || '');
+            }
           }
         });
       });
