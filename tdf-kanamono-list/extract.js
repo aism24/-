@@ -87,7 +87,7 @@
       if (u8[i] === 0x38 && u8[i + 3] === 0x80 && dv.getInt32(i, true) === SIZE_LINE && dv.getInt32(i + 4, true) === 1) {
         var x1 = dv.getFloat64(i + 24, true), y1 = dv.getFloat64(i + 32, true);
         var x2 = dv.getFloat64(i + 40, true), y2 = dv.getFloat64(i + 48, true);
-        if (Math.abs(x1) < 1e6 && Math.abs(y1) < 1e6 && Math.abs(x2) < 1e6 && Math.abs(y2) < 1e6) lines.push([x1, y1, x2, y2]);
+        if (Math.abs(x1) < 1e6 && Math.abs(y1) < 1e6 && Math.abs(x2) < 1e6 && Math.abs(y2) < 1e6) lines.push([x1, y1, x2, y2, u8[i + 10]]);   // 5つ目 = レイヤの番号(レイヤ名の表の並び順+1。2026-11-20、1G-01 で確認)
       }
       var b1 = u8[i + 1];
       if (u8[i + 3] === 0 && b1 >= 1 && b1 <= 63 && u8[i + 2] === b1 * 2 && (u8[i] === 0 || okHeader(dv, i - 52))) {
@@ -126,7 +126,7 @@
   function plateCount(t) { var m = /^([0-9]+)(?=G?PL-)/.exec(t); return m ? parseInt(m[1], 10) : 1; }
   function plateSize(t) { return t.replace(/^[0-9]+(?=G?PL-)/, ''); }
   // 板の符号: KG1・KGR63・KGEVG1(阪和)/ KK-5・PRG14(別の書き方)。小梁・継手などの名前(SB588・BJ35・PJ25・J588 など)は除く
-  var RE_MARK = /^(?:KG[0-9A-Z]+|[A-Z]{2,5}-?[0-9]+[A-Z]?)$/;   // OGALR7(英字5文字。2026-11-19)
+  var RE_MARK = /^(?:KG[0-9A-Z]+|[A-Z]{2,5}-?[0-9]+[A-Z]?|[A-Z]-[A-Z]{1,4}[0-9]+[A-Z]?)$/;   // OGALR7(英字5文字。2026-11-19)・O-KZ109(1G-01)
   var RE_NOT_MARK = /^(?:SB|BJ|THJ?|TS?PJ|EPJ?|PJ|DCJ|GJ|CL|BT|BTJ?B?|RB|KB|BCR|BCP|SN|SM|SS|STK|TMCP)[0-9]/;
   var RE_SHAPE = /^([LC])-[0-9.]+x[0-9.x]+$/;           // L-50x50x6 / C-60x30x10x2.3
   var RE_FB = /^FB-([0-9.]+)x([0-9.]+)x([0-9.]+)$/;     // FB-6x65x255
@@ -449,6 +449,21 @@
       named = { title: c.t.text, marks: ms, shapes: shapes, used: new Set(c.lbs) };
     })();
 
+    // レイヤと同じ名前の詳細図(1G-01 の左下「かんざし受け」。2026-11-20 ユーザー指示「O-KZ109 も拾って」):
+    // 図の名前の上(100〜2600)にある板の表記を、そのレイヤで図に描かれた「板厚だけ離れた平行な2本の線」の数だけ拾う
+    // (1G-01: 平面図に 75×9 の板が3か所×両側 = 6枚。詳細図・断面図の中のものは数えない)
+    var layerDetails = [];
+    T.forEach(function (t) {
+      if (isLeft(t) || /[0-9]/.test(t.text) || t.text.length < 2) return;
+      var no = P.layers.indexOf('_' + t.text); if (no < 0) no = P.layers.indexOf(t.text);
+      if (no < 0) return;
+      var lbs = labels.filter(function (lb) {
+        var dy = lb.y - t.y, dx = Math.abs(lb.x - t.x);
+        return dy > 100 && dy < 2600 && dx < 1900 && !isLeft(lb) && !sectionOf({ x: lb.x, y: lb.y, text: lb.mark }, titles);
+      });
+      if (lbs.length) layerDetails.push({ title: t.text, layer: no + 1, labels: lbs });
+    });
+
     // 旗(断面記号): 文字の右に縦線(長さ250〜450)がある
     // 旗の縦線(梁が傾いた図面では少し傾いている)
     // 傾き2割まで(WR-2G-9 は勾配12.9%。tdf-master-web もこの図面を斜め梁として読めている。2026-11-20)
@@ -736,6 +751,24 @@
         });
       }
 
+      layerDetails.forEach(function (dt) {
+        var ls = L.filter(function (l) { return l[4] === dt.layer && inView(v, { x: (l[0] + l[2]) / 2, y: (l[1] + l[3]) / 2 }); });
+        var hs = ls.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5; }).map(function (l) { return { p: l[1], a: Math.min(l[0], l[2]), b: Math.max(l[0], l[2]) }; });
+        var vs = ls.filter(function (l) { return Math.abs(l[0] - l[2]) < 0.5; }).map(function (l) { return { p: l[0], a: Math.min(l[1], l[3]), b: Math.max(l[1], l[3]) }; });
+        dt.labels.forEach(function (lb) {
+          var th = thickOf(lb.size), n = 0;
+          [hs, vs].forEach(function (g) {
+            g.forEach(function (a) { if (g.some(function (b2) { return Math.abs(b2.p - a.p - th) < 0.6 && Math.abs(b2.a - a.a) < 0.6 && Math.abs(b2.b - a.b) < 0.6; })) n++; });
+          });
+          if (n) add(lb.size, lb.mark, n * lb.cnt, dt.title);
+        });
+      });
+      // 管(スリーブ管 P-318.5x6 と L=1310。1G-01。2026-11-20 ユーザー指示): 図の中の表記1つにつき1本
+      T.forEach(function (t) {
+        if (!inView(v, t) || !/^P-[0-9.]+x[0-9.]+$/.test(t.text)) return;
+        var lt = T.filter(function (w) { return /^L=[0-9.]+$/.test(w.text) && Math.abs(w.x - t.x) < 60 && t.y - w.y > 0 && t.y - w.y < 120; })[0];
+        if (lt) add(t.text, parseFloat(lt.text.slice(2)), 1, '');
+      });
       // 立面図に直接書かれた板の表記(例: PL-12 / KGR64)
       // 旗がなく、どの断面か決められない板がある場所 → 名前だけの断面図(例「外装ALC下地」)があれば、その断面とみなす(2026-11-19 ユーザー説明、2G-01)
       // 切板は符号ごとに 場所の数 だけ。形鋼(L-90X90X7 と L=110)は、図に並ぶ「長さ×脚」の箱の数
