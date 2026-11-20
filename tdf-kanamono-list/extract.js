@@ -729,21 +729,12 @@
 
       // 旗 → 場所。旗は左向き(左の板を見る)を優先し、板厚が断面の表記と合う板だけ
       var flagsBySec = {};
-      // 旗の上に「(x6)」と書いた旗は、その断面が6か所(2026-11-20、EA1-3B-03 の き(x6)・か(x4)。コン止めの板が1枚ずつになっていた)。
-      // 「(xN)」は上100〜400・左右200以内で一番近い旗のもの
-      var flagMult = new Map();
-      T.forEach(function (u) {
-        var mm = /^[(（]\s*[xX×]\s*([0-9]+)\s*[)）]$/.exec(u.text); if (!mm || !inView(v, u)) return;
-        var f = T.filter(function (t) { return RE_SECKEY.test(t.text) && secInfo[t.text] && u.y - t.y >= 100 && u.y - t.y <= 400 && Math.abs(u.x - t.x) <= 200; })
-          .sort(function (a, b) { return Math.abs(a.x - u.x) - Math.abs(b.x - u.x); })[0];
-        if (f) flagMult.set(f, parseInt(mm[1], 10));
-      });
+      var looseFlags = [];   // 立面図の板に当たらなかった旗 {L1, fx}
       T.forEach(function (t) {
         if (!inView(v, t) || !RE_SECKEY.test(t.text) || !secInfo[t.text]) return;
         var fx = flagLineX(t); if (fx === null) return;
         var si = secInfo[t.text];
         flagsBySec[t.text] = flagsBySec[t.text] || { matched: [], unmatched: 0 };
-        if (flagMult.has(t)) { flagsBySec[t.text].unmatched += flagMult.get(t); return; }
         var hit = null;
         if (si.plateT.size && positions.length) {
           var cand = positions.filter(function (p) { return tMatch(p, si.plateT); });
@@ -753,7 +744,39 @@
         }
         if (hit) { if (hit.secs.indexOf(t.text) < 0) hit.secs.push(t.text); if (flagsBySec[t.text].matched.indexOf(hit) < 0) flagsBySec[t.text].matched.push(hit); }
         else flagsBySec[t.text].unmatched++;
+        looseFlags.push({ L1: t.text, fx: fx });
       });
+      // 平面図で数える(2026-11-20 ユーザー指示「実際の絵を見て判断してほしい」。EA1-3B-03 のコン止め き・か):
+      // 旗のそば(左右300以内)の平面図に、その断面の板厚だけ離れた平行な縦線2本(=板)があり、長さが断面図の寸法とほぼ同じ(1.5%以内)なら、
+      // 同じ長さ・同じ高さ・同じ板厚の板が平面図に何か所あるかを数え、旗の数より多ければその数を断面の数にする
+      // (き: 6離れた285の線(断面図 285)→ 6か所。か: 9離れた538.2の線(断面図 545)→ 4か所。旗は1つずつ。C の板(143.3・断面図に無い長さ)は数えない)
+      if (elev && looseFlags.length) {
+        var planV = vlines.filter(function (l) { return l.y0 > elev.top + 300 && inView(v, { x: l.x, y: (l.y0 + l.y1) / 2 }); });
+        var pairsOf = function (tt) {
+          var out = [], seen = {};
+          planV.forEach(function (a) {
+            planV.forEach(function (b) {
+              if (b.x - a.x < tt - 0.3 || b.x - a.x > tt + 0.3 || Math.abs(a.y0 - b.y0) > 0.5 || Math.abs(a.y1 - b.y1) > 0.5) return;
+              var k = a.x.toFixed(1) + '|' + a.y0.toFixed(0); if (seen[k]) return; seen[k] = 1;
+              out.push({ x: (a.x + b.x) / 2, len: a.y1 - a.y0, y0: a.y0 });
+            });
+          });
+          return out;
+        };
+        var doneLoose = {};
+        looseFlags.forEach(function (lf) {
+          if (doneLoose[lf.L1]) return;
+          var si = secInfo[lf.L1], f = flagsBySec[lf.L1];
+          Array.from(si.plateT).forEach(function (tt) {
+            var ps = pairsOf(tt);
+            var dimOk = function (q) { return si.dims.some(function (d) { return Math.abs(q.len - d) <= d * 0.015; }); };
+            var near = ps.filter(function (q) { return Math.abs(q.x - lf.fx) <= 300 && dimOk(q); }).sort(function (a, b) { return Math.abs(a.x - lf.fx) - Math.abs(b.x - lf.fx); })[0];
+            if (!near) return;
+            var n = ps.filter(function (q) { return Math.abs(q.len - near.len) <= 0.5 && Math.abs(q.y0 - near.y0) <= 1; }).length;
+            if (n > f.matched.length + f.unmatched) { f.unmatched = n - f.matched.length; doneLoose[lf.L1] = 1; }
+          });
+        });
+      }
       // 旗の無い板 → 同じ板厚で旗のある場所の断面を引き継ぐ
       positions.forEach(function (p) {
         if (p.secs.length) return;
@@ -1035,9 +1058,21 @@
         if (mekki) parts.push('めっき');
         return { size: it.size, name: it.name, n: it.n, note: parts.join('・') };
       });
+      // 「(EA12-3TB888-2梁取付)」の書き込みのすぐ下の見出し(LGS下地)の金物は、その製品だけに付ける(2026-11-20 ユーザー指示、EA1-3B-03: -2 だけ LGS下地あり)
+      var onlyFor = {};   // 見出し → 製品名の一覧
+      T.forEach(function (u) {
+        var mm = /^[(（]?(.+?)梁?取付[)）]?$/.exec(u.text); if (!mm) return;
+        var who = v.products.filter(function (p) { return mm[1].trim() === p.name; }); if (!who.length) return;
+        var lab = T.filter(function (w) { return w !== u && u.y - w.y > 0 && u.y - w.y < 300 && Math.abs(w.x - u.x) < 1500 && !/取付/.test(w.text); })
+          .sort(function (a, b) { return (u.y - a.y) - (u.y - b.y); })[0];
+        if (!lab) return;
+        var key = stripParen(lab.text);
+        onlyFor[key] = (onlyFor[key] || []).concat(who.map(function (p) { return p.name; }));
+      });
       v.products.forEach(function (p) {
         result.products.push({ view: views.indexOf(v), zuban: info.zuban, name: p.name, fugo: p.fugo, dai: p.dai, size: main, length: length, y: p.y, x: p.x,
-          items: list.map(function (it) { return { size: it.size, name: it.name, n: it.n, note: it.note }; }) });
+          items: list.filter(function (it) { return !(it.note && onlyFor[it.note]) || onlyFor[it.note].indexOf(p.name) >= 0; })
+            .map(function (it) { return { size: it.size, name: it.name, n: it.n, note: it.note }; }) });
       });
     });
     // 図面の上段の図から順(チェックしやすい)。同じ図の製品は製品名の番号順(GJ9→GJ10→GJ12)
