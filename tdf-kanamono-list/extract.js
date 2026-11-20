@@ -205,8 +205,24 @@
     // → ② 製品マーク・設計符号・サイズが上下にずれた行(find_product_rows_offset_mark)。どちらでも読めなければ、製品名があれば現場付け
     var xm = xMarks(lines || []);
     var inX = function (x, y) { return xm.some(function (b) { return x >= b[0] && x <= b[1] && y >= b[2] && y <= b[3]; }); };
+    // ⓪ 柱の表「設計符号 | 製品マーク | 図示 | N台」(tdf-master-web の柱モード find_rows と同じ。2026-11-20、EB1-0C-04「C1B|HRB130|0C-X16Y3|図示|1台」):
+    //    「N台」の左の3つ。3つ目が「図示」なら、図の中の「□-」のサイズの文字のすぐ上に書かれている方が設計符号(どちらにも無ければ並びのとおり 左=設計符号)
+    var boxes = texts.filter(function (u) { return /^□\s*[-‐]?\s*[0-9.]+\s*[xX×]\s*[0-9.]+/.test(u.text); });
+    var sizeLabels = new Set();
+    boxes.forEach(function (r) { texts.forEach(function (q) { if (q !== r && q.y - r.y > 0 && q.y - r.y <= 300 && Math.abs(q.x - r.x) <= 450) sizeLabels.add(q.text); }); });
+    pending.forEach(function (p) {
+      var left = p.same.slice().reverse();   // 左から
+      var cells = left.slice(-3);
+      if (cells.length < 3 || cells[2].text.replace(/\s/g, '') !== '図示') return;
+      var a = cells[0], b = cells[1], code = a, mark = b;
+      if (!(sizeLabels.has(a.text) || !sizeLabels.has(b.text))) { code = b; mark = a; }
+      p.done = true;
+      if (inX(mark.x, mark.y) || inX(p.dai.x, p.dai.y)) return;
+      rows.push({ name: mark.text, fugo: code.text, dai: p.n, x: Math.min(a.x, b.x), xr: p.dai.x, y: p.dai.y, main: boxes.length ? boxes[0].text : '', column: true });
+    });
     var groups = {};
     pending.forEach(function (p) {
+      if (p.done) return;
       var mk = p.same.filter(function (u) { return !RE_DAI.test(u.text); })[0];   // same は右から並ぶ → 一番右 = 製品マーク
       if (!mk || (p.same.length >= 3 && RE_MW_SIZE.test(p.same[0].text))) return;
       p.mark = mk;
@@ -1125,6 +1141,8 @@
     });
     // 図面の上段の図から順(チェックしやすい)。同じ図の製品は製品名の番号順(GJ9→GJ10→GJ12)
     result.products.sort(function (a, b) { return a.view - b.view || cmpNat(a.name, b.name); });
+    // 柱の詳細図(「図示」の行)は製品だけ読む。柱の金物の拾い出しのルールはまだ決めていない(2026-11-20、EB1-0C-04)
+    if (pr.rows.some(function (r) { return r.column; })) result.warnings.push('柱の詳細図です。製品は読みましたが、柱の金物は拾い出しのルールがまだ決まっていないため抽出していません');
     if (sayaCounted) { excluded.delete('サヤ管'); result.included.push('サヤ管'); }   // サイズ・長さ・本数が分かったので金物リストに入れた(お知らせで「抽出しました」と出す)
     result.excluded = Array.from(excluded);
     return result;
