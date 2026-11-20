@@ -574,15 +574,20 @@
     //  - 本数: 図の中のサヤ管のレイヤで、外径だけ離れた長さの同じ平行な2本の線(1本の管)の数(数えるのは下の views の中で)
     var saya = null;
     (function () {
+      // 名前は「サヤ管」。無ければ「さや管」(EA1-3B-03。管の表記は名前のすぐ下)も(2026-11-20 ユーザー指示「さや管は拾えない？」)
       var title = T.filter(function (t) { return t.text === 'サヤ管' && !isLeft(t) && !sectionOf(t, titles); })[0];
+      var below = false;
+      if (!title) { title = T.filter(function (t) { return /^(さや管|サヤ管|サヤ菅)$/.test(t.text) && !isLeft(t) && !sectionOf(t, titles); })[0]; below = true; }
       if (!title) return;
-      var pipe = T.filter(function (u) { return /^P-([0-9.]+)φ?x([0-9.]+)$/.test(u.text) && u.y - title.y > 100 && u.y - title.y < 2600 && Math.abs(u.x - title.x) < 1900; })
+      var pipe = T.filter(function (u) { return /^P-([0-9.]+)φ?x([0-9.]+)$/.test(u.text) && (below ? title.y - u.y > 0 && title.y - u.y < 400 : u.y - title.y > 100 && u.y - title.y < 2600) && Math.abs(u.x - title.x) < 1900; })
         .sort(function (a, b) { return dist(a, title) - dist(b, title); })[0];
       if (!pipe) return;
       var m = /^P-([0-9.]+)φ?x([0-9.]+)$/.exec(pipe.text);
       var len = null;
       var lt = T.filter(function (w) { return /^L=[0-9.]+$/.test(w.text) && dist(w, pipe) < 300; })[0];
       if (lt) len = parseFloat(lt.text.slice(2));
+      // 図の中の「サヤ管 K11」(「菅」の字も)の書き込みのすぐ上の L=…(EA1-3B-03 の L=220)
+      else if ((lt = T.filter(function (w) { return /^L=[0-9.]+$/.test(w.text) && T.some(function (k) { return /^(サヤ管|さや管|サヤ菅)/.test(k.text) && k !== title && Math.abs(k.x - w.x) < 300 && w.y - k.y > 0 && w.y - k.y < 300; }); })[0])) len = parseFloat(lt.text.slice(2));
       else { var ts = T.filter(function (w) { return /^<TS[0-9.]+>$/.test(w.text); }).map(function (w) { return parseFloat(w.text.slice(3)); }); if (ts.length && ts.every(function (x) { return x === ts[0]; })) len = ts[0]; }
       if (!len) return;
       var lays = [];
@@ -924,7 +929,11 @@
         });
       });
       if (saya) {
-        var sl = L.filter(function (l) { return saya.layers.indexOf(l[4]) >= 0 && inView(v, { x: (l[0] + l[2]) / 2, y: (l[1] + l[3]) / 2 }) && Math.abs(Math.hypot(l[2] - l[0], l[3] - l[1]) - saya.len) < 0.6; });
+        // サヤ管のレイヤが無い図面(EA1-3B-03)は、図の中のすべての線で数える(外径だけ離れた・長さ L の平行な2本 = 1本の管。上フランジの上に立つ 60.5×220 の長方形)
+        var sl = L.filter(function (l) { return (!saya.layers.length || saya.layers.indexOf(l[4]) >= 0) && inView(v, { x: (l[0] + l[2]) / 2, y: (l[1] + l[3]) / 2 }) && Math.abs(Math.hypot(l[2] - l[0], l[3] - l[1]) - saya.len) < 0.6; });
+        if (!saya.layers.length) {   // 同じ線が重ねて描かれていても1本に
+          var seenL = {}; sl = sl.filter(function (l) { var k = [l[0], l[1], l[2], l[3]].map(function (x) { return x.toFixed(1); }).join(','); if (seenL[k]) return false; seenL[k] = 1; return true; });
+        }
         var gs = [sl.filter(function (l) { return Math.abs(l[0] - l[2]) < 0.5; }).map(function (l) { return { p: l[0], a: Math.min(l[1], l[3]), b: Math.max(l[1], l[3]) }; }),
           sl.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5; }).map(function (l) { return { p: l[1], a: Math.min(l[0], l[2]), b: Math.max(l[0], l[2]) }; })];
         var nSaya = 0;
