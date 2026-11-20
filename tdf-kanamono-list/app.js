@@ -32,9 +32,11 @@ function busy(msg, ratio) {
   $('status-overlay').classList.add('open');
 }
 function idle() { $('status-overlay').classList.remove('open'); }
-function notice(title, body) {
+// lines: true = 書いた改行の位置だけで改行する(文の途中で折り返さない。枠は文の長さに合わせて広げる。2026-11-20 ユーザー指示)
+function notice(title, body, lines) {
   return new Promise(resolve => {
     $('notice-title').textContent = title; $('notice-body').textContent = body;
+    $('notice-modal').querySelector('.dialog').classList.toggle('lines', !!lines);
     $('notice-modal').classList.add('open');
     $('notice-ok').onclick = () => { $('notice-modal').classList.remove('open'); resolve(); };
   });
@@ -503,7 +505,7 @@ async function startPlan() {
   renderServer();
   // サーバーは本社・鳥取のどちらか(鳥取サーバー固定ではない)。① のボタンで選び、毎回「①進行中工事」まで選ぶ(2026-11-20 ユーザー指示)
   await notice('次の加工予定の金物リスト',
-    `${PLAN.src ? '「' + PLAN.src + '」の' : ''}次の加工予定(黄色) ${PLAN.rows.length}件(工事 ${kojis.join('・')})の金物リストを作ります。\n「① 本社サーバー」か「① 鳥取サーバー」を押し、そのサーバーの「①進行中工事」を選ぶと、TDFを読み込みます。`);
+    `${PLAN.src ? '「' + PLAN.src + '」の' : ''}次の加工予定(黄色) ${PLAN.rows.length}件\n(工事 ${kojis.join('・')})の金物リストを作ります。\n「① 本社サーバー」か「① 鳥取サーバー」を押し、\nサーバー内の「①進行中工事」を選ぶと、TDFを読み込みます。`, true);
 }
 // リンク表に無い行は、工事のフォルダの中から図番でTDFを探す(ファイル名「EA1-3B-04　260928.tdf」。2026-11-20 ユーザー指示)
 // 工事のフォルダ = 同じ工事のリンクのある行の「①進行中工事」の次のフォルダ、無ければ名前が工事番号で始まるフォルダ
