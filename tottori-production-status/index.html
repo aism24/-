@@ -5,7 +5,7 @@
 <title>鳥取工場 生産状況</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="style.css?v=20261119a">
+<link rel="stylesheet" href="style.css?v=20261120a">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body class="landing-mode">
@@ -83,6 +83,14 @@
   </div>
 </div>
 
+<!-- 次の加工予定の金物リストを作るか(2026-11-20。パソコンの Chrome・Edge だけ) -->
+<div class="modal notice-modal" id="kanaModal" hidden>
+  <div class="notice-box" role="alertdialog" aria-modal="true" aria-labelledby="kanaText">
+    <p class="notice-text" id="kanaText"></p>
+    <div class="notice-actions"><button type="button" class="btn" id="kanaNo">いいえ</button><button type="button" class="btn primary notice-ok" id="kanaYes">はい</button></div>
+  </div>
+</div>
+
 <!-- 加工結果の確認(マスターに加工日が無い製品) -->
 <div class="modal" id="dateModal" hidden>
   <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="dateTitle">
@@ -106,7 +114,7 @@
   </div>
 </div>
 
-<script src="app.js?v=20261119a"></script>
+<script src="app.js?v=20261120a"></script>
 <script>
 // 会社ロゴを5回続けて(1.5秒以内の間隔で)タップすると、この端末だけ「← アプリ一覧へ」が出る(ブラウザに記憶)。もう一度5回で消える
 // (2026-11-11、ユーザー指示。truck-fax・shipping-list-link と同じ仕組み)

@@ -457,5 +457,119 @@ $('btn-excel').addEventListener('click', async () => {
   finally { idle(); }
 });
 
-loadSettings();
+// ---------- 次の加工予定から作る(tottori-production-status と連動。2026-11-20 ユーザー指示) ----------
+// tottori-production-status で加工結果PDFを取り込み、「次の加工予定の金物リストを作りますか？」で「はい」を押すと、
+// このページが #plan=…(予定表で台数のセルが黄色の行)付きで開く。鳥取固定。工事ごとにシートを分け(シート名は工事番号)、
+// 1枚目に次の加工予定の一覧を入れたExcelをダウンロードする。TDFは shipping-list-link のリンク表の場所を「①進行中工事」から読む
+function readPlanFromHash() {
+  const m = /^#plan=(.+)$/.exec(location.hash || '');
+  if (!m) return null;
+  try { const p = JSON.parse(decodeURIComponent(m[1])); return p && Array.isArray(p.rows) && p.rows.length ? p : null; } catch (e) { return null; }
+}
+const PLAN = readPlanFromHash();
+const nk = s => String(s || '').normalize('NFKC').trim();
+// リンク(file://サーバー/…/①進行中工事/工事/…/X.tdf)の「①進行中工事」より後ろ
+function relFromLink(link, rootName) {
+  if (!link) return null;
+  let s = String(link).replace(/^file:/i, '');
+  try { s = decodeURIComponent(s); } catch (e) { /* そのまま */ }
+  const segs = s.split(/[\\/]+/).filter(Boolean), k = segs.findIndex(x => nk(x) === nk(rootName));
+  return k < 0 || k === segs.length - 1 ? null : segs.slice(k + 1);
+}
+async function fileAt(root, segs) {
+  let d = root;
+  for (const sg of segs.slice(0, -1)) d = await d.getDirectoryHandle(sg);
+  return d.getFileHandle(segs[segs.length - 1]);
+}
+async function startPlan() {
+  history.replaceState(null, '', location.pathname + location.search);   // 開き直しで二重に作らないよう、#plan を消す
+  state.factory = '鳥取'; state.kojiNo = ''; state.kojiName = '次の加工予定';
+  $('start-modal').classList.add('hidden');
+  document.body.classList.add('app-started'); state.started = true;
+  $('koji-label').textContent = `鳥取工場 / 次の加工予定(${PLAN.rows.length}件)`;
+  apiPostQuiet({ action: 'start', koji: '次の加工予定', factory: '鳥取' });
+  const kojis = [...new Set(PLAN.rows.map(r => r.kojiNo || r.abbr))];
+  const ok = await confirm2('次の加工予定の金物リスト',
+    `${PLAN.src ? '「' + PLAN.src + '」の' : ''}次の加工予定(黄色) ${PLAN.rows.length}件(工事 ${kojis.join('・')})の金物リストを作ります。\n「読み込みを始める」を押すと、鳥取サーバーの「①進行中工事」からTDFを読みます。`,
+    '読み込みを始める', 'やめる');
+  if (ok) await runPlan(PLAN);
+}
+async function runPlan(plan) {
+  const sv = state.servers.find(x => x.name === '鳥取');
+  if (!sv) { await notice('鳥取サーバーがありません', '設定シートのE列に「鳥取」のサーバーがありません。'); return; }
+  const root = (state.server && state.server.name === '鳥取' && state.root) || await getRoot(sv, true);
+  if (!root) return;
+  state.server = sv; state.root = root; renderServer();
+  const rows = plan.rows.map(r => Object.assign({}, r, { status: '' }));
+  const files = new Map();   // 「①進行中工事」からの場所 → {fileName, dir, res | err}
+  rows.forEach(r => {
+    r.segs = relFromLink(r.link, root.name);
+    if (!r.link) r.status = 'リンク表にありません';
+    else if (!r.segs) r.status = 'TDFの場所が「①進行中工事」の中ではありません';
+    else if (!files.has(r.segs.join('/'))) files.set(r.segs.join('/'), { segs: r.segs });
+  });
+  const list = [...files.values()], total = list.length || 1;
+  try {
+    for (const [i, f] of list.entries()) {
+      const step = (r, msg) => busy(`${msg}\n${i + 1}/${total}枚目 ${f.segs[f.segs.length - 1]}`, (i + r) / total);
+      step(0, 'TDFを読み込んでいます…');
+      try {
+        const file = await (await fileAt(root, f.segs)).getFile();
+        const buf = await file.arrayBuffer();
+        const res = KanamonoExtract.extract(buf, file.name);
+        try {
+          step(0.3, pyPromise ? '長さを読んでいます…' : '長さを読む準備をしています…(初回だけ数秒かかります)');
+          const ml = await masterLengths(buf, file.name, r => step(0.3 + 0.6 * r, '長さを読む準備をしています…(初回だけ数秒かかります)'));
+          res.products.forEach(p => { const m = ml.find(x => x[0] === p.name); if (m && m[1]) p.length = Math.round(m[1] * 10000) / 10; });
+        } catch (e) { /* 長さは図面の寸法から読んだもの */ }
+        f.fileName = file.name; f.res = res;
+        f.dir = [sv.path.replace(/[\\/]+$/, '')].concat(f.segs.slice(0, -1)).join('\\');
+      } catch (e) { f.err = 'TDFを開けませんでした'; }
+    }
+  } finally { idle(); }
+  // 予定の行ごとに、TDFの中の同じ製品名の製品を使う。枚数は1台あたり × 予定の台数
+  const groups = new Map();
+  rows.forEach(r => {
+    if (r.status) return;
+    const f = files.get(r.segs.join('/'));
+    if (f.err) { r.status = f.err; return; }
+    const p = f.res.products.find(x => nk(x.name) === nk(r.mark));
+    if (!p) { r.status = 'TDFにこの製品がありません'; return; }
+    r.status = '作成';
+    const key = r.kojiNo || r.abbr || '工事番号なし';
+    if (!groups.has(key)) groups.set(key, { sheet: key.replace(/[\\/?*\[\]:]/g, '_').slice(0, 31), head: { kojiNo: r.kojiNo || '', koji: f.res.koji || r.abbr || '' }, products: [], tdfs: [] });
+    const g = groups.get(key), qty = Number(r.qty) || p.dai || 1;
+    g.products.push({ zuban: p.zuban, name: p.name, size: p.size, length: p.length, dai: qty, link: r.link || fileUrl(f.dir, f.fileName),
+      items: p.items.map(it => ({ size: it.size, name: it.name, n: it.n * qty, note: it.note })) });
+    if (!g.tdfs.includes(f)) g.tdfs.push(f);
+  });
+  // 画面にも出す(作った製品だけ)
+  state.tdfs = [];
+  groups.forEach(g => g.tdfs.forEach(f => {
+    const names = g.products.map(x => nk(x.name));
+    const res = Object.assign({}, f.res, { products: f.res.products.filter(p => names.includes(nk(p.name))) });
+    res.products.forEach(p => p.items.forEach(it => { it.n0 = it.n; }));
+    state.tdfs.push({ id: nextId++, fileName: f.fileName, path: f.dir, res });
+  }));
+  render();
+  if (!groups.size) { await notice('金物リストを作れませんでした', rows.map(r => `${r.abbr} ${r.mark}: ${r.status}`).join('\n')); return; }
+  busy('Excelを作っています…');
+  try {
+    await loadExcelJS();
+    const gs = [...groups.values()];
+    const { wb, layouts } = KanamonoExcel.buildPlan(window.ExcelJS, '鳥取', rows, gs);
+    const buf = await wb.xlsx.writeBuffer();
+    const d = new Date();
+    const name = `次の加工予定_金物リスト_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.xlsx`;
+    const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    layouts.forEach(l => apiPostQuiet({ action: 'download', koji: l.sheet, factory: '鳥取', rows: KanamonoExcel.toValues(l.layout) }));
+  } catch (e) { toast('Excelを作れませんでした: ' + e.message, 'error'); }
+  finally { idle(); }
+  const miss = rows.filter(r => r.status !== '作成');
+  if (miss.length) await notice('金物リストに入れなかった製品', miss.map(r => `${r.abbr} ${r.mark}(${r.zuban || '図番なし'}): ${r.status}`).join('\n') + '\n\n「次の加工予定」のシートには載せています。');
+}
+
+loadSettings().then(() => { if (PLAN) startPlan(); });
 render();
