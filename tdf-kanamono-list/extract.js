@@ -583,13 +583,15 @@
       if (!title) return;
       var pipe = T.filter(function (u) { return /^P-([0-9.]+)φ?x([0-9.]+)$/.test(u.text) && (below ? title.y - u.y > 0 && title.y - u.y < 400 : u.y - title.y > 100 && u.y - title.y < 2600) && Math.abs(u.x - title.x) < 1900; })
         .sort(function (a, b) { return dist(a, title) - dist(b, title); })[0];
+      // 「サヤ管」(カタカナ)でも管の表記が名前のすぐ下の図面がある(2026-11-20 ユーザー指摘「さや管漏れ」、EA1-3G-05)
+      if (!pipe && !below) { below = true; pipe = T.filter(function (u) { return /^P-([0-9.]+)φ?x([0-9.]+)$/.test(u.text) && title.y - u.y > 0 && title.y - u.y < 400 && Math.abs(u.x - title.x) < 1900; }).sort(function (a, b) { return dist(a, title) - dist(b, title); })[0]; }
       if (!pipe) return;
       var m = /^P-([0-9.]+)φ?x([0-9.]+)$/.exec(pipe.text);
       var len = null;
       var lt = T.filter(function (w) { return /^L=[0-9.]+$/.test(w.text) && dist(w, pipe) < 300; })[0];
       if (lt) len = parseFloat(lt.text.slice(2));
-      // 図の中の「サヤ管 K11」(「菅」の字も)の書き込みのすぐ上の L=…(EA1-3B-03 の L=220)
-      else if ((lt = T.filter(function (w) { return /^L=[0-9.]+$/.test(w.text) && T.some(function (k) { return /^(サヤ管|さや管|サヤ菅)/.test(k.text) && k !== title && Math.abs(k.x - w.x) < 300 && w.y - k.y > 0 && w.y - k.y < 300; }); })[0])) len = parseFloat(lt.text.slice(2));
+      // 図の中の「サヤ管 K11」(「菅」の字も)の書き込みのすぐ上か下の L=…(EA1-3B-03 は上、EA1-3G-05 は下の「L＝220」)
+      else if ((lt = T.filter(function (w) { return /^L=[0-9.]+$/.test(w.text) && T.some(function (k) { return /^(サヤ管|さや管|サヤ菅)/.test(k.text) && k !== title && Math.abs(k.x - w.x) < 300 && Math.abs(w.y - k.y) > 0 && Math.abs(w.y - k.y) < 300; }); })[0])) len = parseFloat(lt.text.slice(2));
       else { var ts = T.filter(function (w) { return /^<TS[0-9.]+>$/.test(w.text); }).map(function (w) { return parseFloat(w.text.slice(3)); }); if (ts.length && ts.every(function (x) { return x === ts[0]; })) len = ts[0]; }
       if (!len) return;
       var lays = [];
@@ -673,7 +675,7 @@
     var fbDims = [];
     T.forEach(function (t) { var m = RE_FB.exec(t.text); if (m) { var k = m[1] + 'x' + m[2] + 'x' + m[3]; if (!fbDims.some(function (f) { return f.key === k; })) fbDims.push({ key: k, t: m[1], w: parseFloat(m[2]), l: parseFloat(m[3]) }); } });
 
-    var result = { fileName: fileName || '', koji: info.koji, kojiNo: info.kojiNo, zuban: info.zuban, products: [], excluded: [], warnings: [] };
+    var result = { fileName: fileName || '', koji: info.koji, kojiNo: info.kojiNo, zuban: info.zuban, products: [], excluded: [], included: [], warnings: [] };
 
     views.forEach(function (v) {
       var items = {};   // key → {size, name, n, notes:Set}
@@ -1123,7 +1125,7 @@
     });
     // 図面の上段の図から順(チェックしやすい)。同じ図の製品は製品名の番号順(GJ9→GJ10→GJ12)
     result.products.sort(function (a, b) { return a.view - b.view || cmpNat(a.name, b.name); });
-    if (sayaCounted) excluded.delete('サヤ管');   // サイズ・長さ・本数が分かったので金物リストに入れた
+    if (sayaCounted) { excluded.delete('サヤ管'); result.included.push('サヤ管'); }   // サイズ・長さ・本数が分かったので金物リストに入れた(お知らせで「抽出しました」と出す)
     result.excluded = Array.from(excluded);
     return result;
   }

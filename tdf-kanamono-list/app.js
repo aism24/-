@@ -270,7 +270,7 @@ async function importItems(items) {
   // 進み具合: 1枚の中で 図面の読み取り=0〜0.3、長さ(初回は Python の準備を含む)=0.3〜1
   const step = (i, r, msg) => busy(`${msg}\n${i + 1}/${total}枚目 ${items[i].file.name}`, (i + r) / total);
   step(0, 0, 'TDFを読み込んでいます…');
-  const errors = [], excluded = new Set(), warns = [];
+  const errors = [], excluded = new Set(), included = new Set(), warns = [];
   try {
     for (const [i, { file: f, path }] of items.entries()) {
       step(i, 0, 'TDFを読み込んでいます…');
@@ -292,12 +292,19 @@ async function importItems(items) {
         state.tdfs.push({ id: nextId++, fileName: f.name, path: path || '', res });
         if (res.kojiNo && res.kojiNo !== state.kojiNo) warns.push(`${f.name}: 図面の工事番号(${res.kojiNo})が、選んだ工事(${state.kojiNo})と違います`);
         res.excluded.forEach(x => excluded.add(x));
+        (res.included || []).forEach(x => included.add(x));
         res.warnings.forEach(w => warns.push(`${f.name}: ${w}`));
       } catch (e) { errors.push(`${f.name}: 読めませんでした(${e.message})`); }
     }
   } finally { idle(); }
   render();
-  if (excluded.size) await notice('お知らせ', Array.from(excluded).join('・') + 'は抽出していません');
+  // 除外することもある金物(サヤ管)を図面から拾えたときは「抽出しました」と出す(2026-11-20 ユーザー指示)。拾えた図面と拾えなかった図面が混ざるときは「一部の図面で」
+  const msg = [];
+  const exOnly = Array.from(excluded).filter(x => !included.has(x)), both = Array.from(excluded).filter(x => included.has(x));
+  if (included.size) msg.push(Array.from(included).join('・') + 'は抽出しました(サイズ・長さ・本数が図面から分かったため)');
+  if (exOnly.length) msg.push(exOnly.join('・') + 'は抽出していません');
+  if (both.length) msg.push(both.join('・') + 'は一部の図面で抽出していません(サイズ・長さ・本数のどれかが図面から分からないため)');
+  if (msg.length) await notice('お知らせ', msg.join('\n'));
   // 取り込めなかったTDFがあるときは、対象外の図面の説明を添える(2026-11-19 ユーザー指示。2G-07A のような断面だけの補助図面は対象外)
   const NOTE_UNSUPPORTED = '断面だけの補助図面がある場合（a付など）は、抽出できません';
   if (errors.length || warns.length) await notice('取り込めなかったTDF・確認が必要なこと', errors.concat(warns).join('\n') + (errors.length ? '\n\n' + NOTE_UNSUPPORTED : ''));
