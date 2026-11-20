@@ -28,7 +28,7 @@
  * セットアップ手順は README.md を参照。
  */
 
-const CODE_VERSION = '2026-11-12g';
+const CODE_VERSION = '2026-11-21a';
 const LATE_WINDOW_MONTHS = 2; // 遅れリストに出す予定日の範囲(今日から何か月前まで)
 const TIMEZONE = 'Asia/Tokyo';
 const TARGET_SITE_DEFAULT = '鳥取';
@@ -550,7 +550,7 @@ function buildLists_(allRows, calendar, today, planRows, abbr, prevKey) {
   });
   // 予定表の製品ごとの加工日(結果の日まで)。画面がPDFの予定表で、マスタでは完了なのに青くない行を薄い青で塗るのに使う(2026-11-12 ユーザー指定)
   // 案件マスターの行の探し方は遅れの判定と同じ(略称→工事番号+製品名。略称が未設定なら製品名(+図番)で1件に決まるときだけ)
-  const planDone = {};
+  const planDone = {}, planPart = {};
   planRows.forEach(function (p) {
     const no = abbr[p[0]];
     let cands;
@@ -563,6 +563,9 @@ function buildLists_(allRows, calendar, today, planRows, abbr, prevKey) {
     let done = '';
     cands.forEach(function (j) { const x = allRows[j][D.DONE]; if (x && x <= prev.key && x > done) done = x; });
     if (done) planDone[p[0] + '\t' + p[1]] = done;
+    // 部位(柱・大梁・小梁…)。金物リストを 工事 → 柱 → 大梁 → 小梁 → 製品番号順 に並べるのに使う(2026-11-21 ユーザー指示)
+    const part = cands.map(function (j) { return allRows[j][D.PART]; }).filter(function (x) { return x; })[0];
+    if (part) planPart[p[0] + '\t' + p[1]] = String(part);
   });
   const lateDays = {}; // 予定日 -> 遅れ日数(同じ予定日は1回だけ数える)
   let missingCal = '', notFound = 0;
@@ -609,6 +612,7 @@ function buildLists_(allRows, calendar, today, planRows, abbr, prevKey) {
     warnings: warnings,
     plan: planCoverage_(planSummary_(planRows), planRows, calendar, lateBefore, prev.key),
     planDone: planDone,
+    planPart: planPart,
   };
 }
 
@@ -924,7 +928,7 @@ function toPayload_(b) {
   try { workList = JSON.parse(propGet_('WORKLIST') || '[]'); } catch (e) { workList = []; }
   const unknown = {};
   planRows_().concat(resultNames_()).forEach(function (p) { if (p[0] && !abbr[p[0]]) unknown[p[0]] = true; }); // 加工結果の表だけに出てくる略称も選んでもらう
-  return { abbr: abbr, workList: workList, unknown: Object.keys(unknown).sort(), plan: b.plan || null, baseDate: b.baseDate, prevDate: b.prevDate, updatedAt: b.updatedAt, pending: b.pending || 0, warnings: b.warnings || [], yesterday: b.yesterday, late: b.late, planDone: b.planDone || {} };
+  return { abbr: abbr, workList: workList, unknown: Object.keys(unknown).sort(), plan: b.plan || null, baseDate: b.baseDate, prevDate: b.prevDate, updatedAt: b.updatedAt, pending: b.pending || 0, warnings: b.warnings || [], yesterday: b.yesterday, late: b.late, planDone: b.planDone || {}, planPart: b.planPart || {} };
 }
 
 function getOwnFolder_(ss) {
