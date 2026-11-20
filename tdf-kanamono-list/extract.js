@@ -1051,16 +1051,21 @@
                 add(shape, Math.round(len * 10) / 10, nFlag * nLab, si.title.sub || '');
               } else {
                 // ② 合計が100未満 = 梁に沿って長く付く溝形鋼を端から見た断面(EA1-3B-04「あ」: 37.5+37.5=75。2026-11-20 ユーザー指示「長さ2968は拾えない？」):
-                //    立面図で、溝形鋼の幅(C-75x45… の 45)だけ離れた同じ長さ(1000以上)の平行な横線の組を部材とし、その範囲に旗があるものを拾う(長さ = 線の長さ)
-                var bw = parseFloat((/^C-[0-9.]+x([0-9.]+)/.exec(shape) || [])[1]);
+                //    立面図で、溝形鋼の幅(C-75x45… の 45)だけ離れた同じ長さの平行な横線の組を部材とし、その範囲に旗があるものを拾う(長さ = 線の長さ)。
+                //    短いものもある(EA1-3B-06「あ」: 43×45 の四角・寸法43。2026-11-20 ユーザー指摘「あ断面のLGSが拾えていない」)
+                var bw = parseFloat((/^C-[0-9.]+x([0-9.]+)/.exec(shape) || [])[1]), ct = parseFloat((/x([0-9.]+)$/.exec(shape) || [])[1]) || 0;
                 var fxs = looseFlags.filter(function (f) { return f.L1 === L1; }).map(function (f) { return f.fx; });
                 if (bw && fxs.length) {
-                  var hh = hlines.filter(function (h) { return h.x1 - h.x0 >= 1000 && inView(v, { x: (h.x0 + h.x1) / 2, y: h.y }); });
+                  var hh = L.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[0] - l[2]) >= 20; }).map(function (l) { return { y: l[1], x0: Math.min(l[0], l[2]), x1: Math.max(l[0], l[2]) }; })
+                    .filter(function (h) { return inView(v, { x: (h.x0 + h.x1) / 2, y: h.y }); });
                   var seenM = {};
                   hh.forEach(function (a) {
-                    var b2 = hh.find(function (h) { return h !== a && Math.abs(h.y - a.y - bw) < 0.3 && Math.abs(h.x0 - a.x0) < 0.6 && Math.abs(h.x1 - a.x1) < 0.6; });
+                    // 間隔 = 幅(45)。片方の辺が梁のフランジの線と重なる図面は、板厚だけ内側の線(45-2.3=42.7。EA1-3B-06)
+                    var b2 = hh.find(function (h) { var dy = h.y - a.y; return h !== a && (Math.abs(dy - bw) < 0.3 || (ct && Math.abs(dy - (bw - ct)) < 0.3)) && Math.abs(h.x0 - a.x0) < 0.6 && Math.abs(h.x1 - a.x1) < 0.6; });
                     if (!b2) return;
-                    var k = a.x0.toFixed(0) + '-' + a.x1.toFixed(0) + '@' + a.y.toFixed(0); if (seenM[k]) return; seenM[k] = 1;
+                    // 同じ部材の線(幅・板厚の線)が何組もあっても1本(左右の端が同じで上下が幅の範囲内)
+                    var k = a.x0.toFixed(0) + '-' + a.x1.toFixed(0);
+                    if ((seenM[k] || []).some(function (y) { return Math.abs(y - a.y) <= bw + 1; })) return; (seenM[k] = seenM[k] || []).push(a.y);
                     if (!fxs.some(function (fx) { return fx >= a.x0 - 100 && fx <= a.x1 + 100; })) return;
                     add(shape, Math.round((a.x1 - a.x0) * 10) / 10, 1, si.title.sub || '');
                   });
