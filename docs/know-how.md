@@ -933,3 +933,8 @@
 - やり方: tdf-master-web の index.html に埋め込んだ Python(text/python-src)をそのまま py/ に写し、Pyodide(同じ版)で extract_file() を呼んで長さだけ使う。読めなければ従来の値+お知らせ
 - 効果: 長さが tdf-master-web と一致する図面 7/10 → 10/10(桜島の書き方 3図面が 6713→7076 など)。準備は初回だけ約3.6秒、以降1枚約1秒
 - 使ったアプリ: tdf-kanamono-list(tdf-master-web のコードは変えない)
+
+### 回帰テスト用の実図面は非公開リポジトリ aism24/test-tdf に置く(tdf-kanamono-list、2026-11-20)
+- やり方: 図面と前回値(expected.json)・run.js を非公開の test-tdf に入れ、セッション開始時に aism24/- と一緒に選ぶ。公開リポジトリには置き場所だけ書く。
+- 効果: セッションごとにユーザーが送る回帰テスト用TDF 4〜7件 → 0件。比べるのは extract.js の出力の全項目(1コマンドで7図面)。
+- 注意: このセッションから add_repo は安全確認で止められた → 一式を zip で渡し、ユーザーが GitHub の「uploading an existing file」で入れた。
