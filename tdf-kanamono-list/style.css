@@ -121,6 +121,8 @@ table.kl input.note-in { width: 160px; font-size: 13px; padding: 2px 4px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .server-btn { padding: 12px 24px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; background: #1a73e8; color: #fff; cursor: pointer; }
 .dialog.wide { max-width: 760px; }
+.dialog.lines { width: auto; max-width: 95vw; }
+.dialog.lines #notice-body { white-space: pre; overflow-x: auto; }
 .pick-tools { display: flex; gap: 8px; margin: 6px 0; }
 #pick-list { max-height: 55vh; overflow: auto; border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
 #pick-list details { border-bottom: 1px solid #eee; padding: 4px 0; }
