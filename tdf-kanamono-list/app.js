@@ -536,8 +536,8 @@ async function findByZuban(root, rows) {
       if (!kd) { r.status = 'リンク表に無く、工事のフォルダも分かりません'; continue; }
       if (!idx.has(kd)) {
         let n = 0;
-        busy(`リンク表に無い製品のTDFを図番で探しています…\n${kd}`, 0);
-        idx.set(kd, await indexTdfs(await root.getDirectoryHandle(kd), [kd], {}, () => { if (++n % 20 === 0) busy(`リンク表に無い製品のTDFを図番で探しています…(${n}フォルダ)\n${kd}`, 0); }));
+        busy(`マスタに無い製品をサーバーから探しています…\n${kd}`, 0);
+        idx.set(kd, await indexTdfs(await root.getDirectoryHandle(kd), [kd], {}, () => { if (++n % 20 === 0) busy(`マスタに無い製品をサーバーから探しています…(${n}フォルダ)\n${kd}`, 0); }));
       }
       const c = (idx.get(kd)[nk(r.zuban).toUpperCase()] || []).slice().sort((a, b) => b.date.localeCompare(a.date));
       if (!c.length) { r.status = 'リンク表に無く、図番のTDFも見つかりません'; continue; }
