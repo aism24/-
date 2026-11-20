@@ -1168,7 +1168,9 @@
         var o0 = occ[0];
         var sameRow = sizesT.filter(function (a) { return Math.abs(a.y - o0.y) <= 60 && dist(a, o0) <= 800; }).sort(function (a, b) { return dist(a, o0) - dist(b, o0); });
         var sz = sameRow[0] || sizesT.slice().sort(function (a, b) { return dist(a, o0) - dist(b, o0); })[0];
-        if (!sz || dist(sz, o0) > 800) return;
+        // 800以内に無いときは、同じ高さ(±60)の1200以内まで見る(EB2-1C-03 の NCKE1 は「FB-90x12x4面」と同じ高さで970離れている。2026-11-20 ユーザー指摘「NCKE1の漏れ」)
+        if (!sz || dist(sz, o0) > 800) sz = sizesT.filter(function (a) { return Math.abs(a.y - o0.y) <= 60 && dist(a, o0) <= 1200; }).sort(function (a, b) { return dist(a, o0) - dist(b, o0); })[0];
+        if (!sz) return;
         var st = sz.text.replace(/^.*?((?:G?PL|FB)-)/, '$1'), mult = 1;
         var mm2 = /x([0-9]+)面/.exec(st); if (mm2) { mult = parseInt(mm2[1], 10); st = st.replace(/x[0-9]+面.*$/, ''); }   // 「FB-90x12x4面」= 4枚
         var m = /^((?:G?PL|FB)-[0-9.]+(?:x[φ0-9.]+)*)/.exec(st);
