@@ -5,7 +5,7 @@
 <title>鳥取工場 生産状況</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="style.css?v=20261120a">
+<link rel="stylesheet" href="style.css?v=20261120d">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body class="landing-mode">
@@ -86,8 +86,9 @@
 <!-- 次の加工予定の金物リストを作るか(2026-11-20。パソコンの Chrome・Edge だけ) -->
 <div class="modal notice-modal" id="kanaModal" hidden>
   <div class="notice-box" role="alertdialog" aria-modal="true" aria-labelledby="kanaText">
+    <div class="kana-brand"><img class="kana-icon" src="assets/jissun-icon.png?v=20261120d" width="48" height="48" alt=""><span class="kana-title">製品別金物リスト(tdf)</span><img class="kana-icon kana-icon-flip" src="assets/jissun-icon.png?v=20261120d" width="48" height="48" alt=""></div>
     <p class="notice-text" id="kanaText"></p>
-    <div class="notice-actions"><button type="button" class="btn" id="kanaNo">いいえ</button><button type="button" class="btn primary notice-ok" id="kanaYes">はい</button></div>
+    <div class="notice-actions"><button type="button" class="btn primary kana-btn" id="kanaYes">はい</button><button type="button" class="btn kana-btn" id="kanaNo">いいえ</button></div>
   </div>
 </div>
 
