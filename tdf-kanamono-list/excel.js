@@ -96,9 +96,14 @@
   var STYLED_COLS = { title: 5, info: 5, phead: 5, pval: 5, lhead: 5, item: 5, item_gpl: 5, sub: 5, shead: 5, sitem: 5, sitem_gpl: 5, stitle: 1, cat: 1 };
 
   function buildStandard(ExcelJS, head, products, multi) {
-    var lay = layout(head, products, multi);
     var wb = new ExcelJS.Workbook();
-    var ws = wb.addWorksheet('金物リスト', {
+    var lay = addStandardSheet(wb, '金物リスト', head, products, multi);
+    return { wb: wb, layout: lay };
+  }
+  // 1枚のシート(標準の様式)を wb に足す。次の加工予定では工事ごとに1枚(シート名は工事番号。2026-11-20)
+  function addStandardSheet(wb, sheetName, head, products, multi) {
+    var lay = layout(head, products, multi);
+    var ws = wb.addWorksheet(sheetName, {
       // E列の幅9は ExcelJS が既定値として書かないので、シートの既定の列幅を9にして合わせる
       properties: { defaultRowHeight: DEF_H, defaultColWidth: 9 },
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, scale: 96,
@@ -123,13 +128,45 @@
     [2, 3].forEach(function (r) { for (var c = 2; c <= 4; c++) styleCell(ws.getRow(r).getCell(c), 'info', c - 1); });
     lay.breaks.forEach(function (b) { ws.getRow(b).addPageBreak(); });
     ws.pageSetup.printArea = 'A1:E' + lay.rows.length;
-    return { wb: wb, layout: lay };
+    return lay;
+  }
+
+  // 次の加工予定の一覧のシート(tottori-production-status の予定表の黄色の行。2026-11-20)
+  // rows: [{date, abbr, kojiNo, mark, zuban, qty, weight, link, status}]。製品名・図番に実寸法師へのリンク
+  function addPlanSheet(wb, rows) {
+    var ws = wb.addWorksheet('次の加工予定', { properties: { defaultRowHeight: DEF_H },
+      pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:2' } });
+    ws.columns = [{ width: 12 }, { width: 10 }, { width: 10 }, { width: 24 }, { width: 7 }, { width: 9 }, { width: 18 }, { width: 34 }];
+    var t = ws.getRow(1); t.getCell(1).value = '次の加工予定'; t.getCell(1).font = font({ size: 14, bold: true }); t.height = HT.title;
+    var hd = ['予定日', '件名', '工事番号', '製品名', '台数', '重量(t)', '図番', '金物リスト'];
+    var hr = ws.getRow(2);
+    hd.forEach(function (h, i) { var c = hr.getCell(i + 1); c.value = h; c.fill = fill('DDEBF7'); c.font = font({ bold: true }); c.border = { left: THIN, right: THIN, top: THIN, bottom: THIN }; c.alignment = CENTER; });
+    rows.forEach(function (r, i) {
+      var row = ws.getRow(i + 3);
+      var vals = [r.date || '', r.abbr || '', r.kojiNo || '', r.mark || '', r.qty, r.weight, r.zuban || '', r.status || ''];
+      vals.forEach(function (v, c) {
+        var cell = row.getCell(c + 1);
+        if ((c === 3 || c === 6) && r.link && v) { cell.value = { text: String(v), hyperlink: r.link }; cell.font = font({ bold: true, u: true, color: 'FF0000FF' }); }
+        else { cell.value = v === undefined ? '' : v; cell.font = font({ color: c === 7 && r.status && r.status !== '作成' ? 'FFC00000' : undefined }); }
+        cell.border = { left: THIN, right: THIN, top: THIN, bottom: THIN };
+        if (c !== 7) cell.alignment = CENTER;
+      });
+    });
+    ws.pageSetup.printArea = 'A1:H' + (rows.length + 2);
+  }
+  // 次の加工予定のExcel: 1枚目=次の加工予定の一覧、2枚目から=工事ごとの金物リスト(シート名は工事番号)
+  // groups: [{sheet, head, products}]
+  function buildPlan(ExcelJS, factory, planRows, groups) {
+    var wb = new ExcelJS.Workbook();
+    addPlanSheet(wb, planRows);
+    var layouts = groups.map(function (g) { return { sheet: g.sheet, layout: addStandardSheet(wb, g.sheet, g.head, g.products, true) }; });
+    return { wb: wb, layouts: layouts };
   }
 
   var FORMATS = { '本社': buildStandard, '夢前': buildStandard, '鳥取': buildStandard };
   function build(ExcelJS, factory, head, products, multi) { return (FORMATS[factory] || buildStandard)(ExcelJS, head, products, multi); }
 
-  var api = { layout: layout, toValues: toValues, build: build };
+  var api = { layout: layout, toValues: toValues, build: build, buildPlan: buildPlan };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.KanamonoExcel = api;
 })(typeof window !== 'undefined' ? window : this);

@@ -489,12 +489,13 @@
     $('landingNote').hidden = true;
     if (!st.shown) { landingState(true, '読み取っています…', '「' + file.name + '」', ''); progress(3, 'PDFを読み取り中'); }
     else toast('「' + file.name + '」を読み取っています…');
-    let bytes = null, planPages = [], cells = [];
+    let bytes = null, planPages = [], cells = [], planItems = [];
     loadPdfLib().catch(function () {}); // ダウンロード用の部品を先に読み込んでおく
     loadLinks().catch(function () {}); // 実寸リンク表もGASの照らし合わせと並行して読んでおく(2026-11-12)
     file.arrayBuffer().then(function (buf) { bytes = buf.slice(0); return parsePlanPdf(buf, file.name); }).then(function (r) {
       planPages = r.planPages;
       cells = r.cells;
+      planItems = r.items || [];
       st.results = r.results;
       if (!st.shown) {
         landingState(true, '処理を実行中\n塗りつぶし＆ハイパーリンク付与', // 2行・中央揃え(2026-11-12 ユーザー指定)
@@ -508,7 +509,7 @@
       if (res.status !== 'success') throw new Error(res.message || '保存に失敗しました');
       clearInterval(progTimer);
       progress(80, 'PDFを作成中(塗りつぶし・リンク)');
-      st.src = { bytes: bytes, planPages: planPages, cells: cells, name: file.name };
+      st.src = { bytes: bytes, planPages: planPages, cells: cells, items: planItems, name: file.name };
       const rc = mergeNoMaster(res.data, res.resultCheck);
       setData(res.data); // 一覧は裏で作り、PDFができてから画面を切り替える(進捗バーを最後まで見せるため)
       const mt = missingText(res.data.plan);
@@ -518,6 +519,9 @@
         progress(100, '完了');
         showResult();
         progress(null);
+        // PDFのダウンロードのあと「次の加工予定の金物リストを作りますか？」(2026-11-20 ユーザー指示)。答えてから今までのお知らせを出す
+        return askKanamono();
+      }).then(function () {
         if (!DEMO && (res.data.unknown || []).length && $('abbrModal').hidden) openAbbr(true); // 新しい略称があれば工事番号を選ぶ画面
         const fixed = st.linkStat ? st.linkStat.fixed : 0;
         const pink = function () { notice('予定表を読み込みました(' + res.saved + '件)' + (mt ? '。' + mt : '') + (fixed ? '\nマスタで完了を確認：' + fixed + '件' : ''), function () { showResultCheck(rc); }); };
@@ -753,7 +757,7 @@
     const q = cellOf(c.qty);
     if (!q || q.x1 - q.x0 > 25 * S || q.y1 - q.y0 > 15 * S) { paintRow.miss = (paintRow.miss || 0) + 1; return; } // 台数のセルが大きすぎる=枠を取り違えた
     let col = q.bg; // 台数のセルの色
-    if (isYellow(q.bg)) st.next[c.name + '\t' + c.mark] = true; // 次の加工予定(黄色)
+    if (isYellow(q.bg)) { st.next[c.name + '\t' + c.mark] = true; c.next = true; } // 次の加工予定(黄色)。c.next は金物リストへ渡す行に使う
     // マスタでは加工済み(結果の日まで)なのに台数が青くない行は、台数も含めて薄い青で塗る(予定表の色付けの不足を補う。2026-11-12 ユーザー指定)
     const fixDone = !!(c.done && dist(col, BLUE_LIGHT) > 80 && dist(col, BLUE_DARK) > 80);
     if (fixDone) { col = BLUE_LIGHT; paintRow.fixed = (paintRow.fixed || 0) + 1; fill(q); }
@@ -859,6 +863,44 @@
           return out.save();
         });
       });
+    });
+  }
+
+  // ---- 次の加工予定の金物リスト(tdf-kanamono-list と連動。2026-11-20 ユーザー指示) ----
+  // 予定表で台数のセルが黄色の行(次の加工予定)を、金物リストのアプリに #plan=… で渡して新しいタブで開く。
+  // 金物リストはサーバーのTDFを読むので、パソコンの Chrome・Edge(フォルダを読む仕組みがあるブラウザ)だけで聞く。iPad では聞かない
+  const KANAMONO_URL = 'https://raw.githack.com/aism24/-/main/tdf-kanamono-list/index.html';
+  function nextPlanRows() {
+    const src = st.src, abbr = (st.data && st.data.abbr) || {}, links = st.links || {};
+    if (!src || !src.items) return [];
+    const seen = {};
+    return src.items.filter(function (it) { return it.cell && it.cell.next; }).filter(function (it) {
+      const k = it.name + '\t' + it.mark; if (seen[k]) return false; seen[k] = 1; return true;
+    }).map(function (it) {
+      const lk = links[(it.drawing || '') + '\t' + it.mark];
+      return { date: it.date, abbr: it.name, kojiNo: abbr[it.name] || '', mark: it.mark, zuban: it.drawing || '', qty: it.qty, weight: it.weight, link: typeof lk === 'string' ? lk : '' };
+    });
+  }
+  function askKanamono() {
+    if (DEMO || typeof window.showDirectoryPicker !== 'function') return Promise.resolve();
+    const rows = nextPlanRows();
+    if (!rows.length) return Promise.resolve();
+    return new Promise(function (resolve) {
+      $('kanaText').textContent = '次の加工予定の金物リストを作りますか？\n(黄色の ' + rows.length + ' 件。金物リストのアプリが新しいタブで開きます)';
+      $('kanaModal').hidden = false;
+      const done = function (yes) {
+        $('kanaModal').hidden = true;
+        $('kanaYes').onclick = $('kanaNo').onclick = null;
+        if (yes) {
+          const plan = { v: 1, src: st.src ? st.src.name : '', rows: rows };
+          window.open(KANAMONO_URL + '#plan=' + encodeURIComponent(JSON.stringify(plan)), '_blank');
+          sendLog('金物リスト', rows.length + '件');
+        }
+        resolve();
+      };
+      $('kanaYes').onclick = function () { done(true); };
+      $('kanaNo').onclick = function () { done(false); };
+      $('kanaYes').focus();
     });
   }
 

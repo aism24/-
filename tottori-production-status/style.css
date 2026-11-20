@@ -312,3 +312,4 @@ table.sheet td.note.nomaster { color: #d00000; font-weight: 700; }
   body:not(.landing-mode) .logo { grid-column: 3; grid-row: 1; justify-self: end; }
   body:not(.landing-mode) .hdr-btns { grid-column: 1 / -1; grid-row: 2; justify-self: end; margin: 0; }
 }
+#kanaModal .notice-actions { gap: 12px; }
