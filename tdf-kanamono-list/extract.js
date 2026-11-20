@@ -1142,6 +1142,8 @@
     // 図面の上段の図から順(チェックしやすい)。同じ図の製品は製品名の番号順(GJ9→GJ10→GJ12)
     result.products.sort(function (a, b) { return a.view - b.view || cmpNat(a.name, b.name); });
     // 柱の詳細図(「図示」の行)は製品だけ読む。柱の金物の拾い出しのルールはまだ決めていない(2026-11-20、EB1-0C-04)
+    // columnDrawing: 長さを tdf-master-web の柱モード(py/tdf_column.py)で求める目印(梁の図面には付けない)
+    if (pr.rows.some(function (r) { return r.column; })) result.columnDrawing = true;
     if (pr.rows.some(function (r) { return r.column; })) result.warnings.push('柱の詳細図です。製品は読みましたが、柱の金物は拾い出しのルールがまだ決まっていないため抽出していません');
     if (sayaCounted) { excluded.delete('サヤ管'); result.included.push('サヤ管'); }   // サイズ・長さ・本数が分かったので金物リストに入れた(お知らせで「抽出しました」と出す)
     result.excluded = Array.from(excluded);
