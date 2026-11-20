@@ -872,7 +872,7 @@
   // 金物リストは Vercel の本番を正とする(2026-11-20 ユーザー決定。raw.githack の main は数時間古いままのことがあった)
   const KANAMONO_URL = 'https://tdf-kanamono-list.vercel.app/';
   function nextPlanRows() {
-    const src = st.src, abbr = (st.data && st.data.abbr) || {}, links = st.links || {};
+    const src = st.src, abbr = (st.data && st.data.abbr) || {}, links = st.links || {}, parts = (st.data && st.data.planPart) || {};
     if (!src || !src.items) return [];
     const seen = {};
     // items は GAS へ送るため cell を外してある。cells は items と同じ順番(parsePlanPdf)なので、番号で対応させる
@@ -881,7 +881,7 @@
       const k = it.name + '\t' + it.mark; if (seen[k]) return false; seen[k] = 1; return true;
     }).map(function (it) {
       const lk = links[(it.drawing || '') + '\t' + it.mark];
-      return { date: it.date, abbr: it.name, kojiNo: abbr[it.name] || '', mark: it.mark, zuban: it.drawing || '', qty: it.qty, weight: it.weight, link: typeof lk === 'string' ? lk : '' };
+      return { date: it.date, abbr: it.name, kojiNo: abbr[it.name] || '', mark: it.mark, zuban: it.drawing || '', qty: it.qty, weight: it.weight, link: typeof lk === 'string' ? lk : '', part: parts[it.name + '\t' + it.mark] || '' }; // part: 案件マスターの部位(金物リストの並び替えに使う。2026-11-21)
     });
   }
   function askKanamono() {

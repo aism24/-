@@ -336,6 +336,8 @@ function allProducts() {
   state.tdfs.slice().sort((a, b) => KanamonoExtract.cmpNat(a.res.zuban || a.fileName, b.res.zuban || b.fileName)).forEach(t => {
     t.res.products.slice().sort((a, b) => KanamonoExtract.cmpNat(a.name, b.name)).forEach(p => out.push({ t, p }));
   });
+  // 次の加工予定から作ったときは 工事 → 柱 → 大梁 → 小梁 → 製品番号順(runPlan が付けた ord。2026-11-21 ユーザー指示)
+  if (out.length && out.every(x => typeof x.p.ord === 'number')) out.sort((a, b) => a.p.ord - b.p.ord);
   return out;
 }
 function render() {
@@ -547,6 +549,21 @@ async function findByZuban(root, rows) {
     }
   } finally { idle(); }
 }
+// 次の加工予定の並び(2026-11-21 ユーザー指示): 工事 → 柱 → 大梁 → 小梁 → その他 → 製品番号順。画面の表・Excel(1枚目・工事ごとのシート)とも。
+// 部位は tottori が案件マスターから渡す(r.part)。無ければ図面から推定: 柱の詳細図なら柱、図番の区切りの記号(3G・RG=大梁、3B・RB=小梁、2C・0C=柱)。分からなければ「その他」
+const PLAN_PARTS = ['柱', '大梁', '小梁'];
+function guessPart(zuban, columnDrawing) {
+  if (columnDrawing) return '柱';
+  const segs = nk(zuban).toUpperCase().split('-');
+  for (let i = segs.length - 2; i >= 0; i--) {
+    const m = /^(?:[0-9A-Z]*[0-9][0-9A-Z]*|R|PH|K)([CGB])$/.exec(segs[i]);   // 数字を含む(3G・B1M2G)か R・PH・K で始まる記号だけ(「EB」のような工区の記号は見ない)
+    if (m) return { C: '柱', G: '大梁', B: '小梁' }[m[1]];
+  }
+  return '';
+}
+const partRank = part => { const i = PLAN_PARTS.indexOf(part); return i < 0 ? PLAN_PARTS.length : i; };
+const kojiKeyOf = r => r.kojiNo || r.abbr || '工事番号なし';
+const cmpText = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 async function runPlan(plan) {
   const sv = state.server, root = state.root;
   if (!sv || !root) return;
@@ -578,6 +595,7 @@ async function runPlan(plan) {
       } catch (e) { f.err = 'TDFを開けませんでした'; }
     }
   } finally { idle(); }
+  rows.forEach(r => { const f = r.segs && files.get(r.segs.join('/')); r.partEff = r.part || guessPart(r.zuban, !!(f && f.res && f.res.columnDrawing)); });
   // 予定の行ごとに、TDFの中の同じ製品名の製品を使う。枚数は1台あたり × 予定の台数
   const groups = new Map();
   rows.forEach(r => {
@@ -591,26 +609,30 @@ async function runPlan(plan) {
     const key = r.kojiNo || r.abbr || '工事番号なし';
     if (!groups.has(key)) groups.set(key, { sheet: key.replace(/[\\/?*\[\]:]/g, '_').slice(0, 31), head: { kojiNo: r.kojiNo || '', koji: f.res.koji || r.abbr || '' }, products: [], tdfs: [] });
     const g = groups.get(key), qty = Number(r.qty) || p.dai || 1;
-    g.products.push({ zuban: p.zuban, name: p.name, size: p.size, length: p.length, dai: qty, link: r.link || fileUrl(f.dir, f.fileName),
+    g.products.push({ zuban: p.zuban, name: p.name, size: p.size, length: p.length, dai: qty, link: r.link || fileUrl(f.dir, f.fileName), rank: partRank(r.partEff),
       items: p.items.map(it => ({ size: it.size, name: it.name, n: it.n * qty, note: it.note })) });
     if (!g.tdfs.includes(f)) g.tdfs.push(f);
   });
-  // 画面にも出す(作った製品だけ)
+  // 並び: 工事 → 柱 → 大梁 → 小梁 → その他 → 製品番号順(1枚目の一覧の行も同じ)
+  rows.sort((a, b) => cmpText(kojiKeyOf(a), kojiKeyOf(b)) || partRank(a.partEff) - partRank(b.partEff) || KanamonoExtract.cmpNat(nk(a.mark), nk(b.mark)));
+  const gs = [...groups.keys()].sort(cmpText).map(k => groups.get(k));
+  let ord = 0;
+  gs.forEach(g => { g.products.sort((a, b) => a.rank - b.rank || KanamonoExtract.cmpNat(a.name, b.name)); g.products.forEach(x => { x.ord = ord++; }); });
+  // 画面にも出す(作った製品だけ。画面の表もこの並び = 製品の ord)
   state.tdfs = [];
-  groups.forEach(g => g.tdfs.forEach(f => {
-    const names = g.products.map(x => nk(x.name));
-    const res = Object.assign({}, f.res, { products: f.res.products.filter(p => names.includes(nk(p.name))) });
-    res.products.forEach(p => p.items.forEach(it => { it.n0 = it.n; }));
+  gs.forEach(g => g.tdfs.forEach(f => {
+    const byName = new Map(g.products.map(x => [nk(x.name), x.ord]));
+    const res = Object.assign({}, f.res, { products: f.res.products.filter(p => byName.has(nk(p.name))) });
+    res.products.forEach(p => { p.ord = byName.get(nk(p.name)); p.items.forEach(it => { it.n0 = it.n; }); });
     state.tdfs.push({ id: nextId++, fileName: f.fileName, path: f.dir, res });
   }));
+  const minOrd = t => Math.min(...t.res.products.map(p => p.ord));
+  state.tdfs.sort((a, b) => minOrd(a) - minOrd(b));
   render();
   if (!groups.size) { await notice('金物リストを作れませんでした', rows.map(r => `${r.abbr} ${r.mark}: ${r.status}`).join('\n')); return; }
   busy('Excelを作っています…');
   try {
     await loadExcelJS();
-    const gs = [...groups.values()];
-    // 工事ごとのシートの中も 図面番号順 → 製品番号順(2026-11-20 ユーザー指示)
-    gs.forEach(g => g.products.sort((a, b) => KanamonoExtract.cmpNat(a.zuban || '', b.zuban || '') || KanamonoExtract.cmpNat(a.name, b.name)));
     const { wb, layouts } = KanamonoExcel.buildPlan(window.ExcelJS, '鳥取', rows, gs);
     const buf = await wb.xlsx.writeBuffer();
     const d = new Date();
