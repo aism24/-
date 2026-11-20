@@ -729,11 +729,21 @@
 
       // 旗 → 場所。旗は左向き(左の板を見る)を優先し、板厚が断面の表記と合う板だけ
       var flagsBySec = {};
+      // 旗の上に「(x6)」と書いた旗は、その断面が6か所(2026-11-20、EA1-3B-03 の き(x6)・か(x4)。コン止めの板が1枚ずつになっていた)。
+      // 「(xN)」は上100〜400・左右200以内で一番近い旗のもの
+      var flagMult = new Map();
+      T.forEach(function (u) {
+        var mm = /^[(（]\s*[xX×]\s*([0-9]+)\s*[)）]$/.exec(u.text); if (!mm || !inView(v, u)) return;
+        var f = T.filter(function (t) { return RE_SECKEY.test(t.text) && secInfo[t.text] && u.y - t.y >= 100 && u.y - t.y <= 400 && Math.abs(u.x - t.x) <= 200; })
+          .sort(function (a, b) { return Math.abs(a.x - u.x) - Math.abs(b.x - u.x); })[0];
+        if (f) flagMult.set(f, parseInt(mm[1], 10));
+      });
       T.forEach(function (t) {
         if (!inView(v, t) || !RE_SECKEY.test(t.text) || !secInfo[t.text]) return;
         var fx = flagLineX(t); if (fx === null) return;
         var si = secInfo[t.text];
         flagsBySec[t.text] = flagsBySec[t.text] || { matched: [], unmatched: 0 };
+        if (flagMult.has(t)) { flagsBySec[t.text].unmatched += flagMult.get(t); return; }
         var hit = null;
         if (si.plateT.size && positions.length) {
           var cand = positions.filter(function (p) { return tMatch(p, si.plateT); });
