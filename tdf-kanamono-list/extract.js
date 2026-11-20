@@ -172,11 +172,15 @@
       var name = same.find(function (u) { return RE_PNAME.test(u.text) && !RE_FUGO.test(u.text) && !RE_MAIN.test(u.text) && (!fugo || u.x < fugo.x); });
       if (!name) {
         // 上の読み方で製品名が見つからない行は、tdf-master-web(製品情報の抽出)と同じ読み方で読み直す(2026-11-19)
-        var mw = masterWebRow(same, t, parseInt(m[1], 10));
+        var mw = masterWebRow(same, t, parseInt(m[1], 10)) || offsetMarkRow(texts, t, parseInt(m[1], 10));
         if (mw) rows.push(mw);
         return;
       }
-      var main = same.find(function (u) { return RE_MAIN.test(u.text) && u.x > name.x; });
+      // 同じ高さに符号が無い行は、現場付けとする前に、符号・サイズが上下にずれた行(2行で共有)として読み直す(2026-11-20)
+      if (!fugo) { var om = offsetMarkRow(texts, t, parseInt(m[1], 10)); if (om) { rows.push(om); return; } }
+      // 本体: H形鋼の表記。無ければ組立H(BH-)・SH(tdf-master-web のサイズの形)も本体とする(2026-11-20、EA1-3G-01 の BH-1300x450x25x40)
+      var main = same.find(function (u) { return RE_MAIN.test(u.text) && u.x > name.x; }) ||
+        same.find(function (u) { return /^(BH|SH|H)-[0-9]+x[0-9]+x[0-9.]+x[0-9.]+$/.test(u.text) && u.x > name.x; });
       var rec = { name: name.text, fugo: fugo ? fugo.text : '', dai: parseInt(m[1], 10), x: name.x, xr: t.x, y: t.y, main: main ? main.text : '' };
       if (fugo) rows.push(rec); else onSite.push(rec);
     });
@@ -196,6 +200,30 @@
     if (!RE_MW_SIZE.test(sizeT.text.normalize('NFKC').trim())) return null;
     if (RE_DAI.test(markT.text.normalize('NFKC').trim())) return null;
     return { name: markT.text, fugo: codeT.text, dai: nDai, x: markT.x, xr: dai.x, y: dai.y, main: sizeT.text };
+  }
+
+  // tdf-master-web の find_product_rows_offset_mark と同じ読み方(2026-11-20、EA1-1B-01):
+  // 製品マークが「N台」の行から上下にずれた行や、2行の製品で設計符号・サイズを共有して2行の真ん中に書いた行。
+  // 「N台」から左へ(同じ高さの直前の「N台」より右)、上下130以内の文字を見る。サイズとその左の設計符号(サイズと同じ高さ)があり、
+  // さらに左で一番近い製品マークらしい文字を製品マークにする。製品マークは、同じ列の「N台」のうちこの「N台」に一番近いこと
+  var RE_MARK_LIKE = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$/;
+  function offsetMarkRow(texts, dai, nDai) {
+    var dais = texts.filter(function (u) { return RE_DAI.test(u.text); });
+    var prev = dais.filter(function (d) { return d.x < dai.x && Math.abs(d.y - dai.y) < 15; }).reduce(function (a, d) { return a === null || d.x > a ? d.x : a; }, null);
+    var win = texts.filter(function (u) { return u.x < dai.x && (prev === null || u.x > prev) && Math.abs(u.y - dai.y) <= 130 && !RE_DAI.test(u.text); });
+    var sizes = win.filter(function (u) { return RE_MW_SIZE.test(u.text); });
+    if (!sizes.length) return null;
+    var size = sizes.slice().sort(function (a, b) { return Math.abs(a.y - dai.y) - Math.abs(b.y - dai.y) || b.x - a.x; })[0];
+    var codes = win.filter(function (u) { return u.x < size.x && Math.abs(u.y - size.y) < 15; });
+    if (!codes.length) return null;
+    var code = codes.sort(function (a, b) { return b.x - a.x; })[0];
+    var marks = win.filter(function (u) { return u.x < code.x && u !== size && RE_MARK_LIKE.test(u.text) && !RE_MW_SIZE.test(u.text); });
+    if (!marks.length) return null;
+    var mark = marks.sort(function (a, b) { return b.x - a.x; })[0];
+    var col = dais.filter(function (d) { return Math.abs(d.x - dai.x) < 1; });
+    var nearest = col.sort(function (a, b) { return Math.abs(a.y - mark.y) - Math.abs(b.y - mark.y); })[0];
+    if (nearest !== dai) return null;
+    return { name: mark.text, fugo: code.text, dai: nDai, x: mark.x, xr: dai.x, y: dai.y, main: size.text };
   }
 
   // 断面の見出し「A SEC」
