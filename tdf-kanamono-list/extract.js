@@ -144,6 +144,24 @@
   function titleInfo(texts) {
     var koji = '';
     texts.forEach(function (t) { if (/工事$/.test(t.text) && t.text.length > koji.length && !/^工事/.test(t.text)) koji = t.text; });
+    // 「〜工事」が無い図面(2026-11-20、EA1-3G-01 等の阪和の表題欄): 見出し「工事名称」(1文字ずつ・または続けて)の下に書かれた値を工事名にする。
+    // 値 = 見出しの左端-200より右・見出しの下600以内の文字のうち、見出しに一番近いもの(見出しの文字・「図面番号」などの見出しは除く)
+    if (!koji) {
+      var heads = [];
+      texts.forEach(function (t) {
+        if (t.text === '工事名称') heads.push({ x: t.x, y: t.y, x1: t.x + 400 });
+        if (t.text !== '工') return;
+        var seq = ['事', '名', '称'], cur = t, ok = true;
+        seq.forEach(function (ch) { if (!ok) return; var n = texts.find(function (u) { return u.text === ch && Math.abs(u.y - cur.y) < 5 && u.x > cur.x && u.x - cur.x < 200; }); if (n) cur = n; else ok = false; });
+        if (ok) heads.push({ x: t.x, y: t.y, x1: cur.x });
+      });
+      heads.forEach(function (h) {
+        if (koji) return;
+        var c = texts.filter(function (u) { return u.text.length > 1 && u.y < h.y - 30 && h.y - u.y < 600 && u.x > h.x - 200 && u.x < h.x1 + 3000 && !/名称|番号/.test(u.text); })
+          .sort(function (p, q) { return (h.y - p.y) + Math.abs(p.x - h.x) * 0.2 - ((h.y - q.y) + Math.abs(q.x - h.x) * 0.2); })[0];
+        if (c) koji = c.text;
+      });
+    }
     var zuban = '', best = -Infinity;
     // 表題欄(右下)にあるもの。工事番号(26-11)・形鋼・板の表記は除く
     texts.forEach(function (t) { if (RE_ZUBAN.test(t.text) && !/^[0-9]+-[0-9]+$/.test(t.text) && !RE_PLATE.test(t.text) && !/^(?:S?H|BT|FB|L|C)-/.test(t.text)) { var s = t.x - t.y; if (s > best) { best = s; zuban = t.text; } } });
