@@ -15,7 +15,7 @@ PDFのダウンロードのあと「次の加工予定の金物リストを作�
 「はい」で金物リストのアプリ(`tdf-kanamono-list/`。`app.js` の `KANAMONO_URL`)を新しいタブで開き、予定表で台数のセルが**黄色**(次の加工予定)の行を `#plan=…` で渡す
 (予定日・件名・工事番号(略称シート)・製品名・台数・重量・図番・実寸法師へのリンク(shipping-list-link))。答えてから、今までのお知らせを出す。
 金物リスト側で TDF を読み、工事ごとにシートを分けた(シート名=工事番号)Excelをダウンロードする(仕様は docs/apps/tdf-kanamono-list.md)。
-`KANAMONO_URL` は金物リストを Vercel で公開するまで raw.githack の main を指す。公開したら本番のURLに変える。
+`KANAMONO_URL` は金物リストの本番 https://tdf-kanamono-list.vercel.app/ (2026-11-20 から。金物リストは Vercel で更新していく)。
 
 ## 決まり
 | 項目 | 決まり |

@@ -869,7 +869,8 @@
   // ---- 次の加工予定の金物リスト(tdf-kanamono-list と連動。2026-11-20 ユーザー指示) ----
   // 予定表で台数のセルが黄色の行(次の加工予定)を、金物リストのアプリに #plan=… で渡して新しいタブで開く。
   // 金物リストはサーバーのTDFを読むので、パソコンの Chrome・Edge(フォルダを読む仕組みがあるブラウザ)だけで聞く。iPad では聞かない
-  const KANAMONO_URL = 'https://raw.githack.com/aism24/-/main/tdf-kanamono-list/index.html';
+  // 金物リストは Vercel の本番を正とする(2026-11-20 ユーザー決定。raw.githack の main は数時間古いままのことがあった)
+  const KANAMONO_URL = 'https://tdf-kanamono-list.vercel.app/';
   function nextPlanRows() {
     const src = st.src, abbr = (st.data && st.data.abbr) || {}, links = st.links || {};
     if (!src || !src.items) return [];
