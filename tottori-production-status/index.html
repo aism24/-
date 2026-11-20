@@ -5,7 +5,7 @@
 <title>鳥取工場 生産状況</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="style.css?v=20261120d">
+<link rel="stylesheet" href="style.css?v=20261121b">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body class="landing-mode">
@@ -116,28 +116,7 @@
 </div>
 
 <script src="app.js?v=20261121a"></script>
-<script>
-// 会社ロゴを5回続けて(1.5秒以内の間隔で)タップすると、この端末だけ「← アプリ一覧へ」が出る(ブラウザに記憶)。もう一度5回で消える
-// (2026-11-11、ユーザー指示。truck-fax・shipping-list-link と同じ仕組み)
-(function () {
-  var KEY = 'tottori-production-status:toLauncher', n = 0, last = 0;
-  function get() { try { return localStorage.getItem(KEY) === '1'; } catch (e) { return false; } }
-  function set(on) { try { if (on) localStorage.setItem(KEY, '1'); else localStorage.removeItem(KEY); } catch (e) {} }
-  function show() {
-    if (document.getElementById('toLauncherJs')) return;
-    var s = document.createElement('script');
-    s.id = 'toLauncherJs'; s.src = 'to-launcher.js?v=20261111a'; s.setAttribute('data-target', '.app-header h1'); s.setAttribute('data-mode', 'in');
-    document.body.appendChild(s);
-  }
-  if (get()) show();
-  document.querySelector('.brand .logo').addEventListener('click', function () {
-    var now = Date.now();
-    n = now - last <= 1500 ? n + 1 : 1; last = now;
-    if (n < 5) return;
-    n = 0;
-    if (get()) { set(false); location.reload(); } else { set(true); show(); }
-  });
-})();
-</script>
+<!-- 「← アプリ一覧へ」はいつも表示する(2026-11-21 ユーザー指示。会社ロゴを5回タップして出す仕組みは削除) -->
+<script src="to-launcher.js?v=20261111a" data-target=".app-header h1" data-mode="in"></script>
 </body>
 </html>
