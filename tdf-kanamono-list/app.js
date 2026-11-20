@@ -262,8 +262,16 @@ async function importItems(items) {
     for (const { file: f, path } of items) {
       try {
         if (state.tdfs.some(t => t.fileName === f.name && t.path === path)) { errors.push(`${f.name}: すでに取り込んでいます`); continue; }
-        const res = KanamonoExtract.extract(await f.arrayBuffer(), f.name);
+        const buf = await f.arrayBuffer();
+        const res = KanamonoExtract.extract(buf, f.name);
         if (!res.products.length) { errors.push(`${f.name}: 製品(「製品名 符号 N台」の行)が見つかりませんでした`); continue; }
+        // 長さは tdf-master-web と同じ方法で求める(2026-11-20 ユーザー指示)。読めなければ図面の寸法から読んだ長さのまま
+        try {
+          busy('長さを読んでいます…(初回だけ準備に数秒かかります)');
+          const ml = await masterLengths(buf, f.name);
+          res.products.forEach(p => { const m = ml.find(x => x[0] === p.name); if (m && m[1]) p.length = Math.round(m[1] * 10000) / 10; });
+        } catch (e) { warns.push(`${f.name}: 長さを tdf-master-web と同じ方法で読めませんでした(${e.message})。図面の寸法から読んだ長さを使います`); }
+        finally { busy('TDFを読み込んでいます…'); }
         const base = state.tdfs[0];
         if (base && base.res.koji !== res.koji) { errors.push(`${f.name}: 工事名が違うため取り込みません(「${res.koji || '不明'}」。取り込み済みは「${base.res.koji}」)`); continue; }
         res.products.forEach(p => p.items.forEach(it => { it.n0 = it.n; }));
@@ -368,6 +376,38 @@ function buildExportProducts() {
     items: p.items.map(it => ({ size: it.size, name: it.name, n: it.n, note: it.note })),
   }));
 }
+// ---------- 長さ(tdf-master-web と同じ Python を Pyodide で動かす。py/ は tdf-master-web の写し) ----------
+const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js';   // tdf-master-web と同じ版
+const PY_FILES = ['tdf_binary.py', 'tdf_master_extractor.py', 'tdf_master_extractor_multi.py', 'tdf_app.py'];
+let pyPromise = null;
+function loadPy() {
+  if (!pyPromise) {
+    pyPromise = (async () => {
+      if (!window.loadPyodide) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = PYODIDE_URL; s.onload = res; s.onerror = () => rej(new Error('Pythonの部品を読み込めませんでした')); document.head.appendChild(s); });
+      const py = await window.loadPyodide();
+      py.FS.mkdir('/mw');
+      for (const n of PY_FILES) {
+        const r = await fetch('py/' + n + '?v=' + PY_VER);
+        if (!r.ok) throw new Error(n + ' を読み込めませんでした');
+        py.FS.writeFile('/mw/' + n, await r.text());
+      }
+      await py.runPythonAsync("import sys, json\nsys.path.insert(0, '/mw')\nimport tdf_app");
+      return py;
+    })();
+    pyPromise.catch(() => { pyPromise = null; });
+  }
+  return pyPromise;
+}
+// [[製品マーク, 長さ(m)], …]
+async function masterLengths(buf, name) {
+  const py = await loadPy();
+  py.FS.writeFile('/input.tdf', new Uint8Array(buf));
+  py.globals.set('tdf_filename', name);
+  const out = await py.runPythonAsync("json.dumps([[r.get('製品マーク'), r.get('長さ')] for r in tdf_app.extract_file('/input.tdf', tdf_filename)], ensure_ascii=False)");
+  return JSON.parse(out);
+}
+const PY_VER = '20261120c';
+
 let exceljsPromise = null;
 function loadExcelJS() {
   if (window.ExcelJS) return Promise.resolve();
