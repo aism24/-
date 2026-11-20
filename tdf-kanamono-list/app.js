@@ -322,10 +322,10 @@ document.addEventListener('drop', async e => {
 
 // ---------- 表示 ----------
 function allProducts() {
-  // 図面番号順。同じ図面の中は図面に書かれた順(上段から)
+  // 図面番号順。同じ図面の中は製品番号順(EA11-3TB489-1, -2, … -18。2026-11-20 ユーザー指示。以前は図面に書かれた順)
   const out = [];
   state.tdfs.slice().sort((a, b) => KanamonoExtract.cmpNat(a.res.zuban || a.fileName, b.res.zuban || b.fileName)).forEach(t => {
-    t.res.products.forEach(p => out.push({ t, p }));
+    t.res.products.slice().sort((a, b) => KanamonoExtract.cmpNat(a.name, b.name)).forEach(p => out.push({ t, p }));
   });
   return out;
 }
@@ -557,6 +557,8 @@ async function runPlan(plan) {
   try {
     await loadExcelJS();
     const gs = [...groups.values()];
+    // 工事ごとのシートの中も 図面番号順 → 製品番号順(2026-11-20 ユーザー指示)
+    gs.forEach(g => g.products.sort((a, b) => KanamonoExtract.cmpNat(a.zuban || '', b.zuban || '') || KanamonoExtract.cmpNat(a.name, b.name)));
     const { wb, layouts } = KanamonoExcel.buildPlan(window.ExcelJS, '鳥取', rows, gs);
     const buf = await wb.xlsx.writeBuffer();
     const d = new Date();
