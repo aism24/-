@@ -464,6 +464,29 @@
       if (lbs.length) layerDetails.push({ title: t.text, layer: no + 1, labels: lbs });
     });
 
+    // サヤ管(2026-11-20 ユーザー指示): サイズ・長さ・本数がすべて図面から分かるときは金物リストに入れる。1つでも分からなければ除外のまま
+    //  - サイズ: 「サヤ管」という名前の詳細図の管の表記(P-60.5φx3.2)
+    //  - 長さ: 凡例の <TS190> の数字、または管の表記のそばの L=…
+    //  - 本数: 図の中のサヤ管のレイヤで、外径だけ離れた長さの同じ平行な2本の線(1本の管)の数(数えるのは下の views の中で)
+    var saya = null;
+    (function () {
+      var title = T.filter(function (t) { return t.text === 'サヤ管' && !isLeft(t) && !sectionOf(t, titles); })[0];
+      if (!title) return;
+      var pipe = T.filter(function (u) { return /^P-([0-9.]+)φ?x([0-9.]+)$/.test(u.text) && u.y - title.y > 100 && u.y - title.y < 2600 && Math.abs(u.x - title.x) < 1900; })
+        .sort(function (a, b) { return dist(a, title) - dist(b, title); })[0];
+      if (!pipe) return;
+      var m = /^P-([0-9.]+)φ?x([0-9.]+)$/.exec(pipe.text);
+      var len = null;
+      var lt = T.filter(function (w) { return /^L=[0-9.]+$/.test(w.text) && dist(w, pipe) < 300; })[0];
+      if (lt) len = parseFloat(lt.text.slice(2));
+      else { var ts = T.filter(function (w) { return /^<TS[0-9.]+>$/.test(w.text); }).map(function (w) { return parseFloat(w.text.slice(3)); }); if (ts.length && ts.every(function (x) { return x === ts[0]; })) len = ts[0]; }
+      if (!len) return;
+      var lays = [];
+      P.layers.forEach(function (n, i) { if (/サヤ管/.test(n) && !/非表示/.test(n)) lays.push(i + 1); });
+      saya = { size: pipe.text, od: parseFloat(m[1]), len: len, layers: lays };
+    })();
+    var sayaCounted = false;
+
     // 旗(断面記号): 文字の右に縦線(長さ250〜450)がある
     // 旗の縦線(梁が傾いた図面では少し傾いている)
     // 傾き2割まで(WR-2G-9 は勾配12.9%。tdf-master-web もこの図面を斜め梁として読めている。2026-11-20)
@@ -763,6 +786,14 @@
           if (n) add(lb.size, lb.mark, n * lb.cnt, dt.title);
         });
       });
+      if (saya) {
+        var sl = L.filter(function (l) { return saya.layers.indexOf(l[4]) >= 0 && inView(v, { x: (l[0] + l[2]) / 2, y: (l[1] + l[3]) / 2 }) && Math.abs(Math.hypot(l[2] - l[0], l[3] - l[1]) - saya.len) < 0.6; });
+        var gs = [sl.filter(function (l) { return Math.abs(l[0] - l[2]) < 0.5; }).map(function (l) { return { p: l[0], a: Math.min(l[1], l[3]), b: Math.max(l[1], l[3]) }; }),
+          sl.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5; }).map(function (l) { return { p: l[1], a: Math.min(l[0], l[2]), b: Math.max(l[0], l[2]) }; })];
+        var nSaya = 0;
+        gs.forEach(function (g) { g.forEach(function (a) { if (g.some(function (b2) { return Math.abs(b2.p - a.p - saya.od) < 0.6 && Math.abs(b2.a - a.a) < 0.6 && Math.abs(b2.b - a.b) < 0.6; })) nSaya++; }); });
+        if (nSaya) { add(saya.size, saya.len, nSaya, 'サヤ管'); sayaCounted = true; }
+      }
       // 管(スリーブ管 P-318.5x6 と L=1310。1G-01。2026-11-20 ユーザー指示): 図の中の表記1つにつき1本
       T.forEach(function (t) {
         if (!inView(v, t) || !/^P-[0-9.]+x[0-9.]+$/.test(t.text)) return;
@@ -886,6 +917,7 @@
     });
     // 図面の上段の図から順(チェックしやすい)。同じ図の製品は製品名の番号順(GJ9→GJ10→GJ12)
     result.products.sort(function (a, b) { return a.view - b.view || cmpNat(a.name, b.name); });
+    if (sayaCounted) excluded.delete('サヤ管');   // サイズ・長さ・本数が分かったので金物リストに入れた
     result.excluded = Array.from(excluded);
     return result;
   }
