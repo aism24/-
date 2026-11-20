@@ -147,7 +147,7 @@
       vals.forEach(function (v, c) {
         var cell = row.getCell(c + 1);
         if ((c === 3 || c === 6) && r.link && v) { cell.value = { text: String(v), hyperlink: r.link }; cell.font = font({ bold: true, u: true, color: 'FF0000FF' }); }
-        else { cell.value = v === undefined ? '' : v; cell.font = font({ color: c === 7 && r.status && r.status !== '作成' ? 'FFC00000' : undefined }); }
+        else { cell.value = v === undefined ? '' : v; cell.font = font({ color: c === 7 && r.status && !/^作成/.test(r.status) ? 'FFC00000' : undefined }); }
         cell.border = { left: THIN, right: THIN, top: THIN, bottom: THIN };
         if (c !== 7) cell.alignment = CENTER;
       });

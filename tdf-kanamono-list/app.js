@@ -505,15 +505,56 @@ async function startPlan() {
   await notice('次の加工予定の金物リスト',
     `${PLAN.src ? '「' + PLAN.src + '」の' : ''}次の加工予定(黄色) ${PLAN.rows.length}件(工事 ${kojis.join('・')})の金物リストを作ります。\n「① 本社サーバー」か「① 鳥取サーバー」を押し、そのサーバーの「①進行中工事」を選ぶと、TDFを読み込みます。`);
 }
+// リンク表に無い行は、工事のフォルダの中から図番でTDFを探す(ファイル名「EA1-3B-04　260928.tdf」。2026-11-20 ユーザー指示)
+// 工事のフォルダ = 同じ工事のリンクのある行の「①進行中工事」の次のフォルダ、無ければ名前が工事番号で始まるフォルダ
+const zubanOf = name => { const m = /^(.+?)(?:[\s_]+(\d{6}))?\.tdf$/i.exec(nk(name)); return m ? { zuban: m[1].trim().toUpperCase(), date: m[2] || '' } : null; };
+async function kojiDirName(root, rows, r) {
+  const key = r.kojiNo || r.abbr;
+  const hit = rows.find(x => x.segs && (x.kojiNo || x.abbr) === key);
+  if (hit) return hit.segs[0];
+  const no = nk(r.kojiNo);
+  if (!no) return null;
+  for await (const e of root.values()) if (e.kind === 'directory' && nk(e.name).startsWith(no) && !/[0-9]/.test(nk(e.name).charAt(no.length))) return e.name;
+  return null;
+}
+// フォルダの中の TDF を全部(下のフォルダも)。図番 → [{segs, date}]
+async function indexTdfs(dir, base, out, onDir) {
+  onDir();
+  for await (const e of dir.values()) {
+    if (e.kind === 'directory') { try { await indexTdfs(e, base.concat(e.name), out, onDir); } catch (err) { /* 読めないフォルダは飛ばす */ } }
+    else { const z = zubanOf(e.name); if (z) (out[z.zuban] = out[z.zuban] || []).push({ segs: base.concat(e.name), date: z.date }); }
+  }
+  return out;
+}
+async function findByZuban(root, rows) {
+  const need = rows.filter(r => !r.link);
+  if (!need.length) return;
+  const idx = new Map();   // 工事のフォルダ名 → 図番の索引
+  try {
+    for (const r of need) {
+      const kd = await kojiDirName(root, rows, r);
+      if (!kd) { r.status = 'リンク表に無く、工事のフォルダも分かりません'; continue; }
+      if (!idx.has(kd)) {
+        let n = 0;
+        busy(`リンク表に無い製品のTDFを図番で探しています…\n${kd}`, 0);
+        idx.set(kd, await indexTdfs(await root.getDirectoryHandle(kd), [kd], {}, () => { if (++n % 20 === 0) busy(`リンク表に無い製品のTDFを図番で探しています…(${n}フォルダ)\n${kd}`, 0); }));
+      }
+      const c = (idx.get(kd)[nk(r.zuban).toUpperCase()] || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+      if (!c.length) { r.status = 'リンク表に無く、図番のTDFも見つかりません'; continue; }
+      r.segs = c[0].segs; r.byZuban = true;   // 同じ図番が複数あればファイル名の日付の新しいもの
+    }
+  } finally { idle(); }
+}
 async function runPlan(plan) {
   const sv = state.server, root = state.root;
   if (!sv || !root) return;
   const rows = plan.rows.map(r => Object.assign({}, r, { status: '' }));
   const files = new Map();   // 「①進行中工事」からの場所 → {fileName, dir, res | err}
+  rows.forEach(r => { r.segs = relFromLink(r.link, root.name); });
+  await findByZuban(root, rows);
   rows.forEach(r => {
-    r.segs = relFromLink(r.link, root.name);
-    if (!r.link) r.status = 'リンク表にありません';
-    else if (!r.segs) r.status = 'TDFの場所が「①進行中工事」の中ではありません';
+    if (r.status) return;
+    if (!r.segs) r.status = 'TDFの場所が「①進行中工事」の中ではありません';
     else if (!files.has(r.segs.join('/'))) files.set(r.segs.join('/'), { segs: r.segs });
   });
   const list = [...files.values()], total = list.length || 1;
@@ -543,7 +584,8 @@ async function runPlan(plan) {
     if (f.err) { r.status = f.err; return; }
     const p = f.res.products.find(x => nk(x.name) === nk(r.mark));
     if (!p) { r.status = 'TDFにこの製品がありません'; return; }
-    r.status = '作成';
+    r.status = r.byZuban ? '作成(図番で探したTDF)' : '作成';
+    if (!r.link) r.link = fileUrl(f.dir, f.fileName);   // 次の加工予定のシートのリンクも、見つけたTDFにする
     const key = r.kojiNo || r.abbr || '工事番号なし';
     if (!groups.has(key)) groups.set(key, { sheet: key.replace(/[\\/?*\[\]:]/g, '_').slice(0, 31), head: { kojiNo: r.kojiNo || '', koji: f.res.koji || r.abbr || '' }, products: [], tdfs: [] });
     const g = groups.get(key), qty = Number(r.qty) || p.dai || 1;
@@ -577,7 +619,7 @@ async function runPlan(plan) {
     layouts.forEach(l => apiPostQuiet({ action: 'download', koji: l.sheet, factory: '鳥取', rows: KanamonoExcel.toValues(l.layout) }));
   } catch (e) { toast('Excelを作れませんでした: ' + e.message, 'error'); }
   finally { idle(); }
-  const miss = rows.filter(r => r.status !== '作成');
+  const miss = rows.filter(r => !/^作成/.test(r.status));
   if (miss.length) await notice('金物リストに入れなかった製品', miss.map(r => `${r.abbr} ${r.mark}(${r.zuban || '図番なし'}): ${r.status}`).join('\n') + '\n\n「次の加工予定」のシートには載せています。');
 }
 
