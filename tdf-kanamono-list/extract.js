@@ -598,7 +598,20 @@
         // 同じ板厚の旗の場所が別々の断面なら、どの断面か決められないので当てはめない
         // (2G-01: 厚さ9の断面が C・D・E・F・DK1 とあり、方杖の取り付きの板を C とみなしていた。2026-11-19)
         if (same.length && same.every(function (q) { return q.secs.join(',') === same[0].secs.join(','); })) p.secs = same[0].secs.slice();
-        else if (same.length) p.ambiguous = true;
+        else if (same.length) {
+          // 決められないときは、描かれている線の形(縦線の位置と上下の範囲)がまったく同じ旗のある板の断面にする
+          // (2G-02: 旗のない x≈8202 の板が DK1 の板と同じ形。2026-11-20)
+          var sig = function (q) {
+            return vlines.filter(function (l) { return Math.abs(l.x - q.x) < 30 && l.y1 - l.y0 >= 60 && l.y1 > elev.bot - 100 && l.y0 < elev.top + 1500; })
+              .map(function (l) { return [Math.round((l.x - q.x) * 2) / 2, Math.round(l.y0), Math.round(l.y1)]; })
+              .sort(function (a, b) { return a[0] - b[0] || a[1] - b[1] || a[2] - b[2]; });
+          };
+          var sp = sig(p);
+          var eq = function (a, b) { return a.length === b.length && a.every(function (x, i) { return Math.abs(x[0] - b[i][0]) <= 1 && Math.abs(x[1] - b[i][1]) <= 1 && Math.abs(x[2] - b[i][2]) <= 1; }); };
+          var twins = same.filter(function (q) { return eq(sp, sig(q)); });
+          if (twins.length && twins.every(function (q) { return q.secs.join(',') === twins[0].secs.join(','); })) p.secs = twins[0].secs.slice();
+          else p.ambiguous = true;
+        }
       });
 
       // 板の数
