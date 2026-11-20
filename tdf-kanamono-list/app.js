@@ -134,8 +134,8 @@ async function checkRoot(h, sv) {
   if (marks.includes(sv.name)) return 'ok';
   return marks.length ? 'wrong' : 'unknown';
 }
-// サーバーの「①進行中工事」。2026-11-20 ユーザー指示: 覚えたフォルダは使わず、サーバーを選ぶたびに毎回選ぶ(forcePick)。
-// 選んだフォルダはブラウザに残すが、それは「別のサーバーと同じフォルダを選んでいないか」を確かめるためだけに使う。
+// サーバーの「①進行中工事」(通常は初回だけ選んで、ブラウザに覚える)。
+// 2026-11-20 ユーザー指示: tottori-production-status から飛んだとき(#plan。鳥取専用)だけは、覚えたフォルダを使わず毎回選ぶ(forcePick)。
 // 2026-11-19: 本社を覚えたあと鳥取を選ぶと、選ぶ画面が本社の①進行中工事から開き、同じ名前なので本社を鳥取として覚えてしまうことがあった。
 // 目印ファイルと「別のサーバーとして覚えたフォルダと同じでないか」で確かめる
 async function getRoot(sv, ask, forcePick) {
@@ -153,7 +153,7 @@ async function getRoot(sv, ask, forcePick) {
     if (!ask) return null;
   }
   if (root || !ask) return root || null;
-  await notice(`${sv.name}サーバーの「①進行中工事」を選びます`, `次の画面で、${sv.name}サーバーの「①進行中工事」フォルダを選んでください。\n画面は前に開いた場所から開くので、別のサーバーのフォルダを選ばないよう、場所を確かめてください。`);
+  await notice(forcePick ? `${sv.name}サーバーの「①進行中工事」を選びます` : `${sv.name}サーバーの「①進行中工事」を覚えます`, `次の画面で、${sv.name}サーバーの「①進行中工事」フォルダを選んでください${forcePick ? '' : '(最初の1回だけ)'}。\n画面は前に開いた場所から開くので、別のサーバーのフォルダを選ばないよう、場所を確かめてください。`);
   // id は英数字・_・- だけ(32文字まで)。日本語を入れると開かずにエラーになる(2026-11-19、「root-本社」で開かなかった)
   const pid = 'root' + Math.max(0, state.servers.findIndex(x => x.name === sv.name));
   for (;;) {
@@ -178,15 +178,15 @@ async function getRoot(sv, ask, forcePick) {
     }
     if (v === 'unknown' && !(await confirm2('サーバーを確認できません', `選んだ「${h.name}」に目印ファイル(「_${sv.name}サーバー…」で始まるファイル)がありません。${sv.name}サーバーの「①進行中工事」で合っていますか?`, 'このフォルダを使う', '選び直す'))) continue;
     await idbSet('root:' + sv.name, h);
-    toast(`${sv.name}サーバーの「${h.name}」を選びました`);
+    toast(forcePick ? `${sv.name}サーバーの「${h.name}」を選びました` : `${sv.name}サーバーの「${h.name}」を覚えました`);
     return h;
   }
 }
-// ① サーバーのボタン: 使うサーバーを決め、その「①進行中工事」を毎回選ぶ(フォルダはたどらない。2026-11-20)。
+// ① サーバーのボタン: 使うサーバーを決め、その「①進行中工事」を覚える(フォルダはたどらない)。
 // 選んだら、もう一方のボタンはリセットするまで押せない
 async function selectServer(sv) {
   if (state.server) return false;
-  const root = await getRoot(sv, true, true); if (!root) return false;
+  const root = await getRoot(sv, true); if (!root) return false;
   state.server = sv; state.root = root;
   renderServer(); render();
   return true;
@@ -498,7 +498,7 @@ async function startPlan() {
 async function runPlan(plan) {
   const sv = state.servers.find(x => x.name === '鳥取');
   if (!sv) { await notice('鳥取サーバーがありません', '設定シートのE列に「鳥取」のサーバーがありません。'); return; }
-  const root = (state.server && state.server.name === '鳥取' && state.root) || await getRoot(sv, true, true);   // 毎回選ぶ(2026-11-20)
+  const root = (state.server && state.server.name === '鳥取' && state.root) || await getRoot(sv, true, true);   // tottori から飛んだとき(鳥取専用)は毎回選ぶ(2026-11-20 ユーザー指示)
   if (!root) return;
   state.server = sv; state.root = root; renderServer();
   const rows = plan.rows.map(r => Object.assign({}, r, { status: '' }));
