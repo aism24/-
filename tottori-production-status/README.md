@@ -89,7 +89,8 @@ GASを直したら `CODE_VERSION` を上げ、「デプロイを管理 → 編�
 
 ## 本番URL
 - Vercel: https://tottori-production-status.vercel.app/ (2026-11-12 初回デプロイ。Git連携は解除済み)
-- **本番(Vercel)へのデプロイは絶対にしない(2026-11-20 ユーザー指示)。** 修正は GitHub の main まで。確認は raw.githack。デプロイしてよいかはユーザーが改めて明示したときだけ(ほかのアプリの「デプロイして」はこのアプリに含まない)
+- **本番(Vercel)へは推測で勝手にデプロイしない(2026-11-20 ユーザー指示「絶対」)。** 全部完成したらデプロイする予定。それまでの修正は GitHub の main まで、確認は raw.githack。ほかのアプリの「デプロイして」はこのアプリに含まない。
+  **ユーザーが「デプロイして」と指示しても、すぐにはデプロイせず「ホンマでっか？」と確認し、返事でもう一度はっきり了承を得てから行う**(2026-11-20 ユーザーとの約束)
 
 ## 確認用URL
 - GitHub(raw.githack): `https://raw.githack.com/aism24/-/main/tottori-production-status/index.html`
