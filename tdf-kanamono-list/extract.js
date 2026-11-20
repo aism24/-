@@ -177,8 +177,8 @@
   // 「製品名 符号 N台」の行。符号が無い行(現場付けの製品)は onSite に入れる
   // 製品名: B1M2GJ9・B1M2G001-1・2G21-W9 など(英字を含む、記号は - だけ)
   var RE_PNAME = /^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+)*$/;
-  function productRows(texts) {
-    var rows = [], onSite = [];
+  function productRows(texts, lines) {
+    var rows = [], onSite = [], pending = [];
     texts.forEach(function (t) {
       var m = RE_DAI.exec(t.text); if (!m) return;
       var same = texts.filter(function (u) { return Math.abs(u.y - t.y) < 15 && u.x < t.x && t.x - u.x < 6000; })
@@ -190,19 +190,72 @@
       var name = same.find(function (u) { return RE_PNAME.test(u.text) && !RE_FUGO.test(u.text) && !RE_MAIN.test(u.text) && (!fugo || u.x < fugo.x); });
       if (!name) {
         // 上の読み方で製品名が見つからない行は、tdf-master-web(製品情報の抽出)と同じ読み方で読み直す(2026-11-19)
-        var mw = masterWebRow(same, t, parseInt(m[1], 10)) || offsetMarkRow(texts, t, parseInt(m[1], 10));
-        if (mw) rows.push(mw);
+        var mw = masterWebRow(same, t, parseInt(m[1], 10));
+        if (mw) rows.push(mw); else pending.push({ dai: t, n: parseInt(m[1], 10), same: same, onSite: null });
         return;
       }
-      // 同じ高さに符号が無い行は、現場付けとする前に、符号・サイズが上下にずれた行(2行で共有)として読み直す(2026-11-20)
-      if (!fugo) { var om = offsetMarkRow(texts, t, parseInt(m[1], 10)); if (om) { rows.push(om); return; } }
+      // 同じ高さに符号が無い行は、現場付けとする前に、tdf-master-web と同じ読み方(下の pending)で読み直す(2026-11-20)
       // 本体: H形鋼の表記。無ければ組立H(BH-)・SH(tdf-master-web のサイズの形)も本体とする(2026-11-20、EA1-3G-01 の BH-1300x450x25x40)
       var main = same.find(function (u) { return RE_MAIN.test(u.text) && u.x > name.x; }) ||
         same.find(function (u) { return /^(BH|SH|H)-[0-9]+x[0-9]+x[0-9.]+x[0-9.]+$/.test(u.text) && u.x > name.x; });
       var rec = { name: name.text, fugo: fugo ? fugo.text : '', dai: parseInt(m[1], 10), x: name.x, xr: t.x, y: t.y, main: main ? main.text : '' };
-      if (fugo) rows.push(rec); else onSite.push(rec);
+      if (fugo) rows.push(rec); else pending.push({ dai: t, n: rec.dai, same: same, onSite: rec });
+    });
+    // 読めなかった行は tdf-master-web と同じ順で読み直す(2026-11-20): ① 複数行で設計符号・サイズを共有する表(find_product_rows_shared_group)
+    // → ② 製品マーク・設計符号・サイズが上下にずれた行(find_product_rows_offset_mark)。どちらでも読めなければ、製品名があれば現場付け
+    var xm = xMarks(lines || []);
+    var inX = function (x, y) { return xm.some(function (b) { return x >= b[0] && x <= b[1] && y >= b[2] && y <= b[3]; }); };
+    var groups = {};
+    pending.forEach(function (p) {
+      var mk = p.same.filter(function (u) { return !RE_DAI.test(u.text); })[0];   // same は右から並ぶ → 一番右 = 製品マーク
+      if (!mk || (p.same.length >= 3 && RE_MW_SIZE.test(p.same[0].text))) return;
+      p.mark = mk;
+      var k = mk.x.toFixed(1) + '|' + p.dai.x.toFixed(1);
+      (groups[k] = groups[k] || []).push(p);
+    });
+    Object.keys(groups).forEach(function (k) {
+      var g = groups[k].sort(function (a, b) { return a.dai.y - b.dai.y; }), clusters = [[g[0]]];
+      g.slice(1).forEach(function (p) { var c = clusters[clusters.length - 1]; if (p.dai.y - c[c.length - 1].dai.y > 3000) clusters.push([p]); else c.push(p); });
+      clusters.forEach(function (c) {
+        var mx = c[0].mark.x, dx = c[0].dai.x, ys = c.map(function (p) { return p.dai.y; });
+        var lo = Math.min.apply(null, ys) - 2, hi = Math.max.apply(null, ys) + 2;
+        var line = texts.filter(function (u) { return u.x > mx && u.x < dx && u.y >= lo && u.y <= hi; }).sort(function (a, b) { return a.x - b.x; });
+        if (line.length < 2) return;
+        var size = line[line.length - 1], code = line[line.length - 2];
+        if (!RE_MW_SIZE.test(size.text)) return;
+        c.forEach(function (p) {
+          p.done = true;
+          if (inX(p.mark.x, p.mark.y) || inX(p.dai.x, p.dai.y)) return;   // ×印で消した行
+          rows.push({ name: p.mark.text, fugo: code.text, dai: p.n, x: p.mark.x, xr: p.dai.x, y: p.dai.y, main: size.text });
+        });
+      });
+    });
+    pending.forEach(function (p) {
+      if (p.done) return;
+      var om = offsetMarkRow(texts, p.dai, p.n);
+      if (om && !inX(om.x, om.y) && !inX(om.xr, om.y)) rows.push(om);
+      else if (!om && p.onSite) onSite.push(p.onSite);
     });
     return { rows: rows, onSite: onSite };
+  }
+  // ×印(削除マーク)の範囲 [x0, x1, y0, y1]: 同じ長方形の対角線になる斜めの線2本(tdf-master-web の find_x_marks と同じ。角の誤差2)
+  function xMarks(lines) {
+    var diag = lines.filter(function (l) { var a = Math.atan2(l[3] - l[1], l[2] - l[0]) * 180 / Math.PI; a = ((a % 180) + 180) % 180; return !(a < 5 || a > 175 || Math.abs(a - 90) < 5); });
+    var used = new Set(), out = [], close = function (p, q) { return Math.abs(p[0] - q[0]) < 2 && Math.abs(p[1] - q[1]) < 2; };
+    diag.forEach(function (a, i) {
+      if (used.has(i)) return;
+      var c1 = [a[0], a[3]], c2 = [a[2], a[1]];
+      for (var j = i + 1; j < diag.length; j++) {
+        if (used.has(j)) continue;
+        var b = diag[j], p = [b[0], b[1]], q = [b[2], b[3]];
+        if ((close(p, c1) && close(q, c2)) || (close(p, c2) && close(q, c1))) {
+          used.add(i); used.add(j);
+          out.push([Math.min(a[0], a[2]), Math.max(a[0], a[2]), Math.min(a[1], a[3]), Math.max(a[1], a[3])]);
+          break;
+        }
+      }
+    });
+    return out;
   }
 
   // tdf-master-web の find_product_rows と同じ読み方(index.html の py-tdf-master-extractor):
@@ -313,7 +366,7 @@
     var P = parse(buf), T = P.texts, L = P.lines;
     var info = titleInfo(T);
     var titles = sectionTitles(T);
-    var pr = productRows(T);
+    var pr = productRows(T, L);
     // 製品の行を、図(立面図・平面図)ごとにまとめる。行の高さが近く(600以内)、横にも近い(5000以内)ものは同じ図。
     // 図の範囲: 縦 = 製品の行より上で、上の図の行まで。横 = 左右に並ぶ図の間で分け、右に断面図があればその手前まで
     var prods = pr.rows.slice().sort(function (a, b) { return b.y - a.y || a.x - b.x; });
@@ -379,7 +432,7 @@
       var si = secInfo[s.letter];
       if (RE_SHAPE.test(t.text)) si.shapes.push(t.text);
       if (RE_JOINT.test(t.text) && /^[A-Z]+J[0-9]/.test(t.text)) si.joint = true;
-      if (/^[0-9]+$/.test(t.text) && parseInt(t.text, 10) >= 100) si.dims.push(parseInt(t.text, 10));
+      if (/^[0-9]+$/.test(t.text) && parseInt(t.text, 10) >= 100) { si.dims.push(parseInt(t.text, 10)); (si.dimT = si.dimT || []).push(t); }
       // 断面図の中の断面記号(例: C断面の中の E)
     });
     // 断面図の中の断面記号 → どの断面図の中か(親)。2026-11-19 ユーザー説明(2G-01)で見直し:
@@ -935,11 +988,14 @@
               if (cnt) doneShape[shape + '#plan'] = 1;
             });
             // 平面図で数えられないとき(梁の下に付く LGS下地。EA1-3G-01・EA1-3B-01、2026-11-20 ユーザー指示「サイズと長さと本数が図面より見れる」):
-            // 長さ = 断面図の寸法の一番大きい数(「あ SEC」の 225+225=450)、本数 = 立面図の旗の数 × 断面図の表記の数
+            // 長さ = 断面図の寸法の、同じ高さに並ぶ数の合計の一番大きいもの(EA1-3G-01「あ」: 225+225=450 と 450 → 450、EA1-3B-01: 150+150=300)
+            // 本数 = 立面図の旗の数 × 断面図の表記の数
             var fl = flagsBySec[L1], nFlag = fl ? fl.matched.length + fl.unmatched : 0;
-            if (!doneShape[shape + '#plan'] && nFlag && si.dims.length) {
-              var nLab = si.shapes.filter(function (x) { return x === shape; }).length;
-              add(shape, Math.max.apply(null, si.dims), nFlag * nLab, si.title.sub || '');
+            if (!doneShape[shape + '#plan'] && nFlag && si.dimT && si.dimT.length) {
+              var nLab = si.shapes.filter(function (x) { return x === shape; }).length, byRow = {}, len = 0;
+              si.dimT.forEach(function (d) { var k = Math.round(d.y / 20); byRow[k] = (byRow[k] || 0) + parseFloat(d.text); });
+              Object.keys(byRow).forEach(function (k) { len = Math.max(len, byRow[k]); });
+              add(shape, len, nFlag * nLab, si.title.sub || '');
             }
           }
         });
