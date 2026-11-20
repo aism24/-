@@ -377,6 +377,10 @@
       var v = views.find(function (v) {
         var gaps = v.products.filter(function (q) { return Math.abs(q.y - p.y) < 15; }).map(function (q) { return Math.max(p.x - q.xr, q.x - p.xr); });
         if (gaps.length && Math.min.apply(null, gaps) > 1500) return false;   // 一番近い行との間隔で決める
+        // 高さの違う行でも、横に重ならず1500より離れていれば別の図(2026-11-20、EA1-3B-02: 下の段の左の図の表 -16・-9 と中央の図の表 -8 が
+        // 高さ約500違いで横に約2900離れて並び、1つの図にまとめて A・B 両方の板を3製品に入れていた)
+        var hg = v.products.map(function (q) { return Math.max(p.x - q.xr, q.x - p.xr); });
+        if (Math.min.apply(null, hg) > 1500) return false;
         return Math.abs(v.labelY - p.y) < 600 && p.x - v.xr < 5000 && v.x - p.xr < 5000;
       });
       if (v) { v.products.push(p); v.labelY = Math.min(v.labelY, p.y); v.labelTop = Math.max(v.labelTop, p.y); v.x = Math.min(v.x, p.x); v.xr = Math.max(v.xr, p.xr); }
@@ -385,7 +389,8 @@
     views.forEach(function (v) {
       var above = views.filter(function (u) { return u !== v && u.labelY > v.labelTop + 600 && u.x < v.xr + 5000 && u.xr > v.x - 5000; });
       v.yMin = v.labelTop; v.yMax = above.length ? Math.min.apply(null, above.map(function (u) { return u.labelY; })) : Infinity;
-      var row = views.filter(function (u) { return Math.abs(u.labelY - v.labelY) < 600; }).sort(function (a, b) { return a.x - b.x; });
+      // 同じ段 = 行の高さの差600以内。または表の上下の範囲が600以内に近いもの(2026-11-20、EA1-3B-02: 2行の表と1行の表が下端で720ずれていた)
+      var row = views.filter(function (u) { return Math.abs(u.labelY - v.labelY) < 600 || (u.labelY <= v.labelTop + 600 && v.labelY <= u.labelTop + 600 && (u.labelTop > u.labelY || v.labelTop > v.labelY)); }).sort(function (a, b) { return a.x - b.x; });
       var i = row.indexOf(v);
       v.x0 = i > 0 ? (row[i - 1].xr + v.x) / 2 : -Infinity;
       v.x1 = i < row.length - 1 ? (v.xr + row[i + 1].x) / 2 : Infinity;
