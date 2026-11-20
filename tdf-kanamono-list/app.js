@@ -23,7 +23,14 @@ function toast(msg, type) {
   const t = $('toast'); t.textContent = msg; t.className = 'show' + (type === 'error' ? ' error' : '');
   clearTimeout(toast._t); toast._t = setTimeout(() => { t.className = ''; }, 4000);
 }
-function busy(msg) { $('status-text').textContent = msg || '処理中…'; $('status-overlay').classList.add('open'); }
+// ratio(0〜1)を渡すとデータバーで進み具合を出す。渡さなければバーは出さない
+function busy(msg, ratio) {
+  $('status-text').textContent = msg || '処理中…';
+  const has = typeof ratio === 'number';
+  $('status-progress').hidden = !has;
+  if (has) { const pc = Math.max(0, Math.min(100, Math.round(ratio * 100))); $('status-bar').style.width = pc + '%'; $('status-pct').textContent = pc + '%'; }
+  $('status-overlay').classList.add('open');
+}
 function idle() { $('status-overlay').classList.remove('open'); }
 function notice(title, body) {
   return new Promise(resolve => {
@@ -256,10 +263,14 @@ async function importWithNotice(items) {
 }
 
 async function importItems(items) {
-  busy('TDFを読み込んでいます…');
+  const total = items.length;
+  // 進み具合: 1枚の中で 図面の読み取り=0〜0.3、長さ(初回は Python の準備を含む)=0.3〜1
+  const step = (i, r, msg) => busy(`${msg}\n${i + 1}/${total}枚目 ${items[i].file.name}`, (i + r) / total);
+  step(0, 0, 'TDFを読み込んでいます…');
   const errors = [], excluded = new Set(), warns = [];
   try {
-    for (const { file: f, path } of items) {
+    for (const [i, { file: f, path }] of items.entries()) {
+      step(i, 0, 'TDFを読み込んでいます…');
       try {
         if (state.tdfs.some(t => t.fileName === f.name && t.path === path)) { errors.push(`${f.name}: すでに取り込んでいます`); continue; }
         const buf = await f.arrayBuffer();
@@ -267,11 +278,11 @@ async function importItems(items) {
         if (!res.products.length) { errors.push(`${f.name}: 製品(「製品名 符号 N台」の行)が見つかりませんでした`); continue; }
         // 長さは tdf-master-web と同じ方法で求める(2026-11-20 ユーザー指示)。読めなければ図面の寸法から読んだ長さのまま
         try {
-          busy('長さを読んでいます…(初回だけ準備に数秒かかります)');
-          const ml = await masterLengths(buf, f.name);
+          step(i, 0.3, pyPromise ? '長さを読んでいます…' : '長さを読む準備をしています…(初回だけ数秒かかります)');
+          const ml = await masterLengths(buf, f.name, r => step(i, 0.3 + 0.6 * r, '長さを読む準備をしています…(初回だけ数秒かかります)'));
           res.products.forEach(p => { const m = ml.find(x => x[0] === p.name); if (m && m[1]) p.length = Math.round(m[1] * 10000) / 10; });
         } catch (e) { warns.push(`${f.name}: 長さを tdf-master-web と同じ方法で読めませんでした(${e.message})。図面の寸法から読んだ長さを使います`); }
-        finally { busy('TDFを読み込んでいます…'); }
+        step(i, 1, 'TDFを読み込んでいます…');
         const base = state.tdfs[0];
         if (base && base.res.koji !== res.koji) { errors.push(`${f.name}: 工事名が違うため取り込みません(「${res.koji || '不明'}」。取り込み済みは「${base.res.koji}」)`); continue; }
         res.products.forEach(p => p.items.forEach(it => { it.n0 = it.n; }));
@@ -380,18 +391,28 @@ function buildExportProducts() {
 const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js';   // tdf-master-web と同じ版
 const PY_FILES = ['tdf_binary.py', 'tdf_master_extractor.py', 'tdf_master_extractor_multi.py', 'tdf_app.py'];
 let pyPromise = null;
-function loadPy() {
+// onProgress(0〜1): 準備の段階(部品の読み込み・Python の起動・ファイル4つ・取り込み)ごとに呼ぶ
+let pyProgress = null;
+function loadPy(onProgress) {
+  if (onProgress) pyProgress = onProgress;
+  const tick = (k) => { if (pyProgress) pyProgress(k / (PY_FILES.length + 3)); };
   if (!pyPromise) {
     pyPromise = (async () => {
+      tick(0);
       if (!window.loadPyodide) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = PYODIDE_URL; s.onload = res; s.onerror = () => rej(new Error('Pythonの部品を読み込めませんでした')); document.head.appendChild(s); });
+      tick(1);
       const py = await window.loadPyodide();
+      tick(2);
       py.FS.mkdir('/mw');
-      for (const n of PY_FILES) {
+      for (const [k, n] of PY_FILES.entries()) {
         const r = await fetch('py/' + n + '?v=' + PY_VER);
         if (!r.ok) throw new Error(n + ' を読み込めませんでした');
         py.FS.writeFile('/mw/' + n, await r.text());
+        tick(3 + k);
       }
       await py.runPythonAsync("import sys, json\nsys.path.insert(0, '/mw')\nimport tdf_app");
+      tick(PY_FILES.length + 3);
+      pyProgress = null;
       return py;
     })();
     pyPromise.catch(() => { pyPromise = null; });
@@ -399,8 +420,8 @@ function loadPy() {
   return pyPromise;
 }
 // [[製品マーク, 長さ(m)], …]
-async function masterLengths(buf, name) {
-  const py = await loadPy();
+async function masterLengths(buf, name, onProgress) {
+  const py = await loadPy(onProgress);
   py.FS.writeFile('/input.tdf', new Uint8Array(buf));
   py.globals.set('tdf_filename', name);
   const out = await py.runPythonAsync("json.dumps([[r.get('製品マーク'), r.get('長さ')] for r in tdf_app.extract_file('/input.tdf', tdf_filename)], ensure_ascii=False)");

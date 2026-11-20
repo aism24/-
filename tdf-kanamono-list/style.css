@@ -132,6 +132,14 @@ table.kl input.note-in { width: 160px; font-size: 13px; padding: 2px 4px; }
 .status-box { background: #fff; border-radius: 10px; padding: 20px 28px; display: flex; align-items: center; gap: 14px; }
 .spinner { width: 22px; height: 22px; border: 3px solid #ddd; border-top-color: #1a73e8; border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* 読み込み中のデータバー(2026-11-20 ユーザー指示) */
+.status-main { display: flex; flex-direction: column; gap: 8px; min-width: 260px; max-width: 70vw; }
+#status-text { word-break: break-all; white-space: pre-line; line-height: 1.6; }
+.progress { display: flex; align-items: center; gap: 8px; }
+.progress[hidden] { display: none; }
+.progress-track { flex: 1; height: 10px; background: #e6e9ee; border-radius: 5px; overflow: hidden; }
+.progress-bar { height: 100%; width: 0; background: #1a73e8; border-radius: 5px; transition: width 0.2s ease; }
+.progress-pct { font-size: 12px; color: #555; min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
 #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #333; color: #fff; padding: 10px 18px; border-radius: 6px; font-size: 13px; display: none; z-index: 4000; }
 #toast.show { display: block; }
 #toast.error { background: #c0392b; }
