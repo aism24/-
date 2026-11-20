@@ -1252,6 +1252,17 @@
         var nBar = T.filter(function (u) { return u.text === bar.text && (ttl ? u.y > ttl.y && u.y - ttl.y < 2500 && Math.abs(u.x - ttl.x) < 1500 : dist(u, t) <= 1500); }).length;
         out.push({ size: bar.text, name: parseFloat(t.text.slice(2)), n: nBar, note: ttl ? ttl.text : '' });
       });
+      // 仕口の上フランジの上に立つさや管(2026-11-20 ユーザー説明、EB2-0C-05): 立面図に縦書きの「K-11」とそばの長さの寸法「190」。
+      // サイズの表記は無いので、サイズ = K-11、切板名(長さ)= そば(400以内)の数字だけの寸法、本数 = 図面の中のその「K-11」の数、備考 = サヤ管。
+      // 親綱掛けフックの K-9(上の L-270 の部材と同じ記号)は数えない。レイヤは見ない(図面では「-親綱ピース」になっているが間違い = ユーザー説明)
+      var hookBars = out.filter(function (it) { return /フック/.test(it.note); }).map(function (it) { return it.size; });
+      var kMarks = T.filter(function (t) { return /^K-[0-9]+$/.test(t.text) && hookBars.indexOf(t.text) < 0; });
+      Array.from(new Set(kMarks.map(function (t) { return t.text; }))).forEach(function (mk) {
+        var occ = kMarks.filter(function (t) { return t.text === mk; });
+        var lens = occ.map(function (t) { var d = T.filter(function (u) { return /^[0-9]+(\.[0-9]+)?$/.test(u.text) && dist(u, t) <= 400; }).sort(function (a, b) { return dist(a, t) - dist(b, t); })[0]; return d ? parseFloat(d.text) : null; });
+        if (lens.some(function (x) { return !x; }) || lens.some(function (x) { return x !== lens[0]; })) return;   // 長さが分からない・食い違うときは拾わない
+        out.push({ size: mk, name: lens[0], n: occ.length, note: 'サヤ管' });
+      });
       // 同じサイズ・切板名(長さ)・備考は1行に(ア・イ の L-75x75x6 707.1 → 4本)
       var merged = [];
       out.forEach(function (it) { var m = merged.find(function (x) { return x.size === it.size && x.name === it.name && x.note === it.note; }); if (m) m.n += it.n; else merged.push(it); });
