@@ -186,9 +186,11 @@ async function getRoot(sv, ask, forcePick) {
 // 選んだら、もう一方のボタンはリセットするまで押せない
 async function selectServer(sv) {
   if (state.server) return false;
-  const root = await getRoot(sv, true); if (!root) return false;
+  // tottori から飛んだとき(#plan)は、毎回 ①進行中工事 を選び、選んだらそのままTDFを読む(2026-11-20 ユーザー指示。サーバーは本社・鳥取どちらも可)
+  const root = await getRoot(sv, true, !!PLAN); if (!root) return false;
   state.server = sv; state.root = root;
   renderServer(); render();
+  if (PLAN) await runPlan(PLAN);
   return true;
 }
 function renderServer() {
@@ -460,7 +462,7 @@ $('btn-excel').addEventListener('click', async () => {
 
 // ---------- 次の加工予定から作る(tottori-production-status と連動。2026-11-20 ユーザー指示) ----------
 // tottori-production-status で加工結果PDFを取り込み、「次の加工予定の金物リストを作りますか？」で「はい」を押すと、
-// このページが #plan=…(予定表で台数のセルが黄色の行)付きで開く。鳥取固定。工事ごとにシートを分け(シート名は工事番号)、
+// このページが #plan=…(予定表で台数のセルが黄色の行)付きで開く。工場は鳥取固定。TDFのサーバーは本社・鳥取のどちらかを ① で選ぶ(2026-11-20)。工事ごとにシートを分け(シート名は工事番号)、
 // 1枚目に次の加工予定の一覧を入れたExcelをダウンロードする。TDFは shipping-list-link のリンク表の場所を「①進行中工事」から読む
 function readPlanFromHash() {
   const m = /^#plan=(.+)$/.exec(location.hash || '');
@@ -490,17 +492,14 @@ async function startPlan() {
   $('koji-label').textContent = `鳥取工場 / 次の加工予定(${PLAN.rows.length}件)`;
   apiPostQuiet({ action: 'start', koji: '次の加工予定', factory: '鳥取' });
   const kojis = [...new Set(PLAN.rows.map(r => r.kojiNo || r.abbr))];
-  const ok = await confirm2('次の加工予定の金物リスト',
-    `${PLAN.src ? '「' + PLAN.src + '」の' : ''}次の加工予定(黄色) ${PLAN.rows.length}件(工事 ${kojis.join('・')})の金物リストを作ります。\n「読み込みを始める」を押すと、鳥取サーバーの「①進行中工事」からTDFを読みます。`,
-    '読み込みを始める', 'やめる');
-  if (ok) await runPlan(PLAN);
+  renderServer();
+  // サーバーは本社・鳥取のどちらか(鳥取サーバー固定ではない)。① のボタンで選び、毎回「①進行中工事」まで選ぶ(2026-11-20 ユーザー指示)
+  await notice('次の加工予定の金物リスト',
+    `${PLAN.src ? '「' + PLAN.src + '」の' : ''}次の加工予定(黄色) ${PLAN.rows.length}件(工事 ${kojis.join('・')})の金物リストを作ります。\n「① 本社サーバー」か「① 鳥取サーバー」を押し、そのサーバーの「①進行中工事」を選ぶと、TDFを読み込みます。`);
 }
 async function runPlan(plan) {
-  const sv = state.servers.find(x => x.name === '鳥取');
-  if (!sv) { await notice('鳥取サーバーがありません', '設定シートのE列に「鳥取」のサーバーがありません。'); return; }
-  const root = (state.server && state.server.name === '鳥取' && state.root) || await getRoot(sv, true, true);   // tottori から飛んだとき(鳥取専用)は毎回選ぶ(2026-11-20 ユーザー指示)
-  if (!root) return;
-  state.server = sv; state.root = root; renderServer();
+  const sv = state.server, root = state.root;
+  if (!sv || !root) return;
   const rows = plan.rows.map(r => Object.assign({}, r, { status: '' }));
   const files = new Map();   // 「①進行中工事」からの場所 → {fileName, dir, res | err}
   rows.forEach(r => {
