@@ -928,3 +928,8 @@
 - やり方: 製品の行(製品名・符号)が読めない図面に、tdf-master-web の find_product_rows と同じ読み方を移植。ただし既存の判定で製品名が見つからない行だけに使い、借り元のコードは変えない
 - 効果: 読めなかった2図面(製品名に小文字・漢字、本体 BH-)が 製品0件→各1〜2件。検証図面3件の結果は main と完全一致(作りの上で変わらない)
 - 使ったアプリ: tdf-kanamono-list
+
+### 別アプリと同じ結果が要るときは、Python を書き直さず写しを Pyodide で動かす(tdf-kanamono-list、2026-11-20)
+- やり方: tdf-master-web の index.html に埋め込んだ Python(text/python-src)をそのまま py/ に写し、Pyodide(同じ版)で extract_file() を呼んで長さだけ使う。読めなければ従来の値+お知らせ
+- 効果: 長さが tdf-master-web と一致する図面 7/10 → 10/10(桜島の書き方 3図面が 6713→7076 など)。準備は初回だけ約3.6秒、以降1枚約1秒
+- 使ったアプリ: tdf-kanamono-list(tdf-master-web のコードは変えない)
