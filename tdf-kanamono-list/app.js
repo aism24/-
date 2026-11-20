@@ -282,7 +282,7 @@ async function importItems(items) {
         // 長さは tdf-master-web と同じ方法で求める(2026-11-20 ユーザー指示)。読めなければ図面の寸法から読んだ長さのまま
         try {
           step(i, 0.3, pyPromise ? '長さを読んでいます…' : '長さを読む準備をしています…(初回だけ数秒かかります)');
-          const ml = await masterLengths(buf, f.name, r => step(i, 0.3 + 0.6 * r, '長さを読む準備をしています…(初回だけ数秒かかります)'));
+          const ml = await masterLengths(buf, f.name, r => step(i, 0.3 + 0.6 * r, '長さを読む準備をしています…(初回だけ数秒かかります)'), res.columnDrawing);
           res.products.forEach(p => { const m = ml.find(x => x[0] === p.name); if (m && m[1]) p.length = Math.round(m[1] * 10000) / 10; });
         } catch (e) { warns.push(`${f.name}: 長さを tdf-master-web と同じ方法で読めませんでした(${e.message})。図面の寸法から読んだ長さを使います`); }
         step(i, 1, 'TDFを読み込んでいます…');
@@ -399,7 +399,7 @@ function buildExportProducts() {
 }
 // ---------- 長さ(tdf-master-web と同じ Python を Pyodide で動かす。py/ は tdf-master-web の写し) ----------
 const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js';   // tdf-master-web と同じ版
-const PY_FILES = ['tdf_binary.py', 'tdf_master_extractor.py', 'tdf_master_extractor_multi.py', 'tdf_app.py'];
+const PY_FILES = ['tdf_binary.py', 'tdf_master_extractor.py', 'tdf_master_extractor_multi.py', 'tdf_app.py', 'tdf_column.py'];   // tdf_column = 柱モード(2026-11-20)
 let pyPromise = null;
 // onProgress(0〜1): 準備の段階(部品の読み込み・Python の起動・ファイル4つ・取り込み)ごとに呼ぶ
 let pyProgress = null;
@@ -420,7 +420,7 @@ function loadPy(onProgress) {
         py.FS.writeFile('/mw/' + n, await r.text());
         tick(3 + k);
       }
-      await py.runPythonAsync("import sys, json\nsys.path.insert(0, '/mw')\nimport tdf_app");
+      await py.runPythonAsync("import sys, json\nsys.path.insert(0, '/mw')\nimport tdf_app\nimport tdf_column");
       tick(PY_FILES.length + 3);
       pyProgress = null;
       return py;
@@ -429,15 +429,16 @@ function loadPy(onProgress) {
   }
   return pyPromise;
 }
-// [[製品マーク, 長さ(m)], …]
-async function masterLengths(buf, name, onProgress) {
+// [[製品マーク, 長さ(m)], …]。柱の図面(column)は tdf-master-web の柱モード(tdf_column)で求める(2026-11-20 ユーザー指摘「長さは？」。EB1-0C-04: 梁モードだと 368.1、柱モードは 3248.1)
+async function masterLengths(buf, name, onProgress, column) {
   const py = await loadPy(onProgress);
   py.FS.writeFile('/input.tdf', new Uint8Array(buf));
   py.globals.set('tdf_filename', name);
-  const out = await py.runPythonAsync("json.dumps([[r.get('製品マーク'), r.get('長さ')] for r in tdf_app.extract_file('/input.tdf', tdf_filename)], ensure_ascii=False)");
+  const mod = column ? 'tdf_column' : 'tdf_app';
+  const out = await py.runPythonAsync("json.dumps([[r.get('製品マーク'), r.get('長さ')] for r in " + mod + ".extract_file('/input.tdf', tdf_filename)], ensure_ascii=False)");
   return JSON.parse(out);
 }
-const PY_VER = '20261120c';
+const PY_VER = '20261120d';
 
 let exceljsPromise = null;
 function loadExcelJS() {
@@ -526,7 +527,7 @@ async function runPlan(plan) {
         const res = KanamonoExtract.extract(buf, file.name);
         try {
           step(0.3, pyPromise ? '長さを読んでいます…' : '長さを読む準備をしています…(初回だけ数秒かかります)');
-          const ml = await masterLengths(buf, file.name, r => step(0.3 + 0.6 * r, '長さを読む準備をしています…(初回だけ数秒かかります)'));
+          const ml = await masterLengths(buf, file.name, r => step(0.3 + 0.6 * r, '長さを読む準備をしています…(初回だけ数秒かかります)'), res.columnDrawing);
           res.products.forEach(p => { const m = ml.find(x => x[0] === p.name); if (m && m[1]) p.length = Math.round(m[1] * 10000) / 10; });
         } catch (e) { /* 長さは図面の寸法から読んだもの */ }
         f.fileName = file.name; f.res = res;
