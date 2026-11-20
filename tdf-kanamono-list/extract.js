@@ -97,7 +97,8 @@
           var e = st; while (e < st + len && u8[e] !== 0) e++;
           if (e > st) tx = dec.decode(u8.subarray(st, e));
         }
-        var rec = { text: tx, id: dv.getUint32(rs + 48, true), x: dv.getFloat64(rs + 4, true), y: dv.getFloat64(rs + 12, true) };
+        // lay = 文字のレイヤの番号(記録の10バイト前。その2バイト前が 1 のときだけ。線と同じくレイヤ名の表の並び順+1。2026-11-20、EB1-0C-04 の GEN で確認)
+        var rec = { text: tx, id: dv.getUint32(rs + 48, true), x: dv.getFloat64(rs + 4, true), y: dv.getFloat64(rs + 12, true), lay: rs >= 12 && u8[rs - 12] === 1 ? u8[rs - 10] : -1 };
         if (tx !== null) { texts.push(rec); if (!(rec.id in bodyById)) bodyById[rec.id] = tx; } else cands.push(rec);
       }
     }
@@ -1143,8 +1144,80 @@
     result.products.sort(function (a, b) { return a.view - b.view || cmpNat(a.name, b.name); });
     // 柱の詳細図(「図示」の行)は製品だけ読む。柱の金物の拾い出しのルールはまだ決めていない(2026-11-20、EB1-0C-04)
     // columnDrawing: 長さを tdf-master-web の柱モード(py/tdf_column.py)で求める目印(梁の図面には付けない)
-    if (pr.rows.some(function (r) { return r.column; })) result.columnDrawing = true;
-    if (pr.rows.some(function (r) { return r.column; })) result.warnings.push('柱の詳細図です。製品は読みましたが、柱の金物は拾い出しのルールがまだ決まっていないため抽出していません');
+    if (pr.rows.some(function (r) { return r.column; })) {
+      result.columnDrawing = true;
+      var colItems = columnItems();
+      result.products.forEach(function (p) { if (pr.rows.some(function (r) { return r.column && r.name === p.name; })) p.items = colItems; });
+      if (!colItems.length) result.warnings.push('柱の詳細図です。製品は読みましたが、GENレイヤのマークが見つからないため金物は抽出していません');
+    }
+    // ---------- 柱の金物(2026-11-20 ユーザー指示、EB1-0C-04): レイヤ GEN のマークとその数量 ----------
+    //  - マーク = GEN レイヤの文字(ND9H・N-R61K など。L-270 のような寸法の書き方は除く)。サイズ = マークのそば(800以内)で一番近い板の表記(PL-50・R.PL-28・PL-36・PL-50xφ1750・FB-90x12x4面)
+    //  - 数量 = GEN レイヤに書かれたそのマークの数(十文字補強: N-R10BK・N-R70BK は2か所、N-R10AK・N-R70AK は1か所 = ユーザー確認)。「FB-90x12x4面」は ×4(NCKE1 = 4枚、ユーザー確認)
+    //  - マークが断面図(E・F)の中にあり、その断面の旗が図(A断面のベースプレートの平面図)にあるときは、図に描かれた同じ板
+    //    (板厚だけ離れた平行な2本の線で、長さが断面図の寸法と1.5%以内)の数(E=328.6 が8か所、F=200.9 が4か所 = ユーザー確認)
+    function columnItems() {
+      var genNo = P.layers.indexOf('GEN') + 1; if (!genNo) return [];
+      var gen = T.filter(function (t) { return t.lay === genNo && /^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*$/.test(t.text) && !/^(L|C|H|PL|FB|G?PL)-/.test(t.text) && /[0-9]/.test(t.text); });
+      var sizesT = T.filter(function (t) { return /(^|[ .])(G?PL|FB)-[0-9]/.test(t.text) || /^(G?PL|FB)-[0-9]/.test(t.text); });
+      var byMark = {};
+      gen.forEach(function (t) { (byMark[t.text] = byMark[t.text] || []).push(t); });
+      var out = [];
+      Object.keys(byMark).forEach(function (mk) {
+        var occ = byMark[mk];
+        // 同じ高さ(±60)に書かれた表記を優先(十文字補強の「N BPL-36 (十文字補強)  N-R70AK」。そばの F.PL-40x450 と取り違えない)、無ければ一番近いもの
+        var o0 = occ[0];
+        var sameRow = sizesT.filter(function (a) { return Math.abs(a.y - o0.y) <= 60 && dist(a, o0) <= 800; }).sort(function (a, b) { return dist(a, o0) - dist(b, o0); });
+        var sz = sameRow[0] || sizesT.slice().sort(function (a, b) { return dist(a, o0) - dist(b, o0); })[0];
+        if (!sz || dist(sz, o0) > 800) return;
+        var st = sz.text.replace(/^.*?((?:G?PL|FB)-)/, '$1'), mult = 1;
+        var mm2 = /x([0-9]+)面/.exec(st); if (mm2) { mult = parseInt(mm2[1], 10); st = st.replace(/x[0-9]+面.*$/, ''); }   // 「FB-90x12x4面」= 4枚
+        var m = /^((?:G?PL|FB)-[0-9.]+(?:x[φ0-9.]+)*)/.exec(st);
+        if (!m) return;
+        var size = m[1];
+        var n = occ.length * mult;
+        // 断面図の中のマーク → その断面の旗がある図で、同じ板の数を数える
+        var sec = sectionOf(occ[0], titles);
+        if (sec) {
+          // 柱の図面の旗は文字のそばに縦線が無い(A断面の E・F)。断面の記号と同じ1文字で、見出しではなく、その断面の図の外にあり、同じ行のすぐ横(250以内)にほかの文字が無いもの
+          var flags = T.filter(function (t) {
+            if (t.text !== sec.letter || titles.some(function (x) { return x.letter === t.text && Math.abs(x.y - t.y) < 10; })) return false;
+            if ((sectionOf(t, titles) || {}).letter === sec.letter) return false;
+            return !T.some(function (u) { return u !== t && Math.abs(u.y - t.y) < 60 && Math.abs(u.x - t.x) < 250; });
+          });
+          var th = parseFloat((/-([0-9.]+)/.exec(size) || [])[1]);
+          var dims = (secInfo[sec.letter] && secInfo[sec.letter].dimT2 || []).map(function (d) { return parseFloat(d.text); });
+          if (flags.length && th && dims.length) {
+            // 板 = 板厚だけ離れた平行な同じ長さの2本の線(長さ50以上)。その断面(E・F)自身の図の線は除く
+            var cand = L.filter(function (l) { return Math.hypot(l[2] - l[0], l[3] - l[1]) >= 50 && (sectionOf({ x: (l[0] + l[2]) / 2, y: (l[1] + l[3]) / 2 }, titles) || {}).letter !== sec.letter; });
+            var allPairs = [];
+            cand.forEach(function (a, i) {
+              var la = Math.hypot(a[2] - a[0], a[3] - a[1]), ux = (a[2] - a[0]) / la, uy = (a[3] - a[1]) / la;
+              cand.slice(i + 1).forEach(function (b) {
+                var lb = Math.hypot(b[2] - b[0], b[3] - b[1]); if (Math.abs(la - lb) > 1) return;
+                if (Math.abs(ux * (b[3] - b[1]) / lb - uy * (b[2] - b[0]) / lb) > 0.01) return;   // 平行
+                var mx = (b[0] + b[2] - a[0] - a[2]) / 2, my = (b[1] + b[3] - a[1] - a[3]) / 2;
+                if (Math.abs(Math.abs(mx * uy - my * ux) - th) > 1 || Math.abs(mx * ux + my * uy) > 5) return;
+                allPairs.push({ x: (a[0] + a[2] + b[0] + b[2]) / 4, y: (a[1] + a[3] + b[1] + b[3]) / 4, len: Math.round(la * 10) / 10 });
+              });
+            });
+            // 数える板は長さが断面図の寸法と1.5%以内のもの
+            var pairs = allPairs.filter(function (q) { return dims.some(function (d) { return Math.abs(q.len - d) <= d * 0.015; }); });
+            // 旗に一番近い板の長さの板をすべて数える(旗が指す図の中の同じ板)
+            var near = pairs.slice().sort(function (a, b) { return Math.min.apply(null, flags.map(function (f) { return dist(f, a); })) - Math.min.apply(null, flags.map(function (f) { return dist(f, b); })); })[0];
+            if (near && Math.min.apply(null, flags.map(function (f) { return dist(f, near); })) < 1500) {
+              // 同じ図の板だけ: 旗に一番近い板から、800以内に続いて並ぶ同じ長さの板(B断面の図にも同じリブが描かれているので、そちらは数えない)
+              //   つながりは長さに関係なくすべての板でたどり(角の短いリブ F は互いに離れているが、長いリブ E がつなぐ)、その中の同じ長さの板を数える
+              var grp = [near], added = true;
+              while (added) { added = false; allPairs.forEach(function (q) { if (grp.indexOf(q) < 0 && grp.some(function (g) { return dist(g, q) <= 800; })) { grp.push(q); added = true; } }); }
+              var cnt = grp.filter(function (q) { return Math.abs(q.len - near.len) <= 0.5; }).length;
+              if (cnt > n) n = cnt * mult;
+            }
+          }
+        }
+        out.push({ size: size, name: mk, n: n, note: '' });
+      });
+      return out;
+    }
     if (sayaCounted) { excluded.delete('サヤ管'); result.included.push('サヤ管'); }   // サイズ・長さ・本数が分かったので金物リストに入れた(お知らせで「抽出しました」と出す)
     result.excluded = Array.from(excluded);
     return result;
