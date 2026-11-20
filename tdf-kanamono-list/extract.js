@@ -1049,6 +1049,13 @@
         add(o.shape, Math.round(o.len * 10) / 10, 1, o.note);
       });
 
+      // スリーブの「150S」(2026-11-20 ユーザー指示、EA1-3B-01): ウェブの片側の孔の上下に1つずつ付く金物。1か所につき2個、サイズ欄に「150S」、備考は「スリーブ」。
+      // 「(150φ)」は孔の大きさで金物ではない。そばに孔の書き込み(φ)があるものだけ
+      T.forEach(function (t) {
+        if (!inView(v, t) || !/^[0-9]+S$/.test(t.text)) return;
+        if (!T.some(function (u) { return /φ/.test(u.text) && Math.abs(u.x - t.x) < 300 && Math.abs(u.y - t.y) < 300; })) return;
+        add(t.text, '', 2, 'スリーブ');
+      });
       var list = Object.keys(items).map(function (k) {
         var it = items[k];
         var subs = new Set(), mekki = false;
