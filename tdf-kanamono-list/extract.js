@@ -438,6 +438,8 @@
       if (RE_SHAPE.test(t.text)) si.shapes.push(t.text);
       if (RE_JOINT.test(t.text) && /^[A-Z]+J[0-9]/.test(t.text)) si.joint = true;
       if (/^[0-9]+$/.test(t.text) && parseInt(t.text, 10) >= 100) { si.dims.push(parseInt(t.text, 10)); (si.dimT = si.dimT || []).push(t); }
+      // LGS下地の長さ用(小数も。EA1-3B-05「あ」: 87.5+87.5=175。2026-11-20)
+      if (/^[0-9]+(\.[0-9]+)?$/.test(t.text) && parseFloat(t.text) >= 10) (si.dimT2 = si.dimT2 || []).push(t);
       // 断面図の中の断面記号(例: C断面の中の E)
     });
     // 断面図の中の断面記号 → どの断面図の中か(親)。2026-11-19 ユーザー説明(2G-01)で見直し:
@@ -1038,27 +1040,31 @@
             // 長さ = 断面図の寸法の、同じ高さに並ぶ数の合計の一番大きいもの(EA1-3G-01「あ」: 225+225=450 と 450 → 450、EA1-3B-01: 150+150=300)
             // 本数 = 立面図の旗の数 × 断面図の表記の数
             var fl = flagsBySec[L1], nFlag = fl ? fl.matched.length + fl.unmatched : 0;
-            if (!doneShape[shape + '#plan'] && nFlag && si.dimT && si.dimT.length) {
+            if (!doneShape[shape + '#plan'] && nFlag) {
+              // 断面図の寸法の、同じ高さに並ぶ数の合計の一番大きいもの(小数も)
               var nLab = si.shapes.filter(function (x) { return x === shape; }).length, byRow = {}, len = 0;
-              si.dimT.forEach(function (d) { var k = Math.round(d.y / 20); byRow[k] = (byRow[k] || 0) + parseFloat(d.text); });
+              (si.dimT2 || []).forEach(function (d) { var k = Math.round(d.y / 20); byRow[k] = (byRow[k] || 0) + parseFloat(d.text); });
               Object.keys(byRow).forEach(function (k) { len = Math.max(len, byRow[k]); });
-              add(shape, len, nFlag * nLab, si.title.sub || '');
-            }
-            // 断面図に長さの寸法が無い溝形鋼(EA1-3B-04「あ」: 37.5+37.5=75 だけ。梁に沿って長く付く C を端から見た断面。2026-11-20 ユーザー指示「長さ2968は拾えない？」):
-            // 立面図で、溝形鋼の幅(C-75x45… の 45)だけ離れた同じ長さの平行な横線の組を部材とし、その範囲に旗があるものを拾う(長さ = 線の長さ)
-            if (!doneShape[shape + '#plan'] && nFlag && !(si.dimT && si.dimT.length)) {
-              var bw = parseFloat((/^C-[0-9.]+x([0-9.]+)/.exec(shape) || [])[1]);
-              var fxs = looseFlags.filter(function (f) { return f.L1 === L1; }).map(function (f) { return f.fx; });
-              if (bw && fxs.length) {
-                var hh = hlines.filter(function (h) { return h.x1 - h.x0 >= 300 && inView(v, { x: (h.x0 + h.x1) / 2, y: h.y }); });
-                var seenM = {};
-                hh.forEach(function (a) {
-                  var b2 = hh.find(function (h) { return h !== a && Math.abs(h.y - a.y - bw) < 0.3 && Math.abs(h.x0 - a.x0) < 0.6 && Math.abs(h.x1 - a.x1) < 0.6; });
-                  if (!b2) return;
-                  var k = a.x0.toFixed(0) + '-' + a.x1.toFixed(0) + '@' + a.y.toFixed(0); if (seenM[k]) return; seenM[k] = 1;
-                  if (!fxs.some(function (fx) { return fx >= a.x0 - 100 && fx <= a.x1 + 100; })) return;
-                  add(shape, Math.round((a.x1 - a.x0) * 10) / 10, 1, si.title.sub || '');
-                });
+              if (len >= 100) {
+                // ① 梁を横切る溝形鋼(梁の下に付く LGS下地。EA1-3G-01・EA1-3B-01、2026-11-20 ユーザー指示「サイズと長さと本数が図面より見れる」):
+                //    長さ = その合計(EA1-3G-01: 225+225=450、EA1-3B-01: 150+150=300、EA1-3B-05: 87.5+87.5=175)、本数 = 立面図の旗の数 × 断面図の表記の数
+                add(shape, Math.round(len * 10) / 10, nFlag * nLab, si.title.sub || '');
+              } else {
+                // ② 合計が100未満 = 梁に沿って長く付く溝形鋼を端から見た断面(EA1-3B-04「あ」: 37.5+37.5=75。2026-11-20 ユーザー指示「長さ2968は拾えない？」):
+                //    立面図で、溝形鋼の幅(C-75x45… の 45)だけ離れた同じ長さ(1000以上)の平行な横線の組を部材とし、その範囲に旗があるものを拾う(長さ = 線の長さ)
+                var bw = parseFloat((/^C-[0-9.]+x([0-9.]+)/.exec(shape) || [])[1]);
+                var fxs = looseFlags.filter(function (f) { return f.L1 === L1; }).map(function (f) { return f.fx; });
+                if (bw && fxs.length) {
+                  var hh = hlines.filter(function (h) { return h.x1 - h.x0 >= 1000 && inView(v, { x: (h.x0 + h.x1) / 2, y: h.y }); });
+                  var seenM = {};
+                  hh.forEach(function (a) {
+                    var b2 = hh.find(function (h) { return h !== a && Math.abs(h.y - a.y - bw) < 0.3 && Math.abs(h.x0 - a.x0) < 0.6 && Math.abs(h.x1 - a.x1) < 0.6; });
+                    if (!b2) return;
+                    var k = a.x0.toFixed(0) + '-' + a.x1.toFixed(0) + '@' + a.y.toFixed(0); if (seenM[k]) return; seenM[k] = 1;
+                    if (!fxs.some(function (fx) { return fx >= a.x0 - 100 && fx <= a.x1 + 100; })) return;
+                    add(shape, Math.round((a.x1 - a.x0) * 10) / 10, 1, si.title.sub || '');
+                  });
+                }
               }
             }
           }
