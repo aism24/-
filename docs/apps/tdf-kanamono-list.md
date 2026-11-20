@@ -8,6 +8,7 @@ TDF(実寸法師)の鉄骨図面から、製品ごとの金物(切板・山形�
 ## 構成・機能(ユーザーの要件)
 - GAS → GitHub → Vercel(管理用のDriveフォルダ・スプレッドシートはユーザー作成済み。IDはここに書かない)
 - 本番: https://tdf-kanamono-list.vercel.app/(2026-11-20 公開。Vercelプロジェクト名「-tdf-kanamono-list」。状態は docs/vercel-status.md)
+- tottori-production-status から飛ぶ先(KANAMONO_URL)は 2026-11-20 から金物リストの本番。tottori は GitHub(raw.githack)で確認し、本番(Vercel)は完成までデプロイしない(ユーザー指示)。
 - ① アプリ起動 ② サーバー(TDFの置き場所)を指定=Excelのハイパーリンク用 ③ TDF取込(別フォルダからも追加可。ただし同じ工事だけ)
 - ④ 金物リスト一覧をテーブル表示。図番クリックでPowerShell経由で実寸法師を開く ⑤ ハイパーリンク付きExcelダウンロード
 - **除外したもの(下の「対象外」)は、アプリでは「除外一覧」として表示する**(黙って捨てない)
