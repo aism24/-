@@ -1216,7 +1216,44 @@
         }
         out.push({ size: size, name: mk, n: n, note: '' });
       });
-      return out;
+      // 柱の図面の形鋼の断面(ア・イ の L-75x75x6。2026-11-20 ユーザー指示「アイ断面があるのでそちらのL-75も拾って欲しい」):
+      // 本数 = 図の中のその断面の旗の数 × 断面図の表記の数。長さ = 断面図に長さの寸法が無いので、旗のそば(1000以内)に描かれた線(300〜3000)で一番多い長さ(C断面の八角形の斜めの辺 707.1)
+      Object.keys(secInfo).forEach(function (L1) {
+        var si = secInfo[L1];
+        Array.from(new Set(si.shapes.filter(function (x) { return /^L-/.test(x); }))).forEach(function (shape) {
+          var flags = T.filter(function (t) {
+            if (t.text !== L1 || titles.some(function (x) { return x.letter === t.text && Math.abs(x.y - t.y) < 10; })) return false;
+            if ((sectionOf(t, titles) || {}).letter === L1) return false;
+            return !T.some(function (u) { return u !== t && Math.abs(u.y - t.y) < 60 && Math.abs(u.x - t.x) < 250; });
+          });
+          if (!flags.length) return;
+          var cnt = {};
+          L.forEach(function (l) {
+            var len = Math.hypot(l[2] - l[0], l[3] - l[1]); if (len < 300 || len > 3000) return;
+            var mid = { x: (l[0] + l[2]) / 2, y: (l[1] + l[3]) / 2 };
+            if (!flags.some(function (f) { return dist(f, mid) <= 1000; })) return;
+            var k = (Math.round(len * 10) / 10).toFixed(1); cnt[k] = (cnt[k] || 0) + 1;
+          });
+          var best = Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a]; })[0];
+          if (!best) return;
+          var nLab = si.shapes.filter(function (x) { return x === shape; }).length;
+          out.push({ size: shape, name: parseFloat(best), n: flags.length * nLab, note: si.title.sub || '' });
+        });
+      });
+      // GEN レイヤの「L-270」(2026-11-20 ユーザー説明、EB1-0C-04): 親綱掛けフックの断面の K-9 が2本、長さ270。
+      // 書き方は形鋼と同じ: サイズ = そば(1500以内)の「K-9」、切板名(長さ)= 270、本数 = その図の中の「K-9」の数、備考 = そばの見出し(「…フック」など。1000以内)
+      T.filter(function (t) { return t.lay === genNo && /^L-[0-9.]+$/.test(t.text); }).forEach(function (t) {
+        var bar = T.filter(function (u) { return /^[A-Z]{1,2}-[0-9.]+$/.test(u.text) && !/^(L|C|H|PL|FB)-/.test(u.text) && dist(u, t) <= 1500; }).sort(function (a, b) { return dist(a, t) - dist(b, t); })[0];
+        if (!bar) return;
+        var ttl = T.filter(function (u) { return /フック|ピース|金物/.test(u.text) && dist(u, t) <= 1000; }).sort(function (a, b) { return dist(a, t) - dist(b, t); })[0];
+        // 本数 = その図(見出しの上 2500・左右 1500 以内)の中の「K-9」の数(柱の立面図の K-9 は数えない)。見出しが無ければ L-270 から1500以内
+        var nBar = T.filter(function (u) { return u.text === bar.text && (ttl ? u.y > ttl.y && u.y - ttl.y < 2500 && Math.abs(u.x - ttl.x) < 1500 : dist(u, t) <= 1500); }).length;
+        out.push({ size: bar.text, name: parseFloat(t.text.slice(2)), n: nBar, note: ttl ? ttl.text : '' });
+      });
+      // 同じサイズ・切板名(長さ)・備考は1行に(ア・イ の L-75x75x6 707.1 → 4本)
+      var merged = [];
+      out.forEach(function (it) { var m = merged.find(function (x) { return x.size === it.size && x.name === it.name && x.note === it.note; }); if (m) m.n += it.n; else merged.push(it); });
+      return merged;
     }
     if (sayaCounted) { excluded.delete('サヤ管'); result.included.push('サヤ管'); }   // サイズ・長さ・本数が分かったので金物リストに入れた(お知らせで「抽出しました」と出す)
     result.excluded = Array.from(excluded);
