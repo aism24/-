@@ -272,8 +272,14 @@
     // 図の範囲: 縦 = 製品の行より上で、上の図の行まで。横 = 左右に並ぶ図の間で分け、右に断面図があればその手前まで
     var prods = pr.rows.slice().sort(function (a, b) { return b.y - a.y || a.x - b.x; });
     var views = [];
+    // 同じ高さの行で、別の製品の行から1500より離れて並ぶ製品は、左右に並ぶ別の図(図の間が5000より狭い図面がある。WR-2G-9 は間隔約3450。2026-11-20)
+    // 1つの図の下に製品の行が横に並ぶ図面(検証図面A の J9・J12。間隔約390)は同じ図のまま
     prods.forEach(function (p) {
-      var v = views.find(function (v) { return Math.abs(v.labelY - p.y) < 600 && p.x - v.xr < 5000 && v.x - p.xr < 5000; });
+      var v = views.find(function (v) {
+        var gaps = v.products.filter(function (q) { return Math.abs(q.y - p.y) < 15; }).map(function (q) { return Math.max(p.x - q.xr, q.x - p.xr); });
+        if (gaps.length && Math.min.apply(null, gaps) > 1500) return false;   // 一番近い行との間隔で決める
+        return Math.abs(v.labelY - p.y) < 600 && p.x - v.xr < 5000 && v.x - p.xr < 5000;
+      });
       if (v) { v.products.push(p); v.labelY = Math.min(v.labelY, p.y); v.labelTop = Math.max(v.labelTop, p.y); v.x = Math.min(v.x, p.x); v.xr = Math.max(v.xr, p.xr); }
       else views.push({ products: [p], labelY: p.y, labelTop: p.y, x: p.x, xr: p.xr });
     });
@@ -444,8 +450,9 @@
     })();
 
     // 旗(断面記号): 文字の右に縦線(長さ250〜450)がある
-    // 旗の縦線(梁が傾いた図面では少し傾いている。傾き1割まで)
-    var flagLines = L.filter(function (l) { var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]); return dy > 200 && dy < 500 && dx <= dy * 0.1; })
+    // 旗の縦線(梁が傾いた図面では少し傾いている)
+    // 傾き2割まで(WR-2G-9 は勾配12.9%。tdf-master-web もこの図面を斜め梁として読めている。2026-11-20)
+    var flagLines = L.filter(function (l) { var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]); return dy > 200 && dy < 500 && dx <= dy * 0.2; })
       .map(function (l) { return { x: (l[0] + l[2]) / 2, y0: Math.min(l[1], l[3]), y1: Math.max(l[1], l[3]) }; });
     function flagLineX(t) {
       var c = flagLines.filter(function (v) { return v.x - t.x > 50 && v.x - t.x < 180 && v.y0 <= t.y + 20 && v.y1 >= t.y; });
@@ -534,14 +541,18 @@
       // 長さ: 寸法の行で「10」(柱との隙間)2つの間にある一番大きい数。梁が傾いていると寸法の行も傾くので、2つの「10」を結ぶ線のそばで探す
       var length = 0;
       var tens = T.filter(function (t) { return inView(v, t) && t.text === '10'; });
-      tens.forEach(function (a) {
-        // 右で一番近い「10」(傾き1割以内)だけを相手にする(通り芯の番号「10」と組にしない)
-        var b = tens.filter(function (c) { return c.x > a.x + 1000 && Math.abs(c.y - a.y) <= (c.x - a.x) * 0.1; }).sort(function (p, q) { return p.x - q.x; })[0];
-        if (!b) return;
-        T.forEach(function (u) {
-          if (!inView(v, u) || !/^[0-9]+(\.[0-9]+)?$/.test(u.text) || u.x <= a.x || u.x >= b.x) return;
-          var yl = a.y + (b.y - a.y) * (u.x - a.x) / (b.x - a.x);
-          if (Math.abs(u.y - yl) < 40) { var n = parseFloat(u.text); if (n > length && n < 30000) length = n; }
+      // 右で一番近い「10」(傾き1割以内)だけを相手にする(通り芯の番号「10」と組にしない)。
+      // 見つからなければ傾き2割まで広げる(WR-2G-9 は勾配12.9%。初めから2割にすると別の行の「10」と組になる図面がある。2026-11-20)
+      [0.1, 0.2].forEach(function (slope) {
+        if (length) return;
+        tens.forEach(function (a) {
+          var b = tens.filter(function (c) { return c.x > a.x + 1000 && Math.abs(c.y - a.y) <= (c.x - a.x) * slope; }).sort(function (p, q) { return p.x - q.x; })[0];
+          if (!b) return;
+          T.forEach(function (u) {
+            if (!inView(v, u) || !/^[0-9]+(\.[0-9]+)?$/.test(u.text) || u.x <= a.x || u.x >= b.x) return;
+            var yl = a.y + (b.y - a.y) * (u.x - a.x) / (b.x - a.x);
+            if (Math.abs(u.y - yl) < 40) { var n = parseFloat(u.text); if (n > length && n < 30000) length = n; }
+          });
         });
       });
 
