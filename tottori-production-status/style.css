@@ -313,3 +313,9 @@ table.sheet td.note.nomaster { color: #d00000; font-weight: 700; }
   body:not(.landing-mode) .hdr-btns { grid-column: 1 / -1; grid-row: 2; justify-self: end; margin: 0; }
 }
 #kanaModal .notice-actions { gap: 12px; }
+/* 金物リストの確認: 実寸ロゴ左・アプリ名・実寸ロゴ右、はい/いいえは同じ大きさ(2026-11-20 ユーザー指示) */
+.kana-brand { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 12px; }
+.kana-icon { flex: none; display: block; image-rendering: pixelated; }
+.kana-icon-flip { transform: scaleX(-1); }
+.kana-title { font-size: 20px; font-weight: 700; color: #222; white-space: nowrap; }
+#kanaModal .kana-btn { width: 120px; min-width: 0; padding: 10px 0; font-size: 17px; font-weight: 700; }
