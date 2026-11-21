@@ -476,6 +476,18 @@
         si.plates[lb.mark].note = num ? num.text + 'mm切断' : '切断';
       }
     });
+    // 符号の無い「支給品」の板(2026-11-21 ユーザー指示、EA1-RG-10 の か断面「避雷針プレート」の「PL-6 / 支給品」): 符号なしで入れる。
+    // 枚数は断面の数(旗の数)×表記の枚数、備考は断面の副題と「支給品」
+    T.forEach(function (t) {
+      if (!RE_PLATE.test(t.text) || isLeft(t)) return;
+      if (labels.some(function (lb) { return Math.abs(lb.sx - t.x) < 1 && Math.abs(lb.sy - t.y) < 1; })) return;
+      if (!T.some(function (u) { return u.text === '支給品' && t.y - u.y > 0 && t.y - u.y < 250 && Math.abs(u.x - t.x) < 300; })) return;
+      var s3 = sectionOf(t, titles); if (!s3) return;
+      var si3 = secInfo[s3.letter];
+      if (si3.plates['']) return;
+      si3.plates[''] = { size: plateSize(t.text), n: plateCount(t.text), mekki: false, note: (s3.sub ? s3.sub + '・' : '') + '支給品' };
+      si3.plateT.add(thickOf(plateSize(t.text)));
+    });
     // 断面図の中の、板の表記と組にならなかった符号は、同じ符号がほかで組になっていればそのサイズで1枚(2026-11-21 ユーザー確認、WB3-3G-12:
     // G断面は「BH-250x250x12x12 / MGR166」、H断面は「PL-12 / MGR166」→ G にも PL-12 MGR166 1枚)
     var knownSize = {};
