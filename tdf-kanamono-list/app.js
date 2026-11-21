@@ -6,6 +6,7 @@
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyKURzPEeCi9kQ7Pfb_WXBJ7ntKNCwSzK9cWkT_YWGrHdAyF4SVBgix4VlSUlVVKUktzg/exec';
 const EXCELJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
 const LS_KEY = 'tdf-kanamono-list:last';
+const LS_SETTINGS = 'tdf-kanamono-list:settings';   // 前回GASから読んだ工事リスト・サーバー(開いたらすぐ出し、裏で最新に置き換える。2026-11-21)
 
 const state = {
   factory: '', kojiNo: '', kojiName: '',
@@ -72,21 +73,37 @@ document.querySelectorAll('.factory-btn').forEach(b => b.addEventListener('click
 }));
 $('koji-select').addEventListener('change', updateStartBtn);
 
-async function loadSettings() {
-  const sel = $('koji-select');
-  try {
-    const j = await apiGet('settings');
-    state.kojiList = j.koji || []; state.servers = j.servers || [];
-    sel.innerHTML = '<option value="" disabled selected>選択してください</option>' +
-      state.kojiList.map(k => `<option value="${esc(k.no)}">${esc(k.no)}　${esc(k.name)}</option>`).join('');
+// 工事リスト・サーバーを画面に入れる。first = 最初の1回(前回選んだ工事・工場を選んでおく)。2回目以降は今選んでいる工事を残す
+function applySettings(j, first) {
+  const sel = $('koji-select'), cur = sel.value;
+  state.kojiList = j.koji || []; state.servers = j.servers || [];
+  sel.innerHTML = '<option value="" disabled selected>選択してください</option>' +
+    state.kojiList.map(k => `<option value="${esc(k.no)}">${esc(k.no)}　${esc(k.name)}</option>`).join('');
+  if (first) {
     let last = {}; try { last = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { /* なし */ }
     if (last.kojiNo && state.kojiList.some(k => k.no === last.kojiNo)) sel.value = last.kojiNo;
     if (last.factory) { const b = document.querySelector(`.factory-btn[data-factory="${last.factory}"]`); if (b) b.click(); }
-  } catch (e) {
-    sel.innerHTML = '<option value="" disabled selected>工事リストを読めませんでした</option>';
-    $('koji-msg').textContent = e.message + '(GASのURLを設定するまでは開始できません)';
-  }
+  } else if (cur && state.kojiList.some(k => k.no === cur)) sel.value = cur;
+  $('koji-msg').textContent = '';
+  if (state.started && !state.server) renderServer();
   updateStartBtn();
+}
+// 前回の工事リストがあれば、それをすぐ出して返す(GASの返事を待たない。GASは1〜4秒かかる)。裏でGASから読み、変わっていれば置き換える
+async function loadSettings() {
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(LS_SETTINGS) || 'null'); } catch (e) { cached = null; }
+  if (cached && Array.isArray(cached.koji)) applySettings(cached, true); else cached = null;
+  const fresh = apiGet('settings').then(j => {
+    const v = { koji: j.koji || [], servers: j.servers || [] };
+    try { localStorage.setItem(LS_SETTINGS, JSON.stringify(v)); } catch (e) { /* なし */ }
+    if (!cached || JSON.stringify(v) !== JSON.stringify({ koji: cached.koji || [], servers: cached.servers || [] })) applySettings(v, !cached);
+  }).catch(e => {
+    if (cached) return;   // 前回の工事リストで続けられる
+    $('koji-select').innerHTML = '<option value="" disabled selected>工事リストを読めませんでした</option>';
+    $('koji-msg').textContent = e.message + '(GASのURLを設定するまでは開始できません)';
+    updateStartBtn();
+  });
+  if (!cached) await fresh;
 }
 $('start-btn').addEventListener('click', () => {
   const no = $('koji-select').value, k = state.kojiList.find(x => x.no === no);
@@ -98,6 +115,7 @@ $('start-btn').addEventListener('click', () => {
   document.body.classList.add('app-started'); state.started = true;
   renderServer();
   render();
+  preloadPy();
 });
 $('btn-change').addEventListener('click', () => { $('start-modal').classList.remove('hidden'); });
 $('start-cancel-btn').addEventListener('click', () => { $('start-modal').classList.add('hidden'); });
@@ -281,6 +299,9 @@ async function importItems(items) {
         const buf = await f.arrayBuffer();
         const res = KanamonoExtract.extract(buf, f.name);
         if (!res.products.length) { errors.push(`${f.name}: 製品(「製品名 符号 N台」の行)が見つかりませんでした`); continue; }
+        // 工事名が違うTDFは取り込まないので、長さ(Python)を読む前に止める(2026-11-21。以前は長さを読んでから止めていた)
+        const base = state.tdfs[0];
+        if (base && base.res.koji !== res.koji) { errors.push(`${f.name}: 工事名が違うため取り込みません(「${res.koji || '不明'}」。取り込み済みは「${base.res.koji}」)`); continue; }
         // 長さは tdf-master-web と同じ方法で求める(2026-11-20 ユーザー指示)。読めなければ図面の寸法から読んだ長さのまま
         try {
           step(i, 0.3, pyPromise ? '長さを読んでいます…' : '長さを読む準備をしています…(初回だけ数秒かかります)');
@@ -288,8 +309,6 @@ async function importItems(items) {
           res.products.forEach(p => { const m = ml.find(x => x[0] === p.name); if (m && m[1]) p.length = Math.round(m[1] * 10000) / 10; });
         } catch (e) { warns.push(`${f.name}: 長さを tdf-master-web と同じ方法で読めませんでした(${e.message})。図面の寸法から読んだ長さを使います`); }
         step(i, 1, 'TDFを読み込んでいます…');
-        const base = state.tdfs[0];
-        if (base && base.res.koji !== res.koji) { errors.push(`${f.name}: 工事名が違うため取り込みません(「${res.koji || '不明'}」。取り込み済みは「${base.res.koji}」)`); continue; }
         res.products.forEach(p => p.items.forEach(it => { it.n0 = it.n; }));
         state.tdfs.push({ id: nextId++, fileName: f.name, path: path || '', res });
         if (res.kojiNo && res.kojiNo !== state.kojiNo) warns.push(`${f.name}: 図面の工事番号(${res.kojiNo})が、選んだ工事(${state.kojiNo})と違います`);
@@ -343,30 +362,37 @@ function allProducts() {
 function render() {
   const has = state.tdfs.length > 0;
   $('btn-excel').disabled = !has; $('btn-reset').disabled = !has && !state.server;
+  const prods = has ? allProducts() : [];
+  // 取り込んだTDFの一覧も、下の金物リストと同じ並び(2026-11-21。以前は取り込んだ順だった)
+  const listOrder = [];
+  prods.forEach(({ t }) => { if (!listOrder.includes(t)) listOrder.push(t); });
   $('tdf-list').innerHTML = has ? '<table><tr><th>図面番号</th><th>工事名(図面)</th><th>ファイル名</th><th></th></tr>' +
-    state.tdfs.map(t => `<tr><td>${esc(t.res.zuban)}</td><td>${esc(t.res.koji)}</td><td title="${esc(t.path || 'リンクなし')}">${esc(t.fileName)}${t.path ? '' : '(リンクなし)'}</td><td><button type="button" class="rm-btn" data-rm="${t.id}">外す</button></td></tr>`).join('') + '</table>' : '';
+    listOrder.map(t => `<tr><td>${esc(t.res.zuban)}</td><td>${esc(t.res.koji)}</td><td title="${esc(t.path || 'リンクなし')}">${esc(t.fileName)}${t.path ? '' : '(リンクなし)'}</td><td><button type="button" class="rm-btn" data-rm="${t.id}">外す</button></td></tr>`).join('') + '</table>' : '';
   const R = $('result');
   if (!has) { R.innerHTML = state.started ? '<div class="empty-msg">TDFを取り込むと、製品ごとの金物リストがここに出ます。<br>枚数(本数)と備考は直してからExcelに出せます。</div>' : ''; return; }
   let html = '';
-  allProducts().forEach(({ t, p }, pi) => {
-    const link = jissunUrl(t.path, t.fileName);
+  prods.forEach(({ t, p }) => {
+    const link = jissunUrl(t.path, t.fileName), pIdx = t.res.products.indexOf(p);
     const zb = link ? `<a href="${esc(link)}" title="実寸法師で開く">${esc(p.zuban)}</a>` : `<span class="nolink" title="サーバーの場所が分からないため、リンクはありません">${esc(p.zuban)}</span>`;
     const nm = link ? `<a href="${esc(link)}" title="実寸法師で開く">${esc(p.name)}</a>` : `<span class="nolink" title="サーバーの場所が分からないため、リンクはありません">${esc(p.name)}</span>`;
-    const items = p.items.slice().sort(KanamonoExtract.cmpItem);
-    const sum = items.reduce((a, it) => a + (it.n > 0 ? it.n : 0), 0);
+    const items = p.items.map((it, idx) => ({ it, idx })).sort((a, b) => KanamonoExtract.cmpItem(a.it, b.it));
     html += `<div class="prod-card"><table class="kl">
       <tr class="phead"><td>図面番号</td><td>製品名</td><td>サイズ</td><td>長さ（mm）</td><td>台数</td></tr>
       <tr class="pval"><td>${zb}</td><td>${nm}</td><td>${esc(p.size)}</td><td>${esc(p.length || '')}</td><td>${esc(p.dai)}</td></tr>
       <tr class="lhead"><td>サイズ</td><td>切板名（長さ）</td><td>枚数（本数）</td><td>備考</td><td></td></tr>` +
-      items.map(it => {
-        const idx = p.items.indexOf(it), g = KanamonoExtract.kindOf(it.size) === 'GPL' ? ' gpl' : '';
+      items.map(({ it, idx }) => {
+        const g = KanamonoExtract.kindOf(it.size) === 'GPL' ? ' gpl' : '';
         return `<tr class="item${g}"><td class="b">${esc(it.size)}</td><td class="b">${esc(it.name)}</td>
-          <td class="b"><input class="qty${it.n !== it.n0 ? ' changed' : ''}" type="number" min="0" value="${it.n}" data-t="${t.id}" data-p="${t.res.products.indexOf(p)}" data-i="${idx}"></td>
-          <td class="note"><input class="note-in" value="${esc(it.note)}" data-t="${t.id}" data-p="${t.res.products.indexOf(p)}" data-i="${idx}"></td><td></td></tr>`;
+          <td class="b"><input class="qty${it.n !== it.n0 ? ' changed' : ''}" type="number" min="0" value="${it.n}" data-t="${t.id}" data-p="${pIdx}" data-i="${idx}"></td>
+          <td class="note"><input class="note-in" value="${esc(it.note)}" data-t="${t.id}" data-p="${pIdx}" data-i="${idx}"></td><td></td></tr>`;
       }).join('') +
-      `<tr class="sub"><td></td><td>小計</td><td>${sum}</td><td></td><td></td></tr></table></div>`;
+      `<tr class="sub"><td></td><td>小計</td><td>${subTotal(p)}</td><td></td><td></td></tr></table></div>`;
   });
-  // 総まとめ(Excelと同じ並び)
+  R.innerHTML = html + '<div id="sum-area">' + summaryHtml() + '</div>';
+}
+function subTotal(p) { return p.items.reduce((a, it) => a + (it.n > 0 ? it.n : 0), 0); }
+// 総まとめ(Excelと同じ並び)
+function summaryHtml() {
   const lay = KanamonoExcel.layout({ kojiNo: state.kojiNo, koji: '' }, buildExportProducts(), state.tdfs.length > 1);
   let sumHtml = '', inSum = false;
   lay.rows.forEach(r => {
@@ -377,7 +403,7 @@ function render() {
     if (r.kind === 'sitem' || r.kind === 'sitem_gpl') sumHtml += `<tr class="sitem${r.kind === 'sitem_gpl' ? ' gpl' : ''}"><td class="b">${esc(r.vals[0])}</td><td class="b">${esc(r.vals[1])}</td><td class="b">${esc(r.vals[2])}</td><td class="note">${esc(r.vals[3] || '')}</td></tr>`;
   });
   if (sumHtml.includes('<table')) sumHtml += '</table></div>';
-  R.innerHTML = html + sumHtml;
+  return sumHtml;
 }
 document.addEventListener('click', e => {
   const rm = e.target.closest('[data-rm]');
@@ -387,11 +413,15 @@ document.addEventListener('change', e => {
   const el = e.target; if (!el.dataset || !el.dataset.t) return;
   const t = state.tdfs.find(x => String(x.id) === el.dataset.t); if (!t) return;
   const it = t.res.products[+el.dataset.p].items[+el.dataset.i];
-  if (el.classList.contains('qty')) { const v = parseInt(el.value, 10); it.n = isNaN(v) || v < 0 ? 0 : v; }
-  if (el.classList.contains('note-in')) it.note = el.value.trim();
-  render();
+  const p = t.res.products[+el.dataset.p];
+  if (el.classList.contains('qty')) { const v = parseInt(el.value, 10); it.n = isNaN(v) || v < 0 ? 0 : v; el.value = it.n; el.classList.toggle('changed', it.n !== it.n0); }
+  if (el.classList.contains('note-in')) { it.note = el.value.trim(); el.value = it.note; }
+  // 直した欄・その製品の小計・総まとめだけ書き換える(2026-11-21。以前は全体を描き直していて、Tab で次の欄へ移ると選択が外れた)
+  const sub = el.closest('table.kl') && el.closest('table.kl').querySelector('tr.sub td:nth-child(3)');
+  if (sub) sub.textContent = subTotal(p);
+  if ($('sum-area')) $('sum-area').innerHTML = summaryHtml();
 });
-$('btn-reset').addEventListener('click', () => { if (confirm('取り込んだTDF・修正・選んだサーバーをすべて消します。よろしいですか?')) { state.tdfs = []; state.server = null; state.root = null; renderServer(); render(); } });
+$('btn-reset').addEventListener('click', () => { if (confirm('取り込んだTDF・修正・選んだサーバーをすべて消します。よろしいですか?')) { state.tdfs = []; state.server = null; state.root = null; state.planCtx = null; renderServer(); render(); } });
 
 // ---------- Excel ----------
 function buildExportProducts() {
@@ -411,6 +441,7 @@ function loadPy(onProgress) {
   if (onProgress) pyProgress = onProgress;
   const tick = (k) => { if (pyProgress) pyProgress(k / (PY_FILES.length + 3)); };
   if (!pyPromise) {
+    if (!onProgress) pyProgress = null;   // 裏で先に読むとき(preloadPy)は進み具合を出さない。前の取り込みの表示を使わない(2026-11-21)
     pyPromise = (async () => {
       tick(0);
       if (!window.loadPyodide) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = PYODIDE_URL; s.onload = res; s.onerror = () => rej(new Error('Pythonの部品を読み込めませんでした')); document.head.appendChild(s); });
@@ -429,7 +460,7 @@ function loadPy(onProgress) {
       pyProgress = null;
       return py;
     })();
-    pyPromise.catch(() => { pyPromise = null; });
+    pyPromise.catch(() => { pyPromise = null; pyProgress = null; });   // 失敗したら次は読み直す。進み具合の表示も外す
   }
   return pyPromise;
 }
@@ -443,6 +474,9 @@ async function masterLengths(buf, name, onProgress, column) {
   return JSON.parse(out);
 }
 const PY_VER = '20261120d';
+// 長さを読む Python の部品(約5MB。初回の準備に数秒)を、工場・工事を選んで開始したときに裏で読み始める(2026-11-21)。
+// 最初のTDFを取り込むときの待ちを短くするため。失敗しても何も出さない(取り込むときに読み直す)
+function preloadPy() { setTimeout(() => { loadPy().catch(() => {}); }, 300); }
 
 let exceljsPromise = null;
 function loadExcelJS() {
@@ -451,8 +485,16 @@ function loadExcelJS() {
   return exceljsPromise;
 }
 function pad(n) { return String(n).padStart(2, '0'); }
+function stamp(d) { return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`; }
+function saveXlsx(buf, name) {
+  const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
 $('btn-excel').addEventListener('click', async () => {
   if (!state.tdfs.length) return;
+  // 次の加工予定から作った画面なら、最初に届いたExcelと同じ形(シート１の一覧+工事ごとのシート)で、画面で直した数を入れて作り直す(2026-11-21)
+  if (state.planCtx && allProducts().every(x => typeof x.p.ord === 'number')) { await downloadPlanExcel(state.planCtx, planGroupsFromScreen(state.planCtx)); return; }
   busy('Excelを作っています…');
   try {
     await loadExcelJS();
@@ -461,12 +503,9 @@ $('btn-excel').addEventListener('click', async () => {
     const head = { kojiNo: state.kojiNo, koji };
     const { wb, layout } = KanamonoExcel.build(window.ExcelJS, state.factory, head, buildExportProducts(), multi);
     const buf = await wb.xlsx.writeBuffer();
-    const d = new Date();
-    const name = multi ? `${state.kojiNo}_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}_金物リスト.xlsx`
+    const name = multi ? `${state.kojiNo}_${stamp(new Date())}_金物リスト.xlsx`
       : `${state.tdfs[0].res.zuban || state.tdfs[0].fileName.replace(/\.tdf$/i, '')}_金物リスト.xlsx`;
-    const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-    const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    saveXlsx(buf, name);
     apiPostQuiet({ action: 'download', koji: state.kojiName, factory: state.factory, rows: KanamonoExcel.toValues(layout) });
   } catch (e) { toast('Excelを作れませんでした: ' + e.message, 'error'); }
   finally { idle(); }
@@ -505,6 +544,7 @@ async function startPlan() {
   apiPostQuiet({ action: 'start', koji: '次の加工予定', factory: '鳥取' });
   const kojis = [...new Set(PLAN.rows.map(r => r.kojiNo || r.abbr))];
   renderServer();
+  preloadPy();
   // サーバーは本社・鳥取のどちらか(鳥取サーバー固定ではない)。① のボタンで選び、毎回「①進行中工事」まで選ぶ(2026-11-20 ユーザー指示)
   await notice('次の加工予定の金物リスト',
     `${PLAN.src ? '「' + PLAN.src + '」の' : ''}次の加工予定(黄色) ${PLAN.rows.length}件\n(工事 ${kojis.join('・')})の金物リストを作ります。\n「① 本社サーバー」か「① 鳥取サーバー」を押し、\nサーバー内の「①進行中工事」を選ぶと、TDFを読み込みます。`, true);
@@ -512,8 +552,14 @@ async function startPlan() {
 // リンク表に無い行は、工事のフォルダの中から図番でTDFを探す(ファイル名「EA1-3B-04　260928.tdf」。2026-11-20 ユーザー指示)
 // 工事のフォルダ = 同じ工事のリンクのある行の「①進行中工事」の次のフォルダ、無ければ名前が工事番号で始まるフォルダ
 const zubanOf = name => { const m = /^(.+?)(?:[\s_]+(\d{6}))?\.tdf$/i.exec(nk(name)); return m ? { zuban: m[1].trim().toUpperCase(), date: m[2] || '' } : null; };
-async function kojiDirName(root, rows, r) {
+async function kojiDirName(root, rows, r, memo) {
   const key = r.kojiNo || r.abbr;
+  if (memo.has(key)) return memo.get(key);   // 同じ工事は1回だけ探す(2026-11-21。以前は行ごとに「①進行中工事」を見直していた)
+  const kd = await kojiDirName0(root, rows, r, key);
+  memo.set(key, kd);
+  return kd;
+}
+async function kojiDirName0(root, rows, r, key) {
   const hit = rows.find(x => x.segs && (x.kojiNo || x.abbr) === key);
   if (hit) return hit.segs[0];
   const no = nk(r.kojiNo);
@@ -533,10 +579,10 @@ async function indexTdfs(dir, base, out, onDir) {
 async function findByZuban(root, rows) {
   const need = rows.filter(r => !r.link);
   if (!need.length) return;
-  const idx = new Map();   // 工事のフォルダ名 → 図番の索引
+  const idx = new Map(), memo = new Map();   // 工事のフォルダ名 → 図番の索引 / 工事 → 工事のフォルダ名
   try {
     for (const r of need) {
-      const kd = await kojiDirName(root, rows, r);
+      const kd = await kojiDirName(root, rows, r, memo);
       if (!kd) { r.status = 'リンク表に無く、工事のフォルダも分かりません'; continue; }
       if (!idx.has(kd)) {
         let n = 0;
@@ -633,21 +679,31 @@ async function runPlan(plan) {
   state.tdfs.sort((a, b) => minOrd(a) - minOrd(b));
   render();
   if (!groups.size) { await notice('金物リストを作れませんでした', rows.map(r => `${r.abbr} ${r.mark}: ${r.status}`).join('\n')); return; }
+  // 画面の「Excelダウンロード」で作り直すときのために、一覧の行と工事ごとの製品(並び順 ord・リンク)を覚えておく
+  state.planCtx = { rows, groups: gs.map(g => ({ sheet: g.sheet, head: g.head, prods: g.products.map(x => ({ ord: x.ord, link: x.link })) })) };
+  await downloadPlanExcel(state.planCtx, gs);
+  const miss = rows.filter(r => !/^作成/.test(r.status));
+  if (miss.length) await notice('金物リストに入れなかった製品', miss.map(r => `${r.abbr} ${r.mark}(${r.zuban || '図番なし'}): ${r.status}`).join('\n') + '\n\n「次の加工予定」のシートには載せています。');
+}
+
+// 次の加工予定のExcel(シート１=一覧、シート２以降=工事ごと)を作ってダウンロードする
+async function downloadPlanExcel(ctx, groups) {
   busy('Excelを作っています…');
   try {
     await loadExcelJS();
-    const { wb, layouts } = KanamonoExcel.buildPlan(window.ExcelJS, '鳥取', rows, gs);
-    const buf = await wb.xlsx.writeBuffer();
-    const d = new Date();
-    const name = `次の加工予定_金物リスト_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.xlsx`;
-    const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-    const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    const { wb, layouts } = KanamonoExcel.buildPlan(window.ExcelJS, ctx.rows, groups);
+    saveXlsx(await wb.xlsx.writeBuffer(), `次の加工予定_金物リスト_${stamp(new Date())}.xlsx`);
     layouts.forEach(l => apiPostQuiet({ action: 'download', koji: l.sheet, factory: '鳥取', rows: KanamonoExcel.toValues(l.layout) }));
   } catch (e) { toast('Excelを作れませんでした: ' + e.message, 'error'); }
   finally { idle(); }
-  const miss = rows.filter(r => !/^作成/.test(r.status));
-  if (miss.length) await notice('金物リストに入れなかった製品', miss.map(r => `${r.abbr} ${r.mark}(${r.zuban || '図番なし'}): ${r.status}`).join('\n') + '\n\n「次の加工予定」のシートには載せています。');
+}
+// 画面の今の数・備考で、工事ごとの製品を作り直す(外したTDFの製品は入れない)
+function planGroupsFromScreen(ctx) {
+  const byOrd = new Map(allProducts().map(x => [x.p.ord, x.p]));
+  return ctx.groups.map(g => ({ sheet: g.sheet, head: g.head, products: g.prods.filter(x => byOrd.has(x.ord)).map(x => {
+    const p = byOrd.get(x.ord);
+    return { zuban: p.zuban, name: p.name, size: p.size, length: p.length, dai: p.dai, link: x.link, items: p.items.map(it => ({ size: it.size, name: it.name, n: it.n, note: it.note })) };
+  }) })).filter(g => g.products.length);
 }
 
 loadSettings().then(() => { if (PLAN) startPlan(); });

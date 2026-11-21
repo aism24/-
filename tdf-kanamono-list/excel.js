@@ -57,7 +57,7 @@
       if (i < all.length - 1) withSep.push({ kind: bl.type === 'prod' ? 'blank' : 'sblank', vals: [] });
       var firstSum = bl.type === 'sum' && i > 0 && all[i - 1].type === 'prod';
       if (used > 0 && (firstSum || used + h(body) > PAGE)) { breaks.push(rows.length); used = 0; }
-      rows = rows.concat(withSep); used += h(withSep);
+      Array.prototype.push.apply(rows, withSep); used += h(withSep);
     });
     return { rows: rows, breaks: breaks };
   }
@@ -156,7 +156,7 @@
   }
   // 次の加工予定のExcel: 1枚目=次の加工予定の一覧、2枚目から=工事ごとの金物リスト(シート名は工事番号)
   // groups: [{sheet, head, products}]
-  function buildPlan(ExcelJS, factory, planRows, groups) {
+  function buildPlan(ExcelJS, planRows, groups) {
     var wb = new ExcelJS.Workbook();
     addPlanSheet(wb, planRows);
     var layouts = groups.map(function (g) { return { sheet: g.sheet, layout: addStandardSheet(wb, g.sheet, g.head, g.products, true) }; });
