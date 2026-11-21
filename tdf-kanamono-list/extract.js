@@ -848,6 +848,9 @@
         var cntOf = function (L1) { var f = flagsBySec[L1]; return f.matched.length + f.unmatched; };
         order.forEach(function (L1) {
           var h = hits[L1], f = flagsBySec[L1];
+          // 立面図の板に当たった旗の断面(スチフナなど)は、同じ板の組を旗だけの断面(ALC下地の さ など)が持っていれば数え直さない
+          // (2026-11-21 ユーザー指摘「MG125・MGR92 の枚数が違う」、WB3-3G-04: A断面の旗2つ(立面図のスチフナ2枚)が、そばの ALC下地の板14か所で14になっていた)
+          if (f.matched.length && order.some(function (L2) { return L2 !== L1 && hits[L2].key === h.key && !flagsBySec[L2].matched.length; })) return;
           // 競うのは旗に「x2」などが書いてある断面どうしだけ(同じ場所に付くスチフナ(A・E など)は別の板なので引かない)
           if (f.explicit) {
             var others = order.filter(function (L2) { return L2 !== L1 && flagsBySec[L2].explicit && hits[L2].key === h.key; });
