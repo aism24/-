@@ -1066,7 +1066,20 @@
               if (len >= 100) {
                 // ① 梁を横切る溝形鋼(梁の下に付く LGS下地。EA1-3G-01・EA1-3B-01、2026-11-20 ユーザー指示「サイズと長さと本数が図面より見れる」):
                 //    長さ = その合計(EA1-3G-01: 225+225=450、EA1-3B-01: 150+150=300、EA1-3B-05: 87.5+87.5=175)、本数 = 立面図の旗の数 × 断面図の表記の数
-                add(shape, Math.round(len * 10) / 10, nFlag * nLab, si.title.sub || '');
+                //    旗が無い所にも同じ部材があるとき(WB1-3G-03: 旗「あ」は1つ、取付位置は 1803・4913 の2か所。2026-11-21 ユーザー指摘「旗が無いところの分が拾えていない」):
+                //    立面図の梁の下の端から見た溝形鋼(C-75x45x15x2.3 なら 幅75の両端に板厚2.3離れた縦線の組)を数え、旗の数より多ければその数にする
+                var nPos = nFlag, cH = parseFloat((/^C-([0-9.]+)x/.exec(shape) || [])[1]), cT = parseFloat((/x([0-9.]+)$/.exec(shape) || [])[1]) || 0;
+                if (elev && cH && cT) {
+                  var cv = vlines.filter(function (l) { return l.x >= elev.x0 - 1 && l.x <= elev.x1 + 1 && l.y1 <= elev.bot + 1 && l.y0 >= elev.bot - 300; });
+                  var hasV = function (x, a) { return cv.some(function (l) { return Math.abs(l.x - x) < 0.3 && Math.abs(l.y0 - a.y0) < 0.6 && Math.abs(l.y1 - a.y1) < 0.6; }); };
+                  var seenC = {}, nC = 0;
+                  cv.forEach(function (a) {
+                    if (!hasV(a.x + cT, a) || !hasV(a.x + cH - cT, a) || !hasV(a.x + cH, a)) return;
+                    var k = Math.round(a.x); if (seenC[k]) return; seenC[k] = 1; nC++;
+                  });
+                  if (nC > nPos) nPos = nC;
+                }
+                add(shape, Math.round(len * 10) / 10, nPos * nLab, si.title.sub || '');
               } else {
                 // ② 合計が100未満 = 梁に沿って長く付く溝形鋼を端から見た断面(EA1-3B-04「あ」: 37.5+37.5=75。2026-11-20 ユーザー指示「長さ2968は拾えない？」):
                 //    立面図で、溝形鋼の幅(C-75x45… の 45)だけ離れた同じ長さの平行な横線の組を部材とし、その範囲に旗があるものを拾う(長さ = 線の長さ)。
