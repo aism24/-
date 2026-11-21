@@ -444,7 +444,7 @@
         L.forEach(function (l) {
           if (Math.abs(l[1] - l[3]) < 0.5) return;
           var o = Math.hypot(l[0] - e[0], l[1] - e[1]) < 1 ? [l[2], l[3]] : Math.hypot(l[2] - e[0], l[3] - e[1]) < 1 ? [l[0], l[1]] : null;
-          if (o && Math.abs(o[0] - t.x) > 300 && (!best || Math.abs(o[0] - t.x) > Math.abs(best.x - t.x))) best = { x: o[0], y: o[1], text: '' };
+          if (o && Math.abs(o[0] - t.x) > 50 && (!best || Math.abs(o[0] - t.x) > Math.abs(best.x - t.x))) best = { x: o[0], y: o[1], text: '' };
         });
       });
       return best || t;
@@ -474,7 +474,9 @@
         // 「[-」は引出線のあるものだけ(2G-01: 旗 ウ・カ のそばの「Sb25C」「[-250x90x11x14.5」は取り付く小梁の名前とサイズで金物ではない)
         if (RE_CHAN.test(t.text) && an === t) return;
         var sa = sectionOf(an, titles);
-        secInfo[(sa || s).letter].shapes.push(t.text);
+        var sI = secInfo[(sa || s).letter];
+        sI.shapes.push(t.text);
+        if (an !== t) (sI.anchors = sI.anchors || {})[t.text] = an;
       }
       if (RE_JOINT.test(t.text) && /^[A-Z]+J[0-9]/.test(t.text)) si.joint = true;
       if (/^[0-9]+$/.test(t.text) && parseInt(t.text, 10) >= 100) { si.dims.push(parseInt(t.text, 10)); (si.dimT = si.dimT || []).push(t); }
@@ -1095,7 +1097,17 @@
                 //    長さ = その合計(EA1-3G-01: 225+225=450、EA1-3B-01: 150+150=300、EA1-3B-05: 87.5+87.5=175)、本数 = 立面図の旗の数 × 断面図の表記の数
                 //    旗が無い所にも同じ部材があるとき(WB1-3G-03: 旗「あ」は1つ、取付位置は 1803・4913 の2か所。2026-11-21 ユーザー指摘「旗が無いところの分が拾えていない」):
                 //    立面図の梁の下の端から見た溝形鋼(C-75x45x15x2.3 なら 幅75の両端に板厚2.3離れた縦線の組)を数え、旗の数より多ければその数にする
+                //    断面図で溝形鋼が梁幅の一部だけのとき(2G-01 の M断面: 寸法 160・80・160 で溝形鋼は真ん中の80。2026-11-21 ユーザー説明「長さは80」):
+                //    引出線の先の溝形鋼の横線の長さと同じ寸法があれば、それを長さにする
+                var anc = si.anchors && si.anchors[shape];
+                if (anc) {
+                  var segL = hlines.filter(function (h) { return anc.x >= h.x0 - 5 && anc.x <= h.x1 + 5 && Math.abs(h.y - anc.y) < 60; }).map(function (h) { return h.x1 - h.x0; });
+                  var hit = (si.dimT2 || []).map(function (d) { return parseFloat(d.text); }).filter(function (d) { return segL.some(function (w) { return Math.abs(w - d) < 1; }); });
+                  if (hit.length) len = Math.max.apply(null, hit);
+                }
                 var nPos = nFlag, cH = parseFloat((/^[C\[]-([0-9.]+)x/.exec(shape) || [])[1]), cT = parseFloat((/x([0-9.]+)$/.exec(shape) || [])[1]) || 0;
+                var cB = parseFloat((/^[C\[]-[0-9.]+x([0-9.]+)/.exec(shape) || [])[1]);
+                if (shape.charAt(0) === '[') cT = parseFloat((/^\[-[0-9.]+x[0-9.]+x([0-9.]+)/.exec(shape) || [])[1]) || 0;
                 if (elev && cH && cT) {
                   var cv = vlines.filter(function (l) { return l.x >= elev.x0 - 1 && l.x <= elev.x1 + 1 && l.y1 <= elev.bot + 1 && l.y0 >= elev.bot - 300; });
                   var hasV = function (x, a) { return cv.some(function (l) { return Math.abs(l.x - x) < 0.3 && Math.abs(l.y0 - a.y0) < 0.6 && Math.abs(l.y1 - a.y1) < 0.6; }); };
@@ -1103,6 +1115,13 @@
                   cv.forEach(function (a) {
                     if (!hasV(a.x + cT, a) || !hasV(a.x + cH - cT, a) || !hasV(a.x + cH, a)) return;
                     var k = Math.round(a.x); if (seenC[k]) return; seenC[k] = 1; nC++;
+                  });
+                  // 向きの違う書き方(2G-01: 「[-75x40x5x7」の端面 = 長さ75の縦線の上下の端から長さ40の横線)
+                  if (cB) cv.forEach(function (a) {
+                    if (Math.abs(a.y1 - a.y0 - cH) > 0.6) return;
+                    var fl2 = function (y) { return hlines.some(function (h) { return Math.abs(h.y - y) < 0.3 && Math.abs(h.x1 - h.x0 - cB) < 0.6 && (Math.abs(h.x0 - a.x) < 0.3 || Math.abs(h.x1 - a.x) < 0.3); }); };
+                    if (!fl2(a.y0) || !fl2(a.y1)) return;
+                    var k = Math.round(a.x); if (seenC[k] || seenC[k - 1] || seenC[k + 1]) return; seenC[k] = 1; nC++;
                   });
                   if (nC > nPos) nPos = nC;
                 }
