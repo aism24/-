@@ -136,7 +136,6 @@
   var RE_MAIN = /^S?H-[0-9]+([～~][0-9]+)?x[0-9]+x[0-9.]+x[0-9.]+$/;
   var RE_ZUBAN = /^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+(?:-[A-Z0-9]+)+$/;   // B1M2G-001 / WR-2G-1
   var RE_JOINT = /J[0-9]/;                              // PJ25・TSPJ9・DCJ1・J588(継手・ボルト接合の部材)
-  function near(a, b, dx, dy) { return Math.abs(a.x - b.x) <= dx && Math.abs(a.y - b.y) <= dy; }
   function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
   function thickOf(size) { var m = /-([0-9.]+)/.exec(size); return m ? parseFloat(m[1]) : 0; }
   function stripParen(s) { return s.replace(/^[(（]/, '').replace(/[)）]$/, ''); }
@@ -1156,6 +1155,7 @@
     //  - マークが断面図(E・F)の中にあり、その断面の旗が図(A断面のベースプレートの平面図)にあるときは、図に描かれた同じ板
     //    (板厚だけ離れた平行な2本の線で、長さが断面図の寸法と1.5%以内)の数(E=328.6 が8か所、F=200.9 が4か所 = ユーザー確認)
     function columnItems() {
+      var pairCache = {};
       var genNo = P.layers.indexOf('GEN') + 1; if (!genNo) return [];
       var gen = T.filter(function (t) { return t.lay === genNo && /^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*$/.test(t.text) && !/^(L|C|H|PL|FB|G?PL)-/.test(t.text) && /[0-9]/.test(t.text); });
       var sizesT = T.filter(function (t) { return /(^|[ .])(G?PL|FB)-[0-9]/.test(t.text) || /^(G?PL|FB)-[0-9]/.test(t.text); });
@@ -1190,18 +1190,30 @@
           var dims = (secInfo[sec.letter] && secInfo[sec.letter].dimT2 || []).map(function (d) { return parseFloat(d.text); });
           if (flags.length && th && dims.length) {
             // 板 = 板厚だけ離れた平行な同じ長さの2本の線(長さ50以上)。その断面(E・F)自身の図の線は除く
-            var cand = L.filter(function (l) { return Math.hypot(l[2] - l[0], l[3] - l[1]) >= 50 && (sectionOf({ x: (l[0] + l[2]) / 2, y: (l[1] + l[3]) / 2 }, titles) || {}).letter !== sec.letter; });
-            var allPairs = [];
-            cand.forEach(function (a, i) {
-              var la = Math.hypot(a[2] - a[0], a[3] - a[1]), ux = (a[2] - a[0]) / la, uy = (a[3] - a[1]) / la;
-              cand.slice(i + 1).forEach(function (b) {
-                var lb = Math.hypot(b[2] - b[0], b[3] - b[1]); if (Math.abs(la - lb) > 1) return;
-                if (Math.abs(ux * (b[3] - b[1]) / lb - uy * (b[2] - b[0]) / lb) > 0.01) return;   // 平行
-                var mx = (b[0] + b[2] - a[0] - a[2]) / 2, my = (b[1] + b[3] - a[1] - a[3]) / 2;
-                if (Math.abs(Math.abs(mx * uy - my * ux) - th) > 1 || Math.abs(mx * ux + my * uy) > 5) return;
-                allPairs.push({ x: (a[0] + a[2] + b[0] + b[2]) / 4, y: (a[1] + a[3] + b[1] + b[3]) / 4, len: Math.round(la * 10) / 10 });
-              });
-            });
+            // 平行な同じ長さの2本の線の組は、断面の記号と板厚ごとに1回だけ求める(マークごとに作り直さない)。長さ順に並べ、長さの差が1を超えたら打ち切る
+            var pk = sec.letter + '|' + th;
+            var allPairs = pairCache[pk];
+            if (!allPairs) {
+              var cand = L.map(function (l) { return { l: l, len: Math.hypot(l[2] - l[0], l[3] - l[1]) }; })
+                .filter(function (c) { return c.len >= 50 && (sectionOf({ x: (c.l[0] + c.l[2]) / 2, y: (c.l[1] + c.l[3]) / 2 }, titles) || {}).letter !== sec.letter; });
+              cand.forEach(function (c, k) { c.k = k; });
+              var byLen = cand.slice().sort(function (p, q) { return p.len - q.len; });
+              var found = [];
+              for (var ia = 0; ia < byLen.length; ia++) {
+                var A = byLen[ia], a = A.l, la = A.len, ux = (a[2] - a[0]) / la, uy = (a[3] - a[1]) / la;
+                for (var ib = ia + 1; ib < byLen.length && byLen[ib].len - la <= 1; ib++) {
+                  var B = byLen[ib], b = B.l, lb = B.len;
+                  if (Math.abs(ux * (b[3] - b[1]) / lb - uy * (b[2] - b[0]) / lb) > 0.01) continue;   // 平行
+                  var mx = (b[0] + b[2] - a[0] - a[2]) / 2, my = (b[1] + b[3] - a[1] - a[3]) / 2;
+                  if (Math.abs(Math.abs(mx * uy - my * ux) - th) > 1 || Math.abs(mx * ux + my * uy) > 5) continue;
+                  // 前と同じ組・同じ向き(元の線の順で前にある線を a とする)で値を作る
+                  var P = A.k < B.k ? A : B, Q = A.k < B.k ? B : A, pl = P.l, ql = Q.l;
+                  found.push({ k1: P.k, k2: Q.k, x: (pl[0] + pl[2] + ql[0] + ql[2]) / 4, y: (pl[1] + pl[3] + ql[1] + ql[3]) / 4, len: Math.round(P.len * 10) / 10 });
+                }
+              }
+              found.sort(function (p, q) { return p.k1 - q.k1 || p.k2 - q.k2; });   // 前と同じ順番(元の線の順)
+              allPairs = pairCache[pk] = found;
+            }
             // 数える板は長さが断面図の寸法と1.5%以内のもの
             var pairs = allPairs.filter(function (q) { return dims.some(function (d) { return Math.abs(q.len - d) <= d * 0.015; }); });
             // 旗に一番近い板の長さの板をすべて数える(旗が指す図の中の同じ板)
@@ -1275,7 +1287,8 @@
 
   // ---------- 並べ替え(Excel・画面共通) ----------
   function kindOf(size) { return /^GPL-/.test(size) ? 'GPL' : (/^PL-/.test(size) ? 'PL' : 'STEEL'); }
-  function natKey(v) { return String(v).match(/\d+|\D+/g).map(function (t) { return /^\d+$/.test(t) ? [0, parseInt(t, 10)] : [1, t]; }); }
+  // 空の文字(スリーブ 150S のように切板名が空欄)でも止まらないように(2026-11-21。以前は空欄どうしを比べると match が null で止まった)
+  function natKey(v) { return (String(v).match(/\d+|\D+/g) || []).map(function (t) { return /^\d+$/.test(t) ? [0, parseInt(t, 10)] : [1, t]; }); }
   function cmpNat(a, b) {
     var x = natKey(a), y = natKey(b);
     for (var i = 0; i < Math.min(x.length, y.length); i++) {
