@@ -570,6 +570,8 @@
     }
     T.forEach(function (t) {
       if (isLeft(t) || !RE_SECKEY.test(t.text) || !secInfo[t.text] || titles.some(function (x) { return x.letter === t.text && Math.abs(x.y - t.y) < 10; })) return;
+      // 鋼材の印「N B」「N C」「T C」(SN490B など)の B・C は断面記号ではない(2026-11-21、EA2-RG-07: C断面の「N B GPL-25」の B を入れ子の B断面と読み、NG21・NG22 を5枚にしていた)
+      if (T.some(function (u) { return /^[NT]$/.test(u.text) && Math.abs(u.y - t.y) < 15 && t.x - u.x > 0 && t.x - u.x < 120; })) return;
       var best = null, bs = Infinity, cx = t.x + 18 * t.text.length, rf = rightFlag(t);
       titles.forEach(function (s) {
         var c = (s.x + s.sx) / 2, dy = t.y - s.y, dx = Math.abs(cx - c);
