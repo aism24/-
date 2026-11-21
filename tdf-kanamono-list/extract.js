@@ -437,7 +437,8 @@
     var labels = plateLabels(T, hlines);
     // 形鋼の表記の引出線の先: 表記のすぐ下の横線の端から出る斜めの線の、もう一方の端(無ければ表記の位置)
     function shapeAnchor(t) {
-      var h = hlines.filter(function (h) { return t.y - h.y >= 3 && t.y - h.y <= 40 && h.x0 <= t.x + 50 && h.x1 >= t.x - 50; })
+      // 表記と引出線の間は40までが多いが、69 離れた図面もある(2026-11-21、WB3-3G-08 の「[-100x50x5x7.5」)
+      var h = hlines.filter(function (h) { return t.y - h.y >= 3 && t.y - h.y <= 80 && h.x0 <= t.x + 50 && h.x1 >= t.x - 50; })
         .sort(function (a, b) { return (t.y - a.y) - (t.y - b.y); })[0];
       if (!h) return t;
       var best = null;
