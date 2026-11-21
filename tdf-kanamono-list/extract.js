@@ -129,7 +129,7 @@
   // 板の符号: KG1・KGR63・KGEVG1(阪和)/ KK-5・PRG14(別の書き方)。小梁・継手などの名前(SB588・BJ35・PJ25・J588 など)は除く
   // 「MGR156切断流用」(別の板を切って使う。2026-11-21 WB1-3G-06 の す断面)も符号
   var RE_MARK = /^(?:KG[0-9A-Z]+|[A-Z]{2,5}-?[0-9]+[A-Z]?|[A-Z]-[A-Z]{1,4}[0-9]+[A-Z]?)(?:切断流用)?$/;   // OGALR7(英字5文字。2026-11-19)・O-KZ109(1G-01)
-  var RE_NOT_MARK = /^(?:SB|BJ|THJ?|TS?PJ|EPJ?|PJ|DCJ|GJ|CL|BT|BTJ?B?|RB|KB|BCR|BCP|SN|SM|SS|STK|TMCP)[0-9]/;
+  var RE_NOT_MARK = /^(?:SB|BJ|THJ?|TS?PJ|EPJ?|PJ|DCJ|GJ|CL|BT|BTJ?B?|RB|KB|BCR|BCP|SN|SM|SS|STK|TMCP|EHB)[0-9]/;   // EHB250 = EV の梁の名前(2026-11-21、WB3-3G-12)
   var RE_SHAPE = /^([LC])-[0-9.]+x[0-9.x]+$/;           // L-50x50x6 / C-60x30x10x2.3
   var RE_CHAN = /^\[-[0-9.]+x[0-9.x]+$/;                // [-100x50x5x7.5(溝形鋼の別の書き方。断面図の表記だけで使う。2026-11-21 WB1-3G-05)
   var RE_FB = /^FB-([0-9.]+)x([0-9.]+)x([0-9.]+)$/;     // FB-6x65x255
@@ -374,6 +374,8 @@
     sizes.forEach(function (sz) {
       if (us.has(sz)) return;
       var right = sz.t.x + 18 * sz.t.text.length * 2;
+      // 引出線が文字より右へ長く伸びているときは、引出線の右端から測る(2026-11-21、WB3-3G-12 の「PL-12 ── MGR168A」「PL-12 ── MGR170A」)
+      if (sz.h && sz.h.x1 > right) right = sz.h.x1;
       var m = marks.filter(function (k) { return !um.has(k) && Math.abs(k.y - sz.t.y) < 80 && k.x > right && k.x - right < 400; }).sort(function (p, q) { return p.x - q.x; })[0];
       if (!m) return;
       us.add(sz); um.add(m);
@@ -471,6 +473,49 @@
         var num = cut && T.filter(function (u) { return /^[0-9]+(\.[0-9]+)?$/.test(u.text) && dist(u, cut) < 400; }).sort(function (a, b) { return dist(a, cut) - dist(b, cut); })[0];
         si.plates[lb.mark].note = num ? num.text + 'mm切断' : '切断';
       }
+    });
+    // 断面図の中の、板の表記と組にならなかった符号は、同じ符号がほかで組になっていればそのサイズで1枚(2026-11-21 ユーザー確認、WB3-3G-12:
+    // G断面は「BH-250x250x12x12 / MGR166」、H断面は「PL-12 / MGR166」→ G にも PL-12 MGR166 1枚)
+    var knownSize = {};
+    labels.forEach(function (lb) { if (!(lb.mark in knownSize)) knownSize[lb.mark] = lb.size; });
+    T.forEach(function (t) {
+      if (!RE_MARK.test(t.text) || RE_NOT_MARK.test(t.text) || !(t.text in knownSize) || isLeft(t)) return;
+      if (labels.some(function (lb) { return lb.mark === t.text && Math.abs(lb.x - t.x) < 1 && Math.abs(lb.y - t.y) < 1; })) return;
+      // 符号のすぐ上に板ではない部材のサイズ(BH-250x250x12x12 など)が書いてあるものだけ(2G-01 の入れ子の断面の符号は除く)
+      if (!T.some(function (u) { return /^(BH|SH|H)-[0-9]/.test(u.text) && u.y - t.y > 0 && u.y - t.y < 250 && Math.abs(u.x - t.x) < 400; })) return;
+      var s2 = sectionOf(t, titles); if (!s2) return;
+      var si2 = secInfo[s2.letter];
+      if (si2.plates[t.text]) return;
+      si2.plates[t.text] = { size: knownSize[t.text], n: 1, mekki: false };
+      si2.plateT.add(thickOf(knownSize[t.text]));
+    });
+    // 立面図(平面図)で、部材のサイズ(BH-250 など)の引出線の下に符号だけが並ぶもの(2026-11-21 ユーザー確認、WB3-3G-12:
+    // 「BH-250 / MGR165 / MGR163K」= G 側の BH-250 の下フランジ MGR165 と上フランジ MGR163K)。サイズは同じ符号がほかで組になっていればそのサイズ、
+    // 無ければ一緒に並ぶ符号のサイズ(MGR163K = PL-12 → MGR165 も PL-12)。1枚ずつ
+    T.filter(function (u) { return /^(BH|SH|H)-[0-9]+$/.test(u.text) && isLeft(u); }).forEach(function (u) {
+      var ms = T.filter(function (t) {
+        return RE_MARK.test(t.text) && !RE_NOT_MARK.test(t.text) && u.y - t.y > 0 && u.y - t.y < 450 && Math.abs(t.x - u.x) < 300 &&
+          !labels.some(function (lb) { return lb.mark === t.text && Math.abs(lb.x - t.x) < 1 && Math.abs(lb.y - t.y) < 1; });
+      });
+      var sz0 = ms.map(function (t) { return knownSize[t.text]; }).filter(Boolean)[0];
+      if (!sz0) return;
+      ms.forEach(function (t) { elevLabels.push({ size: knownSize[t.text] || sz0, mark: t.text, cnt: 1, x: t.x, y: t.y, sx: u.x, sy: u.y }); });
+    });
+    // 最後に1つずつ残った板の表記と符号の組(2026-11-21 ユーザー説明、WB3-3G-12: 上の平面図の右の「GPL-12」は、右の小さな図(下FLG面)で説明していて、
+    // そちらには「MG225」だけが書いてある)。同じ種類(GPL / PL)の符号の頭の英字(MG・MGR)が、組になった符号と同じものだけ
+    var usedAt = function (t) { return labels.some(function (lb) { return (Math.abs(lb.x - t.x) < 1 && Math.abs(lb.y - t.y) < 1) || (Math.abs(lb.sx - t.x) < 1 && Math.abs(lb.sy - t.y) < 1); }) ||
+      elevLabels.some(function (lb) { return Math.abs(lb.x - t.x) < 1 && Math.abs(lb.y - t.y) < 1; }); };
+    var pre = function (m) { return (/^[A-Z]+/.exec(m) || [''])[0]; };
+    var preKind = {};
+    labels.forEach(function (lb) { var k = kindOf(lb.size); (preKind[pre(lb.mark)] = preKind[pre(lb.mark)] || {})[k] = 1; });
+    ['GPL', 'PL'].forEach(function (kind) {
+      var sz1 = T.filter(function (t) { return RE_PLATE.test(t.text) && kindOf(plateSize(t.text)) === kind && !usedAt(t) && isLeft(t); });
+      var mk1 = T.filter(function (t) {
+        if (!RE_MARK.test(t.text) || RE_NOT_MARK.test(t.text) || usedAt(t) || t.text in knownSize) return false;
+        var pk = preKind[pre(t.text)]; return pk && pk[kind] && Object.keys(pk).length === 1;
+      });
+      if (sz1.length !== 1 || mk1.length !== 1 || !isLeft(mk1[0])) return;
+      elevLabels.push({ size: plateSize(sz1[0].text), mark: mk1[0].text, cnt: plateCount(sz1[0].text), x: mk1[0].x, y: mk1[0].y, sx: sz1[0].x, sy: sz1[0].y });
     });
     var outsideStrict = function (o) { return !views.some(function (v) { return o.y > v.yMin && o.y < v.yMax && o.x > v.x0 && o.x < v.x1s; }); };
     T.forEach(function (t) {
@@ -795,6 +840,8 @@
       T.forEach(function (t) {
         if (!inView(v, t) || !RE_SECKEY.test(t.text) || !secInfo[t.text]) return;
         var fx = flagLineX(t); if (fx === null) return;
+        // 梁の長さの外の旗(拡大図の旗)は数えない(2026-11-21、WB3-3G-12: EV の拡大図にも旗 G・H があり、2倍に数えていた)
+        if (elev && (fx < elev.x0 - 500 || fx > elev.x1 + 500)) return;
         var si = secInfo[t.text];
         flagsBySec[t.text] = flagsBySec[t.text] || { matched: [], unmatched: 0 };
         var hit = null;
@@ -1178,7 +1225,16 @@
                     if (!fl2(a.y0) || !fl2(a.y1)) return;
                     var k = Math.round(a.x); if (seenC[k] || seenC[k - 1] || seenC[k + 1]) return; seenC[k] = 1; nC++;
                   });
-                  if (nC > nPos) nPos = nC;
+                  // 同じ C の梁を横切る LGS下地の断面がほかにもあれば、その旗の数を引いた残り(2026-11-21 ユーザー確認、WB3-3G-12: あ・い 各1、端面2つ → 112.5×2)
+                  var othersF = 0;
+                  Object.keys(secInfo).forEach(function (L2) {
+                    if (L2 === L1 || secInfo[L2].shapes.indexOf(shape) < 0 || !flagsBySec[L2]) return;
+                    var rw = {}, mx2 = 0;
+                    (secInfo[L2].dimT2 || []).forEach(function (d) { var k = Math.round(d.y / 20); rw[k] = (rw[k] || 0) + parseFloat(d.text); });
+                    Object.keys(rw).forEach(function (k) { mx2 = Math.max(mx2, rw[k]); });
+                    if (mx2 >= 100) othersF += flagsBySec[L2].matched.length + flagsBySec[L2].unmatched;
+                  });
+                  if (nC - othersF > nPos) nPos = nC - othersF;
                 }
                 add(shape, Math.round(len * 10) / 10, nPos * nLab, si.title.sub || '');
               } else {
@@ -1199,6 +1255,8 @@
                     var k = a.x0.toFixed(0) + '-' + a.x1.toFixed(0);
                     if ((seenM[k] || []).some(function (y) { return Math.abs(y - a.y) <= bw + 1; })) return; (seenM[k] = seenM[k] || []).push(a.y);
                     if (!fxs.some(function (fx) { return fx >= a.x0 - 100 && fx <= a.x1 + 100; })) return;
+                    // 立面図の梁の下の線だけ(下面図の同じ長さの線は数えない。2026-11-21、WB3-3G-12 の う 3021: 2 → 1)
+                    if (elev && (a.y < elev.bot - 300 || a.y > elev.top + 300)) return;
                     add(shape, Math.round((a.x1 - a.x0) * 10) / 10, 1, si.title.sub || '');
                   });
                 }
