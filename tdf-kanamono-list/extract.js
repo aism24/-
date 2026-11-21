@@ -804,8 +804,13 @@
         else flagsBySec[t.text].unmatched++;
         // 旗の記号の上の「x19」= その旗の場所の数(2026-11-21、WB1-3G-05・06 の ALC下地: さ x19・す x1)。書いてあれば平面図で数え直さない
         var mul = T.filter(function (u) { var mm = /^x([0-9]+)$/.exec(u.text); return mm && u.y - t.y > 0 && u.y - t.y < 400 && Math.abs(u.x - t.x) < 150; })[0];
-        if (mul) { flagsBySec[t.text].unmatched += parseInt(mul.text.slice(1), 10) - 1; flagsBySec[t.text].explicit = true; }
+        // 「x2」はその記号の旗ぜんぶの場所の数(WB1-3G-05: 左端の「す x2」と右端の「す」で2。2026-11-21 ユーザー確認)
+        if (mul) { var fm = flagsBySec[t.text]; fm.mul = Math.max(fm.mul || 0, parseInt(mul.text.slice(1), 10)); fm.explicit = true; }
         looseFlags.push({ L1: t.text, fx: fx });
+      });
+      Object.keys(flagsBySec).forEach(function (L1) {
+        var f = flagsBySec[L1];
+        if (f.mul && f.mul > f.matched.length + f.unmatched) f.unmatched = f.mul - f.matched.length;
       });
       // 平面図で数える(2026-11-20 ユーザー指示「実際の絵を見て判断してほしい」。EA1-3B-03 のコン止め き・か):
       // 旗のそば(左右300以内)の平面図に、その断面の板厚だけ離れた平行な縦線2本(=板)があり、長さが断面図の寸法とほぼ同じ(1.5%以内)なら、
@@ -824,18 +829,34 @@
           });
           return out;
         };
-        var doneLoose = {};
+        // 同じ板の組(長さ・高さが同じ)に別の断面の旗もあるときは、組の数から、ほかの断面の数(旗の数か「x2」)を引いた残りをその断面の数にする
+        // (2026-11-21 ユーザー確認、WB1-3G-05: ALC下地の板 21か所 = す 2(x2)+ さ 19。さ の旗の「x18」より平面図の数を正とする。WB1-3G-06: 20 = す 1 + さ 19)
+        var hits = {}, order = [];
         looseFlags.forEach(function (lf) {
-          if (doneLoose[lf.L1]) return;
-          var si = secInfo[lf.L1], f = flagsBySec[lf.L1];
-          Array.from(si.plateT).forEach(function (tt) {
+          if (hits[lf.L1]) return;
+          var si = secInfo[lf.L1];
+          Array.from(si.plateT).some(function (tt) {
             var ps = pairsOf(tt);
             var dimOk = function (q) { return si.dims.some(function (d) { return Math.abs(q.len - d) <= d * 0.015; }); };
             var near = ps.filter(function (q) { return Math.abs(q.x - lf.fx) <= 300 && dimOk(q); }).sort(function (a, b) { return Math.abs(a.x - lf.fx) - Math.abs(b.x - lf.fx); })[0];
-            if (!near) return;
+            if (!near) return false;
             var n = ps.filter(function (q) { return Math.abs(q.len - near.len) <= 0.5 && Math.abs(q.y0 - near.y0) <= 1; }).length;
-            if (!f.explicit && n > f.matched.length + f.unmatched) { f.unmatched = n - f.matched.length; doneLoose[lf.L1] = 1; }
+            hits[lf.L1] = { n: n, key: tt + '|' + near.len.toFixed(0) + '|' + near.y0.toFixed(0) }; order.push(lf.L1);
+            return true;
           });
+        });
+        var cntOf = function (L1) { var f = flagsBySec[L1]; return f.matched.length + f.unmatched; };
+        order.forEach(function (L1) {
+          var h = hits[L1], f = flagsBySec[L1];
+          // 競うのは旗に「x2」などが書いてある断面どうしだけ(同じ場所に付くスチフナ(A・E など)は別の板なので引かない)
+          if (f.explicit) {
+            var others = order.filter(function (L2) { return L2 !== L1 && flagsBySec[L2].explicit && hits[L2].key === h.key; });
+            if (!others.length) return;
+            // 組の中で一番多い断面だけが残りを受け取る(ほかの断面は旗の数・「x2」のまま)
+            if (others.some(function (L2) { return cntOf(L2) > cntOf(L1) || (cntOf(L2) === cntOf(L1) && order.indexOf(L2) < order.indexOf(L1)); })) return;
+            var rest = h.n - others.reduce(function (a, L2) { return a + cntOf(L2); }, 0);
+            if (rest > cntOf(L1)) f.unmatched = rest - f.matched.length;
+          } else if (h.n > cntOf(L1)) f.unmatched = h.n - f.matched.length;
         });
       }
       // 旗の無い板 → 同じ板厚で旗のある場所の断面を引き継ぐ
