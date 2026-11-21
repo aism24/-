@@ -1109,6 +1109,13 @@
             // 溝形鋼: 平面図で、断面の寸法と同じ長さの縦線の組
             // 断面の寸法のうち、溝形鋼そのものの大きさ(「[-100x50x5x7.5」の 100・50)は長さではない(2026-11-21、WB1-3G-05: 100×40 を拾っていた)
             var secSz = (/^[C\[]-([0-9.x]+)$/.exec(shape) || [, ''])[1].split('x').slice(0, 2).map(parseFloat);
+            var crossC = function () {
+              var fl0 = flagsBySec[L1]; if (si.title.sub !== 'LGS下地' || !fl0 || !(fl0.matched.length + fl0.unmatched)) return false;
+              var rows = {}, mx = 0;
+              (si.dimT2 || []).forEach(function (d) { var k = Math.round(d.y / 20); rows[k] = (rows[k] || 0) + parseFloat(d.text); });
+              Object.keys(rows).forEach(function (k) { mx = Math.max(mx, rows[k]); });
+              return mx >= 100;
+            };
             si.dims.forEach(function (len) {
               if (shape.charAt(0) === '[' && secSz.indexOf(len) >= 0) return;
               // 同じ形鋼・同じ長さをほかの断面ですでに平面図で数えていれば、この断面も数え済み(WB1-3G-06 の さ・す の [-100x50x5x7.5 295)
@@ -1117,6 +1124,9 @@
               var vs = vlines.filter(function (l) { return inView(v, { x: l.x, y: (l.y0 + l.y1) / 2 }) && Math.abs(l.y1 - l.y0 - len) < 0.6; }).sort(function (a, b) { return a.x - b.x; });
               var used = new Set(), cnt = 0;
               vs.forEach(function (a) { if (used.has(a)) return; var b = vs.find(function (l) { return l !== a && !used.has(l) && l.x - a.x > 0 && l.x - a.x <= 40 && Math.abs(l.y0 - a.y0) < 0.6; }); if (b) { used.add(a); used.add(b); cnt++; } });
+              // 「C-」の LGS下地で、立面図に旗があり断面図の寸法の合計が100以上(梁を横切る部材)のときは、下面図の線では数えず下の①で数える
+              // (2026-11-21 ユーザー指示「650 1本」、WB3-3G-07: 下面図は1本の C を4本の線で描き2組に見える。本数は立面図の旗・端面の数)
+              if (cnt && shape.charAt(0) === 'C' && crossC()) { doneShape[shape + '@' + len] = 0; return; }
               if (cnt) add(shape, len, cnt, si.title.sub || '');
               if (cnt) { doneShape[shape + '#plan' + L1] = 1; doneShape[shape + '@' + len + '#cnt'] = 1; }   // 断面ごと(2026-11-21、WB3-3G-06: あ を平面図で数えたため、同じ C の い(梁に沿う 1433)を読んでいなかった)
             });
