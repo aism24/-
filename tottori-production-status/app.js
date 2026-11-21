@@ -1023,18 +1023,30 @@
       if (e.key === 'ArrowLeft') mzShow(mz.page - 1);
     });
   })();
+  // 説明書は2つ(ダウンロードPDFの説明書・金物リスト作成の使い方。2026-11-21)。押したボタンの href のPDFを開き、描いた絵は説明書ごとに使い回す
   function openManual(ev) {
     if (ev) ev.preventDefault();
     if (st.busy) return;
+    const a = ev && ev.currentTarget, url = (a && a.getAttribute('href')) || $('manualBtn').getAttribute('href');
+    if (st.manualBusy && st.manualUrl !== url) return; // 別の説明書を描いている途中
+    $('manualTitle').textContent = (a && a.getAttribute('data-title')) || 'ダウンロードPDFの説明書';
     $('manualView').hidden = false;
     document.body.classList.add('manual-open');
-    if (st.manualDone) { mzShow(0); return; }
+    const cache = st.manualCache || (st.manualCache = {});
+    if (st.manualUrl !== url) { // 表示している説明書を入れ替える
+      mzPages().forEach(function (cv) { cv.remove(); });
+      st.manualUrl = url;
+      if (cache[url]) cache[url].forEach(function (cv) { $('manualPages').appendChild(cv); });
+    }
+    if (cache[url]) { $('manualLoading').hidden = true; mzShow(0); return; }
     $('manualPrev').classList.add('off'); $('manualNext').classList.add('off');
+    $('manualLoading').hidden = false; $('manualLoading').textContent = '説明書を読み込んでいます…';
     if (st.manualBusy) return;
     if (typeof pdfjsLib === 'undefined') { $('manualLoading').textContent = '部品を読み込み中です。少し待ってからもう一度開いてください。'; return; }
     st.manualBusy = true;
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    pdfjsLib.getDocument($('manualBtn').getAttribute('href')).promise.then(function (pdf) {
+    const pages = [];
+    pdfjsLib.getDocument(url).promise.then(function (pdf) {
       const list = [];
       for (let i = 1; i <= pdf.numPages; i++) list.push(i);
       return list.reduce(function (pr, i) {
@@ -1046,12 +1058,13 @@
           cv.style.width = vp0.width + 'px'; cv.style.height = vp0.height + 'px';
           cv.className = 'manual-page';
           cv.hidden = true;
+          pages.push(cv);
           $('manualPages').appendChild(cv);
           return pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
         });
       }, Promise.resolve());
-    }).then(function () { st.manualDone = true; $('manualLoading').hidden = true; if (!$('manualView').hidden) mzShow(0); })
-      .catch(function (e) { $('manualLoading').textContent = '説明書を開けませんでした: ' + e.message; })
+    }).then(function () { cache[url] = pages; $('manualLoading').hidden = true; if (!$('manualView').hidden) mzShow(0); })
+      .catch(function (e) { pages.forEach(function (cv) { cv.remove(); }); st.manualUrl = null; $('manualLoading').textContent = '説明書を開けませんでした: ' + e.message; })
       .then(function () { st.manualBusy = false; });
   }
   function closeManual() {
@@ -1063,6 +1076,7 @@
   $('manualBtn').addEventListener('click', openManual);
   $('manualBtnHdr').addEventListener('click', openManual); // 一覧の画面ではヘッダーの左端のボタンから開く(2026-11-12 ユーザー指定)
   $('manualClose').addEventListener('click', closeManual);
+  $('kanaManualBtn').addEventListener('click', openManual); // 新機能【次の加工予定の金物リスト作成】の使い方(2026-11-21 ユーザー指示)
 
   init();
   sendLog('起動', '');
