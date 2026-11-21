@@ -980,6 +980,11 @@
           var fx = flagLineX(t); if (fx === null) return;
           var near1 = pieces.slice().sort(function (a, b) { return Math.abs(a.c - fx) - Math.abs(b.c - fx); })[0];
           if (!near1 || Math.abs(near1.c - fx) > 400) return;
+          // 旗のそばに同じくらい近い材が複数あるときは、図にたくさん並ぶ長さの材にする(2026-11-21 ユーザー指示「L-50x5x6 は長さ640で6本」、
+          // WB3-3G-10: 旗「い」のそばに PL-6x100 の板(同じ線の並びで 100 の材に見える)が 640 の山形鋼より 6 近くにあった)
+          var freq = function (q) { return pieces.filter(function (r) { return r.len === q.len && r.size === q.size && r.dir === q.dir; }).length; };
+          var d0 = Math.abs(near1.c - fx);
+          near1 = pieces.filter(function (q) { return Math.abs(q.c - fx) <= d0 + 50; }).sort(function (a, b) { return freq(b) - freq(a) || Math.abs(a.c - fx) - Math.abs(b.c - fx); })[0];
           near1.sec = t.text;
           learned[t.text] = learned[t.text] || { len: near1.len, dir: near1.dir };
         });
