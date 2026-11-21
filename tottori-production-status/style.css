@@ -332,3 +332,8 @@ table.sheet td.note.nomaster { color: #d00000; font-weight: 700; }
   50% { box-shadow: 0 0 0 4px rgba(255, 61, 154, .3), 0 0 18px 6px rgba(255, 61, 154, .7); }
 }
 @media (prefers-reduced-motion: reduce) { .kana-manual-btn { animation: none; box-shadow: 0 0 10px 3px rgba(255, 61, 154, .6); } }
+
+/* 秘密のコマンド(masamiz)。入れた人だけ新機能の使い方ボタンを出し、左下に「コマンド許可」と出す(2026-11-21 ユーザー指示) */
+body:not(.cmd-ok) .kana-manual-btn { display: none; }
+.cmd-badge { position: fixed; left: 12px; bottom: 12px; z-index: 50; padding: 6px 14px; border-radius: 999px; background: #c62828; color: #fff; font-weight: 700; font-size: 14px; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); pointer-events: none; }
+.cmd-badge[hidden] { display: none; }

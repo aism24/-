@@ -5,7 +5,7 @@
 <title>鳥取工場 生産状況</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="style.css?v=20261121c">
+<link rel="stylesheet" href="style.css?v=20261121d">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body class="landing-mode">
@@ -65,6 +65,8 @@
 
 <div class="drop-overlay" id="dropOverlay" hidden><div>ここにドロップ</div></div>
 
+<div class="cmd-badge" id="cmdBadge" hidden>コマンド許可</div>
+
 <div class="toast" id="toast" hidden></div>
 
 <!-- PDFに無い週の遅れのお知らせ(黄色・ゆっくり点滅・赤の太字。「閉じる」を押すまで消えない) -->
@@ -115,7 +117,7 @@
   </div>
 </div>
 
-<script src="app.js?v=20261121b"></script>
+<script src="app.js?v=20261121d"></script>
 <!-- 「← アプリ一覧へ」はいつも表示する(2026-11-21 ユーザー指示。会社ロゴを5回タップして出す仕組みは削除) -->
 <script src="to-launcher.js?v=20261111a" data-target=".app-header h1" data-mode="in"></script>
 </body>
