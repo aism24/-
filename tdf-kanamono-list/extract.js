@@ -127,7 +127,8 @@
   function plateCount(t) { var m = /^([0-9]+)(?=G?PL-)/.exec(t); return m ? parseInt(m[1], 10) : 1; }
   function plateSize(t) { return t.replace(/^[0-9]+(?=G?PL-)/, ''); }
   // 板の符号: KG1・KGR63・KGEVG1(阪和)/ KK-5・PRG14(別の書き方)。小梁・継手などの名前(SB588・BJ35・PJ25・J588 など)は除く
-  var RE_MARK = /^(?:KG[0-9A-Z]+|[A-Z]{2,5}-?[0-9]+[A-Z]?|[A-Z]-[A-Z]{1,4}[0-9]+[A-Z]?)$/;   // OGALR7(英字5文字。2026-11-19)・O-KZ109(1G-01)
+  // 「MGR156切断流用」(別の板を切って使う。2026-11-21 WB1-3G-06 の す断面)も符号
+  var RE_MARK = /^(?:KG[0-9A-Z]+|[A-Z]{2,5}-?[0-9]+[A-Z]?|[A-Z]-[A-Z]{1,4}[0-9]+[A-Z]?)(?:切断流用)?$/;   // OGALR7(英字5文字。2026-11-19)・O-KZ109(1G-01)
   var RE_NOT_MARK = /^(?:SB|BJ|THJ?|TS?PJ|EPJ?|PJ|DCJ|GJ|CL|BT|BTJ?B?|RB|KB|BCR|BCP|SN|SM|SS|STK|TMCP)[0-9]/;
   var RE_SHAPE = /^([LC])-[0-9.]+x[0-9.x]+$/;           // L-50x50x6 / C-60x30x10x2.3
   var RE_CHAN = /^\[-[0-9.]+x[0-9.x]+$/;                // [-100x50x5x7.5(溝形鋼の別の書き方。断面図の表記だけで使う。2026-11-21 WB1-3G-05)
@@ -460,6 +461,12 @@
       si.plates[lb.mark].n += lb.cnt;
       si.plateT.add(thickOf(lb.size));
       if (lb.mekki) si.plates[lb.mark].mekki = true;
+      // 「MGR156切断流用」: 備考は断面図の「切断」の書き込みのそばの寸法(WB1-3G-06 す断面: 15 → 「15mm切断」。2026-11-21 ユーザー指示)
+      if (/切断流用$/.test(lb.mark)) {
+        var cut = T.filter(function (u) { return u.text === '切断' && (sectionOf(u, titles) || {}).letter === s.letter; })[0];
+        var num = cut && T.filter(function (u) { return /^[0-9]+(\.[0-9]+)?$/.test(u.text) && dist(u, cut) < 400; }).sort(function (a, b) { return dist(a, cut) - dist(b, cut); })[0];
+        si.plates[lb.mark].note = num ? num.text + 'mm切断' : '切断';
+      }
     });
     var outsideStrict = function (o) { return !views.some(function (v) { return o.y > v.yMin && o.y < v.yMax && o.x > v.x0 && o.x < v.x1s; }); };
     T.forEach(function (t) {
@@ -795,6 +802,9 @@
         }
         if (hit) { if (hit.secs.indexOf(t.text) < 0) hit.secs.push(t.text); if (flagsBySec[t.text].matched.indexOf(hit) < 0) flagsBySec[t.text].matched.push(hit); }
         else flagsBySec[t.text].unmatched++;
+        // 旗の記号の上の「x19」= その旗の場所の数(2026-11-21、WB1-3G-05・06 の ALC下地: さ x19・す x1)。書いてあれば平面図で数え直さない
+        var mul = T.filter(function (u) { var mm = /^x([0-9]+)$/.exec(u.text); return mm && u.y - t.y > 0 && u.y - t.y < 400 && Math.abs(u.x - t.x) < 150; })[0];
+        if (mul) { flagsBySec[t.text].unmatched += parseInt(mul.text.slice(1), 10) - 1; flagsBySec[t.text].explicit = true; }
         looseFlags.push({ L1: t.text, fx: fx });
       });
       // 平面図で数える(2026-11-20 ユーザー指示「実際の絵を見て判断してほしい」。EA1-3B-03 のコン止め き・か):
@@ -824,7 +834,7 @@
             var near = ps.filter(function (q) { return Math.abs(q.x - lf.fx) <= 300 && dimOk(q); }).sort(function (a, b) { return Math.abs(a.x - lf.fx) - Math.abs(b.x - lf.fx); })[0];
             if (!near) return;
             var n = ps.filter(function (q) { return Math.abs(q.len - near.len) <= 0.5 && Math.abs(q.y0 - near.y0) <= 1; }).length;
-            if (n > f.matched.length + f.unmatched) { f.unmatched = n - f.matched.length; doneLoose[lf.L1] = 1; }
+            if (!f.explicit && n > f.matched.length + f.unmatched) { f.unmatched = n - f.matched.length; doneLoose[lf.L1] = 1; }
           });
         });
       }
@@ -861,7 +871,7 @@
             var p = si.plates[m];
             if (!(m in marks)) marks[m] = { size: p.size, n: p.n, notes: [] };
             else if (p.n < marks[m].n) marks[m].n = p.n;
-            marks[m].notes.push((si.title.sub || '') + (p.mekki ? '|めっき' : ''));
+            marks[m].notes.push((p.note || si.title.sub || '') + (p.mekki ? '|めっき' : ''));
           });
         });
         Object.keys(marks).forEach(function (m) {
