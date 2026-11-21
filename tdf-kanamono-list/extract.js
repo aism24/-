@@ -467,6 +467,7 @@
       var si = secInfo[s.letter];
       si.plates[lb.mark] = si.plates[lb.mark] || { size: lb.size, n: 0, mekki: false };
       si.plates[lb.mark].n += lb.cnt;
+      si.cntMin = Math.min(si.cntMin || Infinity, lb.cnt);
       si.plateT.add(thickOf(lb.size));
       if (lb.mekki) si.plates[lb.mark].mekki = true;
       // 「MGR156切断流用」: 備考は断面図の「切断」の書き込みのそばの寸法(WB1-3G-06 す断面: 15 → 「15mm切断」。2026-11-21 ユーザー指示)
@@ -935,7 +936,13 @@
         var same = positions.filter(function (q) { return q.secs.length && q.ts.length === p.ts.length && q.ts.every(function (t, i) { return Math.abs(t - p.ts[i]) <= 1.6; }); });
         // 同じ板厚の旗の場所が別々の断面なら、どの断面か決められないので当てはめない
         // (2G-01: 厚さ9の断面が C・D・E・F・DK1 とあり、方杖の取り付きの板を C とみなしていた。2026-11-19)
-        if (same.length && same.every(function (q) { return q.secs.join(',') === same[0].secs.join(','); })) p.secs = same[0].secs.slice();
+        if (same.length && same.every(function (q) { return q.secs.join(',') === same[0].secs.join(','); })) {
+          // 断面の表記がすべて「2PL-16」のように2枚以上で、すぐそば(1000以内)に旗のある同じ断面の板があるときは、旗の無い板はその「2」に含まれる
+          // (2026-11-21 ユーザー指摘、EA2-RG-05: 柱の両フランジの下の補強板2か所に旗 B が1つ、B断面は左右に「2PL-16 NGR8K」→ 4枚。8枚にしていた)
+          var inPair = same[0].secs.every(function (L) { return (secInfo[L].cntMin || 1) >= 2; }) &&
+            same.some(function (q) { return Math.min(Math.abs(q.x - p.x1), Math.abs(p.x - q.x1)) <= 1000; });
+          if (!inPair) p.secs = same[0].secs.slice();
+        }
         else if (same.length) {
           // 決められないときは、描かれている線の形(縦線の位置と上下の範囲)がまったく同じ旗のある板の断面にする
           // (2G-02: 旗のない x≈8202 の板が DK1 の板と同じ形。2026-11-20)
@@ -1156,6 +1163,25 @@
           if (b) { used.add(a); used.add(b); cnt++; }
         });
         if (cnt) add('FB-' + fb.t + 'x' + fb.w, fb.l, cnt, 'デッキ受け');
+      });
+
+      // 長さの無い「FB-6x50」(2026-11-21 ユーザー指摘「FB-6x50も拾えるのでは？」、EA2-RG-05 の平面図「FB-6x50 (上FLG付き)」):
+      // 引出線の先の □(幅 = 表記の幅だけ離れた、同じ範囲の平行な横線2本)の長さを切板名に、表記1つにつき1本。備考は表記のそばの(〜)
+      T.forEach(function (t) {
+        var m = /^FB-([0-9.]+)x([0-9.]+)$/.exec(t.text);
+        if (!m || !inView(v, t)) return;
+        var w = parseFloat(m[2]), a0 = shapeAnchor(t);
+        if (a0 === t) return;
+        var hs = hlines.filter(function (h) { return Math.abs(h.y - a0.y) < 2 && h.x0 - 2 <= a0.x && h.x1 + 2 >= a0.x; });
+        var len = null;
+        hs.some(function (h) {
+          var mate = hlines.find(function (g) { return g !== h && Math.abs(Math.abs(g.y - h.y) - w) < 0.8 && Math.abs(g.x0 - h.x0) < 1 && Math.abs(g.x1 - h.x1) < 1; });
+          if (mate) { len = Math.round((h.x1 - h.x0) * 10) / 10; return true; }
+          return false;
+        });
+        if (!len) return;
+        var nt = T.filter(function (u) { return /^[(（].+[)）]$/.test(u.text) && t.y - u.y > 0 && t.y - u.y < 200 && t.x - u.x > 0 && t.x - u.x < 800; })[0];
+        add('FB-' + m[1] + 'x' + m[2], len, 1, nt ? stripParen(nt.text) : '');
       });
 
       // 形鋼の受材(継手の表記がある断面=別の部材は除く)
