@@ -130,6 +130,7 @@
   var RE_MARK = /^(?:KG[0-9A-Z]+|[A-Z]{2,5}-?[0-9]+[A-Z]?|[A-Z]-[A-Z]{1,4}[0-9]+[A-Z]?)$/;   // OGALR7(英字5文字。2026-11-19)・O-KZ109(1G-01)
   var RE_NOT_MARK = /^(?:SB|BJ|THJ?|TS?PJ|EPJ?|PJ|DCJ|GJ|CL|BT|BTJ?B?|RB|KB|BCR|BCP|SN|SM|SS|STK|TMCP)[0-9]/;
   var RE_SHAPE = /^([LC])-[0-9.]+x[0-9.x]+$/;           // L-50x50x6 / C-60x30x10x2.3
+  var RE_CHAN = /^\[-[0-9.]+x[0-9.x]+$/;                // [-100x50x5x7.5(溝形鋼の別の書き方。断面図の表記だけで使う。2026-11-21 WB1-3G-05)
   var RE_FB = /^FB-([0-9.]+)x([0-9.]+)x([0-9.]+)$/;     // FB-6x65x255
   var RE_FUGO = /^[0-9]+G[0-9]+[A-Z]*$/;                // 2G2 / 3G1B
   var RE_DAI = /^([0-9]+)台$/;
@@ -433,6 +434,21 @@
     var hlines = L.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[0] - l[2]) > 20; })
       .map(function (l) { return { y: l[1], x0: Math.min(l[0], l[2]), x1: Math.max(l[0], l[2]) }; });
     var labels = plateLabels(T, hlines);
+    // 形鋼の表記の引出線の先: 表記のすぐ下の横線の端から出る斜めの線の、もう一方の端(無ければ表記の位置)
+    function shapeAnchor(t) {
+      var h = hlines.filter(function (h) { return t.y - h.y >= 3 && t.y - h.y <= 40 && h.x0 <= t.x + 50 && h.x1 >= t.x - 50; })
+        .sort(function (a, b) { return (t.y - a.y) - (t.y - b.y); })[0];
+      if (!h) return t;
+      var best = null;
+      [[h.x0, h.y], [h.x1, h.y]].forEach(function (e) {
+        L.forEach(function (l) {
+          if (Math.abs(l[1] - l[3]) < 0.5) return;
+          var o = Math.hypot(l[0] - e[0], l[1] - e[1]) < 1 ? [l[2], l[3]] : Math.hypot(l[2] - e[0], l[3] - e[1]) < 1 ? [l[0], l[1]] : null;
+          if (o && Math.abs(o[0] - t.x) > 300 && (!best || Math.abs(o[0] - t.x) > Math.abs(best.x - t.x))) best = { x: o[0], y: o[1], text: '' };
+        });
+      });
+      return best || t;
+    }
     var secInfo = {};
     titles.forEach(function (s) { secInfo[s.letter] = { title: s, plates: {}, plateT: new Set(), shapes: [], joint: false, dims: [], nested: [] }; });
     var elevLabels = [];
@@ -451,7 +467,15 @@
       if (isLeft(t) && /^[A-Za-z]$/.test((sectionOf(t, titles) || {}).letter || 'A')) return;
       var s = sectionOf(t, titles); if (!s) return;
       var si = secInfo[s.letter];
-      if (RE_SHAPE.test(t.text)) si.shapes.push(t.text);
+      // 形鋼の表記は引出線の先(断面図の中)で断面を決める(2026-11-21、WB1-3G-05: あ断面の「C-75x45x15x2.3」が右の さ断面の近くに書かれていた)。
+      // 溝形鋼は「[-100x50x5x7.5」の書き方も(WB1-3G-05 の さ・す断面。ユーザー指摘「長さ295の21本は [-100x50x5x7.5」)
+      if (RE_SHAPE.test(t.text) || RE_CHAN.test(t.text)) {
+        var an = shapeAnchor(t);
+        // 「[-」は引出線のあるものだけ(2G-01: 旗 ウ・カ のそばの「Sb25C」「[-250x90x11x14.5」は取り付く小梁の名前とサイズで金物ではない)
+        if (RE_CHAN.test(t.text) && an === t) return;
+        var sa = sectionOf(an, titles);
+        secInfo[(sa || s).letter].shapes.push(t.text);
+      }
       if (RE_JOINT.test(t.text) && /^[A-Z]+J[0-9]/.test(t.text)) si.joint = true;
       if (/^[0-9]+$/.test(t.text) && parseInt(t.text, 10) >= 100) { si.dims.push(parseInt(t.text, 10)); (si.dimT = si.dimT || []).push(t); }
       // LGS下地の長さ用(小数も。EA1-3B-05「あ」: 87.5+87.5=175。2026-11-20)
@@ -1044,9 +1068,12 @@
               var seen = {};
               r.forEach(function (h) { var kk = h.x0.toFixed(0) + '-' + h.x1.toFixed(0); if (seen[kk]) return; seen[kk] = 1; add(shape, Math.round(h.x1 - h.x0), 1, si.title.sub || ''); });
             });
-          } else if (shape.charAt(0) === 'C') {
+          } else if (shape.charAt(0) === 'C' || shape.charAt(0) === '[') {
             // 溝形鋼: 平面図で、断面の寸法と同じ長さの縦線の組
+            // 断面の寸法のうち、溝形鋼そのものの大きさ(「[-100x50x5x7.5」の 100・50)は長さではない(2026-11-21、WB1-3G-05: 100×40 を拾っていた)
+            var secSz = (/^[C\[]-([0-9.x]+)$/.exec(shape) || [, ''])[1].split('x').slice(0, 2).map(parseFloat);
             si.dims.forEach(function (len) {
+              if (shape.charAt(0) === '[' && secSz.indexOf(len) >= 0) return;
               if (doneShape[shape + '@' + len]) return; doneShape[shape + '@' + len] = 1;
               var vs = vlines.filter(function (l) { return inView(v, { x: l.x, y: (l.y0 + l.y1) / 2 }) && Math.abs(l.y1 - l.y0 - len) < 0.6; }).sort(function (a, b) { return a.x - b.x; });
               var used = new Set(), cnt = 0;
@@ -1068,7 +1095,7 @@
                 //    長さ = その合計(EA1-3G-01: 225+225=450、EA1-3B-01: 150+150=300、EA1-3B-05: 87.5+87.5=175)、本数 = 立面図の旗の数 × 断面図の表記の数
                 //    旗が無い所にも同じ部材があるとき(WB1-3G-03: 旗「あ」は1つ、取付位置は 1803・4913 の2か所。2026-11-21 ユーザー指摘「旗が無いところの分が拾えていない」):
                 //    立面図の梁の下の端から見た溝形鋼(C-75x45x15x2.3 なら 幅75の両端に板厚2.3離れた縦線の組)を数え、旗の数より多ければその数にする
-                var nPos = nFlag, cH = parseFloat((/^C-([0-9.]+)x/.exec(shape) || [])[1]), cT = parseFloat((/x([0-9.]+)$/.exec(shape) || [])[1]) || 0;
+                var nPos = nFlag, cH = parseFloat((/^[C\[]-([0-9.]+)x/.exec(shape) || [])[1]), cT = parseFloat((/x([0-9.]+)$/.exec(shape) || [])[1]) || 0;
                 if (elev && cH && cT) {
                   var cv = vlines.filter(function (l) { return l.x >= elev.x0 - 1 && l.x <= elev.x1 + 1 && l.y1 <= elev.bot + 1 && l.y0 >= elev.bot - 300; });
                   var hasV = function (x, a) { return cv.some(function (l) { return Math.abs(l.x - x) < 0.3 && Math.abs(l.y0 - a.y0) < 0.6 && Math.abs(l.y1 - a.y1) < 0.6; }); };
@@ -1084,7 +1111,7 @@
                 // ② 合計が100未満 = 梁に沿って長く付く溝形鋼を端から見た断面(EA1-3B-04「あ」: 37.5+37.5=75。2026-11-20 ユーザー指示「長さ2968は拾えない？」):
                 //    立面図で、溝形鋼の幅(C-75x45… の 45)だけ離れた同じ長さの平行な横線の組を部材とし、その範囲に旗があるものを拾う(長さ = 線の長さ)。
                 //    短いものもある(EA1-3B-06「あ」: 43×45 の四角・寸法43。2026-11-20 ユーザー指摘「あ断面のLGSが拾えていない」)
-                var bw = parseFloat((/^C-[0-9.]+x([0-9.]+)/.exec(shape) || [])[1]), ct = parseFloat((/x([0-9.]+)$/.exec(shape) || [])[1]) || 0;
+                var bw = parseFloat((/^[C\[]-[0-9.]+x([0-9.]+)/.exec(shape) || [])[1]), ct = parseFloat((/x([0-9.]+)$/.exec(shape) || [])[1]) || 0;
                 var fxs = looseFlags.filter(function (f) { return f.L1 === L1; }).map(function (f) { return f.fx; });
                 if (bw && fxs.length) {
                   var hh = L.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[0] - l[2]) >= 20; }).map(function (l) { return { y: l[1], x0: Math.min(l[0], l[2]), x1: Math.max(l[0], l[2]) }; })
