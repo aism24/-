@@ -322,9 +322,10 @@ async function importItems(items) {
   // 除外することもある金物(サヤ管)を図面から拾えたときは「抽出しました」と出す(2026-11-20 ユーザー指示)。拾えた図面と拾えなかった図面が混ざるときは「一部の図面で」
   const msg = [];
   const exOnly = Array.from(excluded).filter(x => !included.has(x)), both = Array.from(excluded).filter(x => included.has(x));
-  if (included.size) msg.push(Array.from(included).join('・') + 'は抽出しました(サイズ・長さ・本数が図面から分かったため)');
-  if (exOnly.length) msg.push(exOnly.join('・') + 'は抽出していません');
-  if (both.length) msg.push(both.join('・') + 'は一部の図面で抽出していません(サイズ・長さ・本数のどれかが図面から分からないため)');
+  // 文言(2026-11-21 ユーザー指示「サヤ管は金物リストに入れました/吊りピース・ネット受けピースは対象外のため入れていません」)
+  if (included.size) msg.push(Array.from(included).join('・') + 'は金物リストに入れました');
+  if (exOnly.length) msg.push(exOnly.join('・') + 'は対象外のため入れていません');
+  if (both.length) msg.push(both.join('・') + 'は一部の図面で入れていません(図面から長さなどが読めなかったため)');
   if (msg.length) await notice('お知らせ', msg.join('\n'));
   // 取り込めなかったTDFがあるときは、対象外の図面の説明を添える(2026-11-19 ユーザー指示。2G-07A のような断面だけの補助図面は対象外)
   const NOTE_UNSUPPORTED = '断面だけの補助図面がある場合（a付など）は、抽出できません';
