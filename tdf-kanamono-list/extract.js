@@ -462,7 +462,14 @@
     titles.forEach(function (s) { secInfo[s.letter] = { title: s, plates: {}, plateT: new Set(), shapes: [], joint: false, dims: [], nested: [] }; });
     var elevLabels = [];
     labels.forEach(function (lb) {
-      if (isLeft(lb) && isLeft({ x: lb.sx, y: lb.sy })) { elevLabels.push(lb); return; }
+      // 図の範囲は、ひらがな・カタカナの断面図(か SEC など)の手前まで(x1s)で見る(2026-11-21 ユーザー指摘「2もコン止め」、EA2-3G-08: か断面の NNGNR2 を立面図の書き込みにしていた)
+      //  ただし、見出しのすぐ上(1500以内・横1000以内)の表記だけ(2G-01 の外装ALC下地(名前だけの断面図)の板は今までどおり)
+      var inLeftS = function (o) { return views.some(function (v) { return o.y > v.yMin && o.y < v.yMax && o.x > v.x0 && o.x < v.x1s; }); };
+      var kanaSec = function () {
+        var s0 = sectionOf({ x: lb.x, y: lb.y, text: lb.mark }, titles);
+        return s0 && !/^[A-Za-z]$/.test(s0.letter) && lb.y - s0.y < 1500 && Math.abs(lb.x + 18 * lb.mark.length - (s0.x + s0.sx) / 2) < 1000 && !inLeftS(lb);
+      };
+      if (isLeft(lb) && isLeft({ x: lb.sx, y: lb.sy }) && !kanaSec()) { elevLabels.push(lb); return; }
       var s = sectionOf({ x: lb.x, y: lb.y, text: lb.mark }, titles); if (!s) return;
       var si = secInfo[s.letter];
       si.plates[lb.mark] = si.plates[lb.mark] || { size: lb.size, n: 0, mekki: false };
@@ -911,6 +918,14 @@
             var ps = pairsOf(tt);
             var dimOk = function (q) { return si.dims.some(function (d) { return Math.abs(q.len - d) <= d * 0.015; }); };
             var near = ps.filter(function (q) { return Math.abs(q.x - lf.fx) <= 300 && dimOk(q); }).sort(function (a, b) { return Math.abs(a.x - lf.fx) - Math.abs(b.x - lf.fx); })[0];
+            // 300以内に無ければ500まで(2026-11-21 ユーザー指摘「NNGNR1、2の枚数がNG」、EA2-3G-08: か の旗と平面図の板(PL-9・長さ611)が358離れていた。
+            // 旗の上の「(x4)」はあてにせず、平面図の板の数で数える=ユーザー指示)
+            //  板の長さは、梁の中心からの寸法(620)からウェブ厚の半分(SH-1000x300x19x25 → 9.5)を引いたもの(610.5)。この長さにぴったり合う板だけ
+            if (!near && !flagsBySec[lf.L1].matched.length && /コン止め/.test(si.title.sub || '')) {   // 立面図の板に当たらない旗の、コン止めの断面だけ(EA1-3B-03 の NB33N などは変えない)
+              var mw = /x([0-9.]+)x([0-9.]+)$/.exec((v.products[0] || {}).main || ''), tw = mw ? parseFloat(mw[1]) : 0;
+              var webOk = function (q) { return tw && si.dims.some(function (d) { return Math.abs(q.len - (d - tw / 2)) <= 1; }); };
+              near = ps.filter(function (q) { return Math.abs(q.x - lf.fx) <= 500 && webOk(q); }).sort(function (a, b) { return Math.abs(a.x - lf.fx) - Math.abs(b.x - lf.fx); })[0];
+            }
             if (!near) return false;
             var n = ps.filter(function (q) { return Math.abs(q.len - near.len) <= 0.5 && Math.abs(q.y0 - near.y0) <= 1; }).length;
             hits[lf.L1] = { n: n, key: tt + '|' + near.len.toFixed(0) + '|' + near.y0.toFixed(0) }; order.push(lf.L1);
