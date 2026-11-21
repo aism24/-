@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>次の加工予定の金物リスト作成 使い方</title>
+<!-- 説明書(kanamono.pdf)の元。画面の絵は本物のアプリを模擬データで動かして撮り、製品名・図番・金物のマークは架空の名前に置き換えた(公開リポジトリのため実データは載せない)。
+     作り直すときは、このHTMLをブラウザ(Playwright)で A4横・背景あり でPDFにする -->
+<style>
+@page { size: A4 landscape; margin: 0; }
+* { box-sizing: border-box; }
+body { word-break: auto-phrase; margin: 0; font-family: "Noto Sans CJK JP","Hiragino Sans","Yu Gothic","Meiryo",sans-serif; color: #1d2733; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.page { width: 297mm; height: 210mm; padding: 9mm 12mm; position: relative; page-break-after: always; overflow: hidden; }
+.page:last-child { page-break-after: auto; }
+h1 { margin: 0 0 1mm; font-size: 17pt; }
+h1 small { font-size: 10pt; color: #5d6b7a; font-weight: 400; margin-left: 4mm; }
+.lead { margin: 0 0 4mm; font-size: 10pt; color: #5d6b7a; }
+.nw { white-space: nowrap; }
+.new { display: inline-block; background: #ff66b3; color: #000; font-weight: 700; font-size: 10pt; border-radius: 2mm; padding: .4mm 2.5mm; margin-right: 2mm; vertical-align: middle; }
+.cols { display: flex; gap: 8mm; align-items: flex-start; }
+.shot { border: 1px solid #b9c6d6; box-shadow: 0 2px 8px rgba(0,0,0,.18); border-radius: 2mm; display: block; background: #fff; }
+.step { display: flex; gap: 3mm; align-items: center; margin: 0 0 2.5mm; }
+.step .n { flex: none; width: 8mm; height: 8mm; border-radius: 50%; background: #e3007f; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 12pt; }
+.step b { font-size: 13pt; }
+.notes { font-size: 10.5pt; line-height: 1.6; }
+.notes ul { margin: 0; padding-left: 5mm; }
+.notes li { margin-bottom: 1.6mm; }
+.notes .em { color: #d00000; font-weight: 700; }
+.box { border-radius: 3mm; padding: 3mm 4.5mm; font-size: 10.5pt; line-height: 1.6; }
+.box.green { background: #d9f2d9; }
+.box.yellow { background: #fff6bf; }
+.box.pink { background: #ffe0ef; }
+.box b.t { display: block; font-size: 11.5pt; margin-bottom: 1mm; }
+.foot { position: absolute; left: 12mm; right: 12mm; bottom: 6mm; font-size: 8.5pt; color: #5d6b7a; border-top: 1px solid #dfe5ec; padding-top: 2mm; display: flex; justify-content: space-between; }
+/* 1ページ目: 流れ */
+.flow { display: flex; gap: 3mm; margin: 4mm 0 6mm; }
+.flow .f { flex: 1 1 0; min-width: 0; border: 1.5pt solid #e3007f; border-radius: 3mm; padding: 3mm; position: relative; background: #fff; }
+.flow .f + .f::before { content: "▶"; position: absolute; left: -3.4mm; top: 50%; transform: translate(-50%, -50%); color: #e3007f; font-size: 10pt; }
+.flow .f .n { width: 7mm; height: 7mm; border-radius: 50%; background: #e3007f; color: #fff; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 1.5mm; }
+.flow .f b { display: block; white-space: nowrap; word-break: keep-all; font-size: 10.5pt; margin-bottom: 1mm; }
+.flow .f span { font-size: 9pt; white-space: nowrap; color: #3a4654; line-height: 1.5; display: block; }
+.flow .f .app { display: inline-block; font-size: 8pt; border-radius: 1.5mm; padding: .2mm 1.5mm; margin-bottom: 1mm; font-weight: 700; }
+.app.t { background: #c8ecc8; } .app.k { background: #fff2a8; } .app.x { background: #d7ecd9; color: #1d6b2c; }
+/* Excelの見本 */
+.xl { border: 1px solid #b9c6d6; box-shadow: 0 2px 8px rgba(0,0,0,.15); background: #fff; padding: 3mm; }
+.xl .tab { display: flex; gap: 1mm; margin-top: 2mm; font-size: 8.5pt; }
+.xl .tab span { border: .3pt solid #9aa7b5; border-top: 0; padding: .6mm 3mm; background: #eef1f4; }
+.xl .tab span.on { background: #fff; font-weight: 700; color: #1d6b2c; }
+table.x { border-collapse: collapse; font-size: 8.8pt; width: 100%; }
+table.x th, table.x td { border: .3pt solid #9aa7b5; padding: 1mm 1.4mm; text-align: center; white-space: nowrap; }
+table.x th { background: #ddebf7; }
+table.x td.l { text-align: left; }
+table.x td.st { white-space: normal; min-width: 30mm; text-align: left; font-size: 8pt; }
+table.x .ttl td { border: 0; text-align: left; font-weight: 700; font-size: 10.5pt; padding-left: 0; }
+table.x .ph td, table.x .ph th { background: #ffffcc; }
+table.x .lk { color: #0000ff; text-decoration: underline; font-weight: 700; }
+table.x .ng { color: #c00000; }
+table.x .sub td { background: #f2f2f2; font-weight: 700; }
+.ord { display: flex; align-items: center; gap: 2mm; font-size: 11pt; font-weight: 700; margin: 1mm 0 2mm; flex-wrap: wrap; }
+.ord span { background: #fff; border: 1.2pt solid #e3007f; border-radius: 2mm; padding: .6mm 2.5mm; }
+.ord i { font-style: normal; color: #e3007f; }
+</style></head><body>
+
+<!-- ===== 1ページ目: どんな機能か・流れ ===== -->
+<section class="page">
+  <h1><span class="new">新機能</span>次の加工予定の金物リスト作成 の使い方 <small>1/5</small></h1>
+  <p class="lead">加工結果PDFを取り込んだあと、予定表で<b>台数が黄色(次の加工予定)</b>の製品だけの金物リストを、そのまま作ってExcelでダウンロードできます。</p>
+  <div class="flow">
+    <div class="f"><span class="n">1</span><span class="app t">鳥取工場 生産状況</span><b>加工結果PDFを取り込む</b><span>いつもどおり、<br>PDFのダウンロードまで<br>進みます。</span></div>
+    <div class="f"><span class="n">2</span><span class="app t">鳥取工場 生産状況</span><b><span class="nw">「はい」を押す</span></b><span>「次の加工予定の<br>金物リストを作りますか？」<br>と聞かれます。</span></div>
+    <div class="f"><span class="n">3</span><span class="app k">製品別金物リスト(tdf)</span><b>サーバーを選ぶ</b><span>新しいタブで開きます。<br>「① 本社サーバー」か<br>「① 鳥取サーバー」を押し、<br>「①進行中工事」を選びます。</span></div>
+    <div class="f"><span class="n">4</span><span class="app k">製品別金物リスト(tdf)</span><b>自動で読み込む</b><span>実寸法師の図面(TDF)を<br>読んで、金物を拾います。</span></div>
+    <div class="f"><span class="n">5</span><span class="app x">Excel</span><b>Excelが届く</b><span>工事ごとのシートに、<br>柱 → 大梁 → 小梁 の順で<br>並びます。</span></div>
+  </div>
+  <div class="cols">
+    <div class="box green" style="flex:1"><b class="t">使えるパソコン・ブラウザ</b>
+      パソコンの <b>Chrome</b> か <b>Edge</b> だけです(サーバーのフォルダを読むため)。<br>iPad・スマホでは、手順2の質問は出ません(生産状況の画面・PDFはいつもどおり使えます)。</div>
+    <div class="box yellow" style="flex:1"><b class="t">対象になる製品</b>
+      取り込んだPDFの<span class="nw">「鳥取工場 加工予定表」</span>で、<b>台数のセルが黄色</b>の行(次の加工予定)だけです。<br>黄色の行が1つも無いときは、手順2の質問は出ません。</div>
+    <div class="box pink" style="flex:1"><b class="t"><span class="nw">「いいえ」</span>を押したとき</b>
+      金物リストは作りません。今までどおり、取込のお知らせが出て終わります。<br>ダウンロードされるPDFは、<span class="nw">「はい」</span><span class="nw">「いいえ」</span>のどちらでも同じです。</div>
+  </div>
+  <div class="foot"><span>鳥取工場 生産状況アプリ / 製品別金物リスト(tdf)</span><span>画面の製品名・図番・金物のマークは見本です。</span></div>
+</section>
+
+<!-- ===== 2ページ目: 手順1・2 ===== -->
+<section class="page">
+  <h1>手順1・2 生産状況で<span class="nw">「はい」</span>を押す <small>2/5</small></h1>
+  <p class="lead">加工結果PDFを取り込み、PDFのダウンロードが終わると、次の質問が出ます。</p>
+  <div class="cols">
+    <div style="width:132mm">
+      <div class="step"><span class="n">A</span><b>PDFのダウンロードのあとに出る質問</b></div>
+      <img class="shot" src="kanamono/t1_ask.png" style="width:118mm">
+      <div class="notes" style="margin-top:4mm"><ul>
+        <li>「黄色の ◯ 件」は、予定表で台数が黄色の製品の数です。</li>
+        <li><b><span class="nw">「はい」</span></b> → 金物リストのアプリが<b>新しいタブ</b>で開きます。</li>
+        <li><b><span class="nw">「いいえ」</span></b> → 金物リストは作らず、今までどおりのお知らせが出ます。</li>
+      </ul></div>
+    </div>
+    <div style="flex:1">
+      <div class="step"><span class="n">B</span><b>金物リストのタブで、最初のお知らせ</b></div>
+      <img class="shot" src="kanamono/c_notice.png" style="width:118mm">
+      <div class="notes" style="margin-top:4mm"><ul>
+        <li>取り込んだPDFの名前・件数・工事番号が出ます。</li>
+        <li><b><span class="nw">「OK」</span></b>を押して、次のページの手順3へ進みます。</li>
+        <li>新しいタブが開かないときは、ブラウザがポップアップを止めていないか確かめてください(アドレスバーの右端に出る印から「常に許可」)。</li>
+      </ul></div>
+    </div>
+  </div>
+  <div class="foot"><span>鳥取工場 生産状況アプリ / 製品別金物リスト(tdf)</span><span>次のページ: サーバーを選んで読み込む</span></div>
+</section>
+
+<!-- ===== 3ページ目: 手順3・4 ===== -->
+<section class="page">
+  <h1>手順3・4 サーバーを選んで読み込む <small>3/5</small></h1>
+  <p class="lead">TDF(実寸法師の図面)が入っているサーバーを選びます。<b>毎回</b>選びます(前に選んだフォルダは使いません)。</p>
+  <div class="cols">
+    <div style="width:132mm">
+      <div class="step"><span class="n">A</span><b><span class="nw">「① 本社サーバー」</span>か<span class="nw">「① 鳥取サーバー」</span>を押す</b></div>
+      <img class="shot" src="kanamono/c_server.png" style="width:118mm">
+      <img class="shot" src="kanamono/c_pick.png" style="width:100mm; margin-top:4mm">
+      <div class="notes" style="margin-top:3mm"><ul>
+        <li><span class="nw">「OK」</span>のあと、フォルダを選ぶ画面が開きます。そのサーバーの<b><span class="nw">「①進行中工事」</span></b>フォルダを選んで「フォルダーの選択」→「表示」を許可します。</li>
+        <li class="em">別のサーバーのフォルダを選ばないよう、場所を確かめてください。</li>
+      </ul></div>
+    </div>
+    <div style="flex:1">
+      <div class="step"><span class="n">B</span><b>自動で読み込む(待つだけ)</b></div>
+      <img class="shot" src="kanamono/c_read.png" style="width:100mm">
+      <img class="shot" src="kanamono/c_search.png" style="width:100mm; margin-top:3mm">
+      <div class="notes" style="margin-top:3mm"><ul>
+        <li>製品ごとのTDFは、生産状況と同じ<b>実寸リンク表</b>の場所から読みます。</li>
+        <li>リンク表に無い製品は、<b><span class="nw">「マスタに無い製品をサーバーから探しています…」</span></b>と出て、その工事のフォルダの中から<b>図番が同じTDF</b>を探します(同じ図番が2つ以上あれば、ファイル名の日付が新しいもの)。</li>
+        <li class="em">マスタが無い場合は<br>実際のフォルダから最新図を探し時間がかかる。</li>
+      </ul></div>
+    </div>
+  </div>
+  <div class="foot"><span>鳥取工場 生産状況アプリ / 製品別金物リスト(tdf)</span><span>次のページ: ダウンロードされるExcel</span></div>
+</section>
+
+<!-- ===== 4ページ目: 手順5 Excel ===== -->
+<section class="page">
+  <h1>手順5 Excelが届く <small>4/5</small></h1>
+  <p class="lead">読み込みが終わると、Excel<span class="nw">「次の加工予定_金物リスト_日付_時刻.xlsx」</span>が自動でダウンロードされます。</p>
+  <div class="ord">並び順(画面・Excelとも): <span>工事</span><i>▶</i><span>柱</span><i>▶</i><span>大梁</span><i>▶</i><span>小梁</span><i>▶</i><span>その他</span><i>▶</i><span>製品番号の順</span></div>
+  <div class="cols">
+    <div style="width:150mm">
+      <div class="step"><span class="n">A</span><b>シート１「次の加工予定」 … 黄色の製品の一覧</b></div>
+      <div class="xl">
+        <table class="x">
+          <tr class="ttl"><td colspan="8">次の加工予定</td></tr>
+          <tr><th>予定日</th><th>件名</th><th>工事番号</th><th>製品名</th><th>台数</th><th>重量(t)</th><th>図番</th><th>金物リスト</th></tr>
+          <tr><td>2026-11-21</td><td>AAA</td><td>26-00</td><td class="lk">1C-X1Y1</td><td>1</td><td>8.20</td><td class="lk">A-1C-01</td><td class="st">作成</td></tr>
+          <tr><td>2026-11-21</td><td>AAA</td><td>26-00</td><td class="lk">2G-X2Y1</td><td>1</td><td>7.25</td><td class="lk">A-2G-01</td><td class="st">作成</td></tr>
+          <tr><td>2026-11-21</td><td>AAA</td><td>26-00</td><td class="lk">2B-X1-1</td><td>1</td><td>2.60</td><td class="lk">A-2B-01</td><td class="st"><span class="nw">作成<span class="nw">(図番で探したTDF)</span></span></td></tr>
+          <tr><td>2026-11-21</td><td>AAA</td><td>26-00</td><td class="lk">2B-X1-2</td><td>2</td><td>2.99</td><td class="lk">A-2B-01</td><td class="st"><span class="nw">作成<span class="nw">(図番で探したTDF)</span></span></td></tr>
+          <tr><td>2026-11-21</td><td>AAA</td><td>26-00</td><td>2B-X9-1</td><td>1</td><td>2.41</td><td>A-2B-09</td><td class="st ng">リンク表に無く、図番のTDFも見つかりません</td></tr>
+        </table>
+        <div class="tab"><span class="on">次の加工予定</span><span>26-00</span><span>26-01</span></div>
+      </div>
+      <div class="notes" style="margin-top:3mm"><ul>
+        <li>製品名・図番の<b style="color:#0000ff">青い字</b>を押すと、実寸法師でその図面が開きます。</li>
+        <li>「金物リスト」の列: <b>作成</b> = 金物リストに入れた / <b><span class="nw">作成<span class="nw">(図番で探したTDF)</span></span></b> = リンク表に無く、サーバーから図番で探して入れた / <span class="em">赤い字</span> = 入れなかった理由。</li>
+      </ul></div>
+    </div>
+    <div style="flex:1">
+      <div class="step"><span class="n">B</span><b>シート２以降 … 工事ごとの金物リスト</b></div>
+      <div class="xl">
+        <table class="x">
+          <tr class="ttl"><td colspan="5">金物リスト</td></tr>
+          <tr><td class="l">工事番号</td><td class="l" colspan="4">26-00</td></tr>
+          <tr><td class="l">工事名</td><td class="l" colspan="4">サンプル工事A</td></tr>
+          <tr class="ph"><th>図面番号</th><th>製品名</th><th>サイズ</th><th>長さ(mm)</th><th>台数</th></tr>
+          <tr class="ph"><td class="lk">A-1C-01</td><td class="lk">1C-X1Y1</td><td>□-1000x1000x40</td><td>3248.1</td><td>1</td></tr>
+          <tr><th>サイズ</th><th>切板名(長さ)</th><th>枚数(本数)</th><th>備考</th><th></th></tr>
+          <tr><td>PL-28</td><td>M-01</td><td>8</td><td></td><td></td></tr>
+          <tr><td>FB-90x12</td><td>M-12</td><td>4</td><td></td><td></td></tr>
+          <tr><td>K-9</td><td>270</td><td>2</td><td class="l">親綱掛けフック</td><td></td></tr>
+          <tr class="sub"><td></td><td>小計</td><td>43</td><td></td><td></td></tr>
+          <tr class="ph"><th>図面番号</th><th>製品名</th><th>サイズ</th><th>長さ(mm)</th><th>台数</th></tr>
+          <tr class="ph"><td class="lk">A-2G-01</td><td class="lk">2G-X2Y1</td><td>BH-1300x550x25x40</td><td>11726</td><td>1</td></tr>
+          <tr><td colspan="5" style="color:#5d6b7a">… 大梁 → 小梁 と続き、最後に「取り込んだTDF全ての総まとめ」…</td></tr>
+        </table>
+        <div class="tab"><span>次の加工予定</span><span class="on">26-00</span><span>26-01</span></div>
+      </div>
+      <div class="notes" style="margin-top:3mm"><ul>
+        <li>シートの名前は<b>工事番号</b>です。様式は、金物リストで<span class="nw">1工事ずつ</span>作るときと同じです。</li>
+        <li>枚数は<b>1台あたりの枚数 × 予定の台数</b>です。</li>
+      </ul></div>
+    </div>
+  </div>
+  <div class="foot"><span>鳥取工場 生産状況アプリ / 製品別金物リスト(tdf)</span><span>表の中身は見本です。</span></div>
+</section>
+
+<!-- ===== 5ページ目: 手順6 確認・困ったとき ===== -->
+<section class="page">
+  <h1>結果を確かめる・困ったとき <small>5/5</small></h1>
+  <p class="lead">Excelのダウンロードのあと、入れられなかった製品があればお知らせが出ます。金物リストのタブには、読んだ結果が表で残ります。</p>
+  <div class="cols">
+    <div style="width:118mm">
+      <div class="step"><span class="n">A</span><b>入れなかった製品のお知らせ</b></div>
+      <img class="shot" src="kanamono/c_miss.png" style="width:108mm">
+      <div class="notes" style="margin-top:3mm"><ul>
+        <li>件名・製品名(図番)と理由が出ます。Excelの<span class="nw">シート１「次の加工予定」</span>にも赤い字で載っています。</li>
+      </ul></div>
+      <div class="box yellow" style="margin-top:3mm"><b class="t">お知らせの理由と、することの例</b>
+        <b>リンク表に無く、図番のTDFも見つかりません</b> … サーバーの工事のフォルダに、その図番のTDFがあるか確かめる。<br>
+        <b>TDFにこの製品がありません</b> … 図面の製品名と、予定表の製品名が同じか確かめる。<br>
+        <b>TDFを開けませんでした</b> … サーバーにつながっているか確かめ、もう一度<span class="nw">「はい」</span>からやり直す。</div>
+    </div>
+    <div style="flex:1">
+      <div class="step"><span class="n">B</span><b>金物リストの画面</b></div>
+      <img class="shot" src="kanamono/c_result.png" style="width:118mm">
+      <div class="notes" style="margin-top:3mm"><ul>
+        <li>読んだTDFの一覧と、製品ごとの金物が並びます(<span class="nw">柱 → 大梁 → 小梁</span> の順)。</li>
+        <li>もう一度作り直すときは、生産状況の画面で加工結果PDFを取り込み直して<span class="nw">「はい」</span>を押してください(金物リストのタブは閉じてかまいません)。</li>
+      </ul></div>
+    </div>
+  </div>
+  <div class="foot"><span>鳥取工場 生産状況アプリ / 製品別金物リスト(tdf)</span><span>画面の製品名・図番・金物のマークは見本です。</span></div>
+</section>
+</body></html>

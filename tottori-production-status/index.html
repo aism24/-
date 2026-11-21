@@ -5,7 +5,7 @@
 <title>鳥取工場 生産状況</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="style.css?v=20261121b">
+<link rel="stylesheet" href="style.css?v=20261121c">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body class="landing-mode">
@@ -30,7 +30,7 @@
       <div class="progress" id="progress" hidden><div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div><div class="progress-text" id="progressText"></div></div>
       <label class="btn primary landing-btn" id="landingPick">フォルダから選ぶ<input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden></label>
       <div class="landing-err" id="landingErr" hidden></div>
-      <div class="manual-wrap"><a class="manual-btn" id="manualBtn" href="manual/manual.pdf?v=20261112e" target="_blank" rel="noopener">ダウンロードPDFの説明書</a></div>
+      <div class="manual-wrap"><a class="manual-btn" id="manualBtn" href="manual/manual.pdf?v=20261112e" target="_blank" rel="noopener">ダウンロードPDFの説明書</a><a class="kana-manual-btn" id="kanaManualBtn" href="manual/kanamono.pdf?v=20261121a" target="_blank" rel="noopener" data-title="次の加工予定の金物リスト作成の使い方">新機能【次の加工予定の金物リスト作成】の使い方</a></div>
     </div>
   </section>
 
@@ -59,7 +59,7 @@
 
 <!-- ダウンロードPDFの説明書(アプリの中で開く。「説明書を閉じる」で初期画面に戻る。2026-11-12 ユーザー指定) -->
 <div class="manual-view" id="manualView" hidden>
-  <div class="manual-bar"><span></span><div class="manual-nav"><button type="button" class="manual-nav-btn" id="manualPrev">◀ 前へ</button><span class="manual-title">ダウンロードPDFの説明書</span><button type="button" class="manual-nav-btn" id="manualNext">次へ ▶</button></div><button type="button" class="btn primary" id="manualClose">説明書を閉じる</button></div>
+  <div class="manual-bar"><span></span><div class="manual-nav"><button type="button" class="manual-nav-btn" id="manualPrev">◀ 前へ</button><span class="manual-title" id="manualTitle">ダウンロードPDFの説明書</span><button type="button" class="manual-nav-btn" id="manualNext">次へ ▶</button></div><button type="button" class="btn primary" id="manualClose">説明書を閉じる</button></div>
   <div class="manual-pages" id="manualPages"><div class="manual-loading" id="manualLoading">説明書を読み込んでいます…</div></div>
 </div>
 
@@ -115,7 +115,7 @@
   </div>
 </div>
 
-<script src="app.js?v=20261121a"></script>
+<script src="app.js?v=20261121b"></script>
 <!-- 「← アプリ一覧へ」はいつも表示する(2026-11-21 ユーザー指示。会社ロゴを5回タップして出す仕組みは削除) -->
 <script src="to-launcher.js?v=20261111a" data-target=".app-header h1" data-mode="in"></script>
 </body>
