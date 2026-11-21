@@ -480,10 +480,12 @@
     // 符号の無い「支給品」の板(2026-11-21 ユーザー指示、EA1-RG-10 の か断面「避雷針プレート」の「PL-6 / 支給品」): 符号なしで入れる。
     // 枚数は断面の数(旗の数)×表記の枚数、備考は断面の副題と「支給品」
     T.forEach(function (t) {
-      if (!RE_PLATE.test(t.text) || isLeft(t)) return;
+      if (!RE_PLATE.test(t.text)) return;
       if (labels.some(function (lb) { return Math.abs(lb.sx - t.x) < 1 && Math.abs(lb.sy - t.y) < 1; })) return;
       if (!T.some(function (u) { return u.text === '支給品' && t.y - u.y > 0 && t.y - u.y < 250 && Math.abs(u.x - t.x) < 300; })) return;
       var s3 = sectionOf(t, titles); if (!s3) return;
+      // 断面図が図の右上にあり、表記だけ図の範囲に入る図面がある(2026-11-21 ユーザー指摘「避雷針漏れ」、EA2-RG-12)。見出しが図の外なら断面図の表記
+      if (isLeft(t) && isLeft(s3)) return;
       var si3 = secInfo[s3.letter];
       if (si3.plates['']) return;
       si3.plates[''] = { size: plateSize(t.text), n: plateCount(t.text), mekki: false, note: (s3.sub ? s3.sub + '・' : '') + '支給品' };
