@@ -621,9 +621,12 @@ async function runPlan(plan) {
   // 画面にも出す(作った製品だけ。画面の表もこの並び = 製品の ord)
   state.tdfs = [];
   gs.forEach(g => g.tdfs.forEach(f => {
-    const byName = new Map(g.products.map(x => [nk(x.name), x.ord]));
-    const res = Object.assign({}, f.res, { products: f.res.products.filter(p => byName.has(nk(p.name))) });
-    res.products.forEach(p => { p.ord = byName.get(nk(p.name)); p.items.forEach(it => { it.n0 = it.n; }); });
+    // 画面も予定の台数分(台数 = 予定の台数、枚数 = 1台あたり × 予定の台数。Excel と同じ。2026-11-21 ユーザー指示)
+    const byName = new Map(g.products.map(x => [nk(x.name), x]));
+    const res = Object.assign({}, f.res, { products: f.res.products.filter(p => byName.has(nk(p.name))).map(p => {
+      const gp = byName.get(nk(p.name));
+      return Object.assign({}, p, { ord: gp.ord, dai: gp.dai, items: p.items.map(it => Object.assign({}, it, { n: it.n * gp.dai, n0: it.n * gp.dai })) });
+    }) });
     state.tdfs.push({ id: nextId++, fileName: f.fileName, path: f.dir, res });
   }));
   const minOrd = t => Math.min(...t.res.products.map(p => p.ord));
