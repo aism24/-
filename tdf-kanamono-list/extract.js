@@ -1201,7 +1201,8 @@
       //  - 「150S」(EA1-3B-01): ウェブの片側の孔の上下に1つずつ付く → 1か所につき2個
       //  - 「150B」(EA1-3G-01): 1か所につき1個
       T.forEach(function (t) {
-        var m = /^[0-9]+([SB])$/.exec(t.text);
+        //  - 「150R」「200R」(WB3-3G-05。そばに「(下孔195φ)」)も1か所につき1個(2026-11-21 ユーザー指示)
+        var m = /^[0-9]+([SBR])$/.exec(t.text);
         if (!m || !inView(v, t)) return;
         if (!T.some(function (u) { return /φ/.test(u.text) && Math.abs(u.x - t.x) < 300 && Math.abs(u.y - t.y) < 300; })) return;
         add(t.text, '', m[1] === 'S' ? 2 : 1, 'スリーブ');
