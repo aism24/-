@@ -53,6 +53,23 @@ CLAUDE.md から分離(2026-10-21)。恒久ルールは CLAUDE.md、ここは詳
 
 ※既存分はHobbyの30日保持により、最初のデプロイ(2026-09-19)から30日後の10月19日頃から順次減っていく見込み。
 
+### GitHubリポジトリ容量の確認(2026-11-21〜、ユーザー指示)
+
+Vercelの状況確認のたびに、GitHubの容量も一緒に確認して報告する。非公開の `aism24/test-tdf` は回帰テスト用の図面(.tdf)を足していくので増えていく。
+
+- 確認方法(test-tdf をセッションに入れていなくても取れる。size は履歴込みの容量・KB):
+  - `gh api -X GET search/repositories -f q='repo:aism24/test-tdf' --jq '.items[] | "\(.full_name) size=\(.size)KB"'`
+  - `gh api -X GET search/repositories -f q='repo:aism24/-' --jq '.items[] | "\(.full_name) size=\(.size)KB"'`
+  - 1ファイルの最大サイズは test-tdf をクローンしているときだけ確認: `ls -S -l kanamono/fixtures | head -2`
+- GitHubの上限: 1ファイル 50MBで警告・100MBで push 拒否。リポジトリは1GB以下推奨(5GB超でGitHubから連絡が来ることがある)。
+- **管理ライン: test-tdf・aism24/- とも 500MB を超えたらユーザーに報告する。**
+- 一度入れたファイルは削除しても履歴に残り容量に数えられる(報告に添える)。
+- 報告の形: Vercelの報告に「GitHub容量: test-tdf ◯KB(前回 ◯KB)/ aism24/- ◯KB(前回 ◯KB)」の1行と前回からの増え方を書く。
+
+| 日付(JST) | aism24/test-tdf | aism24/- | 内容 |
+|---|---|---|---|
+| 2026-11-21 16:01 | 2,146KB(約2.1MB) | 55,368KB(約54MB) | 初回。test-tdf は図面28枚・合計8.5MB(圧縮で約2MB)、最大の図面は約0.47MB |
+
 ### 現在のGit連携状態(変更したらここを更新する)
 
 | Vercelプロジェクト | 対象フォルダ | Git連携 | 備考 |
