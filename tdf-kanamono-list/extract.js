@@ -1110,18 +1110,20 @@
             var secSz = (/^[C\[]-([0-9.x]+)$/.exec(shape) || [, ''])[1].split('x').slice(0, 2).map(parseFloat);
             si.dims.forEach(function (len) {
               if (shape.charAt(0) === '[' && secSz.indexOf(len) >= 0) return;
-              if (doneShape[shape + '@' + len]) return; doneShape[shape + '@' + len] = 1;
+              // 同じ形鋼・同じ長さをほかの断面ですでに平面図で数えていれば、この断面も数え済み(WB1-3G-06 の さ・す の [-100x50x5x7.5 295)
+              if (doneShape[shape + '@' + len]) { if (doneShape[shape + '@' + len + '#cnt']) doneShape[shape + '#plan' + L1] = 1; return; }
+              doneShape[shape + '@' + len] = 1;
               var vs = vlines.filter(function (l) { return inView(v, { x: l.x, y: (l.y0 + l.y1) / 2 }) && Math.abs(l.y1 - l.y0 - len) < 0.6; }).sort(function (a, b) { return a.x - b.x; });
               var used = new Set(), cnt = 0;
               vs.forEach(function (a) { if (used.has(a)) return; var b = vs.find(function (l) { return l !== a && !used.has(l) && l.x - a.x > 0 && l.x - a.x <= 40 && Math.abs(l.y0 - a.y0) < 0.6; }); if (b) { used.add(a); used.add(b); cnt++; } });
               if (cnt) add(shape, len, cnt, si.title.sub || '');
-              if (cnt) doneShape[shape + '#plan'] = 1;
+              if (cnt) { doneShape[shape + '#plan' + L1] = 1; doneShape[shape + '@' + len + '#cnt'] = 1; }   // 断面ごと(2026-11-21、WB3-3G-06: あ を平面図で数えたため、同じ C の い(梁に沿う 1433)を読んでいなかった)
             });
             // 平面図で数えられないとき(梁の下に付く LGS下地。EA1-3G-01・EA1-3B-01、2026-11-20 ユーザー指示「サイズと長さと本数が図面より見れる」):
             // 長さ = 断面図の寸法の、同じ高さに並ぶ数の合計の一番大きいもの(EA1-3G-01「あ」: 225+225=450 と 450 → 450、EA1-3B-01: 150+150=300)
             // 本数 = 立面図の旗の数 × 断面図の表記の数
             var fl = flagsBySec[L1], nFlag = fl ? fl.matched.length + fl.unmatched : 0;
-            if (!doneShape[shape + '#plan'] && nFlag) {
+            if (!doneShape[shape + '#plan' + L1] && nFlag) {
               // 断面図の寸法の、同じ高さに並ぶ数の合計の一番大きいもの(小数も)
               var nLab = si.shapes.filter(function (x) { return x === shape; }).length, byRow = {}, len = 0;
               (si.dimT2 || []).forEach(function (d) { var k = Math.round(d.y / 20); byRow[k] = (byRow[k] || 0) + parseFloat(d.text); });
