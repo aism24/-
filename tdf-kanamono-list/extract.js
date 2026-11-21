@@ -207,6 +207,9 @@
     // → ② 製品マーク・設計符号・サイズが上下にずれた行(find_product_rows_offset_mark)。どちらでも読めなければ、製品名があれば現場付け
     var xm = xMarks(lines || []);
     var inX = function (x, y) { return xm.some(function (b) { return x >= b[0] && x <= b[1] && y >= b[2] && y <= b[3]; }); };
+    // ×印で消した表の行は、ふつうに読めた行でも除く(2026-11-21 ユーザー指摘「E,F断面が読めていない?」、WB3-3G-10: 3G-X11Y5 の表を大きな×で消して
+    // 「WB3-3G-12図へ移動」。製品として読み、D・E・F断面(EV)の板をその製品の立面図の板にしていた)
+    rows = rows.filter(function (r) { return !(inX(r.x, r.y) && inX(r.xr, r.y)); });
     // ⓪ 柱の表「設計符号 | 製品マーク | 図示 | N台」(tdf-master-web の柱モード find_rows と同じ。2026-11-20、EB1-0C-04「C1B|HRB130|0C-X16Y3|図示|1台」):
     //    「N台」の左の3つ。3つ目が「図示」なら、図の中の「□-」のサイズの文字のすぐ上に書かれている方が設計符号(どちらにも無ければ並びのとおり 左=設計符号)
     var boxes = texts.filter(function (u) { return /^□\s*[-‐]?\s*[0-9.]+\s*[xX×]\s*[0-9.]+/.test(u.text); });
@@ -331,7 +334,7 @@
     var best = null, bs = Infinity, cx = t.x + (t.text ? 18 * t.text.length : 0);
     titles.forEach(function (s) {
       var dy = t.y - s.y, dx = Math.abs(cx - (s.x + s.sx) / 2);
-      if (dy <= 0 || dy > 2600 || dx > 1900) return;
+      if (dy <= 0 || dy > 2800 || dx > 1900) return;   // 2600 → 2800(2026-11-21、WB3-3G-10 の E・F断面(EV)の上の「GPL-12 MG220」は見出しから2697上。ユーザー指摘「MG220は4枚」)
       var sc = dy + 2 * dx;
       if (sc < bs) { bs = sc; best = s; }
     });
