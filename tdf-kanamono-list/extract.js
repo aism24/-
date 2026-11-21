@@ -679,6 +679,8 @@
       var title = T.filter(function (t) { return t.text === 'サヤ管' && !isLeft(t) && !sectionOf(t, titles); })[0];
       var below = false;
       if (!title) { title = T.filter(function (t) { return /^(さや管|サヤ管|サヤ菅)$/.test(t.text) && !isLeft(t) && !sectionOf(t, titles); })[0]; below = true; }
+      // 図の右に断面図が無く、図の範囲が右端まで広がって詳細図も図の中になる図面(2026-11-21、EA1-RG-05): 名前のすぐ下(400以内)に管の表記がある「サヤ管」
+      if (!title) title = T.filter(function (t) { return /^(さや管|サヤ管|サヤ菅)$/.test(t.text) && !sectionOf(t, titles) && T.some(function (u) { return /^P-([0-9.]+)φ?x([0-9.]+)$/.test(u.text) && t.y - u.y > 0 && t.y - u.y < 400 && Math.abs(u.x - t.x) < 1900; }); })[0];
       if (!title) return;
       var pipe = T.filter(function (u) { return /^P-([0-9.]+)φ?x([0-9.]+)$/.test(u.text) && (below ? title.y - u.y > 0 && title.y - u.y < 400 : u.y - title.y > 100 && u.y - title.y < 2600) && Math.abs(u.x - title.x) < 1900; })
         .sort(function (a, b) { return dist(a, title) - dist(b, title); })[0];
