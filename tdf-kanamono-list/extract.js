@@ -128,7 +128,8 @@
   function plateSize(t) { return t.replace(/^[0-9]+(?=G?PL-)/, ''); }
   // 板の符号: KG1・KGR63・KGEVG1(阪和)/ KK-5・PRG14(別の書き方)。小梁・継手などの名前(SB588・BJ35・PJ25・J588 など)は除く
   // 「MGR156切断流用」(別の板を切って使う。2026-11-21 WB1-3G-06 の す断面)も符号
-  var RE_MARK = /^(?:KG[0-9A-Z]+|[A-Z]{2,5}-?[0-9]+[A-Z]?|[A-Z]-[A-Z]{1,4}[0-9]+[A-Z]?)(?:切断流用)?$/;   // OGALR7(英字5文字。2026-11-19)・O-KZ109(1G-01)
+  // 番号のあとの「MK」(めっき+K)も符号(2026-11-21、EA1-RG-01 の「GPL-25 NHG143MK」)
+  var RE_MARK = /^(?:KG[0-9A-Z]+|[A-Z]{2,5}-?[0-9]+(?:M[A-Z]|[A-Z])?|[A-Z]-[A-Z]{1,4}[0-9]+[A-Z]?)(?:切断流用)?$/;   // OGALR7(英字5文字。2026-11-19)・O-KZ109(1G-01)
   var RE_NOT_MARK = /^(?:SB|BJ|THJ?|TS?PJ|EPJ?|PJ|DCJ|GJ|CL|BT|BTJ?B?|RB|KB|BCR|BCP|SN|SM|SS|STK|TMCP|EHB)[0-9]/;   // EHB250 = EV の梁の名前(2026-11-21、WB3-3G-12)
   var RE_SHAPE = /^([LC])-[0-9.]+x[0-9.x]+$/;           // L-50x50x6 / C-60x30x10x2.3
   var RE_CHAN = /^\[-[0-9.]+x[0-9.x]+$/;                // [-100x50x5x7.5(溝形鋼の別の書き方。断面図の表記だけで使う。2026-11-21 WB1-3G-05)
@@ -1290,6 +1291,8 @@
         var it = items[k];
         var subs = new Set(), mekki = false;
         it.notes.forEach(function (nt) { var p = nt.split('|'); subs.add(p[0]); if (p[1]) mekki = true; });
+        // 符号の末尾の M(番号のすぐあと。MK の M も)= めっき(2026-11-21 ユーザー指示、EA1-RG-01: NG121M・NHG143MK はめっき)
+        if (typeof it.name === 'string' && /[0-9]M[A-Z]?$/.test(it.name)) mekki = true;
         var parts = [];
         if (subs.size === 1 && Array.from(subs)[0]) parts.push(Array.from(subs)[0]);
         if (mekki) parts.push('めっき');
