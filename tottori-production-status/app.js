@@ -1080,19 +1080,14 @@
   $('kanaManualBtn').addEventListener('click', openManual); // 新機能【次の加工予定の金物リスト作成】の使い方(2026-11-21 ユーザー指示)
 
   // ---- 秘密のコマンド(2026-11-21 ユーザー指示) ----
-  // 画面でキーボードから「masamiz」と打つと新しいパターン(次の加工予定の金物リスト作成)が使えるようになり、「コマンド許可」と出す。
-  // そのパソコンで覚える(localStorage)。もう一度打つと元に戻る。日本語入力がオンでも効くよう、文字でなくキーの場所(e.code)で見る
-  const CMD = 'masamiz', CMD_KEY = 'tottori-production-status:cmd';
+  // 最初の画面でキーボードから「masamiz」と打つと新しいパターン(次の加工予定の金物リスト作成)が使えるようになり、白いカードの左上に「コマンド許可」と出す。
+  // 開いている間だけ(閉じたり再読み込みしたりすると元に戻る。覚えない)。もう一度打つと解除。日本語入力がオンでも効くよう、文字でなくキーの場所(e.code)で見る
+  const CMD = 'masamiz';
   let cmdBuf = '';
   function cmdOk() { return document.body.classList.contains('cmd-ok'); }
-  function setCmd(on) {
-    document.body.classList.toggle('cmd-ok', on);
-    $('cmdBadge').hidden = !on;
-    try { if (on) localStorage.setItem(CMD_KEY, '1'); else localStorage.removeItem(CMD_KEY); } catch (e) {}
-  }
-  try { if (localStorage.getItem(CMD_KEY) === '1') setCmd(true); } catch (e) {}
   document.addEventListener('keydown', function (e) {
     if (e.ctrlKey || e.altKey || e.metaKey) return;
+    if ($('landing').hidden || !$('manualView').hidden) { cmdBuf = ''; return; } // 最初の画面だけ
     const t = e.target, tag = t && t.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
     const m = /^Key([A-Z])$/.exec(e.code || '');
@@ -1101,7 +1096,8 @@
     if (cmdBuf !== CMD) return;
     cmdBuf = '';
     const on = !cmdOk();
-    setCmd(on);
+    document.body.classList.toggle('cmd-ok', on);
+    $('cmdBadge').hidden = !on;
     toast(on ? 'コマンド許可：新しいバージョンで進みます' : 'コマンドを解除しました(今まで通りの動きに戻ります)');
     sendLog('コマンド', on ? '許可' : '解除');
   });
