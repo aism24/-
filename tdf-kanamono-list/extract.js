@@ -541,6 +541,15 @@
       if (sz1.length !== 1 || mk1.length !== 1 || !isLeft(mk1[0])) return;
       elevLabels.push({ size: plateSize(sz1[0].text), mark: mk1[0].text, cnt: plateCount(sz1[0].text), x: mk1[0].x, y: mk1[0].y, sx: sz1[0].x, sy: sz1[0].y });
     });
+    // 図の中で組にならずに残った板の表記と、ほかで同じサイズの組になった符号(2026-11-23 ユーザー指摘「NNGN2が1枚不足」、EA2-3G-14:
+    // 4枚目の「PL-9x200」の符号 NNGN2 だけ梁の右端(表記から約1100)に書かれていた)。残った表記と残った符号が同じ数のときだけ、x の順に組にする
+    Object.keys(knownSize).forEach(function (mk) {
+      var sz = knownSize[mk];
+      var a = T.filter(function (t) { return RE_PLATE.test(t.text) && plateSize(t.text) === sz && !usedAt(t) && isLeft(t); }).sort(function (p, q) { return p.x - q.x; });
+      var b = T.filter(function (t) { return t.text === mk && !usedAt(t) && isLeft(t); }).sort(function (p, q) { return p.x - q.x; });
+      if (!a.length || a.length !== b.length) return;
+      a.forEach(function (s, i) { elevLabels.push({ size: sz, mark: mk, cnt: plateCount(s.text), x: b[i].x, y: b[i].y, sx: s.x, sy: s.y }); });
+    });
     var outsideStrict = function (o) { return !views.some(function (v) { return o.y > v.yMin && o.y < v.yMax && o.x > v.x0 && o.x < v.x1s; }); };
     T.forEach(function (t) {
       // DK・カタカナの断面に入る文字は、図の範囲の中でも断面の文字として読む(英字1文字の断面は今までどおり)
