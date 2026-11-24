@@ -602,7 +602,7 @@
     T.forEach(function (t) {
       if (isLeft(t) || !RE_SECKEY.test(t.text) || !secInfo[t.text] || titles.some(function (x) { return x.letter === t.text && Math.abs(x.y - t.y) < 10; })) return;
       // 鋼材の印「N B」「N C」「T C」(SN490B など)の B・C は断面記号ではない(2026-11-21、EA2-RG-07: C断面の「N B GPL-25」の B を入れ子の B断面と読み、NG21・NG22 を5枚にしていた)
-      if (T.some(function (u) { return /^[NT]$/.test(u.text) && Math.abs(u.y - t.y) < 15 && t.x - u.x > 0 && t.x - u.x < 120; })) return;
+      if (T.some(function (u) { return /^[NT]$/.test(u.text) && Math.abs(u.y - t.y) < 15 && t.x - u.x > 0 && t.x - u.x < 160; })) return;   // 120 → 160(2026-11-24、EB3-RG-01 の「N B」は 144 離れていた)
       var best = null, bs = Infinity, cx = t.x + 18 * t.text.length, rf = rightFlag(t);
       titles.forEach(function (s) {
         var c = (s.x + s.sx) / 2, dy = t.y - s.y, dx = Math.abs(cx - c);
@@ -959,7 +959,13 @@
               near = ps.filter(function (q) { return Math.abs(q.x - lf.fx) <= 500 && webOk(q); }).sort(function (a, b) { return Math.abs(a.x - lf.fx) - Math.abs(b.x - lf.fx); })[0];
             }
             if (!near) return false;
-            var n = ps.filter(function (q) { return Math.abs(q.len - near.len) <= 0.5 && Math.abs(q.y0 - near.y0) <= 1; }).length;
+            var grp = ps.filter(function (q) { return Math.abs(q.len - near.len) <= 0.5 && Math.abs(q.y0 - near.y0) <= 1; });
+            // 立面図の板に当たった旗の断面(コン止めは除く=EA1-3B-03)は、平面図の同じ板の組のそば(500以内)に、同じ板厚の別の断面の旗があれば数え直さない
+            // (2026-11-24、EB3-RG-01: 平面図の小梁取合いの GPL-9 3か所は E 1・F 2。E を 3 にして NG35・NGE3 が多かった)
+            if (flagsBySec[lf.L1].matched.length && !/コン止め/.test(si.title.sub || '') && grp.some(function (q) {
+              return looseFlags.some(function (o) { return o.L1 !== lf.L1 && secInfo[o.L1] && secInfo[o.L1].plateT.has(tt) && Math.abs(q.x - o.fx) <= 500; });
+            })) return false;
+            var n = grp.length;
             hits[lf.L1] = { n: n, key: tt + '|' + near.len.toFixed(0) + '|' + near.y0.toFixed(0) }; order.push(lf.L1);
             return true;
           });
