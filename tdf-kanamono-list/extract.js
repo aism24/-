@@ -1138,7 +1138,25 @@
           sl.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5; }).map(function (l) { return { p: l[1], a: Math.min(l[0], l[2]), b: Math.max(l[0], l[2]) }; })];
         var nSaya = 0;
         gs.forEach(function (g) { g.forEach(function (a) { if (g.some(function (b2) { return Math.abs(b2.p - a.p - saya.od) < 0.6 && Math.abs(b2.a - a.a) < 0.6 && Math.abs(b2.b - a.b) < 0.6; })) nSaya++; }); });
-        if (nSaya) { add(saya.size, saya.len, nSaya, 'サヤ管'); sayaCounted = true; }
+        // 長さの違うサヤ管(2026-11-24 ユーザー指示、WA2-3G-06: L=220 の5本と同じ高さに 60.5×190 が1本): L の管と同じ所(下端か上端が同じ高さ)に立つ、
+        // 外径だけ離れた長さの同じ平行な縦2本(長さ100〜400)も数える。長さが2種類以上あれば、それぞれの備考を「サヤ管長さ再確認」にする
+        var others = {};
+        if (nSaya) {
+          var ends = gs[0].filter(function (a) { return gs[0].some(function (b2) { return Math.abs(b2.p - a.p - saya.od) < 0.6 && Math.abs(b2.a - a.a) < 0.6 && Math.abs(b2.b - a.b) < 0.6; }); });
+          var vl = L.filter(function (l) { return (!saya.layers.length || saya.layers.indexOf(l[4]) >= 0) && Math.abs(l[0] - l[2]) < 0.5 && inView(v, { x: l[0], y: (l[1] + l[3]) / 2 }); })
+            .map(function (l) { return { p: l[0], a: Math.min(l[1], l[3]), b: Math.max(l[1], l[3]) }; })
+            .filter(function (a) { var n0 = a.b - a.a; return n0 >= 100 && n0 <= 400 && Math.abs(n0 - saya.len) >= 0.6; });
+          var seenO = {};
+          vl.forEach(function (a) {
+            if (!ends.some(function (e) { return Math.abs(e.a - a.a) < 1 || Math.abs(e.b - a.b) < 1; })) return;
+            if (!vl.some(function (b2) { return Math.abs(b2.p - a.p - saya.od) < 0.6 && Math.abs(b2.a - a.a) < 0.6 && Math.abs(b2.b - a.b) < 0.6; })) return;
+            var k = a.p.toFixed(1) + ',' + a.a.toFixed(1); if (seenO[k]) return; seenO[k] = 1;
+            var ln = Math.round((a.b - a.a) * 10) / 10; others[ln] = (others[ln] || 0) + 1;
+          });
+        }
+        var multi = Object.keys(others).length > 0, sNote = multi ? 'サヤ管長さ再確認' : 'サヤ管';
+        if (nSaya) { add(saya.size, saya.len, nSaya, sNote); sayaCounted = true; }
+        Object.keys(others).forEach(function (ln) { add(saya.size, parseFloat(ln), others[ln], sNote); });
       }
       // 管(スリーブ管 P-318.5x6 と L=1310。1G-01。2026-11-20 ユーザー指示): 図の中の表記1つにつき1本
       T.forEach(function (t) {
