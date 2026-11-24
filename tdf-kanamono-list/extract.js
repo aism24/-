@@ -431,8 +431,9 @@
     var isLeft = function (o) { return views.some(function (v) { return inView(v, o); }); };
 
     // 断面の副題「(EV鉄骨取合)」
+    // 「めっき範囲」は下の図の範囲を示す書き込みで、副題ではない(2026-11-24 ユーザー指摘、WA2-3G-06: A断面のすぐ下の「めっき範囲」は D断面の上の書き込み。MG124・MGR50 はめっき範囲ではない)
     titles.forEach(function (s) {
-      var sub = T.find(function (t) { return s.y - t.y > 60 && s.y - t.y < 320 && Math.abs(t.x - (s.x + s.sx) / 2) < 400 && !/^[A-Za-z]$/.test(t.text) && t.text !== 'SEC'; });
+      var sub = T.find(function (t) { return s.y - t.y > 60 && s.y - t.y < 320 && Math.abs(t.x - (s.x + s.sx) / 2) < 400 && !/^[A-Za-z]$/.test(t.text) && t.text !== 'SEC' && !/範囲$/.test(t.text); });
       s.sub = sub ? stripParen(sub.text) : '';
     });
 
