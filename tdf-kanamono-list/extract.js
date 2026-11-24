@@ -217,6 +217,7 @@
     var boxes = texts.filter(function (u) { return /^□\s*[-‐]?\s*[0-9.]+\s*[xX×]\s*[0-9.]+/.test(u.text); });
     var sizeLabels = new Set();
     boxes.forEach(function (r) { texts.forEach(function (q) { if (q !== r && q.y - r.y > 0 && q.y - r.y <= 300 && Math.abs(q.x - r.x) <= 450) sizeLabels.add(q.text); }); });
+    var zushiRows = [];
     pending.forEach(function (p) {
       var left = p.same.slice().reverse();   // 左から
       var cells = left.slice(-3);
@@ -226,6 +227,26 @@
       p.done = true;
       if (inX(mark.x, mark.y) || inX(p.dai.x, p.dai.y)) return;
       rows.push({ name: mark.text, fugo: code.text, dai: p.n, x: Math.min(a.x, b.x), xr: p.dai.x, y: p.dai.y, main: boxes.length ? boxes[0].text : '', column: true });
+      p.cols = { code: code, mark: mark, zushi: cells[2] };
+      zushiRows.push(p);
+    });
+    // 「図示」の行の上下に続く、設計符号と製品マークだけの行(サイズの欄が空)= 同じ図の製品(tdf-master-web の柱モード _zushi_followers と同じ。
+    // 2026-11-24、WA1-1C-01: 「1C2|1C-X17Y5|図示|1台」の下の「1C2|1C-X18Y5|1台」「1C2|1C-X19Y5|1台」を現場付けにしていた)
+    zushiRows.forEach(function (z) {
+      var members = [z], changed = true;
+      while (changed) {
+        changed = false;
+        pending.forEach(function (p) {
+          if (p.done || Math.abs(p.dai.x - z.dai.x) > 1) return;
+          if (Math.min.apply(null, members.map(function (m) { return Math.abs(p.dai.y - m.dai.y); })) > 400) return;
+          var left = p.same.filter(function (u) { return u.x >= Math.min(z.cols.code.x, z.cols.mark.x) - 1; });
+          var code = left.find(function (u) { return Math.abs(u.x - z.cols.code.x) <= 1; }), mark = left.find(function (u) { return Math.abs(u.x - z.cols.mark.x) <= 1; });
+          if (!code || !mark || code.text !== z.cols.code.text || left.length !== 2) return;
+          p.done = true; changed = true; members.push(p);
+          if (inX(mark.x, mark.y) || inX(p.dai.x, p.dai.y)) return;
+          rows.push({ name: mark.text, fugo: code.text, dai: p.n, x: Math.min(code.x, mark.x), xr: p.dai.x, y: p.dai.y, main: boxes.length ? boxes[0].text : '', column: true });
+        });
+      }
     });
     var groups = {};
     pending.forEach(function (p) {
@@ -1621,7 +1642,7 @@
     if (pr.rows.some(function (r) { return r.column; })) {
       result.columnDrawing = true;
       var colItems = columnItems();
-      result.products.forEach(function (p) { if (pr.rows.some(function (r) { return r.column && r.name === p.name; })) p.items = colItems; });
+      result.products.forEach(function (p) { if (pr.rows.some(function (r) { return r.column && r.name === p.name; })) p.items = colItems.map(function (it) { return { size: it.size, name: it.name, n: it.n, note: it.note }; }); });   // 製品ごとに別の行(画面で1台だけ直せるように)
       if (!colItems.length) result.warnings.push('柱の詳細図です。製品は読みましたが、GENレイヤのマークが見つからないため金物は抽出していません');
     }
     // ---------- 柱の金物(2026-11-20 ユーザー指示、EB1-0C-04): レイヤ GEN のマークとその数量 ----------
