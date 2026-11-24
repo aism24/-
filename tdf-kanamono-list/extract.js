@@ -471,6 +471,15 @@
         return s0 && !/^[A-Za-z]$/.test(s0.letter) && lb.y - s0.y < 1500 && Math.abs(lb.x + 18 * lb.mark.length - (s0.x + s0.sx) / 2) < 1000 && !inLeftS(lb);
       };
       if (isLeft(lb) && isLeft({ x: lb.sx, y: lb.sy }) && !kanaSec()) { elevLabels.push(lb); return; }
+      // 「"a"詳細」の詳細図の中の板(2026-11-24 ユーザー指摘「MGC1は何枚？」、WA2-3G-06: 詳細図に「PL-9x200 / MGC1」、立面図(平面図)には符号の無い「PL-9x200」が4か所):
+      // 詳細図の見出しが下(2500以内・横1500以内)にあり、図の中に同じサイズの組にならない表記があれば、その表記1つにつき1枚(備考なし)。き断面(コン止め)の板にしない
+      if (!isLeft(lb) && T.some(function (u) { return /^"[A-Za-z]"詳細$/.test(u.text) && lb.y - u.y > 0 && lb.y - u.y < 2500 && Math.abs(u.x - lb.x) < 1500; })) {
+        var same = T.filter(function (u) {
+          return RE_PLATE.test(u.text) && plateSize(u.text) === lb.size && isLeft(u) &&
+            !labels.some(function (o) { return Math.abs(o.sx - u.x) < 1 && Math.abs(o.sy - u.y) < 1; });
+        });
+        if (same.length) { same.forEach(function (u) { elevLabels.push({ size: lb.size, mark: lb.mark, cnt: plateCount(u.text), x: u.x, y: u.y, sx: u.x, sy: u.y }); }); return; }
+      }
       var s = sectionOf({ x: lb.x, y: lb.y, text: lb.mark }, titles); if (!s) return;
       var si = secInfo[s.letter];
       si.plates[lb.mark] = si.plates[lb.mark] || { size: lb.size, n: 0, mekki: false };
