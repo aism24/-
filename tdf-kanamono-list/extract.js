@@ -753,9 +753,19 @@
     // 傾き2割まで(WR-2G-9 は勾配12.9%。tdf-master-web もこの図面を斜め梁として読めている。2026-11-20)
     var flagLines = L.filter(function (l) { var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]); return dy > 200 && dy < 500 && dx <= dy * 0.2; })
       .map(function (l) { return { x: (l[0] + l[2]) / 2, y0: Math.min(l[1], l[3]), y1: Math.max(l[1], l[3]) }; });
+    // ×で消した旗(旗を囲む四角の対角線2本。2026-11-24、WA2-3G-07: 中止の A・D の旗)は数えない
+    var crossLines = L.filter(function (l) { var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]); return dx > 100 && dy > 100 && dx < 800 && dy < 1000; })
+      .map(function (l) { return { x0: Math.min(l[0], l[2]), x1: Math.max(l[0], l[2]), y0: Math.min(l[1], l[3]), y1: Math.max(l[1], l[3]), up: (l[2] - l[0]) * (l[3] - l[1]) > 0 }; });
+    function crossedOut(x0, x1, y) {
+      return crossLines.some(function (a) {
+        return a.up && a.x0 <= x0 && a.x1 >= x1 && a.y0 <= y && a.y1 >= y &&
+          crossLines.some(function (b) { return !b.up && Math.abs(b.x0 - a.x0) < 2 && Math.abs(b.x1 - a.x1) < 2 && Math.abs(b.y0 - a.y0) < 2 && Math.abs(b.y1 - a.y1) < 2; });
+      });
+    }
     function flagLineX(t) {
       var c = flagLines.filter(function (v) { return v.x - t.x > 50 && v.x - t.x < 180 && v.y0 <= t.y + 20 && v.y1 >= t.y; });
-      return c.length ? c[0].x : null;
+      if (!c.length || crossedOut(t.x, c[0].x, t.y)) return null;
+      return c[0].x;
     }
 
     var excluded = new Set();
