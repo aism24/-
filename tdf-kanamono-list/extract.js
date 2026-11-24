@@ -477,6 +477,9 @@
       si.cntMin = Math.min(si.cntMin || Infinity, lb.cnt);
       si.plateT.add(thickOf(lb.size));
       if (lb.mekki) si.plates[lb.mark].mekki = true;
+      // 符号のすぐ上下に別の文字で「切断流用」(既存の板を切って使う)があれば、備考は断面の副題と「切断流用」(2026-11-24 ユーザー指示、WA1-3G-06 の PL-6x85 GGAR1 →「ALC下地・切断流用」)
+      if (T.some(function (u) { return u.text === '切断流用' && Math.abs(u.x - lb.x) < 150 && Math.abs(u.y - lb.y) < 200; }))
+        si.plates[lb.mark].note = (s.sub ? s.sub + '・' : '') + '切断流用';
       // 「MGR156切断流用」: 備考は断面図の「切断」の書き込みのそばの寸法(WB1-3G-06 す断面: 15 → 「15mm切断」。2026-11-21 ユーザー指示)
       if (/切断流用$/.test(lb.mark)) {
         var cut = T.filter(function (u) { return u.text === '切断' && (sectionOf(u, titles) || {}).letter === s.letter; })[0];
