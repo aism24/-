@@ -111,6 +111,7 @@ $('start-btn').addEventListener('click', () => {
   try { localStorage.setItem(LS_KEY, JSON.stringify({ kojiNo: no, factory: state.factory })); } catch (e) { /* なし */ }
   apiPostQuiet({ action: 'start', koji: state.kojiName, factory: state.factory });
   $('koji-label').textContent = `${state.factory}工場 / ${state.kojiNo} ${state.kojiName}`;
+  moveManualButtonToHeader();   // 起動画面を閉じる前に呼ぶ(カードの中の位置から動かすため)
   $('start-modal').classList.add('hidden');
   document.body.classList.add('app-started'); state.started = true;
   renderServer();
@@ -119,6 +120,54 @@ $('start-btn').addEventListener('click', () => {
 });
 $('btn-change').addEventListener('click', () => { $('start-modal').classList.remove('hidden'); });
 $('start-cancel-btn').addEventListener('click', () => { $('start-modal').classList.add('hidden'); });
+
+// ---------- アプリ説明書(manual/p-N.jpg。作り方は docs/manual-draft-kanamono/README.md) ----------
+// ページ数を変えたら MANUAL_PAGES、画像を差し替えたら MANUAL_V も直す
+const MANUAL_PAGES = 11, MANUAL_V = '20261124m';
+let manualPage = 1;
+const manualSrc = n => `manual/p-${n}.jpg?v=${MANUAL_V}`;
+function showManualPage(n) {
+  manualPage = Math.max(1, Math.min(MANUAL_PAGES, n));
+  $('manual-image').src = manualSrc(manualPage);
+  $('manual-page-indicator').textContent = `${manualPage} / ${MANUAL_PAGES}`;
+  $('manual-prev').disabled = manualPage === 1;
+  $('manual-next').disabled = manualPage === MANUAL_PAGES;
+  if (manualPage < MANUAL_PAGES) new Image().src = manualSrc(manualPage + 1);   // 次のページを先に読んでおく
+}
+const manualOpen = () => $('manual-overlay').classList.contains('open');
+function openManual() { $('manual-overlay').classList.add('open'); showManualPage(1); }
+function closeManual() { $('manual-overlay').classList.remove('open'); }
+$('manual-btn').addEventListener('click', openManual);
+$('manual-close').addEventListener('click', closeManual);
+$('manual-prev').addEventListener('click', () => showManualPage(manualPage - 1));
+$('manual-next').addEventListener('click', () => showManualPage(manualPage + 1));
+document.addEventListener('keydown', e => {
+  if (!manualOpen()) return;
+  if (e.key === 'ArrowLeft') showManualPage(manualPage - 1);
+  else if (e.key === 'ArrowRight') showManualPage(manualPage + 1);
+  else if (e.key === 'Escape') closeManual();
+});
+// 「開始」を押したとき、説明書のボタンを起動画面のカードからヘッダーの「工場・工事の変更」の右へ移す(tdf-master-web と同じ FLIP:
+// 先に移動先へ置き、元の位置・大きさとの差を transform で戻してから外すと、縮みながら移って見える)。
+// 2回目以降(「工場・工事の変更」から開始し直したとき)は何もしない
+function moveManualButtonToHeader() {
+  const btn = $('manual-btn'), change = $('btn-change');
+  if (!btn || !change || btn.classList.contains('manual-btn-header')) return;
+  const first = btn.getBoundingClientRect();
+  btn.classList.remove('manual-btn'); btn.classList.add('manual-btn-header');
+  btn.textContent = '説明書';
+  change.insertAdjacentElement('afterend', btn);
+  if (!first.width) return;   // 起動画面を出さずに始めたとき(次の加工予定)は、動かさずに置くだけ
+  const last = btn.getBoundingClientRect();
+  btn.style.position = 'relative'; btn.style.zIndex = '2500'; btn.style.transformOrigin = 'top left'; btn.style.transition = 'none';
+  btn.style.transform = `translate(${first.left - last.left}px, ${first.top - last.top}px) scale(${first.width / last.width}, ${first.height / last.height})`;
+  void btn.offsetWidth;   // 上の transform を一度確実に反映させる
+  requestAnimationFrame(() => { btn.style.transition = 'transform .6s cubic-bezier(0.22, 1, 0.36, 1)'; btn.style.transform = 'none'; });
+  // 動きが終わったら元に戻す(transitionend が来ないとき(タブが裏にある等)のために、時間でも戻す)
+  const reset = () => { ['transition', 'zIndex', 'position', 'transformOrigin', 'transform'].forEach(k => { btn.style[k] = ''; }); };
+  btn.addEventListener('transitionend', reset, { once: true });
+  setTimeout(reset, 900);
+}
 
 // Excelのリンク(file://)
 function fileUrl(dir, name) {
@@ -541,6 +590,7 @@ async function startPlan() {
   state.factory = '鳥取'; state.kojiNo = ''; state.kojiName = '次の加工予定';
   $('start-modal').classList.add('hidden');
   document.body.classList.add('app-started'); state.started = true;
+  moveManualButtonToHeader();
   $('koji-label').textContent = `鳥取工場 / 次の加工予定(${PLAN.rows.length}件)`;
   apiPostQuiet({ action: 'start', koji: '次の加工予定', factory: '鳥取' });
   const kojis = [...new Set(PLAN.rows.map(r => r.kojiNo || r.abbr))];
