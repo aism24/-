@@ -462,6 +462,44 @@
     var secInfo = {};
     titles.forEach(function (s) { secInfo[s.letter] = { title: s, plates: {}, plateT: new Set(), shapes: [], joint: false, dims: [], nested: [] }; });
     var elevLabels = [];
+    // 孔の印(短い線が十字に交わる「+」や「✳」)の中心(2026-11-24、EB3-RG-07)
+    var holeMarks = (function () {
+      var sh = L.filter(function (l) { var n = Math.hypot(l[2] - l[0], l[3] - l[1]); return n >= 6 && n <= 60; })
+        .map(function (l) { return { cx: (l[0] + l[2]) / 2, cy: (l[1] + l[3]) / 2, a: Math.atan2(l[3] - l[1], l[2] - l[0]) }; });
+      var out = [];
+      sh.forEach(function (a, i) {
+        for (var j = i + 1; j < sh.length; j++) {
+          var b = sh[j];
+          if (Math.abs(a.cx - b.cx) > 1.5 || Math.abs(a.cy - b.cy) > 1.5) continue;
+          var d = Math.abs(Math.sin(a.a - b.a)); if (d > 0.5) { out.push({ x: a.cx, y: a.cy }); break; }
+        }
+      });
+      return out;
+    })();
+    // ガセット(GPL)の表記なのに、符号にスチフナの「R」があり、引出線の先の板に孔の印も無い(2026-11-24 ユーザー指示、EB3-RG-07: B断面の「GPL-16 NGR23」は孔の無い板=図面間違い)→ 備考「孔確認」
+    function gplNoHole(lb) {
+      if (!/^GPL-/.test(lb.size)) return false;
+      // スチフナの符号には「R」がある(NGR23 など。2026-11-24 ユーザー説明)。GPL なのに符号の英字に R がある板だけ見る
+      if (!/R/.test((/^[A-Z-]+/.exec(lb.mark) || [''])[0])) return false;
+      var h = hlines.filter(function (q) { return lb.sy - q.y >= 3 && lb.sy - q.y <= 40 && q.x0 <= lb.sx + 25 && q.x1 >= lb.sx + 25; })
+        .sort(function (a, b) { return (lb.sy - a.y) - (lb.sy - b.y); })[0];
+      if (!h) return false;
+      var tips = [];
+      [[h.x0, h.y], [h.x1, h.y]].forEach(function (e) {
+        L.forEach(function (l) {
+          if (Math.abs(l[1] - l[3]) < 0.5) return;
+          if (Math.hypot(l[0] - e[0], l[1] - e[1]) < 1) tips.push([l[2], l[3]]);
+          else if (Math.hypot(l[2] - e[0], l[3] - e[1]) < 1) tips.push([l[0], l[1]]);
+        });
+      });
+      if (!tips.length) return false;
+      // 板が大きいと孔は引出線の先から離れる(B1M2G-01 の KG35・2G-01 の OG113 は約500)ので700まで。ただしウェブの反対側の孔(別の板)は見ない(先が断面の中心から100以内なら左右は見ない=D1M3G-01 の KGEVG1)
+      var s0 = sectionOf({ x: lb.x, y: lb.y, text: lb.mark }, titles);
+      var c = s0 ? (s0.x + s0.sx + 54) / 2 : null;
+      return !tips.some(function (p) {
+        return holeMarks.some(function (m) { return Math.hypot(m.x - p[0], m.y - p[1]) <= 700 && (c === null || Math.abs(p[0] - c) < 100 || (m.x - c) * (p[0] - c) > 0); });
+      });
+    }
     labels.forEach(function (lb) {
       // 図の範囲は、ひらがな・カタカナの断面図(か SEC など)の手前まで(x1s)で見る(2026-11-21 ユーザー指摘「2もコン止め」、EA2-3G-08: か断面の NNGNR2 を立面図の書き込みにしていた)
       //  ただし、見出しのすぐ上(1500以内・横1000以内)の表記だけ(2G-01 の外装ALC下地(名前だけの断面図)の板は今までどおり)
@@ -487,6 +525,7 @@
       si.cntMin = Math.min(si.cntMin || Infinity, lb.cnt);
       si.plateT.add(thickOf(lb.size));
       if (lb.mekki) si.plates[lb.mark].mekki = true;
+      if (gplNoHole(lb)) si.plates[lb.mark].noHole = true;
       // 符号のすぐ上下に別の文字で「切断流用」(既存の板を切って使う)があれば、備考は断面の副題と「切断流用」(2026-11-24 ユーザー指示、WA1-3G-06 の PL-6x85 GGAR1 →「ALC下地・切断流用」)
       if (T.some(function (u) { return u.text === '切断流用' && Math.abs(u.x - lb.x) < 150 && Math.abs(u.y - lb.y) < 200; }))
         si.plates[lb.mark].note = (s.sub ? s.sub + '・' : '') + '切断流用';
@@ -1026,7 +1065,9 @@
             var p = si.plates[m];
             if (!(m in marks)) marks[m] = { size: p.size, n: p.n, notes: [] };
             else if (p.n < marks[m].n) marks[m].n = p.n;
-            marks[m].notes.push((p.note || si.title.sub || '') + (p.mekki ? '|めっき' : ''));
+            var nt0 = p.note || si.title.sub || '';
+            if (p.noHole) nt0 = (nt0 ? nt0 + '・' : '') + '孔確認';
+            marks[m].notes.push(nt0 + (p.mekki ? '|めっき' : ''));
           });
         });
         Object.keys(marks).forEach(function (m) {
@@ -1403,6 +1444,38 @@
         if (!T.some(function (u) { return /φ/.test(u.text) && Math.abs(u.x - t.x) < 300 && Math.abs(u.y - t.y) < 300; })) return;
         add(t.text, '', m[1] === 'S' ? 2 : 1, 'スリーブ');
       });
+      // 1本ずつ長さが書かれた形鋼(2026-11-24 ユーザー指摘「[-100x50x5x7.5 の長さと本数が違う」、EB3-RG-07: 勾配のある梁の ALC下地。
+      // 立面図の材のそばに、同じレイヤでその材の線の長さと同じ数字(206.3・215.4…)が1本ずつ書いてある)。3本以上あり、図の中に旗のある形鋼の断面が1つだけなら、
+      // その形鋼は断面図の寸法×旗の数ではなく、書かれた長さで1本ずつ数える
+      // 材の線は同じ高さ(梁の上面)から立つので、線の下端が同じ高さのものが3本以上あるときだけ(寸法線と分ける)。文字は線の左(400以内)
+      var labC = [];
+      T.forEach(function (t) {
+        if (!inView(v, t) || t.lay < 0 || !/^[0-9]+(\.[0-9]+)?$/.test(t.text)) return;
+        var val = parseFloat(t.text); if (val < 100) return;
+        L.forEach(function (l) {
+          if (l[4] !== t.lay || Math.abs(l[0] - l[2]) >= 3 || Math.abs(Math.hypot(l[2] - l[0], l[3] - l[1]) - val) > 0.15) return;
+          var dx = l[0] - t.x; if (dx <= 0 || dx > 400 || Math.min(l[1], l[3]) - 300 > t.y || Math.max(l[1], l[3]) + 300 < t.y) return;
+          labC.push({ t: t, val: val, y0: Math.min(l[1], l[3]) });
+        });
+      });
+      var labG = {};
+      labC.forEach(function (c) { var k = Math.round(c.y0); (labG[k] = labG[k] || []).push(c); });
+      var lab = [];
+      Object.keys(labG).forEach(function (k) {
+        var g = labG[k].filter(function (c, i, a) { return a.findIndex(function (d) { return d.t === c.t; }) === i; });
+        if (g.length > lab.length) lab = g.map(function (c) { return c.val; });
+      });
+      if (lab.length >= 3) {
+        var shSecs = Object.keys(flagsBySec).filter(function (L1) { return secInfo[L1] && secInfo[L1].shapes.length === 1 && (flagsBySec[L1].matched.length + flagsBySec[L1].unmatched); });
+        if (shSecs.length === 1) {
+          var shSi = secInfo[shSecs[0]], shName = shSi.shapes[0], shNote = shSi.title.sub || '';
+          var had = Object.keys(items).filter(function (k) { return items[k].size === shName && typeof items[k].name === 'number'; });
+          if (had.length) {
+            had.forEach(function (k) { delete items[k]; });
+            lab.forEach(function (val) { add(shName, val, 1, shNote); });
+          }
+        }
+      }
       var list = Object.keys(items).map(function (k) {
         var it = items[k];
         var subs = new Set(), mekki = false;
