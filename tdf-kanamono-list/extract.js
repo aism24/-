@@ -936,6 +936,7 @@
       // 旗 → 場所。旗は左向き(左の板を見る)を優先し、板厚が断面の表記と合う板だけ
       var flagsBySec = {};
       var looseFlags = [];   // 立面図の板に当たらなかった旗 {L1, fx}
+      var flagHits = [];
       T.forEach(function (t) {
         if (!inView(v, t) || !RE_SECKEY.test(t.text) || !secInfo[t.text]) return;
         var fx = flagLineX(t); if (fx === null) return;
@@ -950,7 +951,7 @@
           var right = cand.filter(function (p) { return p.x >= fx && p.x - fx <= 400; }).sort(function (a, b) { return a.x - b.x; })[0];
           hit = left || right || null;
         }
-        if (hit) { if (hit.secs.indexOf(t.text) < 0) hit.secs.push(t.text); if (flagsBySec[t.text].matched.indexOf(hit) < 0) flagsBySec[t.text].matched.push(hit); }
+        if (hit) { if (hit.secs.indexOf(t.text) < 0) hit.secs.push(t.text); if (flagsBySec[t.text].matched.indexOf(hit) < 0) flagsBySec[t.text].matched.push(hit); flagHits.push({ L1: t.text, fx: fx, hit: hit, left: hit === left }); }
         else flagsBySec[t.text].unmatched++;
         // 旗の記号の上の「x19」= その旗の場所の数(2026-11-21、WB1-3G-05・06 の ALC下地: さ x19・す x1)。書いてあれば平面図で数え直さない
         var mul = T.filter(function (u) { var mm = /^x([0-9]+)$/.exec(u.text); return mm && u.y - t.y > 0 && u.y - t.y < 400 && Math.abs(u.x - t.x) < 150; })[0];
@@ -958,6 +959,30 @@
         if (mul) { var fm = flagsBySec[t.text]; fm.mul = Math.max(fm.mul || 0, parseInt(mul.text.slice(1), 10)); fm.explicit = true; }
         looseFlags.push({ L1: t.text, fx: fx });
       });
+      // 並んだ旗(A・B)が左の同じ板を見たときは、左の旗はさらに左の、まだどの旗も見ていない板にする
+      // (2026-11-24 ユーザー指摘「NG51 の枚数が違う」、EB3-RG-10: 旗 A の縦線が B の板(全せい)のすぐ右にあり、A の板(小梁の短い板)を飛ばしていた)
+      (function () {
+        var byHit = new Map();
+        flagHits.forEach(function (h) { if (h.left) { if (!byHit.has(h.hit)) byHit.set(h.hit, []); byHit.get(h.hit).push(h); } });
+        byHit.forEach(function (hs, P) {
+          var secs = hs.map(function (h) { return h.L1; }).filter(function (L, i, a) { return a.indexOf(L) === i; });
+          if (secs.length < 2) return;
+          hs.sort(function (a, b) { return a.fx - b.fx; });
+          var used = new Set(flagHits.map(function (h) { return h.hit; }));
+          var cur = P;
+          for (var i = hs.length - 2; i >= 0; i--) {
+            var h = hs[i]; if (h.L1 === hs[hs.length - 1].L1) continue;
+            var si = secInfo[h.L1];
+            var nx = positions.filter(function (p) { return !used.has(p) && p.x1 < cur.x && tMatch(p, si.plateT) && h.fx - p.x1 <= 800; }).sort(function (a, b) { return b.x1 - a.x1; })[0];
+            if (!nx) return;
+            var f = flagsBySec[h.L1];
+            if (!hs.some(function (o) { return o !== h && o.L1 === h.L1; })) { P.secs = P.secs.filter(function (L) { return L !== h.L1; }); f.matched = f.matched.filter(function (q) { return q !== P; }); }
+            if (nx.secs.indexOf(h.L1) < 0) nx.secs.push(h.L1);
+            if (f.matched.indexOf(nx) < 0) f.matched.push(nx);
+            h.hit = nx; used.add(nx); cur = nx;
+          }
+        });
+      })();
       Object.keys(flagsBySec).forEach(function (L1) {
         var f = flagsBySec[L1];
         if (f.mul && f.mul > f.matched.length + f.unmatched) f.unmatched = f.mul - f.matched.length;
@@ -1090,6 +1115,17 @@
         secInfo[L1].nested.forEach(function (N) { addSecPlatesOnce([N], cnt); addNested(N, cnt, depth + 1); });
       }
       Object.keys(secInfo).forEach(function (L1) { if (secCount[L1]) addNested(L1, secCount[L1], 0); });
+      // 旗がどこにも無い断面(2026-11-24 ユーザー指示、EB3-RG-10: D断面の NG53・NGR28 は立面図に D の旗が無い=図面間違い)。
+      // 製品が1つの図面だけ、断面図の板を1回ずつ入れて備考「図面NG」。中止の断面(板なし)・ほかの断面の中の断面は除く
+      if (views.length === 1) {
+        Object.keys(secInfo).forEach(function (L1) {
+          var si = secInfo[L1];
+          if (flagsBySec[L1] || !Object.keys(si.plates).length) return;
+          if (Object.keys(secInfo).some(function (L2) { return secInfo[L2].nested.indexOf(L1) >= 0; })) return;
+          if (T.some(function (u) { return u.text === L1 && isLeft(u) && RE_SECKEY.test(u.text); })) return;   // 図の中に記号はある(旗の形でないだけ)
+          Object.keys(si.plates).forEach(function (m) { var pl = si.plates[m]; add(pl.size, m, pl.n, '図面NG'); });
+        });
+      }
       // 跳ね出しの山形鋼(2G-01 の DK2・DK3・DK4 の L-65x65x6。2026-11-19 ユーザー説明):
       // 旗は一部の山形鋼にしか無いので、平面図・立面図に描かれた山形鋼(長さ d の平行な3本 = 0・厚さ・脚 か 0・脚-厚さ・脚)をすべて数え、
       // 旗のある山形鋼から各断面の「長さ」と「背の向き」を覚えて、旗のない山形鋼を長さと向きが同じ断面に入れる
