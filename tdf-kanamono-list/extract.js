@@ -217,6 +217,7 @@
     var boxes = texts.filter(function (u) { return /^□\s*[-‐]?\s*[0-9.]+\s*[xX×]\s*[0-9.]+/.test(u.text); });
     var sizeLabels = new Set();
     boxes.forEach(function (r) { texts.forEach(function (q) { if (q !== r && q.y - r.y > 0 && q.y - r.y <= 300 && Math.abs(q.x - r.x) <= 450) sizeLabels.add(q.text); }); });
+    var zushiRows = [];
     pending.forEach(function (p) {
       var left = p.same.slice().reverse();   // 左から
       var cells = left.slice(-3);
@@ -226,6 +227,26 @@
       p.done = true;
       if (inX(mark.x, mark.y) || inX(p.dai.x, p.dai.y)) return;
       rows.push({ name: mark.text, fugo: code.text, dai: p.n, x: Math.min(a.x, b.x), xr: p.dai.x, y: p.dai.y, main: boxes.length ? boxes[0].text : '', column: true });
+      p.cols = { code: code, mark: mark, zushi: cells[2] };
+      zushiRows.push(p);
+    });
+    // 「図示」の行の上下に続く、設計符号と製品マークだけの行(サイズの欄が空)= 同じ図の製品(tdf-master-web の柱モード _zushi_followers と同じ。
+    // 2026-11-24、WA1-1C-01: 「1C2|1C-X17Y5|図示|1台」の下の「1C2|1C-X18Y5|1台」「1C2|1C-X19Y5|1台」を現場付けにしていた)
+    zushiRows.forEach(function (z) {
+      var members = [z], changed = true;
+      while (changed) {
+        changed = false;
+        pending.forEach(function (p) {
+          if (p.done || Math.abs(p.dai.x - z.dai.x) > 1) return;
+          if (Math.min.apply(null, members.map(function (m) { return Math.abs(p.dai.y - m.dai.y); })) > 400) return;
+          var left = p.same.filter(function (u) { return u.x >= Math.min(z.cols.code.x, z.cols.mark.x) - 1; });
+          var code = left.find(function (u) { return Math.abs(u.x - z.cols.code.x) <= 1; }), mark = left.find(function (u) { return Math.abs(u.x - z.cols.mark.x) <= 1; });
+          if (!code || !mark || code.text !== z.cols.code.text || left.length !== 2) return;
+          p.done = true; changed = true; members.push(p);
+          if (inX(mark.x, mark.y) || inX(p.dai.x, p.dai.y)) return;
+          rows.push({ name: mark.text, fugo: code.text, dai: p.n, x: Math.min(code.x, mark.x), xr: p.dai.x, y: p.dai.y, main: boxes.length ? boxes[0].text : '', column: true });
+        });
+      }
     });
     var groups = {};
     pending.forEach(function (p) {
@@ -1621,7 +1642,7 @@
     if (pr.rows.some(function (r) { return r.column; })) {
       result.columnDrawing = true;
       var colItems = columnItems();
-      result.products.forEach(function (p) { if (pr.rows.some(function (r) { return r.column && r.name === p.name; })) p.items = colItems; });
+      result.products.forEach(function (p) { if (pr.rows.some(function (r) { return r.column && r.name === p.name; })) p.items = colItems.map(function (it) { return { size: it.size, name: it.name, n: it.n, note: it.note }; }); });   // 製品ごとに別の行(画面で1台だけ直せるように)
       if (!colItems.length) result.warnings.push('柱の詳細図です。製品は読みましたが、GENレイヤのマークが見つからないため金物は抽出していません');
     }
     // ---------- 柱の金物(2026-11-20 ユーザー指示、EB1-0C-04): レイヤ GEN のマークとその数量 ----------
@@ -1653,6 +1674,14 @@
         var occ = byMark[mk];
         // 同じ高さ(±60)に書かれた表記を優先(十文字補強の「N BPL-36 (十文字補強)  N-R70AK」。そばの F.PL-40x450 と取り違えない)、無ければ一番近いもの
         var o0 = occ[0];
+        // 下がり止めピース(2026-11-24 ユーザー指示「GK6Bと書かれているものは拾ってください。備考欄に『下がり止め』」、WA1-1C-01):
+        // マークのすぐ上(上へ250以内・左右300以内)にピースの記号「K6B」があり、図面に「下がり止めピース」の詳細図があるとき、
+        // サイズ = K6B・数 = マークの数・備考 = 下がり止め。マークの無い K6B は拾わない(ユーザー指示)
+        var piece = T.find(function (u) { return /^K[0-9]+[A-Z]?$/.test(u.text) && u.y - o0.y > 50 && u.y - o0.y <= 250 && Math.abs(u.x - o0.x) <= 300; });
+        if (piece && T.some(function (u) { return /下がり止めピース/.test(u.text) && T.some(function (k) { return k.text === piece.text && k.y > u.y && k.y - u.y < 2500 && Math.abs(k.x - u.x) < 1500; }); })) {
+          out.push({ size: piece.text, name: mk, n: occ.length, note: '下がり止め' });
+          return;
+        }
         var sameRow = sizesT.filter(function (a) { return Math.abs(a.y - o0.y) <= 60 && dist(a, o0) <= 800; }).sort(function (a, b) { return dist(a, o0) - dist(b, o0); });
         // 引出線の上に表記・下にマークの書き方(「T C PL-50 / ND20」)は、マークのすぐ上(上へ250以内・左右300以内)の表記を使う
         // (2026-11-24、EA2-1C-02 D断面: 同じ高さの小梁側の FB-6x50x440(680離れている)を ND20 のサイズにしていた)
