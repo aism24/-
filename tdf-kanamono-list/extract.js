@@ -1634,7 +1634,7 @@
       var genNo = P.layers.indexOf('GEN') + 1; if (!genNo) return [];
       var gen = T.filter(function (t) { return t.lay === genNo && /^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*$/.test(t.text) && !/^(L|C|H|PL|FB|G?PL)-/.test(t.text) && /[0-9]/.test(t.text); });
       var sizesT = T.filter(function (t) { return /(^|[ .])(G?PL|FB)-[0-9]/.test(t.text) || /^(G?PL|FB)-[0-9]/.test(t.text); });
-      var byMark = {};
+      var byMark = {}, usedSizes = [];   // usedSizes = GEN のマークのサイズに使った表記(デッキ受けとして数えない)
       gen.forEach(function (t) { (byMark[t.text] = byMark[t.text] || []).push(t); });
       var out = [];
       Object.keys(byMark).forEach(function (mk) {
@@ -1642,7 +1642,11 @@
         // 同じ高さ(±60)に書かれた表記を優先(十文字補強の「N BPL-36 (十文字補強)  N-R70AK」。そばの F.PL-40x450 と取り違えない)、無ければ一番近いもの
         var o0 = occ[0];
         var sameRow = sizesT.filter(function (a) { return Math.abs(a.y - o0.y) <= 60 && dist(a, o0) <= 800; }).sort(function (a, b) { return dist(a, o0) - dist(b, o0); });
-        var sz = sameRow[0] || sizesT.slice().sort(function (a, b) { return dist(a, o0) - dist(b, o0); })[0];
+        // 引出線の上に表記・下にマークの書き方(「T C PL-50 / ND20」)は、マークのすぐ上(上へ250以内・左右300以内)の表記を使う
+        // (2026-11-24、EA2-1C-02 D断面: 同じ高さの小梁側の FB-6x50x440(680離れている)を ND20 のサイズにしていた)
+        var above = sizesT.filter(function (a) { return a.y - o0.y > 60 && a.y - o0.y <= 250 && Math.abs(a.x - o0.x) <= 300; }).sort(function (a, b) { return dist(a, o0) - dist(b, o0); })[0];
+        if (above && sameRow[0] && dist(sameRow[0], o0) <= dist(above, o0) * 2) above = null;   // 同じ高さの表記のほうが十分近ければ今までどおり
+        var sz = above || sameRow[0] || sizesT.slice().sort(function (a, b) { return dist(a, o0) - dist(b, o0); })[0];
         // 800以内に無いときは、同じ高さ(±60)の1200以内まで見る(EB2-1C-03 の NCKE1 は「FB-90x12x4面」と同じ高さで970離れている。2026-11-20 ユーザー指摘「NCKE1の漏れ」)
         if (!sz || dist(sz, o0) > 800) sz = sizesT.filter(function (a) { return Math.abs(a.y - o0.y) <= 60 && dist(a, o0) <= 1200; }).sort(function (a, b) { return dist(a, o0) - dist(b, o0); })[0];
         if (!sz) return;
@@ -1651,6 +1655,7 @@
         var m = /^((?:G?PL|FB)-[0-9.]+(?:x[φ0-9.]+)*)/.exec(st);
         if (!m) return;
         var size = m[1];
+        usedSizes.push(sz);
         var n = occ.length * mult;
         // 断面図の中のマーク → その断面の旗がある図で、同じ板の数を数える
         var sec = sectionOf(occ[0], titles);
@@ -1738,6 +1743,23 @@
         // 本数 = その図(見出しの上 2500・左右 1500 以内)の中の「K-9」の数(柱の立面図の K-9 は数えない)。見出しが無ければ L-270 から1500以内
         var nBar = T.filter(function (u) { return u.text === bar.text && (ttl ? u.y > ttl.y && u.y - ttl.y < 2500 && Math.abs(u.x - ttl.x) < 1500 : dist(u, t) <= 1500); }).length;
         out.push({ size: bar.text, name: parseFloat(t.text.slice(2)), n: nBar, note: ttl ? ttl.text : '' });
+      });
+      // GEN に長さ(L-270)が無い親綱掛けフック(2026-11-24 ユーザー指示「入れるようにします」、EA2-1C-02・EB2-1C-03 の1節柱):
+      // 見出し「親綱掛けフック」の図(見出しの上 2500・左右 1500 以内)の中の「K-9」の数。長さは図面に無いので空欄
+      if (!out.some(function (it) { return /フック/.test(it.note); })) {
+        T.filter(function (u) { return /^親綱掛けフック$/.test(u.text); }).slice(0, 1).forEach(function (ttl) {
+          var inFig = T.filter(function (u) { return /^K-[0-9]+$/.test(u.text) && u.y > ttl.y && u.y - ttl.y < 2500 && Math.abs(u.x - ttl.x) < 1500; });
+          if (!inFig.length) return;
+          var bar = inFig[0].text;
+          out.push({ size: bar, name: '', n: inFig.filter(function (u) { return u.text === bar; }).length, note: ttl.text });
+        });
+      }
+      // デッキ受けの「FB-6x50x440」(2026-11-24 ユーザー説明「FB-6x50x440これはデッキ受けです。FB-6x50長さ440が2枚」、EA2-1C-02 D断面の小梁 CG1000A の両側):
+      // 柱の図面で、GEN のマークのサイズに使っていない「FB-幅x厚x長さ」の表記1つ = 1枚。サイズ FB-6x50・切板名(長さ)440・備考 デッキ受け
+      //   EB1-0C-04(C断面の梁3か所×2 = 6)・EB2-0C-05(4か所×2 = 8)も同じ描き方
+      T.filter(function (u) { return /^FB-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) && usedSizes.indexOf(u) < 0; }).forEach(function (u) {
+        var m = /^(FB-[0-9.]+x[0-9.]+)x([0-9.]+)$/.exec(u.text);
+        out.push({ size: m[1], name: parseFloat(m[2]), n: 1, note: 'デッキ受け' });
       });
       // 仕口の上フランジの上に立つさや管(2026-11-20 ユーザー説明、EB2-0C-05): 立面図に縦書きの「K-11」とそばの長さの寸法「190」。
       // サイズの表記は無いので、サイズ = K-11、切板名(長さ)= そば(400以内)の数字だけの寸法、本数 = 図面の中のその「K-11」の数、備考 = サヤ管。
