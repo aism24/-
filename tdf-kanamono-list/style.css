@@ -130,7 +130,7 @@ table.kl input.note-in { width: 160px; font-size: 13px; padding: 2px 4px; }
 #pick-list .pick-dir { font-weight: bold; }
 #pick-list .pick-count { color: #777; margin-left: 8px; font-weight: normal; }
 #pick-list .pick-file { display: block; margin-left: 28px; }
-#notice-body { font-size: 14px; line-height: 1.9; white-space: pre-wrap; }
+#notice-body { font-size: 14px; line-height: 1.9; white-space: pre-wrap; word-break: auto-phrase; }  /* 文節の途中で改行しない(Chrome・Edge 119〜。2026-11-24) */
 .status-box { background: #fff; border-radius: 10px; padding: 20px 28px; display: flex; align-items: center; gap: 14px; }
 .spinner { width: 22px; height: 22px; border: 3px solid #ddd; border-top-color: #1a73e8; border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -156,3 +156,58 @@ table.kl input.note-in { width: 160px; font-size: 13px; padding: 2px 4px; }
 .big-btn .btn-sub { display: block; font-size: 12px; font-weight: normal; }
 #repick-row { text-align: right; margin-top: -8px; }
 .link-btn { background: none; border: none; color: #8ab4f8; text-decoration: underline; cursor: pointer; font-size: 12px; }
+
+/* アプリ説明書のボタン(起動画面のカードの中。tdf-master-web と同じ見た目) */
+.manual-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; background: #ff8fc7; color: #000; border: none; border-radius: 14px;
+  padding: 14px 10px; font-size: 24px; font-weight: bold; cursor: pointer;
+  margin: 0 0 16px; box-shadow: 0 3px 12px rgba(255,143,199,0.5);
+  transition: background .15s, transform .15s; white-space: nowrap;
+}
+.manual-btn:hover { background: #ff6fb5; transform: translateY(-1px); }
+/* 「開始」を押したあと: ヘッダーの「工場・工事の変更」の右へ移る(app.js の moveManualButtonToHeader)。
+   文字が途中で2行に割れないよう nowrap、隣のボタンに押されて縮まないよう flex-shrink:0 */
+.manual-btn-header {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #fff; color: #1a73e8; border: 1px solid #1a73e8; border-radius: 14px;
+  padding: 5px 12px; font-size: 12px; font-weight: bold; cursor: pointer;
+  white-space: nowrap; flex-shrink: 0;
+}
+.manual-btn-header:hover { background: #eaf2fe; }
+#header-right .header-btn, #header-right .header-action-btn { white-space: nowrap; }
+
+/* 説明書の表示(ページの画像を画面いっぱいに。縦横の比はそのまま) */
+#manual-overlay {
+  display: none; position: fixed; inset: 0; z-index: 7000;
+  background: rgba(20,30,40,0.72); align-items: center; justify-content: center; padding: 14px;
+}
+#manual-overlay.open { display: flex; }
+#manual-box {
+  background: #fff; border-radius: 14px; padding: 16px; width: 100%; height: 100%;
+  box-shadow: 0 12px 40px rgba(0,0,0,.4); display: flex; flex-direction: column; gap: 12px;
+}
+#manual-image-wrap {
+  position: relative; flex: 1 1 auto; min-height: 0; background: #0b1220; border-radius: 8px;
+  overflow: hidden; display: flex; align-items: center; justify-content: center;
+}
+#manual-image { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; }
+#manual-page-indicator { text-align: center; font-size: 13px; color: #666; font-weight: bold; }
+#manual-actions { display: flex; justify-content: center; gap: 12px; }
+#manual-actions button {
+  padding: 9px 22px; border-radius: 8px; border: 1px solid #bbb; background: #fff;
+  font-size: 14px; font-weight: bold; cursor: pointer; min-width: 96px; white-space: nowrap;
+}
+#manual-actions button:disabled { opacity: .4; cursor: not-allowed; }
+#manual-actions button#manual-close { background: #333; color: #fff; border-color: #333; }
+/* ヘッダー右のボタン(工場・工事の変更・説明書・リセット・Excel)を1行に収める(説明書を足して4つになったため。2026-11-24)。
+   右の列はボタンの幅を下回らない。狭い画面(1100px未満)は今までどおりボタン単位で折り返す */
+@media (min-width: 1100px) {
+  header { grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr); }
+  #header-right { flex-wrap: nowrap; }
+}
+/* 761〜1099px: ロゴの段の下に、ヘッダー右のボタンを1行で並べる(説明書が「工場・工事の変更」と別の段に分かれないように) */
+@media (min-width: 761px) and (max-width: 1099px) {
+  header { grid-template-columns: minmax(0, 1fr) auto; padding-bottom: 8px; }
+  #header-right { grid-column: 1 / -1; flex-wrap: nowrap; }
+}
