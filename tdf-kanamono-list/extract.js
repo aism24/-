@@ -1633,7 +1633,19 @@
       var pairCache = {};
       var genNo = P.layers.indexOf('GEN') + 1; if (!genNo) return [];
       var gen = T.filter(function (t) { return t.lay === genNo && /^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*$/.test(t.text) && !/^(L|C|H|PL|FB|G?PL)-/.test(t.text) && /[0-9]/.test(t.text); });
-      var sizesT = T.filter(function (t) { return /(^|[ .])(G?PL|FB)-[0-9]/.test(t.text) || /^(G?PL|FB)-[0-9]/.test(t.text); });
+      var sizesT = T.filter(function (t) { return /(^|[ .])(G?PL|FB)-[0-9]/.test(t.text) || /^(G?PL|FB)-[0-9]/.test(t.text) || /^[0-9]+-R?PL-[0-9]/.test(t.text); });   // 「3-RPL-6」= リブ PL-6 が3枚(2026-11-24、EA2-1C-06 NCR21)
+      // 表記の引出線(表記のそばから縦にのびる線)の先(端から300以内)にあるマーク → その表記(2026-11-24、EA2-1C-06 B断面: NC79 は GPL-12 の引出線の先。近くの PL-12 は NCR23 の表記)
+      function leaderSize(o) {
+        return sizesT.filter(function (a) {
+          return L.some(function (l) {
+            if (Math.abs(l[0] - l[2]) > 1 || Math.abs(l[1] - l[3]) < 200) return false;   // 縦の線だけ
+            var lo = l[1] < l[3] ? [l[0], l[1]] : [l[2], l[3]], hi = l[1] < l[3] ? [l[2], l[3]] : [l[0], l[1]];
+            var near = function (p, q) { return Math.abs(p[0] - q.x) <= 100 && Math.abs(p[1] - q.y) <= 100; };
+            var far = function (p, q) { return Math.hypot(p[0] - q.x, p[1] - q.y) <= 300; };
+            return (near(lo, a) && far(hi, o) && o.y > a.y) || (near(hi, a) && far(lo, o) && o.y < a.y);
+          });
+        })[0];
+      }
       var byMark = {}, usedSizes = [];   // usedSizes = GEN のマークのサイズに使った表記(デッキ受けとして数えない)
       gen.forEach(function (t) { (byMark[t.text] = byMark[t.text] || []).push(t); });
       var out = [];
@@ -1646,11 +1658,12 @@
         // (2026-11-24、EA2-1C-02 D断面: 同じ高さの小梁側の FB-6x50x440(680離れている)を ND20 のサイズにしていた)
         var above = sizesT.filter(function (a) { return a.y - o0.y > 60 && a.y - o0.y <= 250 && Math.abs(a.x - o0.x) <= 300; }).sort(function (a, b) { return dist(a, o0) - dist(b, o0); })[0];
         if (above && sameRow[0] && dist(sameRow[0], o0) <= dist(above, o0) * 2) above = null;   // 同じ高さの表記のほうが十分近ければ今までどおり
-        var sz = above || sameRow[0] || sizesT.slice().sort(function (a, b) { return dist(a, o0) - dist(b, o0); })[0];
+        var sz = leaderSize(o0) || above || sameRow[0] || sizesT.slice().sort(function (a, b) { return dist(a, o0) - dist(b, o0); })[0];
         // 800以内に無いときは、同じ高さ(±60)の1200以内まで見る(EB2-1C-03 の NCKE1 は「FB-90x12x4面」と同じ高さで970離れている。2026-11-20 ユーザー指摘「NCKE1の漏れ」)
         if (!sz || dist(sz, o0) > 800) sz = sizesT.filter(function (a) { return Math.abs(a.y - o0.y) <= 60 && dist(a, o0) <= 1200; }).sort(function (a, b) { return dist(a, o0) - dist(b, o0); })[0];
         if (!sz) return;
-        var st = sz.text.replace(/^.*?((?:G?PL|FB)-)/, '$1'), mult = 1;
+        var mult = 1, mc = /^([0-9]+)-R?PL-/.exec(sz.text) || /^([0-9]+)G\.PL-/.exec(sz.text); if (mc) mult = parseInt(mc[1], 10);   // 「3-RPL-6」= 3枚、「2G.PL-6」= GPL-6 が2枚(2026-11-24 ユーザー説明、EA2-1C-06 NCN1)
+        var st = sz.text.replace(/^[0-9]+-R?PL-/, 'PL-').replace(/^[0-9]*G\.PL-/, 'GPL-').replace(/^.*?((?:G?PL|FB)-)/, '$1');
         var mm2 = /x([0-9]+)面/.exec(st); if (mm2) { mult = parseInt(mm2[1], 10); st = st.replace(/x[0-9]+面.*$/, ''); }   // 「FB-90x12x4面」= 4枚
         var m = /^((?:G?PL|FB)-[0-9.]+(?:x[φ0-9.]+)*)/.exec(st);
         if (!m) return;
