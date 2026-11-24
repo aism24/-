@@ -1480,9 +1480,9 @@
         if (!T.some(function (u) { return /φ/.test(u.text) && Math.abs(u.x - t.x) < 300 && Math.abs(u.y - t.y) < 300; })) return;
         add(t.text, '', m[1] === 'S' ? 2 : 1, 'スリーブ');
       });
-      // 1本ずつ長さが書かれた形鋼(2026-11-24 ユーザー指摘「[-100x50x5x7.5 の長さと本数が違う」、EB3-RG-07: 勾配のある梁の ALC下地。
+      // 立面図に材が1本ずつ描かれ、そばに数字が書かれた形鋼(2026-11-24 ユーザー指摘「[-100x50x5x7.5 の長さと本数が違う」、EB3-RG-07: 勾配のある梁の ALC下地。
       // 立面図の材のそばに、同じレイヤでその材の線の長さと同じ数字(206.3・215.4…)が1本ずつ書いてある)。3本以上あり、図の中に旗のある形鋼の断面が1つだけなら、
-      // その形鋼は断面図の寸法×旗の数ではなく、書かれた長さで1本ずつ数える
+      // その形鋼の本数は旗の数ではなく材の数
       // 材の線は同じ高さ(梁の上面)から立つので、線の下端が同じ高さのものが3本以上あるときだけ(寸法線と分ける)。文字は線の左(400以内)
       var labC = [];
       T.forEach(function (t) {
@@ -1507,8 +1507,12 @@
           var shSi = secInfo[shSecs[0]], shName = shSi.shapes[0], shNote = shSi.title.sub || '';
           var had = Object.keys(items).filter(function (k) { return items[k].size === shName && typeof items[k].name === 'number'; });
           if (had.length) {
+            // 長さは断面図の寸法(梁の中心から)からウェブ厚の半分を引いたもの(2026-11-24 ユーザー指示、EB3-RG-07: 545 − 25/2 = 532.5。平面図の材も 270+262.5=532.5)。
+            // 立面図のそばの数字(206.3〜297.6)は材の数を数えるのに使う(1本ずつの長さではない)
+            var base = Math.max.apply(null, had.map(function (k) { return items[k].name; }));
+            var mw2 = /x([0-9.]+)x([0-9.]+)$/.exec(main || ''), tw2 = mw2 ? parseFloat(mw2[1]) : 0;
             had.forEach(function (k) { delete items[k]; });
-            lab.forEach(function (val) { add(shName, val, 1, shNote); });
+            add(shName, Math.round((base - tw2 / 2) * 10) / 10, lab.length, shNote);
           }
         }
       }
