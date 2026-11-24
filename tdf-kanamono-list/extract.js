@@ -1674,6 +1674,14 @@
         var occ = byMark[mk];
         // 同じ高さ(±60)に書かれた表記を優先(十文字補強の「N BPL-36 (十文字補強)  N-R70AK」。そばの F.PL-40x450 と取り違えない)、無ければ一番近いもの
         var o0 = occ[0];
+        // 下がり止めピース(2026-11-24 ユーザー指示「GK6Bと書かれているものは拾ってください。備考欄に『下がり止め』」、WA1-1C-01):
+        // マークのすぐ上(上へ250以内・左右300以内)にピースの記号「K6B」があり、図面に「下がり止めピース」の詳細図があるとき、
+        // サイズ = K6B・数 = マークの数・備考 = 下がり止め。マークの無い K6B は拾わない(ユーザー指示)
+        var piece = T.find(function (u) { return /^K[0-9]+[A-Z]?$/.test(u.text) && u.y - o0.y > 50 && u.y - o0.y <= 250 && Math.abs(u.x - o0.x) <= 300; });
+        if (piece && T.some(function (u) { return /下がり止めピース/.test(u.text) && T.some(function (k) { return k.text === piece.text && k.y > u.y && k.y - u.y < 2500 && Math.abs(k.x - u.x) < 1500; }); })) {
+          out.push({ size: piece.text, name: mk, n: occ.length, note: '下がり止め' });
+          return;
+        }
         var sameRow = sizesT.filter(function (a) { return Math.abs(a.y - o0.y) <= 60 && dist(a, o0) <= 800; }).sort(function (a, b) { return dist(a, o0) - dist(b, o0); });
         // 引出線の上に表記・下にマークの書き方(「T C PL-50 / ND20」)は、マークのすぐ上(上へ250以内・左右300以内)の表記を使う
         // (2026-11-24、EA2-1C-02 D断面: 同じ高さの小梁側の FB-6x50x440(680離れている)を ND20 のサイズにしていた)
