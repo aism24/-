@@ -1633,7 +1633,7 @@
       var pairCache = {};
       var genNo = P.layers.indexOf('GEN') + 1; if (!genNo) return [];
       var gen = T.filter(function (t) { return t.lay === genNo && /^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*$/.test(t.text) && !/^(L|C|H|PL|FB|G?PL)-/.test(t.text) && /[0-9]/.test(t.text); });
-      var sizesT = T.filter(function (t) { return /(^|[ .])(G?PL|FB)-[0-9]/.test(t.text) || /^(G?PL|FB)-[0-9]/.test(t.text) || /^[0-9]+-R?PL-[0-9]/.test(t.text); });   // 「3-RPL-6」= リブ PL-6 が3枚(2026-11-24、EA2-1C-06 NCR21)
+      var sizesT = T.filter(function (t) { return /(^|[ .])(G?PL|FB)-[0-9]/.test(t.text) || /^(G?PL|FB)-[0-9]/.test(t.text) || /^[0-9]+-R?PL-[0-9]/.test(t.text) || /^[0-9]+G?PL-[0-9]/.test(t.text); });   // 「2PL-6」= 2枚(EA2-1C-09 NCZ11M の水切り板)   // 「3-RPL-6」= リブ PL-6 が3枚(2026-11-24、EA2-1C-06 NCR21)
       // 表記の引出線(表記のそばから縦にのびる線)の先(端から300以内)にあるマーク → その表記(2026-11-24、EA2-1C-06 B断面: NC79 は GPL-12 の引出線の先。近くの PL-12 は NCR23 の表記)
       function leaderSize(o) {
         return sizesT.filter(function (a) {
@@ -1641,7 +1641,7 @@
             if (Math.abs(l[0] - l[2]) > 1 || Math.abs(l[1] - l[3]) < 200) return false;   // 縦の線だけ
             var lo = l[1] < l[3] ? [l[0], l[1]] : [l[2], l[3]], hi = l[1] < l[3] ? [l[2], l[3]] : [l[0], l[1]];
             var near = function (p, q) { return Math.abs(p[0] - q.x) <= 100 && Math.abs(p[1] - q.y) <= 100; };
-            var far = function (p, q) { return Math.hypot(p[0] - q.x, p[1] - q.y) <= 300; };
+            var far = function (p, q) { return Math.hypot(p[0] - (q.x + 9 * q.text.length), p[1] - q.y) <= 400; };   // マークは文字の中央で測る   // 300 → 400(EA2-1C-09 B断面の NCR23・NCR25 は線の端から 360〜380)
             return (near(lo, a) && far(hi, o) && o.y > a.y) || (near(hi, a) && far(lo, o) && o.y < a.y);
           });
         })[0];
@@ -1662,8 +1662,8 @@
         // 800以内に無いときは、同じ高さ(±60)の1200以内まで見る(EB2-1C-03 の NCKE1 は「FB-90x12x4面」と同じ高さで970離れている。2026-11-20 ユーザー指摘「NCKE1の漏れ」)
         if (!sz || dist(sz, o0) > 800) sz = sizesT.filter(function (a) { return Math.abs(a.y - o0.y) <= 60 && dist(a, o0) <= 1200; }).sort(function (a, b) { return dist(a, o0) - dist(b, o0); })[0];
         if (!sz) return;
-        var mult = 1, mc = /^([0-9]+)-R?PL-/.exec(sz.text) || /^([0-9]+)G\.PL-/.exec(sz.text); if (mc) mult = parseInt(mc[1], 10);   // 「3-RPL-6」= 3枚、「2G.PL-6」= GPL-6 が2枚(2026-11-24 ユーザー説明、EA2-1C-06 NCN1)
-        var st = sz.text.replace(/^[0-9]+-R?PL-/, 'PL-').replace(/^[0-9]*G\.PL-/, 'GPL-').replace(/^.*?((?:G?PL|FB)-)/, '$1');
+        var mult = 1, mc = /^([0-9]+)-R?PL-/.exec(sz.text) || /^([0-9]+)G\.PL-/.exec(sz.text) || /^([0-9]+)(?=G?PL-)/.exec(sz.text); if (mc) mult = parseInt(mc[1], 10);   // 「3-RPL-6」= 3枚、「2G.PL-6」= GPL-6 が2枚(2026-11-24 ユーザー説明、EA2-1C-06 NCN1)
+        var st = sz.text.replace(/^[0-9]+-R?PL-/, 'PL-').replace(/^[0-9]+(?=G?PL-)/, '').replace(/^[0-9]*G\.PL-/, 'GPL-').replace(/^.*?((?:G?PL|FB)-)/, '$1');
         var mm2 = /x([0-9]+)面/.exec(st); if (mm2) { mult = parseInt(mm2[1], 10); st = st.replace(/x[0-9]+面.*$/, ''); }   // 「FB-90x12x4面」= 4枚
         var m = /^((?:G?PL|FB)-[0-9.]+(?:x[φ0-9.]+)*)/.exec(st);
         if (!m) return;
@@ -1721,7 +1721,11 @@
             }
           }
         }
-        out.push({ size: size, name: mk, n: n, note: '' });
+        // 備考(2026-11-24、EA2-1C-09): 断面の副題(「(水切り板)」「(ササラ受)」。<空気抜き…> は除く)と、符号の番号のすぐあとの M = めっき(梁と同じ決まり)
+        var notes = [];
+        if (sec && sec.sub && !/空気抜き/.test(sec.sub)) notes.push(sec.sub);
+        if (/[0-9]M[A-Z]?$/.test(mk)) notes.push('めっき');
+        out.push({ size: size, name: mk, n: n, note: notes.join('・') });
       });
       // 柱の図面の形鋼の断面(ア・イ の L-75x75x6。2026-11-20 ユーザー指示「アイ断面があるのでそちらのL-75も拾って欲しい」):
       // 本数 = 図の中のその断面の旗の数 × 断面図の表記の数。長さ = 断面図に長さの寸法が無いので、旗のそば(1000以内)に描かれた線(300〜3000)で一番多い長さ(C断面の八角形の斜めの辺 707.1)
