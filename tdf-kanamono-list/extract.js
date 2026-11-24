@@ -383,6 +383,15 @@
       us.add(sz); um.add(m);
       out.push({ size: plateSize(sz.t.text), cnt: plateCount(sz.t.text), mark: m.text, x: m.x, y: m.y, sx: sz.t.x, sy: sz.t.y, mekki: false });
     });
+    // まだ組にならない表記と符号: 符号が表記の引出線の右端から右へ500以内・高さの差200以内に1つだけあれば組にする
+    // (2026-11-24 ユーザー指摘「NHG152MK も漏れてる」、EB3-RG-14: めっき範囲の「GPL-25 / zC800」の符号 NHG152MK が右上に離れて書かれていた)
+    sizes.forEach(function (sz) {
+      if (us.has(sz) || !sz.h) return;
+      var cs = marks.filter(function (k) { return !um.has(k) && k.x >= sz.h.x1 - 50 && k.x - sz.h.x1 < 500 && Math.abs(k.y - sz.t.y) < 200; });
+      if (cs.length !== 1) return;
+      var m = cs[0]; us.add(sz); um.add(m);
+      out.push({ size: plateSize(sz.t.text), cnt: plateCount(sz.t.text), mark: m.text, x: m.x, y: m.y, sx: sz.t.x, sy: sz.t.y, mekki: false });
+    });
     return out;
   }
 
@@ -544,11 +553,24 @@
       if (!T.some(function (u) { return u.text === '支給品' && t.y - u.y > 0 && t.y - u.y < 250 && Math.abs(u.x - t.x) < 300; })) return;
       var s3 = sectionOf(t, titles); if (!s3) return;
       // 断面図が図の右上にあり、表記だけ図の範囲に入る図面がある(2026-11-21 ユーザー指摘「避雷針漏れ」、EA2-RG-12)。見出しが図の外なら断面図の表記
-      if (isLeft(t) && isLeft(s3)) return;
+      // 見出しが図の高さにあっても、右の断面図(x1s より右)なら断面図の表記(2026-11-24 ユーザー指摘「避雷針も漏れてる」、EB3-RG-14: か断面の見出しが製品名の行より少し上)
+      var inLeftS3 = function (o) { return views.some(function (v) { return o.y > v.yMin && o.y < v.yMax && o.x > v.x0 && o.x < v.x1s; }); };
+      if (isLeft(t) && isLeft(s3) && inLeftS3(t)) return;
       var si3 = secInfo[s3.letter];
       if (si3.plates['']) return;
       si3.plates[''] = { size: plateSize(t.text), n: plateCount(t.text), mekki: false, note: (s3.sub ? s3.sub + '・' : '') + '支給品' };
       si3.plateT.add(thickOf(plateSize(t.text)));
+    });
+    // 符号の無い板の表記(2026-11-24 ユーザー指示、EB3-RG-13: さ断面(ALC下地)の「PL-6x100」に切板名が無い → 切板名は空欄で、断面の数だけ入れる)。
+    // 幅のある表記(PL-6x100)で、ALC下地・LGS下地の断面図の中のものだけ
+    T.forEach(function (t) {
+      if (!RE_PLATE.test(t.text) || !/x/.test(t.text) || isLeft(t)) return;
+      if (labels.some(function (lb) { return Math.abs(lb.sx - t.x) < 1 && Math.abs(lb.sy - t.y) < 1; })) return;
+      var s4 = sectionOf(t, titles); if (!s4 || !/^(ALC|LGS)下地$/.test(s4.sub || '')) return;
+      var si4 = secInfo[s4.letter];
+      if (si4.plates['']) return;
+      si4.plates[''] = { size: plateSize(t.text), n: plateCount(t.text), mekki: false };
+      si4.plateT.add(thickOf(plateSize(t.text)));
     });
     // 断面図の中の、板の表記と組にならなかった符号は、同じ符号がほかで組になっていればそのサイズで1枚(2026-11-21 ユーザー確認、WB3-3G-12:
     // G断面は「BH-250x250x12x12 / MGR166」、H断面は「PL-12 / MGR166」→ G にも PL-12 MGR166 1枚)
@@ -1377,6 +1399,15 @@
               // (2026-11-21 ユーザー指示「650 1本」、WB3-3G-07: 下面図は1本の C を4本の線で描き2組に見える。本数は立面図の旗・端面の数)
               if (cnt && shape.charAt(0) === 'C' && crossC()) { doneShape[shape + '@' + len] = 0; return; }
               if (cnt) add(shape, len, cnt, si.title.sub || '');
+              // 平面図で旗より多く数えたときは、同じ断面の板も同じ数にする(2026-11-24、EB3-RG-16: さ断面(ALC下地)の [- 345 は平面図で4本、
+              // その先の PL-6x100 NGDK3 は旗の数の1枚だった → 4枚)
+              var nFl = flagsBySec[L1] ? flagsBySec[L1].matched.length + flagsBySec[L1].unmatched : 0;
+              // ほかの断面に同じ形鋼・同じ長さがあるとき(さ・す で [- 295 を共有。WB1-3G-06 など)は、平面図の数が両方の合計なので当てはめない
+              var shared = Object.keys(secInfo).some(function (L2) { return L2 !== L1 && secInfo[L2].shapes.indexOf(shape) >= 0 && secInfo[L2].dims.indexOf(len) >= 0; });
+              if (cnt && nFl && cnt > nFl && !shared && /下地$/.test(si.title.sub || '') && !doneShape['#plates' + L1]) {
+                doneShape['#plates' + L1] = 1;
+                Object.keys(si.plates).forEach(function (m) { var pl = si.plates[m]; add(pl.size, m, (cnt - nFl) * pl.n, pl.note || si.title.sub || ''); });
+              }
               if (cnt) { doneShape[shape + '#plan' + L1] = 1; doneShape[shape + '@' + len + '#cnt'] = 1; }   // 断面ごと(2026-11-21、WB3-3G-06: あ を平面図で数えたため、同じ C の い(梁に沿う 1433)を読んでいなかった)
             });
             // 平面図で数えられないとき(梁の下に付く LGS下地。EA1-3G-01・EA1-3B-01、2026-11-20 ユーザー指示「サイズと長さと本数が図面より見れる」):
@@ -1515,6 +1546,45 @@
             add(shName, Math.round((base - tw2 / 2) * 10) / 10, lab.length, shNote);
           }
         }
+      }
+      // 断面図に長さの無い形鋼(2026-11-24 ユーザー指摘「C-75x45x15x2.3 の長さ 5543.8 が漏れている」、EB3-RG-14: い断面(LGS下地)は 37.5+37.5 だけ。
+      // 立面図の下フランジ沿いの C 材の長さ 5543.8 が寸法で書いてある)。図の中の同じ形鋼の表記のそば(3000以内)に、ある数字と同じレイヤ・同じ長さの線が2本以上あれば、その長さで旗の数
+      Object.keys(flagsBySec).forEach(function (L1) {
+        var si = secInfo[L1]; if (!si || si.shapes.length !== 1 || si.dims.length || si.title.sub === undefined) return;
+        var shp = si.shapes[0]; if (!RE_SHAPE.test(shp) && !RE_CHAN.test(shp)) return;
+        var nF = flagsBySec[L1].matched.length + flagsBySec[L1].unmatched; if (!nF) return;
+        var lbl = T.filter(function (u) { return u.text === shp && inView(v, u); });
+        if (!lbl.length) return;
+        // 数字と線は、その断面の旗の記号と同じレイヤのものだけ(EB3-RG-14: い の旗・5543.8・C 材の線がレイヤ30。EA1-3B-06 の梁の長さ 11736 は別レイヤ)
+        var fLay = T.filter(function (u) { return u.text === L1 && inView(v, u) && u.lay >= 0; }).map(function (u) { return u.lay; });
+        if (!fLay.length) return;
+        var best = null;
+        T.forEach(function (u) {
+          if (!inView(v, u) || !/^[0-9]+\.?[0-9]*$/.test(u.text)) return;
+          var val = parseFloat(u.text); if (val < 300) return;
+          if (fLay.indexOf(u.lay) < 0) return;
+          var ls = L.filter(function (l) { return l[4] === u.lay && Math.abs(Math.hypot(l[2] - l[0], l[3] - l[1]) - val) < 0.1 && lbl.some(function (q) { return Math.min(Math.abs(l[0] - q.x), Math.abs(l[2] - q.x), Math.abs((l[0] + l[2]) / 2 - q.x)) < 3000 && Math.abs((l[1] + l[3]) / 2 - q.y) < 3000; }); });
+          if (ls.length >= 2 && (!best || ls.length > best.n)) best = { val: val, n: ls.length };
+        });
+        if (best && !items[shp + '|' + best.val]) add(shp, best.val, nF, si.title.sub || '');
+      });
+      // ALC下地の形鋼の本数は平面図で数える(2026-11-24 ユーザー指示「し断面の数は平面図側で数えて」、EB3-RG-13: し の旗は2つ、平面図の [- は16か所)。
+      // 平面図に「長さ − ウェブ厚の半分」(545 − 25/2 = 532.5)の線があれば、その長さで、線の数(位置の数)を本数にする(旗の数より多いときだけ)
+      {
+        var mw3 = /x([0-9.]+)x([0-9.]+)$/.exec(main || ''), tw3 = mw3 ? parseFloat(mw3[1]) : 0;
+        if (tw3) Object.keys(items).forEach(function (k) {
+          var it = items[k];
+          if (typeof it.name !== 'number' || !(RE_SHAPE.test(it.size) || RE_CHAN.test(it.size)) || it.notes.indexOf('ALC下地') < 0) return;
+          var tgt = Math.round((it.name - tw3 / 2) * 10) / 10;
+          var xs = {};
+          L.forEach(function (l) {
+            if (Math.abs(l[0] - l[2]) > 20 || Math.abs(Math.hypot(l[2] - l[0], l[3] - l[1]) - tgt) > 0.3) return;
+            if (!inView(v, { x: l[0], y: (l[1] + l[3]) / 2 })) return;   // 勾配のある梁は立面図の外形(elev)が取れないことがあるので、図の中の線で見る
+            xs[Math.round(l[0] / 10)] = 1;
+          });
+          var n3 = Object.keys(xs).length;
+          if (n3 > it.n) { delete items[k]; add(it.size, tgt, n3, 'ALC下地'); }
+        });
       }
       var list = Object.keys(items).map(function (k) {
         var it = items[k];
