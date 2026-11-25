@@ -306,7 +306,7 @@ async function readDrawings(items) {
   if (!items.length) return;
   state.files = items; state.res = null;
   try {
-    busy('注文書(切板手配書)を読んでいます…');
+    busy('図面を読んでいます…', 0);
     const ordersP = apiGet({ action: 'orders', koji: state.kojiNo }).catch(e => ({ error: e.message }));
     const excelP = TankanExcel.prepare().catch(() => null);   // 単重表(画面の重量に使う)とひな形
     const py = await loadPy(r => busy('図面を読む準備をしています…(初回だけ数秒かかります)', r * 0.1));
@@ -338,7 +338,6 @@ async function showReadNotes() {
   if (state.orders && state.orders.error) msg.push(`注文書(切板手配書)を読めませんでした: ${state.orders.error}\n板の重量は図面から計算した値になります。`);
   else if (state.orders && !state.orders.csv) msg.push(`注文書(切板手配書)のキャッシュに ${state.kojiNo} がありません。板の重量は図面から計算した値になります。`);
   if (r.log.length) msg.push('読めなかった図面:\n' + r.log.join('\n'));
-  if (r.bh.length) msg.push('BH柱は短管リストに入れていません:\n' + r.bh.join('\n'));
   const ng = Object.entries(r.verify).filter(([m, v]) => !v.ok);
   if (ng.length) msg.push(`手配書と合わない板(${ng.length}種類。重量は図面から計算した値で黄色):\n` + ng.map(([m, v]) => `${m}: ${v.ng.join('; ')}`).join('\n'));
   const noLink = state.files.filter(it => !it.path).length;
@@ -396,7 +395,7 @@ $('btn-excel').addEventListener('click', async () => {
   const stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}`;
   const name = `短管リスト_${state.kojiNo}_${state.res.setsu}_${stamp}.xlsx`;
   try {
-    busy('Excelを作っています…');
+    busy('Excelを作っています…', 0);
     const blob = await TankanExcel.build({
       res: state.res, kojiName: state.kojiName, factory: state.factory,
       link: n => fileUrl(dirOf(n), n), onProgress: (msg, r) => busy(msg, r),
