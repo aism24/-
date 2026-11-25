@@ -1682,6 +1682,13 @@
           out.push({ size: piece.text, name: mk, n: occ.length, note: '下がり止め' });
           return;
         }
+        // マークが見出し「下がり止めピース」のすぐ下(下へ250以内・左右300以内)に書かれているとき(2026-11-25、WA2-1C-04 の MCSA1):
+        // サイズ = その図(見出しの上 2500・左右 1500 以内)のピースの記号(K6B)・数 = 図の中のその記号の数(平面図の3か所)・備考 = 下がり止め
+        var pTtl = T.find(function (u) { return /^下がり止めピース$/.test(u.text) && u.y - o0.y > 50 && u.y - o0.y <= 250 && Math.abs(u.x - o0.x) <= 300; });
+        if (pTtl) {
+          var pin = T.filter(function (k) { return /^K[0-9]+[A-Z]?$/.test(k.text) && k.y > pTtl.y && k.y - pTtl.y < 2500 && Math.abs(k.x - pTtl.x) < 1500; });
+          if (pin.length) { out.push({ size: pin[0].text, name: mk, n: pin.filter(function (k) { return k.text === pin[0].text; }).length, note: '下がり止め' }); return; }
+        }
         var sameRow = sizesT.filter(function (a) { return Math.abs(a.y - o0.y) <= 60 && dist(a, o0) <= 800; }).sort(function (a, b) { return dist(a, o0) - dist(b, o0); });
         // 引出線の上に表記・下にマークの書き方(「T C PL-50 / ND20」)は、マークのすぐ上(上へ250以内・左右300以内)の表記を使う
         // (2026-11-24、EA2-1C-02 D断面: 同じ高さの小梁側の FB-6x50x440(680離れている)を ND20 のサイズにしていた)
@@ -1764,9 +1771,11 @@
           var flags = T.filter(function (t) {
             if (t.text !== L1 || titles.some(function (x) { return x.letter === t.text && Math.abs(x.y - t.y) < 10; })) return false;
             if ((sectionOf(t, titles) || {}).letter === L1) return false;
-            return !T.some(function (u) { return u !== t && Math.abs(u.y - t.y) < 60 && Math.abs(u.x - t.x) < 250; });
+            if (T.some(function (u) { return u !== t && Math.abs(u.y - t.y) < 60 && Math.abs(u.x - t.x) < 250; })) return false;
+            // 立面図の左に縦に並ぶ高さの記号(F・E・D・C・B・A。同じ x に英字1文字が3つ以上)は旗ではない(2026-11-25、WA2-1C-04)
+            return T.filter(function (u) { return /^[A-Z]$/.test(u.text) && Math.abs(u.x - t.x) < 5; }).length < 3;
           });
-          if (!flags.length) return;
+          if (!flags.length) { pushLeaderBoxes(shape); return; }
           var cnt = {};
           L.forEach(function (l) {
             var len = Math.hypot(l[2] - l[0], l[3] - l[1]); if (len < 300 || len > 3000) return;
@@ -1780,9 +1789,31 @@
           out.push({ size: shape, name: parseFloat(best), n: flags.length * nLab, note: si.title.sub || '' });
         });
       });
+      // 旗の無い断面図の中の形鋼(2026-11-25、WA2-1C-04 B断面の L-65x65x6): 表記の引出線の先の小さな箱(長さ x 脚)が1本ずつ。
+      // 本数 = 先が箱に当たる引出線の数、長さ = 箱の長い辺(脚の長さより長いもの。150)。箱の長さが食い違うときは拾わない
+      function pushLeaderBoxes(shape) {
+        var leg = parseFloat((/^L-([0-9.]+)/.exec(shape) || [])[1]);
+        T.filter(function (t) { return t.text === shape; }).forEach(function (t) {
+          var lens = [];
+          L.forEach(function (l) {
+            if (Math.abs(l[1] - l[3]) < 100) return;   // 斜め・縦の引出線だけ
+            var a = [l[0], l[1]], b = [l[2], l[3]];
+            if (Math.hypot(b[0] - t.x, b[1] - t.y) < Math.hypot(a[0] - t.x, a[1] - t.y)) { var c = a; a = b; b = c; }
+            if (Math.hypot(a[0] - t.x, a[1] - t.y) > 30) return;
+            var box = L.filter(function (m) {
+              if (Math.hypot(m[0] - t.x, m[1] - t.y) < 30 || Math.hypot(m[2] - t.x, m[3] - t.y) < 30) return false;   // 表記から出るほかの引出線は除く
+              var dx = m[2] - m[0], dy = m[3] - m[1], q = Math.max(0, Math.min(1, ((b[0] - m[0]) * dx + (b[1] - m[1]) * dy) / (dx * dx + dy * dy || 1)));
+              return Math.hypot(m[0] + q * dx - b[0], m[1] + q * dy - b[1]) <= 40;   // 引出線の先から40以内を通る線
+            })
+              .map(function (m) { return Math.round(Math.hypot(m[2] - m[0], m[3] - m[1]) * 10) / 10; }).filter(function (v) { return v > leg + 1 && v < 3000; });
+            if (box.length) lens.push(Math.max.apply(null, box));
+          });
+          if (lens.length && lens.every(function (v) { return v === lens[0]; })) out.push({ size: shape, name: lens[0], n: lens.length, note: '' });
+        });
+      }
       // GEN レイヤの「L-270」(2026-11-20 ユーザー説明、EB1-0C-04): 親綱掛けフックの断面の K-9 が2本、長さ270。
       // 書き方は形鋼と同じ: サイズ = そば(1500以内)の「K-9」、切板名(長さ)= 270、本数 = その図の中の「K-9」の数、備考 = そばの見出し(「…フック」など。1000以内)
-      T.filter(function (t) { return t.lay === genNo && /^L-[0-9.]+$/.test(t.text); }).forEach(function (t) {
+      T.filter(function (t) { return t.lay === genNo && /^L[-=][0-9.]+$/.test(t.text); }).forEach(function (t) {   // 「L=220」も同じ(2026-11-25、WA2-1C-04)
         var bar = T.filter(function (u) { return /^[A-Z]{1,2}-[0-9.]+$/.test(u.text) && !/^(L|C|H|PL|FB)-/.test(u.text) && dist(u, t) <= 1500; }).sort(function (a, b) { return dist(a, t) - dist(b, t); })[0];
         if (!bar) return;
         var ttl = T.filter(function (u) { return /フック|ピース|金物/.test(u.text) && dist(u, t) <= 1000; }).sort(function (a, b) { return dist(a, t) - dist(b, t); })[0];
