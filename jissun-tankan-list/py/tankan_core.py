@@ -357,7 +357,16 @@ def extract(L, Z, full, sec, order_rows, progress=None):
             bh = max(colbh, key=lambda a: a[2])[0].replace("x", "*") if colbh else None
             if not [a for a in view if a[0].startswith("□-") and abs(a[2] - mid) < 1800] and bh:
                 size = bh
-                mat, mat_mark = material_of(L, f, T, max(colbh, key=lambda a: a[2]), BH_MATERIAL)   # BHも左の印(○Ｂ=SN490B)
+                rec = max(colbh, key=lambda a: a[2])
+                mat, mat_mark = material_of(L, f, T, rec, BH_MATERIAL)   # BHも左の印(○Ｂ=SN490B)
+            if (size or "").startswith("BH-") and not mat:
+                # BH柱で印が読めないとき(選んだ表記に印が無い・1階はBHをサイズ探しで見つけた): 柱と同じサイズの表記のうち、
+                # 印のあるものを高さの近い順に見る(梁のBH表記は使わない。1節 1C-14・1C-24)
+                for a in sorted([a for a in T if a[0].replace("x", "*") == size], key=lambda a: abs(a[2] - mid)):
+                    m2 = material_of(L, f, T, a, BH_MATERIAL)
+                    if m2[0]:
+                        mat, mat_mark = m2
+                        break
             Ln = None if din is None else (din - 10 if (size or '').startswith('□') else din)
             # 板が3枚以上の階: 仕上がりの寸法の連なり(下から)を区間に分け、区間ごとのサイズと長さを出す
             pls = [(secmark[s][0], secmark[s][1] or TMAP.get(secmark[s][0])) for y, s in zone]  # 下→上
