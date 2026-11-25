@@ -568,7 +568,8 @@ def group_floors(blocks):
     表の並びは、最初の柱の図番の順"""
     floors = collections.OrderedDict()
     for b in sorted(blocks, key=lambda b: (b["fl"], b["dwg"])):
-        key = json.dumps([b["segs"], b["plates"], b["fin"], b["size"], b.get("chain"), b.get("mat")], ensure_ascii=False)
+        # 寸法の連なり(chain)は比べない: 長さ・板が同じなら同じ表(1節 1C-18・1C-21 は連なりの書き方だけ違う。正解は1つの表)
+        key = json.dumps([b["segs"], b["plates"], b["fin"], b["size"], b.get("mat")], ensure_ascii=False)
         fl = floors.setdefault(b["fl"], collections.OrderedDict())
         g = fl.setdefault(key, dict(block=b, members=[]))
         for s in b["syms"]:
