@@ -192,8 +192,14 @@ function jissunUrl(dir, name) {
 }
 
 // ---------- サーバーの「①進行中工事」(ブラウザに覚える) ----------
+// 1回開いたものを使い回す(2026-11-25。以前は読み書きのたびに開き直していた)。開けなかったら次は開き直す
+let idbPromise = null;
 function idb() {
-  return new Promise((res, rej) => { const r = indexedDB.open('tdf-kanamono-list', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+  if (!idbPromise) {
+    idbPromise = new Promise((res, rej) => { const r = indexedDB.open('tdf-kanamono-list', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    idbPromise.catch(() => { idbPromise = null; });
+  }
+  return idbPromise;
 }
 async function idbGet(k) { const d = await idb(); return new Promise(res => { const q = d.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(undefined); }); }
 async function idbSet(k, v) { const d = await idb(); return new Promise(res => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(); t.onerror = () => res(); }); }
@@ -360,11 +366,8 @@ async function importItems(items) {
         const base = state.tdfs[0];
         if (base && base.res.koji !== res.koji) { errors.push(`${f.name}: 工事名が違うため取り込みません(「${res.koji || '不明'}」。取り込み済みは「${base.res.koji}」)`); continue; }
         // 長さは tdf-master-web と同じ方法で求める(2026-11-20 ユーザー指示)。読めなければ図面の寸法から読んだ長さのまま
-        try {
-          step(i, 0.3, pyPromise ? '長さを読んでいます…' : '長さを読む準備をしています…(初回だけ数秒かかります)');
-          const ml = await masterLengths(buf, f.name, r => step(i, 0.3 + 0.6 * r, '長さを読む準備をしています…(初回だけ数秒かかります)'), res.columnDrawing);
-          res.products.forEach(p => { const m = ml.find(x => x[0] === p.name); if (m && m[1]) p.length = Math.round(m[1] * 10000) / 10; });
-        } catch (e) { warns.push(`${f.name}: 長さを tdf-master-web と同じ方法で読めませんでした(${e.message})。図面の寸法から読んだ長さを使います`); }
+        try { await applyMasterLengths(buf, f.name, res, (r, msg) => step(i, r, msg)); }
+        catch (e) { warns.push(`${f.name}: 長さを tdf-master-web と同じ方法で読めませんでした(${e.message})。図面の寸法から読んだ長さを使います`); }
         step(i, 1, 'TDFを読み込んでいます…');
         res.products.forEach(p => p.items.forEach(it => { it.n0 = it.n; }));
         state.tdfs.push({ id: nextId++, fileName: f.name, path: path || '', res });
@@ -479,7 +482,11 @@ document.addEventListener('change', e => {
   if (sub) sub.textContent = subTotal(p);
   if ($('sum-area')) $('sum-area').innerHTML = summaryHtml();
 });
-$('btn-reset').addEventListener('click', () => { if (confirm('取り込んだTDF・修正・選んだサーバーをすべて消します。よろしいですか?')) { state.tdfs = []; state.server = null; state.root = null; state.planCtx = null; renderServer(); render(); } });
+// 確認はほかと同じアプリの確認画面で(2026-11-25。以前はブラウザ標準の確認窓)
+$('btn-reset').addEventListener('click', async () => {
+  if (!(await confirm2('リセット', '取り込んだTDF・修正・選んだサーバーをすべて消します。よろしいですか?', 'すべて消す', 'やめる'))) return;
+  state.tdfs = []; state.server = null; state.root = null; state.planCtx = null; renderServer(); render();
+});
 
 // ---------- Excel ----------
 function buildExportProducts() {
@@ -507,12 +514,14 @@ function loadPy(onProgress) {
       const py = await window.loadPyodide();
       tick(2);
       py.FS.mkdir('/mw');
-      for (const [k, n] of PY_FILES.entries()) {
+      // 5つのファイルは同時に読む(2026-11-25。1つずつだと約0.1秒×5)
+      let got = 0;
+      await Promise.all(PY_FILES.map(async n => {
         const r = await fetch('py/' + n + '?v=' + PY_VER);
         if (!r.ok) throw new Error(n + ' を読み込めませんでした');
         py.FS.writeFile('/mw/' + n, await r.text());
-        tick(3 + k);
-      }
+        tick(3 + got++);
+      }));
       await py.runPythonAsync("import sys, json\nsys.path.insert(0, '/mw')\nimport tdf_app\nimport tdf_column");
       tick(PY_FILES.length + 3);
       pyProgress = null;
@@ -530,6 +539,13 @@ async function masterLengths(buf, name, onProgress, column) {
   const mod = column ? 'tdf_column' : 'tdf_app';
   const out = await py.runPythonAsync("json.dumps([[r.get('製品マーク'), r.get('長さ')] for r in " + mod + ".extract_file('/input.tdf', tdf_filename)], ensure_ascii=False)");
   return JSON.parse(out);
+}
+// 長さを tdf-master-web と同じ方法で読んで、製品の長さを置き換える(TDFの取り込み・次の加工予定で共通)。step(0〜1, 文) = 進み具合
+async function applyMasterLengths(buf, name, res, step) {
+  const PREP = '長さを読む準備をしています…(初回だけ数秒かかります)';
+  step(0.3, pyPromise ? '長さを読んでいます…' : PREP);
+  const ml = await masterLengths(buf, name, r => step(0.3 + 0.6 * r, PREP), res.columnDrawing);
+  res.products.forEach(p => { const m = ml.find(x => x[0] === p.name); if (m && m[1]) p.length = Math.round(m[1] * 10000) / 10; });
 }
 const PY_VER = '20261120d';
 // 長さを読む Python の部品(約5MB。初回の準備に数秒)を、工場・工事を選んで開始したときに裏で読み始める(2026-11-21)。
@@ -692,11 +708,7 @@ async function runPlan(plan) {
         const file = await (await fileAt(root, f.segs)).getFile();
         const buf = await file.arrayBuffer();
         const res = KanamonoExtract.extract(buf, file.name);
-        try {
-          step(0.3, pyPromise ? '長さを読んでいます…' : '長さを読む準備をしています…(初回だけ数秒かかります)');
-          const ml = await masterLengths(buf, file.name, r => step(0.3 + 0.6 * r, '長さを読む準備をしています…(初回だけ数秒かかります)'), res.columnDrawing);
-          res.products.forEach(p => { const m = ml.find(x => x[0] === p.name); if (m && m[1]) p.length = Math.round(m[1] * 10000) / 10; });
-        } catch (e) { /* 長さは図面の寸法から読んだもの */ }
+        try { await applyMasterLengths(buf, file.name, res, step); } catch (e) { /* 長さは図面の寸法から読んだもの */ }
         f.fileName = file.name; f.res = res;
         f.dir = [sv.path.replace(/[\\/]+$/, '')].concat(f.segs.slice(0, -1)).join('\\');
       } catch (e) { f.err = 'TDFを開けませんでした'; }
@@ -713,11 +725,11 @@ async function runPlan(plan) {
     if (!p) { r.status = 'TDFにこの製品がありません'; return; }
     r.status = r.byZuban ? '作成(図番で探したTDF)' : '作成';
     if (!r.link) r.link = fileUrl(f.dir, f.fileName);   // 次の加工予定のシートのリンクも、見つけたTDFにする
-    const key = r.kojiNo || r.abbr || '工事番号なし';
+    const key = kojiKeyOf(r);
     if (!groups.has(key)) groups.set(key, { sheet: key.replace(/[\\/?*\[\]:]/g, '_').slice(0, 31), head: { kojiNo: r.kojiNo || '', koji: f.res.koji || r.abbr || '' }, products: [], tdfs: [] });
     const g = groups.get(key), qty = Number(r.qty) || p.dai || 1;
-    g.products.push({ zuban: p.zuban, name: p.name, size: p.size, length: p.length, dai: qty, link: r.link || fileUrl(f.dir, f.fileName), rank: partRank(r.partEff),
-      items: p.items.map(it => ({ size: it.size, name: it.name, n: it.n * qty, note: it.note })) });
+    g.products.push({ zuban: p.zuban, name: p.name, size: p.size, length: p.length, dai: qty, link: r.link, rank: partRank(r.partEff),
+      items: p.items.map(it => ({ size: it.size, name: it.name, n: it.n * qty, note: it.note })), src: p, f });
     if (!g.tdfs.includes(f)) g.tdfs.push(f);
   });
   // 並び: 工事 → 柱 → 大梁 → 小梁 → その他 → 製品番号順(1枚目の一覧の行も同じ)
@@ -728,12 +740,10 @@ async function runPlan(plan) {
   // 画面にも出す(作った製品だけ。画面の表もこの並び = 製品の ord)
   state.tdfs = [];
   gs.forEach(g => g.tdfs.forEach(f => {
-    // 画面も予定の台数分(台数 = 予定の台数、枚数 = 1台あたり × 予定の台数。Excel と同じ。2026-11-21 ユーザー指示)
-    const byName = new Map(g.products.map(x => [nk(x.name), x]));
-    const res = Object.assign({}, f.res, { products: f.res.products.filter(p => byName.has(nk(p.name))).map(p => {
-      const gp = byName.get(nk(p.name));
-      return Object.assign({}, p, { ord: gp.ord, dai: gp.dai, items: p.items.map(it => Object.assign({}, it, { n: it.n * gp.dai, n0: it.n * gp.dai })) });
-    }) });
+    // 画面も予定の台数分(台数 = 予定の台数、枚数 = 1台あたり × 予定の台数。Excel と同じ。2026-11-21 ユーザー指示)。
+    // 予定の行ごとに1つの製品(同じ製品が2行あっても、Excel と同じく2つ出す。2026-11-25。以前は1つにまとまり、画面から作り直すと1行消えた)
+    const res = Object.assign({}, f.res, { products: g.products.filter(gp => gp.f === f).map(gp =>
+      Object.assign({}, gp.src, { ord: gp.ord, dai: gp.dai, items: gp.src.items.map(it => Object.assign({}, it, { n: it.n * gp.dai, n0: it.n * gp.dai })) })) });
     state.tdfs.push({ id: nextId++, fileName: f.fileName, path: f.dir, res });
   }));
   const minOrd = t => Math.min(...t.res.products.map(p => p.ord));
@@ -770,4 +780,6 @@ function planGroupsFromScreen(ctx) {
 }
 
 loadSettings().then(() => { if (PLAN) startPlan(); });
+// 長さを読む Python の部品は、ページを開いたらすぐ裏で読み始める(2026-11-25 ユーザー承認。工事を選んでいる間に準備が終わる。以前は「開始」を押してから)
+preloadPy();
 render();

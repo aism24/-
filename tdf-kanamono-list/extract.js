@@ -286,11 +286,21 @@
   function xMarks(lines) {
     var diag = lines.filter(function (l) { var a = Math.atan2(l[3] - l[1], l[2] - l[0]) * 180 / Math.PI; a = ((a % 180) + 180) % 180; return !(a < 5 || a > 175 || Math.abs(a - 90) < 5); });
     var used = new Set(), out = [], close = function (p, q) { return Math.abs(p[0] - q[0]) < 2 && Math.abs(p[1] - q[1]) < 2; };
+    // 総当たりをやめ、線の始点を2の升目に入れて、近い升目の線だけ比べる(元と同じく、i より後ろで一番若い j と組にする)
+    var grid = new Map(), cell = function (x, y) { return Math.floor(x / 2) + ',' + Math.floor(y / 2); };
+    diag.forEach(function (b, j) { var k = cell(b[0], b[1]); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(j); });
+    var near = function (pt) {
+      var gx = Math.floor(pt[0] / 2), gy = Math.floor(pt[1] / 2), r = [];
+      for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) { var c = grid.get((gx + dx) + ',' + (gy + dy)); if (c) r.push.apply(r, c); }
+      return r;
+    };
     diag.forEach(function (a, i) {
       if (used.has(i)) return;
       var c1 = [a[0], a[3]], c2 = [a[2], a[1]];
-      for (var j = i + 1; j < diag.length; j++) {
-        if (used.has(j)) continue;
+      var js = near(c1).concat(near(c2)).filter(function (j) { return j > i; }).sort(function (x, y) { return x - y; });
+      for (var m = 0; m < js.length; m++) {
+        var j = js[m];
+        if (used.has(j) || (m > 0 && js[m - 1] === j)) continue;
         var b = diag[j], p = [b[0], b[1]], q = [b[2], b[3]];
         if ((close(p, c1) && close(q, c2)) || (close(p, c2) && close(q, c1))) {
           used.add(i); used.add(j);
@@ -497,9 +507,15 @@
       var sh = L.filter(function (l) { var n = Math.hypot(l[2] - l[0], l[3] - l[1]); return n >= 6 && n <= 60; })
         .map(function (l) { return { cx: (l[0] + l[2]) / 2, cy: (l[1] + l[3]) / 2, a: Math.atan2(l[3] - l[1], l[2] - l[0]) }; });
       var out = [];
+      // 総当たりをやめ、中心を1.5の升目に入れて、近い升目の線だけ比べる(元と同じく、i より後ろの線を若い順に見る)
+      var grid = new Map();
+      sh.forEach(function (b, j) { var k = Math.floor(b.cx / 1.5) + ',' + Math.floor(b.cy / 1.5); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(j); });
       sh.forEach(function (a, i) {
-        for (var j = i + 1; j < sh.length; j++) {
-          var b = sh[j];
+        var gx = Math.floor(a.cx / 1.5), gy = Math.floor(a.cy / 1.5), js = [];
+        for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) { var c = grid.get((gx + dx) + ',' + (gy + dy)); if (c) c.forEach(function (j) { if (j > i) js.push(j); }); }
+        js.sort(function (x, y) { return x - y; });
+        for (var m = 0; m < js.length; m++) {
+          var b = sh[js[m]];
           if (Math.abs(a.cx - b.cx) > 1.5 || Math.abs(a.cy - b.cy) > 1.5) continue;
           var d = Math.abs(Math.sin(a.a - b.a)); if (d > 0.5) { out.push({ x: a.cx, y: a.cy }); break; }
         }
