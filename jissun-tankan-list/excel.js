@@ -64,7 +64,17 @@
     return r2(s);
   }
   // 板の行(9行)のどこに板マークを置くか(上から)
-  function platePos(k) {
+  function platePos(k, b) {
+    // 板5枚以上で内ダイア(OUDY)の無い柱: 図面の高さの割合で 0〜8 行目に置く(提出済みExcelと同じ。例 2CCY8CX2 4階 = 0,2,3,6,8)
+    //   4枚以下は下の決まった並び(提出済みExcelはこちら。割合にすると合わなくなる)
+    const segs = b && b.segs, pl = b && b.plates;
+    if (segs && pl && pl.length === k && k >= 5 && segs.length === k - 1 && !pl.some(p => String(p[0]).startsWith('OUDY')) && segs.every(s => s[1] > 0)) {
+      const fromTop = segs.map(s => s[1]).reverse(), tot = fromTop.reduce((a, v) => a + v, 0);
+      let acc = 0; const out = [0];
+      fromTop.forEach(v => { acc += v; out.push(Math.round(acc / tot * 8)); });
+      for (let i = 1; i < out.length; i++) if (out[i] <= out[i - 1]) out[i] = out[i - 1] + 1;   // 同じ行に重ねない
+      if (out[out.length - 1] <= 8) return out;
+    }
     if (k <= 1) return [0];
     if (k === 2) return [0, 8];
     if (k === 3) return [0, 4, 8];
@@ -75,7 +85,7 @@
 
   const clone = o => JSON.parse(JSON.stringify(o || {}));
   const isPlaceholder = v => typeof v === 'string' && v.includes('{');
-  function copyRows(tpl, merges, src, n, ws, dst) {
+  function copyRows(tpl, merges, src, n, ws, dst, styleOnly) {
     for (let i = 0; i < n; i++) {
       const sr = tpl.getRow(src + i), dr = ws.getRow(dst + i);
       if (sr.height) dr.height = sr.height;
@@ -83,7 +93,7 @@
         const s = sr.getCell(c), d = dr.getCell(c);
         d.style = clone(s.style);
         const v = s.value;
-        if (v !== null && v !== undefined && typeof v !== 'object' && !isPlaceholder(v)) d.value = v;   // 見出しの文字・数字だけ(式と置き換え文字は写さない)
+        if (!styleOnly && v !== null && v !== undefined && typeof v !== 'object' && !isPlaceholder(v)) d.value = v;   // 見出しの文字・数字だけ(式と置き換え文字は写さない)
       }
     }
     merges.forEach(m => {
@@ -193,7 +203,10 @@
     for (const fl of floors) {
       const ws = out.addWorksheet(fl, { pageSetup: clone(tpl.pageSetup), views: clone(tpl.views), properties: clone(tpl.properties), headerFooter: clone(tpl.headerFooter) });
       for (let c = 1; c <= NCOL; c++) { const w = tpl.getColumn(c).width; if (w) ws.getColumn(c).width = w; }
+      ['V', 'W', 'X'].forEach(c => { ws.getColumn(c).width = 13; });   // リンクの列(図面番号・A付き図面番号・製品名)は幅13
       copyRows(tpl, merges, 1, 2, ws, 1);
+      const f0 = clone(ws.getCell('V2').font);   // 見出し V1:X2 の文字は V2 と同じに(セルごとに別のオブジェクト)
+      [1, 2].forEach(q => ['V', 'W', 'X'].forEach(c => { ws.getCell(`${c}${q}`).font = Object.keys(f0).length ? clone(f0) : { name: 'Calibri', size: 11, family: 2 }; }));
       put(ws, 'B1', kojiName || ''); put(ws, 'P1', fl.replace(/L$/, ''));
       put(ws, 'R1', '●シーム方向：特記外 '); put(ws, 'R2', '●ダイア出寸法：特記外 ');
       put(ws, 'W1', factory ? factory + '工場' : '');
@@ -202,59 +215,70 @@
         prog(`Excelを作っています…\n${fl} ${g.members[0] ? g.members[0].sym : ''}`, 0.05 + 0.85 * done / Math.max(nAll, 1)); done++;
         const b = g.block, segs = b.segs || [];
         const sizes = b.segs ? sizesOf(segs) : [b.size];
-        const proto = PROTO[sizes.length === 1 ? 1 : 3], ns = proto.ns, h = ns + 13;
+        const proto = PROTO[sizes.length === 1 ? 1 : 3], ns = proto.ns;
+        const e = segs.length > 3 ? 1 : 0;   // コラム長さが4つある柱(次の行のJまで使う)は1行足す(提出済みExcelと同じ。板の見出しと重ならないように)
+        const h = ns + 13 + e;
         if (acc && acc + h > PAGE_ROWS) { ws.getRow(r - 1).addPageBreak(); acc = 0; }
         acc += h;
-        copyRows(tpl, merges, proto.top, h, ws, r);
-        const rr = r + ns, f1 = rr + 11, f2 = rr + 12;
+        copyRows(tpl, merges, proto.top, ns + 1, ws, r);                       // サイズの行+コラム長さの行
+        // サイズ1つの表: ひな形はサイズの J:P が結合で単重(P)を書けないので J:O に(提出済みExcelと同じ。サイズ3つの表は元から J:O)
+        if (ns === 1) { ws.unMergeCells(`J${r}:P${r}`); ws.mergeCells(`J${r}:O${r}`); }
+        if (e) copyRows(tpl, merges, proto.top + ns, 1, ws, r + ns + 1, true);   // 足した行(書式だけ。結合の中の値を写さない)
+        copyRows(tpl, merges, proto.top + ns + 1, 12, ws, r + ns + 1 + e);     // 板の見出し〜合計
+        const rr = r + ns, f1 = rr + 11 + e, f2 = rr + 12 + e;
         put(ws, `A${r}`, gi + 1);
         put(ws, `B${r}`, { formula: `IF(J${rr}="","",$P$1&$A$1&A${r})`, result: `${fl.replace(/L$/, '')}-${gi + 1}` });
+        // 材質(大組図の柱サイズの左の印から。読めなければ空欄・黄色)
+        if (String(b.size || '').startsWith('□')) for (let k = 0; k < ns; k++) put(ws, `D${r + k}`, b.mat || null, b.mat ? null : YEL);
         let sumQ = 0;
         if (!b.segs) {
           for (let k = r; k < rr; k++) put(ws, `J${k}`, null, ORG);
-          put(ws, `J${rr}`, null, ORG); put(ws, `B${rr + 6}`, null, ORG);
+          put(ws, `J${rr}`, null, ORG); put(ws, `B${rr + 6 + e}`, null, ORG);
         } else {
           sizes.forEach((s, k) => put(ws, `J${r + k}`, s));
           [['J', rr], ['O', rr], ['P', rr], ['J', rr + 1]].forEach(([c, q], k) => { if (k < segs.length) put(ws, `${c}${q}`, segs[k][1]); });
-          put(ws, `B${rr + 6}`, b.fin);
+          put(ws, `B${rr + 6 + e}`, b.fin);
           const pw = pipeWeights(segs);
           pw.forEach((p, k) => {
-            if (ns > 1) put(ws, `P${r + k}`, p.uw);
+            // 単重: サイズ1つの柱も入れる(テーパーだけの柱は空欄。提出済みExcelと同じ)
+            if (ns > 1 || !/^□-\d+-\d+\*/.test(sizes[0] || '')) put(ws, `P${r + k}`, p.uw);
             put(ws, `Q${r + k}`, p.w, p.w === null ? ORG : null);
             sumQ += p.w || 0;
           });
         }
         // 板(上→下)
-        const pos = platePos(b.plates.length);
-        const markRow = {};
+        const pos = platePos(b.plates.length, b);
+        const markRow = {};   // 板マーク → 行(同じ板マークが上下にあれば両方)
         b.plates.forEach(([m, t], k) => {
           if (k >= pos.length) return;
-          const q = rr + 2 + pos[k], pi = plateInfo(m, t, res.verify);
-          markRow[m] = q;
+          const q = rr + 2 + e + pos[k], pi = plateInfo(m, t, res.verify);
+          (markRow[m] = markRow[m] || []).push(q);
           put(ws, `O${q}`, m); put(ws, `P${q}`, pi.t); put(ws, `Q${q}`, pi.w, pi.ng ? YEL : null);
           sumQ += pi.w || 0;
         });
-        put(ws, `Q${f1}`, { formula: `SUM(Q${r}:Q${rr - 1},Q${rr + 2}:Q${rr + 10})`, result: r2(sumQ) });
-        // 柱符号(R列→S列)と、大組図を開くリンク(V=図面番号・W=A付き図面番号・X=製品名。柱符号1つにつき1行)
+        put(ws, `Q${f1}`, { formula: `SUM(Q${r}:Q${rr - 1},Q${rr + 2 + e}:Q${rr + 10 + e})`, result: r2(sumQ) });
+        // 柱符号(R列に縦に。7つ目からS列)と、大組図を開くリンク(V=図面番号・W=A付き図面番号・X=製品名。柱符号1つにつき1行)
+        const nm = g.members.length;
         g.members.forEach((mb, i) => {
-          put(ws, `${i < 3 ? 'R' : 'S'}${r + (i % 3)}`, mb.sym);
+          put(ws, `${i < 6 ? 'R' : 'S'}${r + (i % 6)}`, mb.sym);
           const no = mb.dwg.split('-').pop(), fn = res.files.full[no], fa = res.files.sec[no];
           linkCell(ws, `V${r + i}`, mb.dwg, fn ? link(fn) : '');
           linkCell(ws, `W${r + i}`, mb.dwg + 'A', fa ? link(fa) : '');
           linkCell(ws, `X${r + i}`, mb.sym, fn ? link(fn) : '');
         });
-        put(ws, `O${f2}`, { formula: `COUNTA(R${r}:S${r + 2})`, result: g.members.length });
-        put(ws, `Q${f2}`, { formula: `Q${f1}*O${f2}`, result: r2(sumQ * g.members.length) });
-        // PL形状注意(draw_all.py と同じ並び。odd は下→上)
+        put(ws, `O${f2}`, { formula: nm > 6 ? `COUNTA(R${r}:S${r + 5})` : `COUNTA(R${r}:R${r + Math.max(nm, 1) - 1})`, result: nm });
+        put(ws, `Q${f2}`, { formula: `Q${f1}*O${f2}`, result: r2(sumQ * nm) });
+        // PL形状注意(odd は下→上)。番号は提出済みExcelと同じ: ①=いちばん下の板、②③…=その上の板の順
+        //   置き場所: 1枚=T列 / 2枚=①R・②T(同じ高さ) / 3枚以上=①R(下段)・②T(上段)・③T(下段)・④R(さらに下)
         const odd = g.odd || [];
         let place = [];
         if (odd.length === 1) place = [[odd[0], 'T', r + 7, '']];
         else if (odd.length === 2) place = [[odd[0], 'R', r + 7, ' ①'], [odd[1], 'T', r + 7, ' ②']];
-        else if (odd.length > 2) place = [[odd[0], 'R', r + 9, ' ①'], [odd[odd.length - 1], 'T', r + 3, ' ②']]
-          .concat(odd.slice(1, -1).slice(0, 2).map((o, k) => [o, k ? 'R' : 'T', r + (k ? 15 : 9), ` ${'③④'[k]}`]));
+        else if (odd.length > 2) place = [[odd[0], 'R', r + 9, ' ①'], [odd[1], 'T', r + 3, ' ②'], [odd[2], 'T', r + 9, ' ③']]
+          .concat(odd.length > 3 ? [[odd[3], 'R', r + 15, ' ④']] : []);
         for (const [o, c, q, lab] of place) {
           put(ws, `${c}${q - 1}`, '※　PL形状注意' + lab);
-          if (markRow[o.mark]) put(ws, `C${markRow[o.mark]}`, '※' + lab.trim());
+          (markRow[o.mark] || []).forEach(q2 => put(ws, `C${q2}`, '※' + lab.trim()));
           if (images && o.svg) {
             const im = await svgPng(o.svg);
             const id = out.addImage({ base64: im.data, extension: 'png' });
@@ -266,9 +290,9 @@
         if (images && b.segs) {
           let wpx = 0, hpx = 0;
           for (let c = 4; c <= 13; c++) wpx += colPx(ws.getColumn(c).width);
-          for (let q = rr + 2; q < f1; q++) hpx += rowPx(ws.getRow(q).height);
+          for (let q = rr + 2 + e; q < f1; q++) hpx += rowPx(ws.getRow(q).height);
           const id = out.addImage({ base64: pipePng(b, wpx, hpx), extension: 'png' });
-          ws.addImage(id, { tl: { col: 3, row: rr + 1 }, br: { col: 13, row: f1 - 1 }, editAs: 'oneCell' });
+          ws.addImage(id, { tl: { col: 3, row: rr + 1 + e }, br: { col: 13, row: f1 - 1 }, editAs: 'oneCell' });
         }
         r += h;
       }
@@ -287,11 +311,12 @@
     const hd = ['板マーク', '図面 板厚', '図面 外形(短辺)', '図面 外形(長辺)', '①図面から計算した重量', '図面 使用枚数',
       '手配 板厚', '手配 縦×横', '手配 枚数', '手配 ネット(1枚)', '手配 グロス(1枚)', '注文', '②照合', '③Excelに転記した重量'];
     vs.addRow(hd); vs.getRow(1).font = { bold: true };
-    const g_ = v => String(v);
+    // 値が1つなら数値のまま(Excelで計算できるように)。複数あるときだけ「/」でつないだ文字
+    const jn = a => !a || !a.length ? '' : (a.length === 1 && typeof a[0] === 'number' ? a[0] : a.map(String).join('/'));
     Object.entries(res.verify).forEach(([m, v]) => {
       const row = vs.addRow([m, v.t_dwg, v.dim ? v.dim[0] : '', v.dim ? v.dim[1] : '', v.calc, v.use,
-        v.t_csv ? v.t_csv.map(g_).join('/') : '', v.ab ? v.ab.map(([a, b]) => `${a}x${b}`).join('/') : '', v.n,
-        v.net ? v.net.map(g_).join('/') : '', v.gross ? v.gross.map(g_).join('/') : '', v.files.join(' '),
+        jn(v.t_csv), v.ab ? v.ab.map(([a, b]) => `${a}x${b}`).join('/') : '', v.n,
+        jn(v.net), jn(v.gross), v.files.join(' '),
         v.ok ? 'OK' : '要確認: ' + v.ng.join('; '), v.weight].map(x => x === null || x === undefined ? '' : x));
       if (!v.ok) row.eachCell({ includeEmpty: true }, c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: YEL } }; });
     });

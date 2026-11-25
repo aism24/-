@@ -56,6 +56,40 @@ def _orders(orders_csv):
     return (rows[0] if rows else []), rows[1:]
 
 
+# 材質の印(図面の凡例): 囲み(○/◇)+中の文字(+左の「T」) → 材質。表に無い印・読めない印は None(Excelは空欄・黄色)
+MATERIAL = {("○", "P", False): "BCP325", ("◇", "P", False): "BCP385",
+            ("○", "B", True): "TMCP325B", ("○", "C", True): "TMCP325C",
+            ("◇", "B", False): "TMCP385B", ("◇", "C", False): "TMCP385C"}
+
+
+def _mark_shape(t, cx, cy, R=90):
+    """印の文字の中心 (cx, cy) を囲む形。○=円 / ◇=斜めの線4本以上 / それ以外は None"""
+    circ = [a for a in t.arcs if math.hypot(a.cx - cx, a.cy - cy) < 30 and 30 < a.r < R]
+    segs = [(l.x1, l.y1, l.x2, l.y2) for l in t.lines if max(math.hypot(l.x1 - cx, l.y1 - cy), math.hypot(l.x2 - cx, l.y2 - cy)) < R]
+    for _, pts in t.polylines:
+        if pts and max(math.hypot(x - cx, y - cy) for x, y in pts) < R:
+            segs += [(a[0], a[1], b[0], b[1]) for a, b in zip(pts, pts[1:])]
+    diag = [s for s in segs if abs(s[2] - s[0]) > 10 and abs(s[3] - s[1]) > 10 and 0.5 < abs((s[3] - s[1]) / (s[2] - s[0])) < 2]
+    if circ and not diag:
+        return "○"
+    if len(diag) >= 4 and not circ:
+        return "◇"
+    return None
+
+
+def material_of(L, f, T, size_rec):
+    """柱サイズの文字の左にある材質の印を読む。戻り値 (材質 or None, 印の説明)"""
+    s, sx, sy = size_rec[0], size_rec[1], size_rec[2]
+    mk = sorted([a for a in T if 1 <= len(a[0]) <= 2 and -200 < a[1] - sx < 0 and abs(a[2] - sy) < 30], key=lambda a: sx - a[1])
+    if not mk:
+        return None, "印なし"
+    ch, mx, my, h = unicodedata.normalize("NFKC", mk[0][0]), mk[0][1], mk[0][2], mk[0][4] or 90
+    shape = _mark_shape(L.load(f), mx + h * 0.12, my + h / 2)
+    tee = any(unicodedata.normalize("NFKC", a[0]) == "T" and -400 < a[1] - mx < -60 and abs(a[2] - my) < 40 for a in T)
+    desc = ("T" if tee else "") + (shape or "?") + ch
+    return MATERIAL.get((shape, ch, tee)), desc
+
+
 def extract(L, Z, full, sec, order_rows, progress=None):
     """extract2.py と同じ。戻り値 (blocks, log)"""
     res, log = [], []
@@ -136,7 +170,9 @@ def extract(L, Z, full, sec, order_rows, progress=None):
                 elif cands:  # D内々が書かれていない階: 仕上がり(一番大きい数字)から板厚を引く
                     fin = max(cands); din = fin - up_t - lo_t
             size = [a for a in view if a[0].startswith("□-") and abs(a[2] - mid) < 1800] or [a for a in view if a[0].startswith("BH-") and abs(a[2] - mid) < 1800]
-            size = min(size, key=lambda a: abs(a[2] - mid))[0].replace("x", "*") if size else None
+            size_rec = min(size, key=lambda a: abs(a[2] - mid)) if size else None
+            size = size_rec[0].replace("x", "*") if size else None
+            mat, mat_mark = material_of(L, f, T, size_rec) if size_rec and size.startswith("□") else (None, "")
             # BH柱: 柱のサイズ表記の列(立面の中央)にある、その階より下で一番近いBH表記を使う
             colbh = [a for a in view if re.fullmatch(r"BH-\d+x\d+x\d+x\d+", a[0]) and fx + 4500 < a[1] < fx + 7500 and a[2] < mid]
             bh = max(colbh, key=lambda a: a[2])[0].replace("x", "*") if colbh else None
@@ -176,7 +212,7 @@ def extract(L, Z, full, sec, order_rows, progress=None):
                     fin = sum(v for y_, v in chain)
                 else:
                     segs = None
-            res.append(dict(dwg=f"{Z}-{no}", L=Ln, syms=syms, qty=qty, fl=fl, fin=fin, din=din, size=size,
+            res.append(dict(dwg=f"{Z}-{no}", L=Ln, syms=syms, qty=qty, fl=fl, fin=fin, din=din, size=size, mat=mat, mat_mark=mat_mark,
                             chain=chainv, plates=[(secmark[s][0], secmark[s][1] or TMAP.get(secmark[s][0])) for y, s in allz][::-1], segs=segs,
                             secs=sl + su, cands=cands, mid=round(mid), up=up, up_t=up_t, lo=lo, lo_t=lo_t))
     return res, log
@@ -274,7 +310,7 @@ def group_floors(blocks):
     表の並びは、最初の柱の図番の順"""
     floors = collections.OrderedDict()
     for b in sorted(blocks, key=lambda b: (b["fl"], b["dwg"])):
-        key = json.dumps([b["segs"], b["plates"], b["fin"], b["size"], b.get("chain")], ensure_ascii=False)
+        key = json.dumps([b["segs"], b["plates"], b["fin"], b["size"], b.get("chain"), b.get("mat")], ensure_ascii=False)
         fl = floors.setdefault(b["fl"], collections.OrderedDict())
         g = fl.setdefault(key, dict(block=b, members=[]))
         for s in b["syms"]:
@@ -302,7 +338,10 @@ def run(files, orders_csv, setsu=None, progress=None):
         if progress: progress("板の絵を作っています", k_, len(allg), g["block"]["dwg"])
         g["odd"] = odd_plates(L, Z, full, sec, g["block"], DIM) if g["block"]["segs"] else []
     bh = sorted({(b["fl"], s) for b in blocks if (b.get("size") or "").startswith("BH") for s in b["syms"]})
-    return dict(zuban=Z, setsu=setsu, files=dict(full=full, sec=sec), log=log, blocks=blocks, checks=checks,
+    # 材質の印を読めなかった柱(□のみ)
+    mat_ng = [f"{b['fl']} {s}: 印「{b.get('mat_mark') or '?'}」" for b in sorted(blocks, key=lambda b: (b["fl"], b["dwg"]))
+              if (b.get("size") or "").startswith("□") and not b.get("mat") for s in b["syms"]]
+    return dict(mat_ng=mat_ng, zuban=Z, setsu=setsu, files=dict(full=full, sec=sec), log=log, blocks=blocks, checks=checks,
                 verify=ver, plate_rows=plate_rows, floors=floors, bh=[f"{fl} {s}" for fl, s in bh],
                 orders=len(order_rows))
 
