@@ -10,7 +10,7 @@
  * 利用記録は利用者に分からないようにする(アプリ側は結果を表示しない)。
  * デプロイ: ウェブアプリ / 次のユーザーとして実行=自分 / アクセスできるユーザー=全員
  */
-const CODE_VERSION = '2026-11-25a';
+const CODE_VERSION = '2026-11-25b';
 const ORDERS_FOLDER_ID = '1Pp68pZl9gki8WfOLmrV1L0UG6-hPjyER';   // ドライブ「切板CSV工事別まとめ」(短管リストと同じフォルダ)
 const SHEET_SETTING = '設定';
 const SHEET_RECORD = '記録';
@@ -122,7 +122,7 @@ function readOrders_(kojiNo) {
   const it = DriveApp.getFolderById(ORDERS_FOLDER_ID).getFilesByName(koji + '.csv');
   if (!it.hasNext()) return { koji: koji, name: '', updated: '', marks: {} };
   const f = it.next();
-  const rows = Utilities.parseCsv(f.getBlob().getDataAsString('UTF-8').replace(/^\uFEFF/, ''));
+  const rows = Utilities.parseCsv(readCsvText_(f).replace(/^\uFEFF/, ''));
   const head = rows[0] || [], col = function (h) { return head.indexOf(h); };
   const iMark = col('符号'), iN = col('数量'), iNet = col('ネット重量(kg)') + 1, iName = col('工事名'), iFile = col('ファイル名');
   if (iMark < 0 || iN < 0 || iNet < 1) throw new Error(koji + '.csv の見出し(符号・数量・ネット重量)が見つかりません');
@@ -142,8 +142,38 @@ function readOrders_(kojiNo) {
   return { koji: koji, name: f.getName(), updated: Utilities.formatDate(f.getLastUpdated(), TZ, 'yyyy/MM/dd HH:mm'), marks: marks };
 }
 
+// CSV の中身を読む。DriveApp で「アクセスが拒否されました」になる場合(2026-11-25、会社アカウントの GAS から個人アカウント所有の CSV)に備え、
+// だめなら Drive API(UrlFetchApp)で読む
+function readCsvText_(f) {
+  let e1;
+  try { return f.getBlob().getDataAsString('UTF-8'); } catch (e) { e1 = e; }
+  const r = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + f.getId() + '?alt=media&supportsAllDrives=true',
+    { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (r.getResponseCode() === 200) return r.getContentText('UTF-8');
+  throw new Error(f.getName() + ' を読めません(DriveApp: ' + (e1 && e1.message) + ' / Drive API: ' + r.getResponseCode() + ' ' + r.getContentText().slice(0, 200) + ')');
+}
+
 // Apps Script のエディタで1回実行: ドライブを読む許可の承認と、注文書が読めるかの確認(26-16 の符号の数をログに出す)
 function checkOrders() {
   const o = readOrders_('26-16');
   Logger.log(o.name + ' ' + o.updated + ' 符号 ' + Object.keys(o.marks).length + '件');
+}
+
+// 読めないときの診断(Apps Script のエディタで実行し、実行ログを見せてください)。ファイルは変えない
+function diagnoseOrders() {
+  const log = function (k, v) { Logger.log(k + ': ' + v); };
+  const step = function (k, fn) { try { log(k, 'OK ' + fn()); } catch (e) { log(k, 'NG ' + e.message); } };
+  step('実行しているアカウント', function () { return Session.getEffectiveUser().getEmail(); });
+  let f = null;
+  step('フォルダ', function () { const d = DriveApp.getFolderById(ORDERS_FOLDER_ID); return d.getName(); });
+  step('26-16.csv を探す', function () { const it = DriveApp.getFolderById(ORDERS_FOLDER_ID).getFilesByName('26-16.csv'); f = it.next(); return f.getId() + ' ' + f.getSize() + 'バイト'; });
+  if (!f) return;
+  step('持ち主', function () { const o = f.getOwner(); return o ? o.getEmail() : '(不明)'; });
+  step('DriveApp で中身を読む', function () { return f.getBlob().getDataAsString('UTF-8').length + '文字'; });
+  step('DriveApp.getFileById で読む', function () { return DriveApp.getFileById(f.getId()).getBlob().getBytes().length + 'バイト'; });
+  step('Drive API で読む', function () {
+    const r = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + f.getId() + '?alt=media&supportsAllDrives=true', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) throw new Error(r.getResponseCode() + ' ' + r.getContentText().slice(0, 300));
+    return r.getContentText('UTF-8').length + '文字';
+  });
 }
