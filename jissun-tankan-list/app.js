@@ -330,6 +330,7 @@ async function readDrawings(items) {
     const out = await py.runPythonAsync('tankan_core.run_json(tk_files, tk_orders, "", tk_progress)');
     state.res = JSON.parse(out);
     await excelP;
+    TankanExcel.sortFloors(state.res);   // 表の並び(画面とExcelで同じ番号)
     for (const it of items) { try { py.FS.unlink('/tdf/' + it.file.name); } catch (e) { /* なし */ } }
   } catch (e) {
     idle(); render();

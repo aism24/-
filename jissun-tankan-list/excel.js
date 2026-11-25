@@ -88,6 +88,23 @@
     b.plates.forEach(([m, t]) => { s += plateInfo(m, t, verify).w || 0; });
     return r2(s);
   }
+  // 階ごとの表の並び(提出済みExcelと同じ): 角形が先・BHが後 → サイズの大きい順(単重の重い順) → 1台の重量の重い順 → 図番順。
+  //   res.floors をその場で並べ替える(画面の表と Excel で同じ番号にするため、読み取り直後に1回呼ぶ)
+  function sortFloors(res) {
+    Object.values(res.floors || {}).forEach(gs => {
+      const key = new Map(gs.map(g => {
+        const b = g.block, segs = b.segs || [];
+        const uw = Math.max(0, ...(segs.length ? sizesOf(segs) : [b.size]).map(s => unitW(s) || 0));
+        return [g, [String(b.size || '').startsWith('BH') || !b.segs ? 1 : 0, -uw, -(groupWeight(g, res.verify) || 0), g.members.map(m => m.dwg).sort()[0] || '']];
+      }));
+      gs.sort((a, c) => {
+        const x = key.get(a), y = key.get(c);
+        for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+        return x[3] < y[3] ? -1 : x[3] > y[3] ? 1 : 0;
+      });
+    });
+    return res;
+  }
   // 板の行(9行)のどこに板マークを置くか(上から)
   function platePos(k, b) {
     // 板5枚以上で内ダイア(OUDY)の無い柱: 図面の高さの割合で 0〜8 行目に置く(提出済みExcelと同じ。例 2CCY8CX2 4階 = 0,2,3,6,8)
@@ -222,6 +239,7 @@
     const tpl = tw.getWorksheet('階'), merges = parseMerges(tpl);
     const out = new ExcelJS.Workbook();
     out.creator = ''; out.title = '短管リスト';
+    sortFloors(res);   // 画面側で並べ替え済みでも同じ結果(重量が同じなら図番順)
     const floors = Object.keys(res.floors).sort();
     const nAll = floors.reduce((a, fl) => a + res.floors[fl].length, 0);
     let done = 0;
@@ -390,7 +408,7 @@
     return typeof Blob !== 'undefined' ? new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }) : buf;
   }
 
-  const api = { prepare, build, groupWeight, unitW, platePos };
+  const api = { prepare, build, groupWeight, unitW, platePos, sortFloors };
   root.TankanExcel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
