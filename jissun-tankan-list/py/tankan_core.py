@@ -77,6 +77,75 @@ def _mark_shape(t, cx, cy, R=90):
     return None
 
 
+COMPASS = ["北", "北北東", "北東", "東北東", "東", "東南東", "南東", "南南東", "南", "南南西", "南西", "西南西", "西", "西北西", "北西", "北北西"]
+
+
+def _north(t, T):
+    """KEY PLAN の方位記号: 「N」の近くで、同じ点から出る2本の線(開き 15〜45°)。その真ん中の向き(度、図面の右=0・反時計回り)。
+    方位記号の先端が上下どちらでも、シームは「向かい合う2方向」なので結果は同じ"""
+    for s, x, y, *_ in T:
+        if s not in ("N", "Ｎ"):
+            continue
+        ls = [l for l in t.lines if math.hypot((l.x1 + l.x2) / 2 - x, (l.y1 + l.y2) / 2 - y) < 700 and 100 < math.hypot(l.x2 - l.x1, l.y2 - l.y1) < 600]
+        for i, a in enumerate(ls):
+            for b in ls[i + 1:]:
+                for pa, qa in (((a.x1, a.y1), (a.x2, a.y2)), ((a.x2, a.y2), (a.x1, a.y1))):
+                    for pb, qb in (((b.x1, b.y1), (b.x2, b.y2)), ((b.x2, b.y2), (b.x1, b.y1))):
+                        if math.hypot(pa[0] - pb[0], pa[1] - pb[1]) > 2:
+                            continue
+                        aa = math.degrees(math.atan2(qa[1] - pa[1], qa[0] - pa[0]))
+                        ab = math.degrees(math.atan2(qb[1] - pb[1], qb[0] - pb[0]))
+                        d = (ab - aa + 180) % 360 - 180
+                        la, lb = math.hypot(qa[0] - pa[0], qa[1] - pa[1]), math.hypot(qb[0] - pb[0], qb[1] - pb[1])
+                        # 同じ長さで、先が線で閉じていない(図中の旗のような閉じた三角は別物)
+                        closed = any(min(math.hypot(l.x1 - qa[0], l.y1 - qa[1]) + math.hypot(l.x2 - qb[0], l.y2 - qb[1]),
+                                         math.hypot(l.x2 - qa[0], l.y2 - qa[1]) + math.hypot(l.x1 - qb[0], l.y1 - qb[1])) < 4 for l in ls)
+                        if 15 < abs(d) < 45 and abs(la - lb) < 0.05 * max(la, lb) and not closed:
+                            return (aa + d / 2) % 360
+    return None
+
+
+def seam_of(L, f):
+    """大組図の「シーム方向」の上にある柱の平面図で、塗りつぶし三角(シームの印)が柱の左右か上下かを見て、方位の名前にする。
+    戻り値 例 "南南西・北北東"(南寄りを先に)。読めなければ None"""
+    T = L.texts(f)
+    sm = [a for a in T if a[0] == "シーム方向"]
+    if not sm:
+        return None
+    t = L.load(f)
+    x0, y0 = sm[0][1], sm[0][2]
+    box = lambda x, y: -1000 < x - x0 < 1000 and -100 < y - y0 < 1200
+    ls = [l for l in t.lines if box(l.x1, l.y1) and box(l.x2, l.y2)]
+    key = lambda x, y: (round(x), round(y))
+    start = collections.defaultdict(list)
+    for l in ls:
+        start[key(l.x1, l.y1)].append(l)
+    tri = set()
+    for a in ls:   # 3本の線で閉じた三角(辺 120〜220)
+        for b in start[key(a.x2, a.y2)]:
+            for c in start[key(b.x2, b.y2)]:
+                if c is a or b is a or key(c.x2, c.y2) != key(a.x1, a.y1):
+                    continue
+                if all(120 < math.hypot(l.x2 - l.x1, l.y2 - l.y1) < 220 for l in (a, b, c)):
+                    tri.add(key((a.x1 + b.x1 + c.x1) / 3, (a.y1 + b.y1 + c.y1) / 3))
+    ar = [a for a in t.arcs if box(a.cx, a.cy)]
+    if not tri or not ar:
+        return None
+    cx, cy = sum(a.cx for a in ar) / len(ar), sum(a.cy for a in ar) / len(ar)
+    hz = [abs(x - cx) > abs(y - cy) for x, y in tri]
+    if not (all(hz) or not any(hz)):
+        return None
+    n = _north(t, T)
+    if n is None:
+        return None
+    names = []
+    for a in ((0, 180) if hz[0] else (90, 270)):   # 図面の右・左 / 上・下
+        bearing = (n - a) % 360                     # 北から時計回り
+        names.append((bearing, COMPASS[round(bearing / 22.5) % 16]))
+    names.sort(key=lambda v: not (90 < v[0] < 270))  # 南寄りを先に(提出済みExcelの書き方)
+    return "・".join(v[1] for v in names)
+
+
 def material_of(L, f, T, size_rec):
     """柱サイズの文字の左にある材質の印を読む。戻り値 (材質 or None, 印の説明)"""
     s, sx, sy = size_rec[0], size_rec[1], size_rec[2]
@@ -337,11 +406,21 @@ def run(files, orders_csv, setsu=None, progress=None):
     for k_, g in enumerate(allg):
         if progress: progress("板の絵を作っています", k_, len(allg), g["block"]["dwg"])
         g["odd"] = odd_plates(L, Z, full, sec, g["block"], DIM) if g["block"]["segs"] else []
+    seam = {}   # 図番 → シーム方向(大組図ごと)
+    for g in allg:
+        for mb in g["members"]:
+            d = mb["dwg"]
+            if d not in seam:
+                no = d.split("-")[-1]
+                try:
+                    seam[d] = seam_of(L, full[no]) if no in full else None
+                except Exception:
+                    seam[d] = None
     bh = sorted({(b["fl"], s) for b in blocks if (b.get("size") or "").startswith("BH") for s in b["syms"]})
     # 材質の印を読めなかった柱(□のみ)
     mat_ng = [f"{b['fl']} {s}: 印「{b.get('mat_mark') or '?'}」" for b in sorted(blocks, key=lambda b: (b["fl"], b["dwg"]))
               if (b.get("size") or "").startswith("□") and not b.get("mat") for s in b["syms"]]
-    return dict(mat_ng=mat_ng, zuban=Z, setsu=setsu, files=dict(full=full, sec=sec), log=log, blocks=blocks, checks=checks,
+    return dict(seam=seam, mat_ng=mat_ng, zuban=Z, setsu=setsu, files=dict(full=full, sec=sec), log=log, blocks=blocks, checks=checks,
                 verify=ver, plate_rows=plate_rows, floors=floors, bh=[f"{fl} {s}" for fl, s in bh],
                 orders=len(order_rows))
 
