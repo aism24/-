@@ -34,13 +34,45 @@ function busy(msg, ratio) {
   $('status-overlay').classList.add('open');
 }
 function idle() { $('status-overlay').classList.remove('open'); }
-function notice(title, body, lines) {
+// download: 渡すと OK の横に「このテキストをダウンロードする」ボタンを出す(押すと download() を呼ぶ。案内は閉じない)
+function notice(title, body, lines, download) {
   return new Promise(resolve => {
     $('notice-title').textContent = title; $('notice-body').textContent = body;
     $('notice-modal').querySelector('.dialog').classList.toggle('lines', !!lines);
+    const dl = $('notice-dl');
+    dl.style.display = download ? '' : 'none';
+    dl.onclick = download ? async () => {
+      dl.disabled = true;
+      try { await download(); } catch (e) { toast('ダウンロードできませんでした: ' + (e && e.message || e), 'error'); } finally { dl.disabled = false; }
+    } : null;
     $('notice-modal').classList.add('open');
-    $('notice-ok').onclick = () => { $('notice-modal').classList.remove('open'); resolve(); };
+    $('notice-ok').onclick = () => { $('notice-modal').classList.remove('open'); dl.style.display = 'none'; dl.onclick = null; resolve(); };
   });
+}
+// 案内の文を Excel(1行=1行。【…】の見出しは太字)にして保存する
+async function downloadNoticeExcel(title, body) {
+  await TankanExcel.prepare();   // ExcelJS を読み込む(図面を読むときに読み込み済みのことが多い)
+  const wb = new window.ExcelJS.Workbook();
+  wb.creator = ''; wb.title = title;
+  const ws = wb.addWorksheet(title.slice(0, 31));
+  ws.getColumn(1).width = 120;
+  const font = { name: 'ＭＳ ゴシック', size: 10 };   // 等幅(字下げの並びを崩さない)
+  const d = new Date(), p2 = n => String(n).padStart(2, '0');
+  const when = `${d.getFullYear()}/${p2(d.getMonth() + 1)}/${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  const setsu = state.res ? state.res.setsu : '';
+  const head = ws.addRow([`${title}  ${state.kojiNo} ${state.kojiName} ${setsu}  (${when})`]);
+  head.getCell(1).font = { ...font, size: 12, bold: true };
+  ws.addRow([]);
+  body.split('\n').forEach(line => {
+    const r = ws.addRow([line]);
+    r.getCell(1).font = /^【.*】$/.test(line) ? { ...font, bold: true } : { ...font };
+  });
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}`;
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `${title}_${state.kojiNo}_${setsu}_${stamp}.xlsx`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
 function confirm2(title, body, okLabel, cancelLabel) {
   return new Promise(resolve => {
@@ -351,7 +383,7 @@ async function showReadNotes() {
   if (ng.length) msg.push(`手配書と合わない板(${ng.length}種類。重量は図面から計算した値で黄色):\n` + ng.map(([m, v]) => `${m}: ${v.ng.join('; ')}`).join('\n'));
   const noLink = state.files.filter(it => !it.path).length;
   if (noLink) msg.push(`リンクを付けられないTDFが ${noLink} 個あります(選んだサーバーの「①進行中工事」の中のファイルではないため)。`);
-  if (msg.length) await notice('確認が必要なこと', msg.join('\n\n'), true);
+  if (msg.length) { const body = msg.join('\n\n'); await notice('確認が必要なこと', body, true, () => downloadNoticeExcel('確認が必要なこと', body)); }
 }
 
 // ---------- 表示 ----------
