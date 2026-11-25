@@ -8,7 +8,7 @@
 ```
 jissun-tankan-list/
   template/tankan-template.xlsx  Excelのひな形(書式と表の形だけ。値は {工事名} などの置き換え文字)
-  gas/Code.gs    独立した Apps Script プロジェクトに貼る GAS(下記)
+  gas/Tankan.gs  金物リストと同じ Apps Script プロジェクトに足す GAS(下記)
   vercel.json    {"git":{"deploymentEnabled":false}}
   (これから) index.html / app.js / style.css / py/(抽出の Python。Pyodide で動かす) / to-launcher.js
 ```
@@ -28,14 +28,14 @@ jissun-tankan-list/
 - 「説明」シート: 置き換え文字の一覧。
 - 提出済みの Excel から書式と表の形だけを取り出して作った(実データ・作成者情報は入れていない)。
 
-## GAS(gas/Code.gs)とスプレッドシート
-スプレッドシート「製品別金物一覧アプリ」を金物リスト(tdf-kanamono-list)と共用する。
-金物リストの GAS がすでにそのスプレッドシートに入っていて、ウェブアプリの入口(doGet)は1プロジェクトに1つなので、
-短管リストの GAS は **独立した Apps Script プロジェクト**にして、スプレッドシートを ID で開く。
-1. script.google.com で新しいプロジェクトを作り、`gas/Code.gs` を貼る
-2. プロジェクトの設定 → スクリプト プロパティに `SPREADSHEET_ID`(スプレッドシートの ID)と `ORDERS_FOLDER_ID`(「切板CSV工事別まとめ」フォルダの ID)を入れる(公開リポジトリに書かないため)
-3. 関数 `setupSpreadsheet` を1回実行(「短管_記録」「短管_利用記録」を作る。設定シート・金物リストのシートは触らない)
-4. デプロイ → ウェブアプリ(実行=自分、アクセス=全員)。`/exec?action=ping` で `CODE_VERSION` が返る
-- 設定: 1行目の見出し「工事番号」「工事名」「サーバー」「ファイルパス」で列を探す(読むだけ)
-- `getOrders&koji=26-12`: 注文書キャッシュの CSV(UTF-8)と更新日時。ファイルが無ければ csv は空
-- 利用記録: アプリを開いた日時。記録は画面に出さない
+## GAS(gas/Tankan.gs)とスプレッドシート
+スプレッドシート「製品別金物一覧アプリ」の Apps Script(金物リスト tdf-kanamono-list の Code.gs が入っているプロジェクト)に、
+2つ目のファイル「Tankan」として足す(2026-11-25 ユーザー指示)。ウェブアプリの入口(doGet・doPost)は1プロジェクトに1つなので、
+金物リストの Code.gs の doGet・doPost が、action が `tankan` で始まる依頼だけを Tankan.gs へ回す(Tankan.gs が無くても金物リストは動く)。
+同じプロジェクトでは名前が共有されるため、Tankan.gs の関数・定数はすべて `tankan` / `TANKAN` で始める。URL は金物リストと同じ。
+1. Apps Script に「Tankan」ファイルを足して `gas/Tankan.gs` を貼り、Code.gs を tdf-kanamono-list/gas/Code.gs の最新に差し替えて保存
+2. 関数 `tankanSetupSpreadsheet` を1回実行(「短管_記録」「短管_利用記録」を作る。設定シート・金物リストのシートは触らない)
+3. デプロイを管理 → 金物リストの今のデプロイを編集 → 新バージョン(URL は変わらない)。`?action=tankanPing` で版が返る
+- `tankanSettings`: 設定シート(見出し「工事番号」「工事名」「サーバー」「ファイルパス」で列を探す。読むだけ)
+- `tankanOrders&koji=26-12`: 注文書キャッシュの CSV(UTF-8)と更新日時。ファイルが無ければ csv は空。フォルダ ID は Tankan.gs に書いてある(ユーザー了承)
+- `tankanSave`(POST): 「短管_記録」に1行と中身のシート。`tankanUsage`(POST): 利用記録。記録は画面に出さない

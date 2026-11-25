@@ -8,7 +8,7 @@
  * 利用記録は利用者に分からないようにする(アプリ側は結果を表示しない)。
  * デプロイ: ウェブアプリ / 次のユーザーとして実行=自分 / アクセスできるユーザー=全員
  */
-const CODE_VERSION = '2026-11-19a';
+const CODE_VERSION = '2026-11-25a';
 const SHEET_SETTING = '設定';
 const SHEET_RECORD = '記録';
 const MAX_DATA_SHEETS = 10;
@@ -21,6 +21,8 @@ function json_(o) {
 
 function doGet(e) {
   const action = (e && e.parameter && e.parameter.action) || 'ping';
+  // 短管リスト(jissun-tankan-list)の依頼は同じプロジェクトの Tankan.gs へ回す(入口は1プロジェクトに1つのため)
+  if (typeof tankanIsAction === 'function' && tankanIsAction(action)) return tankanDoGet(e);
   try {
     if (action === 'settings') return json_(Object.assign({ status: 'success' }, readSettings_()));
     return json_({ status: 'success', version: CODE_VERSION });
@@ -32,6 +34,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents || '{}');
+    if (typeof tankanIsAction === 'function' && tankanIsAction(body.action)) return tankanDoPost(body);   // 短管リストの依頼
     const lock = LockService.getScriptLock();
     lock.waitLock(30000);
     try {
