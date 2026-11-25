@@ -374,6 +374,73 @@ def odd_plates(L, Z, full, sec, b, DIM):
     return odd
 
 
+def bh_dia(b, DIM):
+    """BH柱の板: 手配書の板の外形とBHの寸法から出寸法(フランジの先・フランジの外面)を出し、「ダイア出寸法注意」の絵(SVG)を作る。下→上の順"""
+    m = re.fullmatch(r"BH-(\d+)\*(\d+)\*(\d+)\*(\d+)", b.get("size") or "")
+    if not m:
+        return []
+    H, B, tw, tf = (int(v) for v in m.groups())
+    out = []
+    for mk, t in b["plates"][::-1]:
+        if mk in DIM and mk not in [o["mark"] for o in out]:
+            w, l = sorted(DIM[mk])
+            ox, oy = (w - B) / 2, (l - H) / 2
+            out.append(dict(mark=mk, ox=ox, oy=oy, svg=_bh_svg(w, l, H, B, tw, tf, ox, oy)))
+    return out
+
+
+def _bh_svg(w, l, H, B, tw, tf, ox, oy):
+    """板(横 w・縦 l)の中にBH(フランジ幅 B が横、せい H が縦)。上に横の出寸法、左に縦の出寸法(提出済みExcelの絵と同じ向き)"""
+    M = 300
+    vx0, vx1, vy0, vy1 = -w / 2 - M, w / 2 + 80, -l / 2 - 80, l / 2 + M
+    W, Hh = vx1 - vx0, vy1 - vy0
+    P = lambda x, y: (x - vx0, vy1 - y)
+    fmt = lambda v: f"{v:.1f}".rstrip("0").rstrip(".")
+    o = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W/10:.1f}mm" height="{Hh/10:.1f}mm" viewBox="0 0 {W:.1f} {Hh:.1f}">',
+         f'<rect x="0" y="0" width="{W:.1f}" height="{Hh:.1f}" fill="white"/>',
+         '<g stroke="black" stroke-width="6" fill="none">']
+    def rect(x0, y0, x1, y1):
+        (a, b), (c, d) = P(x0, y1), P(x1, y0)
+        o.append(f'<rect x="{a:.1f}" y="{b:.1f}" width="{c-a:.1f}" height="{d-b:.1f}"/>')
+    def line(x0, y0, x1, y1, sw=6):
+        (a, b), (c, d) = P(x0, y0), P(x1, y1)
+        o.append(f'<line x1="{a:.1f}" y1="{b:.1f}" x2="{c:.1f}" y2="{d:.1f}" stroke-width="{sw}"/>')
+    rect(-w / 2, -l / 2, w / 2, l / 2)                       # 板
+    rect(-B / 2, H / 2 - tf, B / 2, H / 2)                   # 上のフランジ
+    rect(-B / 2, -H / 2, B / 2, -H / 2 + tf)                 # 下のフランジ
+    rect(-tw / 2, -H / 2 + tf, tw / 2, H / 2 - tf)           # ウェブ
+    line(-B / 2, -H / 2, B / 2, H / 2, 3); line(-B / 2, H / 2, B / 2, -H / 2, 3)   # 柱の印(×)
+    line(-w / 2 + 40, 0, w / 2 - 40, 0, 3)                   # 中心線
+    o.append('</g>')
+    fs = 120
+    def dim(x0, y0, x1, y1, txt, vert):
+        (a, b), (c, d) = P(x0, y0), P(x1, y1)
+        s = f'<line x1="{a:.1f}" y1="{b:.1f}" x2="{c:.1f}" y2="{d:.1f}" stroke="black" stroke-width="3"/>'
+        for e, f in ((a, b), (c, d)):
+            s += (f'<line x1="{e-25:.1f}" y1="{f:.1f}" x2="{e+25:.1f}" y2="{f:.1f}" stroke="black" stroke-width="3"/>' if vert else
+                  f'<line x1="{e:.1f}" y1="{f-25:.1f}" x2="{e:.1f}" y2="{f+25:.1f}" stroke="black" stroke-width="3"/>')
+        if vert:
+            s += f'<text transform="translate({a-20:.1f},{(b+d)/2:.1f}) rotate(-90)" font-size="{fs}" font-family="MS Gothic" text-anchor="middle">{txt}</text>'
+        else:
+            s += f'<text x="{(a+c)/2:.1f}" y="{b-18:.1f}" font-size="{fs}" font-family="MS Gothic" text-anchor="middle">{txt}</text>'
+        o.append(s)
+    yd = l / 2 + 90
+    dim(-w / 2, yd, -B / 2, yd, fmt(ox), False)
+    dim(B / 2, yd, w / 2, yd, fmt(ox), False)
+    xd = -w / 2 - 90
+    dim(xd, H / 2, xd, l / 2, fmt(oy), True)
+    dim(xd, -l / 2, xd, -H / 2, fmt(oy), True)
+    ox_, oy_ = P(-w / 2 - 150, -l / 2 - 20)
+    L = 220
+    o.append(f'<g stroke="black" stroke-width="4" fill="none"><polyline points="{ox_:.1f},{oy_-L:.1f} {ox_:.1f},{oy_:.1f} {ox_+L:.1f},{oy_:.1f}"/>'
+             f'<polyline points="{ox_-18:.1f},{oy_-L+35:.1f} {ox_:.1f},{oy_-L:.1f} {ox_+18:.1f},{oy_-L+35:.1f}"/>'
+             f'<polyline points="{ox_+L-35:.1f},{oy_-18:.1f} {ox_+L:.1f},{oy_:.1f} {ox_+L-35:.1f},{oy_+18:.1f}"/></g>')
+    o.append(f'<text x="{ox_-60:.1f}" y="{oy_-L+60:.1f}" font-size="{fs}" font-family="MS Gothic">X</text>')
+    o.append(f'<text x="{ox_+L+10:.1f}" y="{oy_+25:.1f}" font-size="{fs}" font-family="MS Gothic">Y</text>')
+    o.append('</svg>')
+    return "\n".join(o)
+
+
 def group_floors(blocks):
     """階ごとに、値(サイズ・長さ・板・仕上がり)がまったく同じ柱を1つの表にまとめる(提出済みExcelと同じまとめ方)。
     表の並びは、最初の柱の図番の順"""
@@ -401,11 +468,13 @@ def run(files, orders_csv, setsu=None, progress=None):
         if len(r) > 17 and "DY" in r[12]:
             try: DIM.setdefault(r[12], (float(r[16]), float(r[17])))
             except ValueError: pass
-    floors = group_floors([b for b in blocks if not (b.get("size") or "").startswith("BH")])
+    floors = group_floors(blocks)
     allg = [g for gs in floors.values() for g in gs]
     for k_, g in enumerate(allg):
         if progress: progress("板の絵を作っています", k_, len(allg), g["block"]["dwg"])
-        g["odd"] = odd_plates(L, Z, full, sec, g["block"], DIM) if g["block"]["segs"] else []
+        isbh = (g["block"].get("size") or "").startswith("BH")
+        g["odd"] = odd_plates(L, Z, full, sec, g["block"], DIM) if g["block"]["segs"] and not isbh else []
+        g["bhdia"] = bh_dia(g["block"], DIM) if isbh else []
     seam = {}   # 図番 → シーム方向(大組図ごと)
     for g in allg:
         for mb in g["members"]:
@@ -419,7 +488,7 @@ def run(files, orders_csv, setsu=None, progress=None):
     bh = sorted({(b["fl"], s) for b in blocks if (b.get("size") or "").startswith("BH") for s in b["syms"]})
     # 材質の印を読めなかった柱(□のみ)
     mat_ng = [f"{b['fl']} {s}: 印「{b.get('mat_mark') or '?'}」" for b in sorted(blocks, key=lambda b: (b["fl"], b["dwg"]))
-              if (b.get("size") or "").startswith("□") and not b.get("mat") for s in b["syms"]]
+              if (b.get("size") or "").startswith(("□", "BH")) and not b.get("mat") for s in b["syms"]]
     return dict(seam=seam, mat_ng=mat_ng, zuban=Z, setsu=setsu, files=dict(full=full, sec=sec), log=log, blocks=blocks, checks=checks,
                 verify=ver, plate_rows=plate_rows, floors=floors, bh=[f"{fl} {s}" for fl, s in bh],
                 orders=len(order_rows))

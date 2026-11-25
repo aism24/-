@@ -5,7 +5,7 @@
 (function (root) {
   'use strict';
   const EXCELJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
-  const TEMPLATE_URL = 'template/tankan-template.xlsx?v=20261125a';
+  const TEMPLATE_URL = 'template/tankan-template.xlsx?v=20261125b';
   const NCOL = 24;                                   // A〜X
   const PROTO = { 1: { top: 3, ns: 1 }, 3: { top: 17, ns: 3 } };
   const YEL = 'FFFFFF99', ORG = 'FFFFCC66';        // 図面と手配書が合わない(黄色)・図面から取れない(橙色)
@@ -38,7 +38,11 @@
     if (!UW) return null;
     const m = /^□-(\d+)-(\d+)\*\d+-\d+\*(\d+)$/.exec(size || '');
     if (m) { const a = Math.floor((+m[1] + +m[2]) / 2); return UW[`□-${a}*${a}*${m[3]}`] || null; }
-    return UW[size] || null;
+    if (UW[size]) return UW[size];
+    // BH: ひな形の「板」シートに無いサイズは断面から(鋼 7.85t/m³、溶接・フィレットは含まない)
+    const h = /^BH-(\d+)\*(\d+)\*([\d.]+)\*([\d.]+)$/.exec(size || '');
+    if (h) { const [H, B, tw, tf] = h.slice(1).map(Number); return Number(((2 * B * tf + (H - 2 * tf) * tw) * 7.85 / 1000).toFixed(1)); }
+    return null;
   }
   // 小数第2位に丸める。Python の round と同じ結果にするため、v*100 を Math.round せず toFixed を使う(366.885 → 366.88)
   const r2 = v => Number(v.toFixed(2));
@@ -258,7 +262,7 @@
         put(ws, `A${r}`, gi + 1);
         put(ws, `B${r}`, { formula: `IF(J${rr}="","",$P$1&$A$1&A${r})`, result: `${fl.replace(/L$/, '')}-${gi + 1}` });
         // 材質(大組図の柱サイズの左の印から。読めなければ空欄・黄色)
-        if (String(b.size || '').startsWith('□')) for (let k = 0; k < ns; k++) put(ws, `D${r + k}`, b.mat || null, b.mat ? null : YEL);
+        if (/^(□|BH)/.test(String(b.size || ''))) for (let k = 0; k < ns; k++) put(ws, `D${r + k}`, b.mat || null, b.mat ? null : YEL);
         let sumQ = 0;
         if (!b.segs) {
           for (let k = r; k < rr; k++) put(ws, `J${k}`, null, ORG);
@@ -322,15 +326,23 @@
         put(ws, `Q${f2}`, { formula: `Q${f1}*O${f2}`, result: r2(sumQ * nm) });
         // PL形状注意(odd は下→上)。番号は提出済みExcelと同じ: ①=いちばん下の板、②③…=その上の板の順
         //   置き場所: 1枚=T列 / 2枚=①R・②T(同じ高さ) / 3枚以上=①R(下段)・②T(上段)・③T(下段)・④R(さらに下)
-        const odd = g.odd || [];
+        // BH柱: 出寸法が特記外と違う板は「ダイア出寸法注意」の絵(同じ出寸法の板は1枚の絵にまとめ、※は全部の板に)
+        const odd = (g.odd || []).slice();
+        const bhd = (g.bhdia || []).filter(d => dflt === null || d.ox !== dflt || d.oy !== dflt);
+        const bseen = {};
+        for (const d of bhd) {
+          const k = `${d.ox}/${d.oy}`;
+          if (bseen[k]) { bseen[k].marks.push(d.mark); continue; }
+          odd.push(bseen[k] = { mark: d.mark, marks: [d.mark], svg: d.svg, title: 'ダイア出寸法注意' });
+        }
         let place = [];
-        if (odd.length === 1) place = [[odd[0], 'T', r + 7, '']];
+        if (odd.length === 1) place = [[odd[0], 'T', r + (odd[0].title ? 6 : 7), '']];   // ダイア出寸法注意は1行上(提出済みExcelと同じ)
         else if (odd.length === 2) place = [[odd[0], 'R', r + 7, ' ①'], [odd[1], 'T', r + 7, ' ②']];
         else if (odd.length > 2) place = [[odd[0], 'R', r + 9, ' ①'], [odd[1], 'T', r + 3, ' ②'], [odd[2], 'T', r + 9, ' ③']]
           .concat(odd.length > 3 ? [[odd[3], 'R', r + 15, ' ④']] : []);
         for (const [o, c, q, lab] of place) {
-          put(ws, `${c}${q - 1}`, '※　PL形状注意' + lab);
-          (markRow[o.mark] || []).forEach(q2 => put(ws, `C${q2}`, '※' + lab.trim()));
+          put(ws, `${c}${q - 1}`, '※　' + (o.title || 'PL形状注意') + lab);
+          (o.marks || [o.mark]).forEach(mk => (markRow[mk] || []).forEach(q2 => put(ws, `C${q2}`, '※' + lab.trim())));
           if (images && o.svg) {
             const im = await svgPng(o.svg);
             const id = out.addImage({ base64: im.data, extension: 'png' });
