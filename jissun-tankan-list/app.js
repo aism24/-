@@ -252,9 +252,13 @@ async function pickFiles() {
     handles = await window.showOpenFilePicker({ id: 'tdf' + Math.max(0, state.servers.findIndex(x => x.name === state.server.name)), startIn: await lastPickDir(), multiple: true,
       types: [{ description: 'TDFファイル', accept: { 'application/octet-stream': ['.tdf'] } }], excludeAcceptAllOption: false });
   } catch (e) { if (e && e.name !== 'AbortError') toast('ファイルを選ぶ画面を開けませんでした: ' + e.message, 'error'); return; }
+  if (!handles.length) return;
+  busy('図面を読んでいます…', 0);   // 「開く」の直後に出す(ファイルの受け取りにも数秒かかる)
   const items = [];
-  for (const h of handles) items.push({ file: await h.getFile(), path: await pathOf(h) });
-  if (handles.length && items[0].path) await idbSet('lastPick', { server: state.server.name, handle: handles[0] });
+  try {
+    for (const [i, h] of handles.entries()) { items.push({ file: await h.getFile(), path: await pathOf(h) }); busy('図面を読んでいます…', 0.1 * (i + 1) / handles.length); }
+  } catch (e) { idle(); await notice('図面を読めませんでした', String(e && e.message || e)); return; }
+  if (items[0].path) await idbSet('lastPick', { server: state.server.name, handle: handles[0] });
   await readDrawings(items);
 }
 $('btn-files').addEventListener('click', pickFiles);
@@ -268,9 +272,11 @@ document.addEventListener('drop', async e => {
   if (!state.started) { toast('先に工場と工事を選んでください', 'error'); return; }
   const its = Array.from(e.dataTransfer.items || []).filter(i => i.kind === 'file');
   const pend = its.map(i => ({ file: i.getAsFile(), hp: i.getAsFileSystemHandle ? i.getAsFileSystemHandle() : null }));
+  if (!pend.length) return;
+  busy('図面を読んでいます…', 0);
   if (state.root) await ensureRootPermission();
   const items = [];
-  for (const x of pend) { const h = x.hp ? await x.hp.catch(() => null) : null; items.push({ file: x.file, path: h && h.kind === 'file' ? await pathOf(h) : '' }); }
+  for (const [i, x] of pend.entries()) { const h = x.hp ? await x.hp.catch(() => null) : null; items.push({ file: x.file, path: h && h.kind === 'file' ? await pathOf(h) : '' }); busy('図面を読んでいます…', 0.1 * (i + 1) / pend.length); }
   await readDrawings(items);
 });
 
@@ -303,19 +309,19 @@ function preloadPy() { setTimeout(() => { loadPy().catch(() => {}); }, 300); }
 
 async function readDrawings(items) {
   items = items.filter(it => /\.tdf$/i.test(it.file.name));
-  if (!items.length) return;
+  if (!items.length) { idle(); return; }
   state.files = items; state.res = null;
   try {
-    busy('図面を読んでいます…', 0);
+    busy('図面を読んでいます…', 0.1);
     const ordersP = apiGet({ action: 'orders', koji: state.kojiNo }).catch(e => ({ error: e.message }));
     const excelP = TankanExcel.prepare().catch(() => null);   // 単重表(画面の重量に使う)とひな形
-    const py = await loadPy(r => busy('図面を読む準備をしています…(初回だけ数秒かかります)', r * 0.1));
-    for (const it of items) py.FS.writeFile('/tdf/' + it.file.name, new Uint8Array(await it.file.arrayBuffer()));
+    const py = await loadPy(r => busy('図面を読む準備をしています…(初回だけ数秒かかります)', 0.1 + r * 0.05));
+    for (const [i, it] of items.entries()) { py.FS.writeFile('/tdf/' + it.file.name, new Uint8Array(await it.file.arrayBuffer())); busy('図面を読んでいます…', 0.15 + 0.1 * (i + 1) / items.length); }
     const o = await ordersP;
     state.orders = o.error ? { name: '', updated: '', csv: '', error: o.error } : o;
     const files = {}; items.forEach(it => { files[it.file.name] = '/tdf/' + it.file.name; });
     // 段階ごとの重み(図面の読み取りがいちばん重い)
-    const W = { '図面を読んでいます': [0.1, 0.6], '板の外形を測っています': [0.6, 0.9], '板の絵を作っています': [0.9, 1.0] };
+    const W = { '図面を読んでいます': [0.25, 0.65], '板の外形を測っています': [0.65, 0.9], '板の絵を作っています': [0.9, 1.0] };
     const progress = (stage, i, n, name) => { const w = W[stage] || [0, 1]; busy(`${stage}…\n${name}`, w[0] + (w[1] - w[0]) * (i / Math.max(n, 1))); };
     py.globals.set('tk_files', JSON.stringify(files));
     py.globals.set('tk_orders', state.orders.csv || '');
