@@ -49,6 +49,27 @@
     if (sizes.length === 1) { const uw = unitW(sizes[0]); return [{ uw, w: uw ? r2(uw * segs.reduce((a, s) => a + (s[1] || 0), 0) / 1000) : null }]; }
     return segs.map(s => { const uw = unitW(s[0]); return { uw, w: uw ? r2(uw * (s[1] || 0) / 1000) : null }; });
   }
+  // ダイア出寸法 = (図面で測った板の外形 − 接する角形の外寸) ÷ 2。板の並び(上→下)と同じ順に返す。
+  //   図面の「30」「80」の文字は書き間違いがありうるので使わない。測れない板・内ダイア(OUDY)・形の違う板(PL形状注意の絵で示す)は null
+  function sideOf(size, below) {   // 板に接する角形の外寸(テーパーは下側の板=1つ目の数字)
+    let m = /^□-(\d+)-(\d+)\*/.exec(size || '');
+    if (m) return +(below ? m[1] : m[2]);
+    m = /^□-(\d+)\*/.exec(size || '');
+    return m ? +m[1] : null;
+  }
+  function diaOut(b, verify, odd) {
+    const segs = b.segs || [], pl = b.plates || [], n = segs.length;
+    if (!n) return pl.map(() => null);
+    const skip = new Set((odd || []).map(o => o.mark));
+    return pl.map(([m], i) => {
+      const k = pl.length - 1 - i;   // 下から何枚目か
+      if (String(m).startsWith('OUDY') || skip.has(m)) return null;
+      const col = sideOf((k < n ? segs[k] : segs[n - 1])[0], k < n);
+      const d = verify[m] && verify[m].dim;
+      if (!col || !d) return null;
+      return Math.round((Math.min(d[0], d[1]) - col) / 2);
+    });
+  }
   function plateInfo(m, t, verify) {
     const v = verify[m];
     if (!v) return { t, w: null, ng: true };
@@ -208,7 +229,11 @@
       const f0 = clone(ws.getCell('V2').font);   // 見出し V1:X2 の文字は V2 と同じに(セルごとに別のオブジェクト)
       [1, 2].forEach(q => ['V', 'W', 'X'].forEach(c => { ws.getCell(`${c}${q}`).font = Object.keys(f0).length ? clone(f0) : { name: 'Calibri', size: 11, family: 2 }; }));
       put(ws, 'B1', kojiName || ''); put(ws, 'P1', fl.replace(/L$/, ''));
-      put(ws, 'R1', '●シーム方向：特記外 '); put(ws, 'R2', '●ダイア出寸法：特記外 ');
+      // ダイア出寸法: この階でいちばん多い値を「特記外」に、違う板だけ板の行に「←ダイア出寸法：80」(提出済みExcelと同じ)
+      const outs = res.floors[fl].map(g => diaOut(g.block, res.verify, g.odd));
+      const cnt = {}; outs.flat().forEach(v => { if (v !== null) cnt[v] = (cnt[v] || 0) + 1; });
+      const dflt = Object.keys(cnt).length ? +Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0] : null;
+      put(ws, 'R1', '●シーム方向：特記外 '); put(ws, 'R2', '●ダイア出寸法：特記外 ' + (dflt === null ? '' : dflt));
       put(ws, 'W1', factory ? factory + '工場' : '');
       let r = 3, acc = 0;
       for (const [gi, g] of res.floors[fl].entries()) {
@@ -249,7 +274,10 @@
         // 板(上→下)
         const pos = platePos(b.plates.length, b);
         const markRow = {};   // 板マーク → 行(同じ板マークが上下にあれば両方)
+        const notes = [];     // [行, 出寸法] 特記外と違う板
         b.plates.forEach(([m, t], k) => {
+          const dv = outs[gi][k];
+          if (k < pos.length && dv !== null && dflt !== null && dv !== dflt) notes.push([rr + 2 + e + pos[k], dv]);
           if (k >= pos.length) return;
           const q = rr + 2 + e + pos[k], pi = plateInfo(m, t, res.verify);
           (markRow[m] = markRow[m] || []).push(q);
@@ -258,15 +286,25 @@
         });
         put(ws, `Q${f1}`, { formula: `SUM(Q${r}:Q${rr - 1},Q${rr + 2 + e}:Q${rr + 10 + e})`, result: r2(sumQ) });
         // 柱符号(R列に縦に。7つ目からS列)と、大組図を開くリンク(V=図面番号・W=A付き図面番号・X=製品名。柱符号1つにつき1行)
-        const nm = g.members.length;
+        // 板の行(R列)に出寸法を書く柱は、柱符号を板の行より上に収める(入らなければ R・S の2列。提出済みExcelの 2CCY4CX1 3階と同じ)
+        const nm = g.members.length, room = rr + 2 + e - r;
+        const two = nm > 6 || (notes.length > 0 && nm > room);
+        const nr = two ? (nm > 6 ? 6 : Math.ceil(nm / 2)) : nm;   // 1列の行数
         g.members.forEach((mb, i) => {
-          put(ws, `${i < 6 ? 'R' : 'S'}${r + (i % 6)}`, mb.sym);
+          put(ws, `${i < nr ? 'R' : 'S'}${r + (i % nr)}`, mb.sym);
           const no = mb.dwg.split('-').pop(), fn = res.files.full[no], fa = res.files.sec[no];
           linkCell(ws, `V${r + i}`, mb.dwg, fn ? link(fn) : '');
           linkCell(ws, `W${r + i}`, mb.dwg + 'A', fa ? link(fa) : '');
           linkCell(ws, `X${r + i}`, mb.sym, fn ? link(fn) : '');
         });
-        put(ws, `O${f2}`, { formula: nm > 6 ? `COUNTA(R${r}:S${r + 5})` : `COUNTA(R${r}:R${r + Math.max(nm, 1) - 1})`, result: nm });
+        put(ws, `O${f2}`, { formula: two ? `COUNTA(R${r}:S${r + nr - 1})` : `COUNTA(R${r}:R${r + Math.max(nm, 1) - 1})`, result: nm });
+        for (const [q, dv] of notes) {   // 赤字・ＭＳ Ｐ明朝 10(提出済みExcelと同じ)
+          const c = ws.getCell(`R${q}`);
+          if (c.value) continue;
+          c.value = '←ダイア出寸法：' + dv;
+          c.font = { name: 'ＭＳ Ｐ明朝', size: 10, color: { argb: 'FFFF0000' } };
+          c.alignment = { horizontal: 'left', vertical: 'middle' };
+        }
         put(ws, `Q${f2}`, { formula: `Q${f1}*O${f2}`, result: r2(sumQ * nm) });
         // PL形状注意(odd は下→上)。番号は提出済みExcelと同じ: ①=いちばん下の板、②③…=その上の板の順
         //   置き場所: 1枚=T列 / 2枚=①R・②T(同じ高さ) / 3枚以上=①R(下段)・②T(上段)・③T(下段)・④R(さらに下)
