@@ -62,6 +62,10 @@ MATERIAL = {("○", "P", False): "BCP325", ("◇", "P", False): "BCP385",
             ("◇", "B", False): "TMCP385B", ("◇", "C", False): "TMCP385C"}
 
 
+# BH(組立H形鋼)の材質の印。大組図の凡例: ○Ｂ印=SN490B・STKN490B、○Ｃ印=SN490C(26-12 2節、ユーザー確認 2026-11-25)
+BH_MATERIAL = {("○", "B", False): "SN490B", ("○", "C", False): "SN490C"}
+
+
 def _mark_shape(t, cx, cy, R=90):
     """印の文字の中心 (cx, cy) を囲む形。○=円 / ◇=斜めの線4本以上 / それ以外は None"""
     circ = [a for a in t.arcs if math.hypot(a.cx - cx, a.cy - cy) < 30 and 30 < a.r < R]
@@ -146,8 +150,9 @@ def seam_of(L, f):
     return "・".join(v[1] for v in names)
 
 
-def material_of(L, f, T, size_rec):
-    """柱サイズの文字の左にある材質の印を読む。戻り値 (材質 or None, 印の説明)"""
+def material_of(L, f, T, size_rec, table=None):
+    """柱サイズの文字の左にある材質の印を読む。戻り値 (材質 or None, 印の説明)。table はBH用の表(省略時は角形の表)"""
+    table = table or MATERIAL
     s, sx, sy = size_rec[0], size_rec[1], size_rec[2]
     mk = sorted([a for a in T if 1 <= len(a[0]) <= 2 and -200 < a[1] - sx < 0 and abs(a[2] - sy) < 30], key=lambda a: sx - a[1])
     if not mk:
@@ -156,7 +161,7 @@ def material_of(L, f, T, size_rec):
     shape = _mark_shape(L.load(f), mx + h * 0.12, my + h / 2)
     tee = any(unicodedata.normalize("NFKC", a[0]) == "T" and -400 < a[1] - mx < -60 and abs(a[2] - my) < 40 for a in T)
     desc = ("T" if tee else "") + (shape or "?") + ch
-    return MATERIAL.get((shape, ch, tee)), desc
+    return table.get((shape, ch, tee)), desc
 
 
 def extract(L, Z, full, sec, order_rows, progress=None):
@@ -247,6 +252,7 @@ def extract(L, Z, full, sec, order_rows, progress=None):
             bh = max(colbh, key=lambda a: a[2])[0].replace("x", "*") if colbh else None
             if not [a for a in view if a[0].startswith("□-") and abs(a[2] - mid) < 1800] and bh:
                 size = bh
+                mat, mat_mark = material_of(L, f, T, max(colbh, key=lambda a: a[2]), BH_MATERIAL)   # BHも左の印(○Ｂ=SN490B)
             Ln = None if din is None else (din - 10 if (size or '').startswith('□') else din)
             # 板が3枚以上の階: 仕上がりの寸法の連なり(下から)を区間に分け、区間ごとのサイズと長さを出す
             pls = [(secmark[s][0], secmark[s][1] or TMAP.get(secmark[s][0])) for y, s in zone]  # 下→上
