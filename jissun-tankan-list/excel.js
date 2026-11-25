@@ -233,7 +233,11 @@
       const outs = res.floors[fl].map(g => diaOut(g.block, res.verify, g.odd));
       const cnt = {}; outs.flat().forEach(v => { if (v !== null) cnt[v] = (cnt[v] || 0) + 1; });
       const dflt = Object.keys(cnt).length ? +Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0] : null;
-      put(ws, 'R1', '●シーム方向：特記外 '); put(ws, 'R2', '●ダイア出寸法：特記外 ' + (dflt === null ? '' : dflt));
+      // シーム方向: この階でいちばん多い向きを「特記外」に、違う柱だけ柱符号の右に「←シーム方向：…」(提出済みExcelと同じ)
+      const seam = res.seam || {}, sc = {};
+      res.floors[fl].forEach(g => g.members.forEach(mb => { const v = seam[mb.dwg]; if (v) sc[v] = (sc[v] || 0) + 1; }));
+      const sdef = Object.keys(sc).sort((a, b) => sc[b] - sc[a])[0] || '';
+      put(ws, 'R1', '●シーム方向：特記外 ' + sdef);put(ws, 'R2', '●ダイア出寸法：特記外 ' + (dflt === null ? '' : dflt));
       put(ws, 'W1', factory ? factory + '工場' : '');
       let r = 3, acc = 0;
       for (const [gi, g] of res.floors[fl].entries()) {
@@ -287,17 +291,27 @@
         put(ws, `Q${f1}`, { formula: `SUM(Q${r}:Q${rr - 1},Q${rr + 2 + e}:Q${rr + 10 + e})`, result: r2(sumQ) });
         // 柱符号(R列に縦に。7つ目からS列)と、大組図を開くリンク(V=図面番号・W=A付き図面番号・X=製品名。柱符号1つにつき1行)
         // 板の行(R列)に出寸法を書く柱は、柱符号を板の行より上に収める(入らなければ R・S の2列。提出済みExcelの 2CCY4CX1 3階と同じ)
+        const seamNotes = [];   // [セル, 向き] 柱符号の右
         const nm = g.members.length, room = rr + 2 + e - r;
         const two = nm > 6 || (notes.length > 0 && nm > room);
         const nr = two ? (nm > 6 ? 6 : Math.ceil(nm / 2)) : nm;   // 1列の行数
         g.members.forEach((mb, i) => {
           put(ws, `${i < nr ? 'R' : 'S'}${r + (i % nr)}`, mb.sym);
+          const sv = seam[mb.dwg];
+          if (sv && sdef && sv !== sdef) seamNotes.push([`${i < nr ? 'S' : 'T'}${r + (i % nr)}`, sv]);
           const no = mb.dwg.split('-').pop(), fn = res.files.full[no], fa = res.files.sec[no];
           linkCell(ws, `V${r + i}`, mb.dwg, fn ? link(fn) : '');
           linkCell(ws, `W${r + i}`, mb.dwg + 'A', fa ? link(fa) : '');
           linkCell(ws, `X${r + i}`, mb.sym, fn ? link(fn) : '');
         });
         put(ws, `O${f2}`, { formula: two ? `COUNTA(R${r}:S${r + nr - 1})` : `COUNTA(R${r}:R${r + Math.max(nm, 1) - 1})`, result: nm });
+        for (const [addr, sv] of seamNotes) {   // 赤字・ＭＳ Ｐ明朝 9(提出済みExcelと同じ)。右のセルが空いているときだけ
+          const c = ws.getCell(addr);
+          if (c.value) continue;
+          c.value = '←シーム方向：' + sv;
+          c.font = { name: 'ＭＳ Ｐ明朝', size: 9, color: { argb: 'FFFF0000' } };
+          c.alignment = { horizontal: 'left', vertical: 'middle' };
+        }
         for (const [q, dv] of notes) {   // 赤字・ＭＳ Ｐ明朝 10(提出済みExcelと同じ)
           const c = ws.getCell(`R${q}`);
           if (c.value) continue;
