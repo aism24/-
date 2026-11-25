@@ -1,0 +1,222 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+/* 見た目は tdf-master-web に合わせる(ページの背景は黒、ヘッダー・表・ダイアログは白) */
+body {
+  font-family: 'Meiryo', 'Hiragino Kaku Gothic ProN', sans-serif;
+  background: #000; min-height: 100vh; color: #333; display: flex; flex-direction: column;
+}
+#drop-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(66,133,244,0.18);
+  border: 4px dashed #4285f4; z-index: 1000; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: bold; color: #4285f4; pointer-events: none;
+}
+#drop-overlay.active { display: flex; }
+
+header {
+  background: #fff; color: #222; padding: 0 20px; min-height: 64px;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25); position: sticky; top: 0; z-index: 300;
+}
+header h1 { font-size: 18px; margin: 0; white-space: nowrap; color: #222; }
+#header-brand { display: flex; align-items: center; gap: 10px; justify-content: center; }
+.side-icon { flex: none; display: block; image-rendering: pixelated; }
+.side-icon-flip { transform: scaleX(-1); }
+header .header-logo { width: 36px; height: 36px; object-fit: contain; flex-shrink: 0; display: block; }
+.logo-frame { display: flex; flex-direction: column; align-items: stretch; flex-shrink: 0; }
+.logo-inner { display: flex; align-items: center; gap: 8px; }
+.company-name { font-size: 14px; font-weight: bold; white-space: nowrap; color: #222; line-height: 36px; }
+.logo-frame::before { content: ''; display: block; height: 7px; background: #27ae60; border-radius: 2px 2px 0 0; }
+.logo-frame::after { content: ''; display: block; height: 7px; background: #1a73e8; border-radius: 0 0 2px 2px; }
+#header-left { justify-self: start; }
+#koji-label { font-size: 13px; font-weight: bold; color: #1a73e8; }
+#header-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-self: end; }
+.header-btn, .header-action-btn {
+  background: #fff; color: #333; border: 1px solid #bbb; border-radius: 4px;
+  padding: 6px 12px; cursor: pointer; font-size: 12px; font-weight: bold;
+}
+.header-action-btn.danger { color: #c0392b; border-color: #e0a0a0; }
+.header-action-btn.orange { background: #f39c12; color: #fff; border-color: #f39c12; }
+.header-action-btn.excel { background: #217346; color: #fff; border-color: #217346; }
+.header-action-btn:disabled, .header-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* 起動画面 */
+#start-modal { display: flex; position: fixed; inset: 0; z-index: 2000; background: rgba(20,30,40,0.55); align-items: center; justify-content: center; }
+#start-modal.hidden { display: none; }
+#start-box { background: #fff; border-radius: 14px; padding: 32px 40px; width: 92%; max-width: 480px; box-shadow: 0 12px 40px rgba(0,0,0,.35); text-align: center; }
+#start-box .logo-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 0 0 18px; }
+#start-box .logo-frame img { width: 56px; height: 56px; }
+#start-box .company-name { font-size: 20px; line-height: 56px; }
+#start-box h2 { font-size: 17px; margin: 6px 0 18px; }
+#factory-field { margin: 4px 0 22px; }
+#factory-field > label { font-size: 13px; color: #555; display: block; margin-bottom: 10px; }
+#factory-btns { display: flex; gap: 18px; justify-content: center; }
+.factory-btn {
+  background: #1a73e8; color: #fff; border: 2px solid transparent; border-radius: 12px;
+  padding: 14px 0; font-size: 18px; font-weight: bold; cursor: pointer; min-width: 80px;
+  transition: transform .2s, box-shadow .2s; box-shadow: 0 3px 10px rgba(26,115,232,0.35);
+}
+.factory-btn:hover { transform: scale(1.1); }
+.factory-btn.yumesaki { background: #e67e22; box-shadow: 0 3px 10px rgba(230,126,34,0.35); }
+.factory-btn.tottori { background: #27ae60; box-shadow: 0 3px 10px rgba(39,174,96,0.35); }
+.factory-btn.selected { border-color: #222; }
+#factory-btns.has-selection .factory-btn:not(.selected) { filter: grayscale(1); opacity: .5; }
+#koji-field { text-align: left; }
+#koji-field label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
+.koji-warn-red { color: #c0392b; font-weight: bold; font-size: 12px; }
+#koji-field select { width: 100%; padding: 9px 10px; font-size: 14px; border: 1px solid #bbb; border-radius: 6px; background: #fff; }
+#koji-msg { font-size: 12px; color: #c0392b; margin-top: 6px; }
+.start-btn { margin-top: 22px; width: 100%; padding: 14px; font-size: 19px; font-weight: bold; border: none; border-radius: 8px; background: #ffd8a8; color: #000; cursor: pointer; }
+.start-btn:disabled { background: #bbb; color: #555; cursor: not-allowed; }
+#start-cancel-btn { display: none; margin-top: 12px; }
+body.app-started #start-cancel-btn { display: inline-block; }
+
+main { flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 16px 20px 40px; }
+/* ボタンは下の表の幅に合わせて均等に並べる(自身は幅を広げない) */
+#import-bar { display: flex; gap: 12px; width: 0; min-width: 100%; }
+#server-btns { display: contents; }
+#import-bar .big-btn { flex: 1 1 0; min-width: 0; padding: 12px 6px; font-size: 14px; }
+.big-btn.server { border-style: solid; background: #eaf2fe; }
+.big-btn.server.selected { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+.big-btn.server:disabled { background: #bbb; color: #666; border-color: #999; cursor: not-allowed; }
+.big-btn.files { border-style: solid; border-color: #6cc06c; background: #d8f5d8; }
+.big-btn { background: #fff; color: #222; border: 2px dashed #4285f4; border-radius: 8px; padding: 12px 18px; font-size: 15px; font-weight: bold; cursor: pointer; }
+.big-btn.folder { border-style: solid; background: #eaf2fe; }
+
+#tdf-list:empty { display: none; }
+/* 幅は下の表に合わせる(一覧自身は幅を広げない。width:0 + min-width:100%)。長いフォルダ名は折り返す */
+#tdf-list { background: #fff; border-radius: 8px; padding: 10px 14px; font-size: 13px; width: 0; min-width: 100%; }
+#tdf-list td.path { white-space: normal; word-break: break-all; }
+#tdf-list table { border-collapse: collapse; }
+#tdf-list th, #tdf-list td { padding: 4px 10px; border-bottom: 1px solid #eee; text-align: left; white-space: nowrap; }
+.rm-btn { border: 1px solid #e0a0a0; color: #c0392b; background: #fff; border-radius: 4px; cursor: pointer; padding: 2px 8px; }
+
+#content { align-self: center; width: fit-content; min-width: min(640px, 100%); max-width: 100%; display: flex; flex-direction: column; gap: 16px; }
+#result { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
+#result:empty { display: none; }
+.prod-card table.kl, #tdf-list table { width: 100%; }
+.prod-card { background: #fff; border-radius: 8px; padding: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+table.kl { border-collapse: collapse; font-size: 13px; min-width: 620px; }
+table.kl th, table.kl td { border: 1px solid #999; padding: 4px 12px; text-align: center; white-space: nowrap; }
+table.kl tr.phead td { background: #ffffcc; }
+table.kl tr.pval td { background: #ffffcc; height: 34px; font-weight: normal; }
+table.kl tr.pval a { color: #0000ff; font-weight: bold; text-decoration: underline; }
+/* リンクが無いときは普通の文字(リンクに見えないように) */
+table.kl tr.pval .nolink { color: #222; font-weight: bold; text-decoration: none; cursor: default; }
+table.kl tr.lhead td, table.kl tr.shead td { background: #ddebf7; font-weight: bold; }
+table.kl tr.gpl td.b { font-weight: bold; }
+table.kl tr.sub td { background: #f2f2f2; font-weight: bold; }
+table.kl tr.sitem td { background: #fff2cc; }
+table.kl td.note { text-align: left; }
+table.kl input.qty { width: 64px; text-align: right; font-size: 13px; padding: 2px 4px; }
+table.kl input.qty.changed { background: #ffe0e0; }
+table.kl input.note-in { width: 160px; font-size: 13px; padding: 2px 4px; }
+.sum-title { color: #fff; font-size: 16px; font-weight: bold; align-self: center; margin-top: 10px; }
+.cat-title { font-weight: bold; margin: 4px 0; }
+.empty-msg { color: #ccc; text-align: center; margin-top: 40px; line-height: 1.9; }
+
+.overlay { display: none; position: fixed; inset: 0; z-index: 3000; background: rgba(20,30,40,0.55); align-items: center; justify-content: center; }
+.overlay.open { display: flex; }
+.dialog { background: #fff; border-radius: 12px; padding: 24px 28px; width: 92%; max-width: 560px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+.dialog-title { font-size: 16px; font-weight: bold; margin-bottom: 12px; }
+.dialog-note { font-size: 12px; color: #555; margin: 8px 0; line-height: 1.7; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.server-btn { padding: 12px 24px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; background: #1a73e8; color: #fff; cursor: pointer; }
+.dialog.wide { max-width: 760px; }
+.dialog.lines { width: auto; max-width: 95vw; }
+.dialog.lines #notice-body { white-space: pre; overflow-x: auto; }
+.pick-tools { display: flex; gap: 8px; margin: 6px 0; }
+#pick-list { max-height: 55vh; overflow: auto; border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+#pick-list details { border-bottom: 1px solid #eee; padding: 4px 0; }
+#pick-list summary { cursor: pointer; }
+#pick-list .pick-dir { font-weight: bold; }
+#pick-list .pick-count { color: #777; margin-left: 8px; font-weight: normal; }
+#pick-list .pick-file { display: block; margin-left: 28px; }
+#notice-body { font-size: 14px; line-height: 1.9; white-space: pre-wrap; word-break: auto-phrase; }  /* 文節の途中で改行しない(Chrome・Edge 119〜。2026-11-24) */
+.status-box { background: #fff; border-radius: 10px; padding: 20px 28px; display: flex; align-items: center; gap: 14px; }
+.spinner { width: 22px; height: 22px; border: 3px solid #ddd; border-top-color: #1a73e8; border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* 読み込み中のデータバー(2026-11-20 ユーザー指示) */
+.status-main { display: flex; flex-direction: column; gap: 8px; min-width: 260px; max-width: 70vw; }
+#status-text { word-break: break-all; white-space: pre-line; line-height: 1.6; }
+.progress { display: flex; align-items: center; gap: 8px; }
+.progress[hidden] { display: none; }
+.progress-track { flex: 1; height: 10px; background: #e6e9ee; border-radius: 5px; overflow: hidden; }
+.progress-bar { height: 100%; width: 0; background: #1a73e8; border-radius: 5px; transition: width 0.2s ease; }
+.progress-pct { font-size: 12px; color: #555; min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+#toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #333; color: #fff; padding: 10px 18px; border-radius: 6px; font-size: 13px; display: none; z-index: 4000; }
+#toast.show { display: block; }
+#toast.error { background: #c0392b; }
+
+@media (max-width: 760px) {
+  header { grid-template-columns: 1fr; padding: 8px 12px; }
+  #header-left, #header-right { justify-self: center; }
+  header h1 { font-size: 15px; }
+  .side-icon { display: none; }
+  table.kl { min-width: 0; }
+}
+.big-btn .btn-sub { display: block; font-size: 12px; font-weight: normal; }
+#repick-row { text-align: right; margin-top: -8px; }
+.link-btn { background: none; border: none; color: #8ab4f8; text-decoration: underline; cursor: pointer; font-size: 12px; }
+
+/* アプリ説明書のボタン(起動画面のカードの中。tdf-master-web と同じ見た目) */
+.manual-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; background: #ff8fc7; color: #000; border: none; border-radius: 14px;
+  padding: 14px 10px; font-size: 24px; font-weight: bold; cursor: pointer;
+  margin: 0 0 16px; box-shadow: 0 3px 12px rgba(255,143,199,0.5);
+  transition: background .15s, transform .15s; white-space: nowrap;
+}
+.manual-btn:hover { background: #ff6fb5; transform: translateY(-1px); }
+/* 「開始」を押したあと: ヘッダーの「工場・工事の変更」の右へ移る(app.js の moveManualButtonToHeader)。
+   文字が途中で2行に割れないよう nowrap、隣のボタンに押されて縮まないよう flex-shrink:0 */
+.manual-btn-header {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #fff; color: #1a73e8; border: 1px solid #1a73e8; border-radius: 14px;
+  padding: 5px 12px; font-size: 12px; font-weight: bold; cursor: pointer;
+  white-space: nowrap; flex-shrink: 0;
+}
+.manual-btn-header:hover { background: #eaf2fe; }
+#header-right .header-btn, #header-right .header-action-btn { white-space: nowrap; }
+
+/* 説明書の表示(ページの画像を画面いっぱいに。縦横の比はそのまま) */
+#manual-overlay {
+  display: none; position: fixed; inset: 0; z-index: 7000;
+  background: rgba(20,30,40,0.72); align-items: center; justify-content: center; padding: 14px;
+}
+#manual-overlay.open { display: flex; }
+#manual-box {
+  background: #fff; border-radius: 14px; padding: 16px; width: 100%; height: 100%;
+  box-shadow: 0 12px 40px rgba(0,0,0,.4); display: flex; flex-direction: column; gap: 12px;
+}
+#manual-image-wrap {
+  position: relative; flex: 1 1 auto; min-height: 0; background: #0b1220; border-radius: 8px;
+  overflow: hidden; display: flex; align-items: center; justify-content: center;
+}
+#manual-image { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; }
+#manual-page-indicator { text-align: center; font-size: 13px; color: #666; font-weight: bold; }
+#manual-actions { display: flex; justify-content: center; gap: 12px; }
+#manual-actions button {
+  padding: 9px 22px; border-radius: 8px; border: 1px solid #bbb; background: #fff;
+  font-size: 14px; font-weight: bold; cursor: pointer; min-width: 96px; white-space: nowrap;
+}
+#manual-actions button:disabled { opacity: .4; cursor: not-allowed; }
+#manual-actions button#manual-close { background: #333; color: #fff; border-color: #333; }
+/* ヘッダー右のボタン(工場・工事の変更・説明書・リセット・Excel)を1行に収める(説明書を足して4つになったため。2026-11-24)。
+   右の列はボタンの幅を下回らない。狭い画面(1100px未満)は今までどおりボタン単位で折り返す */
+@media (min-width: 1100px) {
+  header { grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr); }
+  #header-right { flex-wrap: nowrap; }
+}
+/* 761〜1099px: ロゴの段の下に、ヘッダー右のボタンを1行で並べる(説明書が「工場・工事の変更」と別の段に分かれないように) */
+@media (min-width: 761px) and (max-width: 1099px) {
+  header { grid-template-columns: minmax(0, 1fr) auto; padding-bottom: 8px; }
+  #header-right { grid-column: 1 / -1; flex-wrap: nowrap; }
+}
+
+/* ---------- 短管リスト(jissun-tankan-list)で足したもの ---------- */
+#summary:empty { display: none; }
+.sum-card { background: #fff; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #222; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+.sum-card b.ng { color: #c0392b; }
+.fl-title { font-weight: bold; font-size: 15px; margin: 2px 4px 8px; color: #1a73e8; }
+table.kl.tk td { white-space: nowrap; }
+table.kl.tk tr.warn td { background: #fff2a8; }
+table.kl.tk a { color: #0000ff; text-decoration: underline; }
