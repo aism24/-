@@ -164,6 +164,88 @@ def material_of(L, f, T, size_rec, table=None):
     return table.get((shape, ch, tee)), desc
 
 
+def _chain_col(T, fx):
+    """柱の左の仕上がり寸法の連なり(縦書きの数字が一番多い列)。(文字の高さ=区間の真ん中, 寸法) の下→上"""
+    num = [a for a in T if _num(a[0]) and abs(a[3] - 1.57) < 0.05 and fx - 1500 < a[1] < fx - 400]
+    if not num:
+        return []
+    xs = collections.Counter(round(a[1] - fx) for a in num)
+    cx = max(xs, key=lambda k: xs[k])
+    return sorted((a[2], float(a[0])) for a in num if abs(a[1] - fx - cx) < 30)
+
+
+def _beam_zones(t, T, fx):
+    """梁の範囲(下面, 上面)。梁 = 立面図の「H-」「BH-」「SH-」等のサイズ表記。表記のすぐ上の横線を下面、せい(最初の数字)を足して上面。
+    BH柱の図面では、柱そのもののBH表記(いちばん多いBH表記)は除く"""
+    hl = [l for l in t.lines if abs(l.y1 - l.y2) < 1 and abs(l.x2 - l.x1) > 150]
+    bh = collections.Counter(s for s, x, y, r, h in T if re.fullmatch(r"BH-\d+x\d+x\d+x\d+", s))
+    colsz = {bh.most_common(1)[0][0]} if bh and not any(s.startswith("□-") for s, *_ in T) else set()
+    zones = []
+    for s, x, y, r, h in T:
+        m = re.match(r"[A-Z]*H-(\d+)(?:-\d+)?x", s)
+        if not m or not (fx - 500 < x < fx + 16000) or h > 100 or s in colsz:
+            continue
+        above = [l.y1 for l in hl if 0 < l.y1 - y < 400 and min(l.x1, l.x2) - 50 <= x <= max(l.x1, l.x2) + 50]
+        if above:
+            yb = min(above)
+            zones.append((yb, yb + int(m.group(1))))
+    return zones
+
+
+def _has_plate(t, T, fx, lo, hi):
+    """区間の中に材質の○印付きのプレート(○PL-22 等)の取り付けがあるか(1C-01 1階: D断面のダイアに PL-22。ユーザー説明 2026-11-25)"""
+    for s, x, y, r, h in T:
+        if re.fullmatch(r"PL-\d+", s) and fx - 500 < x < fx + 16000 and lo + 30 < y < hi - 30:
+            if any(-200 < c.cx - x < 0 and -40 < c.cy - y - (h or 90) / 2 < 40 and 25 < c.r < 80 for c in t.arcs):
+                return True
+    return False
+
+
+def _split_parts(nz, chain_all, bz, t, T, fx, TOL=60):
+    """1つの階のダイア(下→上、内ダイアを除く)を短管ごとに分ける。区間(隣り合うダイアの間)に梁がかかる、または○PLの取り付けがあれば
+    取り合いあり。取り合いの無い区間(長管)で分ける。短管は必ず上下のダイアがセット(区間1つ以上)。
+    寸法の連なりと区間の数が合わないとき・取り合いが1つも無いときは、分けずにそのまま(従来どおり)"""
+    if len(nz) < 3:
+        return [nz]
+    yl, yu = nz[0][0], nz[-1][0]
+    # 区間の寸法(文字は区間の真ん中): いちばん下と上のダイアの間にあるものだけ(柱の端の区間を拾わない。1節 1C-01 2階)
+    ch = [(i, c) for i, c in enumerate(chain_all) if yl - 80 < c[0] < yu + 30]
+    if not ch:
+        return [nz]
+    if len(ch) == len(nz) - 1:
+        idx = list(range(len(nz)))          # ダイア k = 区間の境目 k
+    else:
+        # 数が合わない(記号の無いダイアがある 1C-23 等): 区間の境目(寸法の連なりから)に、高さの近いダイアを当てる
+        bnds = [ch[0][1][0] - ch[0][1][1] / 2] + [cy + v / 2 for _, (cy, v) in ch]
+        idx = []
+        for y, _s in nz:
+            k = min(range(len(bnds)), key=lambda j: abs(bnds[j] - y))
+            if abs(bnds[k] - y) > 300 or (idx and k <= idx[-1]):
+                return [nz]
+            idx.append(k)
+    cov = []
+    for i, (cy, v) in ch:
+        lo, hi = cy - v / 2, cy + v / 2
+        ok = any(z0 - TOL <= lo and hi <= z1 + TOL for z0, z1 in bz) or \
+            all(any(z0 - TOL <= p <= z1 + TOL for z0, z1 in bz) for p in [lo + (hi - lo) * k / 10 for k in range(1, 10)])
+        if not ok and 0 < i < len(chain_all) - 1 and v < 1500:   # 柱の上下の端(次の節との継手)の区間は除く
+            ok = _has_plate(t, T, fx, lo, hi)
+        cov.append(ok)
+    runs, cur = [], []
+    for k, c in enumerate(cov):
+        if c:
+            cur.append(k)
+        elif cur:
+            runs.append(cur); cur = []
+    if cur:
+        runs.append(cur)
+    parts = []
+    for r in runs:   # 区間 r[0]〜r[-1] = 境目 r[0]〜r[-1]+1。両端にダイア(板マーク)のあるものだけ短管
+        if r[0] in idx and r[-1] + 1 in idx:
+            parts.append([z for z, k in zip(nz, idx) if r[0] <= k <= r[-1] + 1])
+    return parts or [nz]
+
+
 def extract(L, Z, full, sec, order_rows, progress=None):
     """extract2.py と同じ。戻り値 (blocks, log)"""
     res, log = [], []
@@ -190,7 +272,7 @@ def extract(L, Z, full, sec, order_rows, progress=None):
         lx = max(set(lx), key=lx.count)
         _lt = {}
         for s, x, y, r, h in T:  # 断面記号: 柱の左の列(少し横にずれて書かれたものも拾う。同じ記号が2つあれば列に近い方)
-            if re.fullmatch(r"[A-Z]", s) and lx - 600 < x < lx + 100 and (s not in _lt or abs(x - lx) < _lt[s][0]):
+            if re.fullmatch(r"[A-Z]", s) and lx - 600 < x < lx + 500 and (s not in _lt or abs(x - lx) < _lt[s][0]):   # 右に寄せて書かれた記号も(1C-26 H)
                 _lt[s] = (abs(x - lx), y)
         letters = sorted([(v[1], k) for k, v in _lt.items()])
         secmark = {}
@@ -214,6 +296,20 @@ def extract(L, Z, full, sec, order_rows, progress=None):
             if key in used or Lb in secmark:
                 continue
             used.add(key); secmark[Lb] = (s_, t_, d_)
+        # 2回目: まだ結べていない板マークと断面記号だけ、上下に離れた所(2700〜3600)まで探す(大きい断面図。1節 1C-26 ODY34H・1C-15 ODY11H)
+        pairs2 = []
+        for s_, x, y, r, h in TA:
+            if not re.fullmatch(r"O?[A-Z]*DY\w*", s_) or (round(x), round(y)) in used:
+                continue
+            pl = [a for a in TA if re.fullmatch(r"PL-\d+", a[0]) and 0 < a[2] - y < 200 and abs(a[1] - x) < 300]
+            t_ = int(min(pl, key=lambda a: a[2] - y)[0][3:]) if pl else None
+            for Lb, sx, sy in secs:
+                if Lb not in secmark and 2700 <= y - sy < 3600 and -1700 < x - sx < 1700:
+                    pairs2.append((math.hypot((x - sx) - 800, (y - sy) - 500), (round(x), round(y)), Lb, s_, t_))
+        for d_, key, Lb, s_, t_ in sorted(pairs2):
+            if key in used or Lb in secmark:
+                continue
+            used.add(key); secmark[Lb] = (s_, t_, d_)
         secmark = {k: v[:2] for k, v in secmark.items()}
         [TMAP.setdefault(m, t_) for m, t_ in secmark.values() if t_]
         view = [a for a in T if fx - 2000 < a[1] < fx + 12000]
@@ -223,14 +319,19 @@ def extract(L, Z, full, sec, order_rows, progress=None):
         for it in ml:
             if groups and it[0] - groups[-1][-1][0] < 1500: groups[-1].append(it)
             else: groups.append([it])
-        for zone in groups:
-            if len(zone) < 2:
+        # 階のダイアの組を、取り合い(梁・○PL)のある区間だけの短管に分ける(取り合いの無い区間=長管をはさめば「-上」「-下」)
+        bz, chain_all = _beam_zones(L.load(f), T, fx), _chain_col(T, fx)
+        work = []
+        for zone0 in groups:
+            nz = [z for z in zone0 if not secmark[z[1]][0].startswith('OUDY')]  # 内ダイア(OUDY)は短管を区切らない
+            if len(nz) < 2:
                 continue
+            parts = _split_parts(nz, chain_all, bz, L.load(f), T, fx)
+            for pi, part in enumerate(parts):
+                suf = "" if len(parts) == 1 else ("上" if pi == len(parts) - 1 else ("下" if pi == 0 else "中"))
+                work.append((part, [z for z in zone0 if part[0][0] - 1 <= z[0] <= part[-1][0] + 1], suf))
+        for zone, allz, suf in work:
             fy, fl = min(fls, key=lambda f_: abs(f_[0] - zone[-1][0]))
-            allz = zone
-            zone = [z for z in zone if not secmark[z[1]][0].startswith('OUDY')]  # 内ダイア(OUDY)は短管を区切らない
-            if len(zone) < 2:
-                continue
             (yl, sl), (yu, su) = zone[0], zone[-1]
             lo, lo_t = secmark[sl]; up, up_t = secmark[su]
             lo_t = lo_t or TMAP.get(lo); up_t = up_t or TMAP.get(up)
@@ -243,6 +344,10 @@ def extract(L, Z, full, sec, order_rows, progress=None):
                     fin, din = max(pairs)
                 elif cands:  # D内々が書かれていない階: 仕上がり(一番大きい数字)から板厚を引く
                     fin = max(cands); din = fin - up_t - lo_t
+            if suf and len(zone) == 2 and up_t and lo_t:   # 上下に分けた短管(板2枚): 仕上がりはその区間の寸法(1節 1C-13 下=594)
+                one = [c for c in chain_all if yl - 200 < c[0] < yu + 200]
+                if len(one) == 1:
+                    fin = one[0][1]; din = fin - up_t - lo_t
             size = [a for a in view if a[0].startswith("□-") and abs(a[2] - mid) < 1800] or [a for a in view if a[0].startswith("BH-") and abs(a[2] - mid) < 1800]
             size_rec = min(size, key=lambda a: abs(a[2] - mid)) if size else None
             size = size_rec[0].replace("x", "*") if size else None
@@ -259,19 +364,30 @@ def extract(L, Z, full, sec, order_rows, progress=None):
             segs = [(size, Ln)]
             chainv = [fin]
             if len(pls) > 2:
-                chain = sorted([(a[2], float(a[0])) for a in view if _num(a[0]) and abs(a[3] - 1.57) < 0.05
-                                and fx - 1500 < a[1] < fx - 400 and yl - 200 < a[2] < yu + 200])
+                # 仕上がりの連なりの列(数字のいちばん多い列)だけを使う(隣の列の「200」等を拾わない。1節 1階)
+                chain = [c for c in chain_all if yl - 200 < c[0] < yu + 200]
+                if len(chain) != len(pls) - 1:   # 上のダイアの外の区間まで拾ったとき(1節 1C-24・1C-25 2階)は、ダイアの間だけで取り直す
+                    chain = [c for c in chain_all if yl - 80 < c[0] < yu]   # 区間の真ん中は必ず上のダイアの記号より下(1C-25 K)
                 if len(chain) == len(pls) - 1 and all(t for m_, t in pls):
                     n = len(chain)
                     def inner(i):  # 区間 i の上下の板の内々
                         return chain[i][1] - pls[i][1] - pls[i + 1][1]
                     mains = [i for i in range(n) if any(_num(a[0]) and abs(float(a[0]) - inner(i)) < 0.6 and abs(a[2] - chain[i][0]) < 40 for a in view)]
-                    m = mains[0] if mains else max(0, n - 2)  # D内々の書き込みが無いときは上から2番目の区間
+                    # D内々の書き込みが無いとき: 区間2つなら長い方(梁の取り合い。差が1割以内なら上。1節 1階・1C-01 2階・2節 BH柱の正解)、
+                    # 3つ以上は上から2番目の区間
+                    if not mains and n == 2:   # 区間2つ: 梁のせい+6 にちょうど合う区間(その梁の取り合い)が主区間(1節 1C-02 1階 356=H-350+6 等)
+                        fit = [i for i in range(n) if any(abs(chain[i][1] - (z1 - z0) - 6) <= 1 and abs(z0 - (chain[i][0] - chain[i][1] / 2)) < 300 for z0, z1 in bz)]
+                        if len(fit) == 1:
+                            mains = fit
+                    m = mains[0] if mains else ((1 if chain[1][1] >= chain[0][1] * 0.9 else 0) if n == 2 else max(0, n - 2))
                     segs = []
                     for i, (cy_, v) in enumerate(chain):
                         gap = inner(i) if i == m else (v - pls[i][1] if i < m else v - pls[i + 1][1])
-                        sz = [a for a in view if a[0].startswith("□-") and abs(a[2] - cy_) < 1000] or [a for a in view if a[0].startswith("BH-") and abs(a[2] - cy_) < 600]
-                        sz = min(sz, key=lambda a: abs(a[2] - cy_))[0].replace("x", "*") if sz else None
+                        # 柱のサイズ表記の列(階のサイズ表記と同じ横位置)のものだけ(別の部材の□表記を拾わない。1節 1C-03 2階)
+                        sz = [a for a in view if a[0].startswith("□-") and abs(a[2] - cy_) < 1000 and (size_rec is None or abs(a[1] - size_rec[1]) < 1000)] or \
+                            ([] if (size or "").startswith("□") else [a for a in view if a[0].startswith("BH-") and abs(a[2] - cy_) < 600])
+                        # 角形の柱で区間の近くにサイズが無ければ階のサイズ(梁のBH表記を柱のサイズにしない。1節 1C-21)
+                        sz = min(sz, key=lambda a: abs(a[2] - cy_))[0].replace("x", "*") if sz else size
                         segs.append((sz, gap - 10 if (sz or "").startswith("□") else gap))
                     # テーパーのある階: D内々の区間がテーパー、下は大きい側・上は小さい側の角形
                     tp = [sz for sz, l_ in segs if sz and re.fullmatch(r"□-\d+-\d+\*\d+-\d+\*\d+", sz)]
@@ -287,7 +403,7 @@ def extract(L, Z, full, sec, order_rows, progress=None):
                     fin = sum(v for y_, v in chain)
                 else:
                     segs = None
-            res.append(dict(dwg=f"{Z}-{no}", L=Ln, syms=syms, qty=qty, fl=fl, fin=fin, din=din, size=size, mat=mat, mat_mark=mat_mark,
+            res.append(dict(dwg=f"{Z}-{no}", L=Ln, syms=[s + "-" + suf for s in syms] if suf else syms, qty=qty, fl=fl, fin=fin, din=din, size=size, mat=mat, mat_mark=mat_mark,
                             chain=chainv, plates=[(secmark[s][0], secmark[s][1] or TMAP.get(secmark[s][0])) for y, s in allz][::-1], segs=segs,
                             secs=sl + su, cands=cands, mid=round(mid), up=up, up_t=up_t, lo=lo, lo_t=lo_t))
     return res, log
