@@ -1775,7 +1775,11 @@
             // 立面図の左に縦に並ぶ高さの記号(F・E・D・C・B・A。同じ x に英字1文字が3つ以上)は旗ではない(2026-11-25、WA2-1C-04)
             return T.filter(function (u) { return /^[A-Z]$/.test(u.text) && Math.abs(u.x - t.x) < 5; }).length < 3;
           });
-          if (!flags.length) { pushLeaderBoxes(shape); return; }
+          if (!flags.length) { pushLeaderBoxes(shape, L1); return; }
+          // 旗がほかの断面図の中にあり、その断面図に同じ形鋼の表記があるときは、そちらで数えている(2026-11-25、WA2-1C-06: B断面の中の旗 a の a断面 = B断面の L-65x65x6 と同じ山形鋼)
+          if (flags.every(function (f) {
+            return titles.some(function (ps) { var dy = f.y - ps.y, dx = Math.abs(f.x - (ps.x + ps.sx) / 2); return ps.letter !== L1 && dy > 0 && dy <= 2800 && dx <= 2500 && secInfo[ps.letter] && secInfo[ps.letter].shapes.indexOf(shape) >= 0; });   // 旗 a は B断面の見出しから左へ約1950(sectionOf の範囲の外)
+          })) return;
           var cnt = {};
           L.forEach(function (l) {
             var len = Math.hypot(l[2] - l[0], l[3] - l[1]); if (len < 300 || len > 3000) return;
@@ -1791,9 +1795,9 @@
       });
       // 旗の無い断面図の中の形鋼(2026-11-25、WA2-1C-04 B断面の L-65x65x6): 表記の引出線の先の小さな箱(長さ x 脚)が1本ずつ。
       // 本数 = 先が箱に当たる引出線の数、長さ = 箱の長い辺(脚の長さより長いもの。150)。箱の長さが食い違うときは拾わない
-      function pushLeaderBoxes(shape) {
+      function pushLeaderBoxes(shape, L1) {
         var leg = parseFloat((/^L-([0-9.]+)/.exec(shape) || [])[1]);
-        T.filter(function (t) { return t.text === shape; }).forEach(function (t) {
+        T.filter(function (t) { return t.text === shape && ((sectionOf(t, titles) || {}).letter === L1); }).forEach(function (t) {   // その断面図の表記だけ
           var lens = [];
           L.forEach(function (l) {
             if (Math.abs(l[1] - l[3]) < 100) return;   // 斜め・縦の引出線だけ
@@ -1806,7 +1810,10 @@
               return Math.hypot(m[0] + q * dx - b[0], m[1] + q * dy - b[1]) <= 40;   // 引出線の先から40以内を通る線
             })
               .map(function (m) { return Math.round(Math.hypot(m[2] - m[0], m[3] - m[1]) * 10) / 10; }).filter(function (v) { return v > leg + 1 && v < 3000; });
-            if (box.length) lens.push(Math.max.apply(null, box));
+            // 箱の辺で一番多い長さ(同じ数なら短いほう)。引出線の先が近くの長い線(フランジの 745)に触れていても箱の長さにする(2026-11-25、WA2-1C-06)
+            var bc = {}; box.forEach(function (v) { bc[v] = (bc[v] || 0) + 1; });
+            var bk = Object.keys(bc).map(Number).sort(function (x, y) { return bc[y] - bc[x] || x - y; });
+            if (bk.length) lens.push(bk[0]);
           });
           if (lens.length && lens.every(function (v) { return v === lens[0]; })) out.push({ size: shape, name: lens[0], n: lens.length, note: '' });
         });
