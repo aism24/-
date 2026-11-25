@@ -40,6 +40,12 @@
     if (len > 0) { var k = kgPerM(it.size); return k ? R2(k * len / 1000) : null; }
     return full ? R2(+full[1] * +full[2] * +full[3] * 7.85e-6) : null;
   }
+  // 注文番号の末尾は先頭の0を取る(「043」→「43」、「001」→「1」。2026-11-26 ユーザー指示)。数字だけでないものはそのまま
+  function noZero(nos) {
+    var out = [];
+    nos.forEach(function (n) { var v = /^\d+$/.test(n) ? String(parseInt(n, 10)) : n; if (out.indexOf(v) < 0) out.push(v); });
+    return out;
+  }
   // 注文書との照合: 符号ごとに {ord: 手配数, nos: 注文番号の末尾(_ でつなぐ), used: 使う枚数(リスト全体), diff: 差し引き}。注文書に無い符号は入れない
   function checkMarks(products, marks) {
     var used = {}, out = {};
@@ -47,7 +53,7 @@
     products.forEach(function (p) { p.items.forEach(function (it) { if (isMark(it.name) && it.n > 0) used[it.name] = (used[it.name] || 0) + it.n; }); });
     Object.keys(used).forEach(function (k) {
       var o = marks[k]; if (!o) return;
-      out[k] = { ord: o.n, nos: (o.nos || []).join('_'), used: used[k], diff: o.n - used[k] };
+      out[k] = { ord: o.n, nos: noZero(o.nos || []).join('_'), used: used[k], diff: o.n - used[k] };
     });
     return out;
   }
