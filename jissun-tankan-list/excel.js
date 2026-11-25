@@ -138,12 +138,14 @@
     x.setLineDash([]); x.lineWidth = 1;
     const ch = b.chain || [];
     if (outer.length > 2 && ch.length === outer.length - 1) {   // 上の板から中間の板までの寸法
+      // 端の●: 上側=いちばん上の板の上面、下側=相手の板の下面(板の中心ではない)
       const ytop = ys[ys.length - 1];
       for (let j = outer.length - 2; j > 0; j--) {
         const dist = ch.slice(j).reduce((a, v) => a + v, 0), xx = L0 + W * (0.42 + 0.16 * (outer.length - 2 - j));
-        x.beginPath(); x.moveTo(xx, ytop + pt / 2); x.lineTo(xx, ys[j] + pt / 2); x.stroke();
-        [ytop, ys[j]].forEach(yy => { x.beginPath(); x.arc(xx, yy + pt / 2, 3, 0, Math.PI * 2); x.fill(); });
-        x.save(); x.translate(xx - 3, (ytop + ys[j]) / 2 + pt / 2); x.rotate(-Math.PI / 2); x.font = '11px sans-serif'; x.textAlign = 'center';
+        const yb = ys[j] + pt;
+        x.beginPath(); x.moveTo(xx, ytop); x.lineTo(xx, yb); x.stroke();
+        [ytop, yb].forEach(yy => { x.beginPath(); x.arc(xx, yy, 3, 0, Math.PI * 2); x.fill(); });
+        x.save(); x.translate(xx - 3, (ytop + yb) / 2); x.rotate(-Math.PI / 2); x.font = '11px sans-serif'; x.textAlign = 'center';
         x.fillText(String(Math.round(dist * 10) / 10), 0, 0); x.restore();
       }
     }
