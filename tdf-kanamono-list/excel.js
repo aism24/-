@@ -203,7 +203,7 @@
     ws.mergeCells('B2:D2'); ws.mergeCells('B3:D3');
     [2, 3].forEach(function (r) { for (var c = 2; c <= 4; c++) styleCell(ws.getRow(r).getCell(c), 'info', c - 1); });
     lay.breaks.forEach(function (b) { ws.getRow(b).addPageBreak(); });
-    ws.pageSetup.printArea = 'A1:L' + lay.rows.length;
+    ws.pageSetup.printArea = 'A1:E' + lay.rows.length;   // 印刷は E 列まで(重量・照合の列は印刷しない。2026-11-26 ユーザー指示で元に戻す)
     return lay;
   }
 
