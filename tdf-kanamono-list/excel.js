@@ -25,7 +25,7 @@
         { kind: 'lhead', vals: ['サイズ', '切板名（長さ）', '枚数（本数）', '備考'] }
       ];
       var s = 0;
-      p.items.filter(function (it) { return it.n > 0; }).slice().sort(X.cmpItem).forEach(function (it) {
+      p.items.filter(function (it) { return it.n > 0; }).sort(X.cmpItem).forEach(function (it) {
         b.push({ kind: X.kindOf(it.size) === 'GPL' ? 'item_gpl' : 'item', vals: [it.size, it.name, it.n, it.note || null] });
         s += it.n;
         var k = it.size + '|' + it.name + '|' + (it.note || '');
