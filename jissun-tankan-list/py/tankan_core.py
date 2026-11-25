@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tdf_binary as tb
 import plate
 
-FNAME = re.compile(r"^([0-9A-Za-z]+)-(\d+)(A?)[　 _]")   # 2C-01　261002.tdf / 2C-01A　261002.tdf
+FNAME = re.compile(r"^([0-9A-Za-z]+)-(\d+)(A?)(?:[　 _]|\.tdf$)", re.I)   # 2C-01　261002.tdf / 2C-01A　261002.tdf / 日付の無い 3C-01.tdf(3節)
 TOL = 1.0   # 重量の許容差(kg)。手配書のグロスは整数に丸められているため
 
 
@@ -46,9 +46,17 @@ def _index(files):
         heads[m.group(1)] += 1
         (sec if m.group(3) else full)[(m.group(1), m.group(2))] = name
     if not heads:
-        raise ValueError("大組図のファイル名(例 2C-01　261002.tdf)が見つかりません")
+        raise ValueError("大組図のファイル名(例 2C-01　261002.tdf・3C-01.tdf)が見つかりません")
     z = heads.most_common(1)[0][0]
     return z, {no: n for (h, no), n in full.items() if h == z}, {no: n for (h, no), n in sec.items() if h == z}
+
+
+def _dymark(s):
+    """板マーク(ODY○○H 等)。前に記号の書き損じが付いたもの(「-<ODY98H」「C<ODY108H」。3節 3C-23・3C-15)も読む"""
+    if re.fullmatch(r"O?[A-Z]*DY\w*", s):
+        return s
+    m = re.fullmatch(r".*[^0-9A-Za-z](O[A-Z]*DY\d+[A-Z]?)", s)
+    return m.group(1) if m else None
 
 
 def _orders(orders_csv):
@@ -298,7 +306,8 @@ def extract(L, Z, full, sec, order_rows, progress=None):
                     secs.append((lab[0][0], x, y))
         pairs_ = []
         for s_, x, y, r, h in TA:
-            if not re.fullmatch(r"O?[A-Z]*DY\w*", s_):
+            s_ = _dymark(s_)
+            if not s_:
                 continue
             pl = [a for a in TA if re.fullmatch(r"PL-\d+", a[0]) and 0 < a[2] - y < 200 and abs(a[1] - x) < 300]
             t_ = int(min(pl, key=lambda a: a[2] - y)[0][3:]) if pl else None
@@ -309,11 +318,30 @@ def extract(L, Z, full, sec, order_rows, progress=None):
         for d_, key, Lb, s_, t_ in sorted(pairs_):  # 近い組から順に、板マークと断面記号を1対1で結ぶ
             if key in used or Lb in secmark:
                 continue
-            used.add(key); secmark[Lb] = (s_, t_, d_)
+            used.add(key); secmark[Lb] = (s_, t_, d_, key)
+        # 結べなかった断面記号: 隣が先に取った板マークを、その隣が別の余った板マークに付け替えられるなら付け替える(3節 3C-02 F・G)
+        edges = collections.defaultdict(list)
+        for d_, key, Lb, s_, t_ in sorted(pairs_):
+            edges[Lb].append((d_, key, s_, t_))
+        owner = {v[3]: k for k, v in secmark.items()}
+        def _aug(Lb, seen):
+            for d_, key, s_, t_ in edges[Lb]:
+                if key in seen:
+                    continue
+                seen.add(key)
+                if key not in owner or _aug(owner[key], seen):
+                    owner[key] = Lb; secmark[Lb] = (s_, t_, d_, key)
+                    return True
+            return False
+        if len(used) < len({p[1] for p in pairs_}):   # 余った板マークがあるときだけ
+            for Lb in sorted({p[2] for p in pairs_} - set(secmark)):
+                _aug(Lb, set())
+        used = set(owner)
         # 2回目: まだ結べていない板マークと断面記号だけ、上下に離れた所(2700〜3600)まで探す(大きい断面図。1節 1C-26 ODY34H・1C-15 ODY11H)
         pairs2 = []
         for s_, x, y, r, h in TA:
-            if not re.fullmatch(r"O?[A-Z]*DY\w*", s_) or (round(x), round(y)) in used:
+            s_ = _dymark(s_)
+            if not s_ or (round(x), round(y)) in used:
                 continue
             pl = [a for a in TA if re.fullmatch(r"PL-\d+", a[0]) and 0 < a[2] - y < 200 and abs(a[1] - x) < 300]
             t_ = int(min(pl, key=lambda a: a[2] - y)[0][3:]) if pl else None
@@ -323,7 +351,7 @@ def extract(L, Z, full, sec, order_rows, progress=None):
         for d_, key, Lb, s_, t_ in sorted(pairs2):
             if key in used or Lb in secmark:
                 continue
-            used.add(key); secmark[Lb] = (s_, t_, d_)
+            used.add(key); secmark[Lb] = (s_, t_, d_, key)
         secmark = {k: v[:2] for k, v in secmark.items()}
         [TMAP.setdefault(m, t_) for m, t_ in secmark.values() if t_]
         view = [a for a in T if fx - 2000 < a[1] < fx + 12000]
@@ -356,8 +384,9 @@ def extract(L, Z, full, sec, order_rows, progress=None):
                 pairs = [(a, b) for a in cands for b in cands if abs(a - b - up_t - lo_t) < 0.6]
                 if pairs:
                     fin, din = max(pairs)
-                elif cands:  # D内々が書かれていない階: 仕上がり(一番大きい数字)から板厚を引く
-                    fin = max(cands); din = fin - up_t - lo_t
+                elif cands:  # D内々が書かれていない階: 仕上がりの連なりの列の数字(無ければ一番大きい数字)から板厚を引く
+                    one = [c for c in chain_all if yl < c[0] < yu]   # 柱の全長(11093)を仕上がりにしない(3節 3C-10 等の7階)
+                    fin = one[0][1] if len(one) == 1 else max(cands); din = fin - up_t - lo_t
             if suf and len(zone) == 2 and up_t and lo_t:   # 上下に分けた短管(板2枚): 仕上がりはその区間の寸法(1節 1C-13 下=594)
                 one = [c for c in chain_all if yl - 200 < c[0] < yu + 200]
                 if len(one) == 1:
@@ -428,7 +457,7 @@ def extract(L, Z, full, sec, order_rows, progress=None):
                     segs = None
             res.append(dict(dwg=f"{Z}-{no}", L=Ln, syms=[s + "-" + suf for s in syms] if suf else syms, qty=qty, fl=fl, fin=fin, din=din, size=size, mat=mat, mat_mark=mat_mark,
                             chain=chainv, plates=[(secmark[s][0], secmark[s][1] or TMAP.get(secmark[s][0])) for y, s in allz][::-1], segs=segs,
-                            secs=sl + su, cands=cands, mid=round(mid), up=up, up_t=up_t, lo=lo, lo_t=lo_t))
+                            secs=sl + su, plate_secs=[s for y, s in allz][::-1], cands=cands, mid=round(mid), up=up, up_t=up_t, lo=lo, lo_t=lo_t))
     return res, log
 
 
@@ -602,6 +631,58 @@ def group_floors(blocks):
     return {fl: list(gs.values()) for fl, gs in floors.items()}
 
 
+def _grid(T):
+    """立面図の見出しの通り芯(大きい文字の CY○・CX○ が3つ並んだ真ん中 = この柱の通り)。読めなければ None"""
+    out = {}
+    for p in ("CY", "CX"):
+        g = sorted((x, s) for s, x, y, r, h in T if re.fullmatch(p + r"\d+", s) and h >= 110)
+        out[p] = g[1][1][2:] if len(g) == 3 else None
+    return out
+
+
+def cautions(L, full, blocks, ver):
+    """読み込み後の案内に出す注意(図面の書き間違いの可能性)。戻り値 [(見出し, 本文)]"""
+    out = []
+    # 柱符号: 同じ符号が別の図面にある(3節 3C-08 と 3C-11 が両方 3CY4CX2)。通り芯と合わない図面は書き間違いの候補
+    where = collections.defaultdict(set)
+    for b in blocks:
+        for s in b["syms"]:
+            where[s.split("-")[0]].add(b["dwg"])
+    for sym, dwgs in sorted(where.items()):
+        if len(dwgs) < 2:
+            continue
+        lines = [f"柱符号 {sym} が {len(dwgs)} 枚の図面({'・'.join(sorted(dwgs))})に書かれています。同じ柱が2本あるのか、どれかの図面の符号の書き間違いかを確認してください。"]
+        m = re.search(r"Y(\d+)C?X(\d+)", sym)
+        for d in sorted(dwgs):
+            no = d.split("-")[-1]
+            g = _grid(L.texts(full[no])) if no in full else {}
+            if m and g.get("CY") and g.get("CX") and (g["CY"], g["CX"]) != m.groups():
+                fix = sym[:m.start(1)] + g["CY"] + sym[m.end(1):m.start(2)] + g["CX"] + sym[m.end(2):]
+                lines.append(f"  {d}: 見出しの通り芯は CY{g['CY']}・CX{g['CX']} です。符号は {fix} の書き間違いかもしれません。")
+        lines.append("  (Excel は図面に書かれた符号のまま作っています。同じ表に「2台」とまとまっていることがあります)")
+        out.append(("図面間違いの可能性(柱符号)", "\n".join(lines)))
+    # 切板マーク: 手配書で同じ板(板厚・縦横)の2つのマークが、図面では片方が多く・片方が同じ枚数だけ少ない(3節 ODY99H と ODY45H)
+    cnt = {m: v for m, v in ver.items() if v.get("n") and v.get("use") and v["use"] != v["n"] and v.get("t_csv") and v.get("ab")}
+    for a, va in sorted(cnt.items()):
+        for b_, vb in sorted(cnt.items()):
+            d = va["use"] - va["n"]
+            if a == b_ or d <= 0 or vb["n"] - vb["use"] != d or va["t_csv"] != vb["t_csv"] or va["ab"] != vb["ab"]:
+                continue
+            t_, (x_, y_) = va["t_csv"][0], va["ab"][0]
+            lines = [f"{a}(図面 {va['use']}枚/手配 {va['n']}枚)と {b_}(図面 {vb['use']}枚/手配 {vb['n']}枚)は、手配書では同じ板(PL-{t_:g} {x_:g}×{y_:g})です。",
+                     f"図面の {a} のうち {d} 枚は、{b_} の書き間違いかもしれません。A付きの断面図の板マークを確認してください。",
+                     f"  {a} を使っている所:"]
+            for bl in sorted(blocks, key=lambda x: (x["dwg"], x["fl"])):
+                secs = bl.get("plate_secs") or [""] * len(bl["plates"])
+                hit = [sc for (m_, t__), sc in zip(bl["plates"], secs) if m_ == a]
+                if hit:
+                    mix = any(m_ == b_ for m_, t__ in bl["plates"])
+                    lines.append(f"    {bl['dwg']} {bl['fl']} {'・'.join(bl['syms'])} 断面 {'・'.join(hit)}" + (f"  ← 同じ柱に {b_} もあり。特に確認を" if mix else ""))
+            lines.append("  (重量は手配書で同じ板なので変わりません)")
+            out.append(("切板マーク記入間違いの可能性", "\n".join(lines)))
+    return out
+
+
 def run(files, orders_csv, setsu=None, progress=None):
     """progress(段階, 何番目, 全体の数, 図番) … 進み具合を画面に出すため(省略可)"""
     Z, full, sec = _index(files)
@@ -637,7 +718,11 @@ def run(files, orders_csv, setsu=None, progress=None):
     # 材質の印を読めなかった柱(□のみ)
     mat_ng = [f"{b['fl']} {s}: 印「{b.get('mat_mark') or '?'}」" for b in sorted(blocks, key=lambda b: (b["fl"], b["dwg"]))
               if (b.get("size") or "").startswith(("□", "BH")) and not b.get("mat") for s in b["syms"]]
-    return dict(seam=seam, mat_ng=mat_ng, zuban=Z, setsu=setsu, files=dict(full=full, sec=sec), log=log, blocks=blocks, checks=checks,
+    try:
+        caution = cautions(L, full, blocks, ver)
+    except Exception as e:   # 注意の作成に失敗しても、表とExcelは出す
+        caution = [("注意の確認ができませんでした", str(e))]
+    return dict(seam=seam, mat_ng=mat_ng, cautions=caution, zuban=Z, setsu=setsu, files=dict(full=full, sec=sec), log=log, blocks=blocks, checks=checks,
                 verify=ver, plate_rows=plate_rows, floors=floors, bh=[f"{fl} {s}" for fl, s in bh],
                 orders=len(order_rows))
 
