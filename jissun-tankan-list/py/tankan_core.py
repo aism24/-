@@ -243,7 +243,21 @@ def _split_parts(nz, chain_all, bz, t, T, fx, TOL=60):
     for r in runs:   # 区間 r[0]〜r[-1] = 境目 r[0]〜r[-1]+1。両端にダイア(板マーク)のあるものだけ短管
         if r[0] in idx and r[-1] + 1 in idx:
             parts.append([z for z, k in zip(nz, idx) if r[0] <= k <= r[-1] + 1])
-    return parts or [nz]
+    if not parts:
+        return [nz]
+    # どの短管にも入らなかったダイア(柱の上端など)は、いちばん近い短管に足す(図面のダイアは全部どれかの短管に入る。
+    # ユーザー指示 2026-11-25: 1C-01・1C-25 の上端のL断面、1C-25 1階のD断面。提出済みExcelはここが漏れている)
+    pos = {id(z): i for i, z in enumerate(nz)}
+    while True:
+        inn = {id(z) for p in parts for z in p}
+        lone = [z for z in nz if id(z) not in inn]
+        if not lone:
+            break
+        z = lone[0]
+        p = min(parts, key=lambda p: min(abs(z[0] - p[0][0]), abs(z[0] - p[-1][0])))
+        a, b = min(pos[id(p[0])], pos[id(z)]), max(pos[id(p[-1])], pos[id(z)])
+        parts[parts.index(p)] = nz[a:b + 1]
+    return parts
 
 
 def extract(L, Z, full, sec, order_rows, progress=None):
@@ -272,14 +286,14 @@ def extract(L, Z, full, sec, order_rows, progress=None):
         lx = max(set(lx), key=lx.count)
         _lt = {}
         for s, x, y, r, h in T:  # 断面記号: 柱の左の列(少し横にずれて書かれたものも拾う。同じ記号が2つあれば列に近い方)
-            if re.fullmatch(r"[A-Z]", s) and lx - 600 < x < lx + 500 and (s not in _lt or abs(x - lx) < _lt[s][0]):   # 右に寄せて書かれた記号も(1C-26 H)
+            if re.fullmatch(r"[A-Z][0-9]?", s) and lx - 600 < x < lx + 500 and (s not in _lt or abs(x - lx) < _lt[s][0]):   # 右に寄せて書かれた記号も(1C-26 H)。「E1」「K1」の形も(1節 1C-23)
                 _lt[s] = (abs(x - lx), y)
         letters = sorted([(v[1], k) for k, v in _lt.items()])
         secmark = {}
         secs = []
         for s_, x, y, r, h in TA:
             if s_ == "SEC":
-                lab = [a for a in TA if re.fullmatch(r"[A-Z]", a[0]) and abs(a[2] - y) < 5 and 0 < x - a[1] < 400]
+                lab = [a for a in TA if re.fullmatch(r"[A-Z][0-9]?", a[0]) and abs(a[2] - y) < 5 and 0 < x - a[1] < 400]   # 「E1」「K1」の形も(1節 1C-23)
                 if lab:
                     secs.append((lab[0][0], x, y))
         pairs_ = []
@@ -467,8 +481,10 @@ def verify(blocks, checks, header, order_rows, setsu):
         calc = round(t_d * dim[0] * dim[1] * 7.85e-6, 1) if (t_d and dim) else None   # ①図面から計算(外接長方形=グロス)
         ng = []
         if not o: ng.append("手配書に無い")
-        if not use.get(m): ng.append("図面で使っていない")
-        if o and c:
+        # 手配書にあるが図面で使っていない板は問題にしない(大組図が未完成・別フォルダの図面・中止の板がありうる。ユーザー指示 2026-11-25)。
+        # 図面にあるのに手配が無い・枚数が違うものは問題として出す
+        unused = bool(o) and not use.get(m)
+        if o and c and not unused:
             if len(o["t"]) > 1 or (t_d and t_d not in o["t"]): ng.append(f"板厚 図面{t_d}/手配{sorted(o['t'])}")
             if dim and not any(abs(dim[0] - a) <= 1 and abs(dim[1] - b) <= 1 for a, b in o["ab"]): ng.append(f"寸法 図面{dim}/手配{sorted(o['ab'])}")
             if use[m] != o["n"]: ng.append(f"枚数 図面{use[m]}/手配{o['n']}")
@@ -477,7 +493,7 @@ def verify(blocks, checks, header, order_rows, setsu):
         res[m] = dict(t_dwg=t_d, dim=dim, calc=calc, use=use.get(m, 0),
                       t_csv=sorted(o["t"]) if o else None, ab=sorted(o["ab"]) if o else None, n=o["n"] if o else 0,
                       gross=sorted(o["gross"]) if o else None, net=sorted(o["net"]) if o else None, files=o["files"] if o else [],
-                      ok=not ng, ng=ng, weight=(next(iter(o["gross"])) if (o and not ng) else calc))   # ③問題なければ手配書のグロス
+                      ok=not ng, ng=ng, unused=unused, weight=(next(iter(o["gross"])) if (o and not ng) else calc))   # ③問題なければ手配書のグロス
     return res, dict(header=["ファイル名"] + header[3:], rows=rows)
 
 
