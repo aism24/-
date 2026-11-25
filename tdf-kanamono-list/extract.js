@@ -1767,7 +1767,7 @@
       // 本数 = 図の中のその断面の旗の数 × 断面図の表記の数。長さ = 断面図に長さの寸法が無いので、旗のそば(1000以内)に描かれた線(300〜3000)で一番多い長さ(C断面の八角形の斜めの辺 707.1)
       Object.keys(secInfo).forEach(function (L1) {
         var si = secInfo[L1];
-        Array.from(new Set(si.shapes.filter(function (x) { return /^L-/.test(x); }))).forEach(function (shape) {
+        Array.from(new Set(si.shapes.filter(function (x) { return /^L-/.test(x) || /^\[-/.test(x); }))).forEach(function (shape) {   // 溝形鋼「[-100x50x5x7.5」も(2026-11-25、WA2-1C-06 D断面)
           var flags = T.filter(function (t) {
             if (t.text !== L1 || titles.some(function (x) { return x.letter === t.text && Math.abs(x.y - t.y) < 10; })) return false;
             if ((sectionOf(t, titles) || {}).letter === L1) return false;
@@ -1796,7 +1796,7 @@
       // 旗の無い断面図の中の形鋼(2026-11-25、WA2-1C-04 B断面の L-65x65x6): 表記の引出線の先の小さな箱(長さ x 脚)が1本ずつ。
       // 本数 = 先が箱に当たる引出線の数、長さ = 箱の長い辺(脚の長さより長いもの。150)。箱の長さが食い違うときは拾わない
       function pushLeaderBoxes(shape, L1) {
-        var leg = parseFloat((/^L-([0-9.]+)/.exec(shape) || [])[1]);
+        var leg = parseFloat((/^(?:L|\[)-([0-9.]+)/.exec(shape) || [])[1]);
         T.filter(function (t) { return t.text === shape && ((sectionOf(t, titles) || {}).letter === L1); }).forEach(function (t) {   // その断面図の表記だけ
           var lens = [];
           L.forEach(function (l) {
@@ -1804,16 +1804,25 @@
             var a = [l[0], l[1]], b = [l[2], l[3]];
             if (Math.hypot(b[0] - t.x, b[1] - t.y) < Math.hypot(a[0] - t.x, a[1] - t.y)) { var c = a; a = b; b = c; }
             if (Math.hypot(a[0] - t.x, a[1] - t.y) > 30) return;
-            var box = L.filter(function (m) {
+            var segD = function (m) { var dx = m[2] - m[0], dy = m[3] - m[1], q = Math.max(0, Math.min(1, ((b[0] - m[0]) * dx + (b[1] - m[1]) * dy) / (dx * dx + dy * dy || 1))); return Math.hypot(m[0] + q * dx - b[0], m[1] + q * dy - b[1]); };
+            var lenOf = function (m) { return Math.round(Math.hypot(m[2] - m[0], m[3] - m[1]) * 10) / 10; };
+            var cand = L.filter(function (m) {
               if (Math.hypot(m[0] - t.x, m[1] - t.y) < 30 || Math.hypot(m[2] - t.x, m[3] - t.y) < 30) return false;   // 表記から出るほかの引出線は除く
-              var dx = m[2] - m[0], dy = m[3] - m[1], q = Math.max(0, Math.min(1, ((b[0] - m[0]) * dx + (b[1] - m[1]) * dy) / (dx * dx + dy * dy || 1)));
-              return Math.hypot(m[0] + q * dx - b[0], m[1] + q * dy - b[1]) <= 40;   // 引出線の先から40以内を通る線
-            })
-              .map(function (m) { return Math.round(Math.hypot(m[2] - m[0], m[3] - m[1]) * 10) / 10; }).filter(function (v) { return v > leg + 1 && v < 3000; });
-            // 箱の辺で一番多い長さ(同じ数なら短いほう)。引出線の先が近くの長い線(フランジの 745)に触れていても箱の長さにする(2026-11-25、WA2-1C-06)
-            var bc = {}; box.forEach(function (v) { bc[v] = (bc[v] || 0) + 1; });
-            var bk = Object.keys(bc).map(Number).sort(function (x, y) { return bc[y] - bc[x] || x - y; });
-            if (bk.length) lens.push(bk[0]);
+              var v = lenOf(m); return v > leg + 1 && v <= leg * 4;   // 脚より長く脚の4倍以下(B断面のフランジ 745 は箱ではない)
+            });
+            // 長さ = 引出線の先から40以内を通る線で一番長いもの(箱の長い辺)。
+            // そばの平行な線で、端がそろっていてもっと長いものがあればそちら(2026-11-25 ユーザー指示、WA2-1C-06 D断面: L-100x100x7 は柱面からの 195。[-100x50x5x7.5 は 165)
+            var near = cand.filter(function (m) { return segD(m) <= 40; }).sort(function (x, y) { return lenOf(y) - lenOf(x); });
+            if (!near.length) return;
+            var base = near[0], hz = Math.abs(base[1] - base[3]) < 1, vt = Math.abs(base[0] - base[2]) < 1;
+            var ends = hz ? [base[0], base[2]] : [base[1], base[3]];
+            cand.forEach(function (m) {
+              if (segD(m) > leg || lenOf(m) <= lenOf(base)) return;
+              if (!((hz && Math.abs(m[1] - m[3]) < 1) || (vt && Math.abs(m[0] - m[2]) < 1))) return;
+              var me = hz ? [m[0], m[2]] : [m[1], m[3]];
+              if (me.some(function (e) { return ends.some(function (f) { return Math.abs(e - f) < 1; }); })) base = m;
+            });
+            lens.push(lenOf(base));
           });
           if (lens.length && lens.every(function (v) { return v === lens[0]; })) out.push({ size: shape, name: lens[0], n: lens.length, note: '' });
         });
@@ -1855,6 +1864,20 @@
         var lens = occ.map(function (t) { var d = T.filter(function (u) { return /^[0-9]+(\.[0-9]+)?$/.test(u.text) && dist(u, t) <= 400; }).sort(function (a, b) { return dist(a, t) - dist(b, t); })[0]; return d ? parseFloat(d.text) : null; });
         if (lens.some(function (x) { return !x; }) || lens.some(function (x) { return x !== lens[0]; })) return;   // 長さが分からない・食い違うときは拾わない
         out.push({ size: mk, name: lens[0], n: occ.length, note: 'サヤ管' });
+      });
+      // 樋受け下地(2026-11-25 ユーザー指示「樋受け下地の PL-9x100x100 で6か所拾って」、WA2-1C-06):
+      // 見出し「樋受け下地」の図(見出しの上 2500・左右 1500 以内)の「PL-厚x幅x長さ」1種類。か所の数 = 立面図の、樋受け下地のレイヤの
+      // 板の幅の半分の寸法(50)が上下に2つ並ぶ組の数(板は描かれず「50/50」の寸法だけ。高さ 6266・5066・3866・2666・1466・466 の6か所)
+      T.filter(function (u) { return /^樋受け下地$/.test(u.text); }).some(function (ttl) {
+        var lab = T.find(function (u) { return /^PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) && u.y > ttl.y && u.y - ttl.y < 2500 && Math.abs(u.x - ttl.x) < 1500; });
+        if (!lab) return false;
+        var half = String(parseFloat(lab.text.split('x')[1]) / 2);
+        var hl = P.layers.findIndex(function (n) { return /樋受け/.test(n); }) + 1;
+        var ds = T.filter(function (u) { return u.text === half && (!hl || u.lay === hl); });
+        var nPos = ds.filter(function (u) { return ds.some(function (v) { return v !== u && Math.abs(v.x - u.x) < 5 && u.y - v.y > 0 && u.y - v.y < 80; }); }).length;
+        if (!nPos) return false;
+        out.push({ size: lab.text, name: '', n: nPos, note: '樋受け下地' });
+        return true;
       });
       // 同じサイズ・切板名(長さ)・備考は1行に(ア・イ の L-75x75x6 707.1 → 4本)
       var merged = [];
