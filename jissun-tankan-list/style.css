@@ -115,14 +115,17 @@ table.kl input.note-in { width: 160px; font-size: 13px; padding: 2px 4px; }
 
 .overlay { display: none; position: fixed; inset: 0; z-index: 3000; background: rgba(20,30,40,0.55); align-items: center; justify-content: center; }
 .overlay.open { display: flex; }
-.dialog { background: #fff; border-radius: 12px; padding: 24px 28px; width: 92%; max-width: 560px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+.dialog { background: #fff; border-radius: 12px; padding: 24px 28px; width: 92%; max-width: 560px; box-shadow: 0 12px 40px rgba(0,0,0,.35);
+  max-height: 90vh; display: flex; flex-direction: column; box-sizing: border-box; }   /* 文が長くても画面に収め、OKボタンを常に見せる(本文だけスクロール) */
 .dialog-title { font-size: 16px; font-weight: bold; margin-bottom: 12px; }
 .dialog-note { font-size: 12px; color: #555; margin: 8px 0; line-height: 1.7; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .server-btn { padding: 12px 24px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; background: #1a73e8; color: #fff; cursor: pointer; }
 .dialog.wide { max-width: 760px; }
 .dialog.lines { width: auto; max-width: 95vw; }
-.dialog.lines #notice-body { white-space: pre; overflow-x: auto; }
+.dialog.lines #notice-body { white-space: pre; }
+#notice-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.dialog-title, .dialog-actions { flex: 0 0 auto; }
 .pick-tools { display: flex; gap: 8px; margin: 6px 0; }
 #pick-list { max-height: 55vh; overflow: auto; border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
 #pick-list details { border-bottom: 1px solid #eee; padding: 4px 0; }
