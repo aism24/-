@@ -88,19 +88,22 @@
     b.plates.forEach(([m, t]) => { s += plateInfo(m, t, verify).w || 0; });
     return r2(s);
   }
-  // 階ごとの表の並び(提出済みExcelと同じ): 角形が先・BHが後 → サイズの大きい順(単重の重い順) → 1台の重量の重い順 → 図番順。
+  // 階ごとの表の並び(提出済みExcelと同じ): 角形が先・BHが後 → 外寸の大きい順 → 板厚の厚い順 → 1台の重量の重い順 → 図番順。
+  //   (1節の正解で、□-800*32(単重730)が□-750*36(755)より先 = 単重ではなく外寸→板厚の順と判明)
   //   res.floors をその場で並べ替える(画面の表と Excel で同じ番号にするため、読み取り直後に1回呼ぶ)
   function sortFloors(res) {
     Object.values(res.floors || {}).forEach(gs => {
       const key = new Map(gs.map(g => {
         const b = g.block, segs = b.segs || [];
-        const uw = Math.max(0, ...(segs.length ? sizesOf(segs) : [b.size]).map(s => unitW(s) || 0));
-        return [g, [String(b.size || '').startsWith('BH') || !b.segs ? 1 : 0, -uw, -(groupWeight(g, res.verify) || 0), g.members.map(m => m.dwg).sort()[0] || '']];
+        // 柱の中でいちばん大きいサイズ(外寸, 板厚)。テーパーは大きい側の外寸
+        const dims = (segs.length ? sizesOf(segs) : [b.size]).map(s => { const m = /^□-(\d+)(?:-\d+)?\*.*\*([\d.]+)$/.exec(s || ''); return m ? [+m[1], +m[2]] : [0, 0]; });
+        const big = dims.reduce((p, d) => (d[0] > p[0] || (d[0] === p[0] && d[1] > p[1])) ? d : p, [0, 0]);
+        return [g, [String(b.size || '').startsWith('BH') || !b.segs ? 1 : 0, -big[0], -big[1], -(groupWeight(g, res.verify) || 0), g.members.map(m => m.dwg).sort()[0] || '']];
       }));
       gs.sort((a, c) => {
         const x = key.get(a), y = key.get(c);
-        for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
-        return x[3] < y[3] ? -1 : x[3] > y[3] ? 1 : 0;
+        for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return x[i] - y[i];
+        return x[4] < y[4] ? -1 : x[4] > y[4] ? 1 : 0;
       });
     });
     return res;
@@ -116,6 +119,18 @@
       fromTop.forEach(v => { acc += v; out.push(Math.round(acc / tot * 8)); });
       for (let i = 1; i < out.length; i++) if (out[i] <= out[i - 1]) out[i] = out[i - 1] + 1;   // 同じ行に重ねない
       if (out[out.length - 1] <= 8) return out;
+    }
+    // 角形の柱で板3・4枚(内ダイア無し): 高さの割合で置き、板と板の間は2行以上あける(1節の正解。2節の 250/956/250 = 0,2,6,8 もこれで同じ)
+    if (segs && pl && (k === 3 || k === 4) && pl.length === k && segs.length === k - 1 && !pl.some(p => String(p[0]).startsWith('OUDY'))
+        && segs.every(s => s[1] > 0 && String(s[0] || '').startsWith('□'))) {
+      const fromTop = segs.map(s => s[1]).reverse(), tot = fromTop.reduce((a, v) => a + v, 0);
+      let acc = 0; const out = [0];
+      fromTop.forEach(v => { acc += v; out.push(Math.round(acc / tot * 8)); });
+      out[k - 1] = 8;
+      for (let i = 1; i < k; i++) if (out[i] < out[i - 1] + 2) out[i] = out[i - 1] + 2;
+      out[k - 1] = 8;
+      for (let i = k - 2; i > 0; i--) if (out[i] > out[i + 1] - 2) out[i] = out[i + 1] - 2;
+      if (out.every((v, i) => i === 0 || v >= out[i - 1] + 2)) return out;
     }
     if (k <= 1) return [0];
     if (k === 2) return [0, 8];
@@ -259,7 +274,11 @@
       const seam = res.seam || {}, sc = {};
       res.floors[fl].forEach(g => g.members.forEach(mb => { const v = seam[mb.dwg]; if (v) sc[v] = (sc[v] || 0) + 1; }));
       const sdef = Object.keys(sc).sort((a, b) => sc[b] - sc[a])[0] || '';
-      put(ws, 'R1', '●シーム方向：特記外 ' + sdef);put(ws, 'R2', '●ダイア出寸法：特記外 ' + (dflt === null ? '' : dflt));
+      // 「特記外」は、その階に違う所(←の書き込み)があるときだけ付ける(1節の正解は特記なしで「●ダイア出寸法：30」)
+      const seamEx = Object.keys(sc).length > 1;
+      const diaEx = Object.keys(cnt).length > 1 ||   // BH柱の「ダイア出寸法注意」の絵も違う所に数える(2節 4・5階の正解は「特記外 30」)
+        res.floors[fl].some(g => (g.bhdia || []).some(d => dflt !== null && (d.ox !== dflt || d.oy !== dflt)));
+      put(ws, 'R1', '●シーム方向：' + (seamEx ? '特記外 ' : '') + sdef); put(ws, 'R2', '●ダイア出寸法：' + (diaEx ? '特記外 ' : '') + (dflt === null ? '' : dflt));
       put(ws, 'W1', factory ? factory + '工場' : '');
       let r = 3, acc = 0;
       for (const [gi, g] of res.floors[fl].entries()) {
