@@ -10,7 +10,7 @@
  * 利用記録は利用者に分からないようにする(アプリ側は結果を表示しない)。
  * デプロイ: ウェブアプリ / 次のユーザーとして実行=自分 / アクセスできるユーザー=全員
  */
-const CODE_VERSION = '2026-11-25b';
+const CODE_VERSION = '2026-11-26a';
 const ORDERS_FOLDER_ID = '1Pp68pZl9gki8WfOLmrV1L0UG6-hPjyER';   // ドライブ「切板CSV工事別まとめ」(短管リストと同じフォルダ)
 const SHEET_SETTING = '設定';
 const SHEET_RECORD = '記録';
@@ -114,7 +114,7 @@ function addDataSheet_(rows) {
 }
 
 // 注文書(切板の手配書)を符号ごとに合計する → {koji, name, updated, marks:{符号:{n:数量の合計, w:ネット重量(1枚当り), nos:[注文番号の末尾]}}}
-// 注文番号 = 工事名の先頭「＜16-2-172＞」(無ければファイル名「16-2-172TLPLATE.CSV」)。末尾 = 最後の「-」より後ろ(172)
+// 注文番号 = 工事名の先頭「＜16-2-172＞」(無ければファイル名の先頭の「数字-数字-数字」。「16-2-172TLPLATE.CSV」「11-2-915.CSV」)。末尾 = 最後の「-」より後ろ(172)
 // ファイルが無ければ marks は空(アプリは形鋼の重量だけ入れ、照合はしない)
 function readOrders_(kojiNo) {
   const koji = String(kojiNo || '').trim();
@@ -134,7 +134,8 @@ function readOrders_(kojiNo) {
     o.n += parseFloat(v[iN]) || 0;
     const w = parseFloat(v[iNet]); if (o.w === null && w > 0) o.w = w;
     const nm = String(v[iName] || '').normalize('NFKC'), m = /<([^>]+)>/.exec(nm);
-    const no = m ? m[1] : String(v[iFile] || '').replace(/TLPLATE.*$/i, '');
+    // ファイル名の「TLPLATE」が無いもの(26-11 の「11-2-915.CSV」)で「915.CSV」になっていた(2026-11-26)→ 数字と「-」の並びだけを取る
+    const no = m ? m[1] : ((/\d+(?:-\d+)+/.exec(String(v[iFile] || '')) || [])[0] || '');
     const last = no.split('-').pop().trim();
     if (last && o.nos.indexOf(last) < 0) o.nos.push(last);
   }
