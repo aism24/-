@@ -52,6 +52,14 @@ function confirm2(title, body, okLabel, cancelLabel) {
     $('notice-ok').onclick = () => done(true); $('notice-cancel').onclick = () => done(false);
   });
 }
+// Excelダウンロード後の案内(図番・製品名のリンクの注意)。「閉じる」で閉じる(2026-11-25 ユーザー指示)
+function linkNotice() {
+  return new Promise(resolve => {
+    $('link-notice').classList.add('open');
+    $('link-notice-close').focus();
+    $('link-notice-close').onclick = () => { $('link-notice').classList.remove('open'); resolve(); };
+  });
+}
 async function apiGet(action) {
   if (!GAS_URL) throw new Error('GASのURLが未設定です');
   const r = await fetch(GAS_URL + '?action=' + encodeURIComponent(action));
@@ -546,6 +554,7 @@ $('btn-excel').addEventListener('click', async () => {
   // 次の加工予定から作った画面なら、最初に届いたExcelと同じ形(シート１の一覧+工事ごとのシート)で、画面で直した数を入れて作り直す(2026-11-21)
   if (state.planCtx && allProducts().every(x => typeof x.p.ord === 'number')) { await downloadPlanExcel(state.planCtx, planGroupsFromScreen(state.planCtx)); return; }
   busy('Excelを作っています…');
+  let saved = false;
   try {
     await loadExcelJS();
     const multi = state.tdfs.length > 1;
@@ -555,10 +564,11 @@ $('btn-excel').addEventListener('click', async () => {
     const buf = await wb.xlsx.writeBuffer();
     const name = multi ? `${state.kojiNo}_${stamp(new Date())}_金物リスト.xlsx`
       : `${state.tdfs[0].res.zuban || state.tdfs[0].fileName.replace(/\.tdf$/i, '')}_金物リスト.xlsx`;
-    saveXlsx(buf, name);
+    saveXlsx(buf, name); saved = true;
     apiPostQuiet({ action: 'download', koji: state.kojiName, factory: state.factory, rows: KanamonoExcel.toValues(layout) });
   } catch (e) { toast('Excelを作れませんでした: ' + e.message, 'error'); }
   finally { idle(); }
+  if (saved) await linkNotice();
 });
 
 // ---------- 次の加工予定から作る(tottori-production-status と連動。2026-11-20 ユーザー指示) ----------
@@ -740,13 +750,15 @@ async function runPlan(plan) {
 // 次の加工予定のExcel(シート１=一覧、シート２以降=工事ごと)を作ってダウンロードする
 async function downloadPlanExcel(ctx, groups) {
   busy('Excelを作っています…');
+  let saved = false;
   try {
     await loadExcelJS();
     const { wb, layouts } = KanamonoExcel.buildPlan(window.ExcelJS, ctx.rows, groups);
-    saveXlsx(await wb.xlsx.writeBuffer(), `次の加工予定_金物リスト_${stamp(new Date())}.xlsx`);
+    saveXlsx(await wb.xlsx.writeBuffer(), `次の加工予定_金物リスト_${stamp(new Date())}.xlsx`); saved = true;
     layouts.forEach(l => apiPostQuiet({ action: 'download', koji: l.sheet, factory: '鳥取', rows: KanamonoExcel.toValues(l.layout) }));
   } catch (e) { toast('Excelを作れませんでした: ' + e.message, 'error'); }
   finally { idle(); }
+  if (saved) await linkNotice();
 }
 // 画面の今の数・備考で、工事ごとの製品を作り直す(外したTDFの製品は入れない)
 function planGroupsFromScreen(ctx) {
