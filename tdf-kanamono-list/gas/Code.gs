@@ -5,10 +5,13 @@
  *   記録  A=日時 B=工事名 C=工場 D=シート名。新しい記録は2行目に入れる(新しいものが上)
  *         工事を選んで開始したとき: A〜C。Excelをダウンロードしたとき: A〜D(D=データシートの名前)
  *   MMdd_追番(例 1119_1) ダウンロードしたExcelと同じ内容。新しい10枚だけ残す(古いものから消す)
+ * 注文書  GET orders&koji=26-16 … ドライブ「切板CSV工事別まとめ」の <工事番号>.csv を符号ごとに合計して返す(2026-11-25)。
+ *         初回はドライブを読む許可が要る(Apps Script で checkOrders を1回実行して承認)
  * 利用記録は利用者に分からないようにする(アプリ側は結果を表示しない)。
  * デプロイ: ウェブアプリ / 次のユーザーとして実行=自分 / アクセスできるユーザー=全員
  */
-const CODE_VERSION = '2026-11-19a';
+const CODE_VERSION = '2026-11-25a';
+const ORDERS_FOLDER_ID = '1Pp68pZl9gki8WfOLmrV1L0UG6-hPjyER';   // ドライブ「切板CSV工事別まとめ」(短管リストと同じフォルダ)
 const SHEET_SETTING = '設定';
 const SHEET_RECORD = '記録';
 const MAX_DATA_SHEETS = 10;
@@ -23,6 +26,7 @@ function doGet(e) {
   const action = (e && e.parameter && e.parameter.action) || 'ping';
   try {
     if (action === 'settings') return json_(Object.assign({ status: 'success' }, readSettings_()));
+    if (action === 'orders') return json_(Object.assign({ status: 'success', version: CODE_VERSION }, readOrders_(e.parameter.koji)));
     return json_({ status: 'success', version: CODE_VERSION });
   } catch (err) {
     return json_({ status: 'error', message: String(err && err.message || err) });
@@ -107,4 +111,39 @@ function addDataSheet_(rows) {
     sh.setColumnWidths(1, 4, 150);
   }
   return name;
+}
+
+// 注文書(切板の手配書)を符号ごとに合計する → {koji, name, updated, marks:{符号:{n:数量の合計, w:ネット重量(1枚当り), nos:[注文番号の末尾]}}}
+// 注文番号 = 工事名の先頭「＜16-2-172＞」(無ければファイル名「16-2-172TLPLATE.CSV」)。末尾 = 最後の「-」より後ろ(172)
+// ファイルが無ければ marks は空(アプリは形鋼の重量だけ入れ、照合はしない)
+function readOrders_(kojiNo) {
+  const koji = String(kojiNo || '').trim();
+  if (!/^\d{2}-\d{2}$/.test(koji)) throw new Error('工事番号の形が違います: ' + koji);
+  const it = DriveApp.getFolderById(ORDERS_FOLDER_ID).getFilesByName(koji + '.csv');
+  if (!it.hasNext()) return { koji: koji, name: '', updated: '', marks: {} };
+  const f = it.next();
+  const rows = Utilities.parseCsv(f.getBlob().getDataAsString('UTF-8').replace(/^\uFEFF/, ''));
+  const head = rows[0] || [], col = function (h) { return head.indexOf(h); };
+  const iMark = col('符号'), iN = col('数量'), iNet = col('ネット重量(kg)') + 1, iName = col('工事名'), iFile = col('ファイル名');
+  if (iMark < 0 || iN < 0 || iNet < 1) throw new Error(koji + '.csv の見出し(符号・数量・ネット重量)が見つかりません');
+  const marks = {};
+  for (let r = 1; r < rows.length; r++) {
+    const v = rows[r], mk = String(v[iMark] || '').normalize('NFKC').trim();
+    if (!mk) continue;
+    const o = marks[mk] || (marks[mk] = { n: 0, w: null, nos: [] });
+    o.n += parseFloat(v[iN]) || 0;
+    const w = parseFloat(v[iNet]); if (o.w === null && w > 0) o.w = w;
+    const nm = String(v[iName] || '').normalize('NFKC'), m = /<([^>]+)>/.exec(nm);
+    const no = m ? m[1] : String(v[iFile] || '').replace(/TLPLATE.*$/i, '');
+    const last = no.split('-').pop().trim();
+    if (last && o.nos.indexOf(last) < 0) o.nos.push(last);
+  }
+  Object.keys(marks).forEach(function (k) { marks[k].nos.sort(function (a, b) { return (parseFloat(a) - parseFloat(b)) || (a < b ? -1 : 1); }); });
+  return { koji: koji, name: f.getName(), updated: Utilities.formatDate(f.getLastUpdated(), TZ, 'yyyy/MM/dd HH:mm'), marks: marks };
+}
+
+// Apps Script のエディタで1回実行: ドライブを読む許可の承認と、注文書が読めるかの確認(26-16 の符号の数をログに出す)
+function checkOrders() {
+  const o = readOrders_('26-16');
+  Logger.log(o.name + ' ' + o.updated + ' 符号 ' + Object.keys(o.marks).length + '件');
 }

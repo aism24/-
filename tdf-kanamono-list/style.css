@@ -108,6 +108,16 @@ table.kl tr.sitem td { background: #fff2cc; }
 table.kl td.note { text-align: left; }
 table.kl input.qty { width: 64px; text-align: right; font-size: 13px; padding: 2px 4px; }
 table.kl input.qty.changed { background: #ffe0e0; }
+/* 重量・注文書(2026-11-25): 製品の表の右に 単重・重量(Excel の G・H)、不足の切板は枚数を赤 */
+table.kl td.gap { border: none; background: transparent !important; padding: 0 4px; }
+table.kl td.wcol { min-width: 64px; }
+table.kl tr.phead td.wcol, table.kl tr.pval td.wcol { border: none; background: transparent; }
+table.kl input.qty.short { color: #e00000; font-weight: bold; }
+table.kl td.short { color: #e00000; font-weight: bold; }
+table.kl td.nos { white-space: normal; max-width: 160px; word-break: break-all; }
+.order-info { font-size: 12px; color: #333; background: #fff; border-radius: 6px; padding: 6px 10px; margin: 0 0 8px; line-height: 1.7; }
+.order-info .order-ng { color: #b45309; }
+.order-info .short-sample { color: #e00000; font-weight: bold; }
 table.kl input.note-in { width: 160px; font-size: 13px; padding: 2px 4px; }
 .sum-title { color: #fff; font-size: 16px; font-weight: bold; align-self: center; margin-top: 10px; }
 .cat-title { font-weight: bold; margin: 4px 0; }

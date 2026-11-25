@@ -60,11 +60,29 @@ function linkNotice() {
     $('link-notice-close').onclick = () => { $('link-notice').classList.remove('open'); resolve(); };
   });
 }
-async function apiGet(action) {
+async function apiGet(action, params) {
   if (!GAS_URL) throw new Error('GASのURLが未設定です');
-  const r = await fetch(GAS_URL + '?action=' + encodeURIComponent(action));
+  const q = Object.entries(params || {}).map(([k, v]) => '&' + k + '=' + encodeURIComponent(v)).join('');
+  const r = await fetch(GAS_URL + '?action=' + encodeURIComponent(action) + q);
   const j = await r.json(); if (j.status !== 'success') throw new Error(j.message || 'GASエラー'); return j;
 }
+// ---------- 注文書(切板の手配書。GAS が符号ごとに合計して返す。2026-11-25 ユーザー指示) ----------
+// 工事番号ごとに1回だけ読む。結果 {koji, name, updated, marks} / 読めなければ {koji, error}。読み終わったものは ordersData に入る
+const ordersPromise = new Map(), ordersData = new Map();
+function ordersFor(koji) {
+  koji = String(koji || '').trim();
+  if (!koji) return Promise.resolve(null);
+  if (!ordersPromise.has(koji)) {
+    ordersPromise.set(koji, apiGet('orders', { koji }).then(j => {
+      if (!j.marks) throw new Error('GASが古いため読めません(Code.gs の貼り替えが必要です)');
+      return j;
+    }).catch(e => ({ koji, error: e.message })).then(o => { ordersData.set(koji, o); return o; }));
+  }
+  return ordersPromise.get(koji);
+}
+// 製品の工事番号(次の加工予定は工事ごと、それ以外は選んだ工事)の注文書(読めていなければ null)
+const kojiOf = t => t.koji || state.kojiNo;
+const ordersOf = koji => { const o = ordersData.get(koji); return o && o.marks ? o : null; };
 // 利用記録は画面に何も出さない(成功・失敗とも)。docs/know-how/usage-log-hidden-check.md
 function apiPostQuiet(payload) {
   if (!GAS_URL) return;
@@ -125,6 +143,7 @@ $('start-btn').addEventListener('click', () => {
   renderServer();
   render();
   preloadPy();
+  ordersFor(state.kojiNo).then(() => render());
 });
 $('btn-change').addEventListener('click', () => { $('start-modal').classList.remove('hidden'); });
 $('start-cancel-btn').addEventListener('click', () => { $('start-modal').classList.add('hidden'); });
@@ -431,37 +450,67 @@ function render() {
     listOrder.map(t => `<tr><td>${esc(t.res.zuban)}</td><td>${esc(t.res.koji)}</td><td title="${esc(t.path || 'リンクなし')}">${esc(t.fileName)}${t.path ? '' : '(リンクなし)'}</td><td><button type="button" class="rm-btn" data-rm="${t.id}">外す</button></td></tr>`).join('') + '</table>' : '';
   const R = $('result');
   if (!has) { R.innerHTML = state.started ? '<div class="empty-msg">TDFを取り込むと、製品ごとの金物リストがここに出ます。<br>枚数(本数)と備考は直してからExcelに出せます。</div>' : ''; return; }
-  let html = '';
+  // 重量と注文書の照合(工事ごと)。不足(注文書の合計より使う枚数が多い符号)は枚数を赤に
+  const chkBy = new Map();
+  prods.forEach(({ t, p }) => { const k = kojiOf(t); if (!chkBy.has(k)) chkBy.set(k, []); chkBy.get(k).push(p); });
+  chkBy.forEach((ps, k) => chkBy.set(k, KanamonoExcel.checkMarks(ps, (ordersOf(k) || {}).marks)));
+  let html = orderInfoHtml();
   prods.forEach(({ t, p }) => {
+    const marks = (ordersOf(kojiOf(t)) || {}).marks, chk = chkBy.get(kojiOf(t));
     const link = jissunUrl(t.path, t.fileName), pIdx = t.res.products.indexOf(p);
     const zb = link ? `<a href="${esc(link)}" title="実寸法師で開く">${esc(p.zuban)}</a>` : `<span class="nolink" title="サーバーの場所が分からないため、リンクはありません">${esc(p.zuban)}</span>`;
     const nm = link ? `<a href="${esc(link)}" title="実寸法師で開く">${esc(p.name)}</a>` : `<span class="nolink" title="サーバーの場所が分からないため、リンクはありません">${esc(p.name)}</span>`;
     const items = p.items.map((it, idx) => ({ it, idx })).sort((a, b) => KanamonoExtract.cmpItem(a.it, b.it));
     html += `<div class="prod-card"><table class="kl">
-      <tr class="phead"><td>図面番号</td><td>製品名</td><td>サイズ</td><td>長さ（mm）</td><td>台数</td></tr>
-      <tr class="pval"><td>${zb}</td><td>${nm}</td><td>${esc(p.size)}</td><td>${esc(p.length || '')}</td><td>${esc(p.dai)}</td></tr>
-      <tr class="lhead"><td>サイズ</td><td>切板名（長さ）</td><td>枚数（本数）</td><td>備考</td><td></td></tr>` +
+      <tr class="phead"><td>図面番号</td><td>製品名</td><td>サイズ</td><td>長さ（mm）</td><td>台数</td><td class="gap"></td><td class="wcol"></td><td class="wcol"></td></tr>
+      <tr class="pval"><td>${zb}</td><td>${nm}</td><td>${esc(p.size)}</td><td>${esc(p.length || '')}</td><td>${esc(p.dai)}</td><td class="gap"></td><td class="wcol"></td><td class="wcol"></td></tr>
+      <tr class="lhead"><td>サイズ</td><td>切板名（長さ）</td><td>枚数（本数）</td><td>備考</td><td></td><td class="gap"></td><td class="wcol wh">単重（kg）</td><td class="wcol wh">重量（kg）</td></tr>` +
       items.map(({ it, idx }) => {
         const g = KanamonoExtract.kindOf(it.size) === 'GPL' ? ' gpl' : '';
+        const c = chk[it.name], u = KanamonoExcel.unitWeight(it, marks);
         return `<tr class="item${g}"><td class="b">${esc(it.size)}</td><td class="b">${esc(it.name)}</td>
-          <td class="b"><input class="qty${it.n !== it.n0 ? ' changed' : ''}" type="number" min="0" value="${it.n}" data-t="${t.id}" data-p="${pIdx}" data-i="${idx}"></td>
-          <td class="note"><input class="note-in" value="${esc(it.note)}" data-t="${t.id}" data-p="${pIdx}" data-i="${idx}"></td><td></td></tr>`;
+          <td class="b"><input class="qty${it.n !== it.n0 ? ' changed' : ''}${c && c.diff < 0 ? ' short' : ''}" type="number" min="0" value="${it.n}" data-t="${t.id}" data-p="${pIdx}" data-i="${idx}"${c ? ` title="手配総数 ${c.ord}・リスト全体で ${c.used}"` : ''}></td>
+          <td class="note"><input class="note-in" value="${esc(it.note)}" data-t="${t.id}" data-p="${pIdx}" data-i="${idx}"></td><td></td><td class="gap"></td>
+          <td class="wcol w-unit">${u === null ? '' : u}</td><td class="wcol w-total">${weightText(u, it.n)}</td></tr>`;
       }).join('') +
-      `<tr class="sub"><td></td><td>小計</td><td>${subTotal(p)}</td><td></td><td></td></tr></table></div>`;
+      `<tr class="sub"><td></td><td>小計</td><td>${subTotal(p)}</td><td></td><td></td><td class="gap"></td><td class="wcol"></td><td class="wcol w-sub">${subWeight(p, marks)}</td></tr></table></div>`;
   });
   R.innerHTML = html + '<div id="sum-area">' + summaryHtml() + '</div>';
 }
 function subTotal(p) { return p.items.reduce((a, it) => a + (it.n > 0 ? it.n : 0), 0); }
+const r2 = x => Math.round(x * 100) / 100;
+const weightText = (u, n) => u === null || !(n > 0) ? '' : r2(u * n);
+// 製品の重量の小計(重量の分かるものだけ。1つも分からなければ空欄)
+function subWeight(p, marks) {
+  let s = 0, has = false;
+  p.items.forEach(it => { if (!(it.n > 0)) return; const u = KanamonoExcel.unitWeight(it, marks); if (u !== null) { s += u * it.n; has = true; } });
+  return has ? r2(s) : '';
+}
+// 注文書を読めたか(工事ごと)。読めないときは理由を出す
+function orderInfoHtml() {
+  const ks = [...new Set(state.tdfs.map(kojiOf))].filter(Boolean);
+  if (!ks.length) return '';
+  return '<div class="order-info">' + ks.map(k => {
+    const o = ordersData.get(k);
+    if (!o) return `注文書(${esc(k)}): 読み込み中…`;
+    if (o.error) return `<span class="order-ng">注文書(${esc(k)})を読めませんでした: ${esc(o.error)}。重量は形鋼などだけ入れ、枚数の照合はしません</span>`;
+    if (!o.name) return `<span class="order-ng">注文書(${esc(k)}.csv)がありません。重量は形鋼などだけ入れ、枚数の照合はしません</span>`;
+    return `注文書: ${esc(o.name)}(${esc(o.updated)} 更新)。注文書より使う枚数が多い切板は、枚数が<span class="short-sample">赤</span>`;
+  }).join('<br>') + '</div>';
+}
 // 総まとめ(Excelと同じ並び)
 function summaryHtml() {
-  const lay = KanamonoExcel.layout({ kojiNo: state.kojiNo, koji: '' }, buildExportProducts(), state.tdfs.length > 1);
+  // 注文書は工事が1つのときだけ(次の加工予定で工事が複数あるときは、Excel の工事ごとのシートで照合する)
+  const ks = [...new Set(state.tdfs.map(kojiOf))];
+  const lay = KanamonoExcel.layout({ kojiNo: state.kojiNo, koji: '' }, buildExportProducts(), state.tdfs.length > 1, ks.length === 1 ? ordersOf(ks[0]) : null);
+  const cell = v => esc(v === null || v === undefined ? '' : v);
   let sumHtml = '', inSum = false;
   lay.rows.forEach(r => {
     if (r.kind === 'stitle') { inSum = true; sumHtml += `<div class="sum-title">${esc(r.vals[0])}</div>`; return; }
     if (!inSum) return;
     if (r.kind === 'cat') { sumHtml += (sumHtml.includes('<table') ? '</table></div>' : '') + `<div class="prod-card"><div class="cat-title">${esc(r.vals[0])}</div><table class="kl">`; return; }
-    if (r.kind === 'shead') { sumHtml += '<tr class="shead"><td>サイズ</td><td>切板名（長さ）</td><td>枚数（本数）</td><td>備考</td></tr>'; return; }
-    if (r.kind === 'sitem' || r.kind === 'sitem_gpl') sumHtml += `<tr class="sitem${r.kind === 'sitem_gpl' ? ' gpl' : ''}"><td class="b">${esc(r.vals[0])}</td><td class="b">${esc(r.vals[1])}</td><td class="b">${esc(r.vals[2])}</td><td class="note">${esc(r.vals[3] || '')}</td></tr>`;
+    if (r.kind === 'shead') { sumHtml += '<tr class="shead"><td>サイズ</td><td>切板名（長さ）</td><td>枚数（本数）</td><td>備考</td><td>注文番号</td><td>単重（kg）</td><td>重量（kg）</td><td>手配総数</td><td>差し引き</td></tr>'; return; }
+    if (r.kind === 'sitem' || r.kind === 'sitem_gpl') sumHtml += `<tr class="sitem${r.kind === 'sitem_gpl' ? ' gpl' : ''}"><td class="b">${cell(r.vals[0])}</td><td class="b">${cell(r.vals[1])}</td><td class="b">${cell(r.vals[2])}</td><td class="note">${cell(r.vals[3])}</td><td class="nos">${cell(r.vals[4])}</td><td>${cell(r.vals[6])}</td><td>${cell(r.vals[7])}</td><td>${cell(r.vals[10])}</td><td${r.short ? ' class="short"' : ''}>${cell(r.vals[11])}</td></tr>`;
   });
   if (sumHtml.includes('<table')) sumHtml += '</table></div>';
   return sumHtml;
@@ -480,9 +529,23 @@ document.addEventListener('change', e => {
   // 直した欄・その製品の小計・総まとめだけ書き換える(2026-11-21。以前は全体を描き直していて、Tab で次の欄へ移ると選択が外れた)
   const sub = el.closest('table.kl') && el.closest('table.kl').querySelector('tr.sub td:nth-child(3)');
   if (sub) sub.textContent = subTotal(p);
+  if (el.classList.contains('qty')) refreshWeights(t);
   if ($('sum-area')) $('sum-area').innerHTML = summaryHtml();
 });
 // 確認はほかと同じアプリの確認画面で(2026-11-25。以前はブラウザ標準の確認窓)
+// 枚数を直したとき: その工事の製品の重量・小計と、不足の赤を描き直す(表全体は描き直さない。Tab の選択を残す)
+function refreshWeights(t0) {
+  const k = kojiOf(t0), marks = (ordersOf(k) || {}).marks;
+  const ps = allProducts().filter(x => kojiOf(x.t) === k);
+  const chk = KanamonoExcel.checkMarks(ps.map(x => x.p), marks);
+  document.querySelectorAll('input.qty').forEach(inp => {
+    const t = state.tdfs.find(x => String(x.id) === inp.dataset.t); if (!t || kojiOf(t) !== k) return;
+    const p = t.res.products[+inp.dataset.p], it = p.items[+inp.dataset.i], c = chk[it.name], tr = inp.closest('tr');
+    inp.classList.toggle('short', !!(c && c.diff < 0));
+    const wt = tr.querySelector('.w-total'); if (wt) wt.textContent = weightText(KanamonoExcel.unitWeight(it, marks), it.n);
+    const ws = inp.closest('table.kl').querySelector('.w-sub'); if (ws) ws.textContent = subWeight(p, marks);
+  });
+}
 $('btn-reset').addEventListener('click', async () => {
   if (!(await confirm2('リセット', '取り込んだTDF・修正・選んだサーバーをすべて消します。よろしいですか?', 'すべて消す', 'やめる'))) return;
   state.tdfs = []; state.server = null; state.root = null; state.planCtx = null; renderServer(); render();
@@ -576,7 +639,8 @@ $('btn-excel').addEventListener('click', async () => {
     const multi = state.tdfs.length > 1;
     const koji = state.tdfs[0].res.koji;
     const head = { kojiNo: state.kojiNo, koji };
-    const { wb, layout } = KanamonoExcel.build(window.ExcelJS, state.factory, head, buildExportProducts(), multi);
+    const orders = await ordersFor(state.kojiNo);
+    const { wb, layout } = KanamonoExcel.build(window.ExcelJS, state.factory, head, buildExportProducts(), multi, orders && orders.marks ? orders : null);
     const buf = await wb.xlsx.writeBuffer();
     const name = multi ? `${state.kojiNo}_${stamp(new Date())}_金物リスト.xlsx`
       : `${state.tdfs[0].res.zuban || state.tdfs[0].fileName.replace(/\.tdf$/i, '')}_金物リスト.xlsx`;
@@ -620,6 +684,7 @@ async function startPlan() {
   $('koji-label').textContent = `鳥取工場 / 次の加工予定(${PLAN.rows.length}件)`;
   apiPostQuiet({ action: 'start', koji: '次の加工予定', factory: '鳥取' });
   const kojis = [...new Set(PLAN.rows.map(r => r.kojiNo || r.abbr))];
+  kojis.forEach(k => { if (/^\d{2}-\d{2}$/.test(k)) ordersFor(k); });   // 注文書は先に読み始める
   renderServer();
   preloadPy();
   // サーバーは本社・鳥取のどちらか(鳥取サーバー固定ではない)。① のボタンで選び、毎回「①進行中工事」まで選ぶ(2026-11-20 ユーザー指示)
@@ -744,12 +809,16 @@ async function runPlan(plan) {
     // 予定の行ごとに1つの製品(同じ製品が2行あっても、Excel と同じく2つ出す。2026-11-25。以前は1つにまとまり、画面から作り直すと1行消えた)
     const res = Object.assign({}, f.res, { products: g.products.filter(gp => gp.f === f).map(gp =>
       Object.assign({}, gp.src, { ord: gp.ord, dai: gp.dai, items: gp.src.items.map(it => Object.assign({}, it, { n: it.n * gp.dai, n0: it.n * gp.dai })) })) });
-    state.tdfs.push({ id: nextId++, fileName: f.fileName, path: f.dir, res });
+    state.tdfs.push({ id: nextId++, fileName: f.fileName, path: f.dir, res, koji: g.head.kojiNo });
   }));
   const minOrd = t => Math.min(...t.res.products.map(p => p.ord));
   state.tdfs.sort((a, b) => minOrd(a) - minOrd(b));
   render();
   if (!groups.size) { await notice('金物リストを作れませんでした', rows.map(r => `${r.abbr} ${r.mark}: ${r.status}`).join('\n')); return; }
+  // 注文書(工事ごと。startPlan で読み始めている)が届いてから Excel を作る
+  await Promise.all(gs.map(g => ordersFor(g.head.kojiNo)));
+  gs.forEach(g => { g.orders = ordersOf(g.head.kojiNo); });
+  render();
   // 画面の「Excelダウンロード」で作り直すときのために、一覧の行と工事ごとの製品(並び順 ord・リンク)を覚えておく
   state.planCtx = { rows, groups: gs.map(g => ({ sheet: g.sheet, head: g.head, prods: g.products.map(x => ({ ord: x.ord, link: x.link })) })) };
   await downloadPlanExcel(state.planCtx, gs);
@@ -773,7 +842,7 @@ async function downloadPlanExcel(ctx, groups) {
 // 画面の今の数・備考で、工事ごとの製品を作り直す(外したTDFの製品は入れない)
 function planGroupsFromScreen(ctx) {
   const byOrd = new Map(allProducts().map(x => [x.p.ord, x.p]));
-  return ctx.groups.map(g => ({ sheet: g.sheet, head: g.head, products: g.prods.filter(x => byOrd.has(x.ord)).map(x => {
+  return ctx.groups.map(g => ({ sheet: g.sheet, head: g.head, orders: ordersOf(g.head.kojiNo), products: g.prods.filter(x => byOrd.has(x.ord)).map(x => {
     const p = byOrd.get(x.ord);
     return { zuban: p.zuban, name: p.name, size: p.size, length: p.length, dai: p.dai, link: x.link, items: p.items.map(it => ({ size: it.size, name: it.name, n: it.n, note: it.note })) };
   }) })).filter(g => g.products.length);
