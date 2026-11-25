@@ -292,7 +292,11 @@
           const pw = pipeWeights(segs);
           pw.forEach((p, k) => {
             // 単重: サイズ1つの柱も入れる(テーパーだけの柱は空欄。提出済みExcelと同じ)
-            if (ns > 1 || !/^□-\d+-\d+\*/.test(sizes[0] || '')) put(ws, `P${r + k}`, p.uw);
+            if (ns > 1 || !/^□-\d+-\d+\*/.test(sizes[0] || '')) {
+              put(ws, `P${r + k}`, p.uw);
+              // サイズ1つの表は J:P の結合を外した P がひな形の書式を持たない(Calibri 11 で列に入らず「#」になる)。提出済みExcelと同じ ＭＳ Ｐ明朝 9 に
+              if (ns === 1) { const pc = ws.getCell(`P${r + k}`); pc.font = { name: 'ＭＳ Ｐ明朝', size: 9 }; pc.alignment = { shrinkToFit: true, vertical: 'middle' }; }   // 縮小して全体を表示
+            }
             put(ws, `Q${r + k}`, p.w, p.w === null ? ORG : null);
             sumQ += p.w || 0;
           });
@@ -359,8 +363,10 @@
         else if (odd.length > 2) place = [[odd[0], 'R', r + 9, ' ①'], [odd[1], 'T', r + 3, ' ②'], [odd[2], 'T', r + 9, ' ③']]
           .concat(odd.length > 3 ? [[odd[3], 'R', r + 15, ' ④']] : []);
         for (const [o, c, q, lab] of place) {
-          put(ws, `${c}${q - 1}`, '※　' + (o.title || 'PL形状注意') + lab);
-          (o.marks || [o.mark]).forEach(mk => (markRow[mk] || []).forEach(q2 => put(ws, `C${q2}`, '※' + lab.trim())));
+          // ※と見出しは置く行のひな形の書式に関係なく、赤・ＭＳ Ｐ明朝 10・中央(提出済みExcelと同じ)
+          const red = addr => { const cl = ws.getCell(addr); cl.font = { name: 'ＭＳ Ｐ明朝', size: 10, color: { argb: 'FFFF0000' } }; cl.alignment = { horizontal: 'center', vertical: 'middle' }; };
+          put(ws, `${c}${q - 1}`, '※　' + (o.title || 'PL形状注意') + lab); red(`${c}${q - 1}`);
+          (o.marks || [o.mark]).forEach(mk => (markRow[mk] || []).forEach(q2 => { put(ws, `C${q2}`, '※' + lab.trim()); red(`C${q2}`); }));
           if (images && o.svg) {
             const im = await svgPng(o.svg);
             const id = out.addImage({ base64: im.data, extension: 'png' });
