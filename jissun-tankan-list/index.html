@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大組図から短管リスト作成</title>
+<link rel="stylesheet" href="style.css?v=20261125a">
+</head>
+<body>
+
+<div id="drop-overlay">大組図のTDFファイルをここにドロップ</div>
+
+<!-- 起動画面: 工場と工事を選ぶ -->
+<div id="start-modal">
+  <div id="start-box">
+    <div class="logo-row"><img class="side-icon" src="assets/jissun-icon.png" width="48" height="48" alt=""><div class="logo-frame"><div class="logo-inner"><img class="header-logo" src="assets/logo.svg" alt="正光ロゴ"><span class="company-name">株式会社　正光&nbsp;</span></div></div><img class="side-icon side-icon-flip" src="assets/jissun-icon.png" width="48" height="48" alt=""></div>
+    <h2>工場と工事名を選択してください</h2>
+    <div id="factory-field">
+      <label>作成する工場</label>
+      <div id="factory-btns">
+        <button type="button" class="factory-btn" data-factory="本社">本社</button>
+        <button type="button" class="factory-btn yumesaki" data-factory="夢前">夢前</button>
+        <button type="button" class="factory-btn tottori" data-factory="鳥取">鳥取</button>
+      </div>
+    </div>
+    <div id="koji-field">
+      <label for="koji-select">工事番号・工事名 <span class="koji-warn-red">工事はリストから選択</span></label>
+      <select id="koji-select">
+        <option value="" disabled selected>読込中…</option>
+      </select>
+      <div id="koji-msg"></div>
+    </div>
+    <button type="button" id="start-btn" class="start-btn" disabled>開始</button>
+    <button type="button" id="start-cancel-btn" class="header-btn">キャンセル</button>
+  </div>
+</div>
+
+<header>
+  <div id="header-left">
+    <span id="koji-label"></span>
+  </div>
+  <div id="header-brand">
+    <img class="side-icon" src="assets/jissun-icon.png" width="48" height="48" alt="">
+    <div class="logo-frame"><div class="logo-inner"><img class="header-logo" src="assets/logo.svg" alt="正光ロゴ"><span class="company-name">株式会社　正光&nbsp;</span></div></div>
+    <h1>大組図から短管リスト作成</h1>
+    <img class="side-icon side-icon-flip" src="assets/jissun-icon.png" width="48" height="48" alt="">
+  </div>
+  <div id="header-right">
+    <button type="button" class="header-btn" id="btn-change">工場・工事の変更</button>
+    <button type="button" class="header-action-btn danger" id="btn-reset" disabled>リセット</button>
+    <button type="button" class="header-action-btn excel" id="btn-excel" disabled>📥 Excelダウンロード</button>
+  </div>
+</header>
+
+<input type="file" id="file-input" accept=".tdf" multiple style="display:none">
+
+<main>
+  <div id="content">
+    <div id="import-bar">
+      <span id="server-btns"></span>
+      <button type="button" class="big-btn files" id="btn-files">② 大組図のTDFを選ぶ<span class="btn-sub">（1つの節の立面図と A付きの断面図をまとめて）</span></button>
+    </div>
+    <div id="repick-row"><button type="button" class="link-btn" id="repick-root" style="display:none">選んだサーバーの「①進行中工事」を選び直す</button></div>
+    <div id="summary"></div>
+    <div id="result"></div>
+  </div>
+</main>
+
+<div id="notice-modal" class="overlay">
+  <div class="dialog">
+    <div class="dialog-title" id="notice-title"></div>
+    <div id="notice-body"></div>
+    <div class="dialog-actions"><button type="button" class="header-btn" id="notice-cancel" style="display:none"></button><button type="button" class="header-action-btn orange" id="notice-ok">OK</button></div>
+  </div>
+</div>
+
+<div id="status-overlay" class="overlay"><div class="status-box"><div class="spinner"></div><div class="status-main"><div id="status-text">処理中…</div><div id="status-progress" class="progress" hidden><div class="progress-track"><div id="status-bar" class="progress-bar"></div></div><span id="status-pct" class="progress-pct">0%</span></div></div></div></div>
+<div id="toast"></div>
+
+<script src="excel.js?v=20261125a"></script>
+<script src="app.js?v=20261125a"></script>
+<script src="to-launcher.js?v=20261125a" data-target="header h1" data-mode="beforePrev"></script>
+</body>
+</html>
