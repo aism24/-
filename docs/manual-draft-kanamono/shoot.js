@@ -1,8 +1,9 @@
-// 金物リストの説明書用の画面撮影(Playwright)。使い方: node shoot.js <tdf-kanamono-list のフォルダ> <図面(.tdf)のフォルダ>
+// 金物リストの説明書用の画面撮影(Playwright)。使い方: node shoot.js <tdf-kanamono-list のフォルダ> <図面(.tdf)のフォルダ> <注文書の模擬データ(.json)>
+// 注文書の模擬データは aism24/test-tdf の kanamono/orders-26-16.json(公開リポジトリに入れない)。工事名は見本の名前にして返す。
 // GAS は撮影用の返事(工事リストは見本の工事)にし、利用記録は送らない。フォルダ・ファイルを選ぶ画面はブラウザの外なので、選ぶ所だけ撮影用の図面を返す。
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
-const [APP, FX] = process.argv.slice(2).map(p => path.resolve(p));
+const [APP, FX, ORDF] = process.argv.slice(2).map(p => path.resolve(p));
 const OUT = path.join(__dirname, 'shots'); fs.mkdirSync(OUT, { recursive: true });
 const FILES = ['EA1-3B-04.tdf', 'EA1-RG-01.tdf'];
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
@@ -20,7 +21,8 @@ const rects = {};
     if (!fs.existsSync(p)) return r.fulfill({ status: 404, body: '' });
     r.fulfill({ contentType: TYPES[path.extname(p)] || 'application/octet-stream', body: fs.readFileSync(p) });
   });
-  await pg.route(/script\.google\.com/, r => r.request().method() === 'POST' ? r.fulfill({ contentType: 'application/json', body: '{"status":"success"}' })
+  const ORD = JSON.parse(fs.readFileSync(ORDF, 'utf8')); ORD.name = '○○ビル新築工事'; ORD.koji = '26-01';
+  await pg.route(/script\.google\.com/, r => /action=orders/.test(r.request().url()) ? r.fulfill({ contentType: 'application/json', body: JSON.stringify(Object.assign({ status: 'success' }, ORD)) }) : r.request().method() === 'POST' ? r.fulfill({ contentType: 'application/json', body: '{"status":"success"}' })
     : r.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'success', koji: KOJI, servers: [{ name: '本社', path: '\\\\server\\①進行中工事' }, { name: '鳥取', path: '\\\\server2\\①進行中工事' }] }) }));
   await pg.addInitScript(files => {
     const REL = ['26-01 ○○ビル新築工事', '詳細図', '小梁'];
@@ -44,7 +46,13 @@ const rects = {};
     await pg.waitForTimeout(300);
     await pg.screenshot({ path: path.join(OUT, name + '.png'), fullPage: !!opt.full });
     const r = {};
-    for (const [k, sel] of Object.entries(sels)) { const bb = await pg.locator(sel).first().boundingBox().catch(() => null); if (bb) r[k] = bb; }
+    for (const [k, sel] of Object.entries(sels)) {
+      // 'U:<範囲>|<中の要素>' = 最初の範囲の中にある要素を全部囲む枠
+      const bb = sel.startsWith('U:') ? await pg.evaluate(sp => { const [sc, inner] = sp.split('|'); const els = [...document.querySelector(sc).querySelectorAll(inner)].map(e => e.getBoundingClientRect()).filter(b => b.width && b.bottom > 0 && b.top < innerHeight);
+          if (!els.length) return null; const x = Math.min(...els.map(b => b.left)), y = Math.min(...els.map(b => b.top)); return { x, y, width: Math.max(...els.map(b => b.right)) - x, height: Math.max(...els.map(b => b.bottom)) - y }; }, sel.slice(2))
+        : await pg.locator(sel).first().boundingBox().catch(() => null);
+      if (bb) r[k] = bb;
+    }
     rects[name] = r; console.log('撮影', name, Object.keys(r).join(','));
   }
 
@@ -77,22 +85,22 @@ const rects = {};
     await pg.click('#notice-ok'); await pg.waitForTimeout(500);
   }
   await pg.evaluate(() => window.scrollTo(0, 0));
-  await shot('08_list', { tdflist: '#tdf-list', rm: '.rm-btn', card: '.prod-card', pval: '.prod-card tr.pval', zuban: '.prod-card tr.pval td:first-child', items: '.prod-card tr.item', sub: '.prod-card tr.sub', qty: '.prod-card input.qty', note: '.prod-card input.note-in', excel: '#btn-excel', reset: '#btn-reset', change: '#btn-change', manual: '#manual-btn', files: '#btn-files' });
+  await shot('08_list', { tdflist: '#tdf-list', rm: '.rm-btn', card: '.prod-card', pval: '.prod-card tr.pval', zuban: '.prod-card tr.pval td:first-child', items: '.prod-card tr.item', sub: '.prod-card tr.sub', qty: '.prod-card input.qty', note: '.prod-card input.note-in', excel: '#btn-excel', reset: '#btn-reset', change: '#btn-change', manual: '#manual-btn', files: '#btn-files', order: '.order-info', short: '.prod-card input.qty.short', wcols: 'U:.prod-card:has(tr.pval)|.wh, .w-unit, .w-total, .w-sub', wsub: '.prod-card .w-sub' });
   // 枚数・備考を直す
   const q = pg.locator('.prod-card input.qty').first(); await q.fill('3'); await q.press('Tab');
   const nt = pg.locator('.prod-card input.note-in').first(); await nt.fill('現場確認'); await nt.press('Tab');
   await pg.mouse.click(5, 300);
-  await shot('09_edit', { qty: '.prod-card input.qty', note: '.prod-card input.note-in', sub: '.prod-card tr.sub' });
+  await shot('09_edit', { qty: '.prod-card input.qty', note: '.prod-card input.note-in', sub: '.prod-card tr.sub', wsub: '.prod-card .w-sub' });
   // 総まとめ
   await pg.locator('#sum-area').scrollIntoViewIfNeeded(); await pg.evaluate(() => { const s = document.querySelector('.sum-title'); window.scrollTo(0, s.getBoundingClientRect().top + window.scrollY - 90); });
-  await shot('10_summary', { title: '.sum-title', cat: '.cat-title' });
+  await shot('10_summary', { title: '.sum-title', cat: '.cat-title', newcols: 'U:#sum-area .prod-card|tr.shead td:nth-child(n+5)', short: '#sum-area td.short' });
   await pg.evaluate(() => window.scrollTo(0, 0));
   // Excel
   await pg.click('#btn-excel'); await pg.waitForTimeout(4000);
   console.log('ダウンロード名', await pg.evaluate(() => window.__dl));
-  // リセットは確認(confirm)を出すだけ
-  pg.once('dialog', d => { console.log('確認', d.message()); d.dismiss(); });
-  await pg.click('#btn-reset'); await pg.waitForTimeout(500);
+  await pg.waitForSelector('#link-notice.open'); console.log('Excel後', await pg.textContent('#link-notice .dialog')); await shot('12_link', { box: '#link-notice .dialog', ok: '#link-notice-close' }); await pg.click('#link-notice-close'); await pg.waitForTimeout(500);
+  // リセットは確認(アプリの画面)を撮って「やめる」
+  await pg.click('#btn-reset'); await pg.waitForTimeout(500); await shot('13_reset', { box: '#notice-modal .dialog', ok: '#notice-ok', cancel: '#notice-cancel' }); await pg.click('#notice-cancel'); await pg.waitForTimeout(400);
   // 工場・工事の変更
   await pg.click('#btn-change'); await pg.waitForTimeout(500);
   await shot('11_change', { box: '#start-box', cancel: '#start-cancel-btn', start: '#start-btn' });
