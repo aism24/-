@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>製品別金物リスト(tdf)</title>
-<link rel="stylesheet" href="style.css?v=20261124m">
+<link rel="stylesheet" href="style.css?v=20261125a">
 </head>
 <body>
 
@@ -78,6 +78,19 @@
   </div>
 </div>
 
+<!-- Excelダウンロード後の案内(リンクの注意。2026-11-25 ユーザー指示) -->
+<div id="link-notice" class="overlay" role="dialog" aria-labelledby="link-notice-title">
+  <div class="dialog link-notice">
+    <div class="dialog-title" id="link-notice-title">Excelをダウンロードしました</div>
+    <p class="ln-main">図番と製品名に実寸法師のハイパーリンク付与済みです。<br>クリックすると実寸法師が開けます。</p>
+    <ul class="ln-warn">
+      <li><span class="ln-tag">注意１</span>原本を開くので注意</li>
+      <li><span class="ln-tag">注意２</span>図面差替えがあるとリンク切れになる</li>
+    </ul>
+    <div class="dialog-actions"><button type="button" class="header-action-btn orange" id="link-notice-close">閉じる</button></div>
+  </div>
+</div>
+
 <div id="status-overlay" class="overlay"><div class="status-box"><div class="spinner"></div><div class="status-main"><div id="status-text">処理中…</div><div id="status-progress" class="progress" hidden><div class="progress-track"><div id="status-bar" class="progress-bar"></div></div><span id="status-pct" class="progress-pct">0%</span></div></div></div></div>
 <div id="toast"></div>
 
@@ -96,7 +109,7 @@
 
 <script src="extract.js?v=20261125b"></script>
 <script src="excel.js?v=20261121a"></script>
-<script src="app.js?v=20261124m"></script>
+<script src="app.js?v=20261125a"></script>
 <script src="to-launcher.js?v=20261120i" data-target="header h1" data-mode="beforePrev"></script>
 </body>
 </html>

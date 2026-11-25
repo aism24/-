@@ -122,6 +122,11 @@ table.kl input.note-in { width: 160px; font-size: 13px; padding: 2px 4px; }
 .server-btn { padding: 12px 24px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; background: #1a73e8; color: #fff; cursor: pointer; }
 .dialog.wide { max-width: 760px; }
 .dialog.lines { width: auto; max-width: 95vw; }
+.dialog.link-notice { max-width: 600px; }
+.link-notice .ln-main { font-size: 16px; line-height: 1.8; margin: 4px 0 14px; }
+.link-notice .ln-warn { list-style: none; margin: 0; padding: 12px 14px; background: #fff4e5; border: 1px solid #f0b46a; border-radius: 8px; }
+.link-notice .ln-warn li { font-size: 16px; line-height: 1.8; color: #8a3b00; font-weight: bold; }
+.link-notice .ln-tag { display: inline-block; min-width: 4.2em; margin-right: 8px; padding: 0 6px; border-radius: 4px; background: #e8710a; color: #fff; font-size: 13px; text-align: center; }
 .dialog.lines #notice-body { white-space: pre; overflow-x: auto; }
 .pick-tools { display: flex; gap: 8px; margin: 6px 0; }
 #pick-list { max-height: 55vh; overflow: auto; border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
