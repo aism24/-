@@ -1705,7 +1705,7 @@
       //  - ✕が重なったマークは中止で拾わない(代わりのマークを拾う。N1C-4 の <AC1> → <AC1S>)
       //  - 避雷針ピース(支給品): 「避雷針ピース(支給品)」のそば(300以内)の PL の表記1つ = 1枚(断面の副題の「避雷針ピース」は数えない)
       function angleItems() {
-        var RE_SZ = /^([0-9]+)?((?:G?PL|FB|BT)-[0-9.]+(?:x[0-9.]+)*)$/;
+        var RE_SZ = /^(?:ファスナー|捨て)?([0-9]+)?((?:G?PL|FB|BT)-[0-9.]+(?:x[0-9.]+)*)$/;   // 頭の「ファスナー」「捨て」は読み飛ばす(N1C-6 の <ACGF1K> ファスナーPL-16・<ACGS50> 捨てPL-12x200x140)
         var szT = T.filter(function (t) { return RE_SZ.test(t.text); });
         var hl = L.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[0] - l[2]) > 100; });
         var secT = T.filter(function (t) { return t.text === 'SEC'; });
@@ -1725,7 +1725,9 @@
         function cancelled(m) {
           return diag.some(function (a, i) {
             var ax0 = Math.min(a[0], a[2]), ay0 = Math.min(a[1], a[3]), ax1 = Math.max(a[0], a[2]), ay1 = Math.max(a[1], a[3]);
-            if (m.x < ax0 - 60 || m.x > ax0 + 120 || m.y < ay0 - 60 || m.y > ay1 + 60) return false;
+            // 引出線の上の✕(2026-11-27、N1C-6: 「N B PL-28」の線に✕、元のマーク <ACR4> は✕の右上(または左上)の角。代わりのマーク <ACGS1K> がそばにある)
+            var onCorner = Math.abs(m.y - ay1) < 30 && (Math.abs(m.x - ax0) < 60 || Math.abs(m.x - ax1) < 10);   // 右上は10以内(N1C-4 の代わりのマーク <AC1S> は✕の右上の角の30右)
+            if (!onCorner && (m.x < ax0 - 60 || m.x > ax0 + 120 || m.y < ay0 - 60 || m.y > ay1 + 60)) return false;
             return diag.some(function (c, j) {
               if (j === i || Math.sign((a[3] - a[1]) * (a[2] - a[0])) === Math.sign((c[3] - c[1]) * (c[2] - c[0]))) return false;
               return Math.abs(Math.min(c[0], c[2]) - ax0) < 2 && Math.abs(Math.max(c[0], c[2]) - ax1) < 2 && Math.abs(Math.min(c[1], c[3]) - ay0) < 2 && Math.abs(Math.max(c[1], c[3]) - ay1) < 2;
@@ -1802,6 +1804,12 @@
         // 備考が ALC下地 のマークと英字が同じ(ACAR)マークで、備考の無いものも ALC下地
         var alcPre = out.filter(function (it) { return it.note === 'ALC下地'; }).map(function (it) { return (/^[A-Z]+(?=[0-9])/.exec(String(it.name)) || [''])[0]; }).filter(Boolean);
         out.forEach(function (it) { var p = (/^[A-Z]+(?=[0-9])/.exec(String(it.name)) || [''])[0]; if (!it.note && p && alcPre.indexOf(p) >= 0) it.note = 'ALC下地'; });
+        // マークの無い「捨てPL-12」(2026-11-27 ユーザー指示「サイズは PL-12 だけでOK」、N1C-6 の a・b断面に1つずつ): 表記1つ = 1枚、備考 捨てPL。
+        // マークのサイズに使った表記(<ACGS50> の 捨てPL-12x200x140)は除く
+        var suteT = T.filter(function (u) { return /^捨てPL-[0-9.]+(?:x[0-9.]+)*$/.test(u.text) && usedSizes.indexOf(u) < 0; });
+        Array.from(new Set(suteT.map(function (u) { return u.text.slice(2); }))).forEach(function (sz) {
+          out.push({ size: sz, name: '', n: suteT.filter(function (u) { return u.text.slice(2) === sz; }).length, note: '捨てPL' });
+        });
         // 建方用のピース(E断面の FB-12x90x400)
         T.filter(function (u) { var m = RE_FB.exec(u.text); return m && parseFloat(m[1]) >= 9; }).forEach(function (u) {
           var m = RE_FB.exec(u.text), w = parseFloat(m[2]), len = parseFloat(m[3]);
@@ -1975,6 +1983,29 @@
           if (flags.every(function (f) {
             return titles.some(function (ps) { var dy = f.y - ps.y, dx = Math.abs(f.x - (ps.x + ps.sx) / 2); return ps.letter !== L1 && dy > 0 && dy <= 2800 && dx <= 2500 && secInfo[ps.letter] && secInfo[ps.letter].shapes.indexOf(shape) >= 0; });   // 旗 a は B断面の見出しから左へ約1950(sectionOf の範囲の外)
           })) return;
+          var nLab0 = si.shapes.filter(function (x) { return x === shape; }).length;
+          // 断面図の表記の引出線の先に、山形鋼を横から見た絵(同じ長さの平行な2本の線で、間が板厚)があればその長さ
+          // (2026-11-27、N1C-6 c断面 デッキ受け L-75x75x6: 397。旗 c は C断面の中にあり、旗のそばの線では長さが分からない)
+          var thk = parseFloat((/^L-[0-9.]+x[0-9.]+x([0-9.]+)$/.exec(shape) || [])[1]);
+          var sideLen = 0;
+          if (thk) T.filter(function (t) { return t.text === shape && ((sectionOf(t, titles) || {}).letter === L1); }).forEach(function (t) {
+            L.forEach(function (l) {
+              if (sideLen || Math.abs(l[1] - l[3]) < 100) return;
+              var a = [l[0], l[1]], b = [l[2], l[3]];
+              if (Math.hypot(b[0] - t.x, b[1] - t.y) < Math.hypot(a[0] - t.x, a[1] - t.y)) { var c = a; a = b; b = c; }
+              if (Math.hypot(a[0] - t.x, a[1] - t.y) > 30) return;
+              var hz = L.filter(function (m) { return Math.abs(m[1] - m[3]) < 0.5 && Math.abs(m[0] - m[2]) >= 100 && Math.abs(m[1] - b[1]) <= 40 && b[0] >= Math.min(m[0], m[2]) - 40 && b[0] <= Math.max(m[0], m[2]) + 40; });
+              hz.some(function (m) {
+                var w = Math.abs(m[0] - m[2]);
+                return L.some(function (k) {
+                  if (Math.abs(k[1] - k[3]) >= 0.5 || Math.abs(Math.abs(k[0] - k[2]) - w) > 0.5 || Math.abs(Math.min(k[0], k[2]) - Math.min(m[0], m[2])) > 0.5) return false;
+                  if (Math.abs(Math.abs(k[1] - m[1]) - thk) > 0.6) return false;
+                  sideLen = Math.round(w * 10) / 10; return true;
+                });
+              });
+            });
+          });
+          if (sideLen) { out.push({ size: shape, name: sideLen, n: flags.length * nLab0, note: si.title.sub || '' }); return; }
           var cnt = {};
           L.forEach(function (l) {
             var len = Math.hypot(l[2] - l[0], l[3] - l[1]); if (len < 300 || len > 3000) return;
