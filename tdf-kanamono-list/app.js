@@ -150,7 +150,7 @@ $('start-cancel-btn').addEventListener('click', () => { $('start-modal').classLi
 
 // ---------- アプリ説明書(manual/p-N.jpg。作り方は docs/manual-draft-kanamono/README.md) ----------
 // ページ数を変えたら MANUAL_PAGES、画像を差し替えたら MANUAL_V も直す
-const MANUAL_PAGES = 13, MANUAL_V = '20261126a';
+const MANUAL_PAGES = 13, MANUAL_V = '20261126b';
 let manualPage = 1;
 const manualSrc = n => `manual/p-${n}.jpg?v=${MANUAL_V}`;
 function showManualPage(n) {
@@ -533,7 +533,7 @@ function summaryHtml() {
     if (r.kind === 'stitle') { inSum = true; sumHtml += `<div class="sum-title">${esc(r.vals[0])}</div>`; return; }
     if (!inSum) return;
     if (r.kind === 'cat') { sumHtml += (sumHtml.includes('<table') ? '</table></div>' : '') + `<div class="prod-card"><div class="cat-title">${esc(r.vals[0])}</div><table class="kl">`; return; }
-    if (r.kind === 'shead') { sumHtml += '<tr class="shead"><td>サイズ</td><td>切板名（長さ）</td><td>枚数（本数）</td><td>備考</td><td>注文番号</td><td>単重（kg）</td><td>重量（kg）</td><td>手配総数</td><td>差し引き</td></tr>'; return; }
+    if (r.kind === 'shead') { sumHtml += '<tr class="shead"><td>サイズ</td><td>切板名（長さ）</td><td>枚数（本数）</td><td>備考</td><td>注文番号</td><td>単重（kg）</td><td>重量（kg）</td><td>手配総数</td><td>残数</td></tr>'; return; }
     if (r.kind === 'sitem' || r.kind === 'sitem_gpl') sumHtml += `<tr class="sitem${r.kind === 'sitem_gpl' ? ' gpl' : ''}"><td class="b">${cell(r.vals[0])}</td><td class="b">${cell(r.vals[1])}</td><td class="b">${cell(r.vals[2])}</td><td class="note">${cell(r.vals[3])}</td><td class="nos">${cell(r.vals[4])}</td><td>${cell(r.vals[6])}</td><td>${cell(r.vals[7])}</td><td>${cell(r.vals[10])}</td><td${r.short ? ' class="short"' : ''}>${cell(r.vals[11])}</td></tr>`;
   });
   if (sumHtml.includes('<table')) sumHtml += '</table></div>';
