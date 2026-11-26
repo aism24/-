@@ -171,33 +171,48 @@ function idb() {
 }
 async function idbGet(k) { const d = await idb(); return new Promise(res => { const q = d.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(undefined); }); }
 async function idbSet(k, v) { const d = await idb(); return new Promise(res => { const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(); t.onerror = () => res(); }); }
+// サーバーのフォルダの確認が返らないことがある(金物リストで 2026-11-24・11-26 本社で発生。覚えたフォルダの queryPermission が返らず、ボタンが無反応になった)。
+// 待ち時間の上限を付け、上限を超えたら TIMEOUT を返す(元の処理は止められないので、待つのをやめるだけ。tdf-kanamono-list と同じ)
+const TIMEOUT = Symbol('timeout'), ROOT_WAIT_MS = 10000;
+const withTimeout = (p, ms) => Promise.race([p, new Promise(res => setTimeout(() => res(TIMEOUT), ms))]);
 // 目印ファイル: ①進行中工事 の直下にある「_○○サーバー…」のファイルの ○○
 async function readMarks(dir) {
   const out = [];
   try { for await (const e of dir.values()) { if (e.kind !== 'file') continue; const m = e.name.normalize('NFKC').match(/^_(.+?)サーバー/); if (m && !out.includes(m[1])) out.push(m[1]); } } catch (e) { /* 読めなければ目印なし */ }
   return out;
 }
+// 'ok' / 'wrong'(別のサーバーの目印) / 'unknown'(目印なし) / 'timeout'(読めずに上限を超えた)
 async function checkRoot(h, sv) {
-  const marks = await readMarks(h);
+  const marks = await withTimeout(readMarks(h), ROOT_WAIT_MS);
+  if (marks === TIMEOUT) return 'timeout';
   if (marks.includes(sv.name)) return 'ok';
   return marks.length ? 'wrong' : 'unknown';
 }
 async function getRoot(sv, ask, forcePick) {
-  let root = forcePick ? null : await idbGet('root:' + sv.name);
+  let root = forcePick ? null : await idbGet('root:' + sv.name), stuck = false;
   try {
     if (root) {
-      let perm = await root.queryPermission({ mode: 'read' });
-      if (perm !== 'granted' && ask) perm = await root.requestPermission({ mode: 'read' });
-      if (perm !== 'granted') root = ask ? null : undefined;
+      let perm = await withTimeout(root.queryPermission({ mode: 'read' }), ROOT_WAIT_MS);
+      if (perm === TIMEOUT) stuck = true;
+      else {
+        if (perm !== 'granted' && ask) perm = await root.requestPermission({ mode: 'read' });   // 許可の画面はユーザーが答えるまで待つ(上限なし)
+        if (perm !== 'granted') root = ask ? null : undefined;
+      }
     }
   } catch (e) { root = null; }
-  if (root && (await checkRoot(root, sv)) === 'wrong') {
+  const chk = root && !stuck ? await checkRoot(root, sv) : '';
+  if (chk === 'wrong') {
     await notice('覚えているフォルダが違います', `${sv.name}サーバーとして覚えていたフォルダは、目印ファイルを見ると別のサーバーの「${root.name}」でした。${sv.name}サーバーの「①進行中工事」を選び直してください。`);
     await idbSet('root:' + sv.name, null); root = null;
     if (!ask) return null;
   }
-  if (root || !ask) return root || null;
-  await notice(`${sv.name}サーバーの「①進行中工事」を覚えます`, `次の画面で、${sv.name}サーバーの「①進行中工事」フォルダを選んでください(最初の1回だけ)。\n画面は前に開いた場所から開くので、別のサーバーのフォルダを選ばないよう、場所を確かめてください。`);
+  // 覚えたフォルダの確認が返らない → 覚えたフォルダを消して選び直してもらう(以前はボタンが無反応のままだった)
+  if (stuck || chk === 'timeout') {
+    await idbSet('root:' + sv.name, null); root = null;
+    await notice(`${sv.name}サーバーの「①進行中工事」を確かめられませんでした`, `覚えていたフォルダの確認に${ROOT_WAIT_MS / 1000}秒以上かかったため、覚えたフォルダを消しました。\n次の画面で、${sv.name}サーバーの「①進行中工事」フォルダを選び直してください。\nサーバーにつながっていないときは、エクスプローラーでサーバーを開けるか確かめてください。`);
+    if (!ask) return null;
+  } else if (root || !ask) return root || null;
+  if (!stuck && chk !== 'timeout') await notice(`${sv.name}サーバーの「①進行中工事」を覚えます`, `次の画面で、${sv.name}サーバーの「①進行中工事」フォルダを選んでください(最初の1回だけ)。\n画面は前に開いた場所から開くので、別のサーバーのフォルダを選ばないよう、場所を確かめてください。`);
   // id は英数字だけ(日本語を入れると画面が開かない)
   const pid = 'root' + Math.max(0, state.servers.findIndex(x => x.name === sv.name));
   for (;;) {
@@ -208,7 +223,7 @@ async function getRoot(sv, ask, forcePick) {
     for (const o of state.servers) {
       if (o.name === sv.name) continue;
       const oh = await idbGet('root:' + o.name);
-      try { if (oh && await h.isSameEntry(oh)) same = o.name; } catch (e) { /* 比べられなければ別とみなす */ }
+      try { if (oh && (await withTimeout(h.isSameEntry(oh), ROOT_WAIT_MS)) === true) same = o.name; } catch (e) { /* 比べられなければ別とみなす(返らないときも) */ }
     }
     if (same) {
       if (await confirm2('同じフォルダです', `このフォルダは${same}サーバーの「①進行中工事」として覚えています。${sv.name}サーバーの「①進行中工事」を選んでください。`, '選び直す', 'やめる')) continue;
@@ -219,7 +234,7 @@ async function getRoot(sv, ask, forcePick) {
       if (await confirm2('サーバーが違います', `選んだ「${h.name}」は、目印ファイルを見ると${sv.name}サーバーのものではありません。${sv.name}サーバーの「①進行中工事」を選び直してください。`, '選び直す', 'やめる')) continue;
       return null;
     }
-    if (v === 'unknown' && !(await confirm2('サーバーを確認できません', `選んだ「${h.name}」に目印ファイル(「_${sv.name}サーバー…」で始まるファイル)がありません。${sv.name}サーバーの「①進行中工事」で合っていますか?`, 'このフォルダを使う', '選び直す'))) continue;
+    if ((v === 'unknown' || v === 'timeout') && !(await confirm2('サーバーを確認できません', `選んだ「${h.name}」${v === 'timeout' ? 'の中を読むのに時間がかかり、目印ファイルを確かめられませんでした' : 'に目印ファイル(「_' + sv.name + 'サーバー…」で始まるファイル)がありません'}。${sv.name}サーバーの「①進行中工事」で合っていますか?`, 'このフォルダを使う', '選び直す'))) continue;
     await idbSet('root:' + sv.name, h);
     toast(`${sv.name}サーバーの「${h.name}」を覚えました`);
     return h;
@@ -240,7 +255,13 @@ function renderServer() {
     b.type = 'button'; b.className = 'big-btn server' + (state.server && state.server.name === sv.name ? ' selected' : '');
     b.textContent = `① ${sv.name}サーバー`;
     b.disabled = !!state.server && state.server.name !== sv.name;
-    b.addEventListener('click', () => { if (!state.server) selectServer(sv); });
+    b.addEventListener('click', async () => {
+      if (state.server || box.classList.contains('busy')) return;
+      // 押したことが分かるように「確認中…」を出し、終わるまで他のサーバーのボタンも押せなくする(tdf-kanamono-list と同じ)
+      box.classList.add('busy'); b.textContent = `${sv.name}サーバーを確認中…`;
+      box.querySelectorAll('button').forEach(x => { if (x !== b) x.disabled = true; });
+      try { await selectServer(sv); } finally { box.classList.remove('busy'); renderServer(); }
+    });
     box.appendChild(b);
   });
   $('repick-root').style.display = state.server ? '' : 'none';
@@ -261,7 +282,9 @@ async function pathOf(handle) {
 async function ensureRootPermission() {
   if (!state.root) return false;
   try {
-    if ((await state.root.queryPermission({ mode: 'read' })) === 'granted') return true;
+    const perm = await withTimeout(state.root.queryPermission({ mode: 'read' }), ROOT_WAIT_MS);
+    if (perm === TIMEOUT) return false;
+    if (perm === 'granted') return true;
     return (await state.root.requestPermission({ mode: 'read' })) === 'granted';
   } catch (e) { return false; }
 }
@@ -269,7 +292,8 @@ async function lastPickDir() {
   try {
     const last = await idbGet('lastPick');
     if (!last || !last.handle || last.server !== state.server.name) return state.root;
-    if (!(await state.root.resolve(last.handle))) return state.root;
+    const rel = await withTimeout(state.root.resolve(last.handle), 3000);   // 返らなければ ①進行中工事 から開く
+    if (!rel || rel === TIMEOUT) return state.root;
     return last.handle;
   } catch (e) { return state.root; }
 }

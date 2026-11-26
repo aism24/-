@@ -75,6 +75,7 @@ main { flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 16px 
 #server-btns { display: contents; }
 #import-bar .big-btn { flex: 1 1 0; min-width: 0; padding: 12px 6px; font-size: 14px; }
 .big-btn.server { border-style: solid; background: #eaf2fe; }
+#server-btns.busy .big-btn.server { cursor: progress; }
 .big-btn.server.selected { background: #1a73e8; color: #fff; border-color: #1a73e8; }
 .big-btn.server:disabled { background: #bbb; color: #666; border-color: #999; cursor: not-allowed; }
 .big-btn.files { border-style: solid; border-color: #6cc06c; background: #d8f5d8; }
