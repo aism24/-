@@ -563,13 +563,14 @@ def verify(blocks, checks, header, order_rows, setsu):
         if o and c and not unused:
             if len(o["t"]) > 1 or (t_d and t_d not in o["t"]): ng.append(f"板厚 図面{t_d}/手配{sorted(o['t'])}")
             if dim and not any(abs(dim[0] - a) <= 1 and abs(dim[1] - b) <= 1 for a, b in o["ab"]): ng.append(f"寸法 図面{dim}/手配{sorted(o['ab'])}")
-            if use[m] != o["n"]: ng.append(f"枚数 図面{use[m]}/手配{o['n']}")
+            # 手配の方が多い=ほかの図面の分(問題なし)。足りないときだけ問題(ユーザー指示 2026-11-26: 26-16 は WA1・WB2工区をまとめて手配)
+            if use[m] > o["n"]: ng.append(f"枚数が足りない 図面{use[m]}/手配{o['n']}")
             if len(o["gross"]) > 1: ng.append(f"手配書のグロスが注文ごとに違う{sorted(o['gross'])}")
             elif calc is not None and abs(calc - next(iter(o["gross"]))) > TOL: ng.append(f"重量 計算{calc}/手配{next(iter(o['gross']))}")
         res[m] = dict(t_dwg=t_d, dim=dim, calc=calc, use=use.get(m, 0),
                       t_csv=sorted(o["t"]) if o else None, ab=sorted(o["ab"]) if o else None, n=o["n"] if o else 0,
                       gross=sorted(o["gross"]) if o else None, net=sorted(o["net"]) if o else None, files=o["files"] if o else [],
-                      ok=not ng, ng=ng, unused=unused, weight=(next(iter(o["gross"])) if (o and not ng) else calc))   # ③問題なければ手配書のグロス
+                      ok=not ng, ng=ng, unused=unused, extra=(o["n"] - use[m]) if (o and use.get(m) and o["n"] > use[m]) else 0, weight=(next(iter(o["gross"])) if (o and not ng) else calc))   # ③問題なければ手配書のグロス
     return res, dict(header=["ファイル名"] + header[3:], rows=rows)
 
 
