@@ -485,7 +485,7 @@
       const row = vs.addRow([m, v.t_dwg, v.dim ? v.dim[0] : '', v.dim ? v.dim[1] : '', v.calc, v.use,
         jn(v.t_csv), v.ab ? v.ab.map(([a, b]) => `${a}x${b}`).join('/') : '', v.n,
         jn(v.net), jn(v.gross), v.files.join(' '),
-        v.ok ? (v.unused ? '図面で使っていない(手配だけ。問題としない)' : 'OK') : '要確認: ' + v.ng.join('; '), v.weight].map(x => x === null || x === undefined ? '' : x));
+        v.ok ? (v.unused ? '図面で使っていない(手配だけ。問題としない)' : v.extra ? `OK(手配の方が${v.extra}枚多い。ほかの図面の分として問題としない)` : 'OK') : '要確認: ' + v.ng.join('; '), v.weight].map(x => x === null || x === undefined ? '' : x));
       if (!v.ok) row.eachCell({ includeEmpty: true }, c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: YEL } }; });
     });
     hd.forEach((h_, i) => { vs.getColumn(i + 1).width = Math.max(10, h_.length * 2); });
