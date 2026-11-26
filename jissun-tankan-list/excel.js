@@ -154,7 +154,15 @@
       }
     }
     merges.forEach(m => {
-      if (m.top >= src && m.bottom < src + n) ws.mergeCells(m.top - src + dst, m.left, m.bottom - src + dst, m.right);
+      if (!(m.top >= src && m.bottom < src + n)) return;
+      // ひな形の板の行にある R:S・T:U の結合は使わない(2026-11-26 ユーザー指示)。結合を外したセルの罫線は、すぐ上の行の同じ列にそろえる
+      //   (結合のままの罫線だと R|S の間に太い線が出る)。見出しの R1:U1・R2:U2 は結合のまま
+      if (m.left >= 18 && m.top > 2) {
+        for (let q = m.top; q <= m.bottom; q++) for (let c = m.left; c <= m.right; c++)
+          ws.getRow(q - src + dst).getCell(c).border = clone(tpl.getRow(m.top - 1).getCell(c).border);
+        return;
+      }
+      ws.mergeCells(m.top - src + dst, m.left, m.bottom - src + dst, m.right);
     });
   }
   function parseMerges(tpl) {
@@ -335,7 +343,8 @@
         put(ws, `A${r}`, gi + 1);
         put(ws, `B${r}`, { formula: `IF(J${rr}="","",$P$1&$A$1&A${r})`, result: `${fl.replace(/L$/, '')}-${gi + 1}` });
         // 材質(大組図の柱サイズの左の印から。読めなければ空欄・黄色)
-        if (/^(□|BH)/.test(String(b.size || ''))) for (let k = 0; k < ns; k++) put(ws, `D${r + k}`, b.mat || null, b.mat ? null : YEL);
+        // サイズが2つで3行の表を使うときは、空いた3行目には書かない(2026-11-26 ユーザー指示。26-16 2F-1)
+        if (/^(□|BH)/.test(String(b.size || ''))) for (let k = 0; k < Math.min(ns, sizes.length); k++) put(ws, `D${r + k}`, b.mat || null, b.mat ? null : YEL);
         let sumQ = 0;
         if (!b.segs) {
           for (let k = r; k < rr; k++) put(ws, `J${k}`, null, ORG);
