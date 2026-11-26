@@ -113,6 +113,34 @@ def north_tip(t, T):
         if n:
             ang, (vx, vy), (ex, ey) = n
             return ang if math.hypot(ex - x, ey - y) < math.hypot(vx - x, vy - y) else (ang + 180) % 360
+    return _north_kanji(t, T)
+
+
+def _north_kanji(t, T):
+    """「北」「南」「東」「西」の字で囲んだ丸の方位記号(26-16): 丸の中の三角の先(丸の中心からいちばん遠い、2本の線が会う点)が北。
+    先の向きが「北」の字の向きと45°以内のときだけ使う。戻り値は度(図面の右=0・反時計回り)、読めなければ None"""
+    for s, x, y, *_ in T:
+        if s != "北":
+            continue
+        circ = [a for a in t.arcs if 150 < a.r < 400 and math.hypot(a.cx - x, a.cy - y) < 900]
+        if not circ:
+            continue
+        c = min(circ, key=lambda a: math.hypot(a.cx - x, a.cy - y))
+        cx, cy, R = c.cx, c.cy, max(a.r for a in circ if math.hypot(a.cx - c.cx, a.cy - c.cy) < 2)
+        ends = collections.Counter()
+        for l in t.lines:
+            if max(math.hypot(l.x1 - cx, l.y1 - cy), math.hypot(l.x2 - cx, l.y2 - cy)) < 2 * R:
+                ends[(round(l.x1), round(l.y1))] += 1; ends[(round(l.x2), round(l.y2))] += 1
+        tips = [p for p, k in ends.items() if k >= 2]
+        if not tips:
+            continue
+        px, py = max(tips, key=lambda p: math.hypot(p[0] - cx, p[1] - cy))
+        if math.hypot(px - cx, py - cy) < R * 0.8:
+            continue
+        ang = math.degrees(math.atan2(py - cy, px - cx)) % 360
+        want = math.degrees(math.atan2(y - cy, x - cx)) % 360
+        if abs((ang - want + 180) % 360 - 180) < 45:
+            return ang
     return None
 
 
@@ -156,17 +184,17 @@ def seam_of(L, f):
     box = lambda x, y: -1000 < x - x0 < 1000 and -100 < y - y0 < 1200
     ls = [l for l in t.lines if box(l.x1, l.y1) and box(l.x2, l.y2)]
     key = lambda x, y: (round(x), round(y))
-    start = collections.defaultdict(list)
-    for l in ls:
-        start[key(l.x1, l.y1)].append(l)
+    # 3本の線で閉じた三角(辺 80〜220)。線の向きはそろっていなくてもよい(26-16 は辺100の白抜きの三角で、線の向きがばらばら)
+    edges = {frozenset((key(l.x1, l.y1), key(l.x2, l.y2))) for l in ls if 80 < math.hypot(l.x2 - l.x1, l.y2 - l.y1) < 220}
+    nb = collections.defaultdict(set)
+    for e in edges:
+        if len(e) == 2:
+            p, q = tuple(e); nb[p].add(q); nb[q].add(p)
     tri = set()
-    for a in ls:   # 3本の線で閉じた三角(辺 120〜220)
-        for b in start[key(a.x2, a.y2)]:
-            for c in start[key(b.x2, b.y2)]:
-                if c is a or b is a or key(c.x2, c.y2) != key(a.x1, a.y1):
-                    continue
-                if all(120 < math.hypot(l.x2 - l.x1, l.y2 - l.y1) < 220 for l in (a, b, c)):
-                    tri.add(key((a.x1 + b.x1 + c.x1) / 3, (a.y1 + b.y1 + c.y1) / 3))
+    for p in nb:
+        for q in nb[p]:
+            for r in nb[q] & nb[p]:
+                tri.add(key((p[0] + q[0] + r[0]) / 3, (p[1] + q[1] + r[1]) / 3))
     ar = [a for a in t.arcs if box(a.cx, a.cy)]
     if not tri or not ar:
         return None
@@ -175,6 +203,8 @@ def seam_of(L, f):
     if not (all(hz) or not any(hz)):
         return None
     n = _north(t, T)
+    if n is None:
+        n = _north_kanji(t, T)   # 「北」の字の丸い方位記号(26-16)
     if n is None:
         return None
     names = []

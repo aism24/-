@@ -5,7 +5,7 @@
 // GAS のウェブアプリ URL(スプレッドシート「短管リスト」の gas/Code.gs をデプロイしたもの)
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbziB1nE6QDN_ADEwtrSo6o3WE06uqIgvRLdpQ1JJqhY35Vj_Btk7TIJ_xvpkw1zfHYHTQ/exec';
 const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js';   // tdf-master-web と同じ版
-const PY_FILES = ['tdf_binary.py', 'plate.py', 'tankan_core.py'], PY_VER = '20261126c';
+const PY_FILES = ['tdf_binary.py', 'plate.py', 'tankan_core.py'], PY_VER = '20261126d';
 const LS_KEY = 'jissun-tankan-list:last';
 const LS_SETTINGS = 'jissun-tankan-list:settings';
 
