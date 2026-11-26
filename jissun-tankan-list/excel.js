@@ -375,7 +375,7 @@
         }
         put(ws, `Q${f2}`, { formula: `Q${f1}*O${f2}`, result: r2(sumQ * nm) });
         // PL形状注意(odd は下→上)。番号は提出済みExcelと同じ: ①=いちばん下の板、②③…=その上の板の順
-        //   置き場所: 1枚=T列 / 2枚=①R・②T(同じ高さ) / 3枚以上=①R(下段)・②T(上段)・③T(下段)・④R(さらに下)
+        //   置き場所: 1枚=T列 / 2枚=①R・②T(同じ高さ) / 3枚以上=①R(下段)・②T(上段)・③T(下段)・④R(上段)
         // BH柱: 板は出寸法に関係なく必ず「ダイア出寸法注意」の絵(同じ出寸法の板は1枚の絵にまとめ、※は全部の板に)。
         //   2026-11-26 ユーザー指示「BH柱は必ず出す」。以前は特記外と同じ出寸法の板(3C-14 8階の ODY112、30/30)では絵が出なかった
         const odd = (g.odd || []).slice();
@@ -386,27 +386,44 @@
           if (bseen[k]) { bseen[k].marks.push(d.mark); continue; }
           odd.push(bseen[k] = { mark: d.mark, marks: [d.mark], svg: d.svg, title: 'ダイア出寸法注意' });
         }
+        // 置く行(q=絵の1行目。見出しは q-1)。2026-11-26 ユーザー指示: 1・2枚は大きめに、3枚以上ははみ出さない・絵どうしも重ねない。
+        //   R〜U 列に字がある行(柱符号・←シーム方向・←ダイア出寸法)より下に置く(字は右の空いたセルにはみ出して見えるので R〜U をまとめて見る)
+        const lastRow = r + h - 1;
+        const used = (from, to) => { let u = from - 1; for (let n = from; n <= to; n++) if (['R', 'S', 'T', 'U'].some(cc => { const v = ws.getCell(`${cc}${n}`).value; return v !== null && v !== undefined && v !== ''; })) u = n; return u; };
+        const head = rr + 1 + e;   // 板の見出しの行(ここより上には置かない)
         let place = [];
-        if (odd.length === 1) place = [[odd[0], 'T', r + (odd[0].title ? 6 : 7), '']];   // ダイア出寸法注意は1行上(提出済みExcelと同じ)
-        else if (odd.length === 2) place = [[odd[0], 'R', r + 7, ' ①'], [odd[1], 'T', r + 7, ' ②']];
-        else if (odd.length > 2) place = [[odd[0], 'R', r + 9, ' ①'], [odd[1], 'T', r + 3, ' ②'], [odd[2], 'T', r + 9, ' ③']]
-          .concat(odd.length > 3 ? [[odd[3], 'R', r + 15, ' ④']] : []);
-        for (const [o, c, q, lab] of place) {
+        if (odd.length && odd.length <= 2) {
+          // 1・2枚: 板の見出しの行から表の最後の行までを使い、字のある行の下から(2枚は ①R・②T を同じ高さに)
+          let q = Math.max(head, used(r, lastRow) + 1) + 1;
+          if (lastRow - q + 1 < 5) q = Math.max(head, used(r, r + nr - 1) + 1) + 1;   // ←ダイア出寸法が下の方にあって狭すぎるときは、柱符号の下から
+          // 1枚は R〜U の4列の幅を使い、真ん中に置く(T・U の2列では幅で大きさが決まってしまい大きくできなかった)。見出しは S 列
+          place = odd.length === 1 ? [[odd[0], 'R', q, '', 4, 'S']] : [[odd[0], 'R', q, ' ①'], [odd[1], 'T', q, ' ②']];
+        } else if (odd.length > 2) {
+          // 3枚以上: ①R(下段)・②T(上段)・③T(下段)・④R(上段)。上段は字のある行の下から、下段は表の下半分から
+          const up = Math.max(r + 3, used(r, r + nr - 1) + 2), low = Math.max(r + 9, up + 4);
+          place = [[odd[0], 'R', low, ' ①'], [odd[1], 'T', up, ' ②'], [odd[2], 'T', low, ' ③']]
+            .concat(odd.length > 3 ? [[odd[3], 'R', up, ' ④']] : []);
+        }
+        for (const [o, c, q, lab, span = 2, tc = c] of place) {
           // ※と見出しは置く行のひな形の書式に関係なく、赤・ＭＳ Ｐ明朝 10・中央(提出済みExcelと同じ)
           const red = addr => { const cl = ws.getCell(addr); cl.font = { name: 'ＭＳ Ｐ明朝', size: 10, color: { argb: 'FFFF0000' } }; cl.alignment = { horizontal: 'center', vertical: 'middle' }; };
-          put(ws, `${c}${q - 1}`, '※　' + (o.title || 'PL形状注意') + lab); red(`${c}${q - 1}`);
+          put(ws, `${tc}${q - 1}`, '※　' + (o.title || 'PL形状注意') + lab); red(`${tc}${q - 1}`);
           (o.marks || [o.mark]).forEach(mk => (markRow[mk] || []).forEach(q2 => { put(ws, `C${q2}`, '※' + lab.trim()); red(`C${q2}`); }));
           if (images && o.svg) {
-            // 置ける枠: 横=その列と右隣の列(R・S か T・U)、縦=絵の行から、同じ列の下の絵の見出しの上(無ければ表の最後の行)まで。
-            //   印刷・PDF では画面の計算より少し大きく出るので 0.92 倍(はみ出して次の表の柱符号に重ならないように)
+            // 置ける枠: 横=その列から span 列(R・S か T・U。1枚は R〜U)、縦=絵の行から、同じ列の下の絵の見出しの上(無ければ表の最後の行)まで。
+            //   印刷・PDF では画面の計算より少し大きく出るので 0.92 倍(はみ出して次の表の柱符号や隣の絵に重ならないように)
             const below = place.filter(p => p[1] === c && p[2] > q).map(p => p[2] - 2);
-            const last = below.length ? Math.min(...below) : r + h - 1;
+            const last = below.length ? Math.min(...below) : lastRow;
             let hpx = 0; for (let n = q; n <= last; n++) hpx += (ws.getRow(n).height || 14.25) * 96 / 72;
-            const c0 = c.charCodeAt(0) - 64, wpx = colPx(ws.getColumn(c0).width) + colPx(ws.getColumn(c0 + 1).width) - 8.5;
+            const c0 = c.charCodeAt(0) - 64, cws = [];
+            for (let k = 0; k < span; k++) cws.push(colPx(ws.getColumn(c0 + k).width));
+            const wpx = cws.reduce((a, v) => a + v, 0) - 8.5;
             const im = await svgPng(o.svg, (wpx - 6) * 0.92, (hpx - 6) * 0.92);
             const id = out.addImage({ base64: im.data, extension: 'png' });
-            const ci = c.charCodeAt(0) - 65;
-            ws.addImage(id, { tl: { col: ci + 8.5 / (colPx(ws.getColumn(ci + 1).width) * 0.75), row: q - 1 + 3 / ((ws.getRow(q).height || 14.25)) }, ext: { width: im.w, height: im.h } });
+            // 左の余白: 2列の枠は 8.5(今まで通り)、4列の枠は真ん中に置く。列をまたぐ分は次の列へ進める
+            let off = span > 2 ? 8.5 + Math.max(0, (wpx - im.w) / 2) : 8.5, k = 0;
+            while (k < span - 1 && off >= cws[k]) { off -= cws[k]; k++; }
+            ws.addImage(id, { tl: { col: c0 - 1 + k + off / (cws[k] * 0.75), row: q - 1 + 3 / ((ws.getRow(q).height || 14.25)) }, ext: { width: im.w, height: im.h } });
           }
         }
         // 短管の絵(D〜M列 × 板の行)
