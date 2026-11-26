@@ -5,7 +5,7 @@
 // GAS のウェブアプリ URL(スプレッドシート「短管リスト」の gas/Code.gs をデプロイしたもの)
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbziB1nE6QDN_ADEwtrSo6o3WE06uqIgvRLdpQ1JJqhY35Vj_Btk7TIJ_xvpkw1zfHYHTQ/exec';
 const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js';   // tdf-master-web と同じ版
-const PY_FILES = ['tdf_binary.py', 'plate.py', 'tankan_core.py'], PY_VER = '20261126d';
+const PY_FILES = ['tdf_binary.py', 'plate.py', 'tankan_core.py'], PY_VER = '20261126e';
 const LS_KEY = 'jissun-tankan-list:last';
 const LS_SETTINGS = 'jissun-tankan-list:settings';
 
@@ -450,7 +450,8 @@ async function showReadNotes() {
   if (state.orders && state.orders.error) msg.push(`注文書(切板手配書)を読めませんでした: ${state.orders.error}\n板の重量は図面から計算した値になります。`);
   else if (state.orders && !state.orders.csv) msg.push(`注文書(切板手配書)のキャッシュに ${state.kojiNo} がありません。板の重量は図面から計算した値になります。`);
   (r.cautions || []).forEach(([title, body]) => msg.push(`【${title}】\n${body}`));   // 図面・切板マークの書き間違いの可能性(3節)
-  if (r.log.length) msg.push('読めなかった図面:\n' + r.log.join('\n'));
+  const unread = r.log.filter(s => !/: 板マークが無い$/.test(s));   // 板マークが無い図面は上の【板マークが書かれていない図面】に出す(重ねない)
+  if (unread.length) msg.push('読めなかった図面:\n' + unread.join('\n'));
   if (r.mat_ng && r.mat_ng.length) msg.push(`材質の印を読めなかった柱(材質は空欄・黄色。図面で確かめてください):\n` + r.mat_ng.join('\n'));
   const ng = Object.entries(r.verify).filter(([m, v]) => !v.ok);
   if (ng.length) msg.push(`手配書と合わない板(${ng.length}種類。重量は図面から計算した値で黄色):\n` + ng.map(([m, v]) => `${m}: ${v.ng.join('; ')}`).join('\n'));

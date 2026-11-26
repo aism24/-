@@ -96,6 +96,9 @@ class TdfData:
     polylines: list = field(default_factory=list)  # [(offset, [(x, y), ...]), ...]
     body_text_by_id: dict[int, str] = field(default_factory=dict)
     body_rot_by_id: dict[int, float] = field(default_factory=dict)
+    # 印の付いた文字(マーカーの先頭が 00 でない「XX N 2N 00」。26-16 WA2 の切板符号 M900-50H は 60 08 10 00)。
+    # 今までの読み取りを変えないよう texts とは別に持つ(使う側が必要なものだけ拾う。2026-11-26)
+    flagged_texts: list = field(default_factory=list)
 
     def resolve_text(self, rec: TextRecord) -> str | None:
         if rec.text is not None:
@@ -125,11 +128,12 @@ def _find_all_text_markers(data: bytes) -> list[int]:
 
 
 _TEXT_MARKER_RE = re.compile(b"(?=\x00(?:" + b"|".join(re.escape(bytes((n, n * 2))) for n in range(1, MAX_N + 1)) + b")\x00)")
+_TEXT_MARKER_FLAG_RE = re.compile(b"(?=[\x01-\xff](?:" + b"|".join(re.escape(bytes((n, n * 2))) for n in range(1, MAX_N + 1)) + b")\x00)")
 
 
-def _parse_texts(data: bytes) -> list[TextRecord]:
+def _parse_texts(data: bytes, flagged: bool = False) -> list[TextRecord]:
     records = []
-    for idx in _find_all_text_markers(data):
+    for idx in (_find_all_text_markers(data) if not flagged else [m.start() for m in _TEXT_MARKER_FLAG_RE.finditer(data)]):
         rec_start = idx - HEADER_LEN
         if rec_start < 0:
             continue
@@ -251,6 +255,21 @@ def load(path: str) -> TdfData:
         seen.add(key)
         uniq.append(r)
     tdf.texts = uniq
+    # 印の付いた文字(座標・高さがまともで、文字を持つか、印の付いた本体を指す参照)
+    fl = [r for r in _parse_texts(raw, flagged=True)
+          if all(math.isfinite(v) for v in (r.x, r.y, r.h)) and abs(r.x) < 1e8 and abs(r.y) < 1e8 and 10 < r.h < 1000]
+    fbody = {}
+    for r in fl:
+        if r.text is not None and r.text.isprintable():
+            fbody.setdefault(r.id_field, (r.text, r.rot))
+    seen = set()
+    for r in fl:
+        if r.text is not None and not r.text.isprintable():
+            continue
+        t, rot = (r.text, r.rot) if r.text is not None else fbody.get(r.id_field, (None, 0.0))
+        key = (t, round(r.x, 1), round(r.y, 1))
+        if t and key not in seen:
+            seen.add(key); tdf.flagged_texts.append((t, r.x, r.y, rot, r.h))
     return tdf
 
 
