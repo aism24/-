@@ -238,14 +238,42 @@
     const ch = b.chain || [];
     if (outer.length > 2 && ch.length === outer.length - 1) {   // 上の板から中間の板までの寸法
       // 端の●: 上側=いちばん上の板の上面、下側=相手の板の下面(板の中心ではない)
-      const ytop = ys[ys.length - 1];
+      // 寸法線は柱の内側(点線の内側)の左に寄せて並べる(2026-11-26 ユーザー指示「全体的に寸法を左に寄せる」)。
+      // 数字は板(ダイアフラム)の線・柱の外面の線・内面の点線・内ダイアの点線と重ねない(同じ指示)。隣の数字と同じ高さでよい
+      const ytop = ys[ys.length - 1], nd = outer.length - 2;
+      const inL = cx - Math.max(20, Math.min(...allD.map((d, k) => Math.min(d[0], d[1]) / 2 - thkOf(segs[k][0]))) * sx) + 3;   // 内面の点線の内側(左)
+      const inR = 2 * cx - inL;
+      const FH = 11, step = Math.max(FH + 6, Math.min(26, (inR - inL - FH - 6) / Math.max(nd, 1)));
+      const xs = Array.from({ length: nd }, (_, i) => inL + FH + 5 + i * step);   // いちばん左の線の左に縦書きの数字が入る
+      // 内ダイア(OUDY)の点線の四角の高さ(数字を置かない)
+      const ou = [];
+      plates.forEach((p, k) => {
+        if (!p[0].startsWith('OUDY') || k === 0 || k === plates.length - 1) return;
+        const below = plates.slice(0, k).filter(q => !q[0].startsWith('OUDY')).length;
+        if (below > 0 && below <= ys.length - 1) { const yy = (ys[below - 1] + ys[below]) / 2; ou.push([yy - 2, yy + Math.max(3, (p[1] || 0) * H / totMM) + 2]); }
+      });
+      x.font = FH + 'px sans-serif'; x.textAlign = 'center';
       for (let j = outer.length - 2; j > 0; j--) {
-        const dist = ch.slice(j).reduce((a, v) => a + v, 0), xx = L0 + W * (0.42 + 0.16 * (outer.length - 2 - j));
-        const yb = ys[j] + ph[j];
+        const dist = ch.slice(j).reduce((a, v) => a + v, 0), label = String(Math.round(dist * 10) / 10);
+        const xx = xs[nd - j], yb = ys[j] + ph[j];
         x.beginPath(); x.moveTo(xx, ytop); x.lineTo(xx, yb); x.stroke();
         [ytop, yb].forEach(yy => { x.beginPath(); x.arc(xx, yy, 3, 0, Math.PI * 2); x.fill(); });
-        x.save(); x.translate(xx - 3, (ytop + yb) / 2); x.rotate(-Math.PI / 2); x.font = '11px sans-serif'; x.textAlign = 'center';
-        x.fillText(String(Math.round(dist * 10) / 10), 0, 0); x.restore();
+        // 寸法の範囲の中の、板と板のすき間(上の板の下面〜下の板の上面。内ダイアの所は除く)
+        let gaps = [];
+        for (let k = j; k < outer.length - 1; k++) gaps.push([ys[k + 1] + ph[k + 1], ys[k]]);
+        ou.forEach(([o0, o1]) => { gaps = gaps.flatMap(([a, c]) => (o1 <= a || o0 >= c) ? [[a, c]] : [[a, o0], [o1, c]].filter(([u, v]) => v > u)); });
+        const wTxt = x.measureText(label).width, need = wTxt + 6, mid = (ytop + yb) / 2;
+        const near = arr => arr.reduce((p, q) => Math.abs((q[0] + q[1]) / 2 - mid) < Math.abs((p[0] + p[1]) / 2 - mid) ? q : p);
+        const fit = gaps.filter(([a, c]) => c - a >= need);
+        if (fit.length) {   // 縦書き(線の左。左の線との間に入る)
+          const g = near(fit);
+          x.save(); x.translate(xx - 3, (g[0] + g[1]) / 2); x.rotate(-Math.PI / 2); x.fillText(label, 0, 0); x.restore();
+        } else if (gaps.length) {   // 縦書きが入らない短いすき間: 横書き。右の線・内面の点線にかからない所(線の右、無理なら右端の線の右)
+          const fitH = gaps.filter(([a, c]) => c - a >= FH + 2), g = fitH.length ? near(fitH) : gaps.reduce((p, q) => (q[1] - q[0] > p[1] - p[0] ? q : p));
+          const nextX = nd - j + 1 < nd ? xs[nd - j + 1] : inR;
+          const tx = xx + 3 + wTxt + 2 <= nextX ? xx + 3 : Math.min(xs[nd - 1] + 3, inR - wTxt - 2);
+          x.save(); x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillText(label, tx, (g[0] + g[1]) / 2); x.restore();
+        }
       }
     }
     plates.forEach((p, k) => {   // 内ダイア(OUDY): 区切らない板は、その区間の中ほどに点線の四角(柱の内側の幅)
@@ -391,7 +419,8 @@
             ws.mergeCells(tpz ? `J${q}:P${q}` : `J${q}:O${q}`);
             if (!tpz) ws.getCell(`P${q}`).style = clone(tpl.getRow(proto.top).getCell(16).style);
           });
-          [['J', rr], ['O', rr], ['P', rr], ['J', rr + 1]].forEach(([c, q], k) => { if (k < segs.length) put(ws, `${c}${q}`, segs[k][1]); });
+          // コラム長さは6つまで: コラム長さの行の J・O・P と、足した行の J・O・P(2026-11-26 ユーザー指示。1節 1C-12 の区間5つで1つ入らなかった)
+          [['J', rr], ['O', rr], ['P', rr], ['J', rr + 1], ['O', rr + 1], ['P', rr + 1]].forEach(([c, q], k) => { if (k < segs.length) put(ws, `${c}${q}`, segs[k][1]); });
           put(ws, `B${rr + 6 + e}`, b.fin);
           const pw = pipeWeights(segs);
           pw.forEach((p, k) => {
