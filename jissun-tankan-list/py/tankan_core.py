@@ -392,9 +392,13 @@ def extract(L, Z, full, sec, order_rows, progress=None):
     """extract2.py と同じ。戻り値 (blocks, log)"""
     res, log = [], []
     TMAP = {}   # 板厚の補い(断面図で板厚が読めない板): 注文書キャッシュの板厚
+    PDIM = {}   # 板の短い辺(注文書キャッシュの縦横)。テーパーの柱を見分けるのに使う
     for _r in order_rows:
         if len(_r) > 15 and _isdia(_r[12]):
             try: TMAP.setdefault(_r[12], int(float(_r[15])))
+            except ValueError: pass
+        if len(_r) > 17 and _isdia(_r[12]):
+            try: PDIM.setdefault(_r[12], min(float(_r[16]), float(_r[17])))
             except ValueError: pass
     for k_, key in enumerate(sorted(full)):
         f = full[key]
@@ -440,7 +444,8 @@ def extract(L, Z, full, sec, order_rows, progress=None):
             pl = [a for a in TA if re.fullmatch(r"PL-\d+", a[0]) and 0 < a[2] - y < 200 and abs(a[1] - x) < 300]
             t_ = int(min(pl, key=lambda a: a[2] - y)[0][3:]) if pl else None
             for Lb, sx, sy in secs:
-                if 100 < y - sy < 2700 and -1700 < x - sx < 1700:
+                # 板マークは断面記号より上(26-16 EB2-1C-01 断面B は 77 上に書かれている。以前の下限 100 では結べず、ダイアが1枚抜けた)
+                if 0 < y - sy < 2700 and -1700 < x - sx < 1700:
                     pairs_.append((math.hypot((x - sx) - 800, (y - sy) - 500), (round(x), round(y)), Lb, s_, t_))
         used = set()
         for d_, key, Lb, s_, t_ in sorted(pairs_):  # 近い組から順に、板マークと断面記号を1対1で結ぶ
@@ -526,6 +531,14 @@ def extract(L, Z, full, sec, order_rows, progress=None):
             size = [a for a in view if a[0].startswith("□-") and abs(a[2] - mid) < 1800] or [a for a in view if a[0].startswith("BH-") and abs(a[2] - mid) < 1800]
             size_rec = min(size, key=lambda a: abs(a[2] - mid)) if size else None
             size = size_rec[0].replace("x", "*") if size else None
+            # 上下の板の大きさが違い、その差に合うテーパーの表記(□-1000～900 なら差100)が近くにあれば、テーパーの柱(2026-11-26 ユーザー指摘、26-16 EB1-1C-03 等)。
+            #   いちばん近い表記は上の板より上にある次の節の□-900 のことがあり、板が 1060角(□-1000 用)なのに□-900 の直線の柱にしていた
+            if size and re.fullmatch(r"□-\d+\*\d+\*[\d.]+", size) and PDIM.get(lo) and PDIM.get(up) and PDIM[lo] - PDIM[up] > 1:
+                tps = [a for a in view if abs(a[2] - mid) < 1800 and re.fullmatch(r"□-(\d+)-(\d+)x\d+-\d+x[\d.]+", a[0])
+                       and abs(int(a[0][2:].split("-")[0]) - int(a[0][2:].split("-")[1].split("x")[0]) - (PDIM[lo] - PDIM[up])) < 1]
+                if tps:
+                    size_rec = min(tps, key=lambda a: abs(a[2] - mid))
+                    size = size_rec[0].replace("x", "*")
             mat, mat_mark = material_of(L, f, T, size_rec) if size_rec and size.startswith("□") else (None, "")
             # BH柱: 柱のサイズ表記の列(立面の中央)にある、その階より下で一番近いBH表記を使う
             colbh = [a for a in view if re.fullmatch(r"BH-\d+x\d+x\d+x\d+", a[0]) and fx + 4500 < a[1] < fx + 7500 and a[2] < mid]
