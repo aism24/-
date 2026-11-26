@@ -205,9 +205,16 @@
     const half = (d, tpFallback) => (dMax > dMin && d) ? 0.33 + 0.07 * (d - dMin) / (dMax - dMin) : tpFallback;
     const tot = hs.reduce((a, h) => a + h[1], 0) || 1;
     const scale = (H - pt * outer.length) / Math.max(tot - outer.reduce((a, p) => a + (p[1] || 0), 0), 1);
-    let y = T0 + H; const ys = [];
+    // 板の幅: 外寸が違う区間がある柱は、接する区間の太さ+一定の出(いちばん太い所で絵の幅いっぱい)。出寸法は上下とも同じなので、細い側の板は細く描く。
+    //   2026-11-26 ユーザー指摘: テーパー柱(□-1000-900)で上の板(960角)が下の板(1060角)と同じ幅に描かれていた。サイズが1つの柱は今までどおり幅いっぱい
+    const plateHalf = k => {
+      if (!(dMax > dMin)) return 0.5;
+      const ds = [k > 0 && allD[k - 1] ? allD[k - 1][1] : 0, k < segs.length && allD[k] ? allD[k][0] : 0].filter(Boolean);
+      return ds.length ? half(Math.max(...ds), 0.40) + 0.10 : 0.5;
+    };
+    let y = T0 + H, pk = 0; const ys = [];
     hs.forEach(([kind, v, info]) => {
-      if (kind === 'P') { y -= pt; x.setLineDash([]); x.strokeRect(L0, y, W, pt); ys.push(y); return; }
+      if (kind === 'P') { const ph = plateHalf(pk++); y -= pt; x.setLineDash([]); x.strokeRect(L0 + W * (0.5 - ph), y, W * 2 * ph, pt); ys.push(y); return; }
       const hseg = v * scale, ytop = y - hseg, tp = /^□-(\d+)-(\d+)\*/.test(info || ''), dd = dimsOf(info) || [0, 0];
       const wb = half(dd[0], tp ? 0.40 : 0.37), wt = half(dd[1], tp ? 0.33 : 0.37);
       [1, -1].forEach(sgn => {
