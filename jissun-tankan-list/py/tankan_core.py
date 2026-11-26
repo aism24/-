@@ -632,6 +632,11 @@ def extract(L, Z, full, sec, order_rows, progress=None):
                 if len(one) == 1:
                     fin = one[0][1]; din = fin - up_t - lo_t
             size = [a for a in view if a[0].startswith("□-") and abs(a[2] - mid) < 1800] or [a for a in view if a[0].startswith("BH-") and abs(a[2] - mid) < 1800]
+            if lx > fx and size[:1] and size[0][0].startswith("□-"):
+                # 26-14 の書き方の図面: 上の板より上の表記は上の柱のサイズ(N1C-11: 上の□-450x450x28 が下の□-450x450x32 より真ん中に近く、
+                #   短管を28にしていた。2026-11-26 ユーザー指摘)。上の板より上でない表記があればそちらだけ
+                low = [a for a in size if a[2] <= yu + 100]
+                size = low or size
             size_rec = min(size, key=lambda a: abs(a[2] - mid)) if size else None
             size = size_rec[0].replace("x", "*") if size else None
             # 上下の板の大きさが違い、その差に合うテーパーの表記(□-1000～900 なら差100)が近くにあれば、テーパーの柱(2026-11-26 ユーザー指摘、26-16 EB1-1C-03 等)。
