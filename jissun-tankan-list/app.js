@@ -5,7 +5,7 @@
 // GAS のウェブアプリ URL(スプレッドシート「短管リスト」の gas/Code.gs をデプロイしたもの)
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbziB1nE6QDN_ADEwtrSo6o3WE06uqIgvRLdpQ1JJqhY35Vj_Btk7TIJ_xvpkw1zfHYHTQ/exec';
 const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js';   // tdf-master-web と同じ版
-const PY_FILES = ['tdf_binary.py', 'plate.py', 'tankan_core.py'], PY_VER = '20261126g';
+const PY_FILES = ['tdf_binary.py', 'plate.py', 'tankan_core.py'], PY_VER = '20261126h';
 const LS_KEY = 'jissun-tankan-list:last';
 const LS_SETTINGS = 'jissun-tankan-list:settings';
 
@@ -504,15 +504,40 @@ function render() {
 }
 
 // ---------- Excel ダウンロード ----------
+// 工事名の選択(アプリ・図面・テキスト入力)。戻り値は選んだ工事名、やめたら null。図面の工事名が読めないときは「図面」を選べない
+function chooseKojiName(app, dwg) {
+  return new Promise(resolve => {
+    const radios = [...document.querySelectorAll('input[name="koji-choice"]')], pick = v => radios.forEach(r => { r.checked = r.value === v; });
+    const text = $('koji-text'), dwgRadio = radios.find(r => r.value === 'dwg');
+    $('koji-app').textContent = app || '(なし)';
+    $('koji-dwg').textContent = dwg || '(図面から読めませんでした)';
+    dwgRadio.disabled = !dwg; dwgRadio.closest('.koji-opt').classList.toggle('disabled', !dwg);
+    text.value = ''; pick(app ? 'app' : dwg ? 'dwg' : 'text');
+    const sel = () => (radios.find(r => r.checked) || {}).value;
+    const sync = () => { $('koji-ok').disabled = sel() === 'text' && !text.value.trim(); };
+    radios.forEach(r => { r.onchange = () => { sync(); if (r.value === 'text') text.focus(); }; });
+    text.oninput = () => { pick('text'); sync(); };
+    text.onfocus = () => { pick('text'); sync(); };
+    text.onkeydown = e => { if (e.key === 'Enter' && !$('koji-ok').disabled) $('koji-ok').click(); };
+    sync();
+    $('koji-modal').classList.add('open');
+    const done = v => { $('koji-modal').classList.remove('open'); resolve(v); };
+    $('koji-ok').onclick = () => { const s = sel(); done(s === 'app' ? app : s === 'dwg' ? dwg : text.value.trim()); };
+    $('koji-cancel').onclick = () => done(null);
+  });
+}
 $('btn-excel').addEventListener('click', async () => {
   if (!state.res) return;
   const d = new Date(), p2 = n => String(n).padStart(2, '0');
   const stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}`;
   const name = `短管リスト_${state.kojiNo}_${state.res.setsu}_${stamp}.xlsx`;
+  // Excel に表示する工事名を、アプリ(最初に選んだ工事)・図面の表題欄・テキスト入力の三択で選ぶ(2026-11-26 ユーザー指示)。やめるとダウンロードしない
+  const kojiName = await chooseKojiName(state.kojiName, state.res.koji_dwg);
+  if (kojiName === null) return;
   try {
     busy('Excelを作っています…', 0);
     const blob = await TankanExcel.build({
-      res: state.res, kojiName: state.kojiName, factory: state.factory,
+      res: state.res, kojiName, factory: state.factory,
       link: n => fileUrl(dirOf(n), n), onProgress: (msg, r) => busy(msg, r),
     });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();

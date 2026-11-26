@@ -765,6 +765,22 @@ def group_floors(blocks):
     return {fl: list(gs.values()) for fl, gs in floors.items()}
 
 
+def koji_of(T):
+    """図面の表題欄の工事名(Excel の工事名をアプリの工事名と選べるようにする。2026-11-26 ユーザー指示)。読めなければ None
+    ① 「…工事」で終わる大きな文字(26-12「合同会社桜島開発（仮称）OSAKA SAKURAJIMA RESORT新築工事」)
+    ② 1文字ずつ書いた見出し「工」「事」の右下の大きな文字(26-16 阪和の表題欄「ITMO1 DC1-1」)"""
+    c = [s for s, x, y, r, h in T if h >= 100 and len(s) >= 6 and s.endswith("工事") and "工事名" not in s]
+    if c:
+        return max(c, key=len)
+    for s0, kx, ky, r0, h0 in T:
+        if s0 != "工" or not any(s == "事" and 0 < x - kx < 200 and abs(y - ky) < 5 for s, x, y, r, h in T):
+            continue
+        v = [(s, x, y, h) for s, x, y, r, h in T if h >= 120 and len(s) >= 3 and 0 < x - kx < 3000 and -600 < y - ky < 0]
+        if v:
+            return min(v, key=lambda a: (-a[3], ky - a[2]))[0]
+    return None
+
+
 def _grid(T):
     """立面図の見出しの通り芯(大きい文字の CY○・CX○ が3つ並んだ真ん中 = この柱の通り)。読めなければ None"""
     out = {}
@@ -875,7 +891,16 @@ def run(files, orders_csv, setsu=None, progress=None):
         caution.insert(0, ("読まなかったファイル", "\n".join(
             [f"次の {len(skipped)} 個のTDFは、図番の頭が {Z} と違う(別の節)か、大組図のファイル名の形でないため読んでいません。"] +
             [f"  {n}" for n in skipped])))
-    return dict(seam=seam, north=north, mat_ng=mat_ng, cautions=caution, zuban=Z, setsu=setsu, files=dict(full=full, sec=sec), log=log, blocks=blocks, checks=checks,
+    kc = collections.Counter()   # 図面の表題欄の工事名(図面でいちばん多いもの)
+    for f in full.values():
+        try:
+            k = koji_of(L.texts(f))
+        except Exception:
+            k = None
+        if k:
+            kc[k] += 1
+    koji_dwg = kc.most_common(1)[0][0] if kc else None
+    return dict(koji_dwg=koji_dwg, seam=seam, north=north, mat_ng=mat_ng, cautions=caution, zuban=Z, setsu=setsu, files=dict(full=full, sec=sec), log=log, blocks=blocks, checks=checks,
                 verify=ver, plate_rows=plate_rows, floors=floors, bh=[f"{fl} {s}" for fl, s in bh],
                 orders=len(order_rows))
 
