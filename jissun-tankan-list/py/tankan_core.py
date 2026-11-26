@@ -892,10 +892,18 @@ def koji_of(T):
     ① 「…工事」で終わる大きな文字(26-12「合同会社桜島開発（仮称）OSAKA SAKURAJIMA RESORT新築工事」)
     ② 1文字ずつ書いた見出し「工」「事」の右下の大きな文字(26-16 阪和の表題欄「ITMO1 DC1-1」)"""
     c = [s for s, x, y, r, h in T if h >= 100 and len(s) >= 6 and s.endswith("工事") and "工事名" not in s]
+    # 2行に分けて書いた工事名(26-14 心斎橋:「（仮称）心斎橋スクエア建替えプロジェクト」の下の行に「新築工事」)は、上の行とつなぐ
+    for s, x, y, r, h in T:
+        if h >= 100 and 2 <= len(s) < 6 and s.endswith("工事") and "工事名" not in s:
+            up = [a for a in T if a[4] >= 100 and len(a[0]) >= 4 and 0 < a[2] - y < 300 and x - 3000 < a[1] < x + 200 and "工事" not in a[0]]
+            if up:
+                c.append(min(up, key=lambda a: a[2] - y)[0] + s)
     if c:
         return max(c, key=len)
     for s0, kx, ky, r0, h0 in T:
         if s0 != "工" or not any(s == "事" and 0 < x - kx < 200 and abs(y - ky) < 5 for s, x, y, r, h in T):
+            continue
+        if any(s == "番" and 0 < x - kx < 400 and abs(y - ky) < 5 for s, x, y, r, h in T):   # 「工事番号」の欄は使わない(26-14)
             continue
         v = [(s, x, y, h) for s, x, y, r, h in T if h >= 120 and len(s) >= 3 and 0 < x - kx < 3000 and -600 < y - ky < 0]
         if v:
