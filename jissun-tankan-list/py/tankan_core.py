@@ -36,6 +36,10 @@ class _Loader:
                 # テーパーの「□-900～800x36」(26-16)は 26-12 と同じ「□-900-800x900-800x36」の書き方にそろえる
                 s = re.sub(r"^□-(\d+)～(\d+)x(\d+)$", r"□-\1-\2x\1-\2x\3", s.strip())
                 out.append((s.strip(), r.x, r.y, round(t.resolve_rot(r), 2), r.h))
+        # 印の付いた文字(26-16 WA2 の切板符号 M900-50H 等)は、板マークの形のものだけ足す(ほかの文字は今までどおり読まない)
+        for s, x, y, rot, h in getattr(t, "flagged_texts", []):
+            if DIA.fullmatch(s.strip()):
+                out.append((s.strip(), x, y, round(rot, 2), h))
         return out
 
 
@@ -54,12 +58,12 @@ def _index(files):
     return z, {no: n for (h, no), n in full.items() if h == z}, {no: n for (h, no), n in sec.items() if h == z}
 
 
-DIA = re.compile(r"O?[A-Z]*DY\w*|[A-Z]+D\d+[A-Z]?")   # ダイアの板マーク: ODY○○H(26-12)・GD5H/GD6(26-16)
+DIA = re.compile(r"O?[A-Z]*DY\w*|[A-Z]+D\d+[A-Z]?|M\d{3,4}-\d{1,3}[A-Z]?")   # ダイアの板マーク: ODY○○H(26-12)・GD5H/GD6(26-16 WA1)・M900-50H/M800-50(26-16 WA2)
 
 
 def _isdia(m):
     """手配書の符号がダイアの板マークか"""
-    return bool(m) and ("DY" in m or re.fullmatch(r"[A-Z]+D\d+[A-Z]?", m) is not None)
+    return bool(m) and ("DY" in m or re.fullmatch(r"[A-Z]+D\d+[A-Z]?|M\d{3,4}-\d{1,3}[A-Z]?", m) is not None)
 
 
 def _dymark(s):
@@ -78,7 +82,8 @@ def _orders(orders_csv):
 # 材質の印(図面の凡例): 囲み(○/◇)+中の文字(+左の「T」) → 材質。表に無い印・読めない印は None(Excelは空欄・黄色)
 MATERIAL = {("○", "P", False): "BCP325", ("◇", "P", False): "BCP385",
             ("○", "B", True): "TMCP325B", ("○", "C", True): "TMCP325C",
-            ("◇", "B", False): "TMCP385B", ("◇", "C", False): "TMCP385C"}
+            ("◇", "B", False): "TMCP385B", ("◇", "C", False): "TMCP385C",
+            ("□", "R", False): "BCR295"}   # □R印=BCR295(26-16 の凡例)
 
 
 # BH(組立H形鋼)の材質の印。大組図の凡例: ○Ｂ印=SN490B・STKN490B、○Ｃ印=SN490C(26-12 2節、ユーザー確認 2026-11-25)
@@ -97,6 +102,13 @@ def _mark_shape(t, cx, cy, R=90):
         return "○"
     if len(diag) >= 4 and not circ:
         return "◇"
+    if not circ and not diag:
+        # □(四角で囲んだ印。26-16 の凡例「BCR295 □R印」)。角は中心から少し遠いので広めに見る
+        sq = [(l.x1, l.y1, l.x2, l.y2) for l in t.lines if max(math.hypot(l.x1 - cx, l.y1 - cy), math.hypot(l.x2 - cx, l.y2 - cy)) < 140
+              and 60 < math.hypot(l.x2 - l.x1, l.y2 - l.y1) < 200]
+        hz = [s for s in sq if abs(s[3] - s[1]) < 1]; vt = [s for s in sq if abs(s[2] - s[0]) < 1]
+        if len(hz) >= 2 and len(vt) >= 2 and min(s[1] for s in hz) < cy < max(s[1] for s in hz) and min(s[0] for s in vt) < cx < max(s[0] for s in vt):
+            return "□"
     return None
 
 
@@ -429,6 +441,10 @@ def extract(L, Z, full, sec, order_rows, progress=None):
                 continue
             used.add(key); secmark[Lb] = (s_, t_, d_, key)
         secmark = {k: v[:2] for k, v in secmark.items()}
+        if not secmark and secs and not any(_dymark(a[0]) for a in TA):
+            # 断面図はあるのに板マークが1つも書かれていない図面(26-16 WA2-1C-03 261124版)。読み込み後の案内で知らせる(2026-11-26 ユーザー指示)
+            log.append(f"{Z}-{no}: 板マークが無い")
+            continue
         [TMAP.setdefault(m, t_) for m, t_ in secmark.values() if t_]
         view = [a for a in T if fx - 2000 < a[1] < fx + 12000]
         # 板マークの付いた断面記号を高さ順に並べ、間隔が1500以上空いたところで階を分ける
@@ -810,6 +826,11 @@ def run(files, orders_csv, setsu=None, progress=None):
         caution = cautions(L, full, blocks, ver)
     except Exception as e:   # 注意の作成に失敗しても、表とExcelは出す
         caution = [("注意の確認ができませんでした", str(e))]
+    nomark = [s.split(":")[0] for s in log if s.endswith(": 板マークが無い")]
+    if nomark:   # 板マークが書かれていない図面は短管を作れない(2026-11-26 ユーザー指示: その旨を記載する)
+        caution.insert(0, ("板マークが書かれていない図面", "\n".join(
+            [f"{d}: 断面図に板マーク(切板の符号)が見つかりません。この図面の短管は Excel に入っていません。" for d in nomark] +
+            ["  (図面に板マークを記入してから読み込み直してください)"])))
     return dict(seam=seam, north=north, mat_ng=mat_ng, cautions=caution, zuban=Z, setsu=setsu, files=dict(full=full, sec=sec), log=log, blocks=blocks, checks=checks,
                 verify=ver, plate_rows=plate_rows, floors=floors, bh=[f"{fl} {s}" for fl, s in bh],
                 orders=len(order_rows))
