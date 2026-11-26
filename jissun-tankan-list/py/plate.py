@@ -140,7 +140,7 @@ def _inside(H, x, y, tol=1.0):
 
 def measure(t, mark, colsize):
     """板の外形を測る。戻り値 dict(H=外形の頂点, cx, cy, dim=[短辺,長辺], ...) / 測れないときは None"""
-    lab = [r for r in t.texts if t.resolve_text(r) == mark]
+    lab = [r for r in t.texts if t.resolve_text(r) in (mark, "<" + mark + ">")]   # 「<ADF1>」(26-14 心斎橋。山かっこで囲んで書く)
     if not lab:   # 印の付いた文字の板マーク(26-16 WA2 の M900-50H 等。tdf_binary.flagged_texts)
         lab = [type("F", (), dict(x=x, y=y))() for s, x, y, rot, h in getattr(t, "flagged_texts", []) if s == mark]
     if not lab:
