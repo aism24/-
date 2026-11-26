@@ -203,27 +203,32 @@ def _north(t, T, want_vertex=False):
 
 def seam_of(L, f):
     """大組図の「シーム方向」の上にある柱の平面図で、塗りつぶし三角(シームの印)が柱の左右か上下かを見て、方位の名前にする。
-    戻り値 例 "南南西・北北東"(南寄りを先に)。読めなければ None"""
+    戻り値 例 "南南西・北北東"(シームが2つ。南寄りを先に)/ "東面"(シームが1つ=三角が片側だけ)。読めなければ None。
+    「シーム方向(柱頭)」「シーム方向(柱脚)」の2つがある図面(26-16)は柱脚を使う(2026-11-26 ユーザー指示)"""
     T = L.texts(f)
     sm = [a for a in T if a[0] == "シーム方向"]
     if not sm:
         return None
     t = L.load(f)
-    x0, y0 = sm[0][1], sm[0][2]
-    box = lambda x, y: -1000 < x - x0 < 1000 and -100 < y - y0 < 1200
-    ls = [l for l in t.lines if box(l.x1, l.y1) and box(l.x2, l.y2)]
+    foot = [a for a in sm if any(unicodedata.normalize("NFKC", b[0]) == "(柱脚)" and abs(b[1] - a[1]) < 300 and -300 < b[2] - a[2] < 0 for b in T)]
+    x0, y0 = (foot or sm)[0][1], (foot or sm)[0][2]
     key = lambda x, y: (round(x), round(y))
-    # 3本の線で閉じた三角(辺 80〜220)。線の向きはそろっていなくてもよい(26-16 は辺100の白抜きの三角で、線の向きがばらばら)
-    edges = {frozenset((key(l.x1, l.y1), key(l.x2, l.y2))) for l in ls if 80 < math.hypot(l.x2 - l.x1, l.y2 - l.y1) < 220}
-    nb = collections.defaultdict(set)
-    for e in edges:
-        if len(e) == 2:
-            p, q = tuple(e); nb[p].add(q); nb[q].add(p)
-    tri = set()
-    for p in nb:
-        for q in nb[p]:
-            for r in nb[q] & nb[p]:
-                tri.add(key((p[0] + q[0] + r[0]) / 3, (p[1] + q[1] + r[1]) / 3))
+
+    def triangles(box):   # 3本の線で閉じた三角(辺 80〜220)の重心。線の向きはそろっていなくてもよい(26-16 は辺100の白抜きの三角)
+        ls = [l for l in t.lines if box(l.x1, l.y1) and box(l.x2, l.y2)]
+        edges = {frozenset((key(l.x1, l.y1), key(l.x2, l.y2))) for l in ls if 80 < math.hypot(l.x2 - l.x1, l.y2 - l.y1) < 220}
+        nb = collections.defaultdict(set)
+        for e in edges:
+            if len(e) == 2:
+                p, q = tuple(e); nb[p].add(q); nb[q].add(p)
+        out = set()
+        for p in nb:
+            for q in nb[p]:
+                for r in nb[q] & nb[p]:
+                    out.add(key((p[0] + q[0] + r[0]) / 3, (p[1] + q[1] + r[1]) / 3))
+        return out
+    box = lambda x, y: -1000 < x - x0 < 1000 and -100 < y - y0 < 1200
+    tri = triangles(box)
     ar = [a for a in t.arcs if box(a.cx, a.cy)]
     if not tri or not ar:
         return None
@@ -236,6 +241,21 @@ def seam_of(L, f):
         n = _north_kanji(t, T)   # 「北」の字の丸い方位記号(26-16)
     if n is None:
         return None
+    # シームの数: 三角が柱の両側にあれば2つ。片側しか見つからないときは、少し広い範囲で、同じ軸の上の柱をはさんだ反対側の三角を探す
+    # (26-12 2C-02・26-16 EB の柱脚は上の三角が狭い範囲の外にあった。狭い範囲の円弧から出す中心はずれるので使わない)。
+    # それでも無ければシームは1つで「○○面」(26-16 WA1・WA2 の柱脚。2026-11-26 ユーザー指示)
+    side = lambda x, y: (0 if x > cx else 180) if hz[0] else (90 if y > cy else 270)
+    sides = {side(x, y) for x, y in tri}
+    if len(sides) == 1:
+        wide = triangles(lambda x, y: -1100 < x - x0 < 1100 and -100 < y - y0 < 1800)
+        x1, y1 = next(iter(tri))
+        if hz[0]:
+            other = [p for p in wide if abs(p[1] - y1) < 60 and 600 < abs(p[0] - x1) < 1500 and (p[0] - cx) * (x1 - cx) < 0]
+        else:
+            other = [p for p in wide if abs(p[0] - x1) < 60 and 600 < abs(p[1] - y1) < 1500 and (p[1] - cy) * (y1 - cy) < 0]
+        if not other:
+            bearing = (n - next(iter(sides))) % 360
+            return COMPASS[round(bearing / 22.5) % 16] + "面"
     names = []
     for a in ((0, 180) if hz[0] else (90, 270)):   # 図面の右・左 / 上・下
         bearing = (n - a) % 360                     # 北から時計回り
