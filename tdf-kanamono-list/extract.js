@@ -1694,14 +1694,15 @@
       //  - 切板名 = 「<ACAR2>」の中。サイズ = マークのそばの横の引出線(線の左端がマークの左200〜右900・高さの差が上130〜下240)に書かれた板の表記(2PL-9 = 2枚)。
       //    引出線が無いとき(下がり止め)はマークから600以内で一番近い表記。同じマークで「PL-9x100x160」と「PL-9x100」なら長いほう
       //  - 数 = マークの数 × 表記の枚数。備考 = 引出線の上か表記のそば(250以内)の「ALC下地」「下がり止め」、無ければ断面の副題(「5 SEC」の下の「袖壁取合」など)
-      //  - ALC下地の「PL-厚x幅x長さ」は、副題が ALC下地 の断面(c断面)のとおり上下に2枚(ユーザー指示「c断面を見たら上下に必要なので合計4枚」)
+      //  - ALC下地の「PL-厚x幅x長さ」もマークの数のまま(ACAR5K は 2CG4 の仕口のフランジの上下 = C・D断面の2枚。c断面の ACAR6 の上下。2026-11-27 ユーザー指示で4→2)
       //  - E断面(柱頭)の「FB-12x90x400」(厚さ9以上)は建方用のピース: 数 = その断面の図の 長さx幅 の箱の数(4面)、備考なし(デッキ受けにしない)
-      //  - BT(カットT。N1C-2 の ACAR11K・ACAR12K)もサイズとして読む(引出線を取り違えないため。BT の行は出さない)。ALC下地の BT があるときは、マークの英字が同じ(ACAR)で BT と同じ板厚の備考の無い PL
-      //    (BT に溶接組立する ACAR9・ACAR10)の備考も ALC下地(2026-11-26 ユーザー指示「ACAR9,10と溶接組立でBTになる。備考は全てALC下地」)
+      //  - BT の表記(N1C-2 の「BT-150x100x9x9 ALC下地 <ACAR12K>」)のマークは、ACAR9・10 と溶接組立して BT になる板 → サイズ PL-板厚(PL-9)。引出線の先の✕の箱(板の絵)があれば 幅x長さ も(PL-9x100x130)
+      //  - 備考が ALC下地 のマークと英字が同じ(ACAR)マークは、備考が無くても ALC下地(相方の板。ACAR2・3 = ACAR5K の相方、ACAR9・10 = ACAR11K・12K の相方)
       //  - 間仕切用捨てPL(2026-11-26 ユーザー指示「X-Xで東西面に取り付く絵(板厚12mm)で判断できる」、N1C-2 = 31枚): 見出し「間仕切用捨てPL」の断面の
       //    「PL-厚x幅x長さ」の板が立面図に横から描かれた絵(幅の長さの平行な2本の線で、間が板厚)の数(X-X 立面は東西の2面、Y-Y 立面は1面に描かれている)。
       //    絵が無ければ、図面の節のレイヤ「1節間仕切用捨てPL」の表記の数(2節のレイヤは数えない)
       //  - 「現場付け」と書かれたデッキ受け(FB-6x65x295 現場付け)は拾わない(ユーザー指示)
+      //  - ✕が重なったマークは中止で拾わない(代わりのマークを拾う。N1C-4 の <AC1> → <AC1S>)
       //  - 避雷針ピース(支給品): 「避雷針ピース(支給品)」のそば(300以内)の PL の表記1つ = 1枚(断面の副題の「避雷針ピース」は数えない)
       function angleItems() {
         var RE_SZ = /^([0-9]+)?((?:G?PL|FB|BT)-[0-9.]+(?:x[0-9.]+)*)$/;
@@ -1717,7 +1718,21 @@
         function isSubtitle(u) { return secT.some(function (s) { return s.y - u.y > 50 && s.y - u.y < 200 && u.x > s.x - 500 && u.x < s.x + 200; }); }
         var RE_NOTE = /^(ALC下地|下がり止め)$/;
         var byM = {};
-        angleMarks.forEach(function (m) {
+        // ✕が重なったマーク(<AC1> に斜めの線2本)は中止 → 拾わない。代わりの右隣のマーク(<AC1S>)が同じ引出線のサイズで拾われる
+        // (2026-11-27 ユーザー指示「✕印がある切板名は中止となったもの。その代わりにAC1Sが代用される」、26-14 N1C-4)。
+        // 中止の✕ = 向きの違う斜めの線2本で囲む範囲が同じ・横長(幅が高さの1.5倍以上)・その範囲の左下にマークの文字がある(板を表す正方形の✕ PL-12x100x100 とは違う)
+        var diag = L.filter(function (l) { var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]); return dx > 40 && dy > 20 && dx < 1500 && dx >= dy * 1.5; });
+        function cancelled(m) {
+          return diag.some(function (a, i) {
+            var ax0 = Math.min(a[0], a[2]), ay0 = Math.min(a[1], a[3]), ax1 = Math.max(a[0], a[2]), ay1 = Math.max(a[1], a[3]);
+            if (m.x < ax0 - 60 || m.x > ax0 + 120 || m.y < ay0 - 60 || m.y > ay1 + 60) return false;
+            return diag.some(function (c, j) {
+              if (j === i || Math.sign((a[3] - a[1]) * (a[2] - a[0])) === Math.sign((c[3] - c[1]) * (c[2] - c[0]))) return false;
+              return Math.abs(Math.min(c[0], c[2]) - ax0) < 2 && Math.abs(Math.max(c[0], c[2]) - ax1) < 2 && Math.abs(Math.min(c[1], c[3]) - ay0) < 2 && Math.abs(Math.max(c[1], c[3]) - ay1) < 2;
+            });
+          });
+        }
+        angleMarks.filter(function (m) { return !cancelled(m); }).forEach(function (m) {
           var name = m.text.slice(1, -1), sz = null, line = null;
           hl.forEach(function (l) {
             var x0 = Math.min(l[0], l[2]), x1 = Math.max(l[0], l[2]), dy = l[1] - m.y;
@@ -1744,9 +1759,31 @@
           var noteText = note ? note.text : ((subOf(sz) || {}).sub || '');   // 断面は表記の位置で決める(<ACA4> は4断面寄りに書かれているが、表記 GPL-9 は5断面の中)
           var mm = RE_SZ.exec(sz.text);
           usedSizes.push(sz);
-          (byM[name] = byM[name] || []).push({ size: mm[2], mult: mm[1] ? parseInt(mm[1], 10) : 1, note: noteText });
+          (byM[name] = byM[name] || []).push({ size: mm[2], mult: mm[1] ? parseInt(mm[1], 10) : 1, note: noteText, t: sz });
         });
-        var hasAlcSec = T.some(function (u) { return u.text === 'ALC下地' && isSubtitle(u); });
+        // 表記の斜めの引出線の先の✕の箱(板の絵。N1C-2 D断面 100x130・B断面 100x120)の 幅x長さ。無ければ空
+        function boxDims(t) {
+          var ends = L.filter(function (l) { return Math.abs(l[0] - l[2]) > 10 && Math.abs(l[1] - l[3]) > 10; }).map(function (l) {
+            if (Math.hypot(l[0] - t.x, l[1] - t.y) < 60) return [l[2], l[3]];
+            if (Math.hypot(l[2] - t.x, l[3] - t.y) < 60) return [l[0], l[1]];
+            return null;
+          }).filter(Boolean);
+          var dg = L.filter(function (l) { return Math.abs(l[0] - l[2]) > 10 && Math.abs(l[1] - l[3]) > 10; });
+          var res = '';
+          ends.some(function (e) {
+            return dg.some(function (a, i) {
+              var b0 = [Math.min(a[0], a[2]), Math.min(a[1], a[3]), Math.max(a[0], a[2]), Math.max(a[1], a[3])];
+              var corner = [[b0[0], b0[1]], [b0[0], b0[3]], [b0[2], b0[1]], [b0[2], b0[3]]].some(function (c) { return Math.hypot(c[0] - e[0], c[1] - e[1]) < 5; });
+              if (!corner) return false;
+              var pair = dg.some(function (c, j) { return j !== i && Math.abs(Math.min(c[0], c[2]) - b0[0]) < 1 && Math.abs(Math.min(c[1], c[3]) - b0[1]) < 1 && Math.abs(Math.max(c[0], c[2]) - b0[2]) < 1 && Math.abs(Math.max(c[1], c[3]) - b0[3]) < 1; });
+              if (!pair) return false;
+              var w = Math.round((b0[2] - b0[0]) * 10) / 10, h = Math.round((b0[3] - b0[1]) * 10) / 10;
+              res = 'x' + Math.min(w, h) + 'x' + Math.max(w, h);
+              return true;
+            });
+          });
+          return res;
+        }
         Object.keys(byM).forEach(function (name) {
           var occ = byM[name];
           var size = occ.map(function (o) { return o.size; }).sort(function (a, b) { return b.length - a.length; })[0];
@@ -1756,16 +1793,15 @@
           }
           var note = (occ.find(function (o) { return o.note; }) || {}).note || '';
           var n = occ.reduce(function (s, o) { return s + o.mult; }, 0);
-          if (note === 'ALC下地' && hasAlcSec && /^PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(size)) n *= 2;
+          // BT の表記が付いたマーク(N1C-2 の ACAR11K・12K)は、ACAR9・10 と溶接組立して BT になる板 → サイズは PL-板厚(2026-11-27 ユーザー指示「ACAR9,10の相方のACAR11K,12Kが漏れている」)
+          var bt = /^BT-[0-9.]+x[0-9.]+x[0-9.]+x([0-9.]+)$/.exec(size);
+          if (bt) size = 'PL-' + bt[1] + boxDims(occ[0].t);   // 幅・長さが読めれば足す(2026-11-27 ユーザー指示「サイズが読めるものは幅や長さも入れる」)
           out.push({ size: size, name: name, n: n, note: note });
         });
-        // BT に溶接組立する板(ACAR9・ACAR10)の備考 = ALC下地
-        out.filter(function (it) { return /^BT-/.test(it.size) && it.note === 'ALC下地'; }).forEach(function (bt) {
-          var pre = (/^[A-Z]+/.exec(bt.name) || [''])[0], th = (/^BT-[0-9.]+x[0-9.]+x([0-9.]+)/.exec(bt.size) || [])[1];
-          out.forEach(function (it) { if (!it.note && pre && it.name.indexOf(pre) === 0 && /^[0-9]/.test(it.name.slice(pre.length)) && it.size === 'PL-' + th) it.note = 'ALC下地'; });
-        });
-        // BT の行そのものは拾わない(ACAR9・10 を溶接組立したもの。2026-11-26 ユーザー指示「BT の行は要らず ACAR9・10」)
-        for (var bi = out.length - 1; bi >= 0; bi--) if (/^BT-/.test(out[bi].size)) out.splice(bi, 1);
+        // ALC下地の相方の板(2026-11-27 ユーザー指示「ACAR2,3の備考にもALC下地(ACAR5Kの相方)」、N1C-2 の ACAR9・10 は ACAR11K・12K の相方):
+        // 備考が ALC下地 のマークと英字が同じ(ACAR)マークで、備考の無いものも ALC下地
+        var alcPre = out.filter(function (it) { return it.note === 'ALC下地'; }).map(function (it) { return (/^[A-Z]+(?=[0-9])/.exec(String(it.name)) || [''])[0]; }).filter(Boolean);
+        out.forEach(function (it) { var p = (/^[A-Z]+(?=[0-9])/.exec(String(it.name)) || [''])[0]; if (!it.note && p && alcPre.indexOf(p) >= 0) it.note = 'ALC下地'; });
         // 建方用のピース(E断面の FB-12x90x400)
         T.filter(function (u) { var m = RE_FB.exec(u.text); return m && parseFloat(m[1]) >= 9; }).forEach(function (u) {
           var m = RE_FB.exec(u.text), w = parseFloat(m[2]), len = parseFloat(m[3]);
