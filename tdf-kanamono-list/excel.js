@@ -46,7 +46,7 @@
     nos.forEach(function (n) { var v = /^\d+$/.test(n) ? String(parseInt(n, 10)) : n; if (out.indexOf(v) < 0) out.push(v); });
     return out;
   }
-  // 注文書との照合: 符号ごとに {ord: 手配数, nos: 注文番号の末尾(_ でつなぐ), used: 使う枚数(リスト全体), diff: 差し引き}。注文書に無い符号は入れない
+  // 注文書との照合: 符号ごとに {ord: 手配数, nos: 注文番号の末尾(_ でつなぐ), used: 使う枚数(リスト全体), diff: 残数}。注文書に無い符号は入れない
   function checkMarks(products, marks) {
     var used = {}, out = {};
     if (!marks) return out;
@@ -94,8 +94,8 @@
     cats.forEach(function (c) {
       var its = Object.keys(tot).map(function (k) { return tot[k]; }).filter(function (t) { return X.kindOf(t.size) === c[1]; }).sort(X.cmpItem);
       if (!its.length) return;
-      var sb = [{ kind: 'cat', vals: [c[0]] }, { kind: 'shead', vals: ['サイズ', '切板名（長さ）', '枚数（本数）', '備考', '注文番号', null, '単重（kg）', '重量（kg）', null, null, '手配総数', '差し引き'] }];
-      // E=注文番号の末尾 G=単重 H=単重×枚数 K=手配総数(注文書の合計) L=差し引き(手配総数 − リスト全体で使う枚数。不足は赤)
+      var sb = [{ kind: 'cat', vals: [c[0]] }, { kind: 'shead', vals: ['サイズ', '切板名（長さ）', '枚数（本数）', '備考', '注文番号', null, '単重（kg）', '重量（kg）', null, null, '手配総数', '残数'] }];
+      // E=注文番号の末尾 G=単重 H=単重×枚数 K=手配総数(注文書の合計) L=残数(手配総数 − リスト全体で使う枚数。不足はマイナスで赤。2026-11-26 見出しを「差し引き」→「残数」)
       its.forEach(function (t) {
         var ck = isMark(t.name) ? chk[t.name] : null;
         sb.push({ kind: c[1] === 'GPL' ? 'sitem_gpl' : 'sitem', short: !!(ck && ck.diff < 0),
@@ -181,7 +181,7 @@
         margins: { left: 0.748031496062992, right: 0.748031496062992, top: 0.984251968503937, bottom: 0.984251968503937, header: 0.511811023622047, footer: 0.511811023622047 },
         printTitlesRow: '1:4' }
     });
-    // E は総まとめの注文番号(「172_173」など)も入るので 9 → 14。F・I・J は空き。G・H = 重量、K・L = 手配総数・差し引き(2026-11-25)
+    // E は総まとめの注文番号(「172_173」など)も入るので 9 → 14。F・I・J は空き。G・H = 重量、K・L = 手配総数・残数(2026-11-25)
     ws.columns = [{ width: 20.625 }, { width: 20.625 }, { width: 20.625 }, { width: 20.625 }, { width: 14 }, { width: 2 }, { width: 10 }, { width: 10 }, { width: 2 }, { width: 2 }, { width: 9 }, { width: 9 }];
     lay.rows.forEach(function (r, i) {
       var row = ws.getRow(i + 1);
