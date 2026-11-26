@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tdf_binary as tb
 import plate
 
-FNAME = re.compile(r"^((?:[0-9A-Za-z]+-)?[0-9A-Za-z]+)-(\d+)(A?)(?:[　 _]|\.tdf$)", re.I)   # 2C-01　261002.tdf / 2C-01A　261002.tdf / 日付の無い 3C-01.tdf(3節)
+FNAME = re.compile(r"^((?:[0-9A-Za-z]+-)?[0-9A-Za-z]+)-(\d+)(A?)(?:[　 _(（]|\.tdf$)", re.I)   # 2C-01　261002.tdf / 2C-01A　261002.tdf / 日付の無い 3C-01.tdf(3節)
 # 頭に工区が付いた形 WA1-1C-01　260717.tdf(26-16。断面図は A付きの別ファイルでなく同じファイルの中)も読む。図番の頭は「WA1-1C」
 TOL = 1.0   # 重量の許容差(kg)。手配書のグロスは整数に丸められているため
 
@@ -75,18 +75,21 @@ def _key(full, dwg):
     return dwg if dwg in full else dwg.split("-")[-1]
 
 
-DIA = re.compile(r"O?[A-Z]*DY\w*|[A-Z]+D\d+[A-Z]?|M\d{3,4}-\d{1,3}[A-Z]?")   # ダイアの板マーク: ODY○○H(26-12)・GD5H/GD6(26-16 WA1)・M900-50H/M800-50(26-16 WA2)
+DIA = re.compile(r"O?[A-Z]*DY\w*|[A-Z]+D\d+[A-Z]?|M\d{3,4}-\d{1,3}[A-Z]?|[A-Z]*DF\d+[A-Z]?")   # ダイアの板マーク: ODY○○H(26-12)・GD5H/GD6(26-16 WA1)・M900-50H/M800-50(26-16 WA2)
 
 
 def _isdia(m):
     """手配書の符号がダイアの板マークか"""
-    return bool(m) and ("DY" in m or re.fullmatch(r"[A-Z]+D\d+[A-Z]?|M\d{3,4}-\d{1,3}[A-Z]?", m) is not None)
+    return bool(m) and ("DY" in m or re.fullmatch(r"[A-Z]+D\d+[A-Z]?|M\d{3,4}-\d{1,3}[A-Z]?|[A-Z]*DF\d+[A-Z]?", m) is not None)   # ADF1(26-14 心斎橋)
 
 
 def _dymark(s):
     """板マーク(ODY○○H・GD5H 等)。前に記号の書き損じが付いたもの(「-<ODY98H」「C<ODY108H」。3節 3C-23・3C-15)も読む"""
     if DIA.fullmatch(s):
         return s
+    m = re.fullmatch(r"<([A-Z]*DF\d+[A-Z]?)>", s)   # 「<ADF1>」(26-14 心斎橋。山かっこで囲んで書く)
+    if m:
+        return m.group(1)
     m = re.fullmatch(r".*[^0-9A-Za-z](O[A-Z]*DY\d+[A-Z]?)", s)
     return m.group(1) if m else None
 
@@ -134,7 +137,11 @@ COMPASS = ["北", "北北東", "北東", "東北東", "東", "東南東", "南�
 
 def north_tip(t, T):
     """方位記号の北の向き(度、図面の右=0・反時計回り)。2本の線の付け根と開いた側のうち、「N」の字に近い方を北(矢の先)とする。
-    26-12 は付け根が「N」のすぐ横(先端)で、北=開いた向きの反対(約206.5°)。読めなければ None"""
+    26-12 は付け根が「N」のすぐ横(先端)で、北=開いた向きの反対(約206.5°)。読めなければ None。
+    「北・南・東・西」の字で囲んだ方位記号があればそれを先に使う(26-14 心斎橋 N1C-15: KEY PLAN の近くの別の「N」の字と線で逆向きに読んでいた)"""
+    k = _north_kanji(t, T)
+    if k is not None:
+        return k
     for s, x, y, *_ in T:
         if s not in ("N", "Ｎ"):
             continue
@@ -231,14 +238,15 @@ def seam_of(L, f):
     tri = triangles(box)
     ar = [a for a in t.arcs if box(a.cx, a.cy)]
     if not tri or not ar:
-        return None
+        # 柱の平面図が「シーム方向」の下にあり、シームの印がひし形(26-14 心斎橋)。ひし形の側の「○面」
+        return _seam_rhombus(t, T, x0, y0)
     cx, cy = sum(a.cx for a in ar) / len(ar), sum(a.cy for a in ar) / len(ar)
     hz = [abs(x - cx) > abs(y - cy) for x, y in tri]
     if not (all(hz) or not any(hz)):
         return None
-    n = _north(t, T)
+    n = _north_kanji(t, T)   # 「北」の字の丸い方位記号(26-16・26-14)。あれば先に使う
     if n is None:
-        n = _north_kanji(t, T)   # 「北」の字の丸い方位記号(26-16)
+        n = _north(t, T)
     if n is None:
         return None
     # シームの数: 三角が柱の両側にあれば2つ。片側しか見つからないときは、少し広い範囲で、同じ軸の上の柱をはさんだ反対側の三角を探す
@@ -264,6 +272,36 @@ def seam_of(L, f):
     return "・".join(v[1] for v in names)
 
 
+def _seam_rhombus(t, T, x0, y0):
+    """「シーム方向」の上か下の柱の平面図で、斜めの短い線4本で閉じたひし形(シームの印)が柱のどちら側かを「○面」で返す(26-14 心斎橋)。
+    ひし形が2つ以上・読めなければ None"""
+    box = lambda x, y: -1200 < x - x0 < 1000 and -1600 < y - y0 < 1300   # 平面図は「シーム方向」の下(N1C-1)のことも上(□-450 の N1C-5)のこともある
+    key = lambda x, y: (round(x), round(y))
+    ls = [l for l in t.lines if box(l.x1, l.y1) and box(l.x2, l.y2) and 40 < math.hypot(l.x2 - l.x1, l.y2 - l.y1) < 220
+          and abs(l.x2 - l.x1) > 10 and abs(l.y2 - l.y1) > 10]
+    nb = collections.defaultdict(set)
+    for l in ls:
+        p, q = key(l.x1, l.y1), key(l.x2, l.y2); nb[p].add(q); nb[q].add(p)
+    cents = set()
+    for p in nb:   # p-q-r-s-p の4本で閉じた形
+        for q in nb[p]:
+            for r in nb[q] - {p}:
+                for s_ in (nb[r] & nb[p]) - {q}:
+                    cents.add(key((p[0] + q[0] + r[0] + s_[0]) / 4, (p[1] + q[1] + r[1] + s_[1]) / 4))
+    ar = [a for a in t.arcs if box(a.cx, a.cy) and a.r < 200]
+    if len(cents) != 1 or not ar:
+        return None
+    cx, cy = sum(a.cx for a in ar) / len(ar), sum(a.cy for a in ar) / len(ar)
+    x, y = next(iter(cents))
+    side = (0 if x > cx else 180) if abs(x - cx) > abs(y - cy) else (90 if y > cy else 270)
+    n = _north_kanji(t, T)
+    if n is None:
+        n = _north(t, T)
+    if n is None:
+        return None
+    return COMPASS[round(((n - side) % 360) / 22.5) % 16] + "面"
+
+
 def material_of(L, f, T, size_rec, table=None):
     """柱サイズの文字の左にある材質の印を読む。戻り値 (材質 or None, 印の説明)。table はBH用の表(省略時は角形の表)"""
     table = table or MATERIAL
@@ -283,10 +321,14 @@ def _chain_col(T, fx, lx=None, letters=None):
     階ラベルの左に数字が無い図面(26-16: 階ラベル「2FL」が連なりより左)は、断面記号の列から右で、
     隣り合う断面記号(板マークのあるもの)の高さの差に近い数字がいちばん多い列を使う"""
     num = [a for a in T if _num(a[0]) and abs(a[3] - 1.57) < 0.05 and fx - 1500 < a[1] < fx - 400]
+    if letters:   # 断面記号(板マークのあるもの)の高さの範囲の数字だけ(26-14 心斎橋: 左上の注記の「7」を拾わない)
+        _ly = [y for y, s in letters]
+        num = [a for a in num if min(_ly) - 2000 < a[2] < max(_ly) + 2000]
     if not num and lx is not None and letters and len(letters) > 1:
         ys = sorted(y for y, s in letters)
         gaps = [(a, b, b - a) for a, b in zip(ys, ys[1:])]
-        cand = [a for a in T if _num(a[0]) and abs(a[3] - 1.57) < 0.05 and lx < a[1] < fx + 3000]
+        # 断面記号の列が階ラベルより右(26-14 心斎橋)なら、連なりは階ラベルと断面記号の列の間(右にある梁の端の寸法 800・210 を拾わない)
+        cand = [a for a in T if _num(a[0]) and abs(a[3] - 1.57) < 0.05 and (fx < a[1] < lx if lx > fx else lx < a[1] < fx + 3000)]
         score = collections.Counter()
         for a in cand:
             v = float(a[0])
@@ -329,7 +371,31 @@ def _has_plate(t, T, fx, lo, hi):
     return False
 
 
-def _split_parts(nz, chain_all, bz, t, T, fx, TOL=60):
+def _gap_chain(T, chain_all, zone, fx, lx):
+    """隣り合うダイアの間ごとの仕上がり寸法 [(高さ, 寸法)](下→上)。連なりの列の数字がダイアの間に1つずつ無いとき(26-14 心斎橋 N1C-15:
+    連なりの列は 1006 とまとめて書き、806・200 は隣の列)に使う。ダイアの間ごとに、まず連なりの列、無ければ階ラベルと断面記号の列の間の
+    縦書きの数字から、記号の間隔に近いものを選ぶ。どこか1つでも見つからなければ None"""
+    lo_x, hi_x = (fx, lx) if lx > fx else (lx, fx + 3000)
+    other = [(a[2], float(a[0]), a[1]) for a in T if _num(a[0]) and abs(a[3] - 1.57) < 0.05 and lo_x < a[1] < hi_x]
+    out = []
+    for (y0, _a), (y1, _b) in zip(zone, zone[1:]):
+        g = y1 - y0
+        c = [(cy, v) for cy, v in chain_all if y0 - 40 < cy < y1 + 40 and abs(v - g) < 0.1 * g + 50]
+        if not c:
+            c = [(cy, v) for cy, v, x in sorted(other, key=lambda o: abs(o[2] - fx)) if y0 - 40 < cy < y1 + 40 and abs(v - g) < 0.1 * g + 50]
+        if not c:
+            return None
+        out.append(min(c, key=lambda c_: abs(c_[1] - g)))
+    return out
+
+
+def _beam_depths(T, fx, lo, hi):
+    """区間(lo〜hi)の近くに表記のある梁のせい(H-340・HY-1000 等)"""
+    return [int(m.group(1)) for s, x, y, r, h in T for m in [re.match(r"[A-Z]*HY?-(\d+)(?:-\d+)?x", s)]
+            if m and fx - 500 < x < fx + 16000 and h <= 100 and lo - 1000 < y < hi + 1000]
+
+
+def _split_parts(nz, chain_all, bz, t, T, fx, TOL=60, lx=None):
     """1つの階のダイア(下→上、内ダイアを除く)を短管ごとに分ける。区間(隣り合うダイアの間)に梁がかかる、または○PLの取り付けがあれば
     取り合いあり。取り合いの無い区間(長管)で分ける。短管は必ず上下のダイアがセット(区間1つ以上)。
     寸法の連なりと区間の数が合わないとき・取り合いが1つも無いときは、分けずにそのまま(従来どおり)"""
@@ -349,8 +415,14 @@ def _split_parts(nz, chain_all, bz, t, T, fx, TOL=60):
         for y, _s in nz:
             k = min(range(len(bnds)), key=lambda j: abs(bnds[j] - y))
             if abs(bnds[k] - y) > 300 or (idx and k <= idx[-1]):
-                return [nz]
+                idx = None
+                break
             idx.append(k)
+        if idx is None:   # ダイアの間ごとの寸法を取り直す(26-14 心斎橋 N1C-15)
+            gc = _gap_chain(T, chain_all, nz, fx, lx) if lx is not None else None
+            if not gc:
+                return [nz]
+            ch, idx = list(enumerate(gc)), list(range(len(nz)))
     cov = []
     for i, (cy, v) in ch:
         lo, hi = cy - v / 2, cy + v / 2
@@ -359,6 +431,16 @@ def _split_parts(nz, chain_all, bz, t, T, fx, TOL=60):
         if not ok and 0 < i < len(chain_all) - 1 and v < 1500:   # 柱の上下の端(次の節との継手)の区間は除く
             ok = _has_plate(t, T, fx, lo, hi)
         cov.append(ok)
+    # 梁のせい+6 にちょうど合う区間(続けて並ぶ区間の合計も)は取り合いあり(26-14 心斎橋: 梁の表記が梁の下に離れて書かれ、梁の範囲が取れない。
+    #   346=H-340+6、1006=HY-1000+6(806+200)、806=HY-800+6)。断面記号の列が階ラベルより右の図面(26-14 の書き方)だけ
+    #   (26-12 1節 1C-10 2階の長管 594 が別の梁 588+6 と同じ値になり、短管にしてしまうため)
+    for a_ in (range(len(ch)) if lx is not None and lx > fx else []):
+        for b_ in range(a_, len(ch)):
+            lo = ch[a_][1][0] - ch[a_][1][1] / 2
+            tot = sum(c[1] for _, c in ch[a_:b_ + 1]); hi = lo + tot
+            if any(abs(tot - d - 6) <= 1 for d in _beam_depths(T, fx, lo, hi)):
+                for k in range(a_, b_ + 1):
+                    cov[k] = True
     runs, cur = [], []
     for k, c in enumerate(cov):
         if c:
@@ -410,17 +492,26 @@ def extract(L, Z, full, sec, order_rows, progress=None):
         TA = L.texts(sec[key]) if key in sec else T
         ZH = head.split("-")[-1]   # 柱符号の頭(「WA1-1C」の図面でも「1C」)
         syms = sorted({s for s, x, y, r, h in T if re.fullmatch(ZH + r"(?:-[A-Z])?[A-Z0-9]+", s) and h >= 110})
+        if not syms and re.match(r"[A-Z]+\d+C$", ZH):   # 図番の頭「N1C」・柱符号「1CN1NA」(26-14 心斎橋 N棟)
+            syms = sorted({s for s, x, y, r, h in T if re.fullmatch(ZH.lstrip("ABCDEFGHIJKLMNOPQRSTUVWXYZ") + r"[A-Z0-9]+[上下]?", s) and h >= 110})   # 「1CN5ND上」(1節の中で分けた柱)
         if any("-" in s for s in syms):   # 「1C-X17Y5」の形(製品名)があれば、横の「1C2」(符号)は使わない(26-16)
             syms = [s for s in syms if "-" in s]
         qty = [s for s, x, y, r, h in T if re.fullmatch(r"[0-9０-９]+台", s) and h >= 110]
         fl_all = [(s, x, y) for s, x, y, r, h in T if re.fullmatch(r"C\dFL", s) and h >= 110]
         if not fl_all:   # 「2FL」「1FL」の形(26-16。文字の高さ105)
             fl_all = [(s, x, y) for s, x, y, r, h in T if re.fullmatch(r"\d+FL", s) and h >= 100]
+        if not fl_all:   # 文字の高さ90(26-14 心斎橋)。いちばん左の列だけ使う(断面図の中の「2FL」を使わない)
+            fl_all = [(s, x, y) for s, x, y, r, h in T if re.fullmatch(r"\d+FL", s) and h >= 85]
         if not fl_all:
             log.append(f"{dwg}: 階ラベル無し"); continue
         fx = min(x for s, x, y in fl_all)
         fls = sorted([(y, s) for s, x, y in fl_all if abs(x - fx) < 500])
-        lx = [round(x) for s, x, y, r, h in T if re.fullmatch(r"[A-Z]", s) and fx - 700 < x <= fx]
+        _fy0, _fy1 = min(y for y, s in fls) - 2500, max(y for y, s in fls) + 2500   # 表題欄の文字(26-14 心斎橋の「H」「B」)を断面記号にしない
+        lx = [round(x) for s, x, y, r, h in T if re.fullmatch(r"[A-Z]", s) and fx - 700 < x <= fx and _fy0 < y < _fy1]
+        if not lx:   # 断面記号の列が階ラベルより右(26-14 心斎橋: 階ラベルの右 約1900)。断面図の「○ SEC」にある記号だけ
+            _sp = [(b[1], b[2]) for b in TA if b[0] == "SEC"]
+            _sl = {a[0] for a in TA if re.fullmatch(r"[A-Z]", a[0]) and any(abs(a[2] - sy) < 5 and 0 < sx - a[1] < 400 for sx, sy in _sp)}
+            lx = [round(x) for s, x, y, r, h in T if re.fullmatch(r"[A-Z]", s) and s in _sl and fx < x < fx + 2500 and abs(r) < 0.05 and _fy0 < y < _fy1]
         if not lx:
             log.append(f"{dwg}: 断面記号無し"); continue
         lx = max(set(lx), key=lx.count)
@@ -505,12 +596,22 @@ def extract(L, Z, full, sec, order_rows, progress=None):
             nz = [z for z in zone0 if not secmark[z[1]][0].startswith('OUDY')]  # 内ダイア(OUDY)は短管を区切らない
             if len(nz) < 2:
                 continue
-            parts = _split_parts(nz, chain_all, bz, L.load(f), T, fx)
+            parts = _split_parts(nz, chain_all, bz, L.load(f), T, fx, lx=lx)
+            # 3つ以上に分かれた階(26-14 心斎橋 N1C-15: 2FL の上の小梁・2FL・下の小梁): 柱符号に「-上」等を付けず、
+            #   階の基準(FL)にいちばん近い短管を「2F」、それより上を「2F上」、下を「2F下」に分ける(2026-11-26 ユーザー指示)
+            flx = {}
+            if len(parts) >= 3:
+                fy0, fl0 = min(fls, key=lambda f_: abs(f_[0] - zone0[-1][0]))
+                dist = [0 if p[0][0] - 1 <= fy0 <= p[-1][0] + 1 else min(abs(fy0 - p[0][0]), abs(fy0 - p[-1][0])) for p in parts]
+                mi = dist.index(min(dist))
+                base = fl0[:-1] if fl0.endswith("FL") else fl0
+                flx = {pi: (fl0 if pi == mi else base + ("上" if pi > mi else "下")) for pi in range(len(parts))}
             for pi, part in enumerate(parts):
-                suf = "" if len(parts) == 1 else ("上" if pi == len(parts) - 1 else ("下" if pi == 0 else "中"))
-                work.append((part, [z for z in zone0 if part[0][0] - 1 <= z[0] <= part[-1][0] + 1], suf))
-        for zone, allz, suf in work:
+                suf = "" if len(parts) == 1 or flx else ("上" if pi == len(parts) - 1 else ("下" if pi == 0 else "中"))
+                work.append((part, [z for z in zone0 if part[0][0] - 1 <= z[0] <= part[-1][0] + 1], suf, flx.get(pi)))
+        for zone, allz, suf, flo in work:
             fy, fl = min(fls, key=lambda f_: abs(f_[0] - zone[-1][0]))
+            fl = flo or fl
             (yl, sl), (yu, su) = zone[0], zone[-1]
             lo, lo_t = secmark[sl]; up, up_t = secmark[su]
             lo_t = lo_t or TMAP.get(lo); up_t = up_t or TMAP.get(up)
@@ -521,9 +622,11 @@ def extract(L, Z, full, sec, order_rows, progress=None):
                 pairs = [(a, b) for a in cands for b in cands if abs(a - b - up_t - lo_t) < 0.6]
                 if pairs:
                     fin, din = max(pairs)
-                elif cands:  # D内々が書かれていない階: 仕上がりの連なりの列の数字(無ければ一番大きい数字)から板厚を引く
+                elif cands:  # D内々が書かれていない階: 仕上がりの連なりの列の数字(無ければ梁のせい+6、それも無ければ一番大きい数字)から板厚を引く
                     one = [c for c in chain_all if yl < c[0] < yu]   # 柱の全長(11093)を仕上がりにしない(3節 3C-10 等の7階)
-                    fin = one[0][1] if len(one) == 1 else max(cands); din = fin - up_t - lo_t
+                    # 梁のせい+6 にちょうど合う数字(26-14 心斎橋 N1C-12: 連なりが取れず、梁の横の 1420 を拾っていた。正しくは 1006=梁1000+6)
+                    bfit = [c for c in cands if any(abs(c - d - 6) <= 1 for d in _beam_depths(T, fx, yl - 1500, yu + 1500))] if lx > fx else []   # 26-14 の書き方の図面だけ
+                    fin = one[0][1] if len(one) == 1 else (max(bfit) if bfit else max(cands)); din = fin - up_t - lo_t
             if suf and len(zone) == 2 and up_t and lo_t:   # 上下に分けた短管(板2枚): 仕上がりはその区間の寸法(1節 1C-13 下=594)
                 one = [c for c in chain_all if yl - 200 < c[0] < yu + 200]
                 if len(one) == 1:
@@ -565,6 +668,8 @@ def extract(L, Z, full, sec, order_rows, progress=None):
                 chain = [c for c in chain_all if yl - 200 < c[0] < yu + 200]
                 if len(chain) != len(pls) - 1:   # 上のダイアの外の区間まで拾ったとき(1節 1C-24・1C-25 2階)は、ダイアの間だけで取り直す
                     chain = [c for c in chain_all if yl - 80 < c[0] < yu]   # 区間の真ん中は必ず上のダイアの記号より下(1C-25 K)
+                if len(chain) != len(pls) - 1:   # ダイアの間ごとの数字を隣の列からも探す(26-14 心斎橋 N1C-15 の 806・200)
+                    chain = _gap_chain(T, chain_all, zone, fx, lx) or chain
                 if len(chain) == len(pls) - 1 and all(t for m_, t in pls):
                     n = len(chain)
                     def inner(i):  # 区間 i の上下の板の内々
@@ -623,8 +728,12 @@ def check(L, Z, full, sec, blocks, progress=None):
             if (m, b["dwg"]) in seen: continue
             seen.add((m, b["dwg"]))
             r = plate.measure(L.load(_drawing(Z, full, sec, b["dwg"])), m, 650)
-            rows.append(dict(mark=m, dwg=b["dwg"], fl=b["fl"], sym=b["syms"][0] if b["syms"] else "", t_dwg=t,
-                             dim=plate.summary(r) if r else None))
+            dim = plate.summary(r) if r else None
+            # 柱の外寸以下に測れたもの(柱の線をたどった。26-14 心斎橋の形の違う板 ADF4 等が 700)は測れなかったものとする
+            cols = [int(x) for s_ in [b.get("size") or ""] + [g[0] or "" for g in (b.get("segs") or [])] for m2 in re.findall(r"□-(\d+)(?:-(\d+))?", s_) for x in m2 if x]   # テーパー「□-1000-900」は両方
+            if dim and cols and not m.startswith("OUDY") and min(dim) <= min(cols) + 1:   # 内ダイアは柱より小さいので除く。テーパーは細い側と比べる
+                dim = None
+            rows.append(dict(mark=m, dwg=b["dwg"], fl=b["fl"], sym=b["syms"][0] if b["syms"] else "", t_dwg=t, dim=dim))
     return rows
 
 
@@ -850,7 +959,8 @@ def run(files, orders_csv, setsu=None, progress=None):
     """progress(段階, 何番目, 全体の数, 図番) … 進み具合を画面に出すため(省略可)"""
     Z, full, sec, skipped = _index(files)
     zh = Z.split("-")[-1]   # 「WA1-1C」→「1C」
-    setsu = setsu or (zh[0] + "節" if zh[:1].isdigit() else "")
+    _ms = re.search(r"(\d+)C$", zh)   # 「1C」→1節、「N1C」(26-14 心斎橋 N棟)→1節
+    setsu = setsu or (_ms.group(1) + "節" if _ms else "")
     header, order_rows = _orders(orders_csv)
     L = _Loader(files)
     blocks, log = extract(L, Z, full, sec, order_rows, progress)
@@ -899,7 +1009,7 @@ def run(files, orders_csv, setsu=None, progress=None):
     if nomark:   # 板マークが書かれていない図面は短管を作れない(2026-11-26 ユーザー指示: その旨を記載する)
         caution.insert(0, ("板マークが書かれていない図面", "\n".join(
             [f"{d}: 断面図に板マーク(切板の符号)が見つかりません。この図面の短管は Excel に入っていません。" for d in nomark] +
-            ["  (図面に板マークを記入してから読み込み直してください)"])))
+            ["  (ダイアフラムの無い部材(柱脚だけの柱など)なら問題ありません。板マークの書き漏れなら、記入してから読み込み直してください)"])))
     if skipped:   # 選んだのに読まなかったTDF(別の節の図面・大組図のファイル名の形でないもの)。黙って外さない(2026-11-26 ユーザー指示)
         caution.insert(0, ("読まなかったファイル", "\n".join(
             [f"次の {len(skipped)} 個のTDFは、図番の頭が {Z} と違う(別の節)か、大組図のファイル名の形でないため読んでいません。"] +
