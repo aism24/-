@@ -230,6 +230,20 @@
     });
     return cv.toDataURL('image/png');
   }
+  // 方位記号(案2: 丸+黒い矢じり+N)。deg = 北の向き(図面の右=0・反時計回り)。背景は透明(セルの罫線を隠さない)
+  function northPng(deg, Wpx, Hpx) {
+    const S = 3, cv = document.createElement('canvas'); cv.width = Math.round(Wpx * S); cv.height = Math.round(Hpx * S);
+    const x = cv.getContext('2d'); x.scale(S, S);
+    const a = deg * Math.PI / 180, dx = Math.cos(a), dy = -Math.sin(a);   // 画面は下向きがプラス
+    const cx = Wpx / 2, cy = Hpx / 2, r = Math.min(Hpx, Wpx) * 0.46;
+    const pt = (u, v) => [cx + (-dy * u + dx * v) * r, cy + (dx * u + dy * v) * r];   // v=北向き・u=北に向かって右の局所座標
+    x.lineWidth = Math.max(1, r * 0.06); x.strokeStyle = '#000'; x.fillStyle = '#000';
+    x.beginPath(); x.arc(cx, cy, r * 0.62, 0, Math.PI * 2); x.stroke();
+    x.beginPath(); [[0, 0.72], [-0.26, -0.5], [0, -0.3], [0.26, -0.5]].forEach(([u, v], i) => { const [X, Y] = pt(u, v); i ? x.lineTo(X, Y) : x.moveTo(X, Y); }); x.closePath(); x.fill();
+    x.font = `bold ${r * 0.52}px sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText('N', cx + dx * r * 0.98, cy + dy * r * 0.98);
+    return cv.toDataURL('image/png');
+  }
   // 板の線画(SVG)を PNG に(黒い枠)
   // maxW・maxH(px): 置ける枠の大きさ。縦横の比を保って枠いっぱいに(2026-11-26 ユーザー指摘: 高さ 80pt 固定では、
   //   サイズ1つの表で3枚のときに次の表の柱符号の上に重なり、7行ある所では小さすぎた)
@@ -275,6 +289,13 @@
       const f0 = clone(ws.getCell('V2').font);   // 見出し V1:X2 の文字は V2 と同じに(セルごとに別のオブジェクト)
       [1, 2].forEach(q => ['V', 'W', 'X'].forEach(c => { ws.getCell(`${c}${q}`).font = Object.keys(f0).length ? clone(f0) : { name: 'Calibri', size: 11, family: 2 }; }));
       put(ws, 'B1', kojiName || ''); put(ws, 'P1', fl.replace(/L$/, ''));
+      // 方位記号(O1:O2。2026-11-26 ユーザー指示、形は案2=丸+黒い矢じり+N)。北の向きは大組図の KEY PLAN から(tankan_core.north_tip)
+      const nd = res.north && res.north[fl];
+      if (images && nd !== null && nd !== undefined) {
+        const w = colPx(ws.getColumn(15).width), hh = ((ws.getRow(1).height || 17.25) + (ws.getRow(2).height || 17.25)) * 96 / 72;
+        const id = out.addImage({ base64: northPng(nd, w, hh), extension: 'png' });
+        ws.addImage(id, { tl: { col: 14, row: 0 }, ext: { width: w, height: hh } });
+      }
       // ダイア出寸法: この階でいちばん多い値を「特記外」に、違う板だけ板の行に「←ダイア出寸法：80」(提出済みExcelと同じ)
       const outs = res.floors[fl].map(g => diaOut(g.block, res.verify, g.odd));
       const cnt = {}; outs.flat().forEach(v => { if (v !== null) cnt[v] = (cnt[v] || 0) + 1; });
@@ -305,6 +326,12 @@
         if (e) copyRows(tpl, merges, proto.top + ns, 1, ws, r + ns + 1, true);   // 足した行(書式だけ。結合の中の値を写さない)
         copyRows(tpl, merges, proto.top + ns + 1, 12, ws, r + ns + 1 + e);     // 板の見出し〜合計
         const rr = r + ns, f1 = rr + 11 + e, f2 = rr + 12 + e;
+        if (e) {
+          // コラム長さが4つ(足した行がある)表: 表の番号(A・B:C)は足した行まで、「コラム長さ」(D:I)は2行で結合(2026-11-26 ユーザー指示。見やすく)
+          [`A${r}:A${rr}`, `B${r}:C${rr}`, `D${rr}:I${rr}`, `D${rr + 1}:I${rr + 1}`].forEach(a => { try { ws.unMergeCells(a); } catch (er) { /* 結合なし */ } });
+          ws.mergeCells(`A${r}:A${rr + 1}`); ws.mergeCells(`B${r}:C${rr + 1}`); ws.mergeCells(`D${rr}:I${rr + 1}`);
+          [`A${r}`, `B${r}`, `D${rr}`].forEach(a => { const cl = ws.getCell(a); cl.alignment = Object.assign(clone(cl.alignment), { vertical: 'middle' }); });   // 2〜3行の真ん中に
+        }
         put(ws, `A${r}`, gi + 1);
         put(ws, `B${r}`, { formula: `IF(J${rr}="","",$P$1&$A$1&A${r})`, result: `${fl.replace(/L$/, '')}-${gi + 1}` });
         // 材質(大組図の柱サイズの左の印から。読めなければ空欄・黄色)
