@@ -231,14 +231,16 @@
     return cv.toDataURL('image/png');
   }
   // 板の線画(SVG)を PNG に(黒い枠)
-  function svgPng(svg) {
+  // maxW・maxH(px): 置ける枠の大きさ。縦横の比を保って枠いっぱいに(2026-11-26 ユーザー指摘: 高さ 80pt 固定では、
+  //   サイズ1つの表で3枚のときに次の表の柱符号の上に重なり、7行ある所では小さすぎた)
+  function svgPng(svg, maxW, maxH) {
     return new Promise((res, rej) => {
       const img = new Image();
       // 縦横の比は SVG の viewBox から(width・height の mm 指定は画像にするとき使えないので置き換える)
       const vb = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg), ar = vb ? (+vb[1] / +vb[2]) : 1;
       img.onload = () => {
-        // 高さ 80pt(板の行7行に収める。90pt では印刷・PDF で下の表に少しはみ出した)
-        const Hh = 80 * 96 / 72, Ww = Hh * ar, S = 3;
+        const mh = maxH || 80 * 96 / 72, mw = maxW || mh * ar;
+        const Hh = Math.min(mh, mw / ar), Ww = Hh * ar, S = 3;
         const cv = document.createElement('canvas'); cv.width = Math.round(Ww * S); cv.height = Math.round(Hh * S);
         const x = cv.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height);
         x.drawImage(img, 0, 0, cv.width, cv.height); x.lineWidth = 2; x.strokeStyle = '#000'; x.strokeRect(1, 1, cv.width - 2, cv.height - 2);
@@ -374,9 +376,10 @@
         put(ws, `Q${f2}`, { formula: `Q${f1}*O${f2}`, result: r2(sumQ * nm) });
         // PL形状注意(odd は下→上)。番号は提出済みExcelと同じ: ①=いちばん下の板、②③…=その上の板の順
         //   置き場所: 1枚=T列 / 2枚=①R・②T(同じ高さ) / 3枚以上=①R(下段)・②T(上段)・③T(下段)・④R(さらに下)
-        // BH柱: 出寸法が特記外と違う板は「ダイア出寸法注意」の絵(同じ出寸法の板は1枚の絵にまとめ、※は全部の板に)
+        // BH柱: 板は出寸法に関係なく必ず「ダイア出寸法注意」の絵(同じ出寸法の板は1枚の絵にまとめ、※は全部の板に)。
+        //   2026-11-26 ユーザー指示「BH柱は必ず出す」。以前は特記外と同じ出寸法の板(3C-14 8階の ODY112、30/30)では絵が出なかった
         const odd = (g.odd || []).slice();
-        const bhd = (g.bhdia || []).filter(d => dflt === null || d.ox !== dflt || d.oy !== dflt);
+        const bhd = (g.bhdia || []).slice();
         const bseen = {};
         for (const d of bhd) {
           const k = `${d.ox}/${d.oy}`;
@@ -394,7 +397,13 @@
           put(ws, `${c}${q - 1}`, '※　' + (o.title || 'PL形状注意') + lab); red(`${c}${q - 1}`);
           (o.marks || [o.mark]).forEach(mk => (markRow[mk] || []).forEach(q2 => { put(ws, `C${q2}`, '※' + lab.trim()); red(`C${q2}`); }));
           if (images && o.svg) {
-            const im = await svgPng(o.svg);
+            // 置ける枠: 横=その列と右隣の列(R・S か T・U)、縦=絵の行から、同じ列の下の絵の見出しの上(無ければ表の最後の行)まで。
+            //   印刷・PDF では画面の計算より少し大きく出るので 0.92 倍(はみ出して次の表の柱符号に重ならないように)
+            const below = place.filter(p => p[1] === c && p[2] > q).map(p => p[2] - 2);
+            const last = below.length ? Math.min(...below) : r + h - 1;
+            let hpx = 0; for (let n = q; n <= last; n++) hpx += (ws.getRow(n).height || 14.25) * 96 / 72;
+            const c0 = c.charCodeAt(0) - 64, wpx = colPx(ws.getColumn(c0).width) + colPx(ws.getColumn(c0 + 1).width) - 8.5;
+            const im = await svgPng(o.svg, (wpx - 6) * 0.92, (hpx - 6) * 0.92);
             const id = out.addImage({ base64: im.data, extension: 'png' });
             const ci = c.charCodeAt(0) - 65;
             ws.addImage(id, { tl: { col: ci + 8.5 / (colPx(ws.getColumn(ci + 1).width) * 0.75), row: q - 1 + 3 / ((ws.getRow(q).height || 14.25)) }, ext: { width: im.w, height: im.h } });
