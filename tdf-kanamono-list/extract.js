@@ -1696,10 +1696,15 @@
       //  - 数 = マークの数 × 表記の枚数。備考 = 引出線の上か表記のそば(250以内)の「ALC下地」「下がり止め」、無ければ断面の副題(「5 SEC」の下の「袖壁取合」など)
       //  - ALC下地の「PL-厚x幅x長さ」は、副題が ALC下地 の断面(c断面)のとおり上下に2枚(ユーザー指示「c断面を見たら上下に必要なので合計4枚」)
       //  - E断面(柱頭)の「FB-12x90x400」(厚さ9以上)は建方用のピース: 数 = その断面の図の 長さx幅 の箱の数(4面)、備考なし(デッキ受けにしない)
-      //  - 間仕切用捨てPL: 図面の節(「柱詳細図 (1節)」)のレイヤ「1節間仕切用捨てPL」の表記の数(2節のレイヤは数えない)
+      //  - BT(カットT。N1C-2 の ACAR11K・ACAR12K)もサイズとして読む。ALC下地の BT があるときは、マークの英字が同じ(ACAR)で BT と同じ板厚の備考の無い PL
+      //    (BT に溶接組立する ACAR9・ACAR10)の備考も ALC下地(2026-11-26 ユーザー指示「ACAR9,10と溶接組立でBTになる。備考は全てALC下地」)
+      //  - 間仕切用捨てPL(2026-11-26 ユーザー指示「X-Xで東西面に取り付く絵(板厚12mm)で判断できる」、N1C-2 = 31枚): 見出し「間仕切用捨てPL」の断面の
+      //    「PL-厚x幅x長さ」の板が立面図に横から描かれた絵(幅の長さの平行な2本の線で、間が板厚)の数(X-X 立面は東西の2面、Y-Y 立面は1面に描かれている)。
+      //    絵が無ければ、図面の節のレイヤ「1節間仕切用捨てPL」の表記の数(2節のレイヤは数えない)
+      //  - 「現場付け」と書かれたデッキ受け(FB-6x65x295 現場付け)は拾わない(ユーザー指示)
       //  - 避雷針ピース(支給品): 「避雷針ピース(支給品)」のそば(300以内)の PL の表記1つ = 1枚(断面の副題の「避雷針ピース」は数えない)
       function angleItems() {
-        var RE_SZ = /^([0-9]+)?((?:G?PL|FB)-[0-9.]+(?:x[0-9.]+)*)$/;
+        var RE_SZ = /^([0-9]+)?((?:G?PL|FB|BT)-[0-9.]+(?:x[0-9.]+)*)$/;
         var szT = T.filter(function (t) { return RE_SZ.test(t.text); });
         var hl = L.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[0] - l[2]) > 100; });
         var secT = T.filter(function (t) { return t.text === 'SEC'; });
@@ -1716,7 +1721,15 @@
           var name = m.text.slice(1, -1), sz = null, line = null;
           hl.forEach(function (l) {
             var x0 = Math.min(l[0], l[2]), x1 = Math.max(l[0], l[2]), dy = l[1] - m.y;
-            if (x0 - m.x < -200 || x0 - m.x > 900 || dy > 130 || dy < -240) return;
+            if (x0 - m.x < -200 || x0 - m.x > 900 || dy > 200 || dy < -240) return;   // 上 130 → 200(N1C-2 B断面の <ACAR11K> は引出線の 160 下)
+            var on = szT.filter(function (t) { return t.y - l[1] > -20 && t.y - l[1] < 80 && t.x >= x0 - 150 && t.x <= x1 + 150; });
+            if (!on.length) return;
+            if (!line || Math.abs(dy) < Math.abs(line[1] - m.y)) { line = l; sz = on[0]; }
+          });
+          // 引出線の右端にマークが書かれているとき(2026-11-26、N1C-2 D断面の <ACAR12K>: 「BT-150x100x9x9 ALC下地」の線の右端の上)
+          if (!sz) hl.forEach(function (l) {
+            var x0 = Math.min(l[0], l[2]), x1 = Math.max(l[0], l[2]), dy = l[1] - m.y;
+            if (Math.abs(x1 - m.x) > 300 || dy > 200 || dy < -240) return;
             var on = szT.filter(function (t) { return t.y - l[1] > -20 && t.y - l[1] < 80 && t.x >= x0 - 150 && t.x <= x1 + 150; });
             if (!on.length) return;
             if (!line || Math.abs(dy) < Math.abs(line[1] - m.y)) { line = l; sz = on[0]; }
@@ -1746,6 +1759,11 @@
           if (note === 'ALC下地' && hasAlcSec && /^PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(size)) n *= 2;
           out.push({ size: size, name: name, n: n, note: note });
         });
+        // BT に溶接組立する板(ACAR9・ACAR10)の備考 = ALC下地
+        out.filter(function (it) { return /^BT-/.test(it.size) && it.note === 'ALC下地'; }).forEach(function (bt) {
+          var pre = (/^[A-Z]+/.exec(bt.name) || [''])[0], th = (/^BT-[0-9.]+x[0-9.]+x([0-9.]+)/.exec(bt.size) || [])[1];
+          out.forEach(function (it) { if (!it.note && pre && it.name.indexOf(pre) === 0 && /^[0-9]/.test(it.name.slice(pre.length)) && it.size === 'PL-' + th) it.note = 'ALC下地'; });
+        });
         // 建方用のピース(E断面の FB-12x90x400)
         T.filter(function (u) { var m = RE_FB.exec(u.text); return m && parseFloat(m[1]) >= 9; }).forEach(function (u) {
           var m = RE_FB.exec(u.text), w = parseFloat(m[2]), len = parseFloat(m[3]);
@@ -1763,7 +1781,27 @@
           usedSizes.push(u);
           out.push({ size: 'FB-' + m[1] + 'x' + m[2], name: len, n: nBox || 1, note: '' });
         });
-        // 間仕切用捨てPL
+        // 間仕切用捨てPL: 立面図の板の絵の数
+        function inAnySec(x, y) { return secT.some(function (s) { return y - s.y > 0 && y - s.y <= 2800 && Math.abs(x - s.x) <= 1900; }); }
+        var kDone = false;
+        T.filter(function (u) { return /^PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) && (subOf(u) || {}).sub === '間仕切用捨てPL'; }).slice(0, 1).forEach(function (u) {
+          var d = u.text.slice(3).split('x').map(parseFloat), t = d[0], w = d[1];
+          var ls = L.filter(function (l) {
+            var vt = Math.abs(l[0] - l[2]) < 0.5, hz = Math.abs(l[1] - l[3]) < 0.5;
+            return (vt || hz) && Math.abs(Math.hypot(l[2] - l[0], l[3] - l[1]) - w) <= 1 && !inAnySec((l[0] + l[2]) / 2, (l[1] + l[3]) / 2);
+          });
+          var nPic = 0;
+          ls.forEach(function (a, i) { ls.slice(i + 1).forEach(function (b) {
+            var av = Math.abs(a[0] - a[2]) < 0.5, bv = Math.abs(b[0] - b[2]) < 0.5;
+            if (av !== bv) return;
+            var gap = av ? Math.abs(a[0] - b[0]) : Math.abs(a[1] - b[1]);
+            var off = av ? Math.abs(Math.min(a[1], a[3]) - Math.min(b[1], b[3])) : Math.abs(Math.min(a[0], a[2]) - Math.min(b[0], b[2]));
+            if (Math.abs(gap - t) <= 0.6 && off <= 1) nPic++;
+          }); });
+          if (!nPic) return;
+          out.push({ size: u.text, name: '', n: nPic, note: '間仕切用捨てPL' });
+          kDone = true;
+        });
         var setsu = (T.map(function (u) { return /\(([0-9]+)節\)/.exec(u.text); }).find(Boolean) || [])[1];
         var kTexts = T.filter(function (u) {
           var ln = P.layers[u.lay - 1] || '';
@@ -1771,7 +1809,7 @@
           var ms = /^([0-9]+)節/.exec(ln);
           return !ms || !setsu || ms[1] === setsu;
         });
-        Array.from(new Set(kTexts.map(function (u) { return u.text; }))).forEach(function (s) {
+        if (!kDone) Array.from(new Set(kTexts.map(function (u) { return u.text; }))).forEach(function (s) {
           out.push({ size: s, name: '', n: kTexts.filter(function (u) { return u.text === s; }).length, note: '間仕切用捨てPL' });
         });
         // 避雷針ピース(支給品)
@@ -1962,7 +2000,11 @@
       // デッキ受けの「FB-6x50x440」(2026-11-24 ユーザー説明「FB-6x50x440これはデッキ受けです。FB-6x50長さ440が2枚」、EA2-1C-02 D断面の小梁 CG1000A の両側):
       // 柱の図面で、GEN のマークのサイズに使っていない「FB-幅x厚x長さ」の表記1つ = 1枚。サイズ FB-6x50・切板名(長さ)440・備考 デッキ受け
       //   EB1-0C-04(C断面の梁3か所×2 = 6)・EB2-0C-05(4か所×2 = 8)も同じ描き方
-      T.filter(function (u) { return /^FB-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) && usedSizes.indexOf(u) < 0; }).forEach(function (u) {
+      T.filter(function (u) {
+        if (!/^FB-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) || usedSizes.indexOf(u) >= 0) return false;
+        // 「現場付け」と書かれたもの(表記の右横 300 以内・同じ高さ)は拾わない(2026-11-26 ユーザー指示、26-14 N1C-2 の FB-6x65x295)
+        return !T.some(function (k) { return /^現場付け?$/.test(k.text) && Math.abs(k.y - u.y) < 30 && k.x - u.x > -50 && k.x - u.x < 300; });
+      }).forEach(function (u) {
         var m = /^(FB-[0-9.]+x[0-9.]+)x([0-9.]+)$/.exec(u.text);
         out.push({ size: m[1], name: parseFloat(m[2]), n: 1, note: 'デッキ受け' });
       });
