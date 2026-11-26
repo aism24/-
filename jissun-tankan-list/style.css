@@ -123,6 +123,15 @@ table.kl input.note-in { width: 160px; font-size: 13px; padding: 2px 4px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .server-btn { padding: 12px 24px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; background: #1a73e8; color: #fff; cursor: pointer; }
 .dialog.wide { max-width: 760px; }
+/* 工事名の選択(アプリ・図面・テキスト入力) */
+#koji-body { font-size: 14px; line-height: 1.8; }
+.koji-lead { margin-bottom: 10px; }
+.koji-opt { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.koji-opt:hover { background: #f4f6f8; }
+.koji-opt input[type=radio] { flex: 0 0 auto; margin: 0; }
+.koji-opt.disabled { color: #999; cursor: not-allowed; }
+.koji-opt-text span { flex: 0 0 auto; }
+#koji-text { flex: 1 1 auto; min-width: 0; font-size: 14px; padding: 6px 8px; border: 1px solid #bbb; border-radius: 6px; }
 .dialog.lines { width: auto; max-width: 95vw; }
 .dialog.lines #notice-body { white-space: pre; }
 #notice-body { flex: 1 1 auto; min-height: 0; overflow: auto; }

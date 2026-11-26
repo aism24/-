@@ -154,7 +154,15 @@
       }
     }
     merges.forEach(m => {
-      if (m.top >= src && m.bottom < src + n) ws.mergeCells(m.top - src + dst, m.left, m.bottom - src + dst, m.right);
+      if (!(m.top >= src && m.bottom < src + n)) return;
+      // ひな形の板の行にある R:S・T:U の結合は使わない(2026-11-26 ユーザー指示)。結合を外したセルの罫線は、すぐ上の行の同じ列にそろえる
+      //   (結合のままの罫線だと R|S の間に太い線が出る)。見出しの R1:U1・R2:U2 は結合のまま
+      if (m.left >= 18 && m.top > 2) {
+        for (let q = m.top; q <= m.bottom; q++) for (let c = m.left; c <= m.right; c++)
+          ws.getRow(q - src + dst).getCell(c).border = clone(tpl.getRow(m.top - 1).getCell(c).border);
+        return;
+      }
+      ws.mergeCells(m.top - src + dst, m.left, m.bottom - src + dst, m.right);
     });
   }
   function parseMerges(tpl) {
@@ -180,32 +188,49 @@
   // ---------- 絵(ブラウザだけ) ----------
   const colPx = w => Math.floor((w || 9) * 7 + 5);
   const rowPx = h => (h || 15) * 96 / 72;
-  // 短管の絵(draw_all.py と同じ描き方): 板=四角、短管=実線と点線(テーパーは斜め)、3枚以上は上の板からの寸法、内ダイアは点線の四角
-  function pipePng(b, Wpx, Hpx) {
+  // 短管の絵: 板=四角、短管=実線(外面)と点線(内面。テーパーは斜め)、3枚以上は上の板からの寸法、内ダイアは点線の四角。
+  // 実物の比率で描く(2026-11-26 ユーザー指示「絵の描き方は実際のものと同じように」):
+  //   横 = 板の短い辺(手配書の縦横)・柱の外寸・板厚(管の厚さ)を mm の比で。いちばん大きいものを絵の幅いっぱいに
+  //   縦 = 区間の長さと板の厚さを mm の比で(板は最低 3px)
+  //   以前は板をいつも幅いっぱい・柱の太さを決まった割合(0.37 等)で描いており、板の出寸法が実物より大きく見えていた
+  function pipePng(b, Wpx, Hpx, verify) {
     const S = 3, cv = document.createElement('canvas'); cv.width = Math.round(Wpx * S); cv.height = Math.round(Hpx * S);
     const x = cv.getContext('2d'); x.scale(S, S); x.lineWidth = 1; x.strokeStyle = '#000'; x.fillStyle = '#000';
     const plates = b.plates.slice().reverse(), segs = b.segs;   // 下→上
     const outer = plates.filter(p => !p[0].startsWith('OUDY'));
-    const L0 = 1, W = Wpx - 3, T0 = 1, H = Hpx - 3, pt = 7 * 96 / 72;
-    const hs = [];
-    outer.forEach((p, k) => { hs.push(['P', p[1] || 0]); if (k < segs.length) hs.push(['S', (segs[k][1] || 0) + ((segs[k][0] || '').startsWith('□') ? 10 : 0), segs[k][0]]); });
-    // 区間の太さ(幅に対する割合): サイズが1つの柱は 0.37。外寸が違う区間がある柱(テーパー等)は、外寸に合わせて 0.33(小さい側)〜0.40(大きい側)。
-    // 2026-11-26 ユーザー指摘: 以前はまっすぐの区間をサイズに関係なく 0.37 で描き、下の□-800がテーパーの下端より細く、上の□-700が上端より太く見えた
-    const dimsOf = s => { const m = /^□-(\d+)(?:-(\d+))?\*/.exec(s || ''); return m ? [+m[1], +(m[2] || m[1])] : null; };   // [下端, 上端]。テーパーは1つ目が下
-    const allD = segs.map(s => dimsOf(s[0])), flat = allD.every(Boolean) ? allD.flat() : [];
-    const dMax = flat.length ? Math.max(...flat) : 0, dMin = flat.length ? Math.min(...flat) : 0;
-    const half = (d, tpFallback) => (dMax > dMin && d) ? 0.33 + 0.07 * (d - dMin) / (dMax - dMin) : tpFallback;
-    const tot = hs.reduce((a, h) => a + h[1], 0) || 1;
-    const scale = (H - pt * outer.length) / Math.max(tot - outer.reduce((a, p) => a + (p[1] || 0), 0), 1);
+    const L0 = 1, W = Wpx - 3, T0 = 1, H = Hpx - 3;
+    // 区間の外寸 [下端, 上端](mm)。テーパー「□-1000-900」は1つ目が下。BH は H(せい)
+    const dimsOf = s => {
+      let m = /^□-(\d+)(?:-(\d+))?\*/.exec(s || ''); if (m) return [+m[1], +(m[2] || m[1])];
+      m = /^BH-(\d+)\*/.exec(s || ''); return m ? [+m[1], +m[1]] : null;
+    };
+    const thkOf = s => { const m = /\*([\d.]+)$/.exec(s || ''); return m ? +m[1] : 0; };   // 管の厚さ(BH はフランジ)
+    const isBH = /^BH-/.test(segs[0] && segs[0][0] || '');
+    const allD = segs.map(s => dimsOf(s[0]) || [0, 0]);
+    const colNear = k => Math.max(k > 0 ? allD[k - 1][1] : 0, k < segs.length ? allD[k][0] : 0);   // 板 k(下から)に接する柱の外寸
+    const plW = outer.map((p, k) => {
+      const d = verify && verify[p[0]] && verify[p[0]].dim;
+      if (d && d[0] && d[1]) return isBH ? Math.max(d[0], d[1]) : Math.min(d[0], d[1]);
+      return colNear(k) ? colNear(k) + 60 : 0;   // 手配書に無い板: 出寸法30として
+    });
+    const maxMM = Math.max(1, ...plW, ...allD.flat());
+    const sx = W / maxMM, cx = L0 + W / 2;
+    // 縦: 板の厚さと区間の長さ(□は板厚を引く前の長さ=コラム長さ+10)
+    const segMM = segs.map(s => (s[1] || 0) + ((s[0] || '').startsWith('□') ? 10 : 0));
+    const plMM = outer.map(p => p[1] || 0);
+    const totMM = segMM.reduce((a, v) => a + v, 0) + plMM.reduce((a, v) => a + v, 0) || 1;
+    const ph = plMM.map(t => Math.max(3, t * H / totMM));
+    const sy = Math.max(0, H - ph.reduce((a, v) => a + v, 0)) / Math.max(segMM.reduce((a, v) => a + v, 0), 1);
     let y = T0 + H; const ys = [];
-    hs.forEach(([kind, v, info]) => {
-      if (kind === 'P') { y -= pt; x.setLineDash([]); x.strokeRect(L0, y, W, pt); ys.push(y); return; }
-      const hseg = v * scale, ytop = y - hseg, tp = /^□-(\d+)-(\d+)\*/.test(info || ''), dd = dimsOf(info) || [0, 0];
-      const wb = half(dd[0], tp ? 0.40 : 0.37), wt = half(dd[1], tp ? 0.33 : 0.37);
+    outer.forEach((p, k) => {
+      y -= ph[k]; x.setLineDash([]); x.lineWidth = 1;
+      const pw = (plW[k] || maxMM) * sx; x.strokeRect(cx - pw / 2, y, pw, ph[k]); ys.push(y);
+      if (k >= segs.length) return;
+      const hseg = segMM[k] * sy, ytop = y - hseg, [db, dt] = allD[k], tw = Math.max(2, thkOf(segs[k][0]) * sx);
       [1, -1].forEach(sgn => {
-        const xb = L0 + W / 2 - sgn * W * wb, xt = L0 + W / 2 - sgn * W * wt;
+        const xb = cx - sgn * db * sx / 2, xt = cx - sgn * dt * sx / 2;
         x.setLineDash([]); x.lineWidth = 1; x.beginPath(); x.moveTo(xb, y); x.lineTo(xt, ytop); x.stroke();
-        x.setLineDash([3, 2]); x.lineWidth = 0.7; x.beginPath(); x.moveTo(xb + sgn * 5, y); x.lineTo(xt + sgn * 5, ytop); x.stroke();
+        x.setLineDash([3, 2]); x.lineWidth = 0.7; x.beginPath(); x.moveTo(xb + sgn * tw, y); x.lineTo(xt + sgn * tw, ytop); x.stroke();
       });
       y = ytop;
     });
@@ -213,32 +238,79 @@
     const ch = b.chain || [];
     if (outer.length > 2 && ch.length === outer.length - 1) {   // 上の板から中間の板までの寸法
       // 端の●: 上側=いちばん上の板の上面、下側=相手の板の下面(板の中心ではない)
-      const ytop = ys[ys.length - 1];
+      // 寸法線は柱の内側(点線の内側)の左に寄せて並べる(2026-11-26 ユーザー指示「全体的に寸法を左に寄せる」)。
+      // 数字は板(ダイアフラム)の線・柱の外面の線・内面の点線・内ダイアの点線と重ねない(同じ指示)。隣の数字と同じ高さでよい
+      const ytop = ys[ys.length - 1], nd = outer.length - 2;
+      const inL = cx - Math.max(20, Math.min(...allD.map((d, k) => Math.min(d[0], d[1]) / 2 - thkOf(segs[k][0]))) * sx) + 3;   // 内面の点線の内側(左)
+      const inR = 2 * cx - inL;
+      const FH = 11, step = Math.max(FH + 6, Math.min(26, (inR - inL - FH - 6) / Math.max(nd, 1)));
+      const xs = Array.from({ length: nd }, (_, i) => inL + FH + 5 + i * step);   // いちばん左の線の左に縦書きの数字が入る
+      // 内ダイア(OUDY)の点線の四角の高さ(数字を置かない)
+      const ou = [];
+      plates.forEach((p, k) => {
+        if (!p[0].startsWith('OUDY') || k === 0 || k === plates.length - 1) return;
+        const below = plates.slice(0, k).filter(q => !q[0].startsWith('OUDY')).length;
+        if (below > 0 && below <= ys.length - 1) { const yy = (ys[below - 1] + ys[below]) / 2; ou.push([yy - 2, yy + Math.max(3, (p[1] || 0) * H / totMM) + 2]); }
+      });
+      x.font = FH + 'px sans-serif'; x.textAlign = 'center';
       for (let j = outer.length - 2; j > 0; j--) {
-        const dist = ch.slice(j).reduce((a, v) => a + v, 0), xx = L0 + W * (0.42 + 0.16 * (outer.length - 2 - j));
-        const yb = ys[j] + pt;
+        const dist = ch.slice(j).reduce((a, v) => a + v, 0), label = String(Math.round(dist * 10) / 10);
+        const xx = xs[nd - j], yb = ys[j] + ph[j];
         x.beginPath(); x.moveTo(xx, ytop); x.lineTo(xx, yb); x.stroke();
         [ytop, yb].forEach(yy => { x.beginPath(); x.arc(xx, yy, 3, 0, Math.PI * 2); x.fill(); });
-        x.save(); x.translate(xx - 3, (ytop + yb) / 2); x.rotate(-Math.PI / 2); x.font = '11px sans-serif'; x.textAlign = 'center';
-        x.fillText(String(Math.round(dist * 10) / 10), 0, 0); x.restore();
+        // 寸法の範囲の中の、板と板のすき間(上の板の下面〜下の板の上面。内ダイアの所は除く)
+        let gaps = [];
+        for (let k = j; k < outer.length - 1; k++) gaps.push([ys[k + 1] + ph[k + 1], ys[k]]);
+        ou.forEach(([o0, o1]) => { gaps = gaps.flatMap(([a, c]) => (o1 <= a || o0 >= c) ? [[a, c]] : [[a, o0], [o1, c]].filter(([u, v]) => v > u)); });
+        const wTxt = x.measureText(label).width, need = wTxt + 6, mid = (ytop + yb) / 2;
+        const near = arr => arr.reduce((p, q) => Math.abs((q[0] + q[1]) / 2 - mid) < Math.abs((p[0] + p[1]) / 2 - mid) ? q : p);
+        const fit = gaps.filter(([a, c]) => c - a >= need);
+        if (fit.length) {   // 縦書き(線の左。左の線との間に入る)
+          const g = near(fit);
+          x.save(); x.translate(xx - 3, (g[0] + g[1]) / 2); x.rotate(-Math.PI / 2); x.fillText(label, 0, 0); x.restore();
+        } else if (gaps.length) {   // 縦書きが入らない短いすき間: 横書き。右の線・内面の点線にかからない所(線の右、無理なら右端の線の右)
+          const fitH = gaps.filter(([a, c]) => c - a >= FH + 2), g = fitH.length ? near(fitH) : gaps.reduce((p, q) => (q[1] - q[0] > p[1] - p[0] ? q : p));
+          const nextX = nd - j + 1 < nd ? xs[nd - j + 1] : inR;
+          const tx = xx + 3 + wTxt + 2 <= nextX ? xx + 3 : Math.min(xs[nd - 1] + 3, inR - wTxt - 2);
+          x.save(); x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillText(label, tx, (g[0] + g[1]) / 2); x.restore();
+        }
       }
     }
-    plates.forEach((p, k) => {   // 内ダイア(OUDY): 区切らない板は、その区間の中ほどに点線の四角
+    plates.forEach((p, k) => {   // 内ダイア(OUDY): 区切らない板は、その区間の中ほどに点線の四角(柱の内側の幅)
       if (!p[0].startsWith('OUDY') || k === 0 || k === plates.length - 1) return;
       const below = plates.slice(0, k).filter(q => !q[0].startsWith('OUDY')).length;
-      if (below > 0 && below <= ys.length - 1) { const yy = (ys[below - 1] + ys[below]) / 2; x.setLineDash([3, 2]); x.strokeRect(L0 + W * 0.18, yy, W * 0.64, pt * 0.8); x.setLineDash([]); }
+      if (below > 0 && below <= ys.length - 1) {
+        const d = allD[below - 1], iw = Math.max(8, ((d[0] + d[1]) / 2 - 2 * thkOf(segs[below - 1][0])) * sx);
+        const yy = (ys[below - 1] + ys[below]) / 2; x.setLineDash([3, 2]); x.strokeRect(cx - iw / 2, yy, iw, Math.max(3, (p[1] || 0) * H / totMM)); x.setLineDash([]);
+      }
     });
     return cv.toDataURL('image/png');
   }
+  // 方位記号(案2: 丸+黒い矢じり+N)。deg = 北の向き(図面の右=0・反時計回り)。背景は透明(セルの罫線を隠さない)
+  function northPng(deg, Wpx, Hpx) {
+    const S = 3, cv = document.createElement('canvas'); cv.width = Math.round(Wpx * S); cv.height = Math.round(Hpx * S);
+    const x = cv.getContext('2d'); x.scale(S, S);
+    const a = deg * Math.PI / 180, dx = Math.cos(a), dy = -Math.sin(a);   // 画面は下向きがプラス
+    const cx = Wpx / 2, cy = Hpx / 2, r = Math.min(Hpx, Wpx) * 0.46;
+    const pt = (u, v) => [cx + (-dy * u + dx * v) * r, cy + (dx * u + dy * v) * r];   // v=北向き・u=北に向かって右の局所座標
+    x.lineWidth = Math.max(1, r * 0.06); x.strokeStyle = '#000'; x.fillStyle = '#000';
+    x.beginPath(); x.arc(cx, cy, r * 0.62, 0, Math.PI * 2); x.stroke();
+    x.beginPath(); [[0, 0.72], [-0.26, -0.5], [0, -0.3], [0.26, -0.5]].forEach(([u, v], i) => { const [X, Y] = pt(u, v); i ? x.lineTo(X, Y) : x.moveTo(X, Y); }); x.closePath(); x.fill();
+    x.font = `bold ${r * 0.52}px sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText('N', cx + dx * r * 0.98, cy + dy * r * 0.98);
+    return cv.toDataURL('image/png');
+  }
   // 板の線画(SVG)を PNG に(黒い枠)
-  function svgPng(svg) {
+  // maxW・maxH(px): 置ける枠の大きさ。縦横の比を保って枠いっぱいに(2026-11-26 ユーザー指摘: 高さ 80pt 固定では、
+  //   サイズ1つの表で3枚のときに次の表の柱符号の上に重なり、7行ある所では小さすぎた)
+  function svgPng(svg, maxW, maxH) {
     return new Promise((res, rej) => {
       const img = new Image();
       // 縦横の比は SVG の viewBox から(width・height の mm 指定は画像にするとき使えないので置き換える)
       const vb = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg), ar = vb ? (+vb[1] / +vb[2]) : 1;
       img.onload = () => {
-        // 高さ 80pt(板の行7行に収める。90pt では印刷・PDF で下の表に少しはみ出した)
-        const Hh = 80 * 96 / 72, Ww = Hh * ar, S = 3;
+        const mh = maxH || 80 * 96 / 72, mw = maxW || mh * ar;
+        const Hh = Math.min(mh, mw / ar), Ww = Hh * ar, S = 3;
         const cv = document.createElement('canvas'); cv.width = Math.round(Ww * S); cv.height = Math.round(Hh * S);
         const x = cv.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height);
         x.drawImage(img, 0, 0, cv.width, cv.height); x.lineWidth = 2; x.strokeStyle = '#000'; x.strokeRect(1, 1, cv.width - 2, cv.height - 2);
@@ -273,6 +345,13 @@
       const f0 = clone(ws.getCell('V2').font);   // 見出し V1:X2 の文字は V2 と同じに(セルごとに別のオブジェクト)
       [1, 2].forEach(q => ['V', 'W', 'X'].forEach(c => { ws.getCell(`${c}${q}`).font = Object.keys(f0).length ? clone(f0) : { name: 'Calibri', size: 11, family: 2 }; }));
       put(ws, 'B1', kojiName || ''); put(ws, 'P1', fl.replace(/L$/, ''));
+      // 方位記号(O1:O2。2026-11-26 ユーザー指示、形は案2=丸+黒い矢じり+N)。北の向きは大組図の KEY PLAN から(tankan_core.north_tip)
+      const nd = res.north && res.north[fl];
+      if (images && nd !== null && nd !== undefined) {
+        const w = colPx(ws.getColumn(15).width), hh = ((ws.getRow(1).height || 17.25) + (ws.getRow(2).height || 17.25)) * 96 / 72;
+        const id = out.addImage({ base64: northPng(nd, w, hh), extension: 'png' });
+        ws.addImage(id, { tl: { col: 14, row: 0 }, ext: { width: w, height: hh } });
+      }
       // ダイア出寸法: この階でいちばん多い値を「特記外」に、違う板だけ板の行に「←ダイア出寸法：80」(提出済みExcelと同じ)
       const outs = res.floors[fl].map(g => diaOut(g.block, res.verify, g.odd));
       const cnt = {}; outs.flat().forEach(v => { if (v !== null) cnt[v] = (cnt[v] || 0) + 1; });
@@ -290,30 +369,58 @@
       let r = 3, acc = 0;
       for (const [gi, g] of res.floors[fl].entries()) {
         prog(`Excelを作っています…\n${fl} ${g.members[0] ? g.members[0].sym : ''}`, 0.05 + 0.85 * done / Math.max(nAll, 1)); done++;
-        const b = g.block, segs = b.segs || [];
+        // 表のサイズ・コラム長さは上の区間から書く(2026-11-26 ユーザー指示「上=テーパー、下=ストレート」、全部の工事)。b.segs は下→上なので逆に
+        const b = g.block, segs = (b.segs || []).slice().reverse();
         const sizes = b.segs ? sizesOf(segs) : [b.size];
-        const proto = PROTO[sizes.length === 1 ? 1 : 3], ns = proto.ns;
+        const proto = PROTO[sizes.length === 1 ? 1 : 3], tns = proto.ns;   // tns = ひな形のサイズの行数
+        // サイズが2つの表は、3行のひな形の上2行だけ使い、表を1行短くする(空いた行を作らない。2026-11-26 ユーザー指示、26-16 2F-1)
+        const size2 = tns === 3 && sizes.length === 2, ns = size2 ? 2 : tns;
         const e = segs.length > 3 ? 1 : 0;   // コラム長さが4つある柱(次の行のJまで使う)は1行足す(提出済みExcelと同じ。板の見出しと重ならないように)
         const h = ns + 13 + e;
         if (acc && acc + h > PAGE_ROWS) { ws.getRow(r - 1).addPageBreak(); acc = 0; }
         acc += h;
-        copyRows(tpl, merges, proto.top, ns + 1, ws, r);                       // サイズの行+コラム長さの行
+        if (size2) {
+          copyRows(tpl, merges, proto.top, 2, ws, r);                          // サイズの行(上2行)
+          copyRows(tpl, merges, proto.top + tns, 1, ws, r + 2);                // コラム長さの行
+          ws.mergeCells(r, 1, r + 2, 1); ws.mergeCells(r, 2, r + 2, 3);        // 表の番号(A・B:C)はサイズ2行+コラム長さの行
+        } else copyRows(tpl, merges, proto.top, ns + 1, ws, r);              // サイズの行+コラム長さの行
         // サイズ1つの表: ひな形はサイズの J:P が結合で単重(P)を書けないので J:O に(提出済みExcelと同じ。サイズ3つの表は元から J:O)
         if (ns === 1) { ws.unMergeCells(`J${r}:P${r}`); ws.mergeCells(`J${r}:O${r}`); }
-        if (e) copyRows(tpl, merges, proto.top + ns, 1, ws, r + ns + 1, true);   // 足した行(書式だけ。結合の中の値を写さない)
-        copyRows(tpl, merges, proto.top + ns + 1, 12, ws, r + ns + 1 + e);     // 板の見出し〜合計
+        if (e) copyRows(tpl, merges, proto.top + tns, 1, ws, r + ns + 1, true);   // 足した行(書式だけ。結合の中の値を写さない)
+        copyRows(tpl, merges, proto.top + tns + 1, 12, ws, r + ns + 1 + e);     // 板の見出し〜合計
         const rr = r + ns, f1 = rr + 11 + e, f2 = rr + 12 + e;
+        if (e) {
+          // コラム長さが4つ(足した行がある)表: 表の番号(A・B:C)は足した行まで、「コラム長さ」(D:I)は2行で結合(2026-11-26 ユーザー指示。見やすく)
+          [`A${r}:A${rr}`, `B${r}:C${rr}`, `D${rr}:I${rr}`, `D${rr + 1}:I${rr + 1}`].forEach(a => { try { ws.unMergeCells(a); } catch (er) { /* 結合なし */ } });
+          ws.mergeCells(`A${r}:A${rr + 1}`); ws.mergeCells(`B${r}:C${rr + 1}`); ws.mergeCells(`D${rr}:I${rr + 1}`);
+          [`A${r}`, `B${r}`, `D${rr}`].forEach(a => { const cl = ws.getCell(a); cl.alignment = Object.assign(clone(cl.alignment), { vertical: 'middle' }); });   // 2〜3行の真ん中に
+        }
         put(ws, `A${r}`, gi + 1);
         put(ws, `B${r}`, { formula: `IF(J${rr}="","",$P$1&$A$1&A${r})`, result: `${fl.replace(/L$/, '')}-${gi + 1}` });
         // 材質(大組図の柱サイズの左の印から。読めなければ空欄・黄色)
-        if (/^(□|BH)/.test(String(b.size || ''))) for (let k = 0; k < ns; k++) put(ws, `D${r + k}`, b.mat || null, b.mat ? null : YEL);
+        // サイズが2つで3行の表を使うときは、空いた3行目には書かない(2026-11-26 ユーザー指示。26-16 2F-1)
+        if (/^(□|BH)/.test(String(b.size || ''))) for (let k = 0; k < Math.min(ns, sizes.length); k++) put(ws, `D${r + k}`, b.mat || null, b.mat ? null : YEL);
         let sumQ = 0;
         if (!b.segs) {
           for (let k = r; k < rr; k++) put(ws, `J${k}`, null, ORG);
           put(ws, `J${rr}`, null, ORG); put(ws, `B${rr + 6 + e}`, null, ORG);
         } else {
-          sizes.forEach((s, k) => put(ws, `J${r + k}`, s));
-          [['J', rr], ['O', rr], ['P', rr], ['J', rr + 1]].forEach(([c, q], k) => { if (k < segs.length) put(ws, `${c}${q}`, segs[k][1]); });
+          sizes.forEach((s, k) => {
+            put(ws, `J${r + k}`, s);
+            // テーパー等でサイズの文字が長いとき見えなくならないよう「縮小して全体を表示する」(2026-11-26 ユーザー指示)
+            const jc = ws.getCell(`J${r + k}`); jc.alignment = Object.assign(clone(jc.alignment) || {}, { shrinkToFit: true, wrapText: false });
+          });
+          // サイズが2つ以上の表: テーパーの行は J:P を結合(単重なし)、まっすぐの行は J:O+単重(P)。ひな形は2行目がテーパーの形なので、
+          //   上の区間から書いてテーパーが1行目に来たとき(26-16 WA1 等)に合わせて付け替える
+          if (ns > 1) sizes.forEach((s_, k) => {
+            const q = r + k, tpz = /^□-\d+-\d+\*/.test(s_ || ''), pMerged = ws.getCell(`P${q}`).isMerged;
+            if (tpz === pMerged) return;
+            try { ws.unMergeCells(tpz ? `J${q}:O${q}` : `J${q}:P${q}`); } catch (er) { /* 結合なし */ }
+            ws.mergeCells(tpz ? `J${q}:P${q}` : `J${q}:O${q}`);
+            if (!tpz) ws.getCell(`P${q}`).style = clone(tpl.getRow(proto.top).getCell(16).style);
+          });
+          // コラム長さは6つまで: コラム長さの行の J・O・P と、足した行の J・O・P(2026-11-26 ユーザー指示。1節 1C-12 の区間5つで1つ入らなかった)
+          [['J', rr], ['O', rr], ['P', rr], ['J', rr + 1], ['O', rr + 1], ['P', rr + 1]].forEach(([c, q], k) => { if (k < segs.length) put(ws, `${c}${q}`, segs[k][1]); });
           put(ws, `B${rr + 6 + e}`, b.fin);
           const pw = pipeWeights(segs);
           pw.forEach((p, k) => {
@@ -351,9 +458,11 @@
           put(ws, `${i < nr ? 'R' : 'S'}${r + (i % nr)}`, mb.sym);
           const sv = seam[mb.dwg];
           if (sv && sdef && sv !== sdef) seamNotes.push([`${i < nr ? 'S' : 'T'}${r + (i % nr)}`, sv]);
-          const no = mb.dwg.split('-').pop(), fn = res.files.full[no], fa = res.files.sec[no];
+          // 図番の頭が複数(26-16 EB1・EB2・EB3 を一緒に)のときは鍵が図番そのもの、1つのときは番号
+          const no = mb.dwg in res.files.full ? mb.dwg : mb.dwg.split('-').pop(), fn = res.files.full[no], fa = res.files.sec[no];
           linkCell(ws, `V${r + i}`, mb.dwg, fn ? link(fn) : '');
-          linkCell(ws, `W${r + i}`, mb.dwg + 'A', fa ? link(fa) : '');
+          // 断面図が立面図と同じファイルの中にある工事(26-16。A付きのファイルが1つも無い)は W列を空ける
+          if (fa || Object.keys(res.files.sec).length) linkCell(ws, `W${r + i}`, mb.dwg + 'A', fa ? link(fa) : '');
           linkCell(ws, `X${r + i}`, mb.sym, fn ? link(fn) : '');
         });
         put(ws, `O${f2}`, { formula: two ? `COUNTA(R${r}:S${r + nr - 1})` : `COUNTA(R${r}:R${r + Math.max(nm, 1) - 1})`, result: nm });
@@ -373,31 +482,55 @@
         }
         put(ws, `Q${f2}`, { formula: `Q${f1}*O${f2}`, result: r2(sumQ * nm) });
         // PL形状注意(odd は下→上)。番号は提出済みExcelと同じ: ①=いちばん下の板、②③…=その上の板の順
-        //   置き場所: 1枚=T列 / 2枚=①R・②T(同じ高さ) / 3枚以上=①R(下段)・②T(上段)・③T(下段)・④R(さらに下)
-        // BH柱: 出寸法が特記外と違う板は「ダイア出寸法注意」の絵(同じ出寸法の板は1枚の絵にまとめ、※は全部の板に)
+        //   置き場所: 1枚=T列 / 2枚=①R・②T(同じ高さ) / 3枚以上=①R(下段)・②T(上段)・③T(下段)・④R(上段)
+        // BH柱: 板は出寸法に関係なく必ず「ダイア出寸法注意」の絵(同じ出寸法の板は1枚の絵にまとめ、※は全部の板に)。
+        //   2026-11-26 ユーザー指示「BH柱は必ず出す」。以前は特記外と同じ出寸法の板(3C-14 8階の ODY112、30/30)では絵が出なかった
         const odd = (g.odd || []).slice();
-        const bhd = (g.bhdia || []).filter(d => dflt === null || d.ox !== dflt || d.oy !== dflt);
+        const bhd = (g.bhdia || []).slice();
         const bseen = {};
         for (const d of bhd) {
           const k = `${d.ox}/${d.oy}`;
           if (bseen[k]) { bseen[k].marks.push(d.mark); continue; }
           odd.push(bseen[k] = { mark: d.mark, marks: [d.mark], svg: d.svg, title: 'ダイア出寸法注意' });
         }
+        // 置く行(q=絵の1行目。見出しは q-1)。2026-11-26 ユーザー指示: 1・2枚は大きめに、3枚以上ははみ出さない・絵どうしも重ねない。
+        //   R〜U 列に字がある行(柱符号・←シーム方向・←ダイア出寸法)より下に置く(字は右の空いたセルにはみ出して見えるので R〜U をまとめて見る)
+        const lastRow = r + h - 1;
+        const used = (from, to) => { let u = from - 1; for (let n = from; n <= to; n++) if (['R', 'S', 'T', 'U'].some(cc => { const v = ws.getCell(`${cc}${n}`).value; return v !== null && v !== undefined && v !== ''; })) u = n; return u; };
+        const head = rr + 1 + e;   // 板の見出しの行(ここより上には置かない)
         let place = [];
-        if (odd.length === 1) place = [[odd[0], 'T', r + (odd[0].title ? 6 : 7), '']];   // ダイア出寸法注意は1行上(提出済みExcelと同じ)
-        else if (odd.length === 2) place = [[odd[0], 'R', r + 7, ' ①'], [odd[1], 'T', r + 7, ' ②']];
-        else if (odd.length > 2) place = [[odd[0], 'R', r + 9, ' ①'], [odd[1], 'T', r + 3, ' ②'], [odd[2], 'T', r + 9, ' ③']]
-          .concat(odd.length > 3 ? [[odd[3], 'R', r + 15, ' ④']] : []);
-        for (const [o, c, q, lab] of place) {
+        if (odd.length && odd.length <= 2) {
+          // 1・2枚: 板の見出しの行から表の最後の行までを使い、字のある行の下から(2枚は ①R・②T を同じ高さに)
+          let q = Math.max(head, used(r, lastRow) + 1) + 1;
+          if (lastRow - q + 1 < 5) q = Math.max(head, used(r, r + nr - 1) + 1) + 1;   // ←ダイア出寸法が下の方にあって狭すぎるときは、柱符号の下から
+          // 1枚は R〜U の4列の幅を使い、真ん中に置く(T・U の2列では幅で大きさが決まってしまい大きくできなかった)。見出しは S 列
+          place = odd.length === 1 ? [[odd[0], 'R', q, '', 4, 'S']] : [[odd[0], 'R', q, ' ①'], [odd[1], 'T', q, ' ②']];
+        } else if (odd.length > 2) {
+          // 3枚以上: ①R(下段)・②T(上段)・③T(下段)・④R(上段)。上段は字のある行の下から、下段は表の下半分から
+          const up = Math.max(r + 3, used(r, r + nr - 1) + 2), low = Math.max(r + 9, up + 4);
+          place = [[odd[0], 'R', low, ' ①'], [odd[1], 'T', up, ' ②'], [odd[2], 'T', low, ' ③']]
+            .concat(odd.length > 3 ? [[odd[3], 'R', up, ' ④']] : []);
+        }
+        for (const [o, c, q, lab, span = 2, tc = c] of place) {
           // ※と見出しは置く行のひな形の書式に関係なく、赤・ＭＳ Ｐ明朝 10・中央(提出済みExcelと同じ)
           const red = addr => { const cl = ws.getCell(addr); cl.font = { name: 'ＭＳ Ｐ明朝', size: 10, color: { argb: 'FFFF0000' } }; cl.alignment = { horizontal: 'center', vertical: 'middle' }; };
-          put(ws, `${c}${q - 1}`, '※　' + (o.title || 'PL形状注意') + lab); red(`${c}${q - 1}`);
+          put(ws, `${tc}${q - 1}`, '※　' + (o.title || 'PL形状注意') + lab); red(`${tc}${q - 1}`);
           (o.marks || [o.mark]).forEach(mk => (markRow[mk] || []).forEach(q2 => { put(ws, `C${q2}`, '※' + lab.trim()); red(`C${q2}`); }));
           if (images && o.svg) {
-            const im = await svgPng(o.svg);
+            // 置ける枠: 横=その列から span 列(R・S か T・U。1枚は R〜U)、縦=絵の行から、同じ列の下の絵の見出しの上(無ければ表の最後の行)まで。
+            //   印刷・PDF では画面の計算より少し大きく出るので 0.92 倍(はみ出して次の表の柱符号や隣の絵に重ならないように)
+            const below = place.filter(p => p[1] === c && p[2] > q).map(p => p[2] - 2);
+            const last = below.length ? Math.min(...below) : lastRow;
+            let hpx = 0; for (let n = q; n <= last; n++) hpx += (ws.getRow(n).height || 14.25) * 96 / 72;
+            const c0 = c.charCodeAt(0) - 64, cws = [];
+            for (let k = 0; k < span; k++) cws.push(colPx(ws.getColumn(c0 + k).width));
+            const wpx = cws.reduce((a, v) => a + v, 0) - 8.5;
+            const im = await svgPng(o.svg, (wpx - 6) * 0.92, (hpx - 6) * 0.92);
             const id = out.addImage({ base64: im.data, extension: 'png' });
-            const ci = c.charCodeAt(0) - 65;
-            ws.addImage(id, { tl: { col: ci + 8.5 / (colPx(ws.getColumn(ci + 1).width) * 0.75), row: q - 1 + 3 / ((ws.getRow(q).height || 14.25)) }, ext: { width: im.w, height: im.h } });
+            // 左の余白: 2列の枠は 8.5(今まで通り)、4列の枠は真ん中に置く。列をまたぐ分は次の列へ進める
+            let off = span > 2 ? 8.5 + Math.max(0, (wpx - im.w) / 2) : 8.5, k = 0;
+            while (k < span - 1 && off >= cws[k]) { off -= cws[k]; k++; }
+            ws.addImage(id, { tl: { col: c0 - 1 + k + off / (cws[k] * 0.75), row: q - 1 + 3 / ((ws.getRow(q).height || 14.25)) }, ext: { width: im.w, height: im.h } });
           }
         }
         // 短管の絵(D〜M列 × 板の行)
@@ -405,7 +538,7 @@
           let wpx = 0, hpx = 0;
           for (let c = 4; c <= 13; c++) wpx += colPx(ws.getColumn(c).width);
           for (let q = rr + 2 + e; q < f1; q++) hpx += rowPx(ws.getRow(q).height);
-          const id = out.addImage({ base64: pipePng(b, wpx, hpx), extension: 'png' });
+          const id = out.addImage({ base64: pipePng(b, wpx, hpx, res.verify), extension: 'png' });
           ws.addImage(id, { tl: { col: 3, row: rr + 1 + e }, br: { col: 13, row: f1 - 1 }, editAs: 'oneCell' });
         }
         r += h;
@@ -431,7 +564,7 @@
       const row = vs.addRow([m, v.t_dwg, v.dim ? v.dim[0] : '', v.dim ? v.dim[1] : '', v.calc, v.use,
         jn(v.t_csv), v.ab ? v.ab.map(([a, b]) => `${a}x${b}`).join('/') : '', v.n,
         jn(v.net), jn(v.gross), v.files.join(' '),
-        v.ok ? (v.unused ? '図面で使っていない(手配だけ。問題としない)' : 'OK') : '要確認: ' + v.ng.join('; '), v.weight].map(x => x === null || x === undefined ? '' : x));
+        v.ok ? (v.unused ? '図面で使っていない(手配だけ。問題としない)' : v.extra ? `OK(手配の方が${v.extra}枚多い。ほかの図面の分として問題としない)` : 'OK') : '要確認: ' + v.ng.join('; '), v.weight].map(x => x === null || x === undefined ? '' : x));
       if (!v.ok) row.eachCell({ includeEmpty: true }, c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: YEL } }; });
     });
     hd.forEach((h_, i) => { vs.getColumn(i + 1).width = Math.max(10, h_.length * 2); });

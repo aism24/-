@@ -5,7 +5,7 @@
 // GAS のウェブアプリ URL(スプレッドシート「短管リスト」の gas/Code.gs をデプロイしたもの)
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbziB1nE6QDN_ADEwtrSo6o3WE06uqIgvRLdpQ1JJqhY35Vj_Btk7TIJ_xvpkw1zfHYHTQ/exec';
 const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js';   // tdf-master-web と同じ版
-const PY_FILES = ['tdf_binary.py', 'plate.py', 'tankan_core.py'], PY_VER = '20261125o';
+const PY_FILES = ['tdf_binary.py', 'plate.py', 'tankan_core.py'], PY_VER = '20261126k';
 const LS_KEY = 'jissun-tankan-list:last';
 const LS_SETTINGS = 'jissun-tankan-list:settings';
 
@@ -346,7 +346,7 @@ async function lastPickDir() {
     return last.handle;
   } catch (e) { return state.root; }
 }
-// ② 大組図の TDF を選ぶ(1つの節の立面図と A付きの断面図をまとめて)
+// ② 大組図の TDF を選ぶ(続けて選ぶと前の図面に足す。readDrawings)
 async function pickFiles() {
   if (!state.started) { toast('先に工場と工事を選んでください', 'error'); return; }
   if (!window.showOpenFilePicker) { $('file-input').click(); return; }   // 古いブラウザ: リンクなしで読む
@@ -415,6 +415,11 @@ function preloadPy() { setTimeout(() => { loadPy().catch(() => {}); }, 300); }
 async function readDrawings(items) {
   items = items.filter(it => /\.tdf$/i.test(it.file.name));
   if (!items.length) { idle(); return; }
+  // 続けて取り込んだ図面は、前に読んだ図面に足して全部を読み直す(26-16 B工区の EB1・EB2・EB3 を順に取り込んで1つの Excel に。
+  // 2026-11-26 ユーザー指示)。同じファイル名は新しく選んだ方。やり直すときは「リセット」、工事を変えると前の図面は捨てる
+  const prev = (state.files || []).filter(p => !items.some(it => it.file.name === p.file.name));
+  if (prev.length) toast(`前に読んだ ${prev.length} 個の図面に足して、合わせて ${prev.length + items.length} 個を読みます(やり直すときは「リセット」)`);
+  items = prev.concat(items);
   state.files = items; state.res = null;
   try {
     busy('図面を読んでいます…', 0.1);
@@ -450,7 +455,8 @@ async function showReadNotes() {
   if (state.orders && state.orders.error) msg.push(`注文書(切板手配書)を読めませんでした: ${state.orders.error}\n板の重量は図面から計算した値になります。`);
   else if (state.orders && !state.orders.csv) msg.push(`注文書(切板手配書)のキャッシュに ${state.kojiNo} がありません。板の重量は図面から計算した値になります。`);
   (r.cautions || []).forEach(([title, body]) => msg.push(`【${title}】\n${body}`));   // 図面・切板マークの書き間違いの可能性(3節)
-  if (r.log.length) msg.push('読めなかった図面:\n' + r.log.join('\n'));
+  const unread = r.log.filter(s => !/: 板マークが無い$/.test(s));   // 板マークが無い図面は上の【板マークが書かれていない図面】に出す(重ねない)
+  if (unread.length) msg.push('読めなかった図面:\n' + unread.join('\n'));
   if (r.mat_ng && r.mat_ng.length) msg.push(`材質の印を読めなかった柱(材質は空欄・黄色。図面で確かめてください):\n` + r.mat_ng.join('\n'));
   const ng = Object.entries(r.verify).filter(([m, v]) => !v.ok);
   if (ng.length) msg.push(`手配書と合わない板(${ng.length}種類。重量は図面から計算した値で黄色):\n` + ng.map(([m, v]) => `${m}: ${v.ng.join('; ')}`).join('\n'));
@@ -493,7 +499,7 @@ function render() {
     r.floors[fl].forEach((g, i) => {
       const row = rows.find(x => x[0] === fl && x[1] === i + 1);
       const dwgs = Array.from(new Set(g.members.map(m => m.dwg)));
-      const dl = dwgs.map(d => { const n = r.files.full[d.split('-').pop()], u = n ? jissunUrl(dirOf(n), n) : ''; return u ? `<a href="${esc(u)}">${esc(d)}</a>` : esc(d); }).join('<br>');
+      const dl = dwgs.map(d => { const n = r.files.full[d] || r.files.full[d.split('-').pop()], u = n ? jissunUrl(dirOf(n), n) : ''; return u ? `<a href="${esc(u)}">${esc(d)}</a>` : esc(d); }).join('<br>');
       html += `<tr class="${row[9] === 'OK' ? '' : 'warn'}"><td>${row[1]}</td><td>${g.members.map(m => esc(m.sym)).join('<br>')}</td><td>${dl}</td><td>${esc(row[4]).replace(/ \/ /g, '<br>')}</td>` +
         `<td>${esc(row[5]).replace(/ \/ /g, '<br>')}</td><td>${esc(row[6])}</td><td>${esc(row[7]).replace(/ \/ /g, '<br>')}</td><td>${esc(row[8])}</td><td class="note">${esc(row[9])}</td></tr>`;
     });
@@ -503,15 +509,40 @@ function render() {
 }
 
 // ---------- Excel ダウンロード ----------
+// 工事名の選択(アプリ・図面・テキスト入力)。戻り値は選んだ工事名、やめたら null。図面の工事名が読めないときは「図面」を選べない
+function chooseKojiName(app, dwg) {
+  return new Promise(resolve => {
+    const radios = [...document.querySelectorAll('input[name="koji-choice"]')], pick = v => radios.forEach(r => { r.checked = r.value === v; });
+    const text = $('koji-text'), dwgRadio = radios.find(r => r.value === 'dwg');
+    $('koji-app').textContent = app || '(なし)';
+    $('koji-dwg').textContent = dwg || '(図面から読めませんでした)';
+    dwgRadio.disabled = !dwg; dwgRadio.closest('.koji-opt').classList.toggle('disabled', !dwg);
+    text.value = ''; pick(app ? 'app' : dwg ? 'dwg' : 'text');
+    const sel = () => (radios.find(r => r.checked) || {}).value;
+    const sync = () => { $('koji-ok').disabled = sel() === 'text' && !text.value.trim(); };
+    radios.forEach(r => { r.onchange = () => { sync(); if (r.value === 'text') text.focus(); }; });
+    text.oninput = () => { pick('text'); sync(); };
+    text.onfocus = () => { pick('text'); sync(); };
+    text.onkeydown = e => { if (e.key === 'Enter' && !$('koji-ok').disabled) $('koji-ok').click(); };
+    sync();
+    $('koji-modal').classList.add('open');
+    const done = v => { $('koji-modal').classList.remove('open'); resolve(v); };
+    $('koji-ok').onclick = () => { const s = sel(); done(s === 'app' ? app : s === 'dwg' ? dwg : text.value.trim()); };
+    $('koji-cancel').onclick = () => done(null);
+  });
+}
 $('btn-excel').addEventListener('click', async () => {
   if (!state.res) return;
   const d = new Date(), p2 = n => String(n).padStart(2, '0');
   const stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}`;
   const name = `短管リスト_${state.kojiNo}_${state.res.setsu}_${stamp}.xlsx`;
+  // Excel に表示する工事名を、アプリ(最初に選んだ工事)・図面の表題欄・テキスト入力の三択で選ぶ(2026-11-26 ユーザー指示)。やめるとダウンロードしない
+  const kojiName = await chooseKojiName(state.kojiName, state.res.koji_dwg);
+  if (kojiName === null) return;
   try {
     busy('Excelを作っています…', 0);
     const blob = await TankanExcel.build({
-      res: state.res, kojiName: state.kojiName, factory: state.factory,
+      res: state.res, kojiName, factory: state.factory,
       link: n => fileUrl(dirOf(n), n), onProgress: (msg, r) => busy(msg, r),
     });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
