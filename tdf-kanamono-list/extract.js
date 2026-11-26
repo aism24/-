@@ -1702,6 +1702,7 @@
       //    「PL-厚x幅x長さ」の板が立面図に横から描かれた絵(幅の長さの平行な2本の線で、間が板厚)の数(X-X 立面は東西の2面、Y-Y 立面は1面に描かれている)。
       //    絵が無ければ、図面の節のレイヤ「1節間仕切用捨てPL」の表記の数(2節のレイヤは数えない)
       //  - 「現場付け」と書かれたデッキ受け(FB-6x65x295 現場付け)は拾わない(ユーザー指示)
+      //  - ✕が重なったマークは中止で拾わない(代わりのマークを拾う。N1C-4 の <AC1> → <AC1S>)
       //  - 避雷針ピース(支給品): 「避雷針ピース(支給品)」のそば(300以内)の PL の表記1つ = 1枚(断面の副題の「避雷針ピース」は数えない)
       function angleItems() {
         var RE_SZ = /^([0-9]+)?((?:G?PL|FB|BT)-[0-9.]+(?:x[0-9.]+)*)$/;
@@ -1717,7 +1718,21 @@
         function isSubtitle(u) { return secT.some(function (s) { return s.y - u.y > 50 && s.y - u.y < 200 && u.x > s.x - 500 && u.x < s.x + 200; }); }
         var RE_NOTE = /^(ALC下地|下がり止め)$/;
         var byM = {};
-        angleMarks.forEach(function (m) {
+        // ✕が重なったマーク(<AC1> に斜めの線2本)は中止 → 拾わない。代わりの右隣のマーク(<AC1S>)が同じ引出線のサイズで拾われる
+        // (2026-11-27 ユーザー指示「✕印がある切板名は中止となったもの。その代わりにAC1Sが代用される」、26-14 N1C-4)。
+        // 中止の✕ = 向きの違う斜めの線2本で囲む範囲が同じ・横長(幅が高さの1.5倍以上)・その範囲の左下にマークの文字がある(板を表す正方形の✕ PL-12x100x100 とは違う)
+        var diag = L.filter(function (l) { var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]); return dx > 40 && dy > 20 && dx < 1500 && dx >= dy * 1.5; });
+        function cancelled(m) {
+          return diag.some(function (a, i) {
+            var ax0 = Math.min(a[0], a[2]), ay0 = Math.min(a[1], a[3]), ax1 = Math.max(a[0], a[2]), ay1 = Math.max(a[1], a[3]);
+            if (m.x < ax0 - 60 || m.x > ax0 + 120 || m.y < ay0 - 60 || m.y > ay1 + 60) return false;
+            return diag.some(function (c, j) {
+              if (j === i || Math.sign((a[3] - a[1]) * (a[2] - a[0])) === Math.sign((c[3] - c[1]) * (c[2] - c[0]))) return false;
+              return Math.abs(Math.min(c[0], c[2]) - ax0) < 2 && Math.abs(Math.max(c[0], c[2]) - ax1) < 2 && Math.abs(Math.min(c[1], c[3]) - ay0) < 2 && Math.abs(Math.max(c[1], c[3]) - ay1) < 2;
+            });
+          });
+        }
+        angleMarks.filter(function (m) { return !cancelled(m); }).forEach(function (m) {
           var name = m.text.slice(1, -1), sz = null, line = null;
           hl.forEach(function (l) {
             var x0 = Math.min(l[0], l[2]), x1 = Math.max(l[0], l[2]), dy = l[1] - m.y;
