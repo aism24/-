@@ -382,7 +382,8 @@
           if (sv && sdef && sv !== sdef) seamNotes.push([`${i < nr ? 'S' : 'T'}${r + (i % nr)}`, sv]);
           const no = mb.dwg.split('-').pop(), fn = res.files.full[no], fa = res.files.sec[no];
           linkCell(ws, `V${r + i}`, mb.dwg, fn ? link(fn) : '');
-          linkCell(ws, `W${r + i}`, mb.dwg + 'A', fa ? link(fa) : '');
+          // 断面図が立面図と同じファイルの中にある工事(26-16。A付きのファイルが1つも無い)は W列を空ける
+          if (fa || Object.keys(res.files.sec).length) linkCell(ws, `W${r + i}`, mb.dwg + 'A', fa ? link(fa) : '');
           linkCell(ws, `X${r + i}`, mb.sym, fn ? link(fn) : '');
         });
         put(ws, `O${f2}`, { formula: two ? `COUNTA(R${r}:S${r + nr - 1})` : `COUNTA(R${r}:R${r + Math.max(nm, 1) - 1})`, result: nm });
