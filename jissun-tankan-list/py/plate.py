@@ -41,7 +41,7 @@ def _centers(t, mark, lab):
         sm = [a for a in t.arcs if 15 <= a.r <= 130 and abs(a.cy - ly) < 2500 and abs(a.cx - lx) < 2500]
         for a in sm:
             for b in sm:
-                if abs(b.r - a.r) < 0.5 and 300 < b.cx - a.cx < 800 and 300 < b.cy - a.cy < 800 and abs((b.cx - a.cx) - (b.cy - a.cy)) < 1:
+                if abs(b.r - a.r) < 0.5 and 150 < b.cx - a.cx < 800 and 150 < b.cy - a.cy < 800 and abs((b.cx - a.cx) - (b.cy - a.cy)) < 1:   # 間隔150〜(26-14 □-450 は226)
                     if _corner(sm, a.cx, b.cy, a.r) and _corner(sm, b.cx, a.cy, a.r):
                         tries.append(type("C", (), dict(cx=(a.cx + b.cx) / 2, cy=(a.cy + b.cy) / 2))())
     return sorted(tries, key=lambda a: min(math.hypot(a.cx - lb.x, a.cy - lb.y) for lb in lab))[:20] if tries else tries
@@ -64,8 +64,8 @@ def _outline(t, mark, cx, cy):
     # 外周に使える線(矢印の短い線・中心を通る対角線/中心線は除く)と、端点の索引(1mm升目)
     usable = []
     for i, m in enumerate(cand):
-        if m.length < 15 and not isinstance(m, _Chord): continue
-        if m.length > 300 and abs((m.x2 - m.x1) * (cy - m.y1) - (m.y2 - m.y1) * (cx - m.x1)) / m.length < 5: continue
+        if m.length < 5 and not isinstance(m, _Chord): continue   # 矢印の短い線は除く(15→5: 26-14 ADF4 の外周に 7.6 の線がある)
+        if m.length > 300 and abs((m.x2 - m.x1) * (cy - m.y1) - (m.y2 - m.y1) * (cx - m.x1)) / m.length < 30: continue   # 中心の近くを通る対角線(26-14 □-450 の形の違う板は中心から16ずれる)
         usable.append(i)
     grid = {}
     for i in usable:
@@ -98,8 +98,10 @@ def _outline(t, mark, cx, cy):
                     if math.hypot(p[0] - v[0], p[1] - v[1]) < SNAP and math.hypot(q[0] - u[0], q[1] - u[1]) > SNAP:
                         turn = sgn * ((math.atan2(q[1] - v[1], q[0] - v[0]) - din + math.pi) % (2 * math.pi) - math.pi)
                         if abs(turn) > math.radians(160): continue  # ほぼ引き返す線(Uターン)は外周ではない
-                        if nxt is None or turn > nxt[0]:
-                            nxt = (turn, q)
+                        # 同じ向きの線が重なっているとき(26-14 ADF5: 外周の辺に孔の印の短い線が重なる)は長い方
+                        d_ = math.hypot(q[0] - v[0], q[1] - v[1])
+                        if nxt is None or turn > nxt[0] + 1e-6 or (abs(turn - nxt[0]) <= 1e-6 and d_ > nxt[2]):
+                            nxt = (turn, q, d_)
                 if nxt is None:
                     break
                 q = nxt[1]
