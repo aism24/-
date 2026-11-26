@@ -734,30 +734,72 @@ async function kojiDirName0(root, rows, r, key) {
   return null;
 }
 // フォルダの中の TDF を全部(下のフォルダも)。図番 → [{segs, date}]
-async function indexTdfs(dir, base, out, onDir) {
+// seen: 見終わったフォルダ(「①進行中工事」からの場所)。もう見たフォルダは飛ばす。stop(): true になったら残りのフォルダは見ない
+// 先にそのフォルダのファイルを全部見てから、下のフォルダへ進む
+async function indexTdfs(dir, base, out, onDir, seen, stop) {
+  const key = base.join('/');
+  if (seen && seen.has(key)) return out;
   onDir();
+  const subs = [];
   for await (const e of dir.values()) {
-    if (e.kind === 'directory') { try { await indexTdfs(e, base.concat(e.name), out, onDir); } catch (err) { /* 読めないフォルダは飛ばす */ } }
+    if (e.kind === 'directory') subs.push(e);
     else { const z = zubanOf(e.name); if (z) (out[z.zuban] = out[z.zuban] || []).push({ segs: base.concat(e.name), date: z.date }); }
   }
+  for (const e of subs) {
+    if (stop && stop()) return out;
+    try { await indexTdfs(e, base.concat(e.name), out, onDir, seen, stop); } catch (err) { /* 読めないフォルダは飛ばす */ }
+  }
+  if (seen && !(stop && stop())) seen.add(key);
   return out;
 }
+async function dirAt(root, segs) {
+  let d = root;
+  for (const sg of segs) d = await d.getDirectoryHandle(sg);
+  return d;
+}
+// リンク表にリンクの無い行は、工事のフォルダの中から図番で TDF を探す。
+// 2026-11-26 ユーザー指示(26-16 で 2C-X15Y3 だけリンクが無く、工事のフォルダ全体 3500 フォルダ以上を見て数分かかった): 探す順を
+//   ① 同じ工事でリンクのある製品の TDF があるフォルダ → ② その上のフォルダ(深い方から) → ③ 工事のフォルダ全体
+// にし、探している図番が全部見つかったらそこで止める。画面には「リンクの無い製品(○件)」「見つかった ○/○件」を出す
 async function findByZuban(root, rows) {
   const need = rows.filter(r => !r.link);
   if (!need.length) return;
-  const idx = new Map(), memo = new Map();   // 工事のフォルダ名 → 図番の索引 / 工事 → 工事のフォルダ名
+  const memo = new Map(), groups = new Map();   // 工事 → 工事のフォルダ名 / 工事のフォルダ名 → 探す行
+  for (const r of need) {
+    const kd = await kojiDirName(root, rows, r, memo);
+    if (!kd) { r.status = 'リンク表に無く、工事のフォルダも分かりません'; continue; }
+    if (!groups.has(kd)) groups.set(kd, []);
+    groups.get(kd).push(r);
+  }
   try {
-    for (const r of need) {
-      const kd = await kojiDirName(root, rows, r, memo);
-      if (!kd) { r.status = 'リンク表に無く、工事のフォルダも分かりません'; continue; }
-      if (!idx.has(kd)) {
-        let n = 0;
-        busy(`マスタに無い製品をサーバーから探しています…\n${kd}`, 0);
-        idx.set(kd, await indexTdfs(await root.getDirectoryHandle(kd), [kd], {}, () => { if (++n % 20 === 0) busy(`マスタに無い製品をサーバーから探しています…(${n}フォルダ)\n${kd}`, 0); }));
+    for (const [kd, rs] of groups) {
+      const want = [...new Set(rs.map(r => nk(r.zuban).toUpperCase()).filter(Boolean))];
+      const out = {}, seen = new Set();
+      let nDir = 0;
+      const nFound = () => want.filter(z => out[z]).length;
+      const done = () => nFound() === want.length;
+      const show = () => busy(`リンク表にリンクの無い製品(${rs.length}件)の図面を探しています…\n見つかった図番 ${nFound()}/${want.length}件(${nDir}フォルダを確認)\n${kd}`, want.length ? nFound() / want.length : 0);
+      // リンクのある製品の TDF のフォルダと、その上のフォルダ(工事のフォルダの手前まで)を、深い方から順に。
+      // 例: 1節の柱のリンクがあれば …/01.柱詳細図/1節/A工区 → …/01.柱詳細図/1節 → …/01.柱詳細図(ここで2節の柱も見つかる)→ …/99.詳細図 → …
+      const order = [], keys = new Set();
+      rows.filter(x => x.link && x.segs && x.segs.length > 2 && x.segs[0] === kd).forEach(x => {
+        for (let n = x.segs.length - 1; n >= 2; n--) { const sg = x.segs.slice(0, n), k = sg.join('/'); if (!keys.has(k)) { keys.add(k); order.push(sg); } }
+      });
+      order.sort((a, b) => b.length - a.length);   // 深いフォルダから(同じ深さは見つけた順)
+      order.push([kd]);
+      show();
+      for (const segs of order) {
+        if (done()) break;
+        let dir;
+        try { dir = await dirAt(root, segs); } catch (e) { continue; }   // 無いフォルダは飛ばす
+        await indexTdfs(dir, segs, out, () => { if (++nDir % 20 === 0) show(); }, seen, done);
+        show();
       }
-      const c = (idx.get(kd)[nk(r.zuban).toUpperCase()] || []).slice().sort((a, b) => b.date.localeCompare(a.date));
-      if (!c.length) { r.status = 'リンク表に無く、図番のTDFも見つかりません'; continue; }
-      r.segs = c[0].segs; r.byZuban = true;   // 同じ図番が複数あればファイル名の日付の新しいもの
+      for (const r of rs) {
+        const c = (out[nk(r.zuban).toUpperCase()] || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+        if (!c.length) { r.status = 'リンク表に無く、図番のTDFも見つかりません'; continue; }
+        r.segs = c[0].segs; r.byZuban = true;   // 同じ図番が複数あればファイル名の日付の新しいもの(見たフォルダの中で)
+      }
     }
   } finally { idle(); }
 }
