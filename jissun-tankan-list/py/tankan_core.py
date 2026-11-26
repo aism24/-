@@ -44,18 +44,35 @@ class _Loader:
 
 
 def _index(files):
-    """{図番の頭}, {番号: 立面のファイル名}, {番号: 断面(A付き)のファイル名}"""
-    full, sec, heads = {}, {}, collections.Counter()
+    """{図番の頭}, {番号: 立面のファイル名}, {番号: 断面(A付き)のファイル名}, 読まなかったTDF。
+    頭に工区が付いて頭が複数ある(26-16 B工区の EB1-1C・EB2-1C・EB3-1C を一緒に選んだ)ときは、節(1C)が同じものを全部読み、
+    番号がぶつからないよう鍵を「EB1-1C-01」の形にする(2026-11-26 ユーザー指示)。頭が1つのときは今までどおり「01」"""
+    full, sec, heads, skipped = {}, {}, collections.Counter(), []
     for name in files:
         m = FNAME.match(name)
         if not m or not name.lower().endswith(".tdf"):
+            if name.lower().endswith(".tdf"):
+                skipped.append(name)
             continue
         heads[m.group(1)] += 1
         (sec if m.group(3) else full)[(m.group(1), m.group(2))] = name
     if not heads:
         raise ValueError("大組図のファイル名(例 2C-01　261002.tdf・3C-01.tdf)が見つかりません")
-    z = heads.most_common(1)[0][0]
-    return z, {no: n for (h, no), n in full.items() if h == z}, {no: n for (h, no), n in sec.items() if h == z}
+    zh = collections.Counter()
+    for h, c in heads.items():
+        zh[h.split("-")[-1]] += c
+    z1 = zh.most_common(1)[0][0]                      # 節の頭(例 1C)
+    use = sorted(h for h in heads if h.split("-")[-1] == z1)
+    skipped += sorted(n for (h, no), n in list(full.items()) + list(sec.items()) if h not in use)
+    if len(use) == 1:
+        z = use[0]
+        return z, {no: n for (h, no), n in full.items() if h == z}, {no: n for (h, no), n in sec.items() if h == z}, skipped
+    return "・".join(use), {f"{h}-{no}": n for (h, no), n in full.items() if h in use}, {f"{h}-{no}": n for (h, no), n in sec.items() if h in use}, skipped
+
+
+def _key(full, dwg):
+    """図番(例 2C-01・EB1-1C-01)から full・sec の鍵。頭が複数のときは図番そのもの、1つのときは番号"""
+    return dwg if dwg in full else dwg.split("-")[-1]
 
 
 DIA = re.compile(r"O?[A-Z]*DY\w*|[A-Z]+D\d+[A-Z]?|M\d{3,4}-\d{1,3}[A-Z]?")   # ダイアの板マーク: ODY○○H(26-12)・GD5H/GD6(26-16 WA1)・M900-50H/M800-50(26-16 WA2)
@@ -359,12 +376,15 @@ def extract(L, Z, full, sec, order_rows, progress=None):
         if len(_r) > 15 and _isdia(_r[12]):
             try: TMAP.setdefault(_r[12], int(float(_r[15])))
             except ValueError: pass
-    for k_, no in enumerate(sorted(full)):
-        f = full[no]
+    for k_, key in enumerate(sorted(full)):
+        f = full[key]
+        no = key.split("-")[-1]
+        head = key.rsplit("-", 1)[0] if "-" in key else Z   # 頭が複数のとき鍵は「EB1-1C-01」
+        dwg = f"{head}-{no}"
         if progress: progress("図面を読んでいます", k_, len(full), f)
         T = L.texts(f)
-        TA = L.texts(sec[no]) if no in sec else T
-        ZH = Z.split("-")[-1]   # 柱符号の頭(「WA1-1C」の図面でも「1C」)
+        TA = L.texts(sec[key]) if key in sec else T
+        ZH = head.split("-")[-1]   # 柱符号の頭(「WA1-1C」の図面でも「1C」)
         syms = sorted({s for s, x, y, r, h in T if re.fullmatch(ZH + r"(?:-[A-Z])?[A-Z0-9]+", s) and h >= 110})
         if any("-" in s for s in syms):   # 「1C-X17Y5」の形(製品名)があれば、横の「1C2」(符号)は使わない(26-16)
             syms = [s for s in syms if "-" in s]
@@ -373,12 +393,12 @@ def extract(L, Z, full, sec, order_rows, progress=None):
         if not fl_all:   # 「2FL」「1FL」の形(26-16。文字の高さ105)
             fl_all = [(s, x, y) for s, x, y, r, h in T if re.fullmatch(r"\d+FL", s) and h >= 100]
         if not fl_all:
-            log.append(f"{Z}-{no}: 階ラベル無し"); continue
+            log.append(f"{dwg}: 階ラベル無し"); continue
         fx = min(x for s, x, y in fl_all)
         fls = sorted([(y, s) for s, x, y in fl_all if abs(x - fx) < 500])
         lx = [round(x) for s, x, y, r, h in T if re.fullmatch(r"[A-Z]", s) and fx - 700 < x <= fx]
         if not lx:
-            log.append(f"{Z}-{no}: 断面記号無し"); continue
+            log.append(f"{dwg}: 断面記号無し"); continue
         lx = max(set(lx), key=lx.count)
         _lt = {}
         for s, x, y, r, h in T:  # 断面記号: 柱の左の列(少し横にずれて書かれたものも拾う。同じ記号が2つあれば列に近い方)
@@ -443,7 +463,7 @@ def extract(L, Z, full, sec, order_rows, progress=None):
         secmark = {k: v[:2] for k, v in secmark.items()}
         if not secmark and secs and not any(_dymark(a[0]) for a in TA):
             # 断面図はあるのに板マークが1つも書かれていない図面(26-16 WA2-1C-03 261124版)。読み込み後の案内で知らせる(2026-11-26 ユーザー指示)
-            log.append(f"{Z}-{no}: 板マークが無い")
+            log.append(f"{dwg}: 板マークが無い")
             continue
         [TMAP.setdefault(m, t_) for m, t_ in secmark.values() if t_]
         view = [a for a in T if fx - 2000 < a[1] < fx + 12000]
@@ -547,7 +567,7 @@ def extract(L, Z, full, sec, order_rows, progress=None):
                     fin = sum(v for y_, v in chain)
                 else:
                     segs = None
-            res.append(dict(dwg=f"{Z}-{no}", L=Ln, syms=[s + "-" + suf for s in syms] if suf else syms, qty=qty, fl=fl, fin=fin, din=din, size=size, mat=mat, mat_mark=mat_mark,
+            res.append(dict(dwg=dwg, L=Ln, syms=[s + "-" + suf for s in syms] if suf else syms, qty=qty, fl=fl, fin=fin, din=din, size=size, mat=mat, mat_mark=mat_mark,
                             chain=chainv, plates=[(secmark[s][0], secmark[s][1] or TMAP.get(secmark[s][0])) for y, s in allz][::-1], segs=segs,
                             secs=sl + su, plate_secs=[s for y, s in allz][::-1], cands=cands, mid=round(mid), up=up, up_t=up_t, lo=lo, lo_t=lo_t))
     return res, log
@@ -555,8 +575,8 @@ def extract(L, Z, full, sec, order_rows, progress=None):
 
 def _drawing(Z, full, sec, dwg):
     """図番(例 2C-01)の TDF。板の外形は A付きの断面図を優先(ローカル版の config.drawing(section=True))"""
-    no = dwg.split("-")[-1]
-    return sec.get(no) or full.get(no)
+    k = _key(full, dwg)
+    return sec.get(k) or full.get(k)
 
 
 def check(L, Z, full, sec, blocks, progress=None):
@@ -748,7 +768,7 @@ def cautions(L, full, blocks, ver):
         lines = [f"柱符号 {sym} が {len(dwgs)} 枚の図面({'・'.join(sorted(dwgs))})に書かれています。同じ柱が2本あるのか、どれかの図面の符号の書き間違いかを確認してください。"]
         m = re.search(r"Y(\d+)C?X(\d+)", sym)
         for d in sorted(dwgs):
-            no = d.split("-")[-1]
+            no = _key(full, d)
             g = _grid(L.texts(full[no])) if no in full else {}
             if m and g.get("CY") and g.get("CX") and (g["CY"], g["CX"]) != m.groups():
                 fix = sym[:m.start(1)] + g["CY"] + sym[m.end(1):m.start(2)] + g["CX"] + sym[m.end(2):]
@@ -779,7 +799,7 @@ def cautions(L, full, blocks, ver):
 
 def run(files, orders_csv, setsu=None, progress=None):
     """progress(段階, 何番目, 全体の数, 図番) … 進み具合を画面に出すため(省略可)"""
-    Z, full, sec = _index(files)
+    Z, full, sec, skipped = _index(files)
     zh = Z.split("-")[-1]   # 「WA1-1C」→「1C」
     setsu = setsu or (zh[0] + "節" if zh[:1].isdigit() else "")
     header, order_rows = _orders(orders_csv)
@@ -804,7 +824,7 @@ def run(files, orders_csv, setsu=None, progress=None):
         for mb in g["members"]:
             d = mb["dwg"]
             if d not in seam:
-                no = d.split("-")[-1]
+                no = _key(full, d)
                 try:
                     seam[d] = seam_of(L, full[no]) if no in full else None
                 except Exception:
@@ -831,6 +851,10 @@ def run(files, orders_csv, setsu=None, progress=None):
         caution.insert(0, ("板マークが書かれていない図面", "\n".join(
             [f"{d}: 断面図に板マーク(切板の符号)が見つかりません。この図面の短管は Excel に入っていません。" for d in nomark] +
             ["  (図面に板マークを記入してから読み込み直してください)"])))
+    if skipped:   # 選んだのに読まなかったTDF(別の節の図面・大組図のファイル名の形でないもの)。黙って外さない(2026-11-26 ユーザー指示)
+        caution.insert(0, ("読まなかったファイル", "\n".join(
+            [f"次の {len(skipped)} 個のTDFは、図番の頭が {Z} と違う(別の節)か、大組図のファイル名の形でないため読んでいません。"] +
+            [f"  {n}" for n in skipped])))
     return dict(seam=seam, north=north, mat_ng=mat_ng, cautions=caution, zuban=Z, setsu=setsu, files=dict(full=full, sec=sec), log=log, blocks=blocks, checks=checks,
                 verify=ver, plate_rows=plate_rows, floors=floors, bh=[f"{fl} {s}" for fl, s in bh],
                 orders=len(order_rows))

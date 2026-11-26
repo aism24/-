@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # tdf_binary.py
 import tdf_binary as tb
 
 SNAP = 1.0      # 線の端と端を「つながっている」とみなす距離(mm)
-R = 520         # 板の中心から外形を探す範囲(mm)
+R = 620         # 板の中心から外形を探す範囲(mm)。520 だと 1060 角の板(26-16 □-1000 の ND17H)の外周が範囲外で、柱の線(1000)を測っていた
 
 
 def arc_angles(t, a):
@@ -108,7 +108,7 @@ def _outline(t, mark, cx, cy):
                 pth.append(q)
             if ok and len(pth) >= 4:
                 xs_ = [p[0] for p in pth]; ys_ = [p[1] for p in pth]
-                if min(xs_) < cx < max(xs_) and min(ys_) < cy < max(ys_) and 400 < max(xs_) - min(xs_) < 1100 and 400 < max(ys_) - min(ys_) < 1100:
+                if min(xs_) < cx < max(xs_) and min(ys_) < cy < max(ys_) and 400 < max(xs_) - min(xs_) < 1240 and 400 < max(ys_) - min(ys_) < 1240:
                     area = abs(sum(pth[i][0] * pth[i - 1][1] - pth[i - 1][0] * pth[i][1] for i in range(len(pth)))) / 2
                     if area > 0.6 * (max(xs_) - min(xs_)) * (max(ys_) - min(ys_)):  # 行き来しただけの輪は外形ではない
                         loops.append((0 if sgn == 1 else 1, len(loops), pth))
