@@ -323,16 +323,22 @@
         prog(`Excelを作っています…\n${fl} ${g.members[0] ? g.members[0].sym : ''}`, 0.05 + 0.85 * done / Math.max(nAll, 1)); done++;
         const b = g.block, segs = b.segs || [];
         const sizes = b.segs ? sizesOf(segs) : [b.size];
-        const proto = PROTO[sizes.length === 1 ? 1 : 3], ns = proto.ns;
+        const proto = PROTO[sizes.length === 1 ? 1 : 3], tns = proto.ns;   // tns = ひな形のサイズの行数
+        // サイズが2つの表は、3行のひな形の上2行だけ使い、表を1行短くする(空いた行を作らない。2026-11-26 ユーザー指示、26-16 2F-1)
+        const size2 = tns === 3 && sizes.length === 2, ns = size2 ? 2 : tns;
         const e = segs.length > 3 ? 1 : 0;   // コラム長さが4つある柱(次の行のJまで使う)は1行足す(提出済みExcelと同じ。板の見出しと重ならないように)
         const h = ns + 13 + e;
         if (acc && acc + h > PAGE_ROWS) { ws.getRow(r - 1).addPageBreak(); acc = 0; }
         acc += h;
-        copyRows(tpl, merges, proto.top, ns + 1, ws, r);                       // サイズの行+コラム長さの行
+        if (size2) {
+          copyRows(tpl, merges, proto.top, 2, ws, r);                          // サイズの行(上2行)
+          copyRows(tpl, merges, proto.top + tns, 1, ws, r + 2);                // コラム長さの行
+          ws.mergeCells(r, 1, r + 2, 1); ws.mergeCells(r, 2, r + 2, 3);        // 表の番号(A・B:C)はサイズ2行+コラム長さの行
+        } else copyRows(tpl, merges, proto.top, ns + 1, ws, r);              // サイズの行+コラム長さの行
         // サイズ1つの表: ひな形はサイズの J:P が結合で単重(P)を書けないので J:O に(提出済みExcelと同じ。サイズ3つの表は元から J:O)
         if (ns === 1) { ws.unMergeCells(`J${r}:P${r}`); ws.mergeCells(`J${r}:O${r}`); }
-        if (e) copyRows(tpl, merges, proto.top + ns, 1, ws, r + ns + 1, true);   // 足した行(書式だけ。結合の中の値を写さない)
-        copyRows(tpl, merges, proto.top + ns + 1, 12, ws, r + ns + 1 + e);     // 板の見出し〜合計
+        if (e) copyRows(tpl, merges, proto.top + tns, 1, ws, r + ns + 1, true);   // 足した行(書式だけ。結合の中の値を写さない)
+        copyRows(tpl, merges, proto.top + tns + 1, 12, ws, r + ns + 1 + e);     // 板の見出し〜合計
         const rr = r + ns, f1 = rr + 11 + e, f2 = rr + 12 + e;
         if (e) {
           // コラム長さが4つ(足した行がある)表: 表の番号(A・B:C)は足した行まで、「コラム長さ」(D:I)は2行で結合(2026-11-26 ユーザー指示。見やすく)
