@@ -1739,7 +1739,8 @@
           hl.forEach(function (l) {
             var x0 = Math.min(l[0], l[2]), x1 = Math.max(l[0], l[2]), dy = l[1] - m.y;
             if (x0 - m.x < -200 || x0 - m.x > 900 || dy > 200 || dy < -240) return;   // 上 130 → 200(N1C-2 B断面の <ACAR11K> は引出線の 160 下)
-            var on = szT.filter(function (t) { return t.y - l[1] > -20 && t.y - l[1] < 80 && t.x >= x0 - 150 && t.x <= x1 + 150; });
+            var on = szT.filter(function (t) { return t.y - l[1] > -20 && t.y - l[1] < 80 && t.x >= x0 - 150 && t.x <= x1 + 150; })
+              .sort(function (p, q) { return (p.x >= x0 - 1 && p.x <= x1 ? 0 : 1) - (q.x >= x0 - 1 && q.x <= x1 ? 0 : 1); });   // 線の範囲の中の表記を先に(N1C-7 D断面: <ADF5> の線「N C PL-36」の右端の外に別の線の「FB-6x65x443.6」)
             if (!on.length) return;
             if (!line || Math.abs(dy) < Math.abs(line[1] - m.y)) { line = l; sz = on[0]; }
           });
@@ -1747,7 +1748,8 @@
           if (!sz) hl.forEach(function (l) {
             var x0 = Math.min(l[0], l[2]), x1 = Math.max(l[0], l[2]), dy = l[1] - m.y;
             if (Math.abs(x1 - m.x) > 300 || dy > 200 || dy < -240) return;
-            var on = szT.filter(function (t) { return t.y - l[1] > -20 && t.y - l[1] < 80 && t.x >= x0 - 150 && t.x <= x1 + 150; });
+            var on = szT.filter(function (t) { return t.y - l[1] > -20 && t.y - l[1] < 80 && t.x >= x0 - 150 && t.x <= x1 + 150; })
+              .sort(function (p, q) { return (p.x >= x0 - 1 && p.x <= x1 ? 0 : 1) - (q.x >= x0 - 1 && q.x <= x1 ? 0 : 1); });   // 線の範囲の中の表記を先に(N1C-7 D断面: <ADF5> の線「N C PL-36」の右端の外に別の線の「FB-6x65x443.6」)
             if (!on.length) return;
             if (!line || Math.abs(dy) < Math.abs(line[1] - m.y)) { line = l; sz = on[0]; }
           });
