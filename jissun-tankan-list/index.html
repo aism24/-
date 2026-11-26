@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>大組図から短管リスト作成</title>
-<link rel="stylesheet" href="style.css?v=20261126a">
+<link rel="stylesheet" href="style.css?v=20261126b">
 </head>
 <body>
 
@@ -76,6 +76,20 @@
   </div>
 </div>
 
+<!-- Excel に表示する工事名の選択(アプリ・図面・テキスト入力の三択。2026-11-26 ユーザー指示) -->
+<div id="koji-modal" class="overlay">
+  <div class="dialog">
+    <div class="dialog-title">工事名の選択</div>
+    <div id="koji-body">
+      <div class="koji-lead">Excelに表示する工事名を選択してください。</div>
+      <label class="koji-opt"><input type="radio" name="koji-choice" value="app"><span>アプリ：<span id="koji-app"></span></span></label>
+      <label class="koji-opt"><input type="radio" name="koji-choice" value="dwg"><span>図面：<span id="koji-dwg"></span></span></label>
+      <label class="koji-opt koji-opt-text"><input type="radio" name="koji-choice" value="text"><span>テキスト入力：</span><input type="text" id="koji-text" placeholder="工事名を入力"></label>
+    </div>
+    <div class="dialog-actions"><button type="button" class="header-btn" id="koji-cancel">やめる</button><button type="button" class="header-action-btn orange" id="koji-ok">OK</button></div>
+  </div>
+</div>
+
 <!-- アプリ説明書(manual/p-N.jpg。◀▶・←→キーでページ送り、閉じる・Escで閉じる。作り方は docs/manual-draft-tankan/README.md) -->
 <div id="manual-overlay" role="dialog" aria-label="短管リストアプリ説明書">
   <div id="manual-box">
@@ -92,7 +106,7 @@
 <div id="toast"></div>
 
 <script src="excel.js?v=20261126i"></script>
-<script src="app.js?v=20261126f"></script>
+<script src="app.js?v=20261126g"></script>
 <script src="to-launcher.js?v=20261125a" data-target="header h1" data-mode="beforePrev"></script>
 </body>
 </html>
