@@ -9,7 +9,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tdf_binary as tb
 import plate
 
-FNAME = re.compile(r"^([0-9A-Za-z]+)-(\d+)(A?)(?:[　 _]|\.tdf$)", re.I)   # 2C-01　261002.tdf / 2C-01A　261002.tdf / 日付の無い 3C-01.tdf(3節)
+FNAME = re.compile(r"^((?:[0-9A-Za-z]+-)?[0-9A-Za-z]+)-(\d+)(A?)(?:[　 _]|\.tdf$)", re.I)   # 2C-01　261002.tdf / 2C-01A　261002.tdf / 日付の無い 3C-01.tdf(3節)
+# 頭に工区が付いた形 WA1-1C-01　260717.tdf(26-16。断面図は A付きの別ファイルでなく同じファイルの中)も読む。図番の頭は「WA1-1C」
 TOL = 1.0   # 重量の許容差(kg)。手配書のグロスは整数に丸められているため
 
 
@@ -32,6 +33,8 @@ class _Loader:
         for r in t.texts:
             s = t.resolve_text(r)
             if s and abs(r.x) < 1e8 and abs(r.y) < 1e8:
+                # テーパーの「□-900～800x36」(26-16)は 26-12 と同じ「□-900-800x900-800x36」の書き方にそろえる
+                s = re.sub(r"^□-(\d+)～(\d+)x(\d+)$", r"□-\1-\2x\1-\2x\3", s.strip())
                 out.append((s.strip(), r.x, r.y, round(t.resolve_rot(r), 2), r.h))
         return out
 
@@ -51,9 +54,17 @@ def _index(files):
     return z, {no: n for (h, no), n in full.items() if h == z}, {no: n for (h, no), n in sec.items() if h == z}
 
 
+DIA = re.compile(r"O?[A-Z]*DY\w*|[A-Z]+D\d+[A-Z]?")   # ダイアの板マーク: ODY○○H(26-12)・GD5H/GD6(26-16)
+
+
+def _isdia(m):
+    """手配書の符号がダイアの板マークか"""
+    return bool(m) and ("DY" in m or re.fullmatch(r"[A-Z]+D\d+[A-Z]?", m) is not None)
+
+
 def _dymark(s):
-    """板マーク(ODY○○H 等)。前に記号の書き損じが付いたもの(「-<ODY98H」「C<ODY108H」。3節 3C-23・3C-15)も読む"""
-    if re.fullmatch(r"O?[A-Z]*DY\w*", s):
+    """板マーク(ODY○○H・GD5H 等)。前に記号の書き損じが付いたもの(「-<ODY98H」「C<ODY108H」。3節 3C-23・3C-15)も読む"""
+    if DIA.fullmatch(s):
         return s
     m = re.fullmatch(r".*[^0-9A-Za-z](O[A-Z]*DY\d+[A-Z]?)", s)
     return m.group(1) if m else None
@@ -188,9 +199,23 @@ def material_of(L, f, T, size_rec, table=None):
     return table.get((shape, ch, tee)), desc
 
 
-def _chain_col(T, fx):
-    """柱の左の仕上がり寸法の連なり(縦書きの数字が一番多い列)。(文字の高さ=区間の真ん中, 寸法) の下→上"""
+def _chain_col(T, fx, lx=None, letters=None):
+    """柱の左の仕上がり寸法の連なり(縦書きの数字が一番多い列)。(文字の高さ=区間の真ん中, 寸法) の下→上。
+    階ラベルの左に数字が無い図面(26-16: 階ラベル「2FL」が連なりより左)は、断面記号の列から右で、
+    隣り合う断面記号(板マークのあるもの)の高さの差に近い数字がいちばん多い列を使う"""
     num = [a for a in T if _num(a[0]) and abs(a[3] - 1.57) < 0.05 and fx - 1500 < a[1] < fx - 400]
+    if not num and lx is not None and letters and len(letters) > 1:
+        ys = sorted(y for y, s in letters)
+        gaps = [(a, b, b - a) for a, b in zip(ys, ys[1:])]
+        cand = [a for a in T if _num(a[0]) and abs(a[3] - 1.57) < 0.05 and lx < a[1] < fx + 3000]
+        score = collections.Counter()
+        for a in cand:
+            v = float(a[0])
+            if any(lo - 200 < a[2] < hi + 200 and abs(v - g) < 0.1 * g + 50 for lo, hi, g in gaps):
+                score[round((a[1] - fx) / 30)] += 1
+        if score:
+            best = max(score, key=lambda k: (score[k], -k)) * 30
+            num = [a for a in cand if abs(a[1] - fx - best) < 30]
     if not num:
         return []
     xs = collections.Counter(round(a[1] - fx) for a in num)
@@ -289,7 +314,7 @@ def extract(L, Z, full, sec, order_rows, progress=None):
     res, log = [], []
     TMAP = {}   # 板厚の補い(断面図で板厚が読めない板): 注文書キャッシュの板厚
     for _r in order_rows:
-        if len(_r) > 15 and "DY" in _r[12]:
+        if len(_r) > 15 and _isdia(_r[12]):
             try: TMAP.setdefault(_r[12], int(float(_r[15])))
             except ValueError: pass
     for k_, no in enumerate(sorted(full)):
@@ -297,9 +322,14 @@ def extract(L, Z, full, sec, order_rows, progress=None):
         if progress: progress("図面を読んでいます", k_, len(full), f)
         T = L.texts(f)
         TA = L.texts(sec[no]) if no in sec else T
-        syms = sorted({s for s, x, y, r, h in T if re.fullmatch(Z + r"[A-Z0-9]+", s) and h >= 110})
+        ZH = Z.split("-")[-1]   # 柱符号の頭(「WA1-1C」の図面でも「1C」)
+        syms = sorted({s for s, x, y, r, h in T if re.fullmatch(ZH + r"(?:-[A-Z])?[A-Z0-9]+", s) and h >= 110})
+        if any("-" in s for s in syms):   # 「1C-X17Y5」の形(製品名)があれば、横の「1C2」(符号)は使わない(26-16)
+            syms = [s for s in syms if "-" in s]
         qty = [s for s, x, y, r, h in T if re.fullmatch(r"[0-9０-９]+台", s) and h >= 110]
         fl_all = [(s, x, y) for s, x, y, r, h in T if re.fullmatch(r"C\dFL", s) and h >= 110]
+        if not fl_all:   # 「2FL」「1FL」の形(26-16。文字の高さ105)
+            fl_all = [(s, x, y) for s, x, y, r, h in T if re.fullmatch(r"\d+FL", s) and h >= 100]
         if not fl_all:
             log.append(f"{Z}-{no}: 階ラベル無し"); continue
         fx = min(x for s, x, y in fl_all)
@@ -378,7 +408,7 @@ def extract(L, Z, full, sec, order_rows, progress=None):
             if groups and it[0] - groups[-1][-1][0] < 1500: groups[-1].append(it)
             else: groups.append([it])
         # 階のダイアの組を、取り合い(梁・○PL)のある区間だけの短管に分ける(取り合いの無い区間=長管をはさめば「-上」「-下」)
-        bz, chain_all = _beam_zones(L.load(f), T, fx), _chain_col(T, fx)
+        bz, chain_all = _beam_zones(L.load(f), T, fx), _chain_col(T, fx, lx, [z for z in letters if z[1] in secmark])
         work = []
         for zone0 in groups:
             nz = [z for z in zone0 if not secmark[z[1]][0].startswith('OUDY')]  # 内ダイア(OUDY)は短管を区切らない
@@ -502,7 +532,8 @@ def check(L, Z, full, sec, blocks, progress=None):
 def verify(blocks, checks, header, order_rows, setsu):
     """verify.py と同じ。戻り値 (板マークごとの結果, この節の柱ダイアの手配書の行)"""
     rows = [[r[0]] + r[3:] for r in order_rows
-            if len(r) > 18 and r[12] and r[9].replace(" ", "") == setsu and "ダイア" in r[10]]
+            if len(r) > 18 and r[12] and re.sub(r"【.*?】", "", r[9].replace(" ", "")) == setsu and ("ダイア" in r[10] or "DPL" in r[10].upper())]
+    # 節の「1節【夢前】」は「1節」、工種「柱_通しDPL」もダイア(26-16)
     order = collections.defaultdict(lambda: dict(n=0, t=set(), ab=set(), gross=set(), net=set(), files=[]))
     for r in rows:
         try:
@@ -663,7 +694,7 @@ def cautions(L, full, blocks, ver):
     where = collections.defaultdict(set)
     for b in blocks:
         for s in b["syms"]:
-            where[s.split("-")[0]].add(b["dwg"])
+            where[re.sub(r"-[上下中]$", "", s)].add(b["dwg"])   # 「-上」「-下」だけ外す(「1C-X17Y5」の形の符号は そのまま。26-16)
     for sym, dwgs in sorted(where.items()):
         if len(dwgs) < 2:
             continue
@@ -702,7 +733,8 @@ def cautions(L, full, blocks, ver):
 def run(files, orders_csv, setsu=None, progress=None):
     """progress(段階, 何番目, 全体の数, 図番) … 進み具合を画面に出すため(省略可)"""
     Z, full, sec = _index(files)
-    setsu = setsu or (Z[0] + "節" if Z[:1].isdigit() else "")
+    zh = Z.split("-")[-1]   # 「WA1-1C」→「1C」
+    setsu = setsu or (zh[0] + "節" if zh[:1].isdigit() else "")
     header, order_rows = _orders(orders_csv)
     L = _Loader(files)
     blocks, log = extract(L, Z, full, sec, order_rows, progress)
@@ -710,7 +742,7 @@ def run(files, orders_csv, setsu=None, progress=None):
     ver, plate_rows = verify(blocks, checks, header, order_rows, setsu)
     DIM = {}
     for r in order_rows:
-        if len(r) > 17 and "DY" in r[12]:
+        if len(r) > 17 and _isdia(r[12]):
             try: DIM.setdefault(r[12], (float(r[16]), float(r[17])))
             except ValueError: pass
     floors = group_floors(blocks)
