@@ -92,9 +92,23 @@ def _mark_shape(t, cx, cy, R=90):
 COMPASS = ["北", "北北東", "北東", "東北東", "東", "東南東", "南東", "南南東", "南", "南南西", "南西", "西南西", "西", "西北西", "北西", "北北西"]
 
 
-def _north(t, T):
+def north_tip(t, T):
+    """方位記号の北の向き(度、図面の右=0・反時計回り)。2本の線の付け根と開いた側のうち、「N」の字に近い方を北(矢の先)とする。
+    26-12 は付け根が「N」のすぐ横(先端)で、北=開いた向きの反対(約206.5°)。読めなければ None"""
+    for s, x, y, *_ in T:
+        if s not in ("N", "Ｎ"):
+            continue
+        n = _north(t, [(s, x, y)], want_vertex=True)
+        if n:
+            ang, (vx, vy), (ex, ey) = n
+            return ang if math.hypot(ex - x, ey - y) < math.hypot(vx - x, vy - y) else (ang + 180) % 360
+    return None
+
+
+def _north(t, T, want_vertex=False):
     """KEY PLAN の方位記号: 「N」の近くで、同じ点から出る2本の線(開き 15〜45°)。その真ん中の向き(度、図面の右=0・反時計回り)。
-    方位記号の先端が上下どちらでも、シームは「向かい合う2方向」なので結果は同じ"""
+    方位記号の先端が上下どちらでも、シームは「向かい合う2方向」なので結果は同じ。
+    want_vertex: (向き, 付け根の点, 開いた側の2点の真ん中) を返す(北の向きを決める north_tip 用)"""
     for s, x, y, *_ in T:
         if s not in ("N", "Ｎ"):
             continue
@@ -113,6 +127,8 @@ def _north(t, T):
                         closed = any(min(math.hypot(l.x1 - qa[0], l.y1 - qa[1]) + math.hypot(l.x2 - qb[0], l.y2 - qb[1]),
                                          math.hypot(l.x2 - qa[0], l.y2 - qa[1]) + math.hypot(l.x1 - qb[0], l.y1 - qb[1])) < 4 for l in ls)
                         if 15 < abs(d) < 45 and abs(la - lb) < 0.05 * max(la, lb) and not closed:
+                            if want_vertex:
+                                return (aa + d / 2) % 360, pa, ((qa[0] + qb[0]) / 2, (qa[1] + qb[1]) / 2)
                             return (aa + d / 2) % 360
     return None
 
@@ -704,7 +720,7 @@ def run(files, orders_csv, setsu=None, progress=None):
         isbh = (g["block"].get("size") or "").startswith("BH")
         g["odd"] = odd_plates(L, Z, full, sec, g["block"], DIM) if g["block"]["segs"] and not isbh else []
         g["bhdia"] = bh_dia(g["block"], DIM) if isbh else []
-    seam = {}   # 図番 → シーム方向(大組図ごと)
+    seam, ndir = {}, {}   # 図番 → シーム方向・北の向き(大組図ごと)
     for g in allg:
         for mb in g["members"]:
             d = mb["dwg"]
@@ -714,6 +730,15 @@ def run(files, orders_csv, setsu=None, progress=None):
                     seam[d] = seam_of(L, full[no]) if no in full else None
                 except Exception:
                     seam[d] = None
+                try:
+                    ndir[d] = north_tip(L.load(full[no]), L.texts(full[no])) if no in full else None
+                except Exception:
+                    ndir[d] = None
+    # 階ごとの北の向き(Excel の O1:O2 の方位記号。2026-11-26 ユーザー指示)。その階の大組図でいちばん多い向き
+    north = {}
+    for fl, gs in floors.items():
+        c = collections.Counter(round(ndir[m["dwg"]], 1) for g in gs for m in g["members"] if ndir.get(m["dwg"]) is not None)
+        north[fl] = c.most_common(1)[0][0] if c else None
     bh = sorted({(b["fl"], s) for b in blocks if (b.get("size") or "").startswith("BH") for s in b["syms"]})
     # 材質の印を読めなかった柱(□のみ)
     mat_ng = [f"{b['fl']} {s}: 印「{b.get('mat_mark') or '?'}」" for b in sorted(blocks, key=lambda b: (b["fl"], b["dwg"]))
@@ -722,7 +747,7 @@ def run(files, orders_csv, setsu=None, progress=None):
         caution = cautions(L, full, blocks, ver)
     except Exception as e:   # 注意の作成に失敗しても、表とExcelは出す
         caution = [("注意の確認ができませんでした", str(e))]
-    return dict(seam=seam, mat_ng=mat_ng, cautions=caution, zuban=Z, setsu=setsu, files=dict(full=full, sec=sec), log=log, blocks=blocks, checks=checks,
+    return dict(seam=seam, north=north, mat_ng=mat_ng, cautions=caution, zuban=Z, setsu=setsu, files=dict(full=full, sec=sec), log=log, blocks=blocks, checks=checks,
                 verify=ver, plate_rows=plate_rows, floors=floors, bh=[f"{fl} {s}" for fl, s in bh],
                 orders=len(order_rows))
 
