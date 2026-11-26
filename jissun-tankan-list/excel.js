@@ -189,14 +189,21 @@
     const L0 = 1, W = Wpx - 3, T0 = 1, H = Hpx - 3, pt = 7 * 96 / 72;
     const hs = [];
     outer.forEach((p, k) => { hs.push(['P', p[1] || 0]); if (k < segs.length) hs.push(['S', (segs[k][1] || 0) + ((segs[k][0] || '').startsWith('□') ? 10 : 0), segs[k][0]]); });
+    // 区間の太さ(幅に対する割合): サイズが1つの柱は 0.37。外寸が違う区間がある柱(テーパー等)は、外寸に合わせて 0.33(小さい側)〜0.40(大きい側)。
+    // 2026-11-26 ユーザー指摘: 以前はまっすぐの区間をサイズに関係なく 0.37 で描き、下の□-800がテーパーの下端より細く、上の□-700が上端より太く見えた
+    const dimsOf = s => { const m = /^□-(\d+)(?:-(\d+))?\*/.exec(s || ''); return m ? [+m[1], +(m[2] || m[1])] : null; };   // [下端, 上端]。テーパーは1つ目が下
+    const allD = segs.map(s => dimsOf(s[0])), flat = allD.every(Boolean) ? allD.flat() : [];
+    const dMax = flat.length ? Math.max(...flat) : 0, dMin = flat.length ? Math.min(...flat) : 0;
+    const half = (d, tpFallback) => (dMax > dMin && d) ? 0.33 + 0.07 * (d - dMin) / (dMax - dMin) : tpFallback;
     const tot = hs.reduce((a, h) => a + h[1], 0) || 1;
     const scale = (H - pt * outer.length) / Math.max(tot - outer.reduce((a, p) => a + (p[1] || 0), 0), 1);
     let y = T0 + H; const ys = [];
     hs.forEach(([kind, v, info]) => {
       if (kind === 'P') { y -= pt; x.setLineDash([]); x.strokeRect(L0, y, W, pt); ys.push(y); return; }
-      const hseg = v * scale, ytop = y - hseg, tp = /^□-(\d+)-(\d+)\*/.test(info || '');
+      const hseg = v * scale, ytop = y - hseg, tp = /^□-(\d+)-(\d+)\*/.test(info || ''), dd = dimsOf(info) || [0, 0];
+      const wb = half(dd[0], tp ? 0.40 : 0.37), wt = half(dd[1], tp ? 0.33 : 0.37);
       [1, -1].forEach(sgn => {
-        const xb = L0 + W / 2 - sgn * W * (tp ? 0.40 : 0.37), xt = L0 + W / 2 - sgn * W * (tp ? 0.33 : 0.37);
+        const xb = L0 + W / 2 - sgn * W * wb, xt = L0 + W / 2 - sgn * W * wt;
         x.setLineDash([]); x.lineWidth = 1; x.beginPath(); x.moveTo(xb, y); x.lineTo(xt, ytop); x.stroke();
         x.setLineDash([3, 2]); x.lineWidth = 0.7; x.beginPath(); x.moveTo(xb + sgn * 5, y); x.lineTo(xt + sgn * 5, ytop); x.stroke();
       });

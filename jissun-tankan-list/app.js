@@ -153,7 +153,7 @@ $('start-cancel-btn').addEventListener('click', () => { $('start-modal').classLi
 
 // ---------- アプリ説明書(manual/p-N.jpg。作り方は docs/manual-draft-tankan/README.md) ----------
 // ページ数を変えたら MANUAL_PAGES、画像を差し替えたら MANUAL_V も直す
-const MANUAL_PAGES = 10, MANUAL_V = '20261126a';
+const MANUAL_PAGES = 10, MANUAL_V = '20261126b';
 let manualPage = 1;
 const manualSrc = n => `manual/p-${n}.jpg?v=${MANUAL_V}`;
 function showManualPage(n) {
