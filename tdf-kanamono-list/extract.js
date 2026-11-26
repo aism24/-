@@ -1696,7 +1696,7 @@
       //  - 数 = マークの数 × 表記の枚数。備考 = 引出線の上か表記のそば(250以内)の「ALC下地」「下がり止め」、無ければ断面の副題(「5 SEC」の下の「袖壁取合」など)
       //  - ALC下地の「PL-厚x幅x長さ」は、副題が ALC下地 の断面(c断面)のとおり上下に2枚(ユーザー指示「c断面を見たら上下に必要なので合計4枚」)
       //  - E断面(柱頭)の「FB-12x90x400」(厚さ9以上)は建方用のピース: 数 = その断面の図の 長さx幅 の箱の数(4面)、備考なし(デッキ受けにしない)
-      //  - BT(カットT。N1C-2 の ACAR11K・ACAR12K)もサイズとして読む。ALC下地の BT があるときは、マークの英字が同じ(ACAR)で BT と同じ板厚の備考の無い PL
+      //  - BT(カットT。N1C-2 の ACAR11K・ACAR12K)もサイズとして読む(引出線を取り違えないため。BT の行は出さない)。ALC下地の BT があるときは、マークの英字が同じ(ACAR)で BT と同じ板厚の備考の無い PL
       //    (BT に溶接組立する ACAR9・ACAR10)の備考も ALC下地(2026-11-26 ユーザー指示「ACAR9,10と溶接組立でBTになる。備考は全てALC下地」)
       //  - 間仕切用捨てPL(2026-11-26 ユーザー指示「X-Xで東西面に取り付く絵(板厚12mm)で判断できる」、N1C-2 = 31枚): 見出し「間仕切用捨てPL」の断面の
       //    「PL-厚x幅x長さ」の板が立面図に横から描かれた絵(幅の長さの平行な2本の線で、間が板厚)の数(X-X 立面は東西の2面、Y-Y 立面は1面に描かれている)。
@@ -1764,6 +1764,8 @@
           var pre = (/^[A-Z]+/.exec(bt.name) || [''])[0], th = (/^BT-[0-9.]+x[0-9.]+x([0-9.]+)/.exec(bt.size) || [])[1];
           out.forEach(function (it) { if (!it.note && pre && it.name.indexOf(pre) === 0 && /^[0-9]/.test(it.name.slice(pre.length)) && it.size === 'PL-' + th) it.note = 'ALC下地'; });
         });
+        // BT の行そのものは拾わない(ACAR9・10 を溶接組立したもの。2026-11-26 ユーザー指示「BT の行は要らず ACAR9・10」)
+        for (var bi = out.length - 1; bi >= 0; bi--) if (/^BT-/.test(out[bi].size)) out.splice(bi, 1);
         // 建方用のピース(E断面の FB-12x90x400)
         T.filter(function (u) { var m = RE_FB.exec(u.text); return m && parseFloat(m[1]) >= 9; }).forEach(function (u) {
           var m = RE_FB.exec(u.text), w = parseFloat(m[2]), len = parseFloat(m[3]);
