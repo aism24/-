@@ -395,7 +395,8 @@
           put(ws, `${i < nr ? 'R' : 'S'}${r + (i % nr)}`, mb.sym);
           const sv = seam[mb.dwg];
           if (sv && sdef && sv !== sdef) seamNotes.push([`${i < nr ? 'S' : 'T'}${r + (i % nr)}`, sv]);
-          const no = mb.dwg.split('-').pop(), fn = res.files.full[no], fa = res.files.sec[no];
+          // 図番の頭が複数(26-16 EB1・EB2・EB3 を一緒に)のときは鍵が図番そのもの、1つのときは番号
+          const no = mb.dwg in res.files.full ? mb.dwg : mb.dwg.split('-').pop(), fn = res.files.full[no], fa = res.files.sec[no];
           linkCell(ws, `V${r + i}`, mb.dwg, fn ? link(fn) : '');
           // 断面図が立面図と同じファイルの中にある工事(26-16。A付きのファイルが1つも無い)は W列を空ける
           if (fa || Object.keys(res.files.sec).length) linkCell(ws, `W${r + i}`, mb.dwg + 'A', fa ? link(fa) : '');
