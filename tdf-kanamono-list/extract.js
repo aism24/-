@@ -1668,8 +1668,11 @@
     //    (板厚だけ離れた平行な2本の線で、長さが断面図の寸法と1.5%以内)の数(E=328.6 が8か所、F=200.9 が4か所 = ユーザー確認)
     function columnItems() {
       var pairCache = {};
-      var genNo = P.layers.indexOf('GEN') + 1; if (!genNo) return [];
-      var gen = T.filter(function (t) { return t.lay === genNo && /^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*$/.test(t.text) && !/^(L|C|H|PL|FB|G?PL)-/.test(t.text) && /[0-9]/.test(t.text); });
+      var genNo = P.layers.indexOf('GEN') + 1;
+      // 山括弧のマーク(<ACAR2>)の図面(2026-11-26 ユーザー指示、26-14 N1C-1): GEN に文字が無く、マークが「<…>」で書かれている
+      var angleMarks = T.filter(function (t) { return /^<[A-Z][A-Z0-9]*>$/.test(t.text); });
+      if (!genNo && !angleMarks.length) return [];
+      var gen = !genNo ? [] : T.filter(function (t) { return t.lay === genNo &&/^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*$/.test(t.text) && !/^(L|C|H|PL|FB|G?PL)-/.test(t.text) && /[0-9]/.test(t.text); });
       var sizesT = T.filter(function (t) { return /(^|[ .])(G?PL|FB)-[0-9]/.test(t.text) || /^(G?PL|FB)-[0-9]/.test(t.text) || /^[0-9]+-R?PL-[0-9]/.test(t.text) || /^[0-9]+G?PL-[0-9]/.test(t.text); });   // 「2PL-6」= 2枚(EA2-1C-09 NCZ11M の水切り板)   // 「3-RPL-6」= リブ PL-6 が3枚(2026-11-24、EA2-1C-06 NCR21)
       // 表記の引出線(表記のそばから縦にのびる線)の先(端から300以内)にあるマーク → その表記(2026-11-24、EA2-1C-06 B断面: NC79 は GPL-12 の引出線の先。近くの PL-12 は NCR23 の表記)
       function leaderSize(o) {
@@ -1686,6 +1689,99 @@
       var byMark = {}, usedSizes = [];   // usedSizes = GEN のマークのサイズに使った表記(デッキ受けとして数えない)
       gen.forEach(function (t) { (byMark[t.text] = byMark[t.text] || []).push(t); });
       var out = [];
+      if (!gen.length && angleMarks.length) angleItems();
+      // ---------- 山括弧のマークの図面(2026-11-26 ユーザー指示、26-14 N1C-1。GEN にマークが無いときだけ) ----------
+      //  - 切板名 = 「<ACAR2>」の中。サイズ = マークのそばの横の引出線(線の左端がマークの左200〜右900・高さの差が上130〜下240)に書かれた板の表記(2PL-9 = 2枚)。
+      //    引出線が無いとき(下がり止め)はマークから600以内で一番近い表記。同じマークで「PL-9x100x160」と「PL-9x100」なら長いほう
+      //  - 数 = マークの数 × 表記の枚数。備考 = 引出線の上か表記のそば(250以内)の「ALC下地」「下がり止め」、無ければ断面の副題(「5 SEC」の下の「袖壁取合」など)
+      //  - ALC下地の「PL-厚x幅x長さ」は、副題が ALC下地 の断面(c断面)のとおり上下に2枚(ユーザー指示「c断面を見たら上下に必要なので合計4枚」)
+      //  - E断面(柱頭)の「FB-12x90x400」(厚さ9以上)は建方用のピース: 数 = その断面の図の 長さx幅 の箱の数(4面)、備考なし(デッキ受けにしない)
+      //  - 間仕切用捨てPL: 図面の節(「柱詳細図 (1節)」)のレイヤ「1節間仕切用捨てPL」の表記の数(2節のレイヤは数えない)
+      //  - 避雷針ピース(支給品): 「避雷針ピース(支給品)」のそば(300以内)の PL の表記1つ = 1枚(断面の副題の「避雷針ピース」は数えない)
+      function angleItems() {
+        var RE_SZ = /^([0-9]+)?((?:G?PL|FB)-[0-9.]+(?:x[0-9.]+)*)$/;
+        var szT = T.filter(function (t) { return RE_SZ.test(t.text); });
+        var hl = L.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[0] - l[2]) > 100; });
+        var secT = T.filter(function (t) { return t.text === 'SEC'; });
+        function subOf(m) {   // 断面の副題(見出し「◯ SEC」のすぐ下の日本語)
+          var s = secT.filter(function (x) { var dy = m.y - x.y; return dy > 0 && dy <= 2800 && Math.abs(m.x - x.x) <= 1900; }).sort(function (a, b) { return (m.y - a.y + 2 * Math.abs(m.x - a.x)) - (m.y - b.y + 2 * Math.abs(m.x - b.x)); })[0];
+          if (!s) return null;
+          var sub = T.find(function (u) { return s.y - u.y > 50 && s.y - u.y < 200 && u.x > s.x - 500 && u.x < s.x + 200 && /[ぁ-んァ-ヶ一-龠]/.test(u.text); });
+          return { sec: s, sub: sub ? sub.text : '' };
+        }
+        function isSubtitle(u) { return secT.some(function (s) { return s.y - u.y > 50 && s.y - u.y < 200 && u.x > s.x - 500 && u.x < s.x + 200; }); }
+        var RE_NOTE = /^(ALC下地|下がり止め)$/;
+        var byM = {};
+        angleMarks.forEach(function (m) {
+          var name = m.text.slice(1, -1), sz = null, line = null;
+          hl.forEach(function (l) {
+            var x0 = Math.min(l[0], l[2]), x1 = Math.max(l[0], l[2]), dy = l[1] - m.y;
+            if (x0 - m.x < -200 || x0 - m.x > 900 || dy > 130 || dy < -240) return;
+            var on = szT.filter(function (t) { return t.y - l[1] > -20 && t.y - l[1] < 80 && t.x >= x0 - 150 && t.x <= x1 + 150; });
+            if (!on.length) return;
+            if (!line || Math.abs(dy) < Math.abs(line[1] - m.y)) { line = l; sz = on[0]; }
+          });
+          if (!sz) sz = szT.filter(function (t) { return dist(t, m) <= 600; }).sort(function (a, b) { return dist(a, m) - dist(b, m); })[0];
+          if (!sz) return;
+          var note = T.find(function (u) {
+            if (!RE_NOTE.test(u.text)) return false;
+            if (dist(u, sz) <= 250) return true;
+            return line && Math.abs(u.y - line[1]) < 80 && u.x >= Math.min(line[0], line[2]) - 150 && u.x <= Math.max(line[0], line[2]) + 150;
+          });
+          var noteText = note ? note.text : ((subOf(sz) || {}).sub || '');   // 断面は表記の位置で決める(<ACA4> は4断面寄りに書かれているが、表記 GPL-9 は5断面の中)
+          var mm = RE_SZ.exec(sz.text);
+          usedSizes.push(sz);
+          (byM[name] = byM[name] || []).push({ size: mm[2], mult: mm[1] ? parseInt(mm[1], 10) : 1, note: noteText });
+        });
+        var hasAlcSec = T.some(function (u) { return u.text === 'ALC下地' && isSubtitle(u); });
+        Object.keys(byM).forEach(function (name) {
+          var occ = byM[name];
+          var size = occ.map(function (o) { return o.size; }).sort(function (a, b) { return b.length - a.length; })[0];
+          if (!occ.every(function (o) { return size.indexOf(o.size) === 0; })) {   // 同じマークでサイズが食い違うときはサイズごと
+            occ.forEach(function (o) { out.push({ size: o.size, name: name, n: o.mult, note: o.note }); });
+            return;
+          }
+          var note = (occ.find(function (o) { return o.note; }) || {}).note || '';
+          var n = occ.reduce(function (s, o) { return s + o.mult; }, 0);
+          if (note === 'ALC下地' && hasAlcSec && /^PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(size)) n *= 2;
+          out.push({ size: size, name: name, n: n, note: note });
+        });
+        // 建方用のピース(E断面の FB-12x90x400)
+        T.filter(function (u) { var m = RE_FB.exec(u.text); return m && parseFloat(m[1]) >= 9; }).forEach(function (u) {
+          var m = RE_FB.exec(u.text), w = parseFloat(m[2]), len = parseFloat(m[3]);
+          var s = (subOf(u) || {}).sec; if (!s) return;
+          var inSec = function (l) { var mx = (l[0] + l[2]) / 2, my = (l[1] + l[3]) / 2; return my < s.y + 2800 && my > s.y && Math.abs(mx - s.x) < 1900; };
+          var ls = L.filter(function (l) { return Math.abs(Math.hypot(l[2] - l[0], l[3] - l[1]) - len) <= 1 && inSec(l); });
+          var nBox = 0;
+          ls.forEach(function (a, i) { ls.slice(i + 1).forEach(function (b) {
+            var ah = Math.abs(a[1] - a[3]) < 1, bh = Math.abs(b[1] - b[3]) < 1;
+            if (ah !== bh) return;
+            var d = ah ? Math.abs(a[1] - b[1]) : Math.abs(a[0] - b[0]);
+            var o = ah ? Math.abs(Math.min(a[0], a[2]) - Math.min(b[0], b[2])) : Math.abs(Math.min(a[1], a[3]) - Math.min(b[1], b[3]));
+            if (Math.abs(d - w) <= 1 && o <= 1) nBox++;
+          }); });
+          usedSizes.push(u);
+          out.push({ size: 'FB-' + m[1] + 'x' + m[2], name: len, n: nBox || 1, note: '' });
+        });
+        // 間仕切用捨てPL
+        var setsu = (T.map(function (u) { return /\(([0-9]+)節\)/.exec(u.text); }).find(Boolean) || [])[1];
+        var kTexts = T.filter(function (u) {
+          var ln = P.layers[u.lay - 1] || '';
+          if (!/間仕切用捨てPL/.test(ln) || !/^PL-[0-9.x]+$/.test(u.text)) return false;
+          var ms = /^([0-9]+)節/.exec(ln);
+          return !ms || !setsu || ms[1] === setsu;
+        });
+        Array.from(new Set(kTexts.map(function (u) { return u.text; }))).forEach(function (s) {
+          out.push({ size: s, name: '', n: kTexts.filter(function (u) { return u.text === s; }).length, note: '間仕切用捨てPL' });
+        });
+        // 避雷針ピース(支給品)
+        T.filter(function (u) { return /避雷針ピース/.test(u.text) && /支給/.test(u.text) && !isSubtitle(u); }).forEach(function (u) {
+          var s = szT.filter(function (t) { return /^PL-/.test(t.text) && dist(t, u) <= 300; }).sort(function (a, b) { return dist(a, u) - dist(b, u); })[0];
+          if (!s) return;
+          usedSizes.push(s);
+          out.push({ size: s.text, name: '', n: 1, note: '避雷針ピース・支給品' });
+        });
+      }
       Object.keys(byMark).forEach(function (mk) {
         var occ = byMark[mk];
         // 同じ高さ(±60)に書かれた表記を優先(十文字補強の「N BPL-36 (十文字補強)  N-R70AK」。そばの F.PL-40x450 と取り違えない)、無ければ一番近いもの
