@@ -346,7 +346,7 @@ async function lastPickDir() {
     return last.handle;
   } catch (e) { return state.root; }
 }
-// ② 大組図の TDF を選ぶ(1つの節の立面図と A付きの断面図をまとめて)
+// ② 大組図の TDF を選ぶ(続けて選ぶと前の図面に足す。readDrawings)
 async function pickFiles() {
   if (!state.started) { toast('先に工場と工事を選んでください', 'error'); return; }
   if (!window.showOpenFilePicker) { $('file-input').click(); return; }   // 古いブラウザ: リンクなしで読む
@@ -415,6 +415,11 @@ function preloadPy() { setTimeout(() => { loadPy().catch(() => {}); }, 300); }
 async function readDrawings(items) {
   items = items.filter(it => /\.tdf$/i.test(it.file.name));
   if (!items.length) { idle(); return; }
+  // 続けて取り込んだ図面は、前に読んだ図面に足して全部を読み直す(26-16 B工区の EB1・EB2・EB3 を順に取り込んで1つの Excel に。
+  // 2026-11-26 ユーザー指示)。同じファイル名は新しく選んだ方。やり直すときは「リセット」、工事を変えると前の図面は捨てる
+  const prev = (state.files || []).filter(p => !items.some(it => it.file.name === p.file.name));
+  if (prev.length) toast(`前に読んだ ${prev.length} 個の図面に足して、合わせて ${prev.length + items.length} 個を読みます(やり直すときは「リセット」)`);
+  items = prev.concat(items);
   state.files = items; state.res = null;
   try {
     busy('図面を読んでいます…', 0.1);
