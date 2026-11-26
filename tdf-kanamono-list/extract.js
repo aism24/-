@@ -1670,7 +1670,7 @@
       var pairCache = {};
       var genNo = P.layers.indexOf('GEN') + 1;
       // 山括弧のマーク(<ACAR2>)の図面(2026-11-26 ユーザー指示、26-14 N1C-1): GEN に文字が無く、マークが「<…>」で書かれている
-      var angleMarks = T.filter(function (t) { return /^<[A-Z][A-Z0-9]*>$/.test(t.text); });
+      var angleMarks = T.filter(function (t) { return /^<[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*>$/.test(t.text); });   // ハイフン入り(<A450-28H> = 柱頭の八角形の PL-9。2026-11-27、N1C-5)
       if (!genNo && !angleMarks.length) return [];
       var gen = !genNo ? [] : T.filter(function (t) { return t.lay === genNo &&/^[A-Z][A-Z0-9]*(-[A-Z0-9]+)*$/.test(t.text) && !/^(L|C|H|PL|FB|G?PL)-/.test(t.text) && /[0-9]/.test(t.text); });
       var sizesT = T.filter(function (t) { return /(^|[ .])(G?PL|FB)-[0-9]/.test(t.text) || /^(G?PL|FB)-[0-9]/.test(t.text) || /^[0-9]+-R?PL-[0-9]/.test(t.text) || /^[0-9]+G?PL-[0-9]/.test(t.text); });   // 「2PL-6」= 2枚(EA2-1C-09 NCZ11M の水切り板)   // 「3-RPL-6」= リブ PL-6 が3枚(2026-11-24、EA2-1C-06 NCR21)
@@ -1773,7 +1773,7 @@
           ends.some(function (e) {
             return dg.some(function (a, i) {
               var b0 = [Math.min(a[0], a[2]), Math.min(a[1], a[3]), Math.max(a[0], a[2]), Math.max(a[1], a[3])];
-              var corner = [[b0[0], b0[1]], [b0[0], b0[3]], [b0[2], b0[1]], [b0[2], b0[3]]].some(function (c) { return Math.hypot(c[0] - e[0], c[1] - e[1]) < 5; });
+              var corner = [[b0[0], b0[1]], [b0[0], b0[3]], [b0[2], b0[1]], [b0[2], b0[3]]].some(function (c) { return Math.hypot(c[0] - e[0], c[1] - e[1]) < 10; });   // 5 → 10(N1C-5 の <ACAR14K> は引出線の端が箱の角の 9 上)
               if (!corner) return false;
               var pair = dg.some(function (c, j) { return j !== i && Math.abs(Math.min(c[0], c[2]) - b0[0]) < 1 && Math.abs(Math.min(c[1], c[3]) - b0[1]) < 1 && Math.abs(Math.max(c[0], c[2]) - b0[2]) < 1 && Math.abs(Math.max(c[1], c[3]) - b0[3]) < 1; });
               if (!pair) return false;
@@ -1822,7 +1822,14 @@
         // 間仕切用捨てPL: 立面図の板の絵の数
         function inAnySec(x, y) { return secT.some(function (s) { return y - s.y > 0 && y - s.y <= 2800 && Math.abs(x - s.x) <= 1900; }); }
         var kDone = false;
-        T.filter(function (u) { return /^PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) && (subOf(u) || {}).sub === '間仕切用捨てPL'; }).slice(0, 1).forEach(function (u) {
+        var kCand = T.filter(function (u) { return /^PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) && (subOf(u) || {}).sub === '間仕切用捨てPL'; });
+        // 表記が隣の断面のほうに近いとき(N1C-5: 3断面の上の「PL-12x100x100」が4断面 ALC下地 の見出しに近い)は、副題「間仕切用捨てPL」の断面の範囲(上へ2800・左右1900)の表記で一番近いもの
+        if (!kCand.length) T.filter(function (v) { return v.text === '間仕切用捨てPL' && isSubtitle(v); }).forEach(function (v) {
+          var s = secT.find(function (x) { return x.y - v.y > 50 && x.y - v.y < 200 && v.x > x.x - 500 && v.x < x.x + 200; });
+          var c = T.filter(function (u) { return /^PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) && u.y - s.y > 0 && u.y - s.y <= 2800 && Math.abs(u.x - s.x) <= 1900; }).sort(function (a, b) { return dist(a, s) - dist(b, s); })[0];
+          if (c && !kCand.length) kCand.push(c);
+        });
+        kCand.slice(0, 1).forEach(function (u) {
           var d = u.text.slice(3).split('x').map(parseFloat), t = d[0], w = d[1];
           var ls = L.filter(function (l) {
             var vt = Math.abs(l[0] - l[2]) < 0.5, hz = Math.abs(l[1] - l[3]) < 0.5;
