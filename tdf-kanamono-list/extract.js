@@ -1751,6 +1751,34 @@
             });
           });
         }
+        // 表記の引出線の端(表記の左下)から出る斜めの線の本数(1本以上。それぞれが板を指す)
+        function branches(t, lines) {
+          var br = 1;
+          lines.forEach(function (ln) {
+            [[ln[0], ln[1]], [ln[2], ln[3]]].forEach(function (e) {
+              if (Math.abs(t.x - e[0]) > 60 || t.y - e[1] < -20 || t.y - e[1] > 80) return;
+              var from = function (p, skip) {
+                return L.filter(function (l) {
+                  if (l === skip || Math.abs(l[1] - l[3]) < 10 || Math.abs(l[0] - l[2]) < 10) return false;
+                  return Math.hypot(l[0] - p[0], l[1] - p[1]) < 5 || Math.hypot(l[2] - p[0], l[3] - p[1]) < 5;
+                });
+              };
+              var ds = from(e), c = ds.length;
+              // 斜めの線が1本で、その先で2本以上に分かれるもの(N1C-12 c断面の 捨てPL-12: 引出線 → 斜めの線 → 板2つ)
+              if (c === 1) {
+                var d = ds[0], far = Math.hypot(d[0] - e[0], d[1] - e[1]) < 5 ? [d[2], d[3]] : [d[0], d[1]];
+                // 分かれる点は宙(縦・横の線が無い)で、分かれた線は2〜3本・どれも手前の斜めの線より短い。
+                // 板の絵の角に当たる斜めの引出線(N1C-12 D断面の ファスナーPL-16 <ACGF3K>: 角から6本)は数えない
+                var len = function (l) { return Math.hypot(l[2] - l[0], l[3] - l[1]); };
+                var bs = from(far, d).filter(function (l) { return l[4] === d[4]; });
+                var hv = L.some(function (l) { return (Math.abs(l[1] - l[3]) < 10 || Math.abs(l[0] - l[2]) < 10) && (Math.hypot(l[0] - far[0], l[1] - far[1]) < 5 || Math.hypot(l[2] - far[0], l[3] - far[1]) < 5); });
+                if (!hv && bs.length >= 2 && bs.length <= 3 && bs.every(function (l) { return len(l) < len(d); })) c = bs.length;
+              }
+              if (c > br) br = c;
+            });
+          });
+          return br;
+        }
         angleMarks.filter(function (m) { return !cancelled(m); }).forEach(function (m) {
           var name = m.text.slice(1, -1), sz = null, line = null;
           hl.forEach(function (l) {
@@ -1794,7 +1822,11 @@
             var lq = T.find(function (u) { return /^L=[0-9.]+$/.test(u.text) && Math.abs(u.y - sz.y) < 30 && Math.abs(u.x - sz.x) <= 800; });
             if (lq) szText += 'x' + lq.text.slice(2);
           }
-          (byM[name] = byM[name] || []).push({ size: szText, mult: (mm[1] ? parseInt(mm[1], 10) : 1) * secTimes(sz), note: noteText, t: sz });
+          // 引出線の端から斜めの線が2本以上出て、それぞれ板を指すとき(2026-11-27 ユーザー指示「ACGS48は2枚。B断面に2つの板へ引っ張るパターン」、N1C-12 の 捨てPL-12x120x120)
+          // → 枚数 = 斜めの線の本数。表記に枚数(2PL-9)があるときは数えない。線が出る点は表記の左下(表記が書かれた引出線の端)だけ
+          // (N1C-6 の <ACGS67> は表記 PL-16 の下の板の絵の横線の端に縦の線が2本あるが、引出線ではない)
+          var br = line && !mm[1] ? branches(sz, [line]) : 1;
+          (byM[name] = byM[name] || []).push({ size: szText, mult: (mm[1] ? parseInt(mm[1], 10) : br) * secTimes(sz), note: noteText, t: sz });
         });
         // 表記の斜めの引出線の先の✕の箱(板の絵。N1C-2 D断面 100x130・B断面 100x120)の 幅x長さ。無ければ空
         function boxDims(t) {
@@ -1844,7 +1876,9 @@
         // マークのサイズに使った表記(<ACGS50> の 捨てPL-12x200x140)は除く
         var suteT = T.filter(function (u) { return /^捨てPL-[0-9.]+(?:x[0-9.]+)*$/.test(u.text) && usedSizes.indexOf(u) < 0; });
         Array.from(new Set(suteT.map(function (u) { return u.text.slice(2); }))).forEach(function (sz) {
-          out.push({ size: sz, name: '', n: suteT.filter(function (u) { return u.text.slice(2) === sz; }).length, note: '捨てPL' });
+          // 引出線が2本に分かれて板2つを指すものは2枚(2026-11-27 ユーザー指示、N1C-12 c断面の <ACGS39> PL-16 の下の 捨てPL-12)
+          var nearHl = function (u) { return hl.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && u.y - l[1] > -20 && u.y - l[1] < 80; }); };
+          out.push({ size: sz, name: '', n: suteT.filter(function (u) { return u.text.slice(2) === sz; }).reduce(function (a, u) { return a + branches(u, nearHl(u)); }, 0), note: '捨てPL' });
         });
         // 建方用のピース(E断面の FB-12x90x400)
         T.filter(function (u) { var m = RE_FB.exec(u.text); return m && parseFloat(m[1]) >= 9; }).forEach(function (u) {
