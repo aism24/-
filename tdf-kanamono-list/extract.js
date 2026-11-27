@@ -131,7 +131,7 @@
   // 番号のあとの「MK」(めっき+K)も符号(2026-11-21、EA1-RG-01 の「GPL-25 NHG143MK」)
   // 「NG-D1」(腰折れの梁のダイアフラム。2026-11-21 ユーザー指示、EA1-RG-05)= 英字2〜5文字-英字1文字+番号
   var RE_MARK = /^(?:KG[0-9A-Z]+|[A-Z]{2,5}-?[0-9]+(?:M[A-Z]|[A-Z])?|[A-Z]{2,5}-[A-Z][0-9]+|[A-Z]-[A-Z]{1,4}[0-9]+[A-Z]?)(?:切断流用)?$/;   // OGALR7(英字5文字。2026-11-19)・O-KZ109(1G-01)
-  var RE_NOT_MARK = /^(?:SB|BJ|THJ?|TS?PJ|EPJ?|PJ|DCJ|GJ|CL|BT|BTJ?B?|RB|KB|BCR|BCP|SN|SM|SS|STK|TMCP|EHB)[0-9]/;   // EHB250 = EV の梁の名前(2026-11-21、WB3-3G-12)
+  var RE_NOT_MARK = /^(?:E?SP|EP|E?S?PJ|PD|BJ|THJ?|TS?PJ|EPJ?|PJ|DCJ|GJ|CL|BT|BTJ?B?|RB|KB|BCR|BCP|SN|SM|SS|STK|TMCP|EHB)[0-9]/;   // EHB250 = EV の梁の名前(2026-11-21、WB3-3G-12)
   var RE_SHAPE = /^([LC])-[0-9.]+x[0-9.x]+$/;           // L-50x50x6 / C-60x30x10x2.3
   var RE_CHAN = /^\[-[0-9.]+x[0-9.x]+$/;                // [-100x50x5x7.5(溝形鋼の別の書き方。断面図の表記だけで使う。2026-11-21 WB1-3G-05)
   var RE_FB = /^FB-([0-9.]+)x([0-9.]+)x([0-9.]+)$/;     // FB-6x65x255
@@ -389,7 +389,9 @@
   // 線(なければ表記の位置)と符号の中心の距離が近いもの同士を1対1で組にする。(めっき)は線の下にあればその板
   function plateLabels(texts, hlines, titles) {
     function leader(s) {
-      var c = hlines.filter(function (h) { return s.y - h.y >= 3 && s.y - h.y <= 40 && h.x0 <= s.x + 25 && h.x1 >= s.x + 25; })
+      // 文字と同じ高さに引いた引出線も(2026-11-27、26-14 N2G-03 の右端の「サイドPL-28」は引出線が文字の高さちょうど)
+      // 引出線が文字の左だけにあり、文字の書き始めで終わるもの(N2G-13 の「L=129.8 捨てPL-12x120」)も
+      var c = hlines.filter(function (h) { return s.y - h.y >= (s.pre ? -1 : 3) && s.y - h.y <= 40 && h.x0 <= s.x + 25 && h.x1 >= s.x + (s.pre ? -5 : 25); })
         .sort(function (a, b) { return (s.y - a.y) - (s.y - b.y); });
       return c[0] || null;
     }
@@ -399,10 +401,22 @@
       var cx = Math.max(h.x0, Math.min(h.x1, p.x));
       return Math.hypot(p.x - cx, p.y - h.y);
     }
-    var sizes = texts.filter(function (t) { return RE_PLATE.test(t.text); }).map(function (s) { return { t: s, h: leader(s) }; });
-    // 山括弧の符号(2026-11-27、26-14 N2G-01 の A断面の「GPL-9 <AG28>」): 断面図の中にあるものだけ、括弧を外して符号として読む
-    // (2G-01 の <TS190> は図面の凡例「サヤ管」「吊ピース PL-12」のそばの文字で金物ではない)
-    var marks = texts.map(function (t) { var a = /^<([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)>$/.exec(t.text); return a && titles && sectionOf(t, titles) ? Object.assign({}, t, { text: a[1] }) : t; })
+    // 頭に言葉の付いた板(2026-11-27 ユーザー指示「頭の言葉を外して PL-9 などで拾う」、26-14 の梁: リブPL-9・返しPL-6・サイドPL-28・カバーPL-9・Cov.PL-9・捨てPL-12x120)
+    var sizes = texts.map(function (t) { if (/^G\.PL-/.test(t.text)) return Object.assign({}, t, { text: 'GPL-' + t.text.slice(5), pre: 'G.', orig: t });   // 「G.PL-9」= GPL-9(N2G-22 目隠しルーバー <AGA30M>)
+      var a = /^(リブ|返し|サイド|カバー|Cov\.|捨て)((?:[0-9]+)?G?PL-.+)$/.exec(t.text); return a && RE_PLATE.test(a[2]) ? Object.assign({}, t, { text: a[2], pre: a[1], orig: t }) : t; })
+      .filter(function (t) { return RE_PLATE.test(t.text); }).map(function (s) { return { t: s, h: leader(s) }; });
+    // 「PL-12x120」のすぐ横(同じ高さ・600以内)の「L=129.8」は長さ(N2G-13 の 捨てPL-12x120 <AGAR45>)
+    function withLen(t) {
+      var sz = plateSize(t.text);
+      if (!/^G?PL-[0-9.]+x[0-9.]+$/.test(sz)) return sz;
+      var lq = texts.filter(function (u) { return /^L=[0-9.]+$/.test(u.text) && Math.abs(u.y - t.y) < 30 && Math.abs(u.x - t.x) <= 600; }).sort(function (a, b) { return Math.abs(a.x - t.x) - Math.abs(b.x - t.x); })[0];
+      return lq ? sz + 'x' + lq.text.slice(2) : sz;
+    }
+    // サイドPL は1つの端部でフランジ面に2か所 × 上下 = 4枚(2026-11-27 ユーザー指示、<AGSA1>)
+    function cntOf(t) { return t.pre === 'サイド' ? 4 : plateCount(t.text); }
+    // 山括弧の符号(2026-11-27、26-14 N2G-01 の A断面の「GPL-9 <AG28>」、平面図の <AGSA1> など): 括弧を外して符号として読む
+    // (「<TS190>」はサヤ管の長さの凡例(2G-01)で金物の符号ではない)
+    var marks = texts.map(function (t) { var a = /^<([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)>$/.exec(t.text); return a && !/^TS[0-9]/.test(a[1]) ? Object.assign({}, t, { text: a[1] }) : t; })
       .filter(function (t) { return RE_MARK.test(t.text) && !RE_NOT_MARK.test(t.text) && !RE_PLATE.test(t.text); });
     var mekkis = texts.filter(function (t) { return /めっき/.test(t.text); });
     var pairs = [];
@@ -415,7 +429,7 @@
       var h = p.s.h, mek;
       if (h) mek = mekkis.some(function (k) { var dy = h.y - k.y; return (dy > 0 ? dy < 160 : -dy <= 155) && k.x >= h.x0 - 30 && k.x <= h.x1; });
       else mek = mekkis.some(function (k) { return dist(k, p.m) < 150; });
-      out.push({ size: plateSize(p.s.t.text), cnt: plateCount(p.s.t.text), mark: p.m.text, x: p.m.x, y: p.m.y, sx: p.s.t.x, sy: p.s.t.y, mekki: mek });
+      out.push({ size: withLen(p.s.t), cnt: cntOf(p.s.t), mark: p.m.text, x: p.m.x, y: p.m.y, sx: p.s.t.x, sy: p.s.t.y, mekki: mek });
     });
     // 組にならなかった表記: 符号が板の表記の右横(同じ高さ)に書かれている形(2G-01 の「PL-9  OGAR63」。2026-11-19)
     sizes.forEach(function (sz) {
@@ -426,7 +440,7 @@
       var m = marks.filter(function (k) { return !um.has(k) && Math.abs(k.y - sz.t.y) < 80 && k.x > right && k.x - right < 400; }).sort(function (p, q) { return p.x - q.x; })[0];
       if (!m) return;
       us.add(sz); um.add(m);
-      out.push({ size: plateSize(sz.t.text), cnt: plateCount(sz.t.text), mark: m.text, x: m.x, y: m.y, sx: sz.t.x, sy: sz.t.y, mekki: false });
+      out.push({ size: withLen(sz.t), cnt: cntOf(sz.t), mark: m.text, x: m.x, y: m.y, sx: sz.t.x, sy: sz.t.y, mekki: false });
     });
     // まだ組にならない表記と符号: 符号が表記の引出線の右端から右へ500以内・高さの差200以内に1つだけあれば組にする
     // (2026-11-24 ユーザー指摘「NHG152MK も漏れてる」、EB3-RG-14: めっき範囲の「GPL-25 / zC800」の符号 NHG152MK が右上に離れて書かれていた)
@@ -435,7 +449,7 @@
       var cs = marks.filter(function (k) { return !um.has(k) && k.x >= sz.h.x1 - 50 && k.x - sz.h.x1 < 500 && Math.abs(k.y - sz.t.y) < 200; });
       if (cs.length !== 1) return;
       var m = cs[0]; us.add(sz); um.add(m);
-      out.push({ size: plateSize(sz.t.text), cnt: plateCount(sz.t.text), mark: m.text, x: m.x, y: m.y, sx: sz.t.x, sy: sz.t.y, mekki: false });
+      out.push({ size: withLen(sz.t), cnt: cntOf(sz.t), mark: m.text, x: m.x, y: m.y, sx: sz.t.x, sy: sz.t.y, mekki: false });
     });
     return out;
   }
@@ -466,15 +480,19 @@
       else views.push({ products: [p], labelY: p.y, labelTop: p.y, x: p.x, xr: p.xr });
     });
     views.forEach(function (v) {
-      var above = views.filter(function (u) { return u !== v && u.labelY > v.labelTop + 600 && u.x < v.xr + 5000 && u.xr > v.x - 5000; });
+      // 左右に並ぶ図(2026-11-27、26-14 N2G-03: 左の N2NA と右の N2NC の製品の行が約900ずれ、右の図を左の図の上の図とみなしていた):
+      // 製品の行が横に重ならず、高さの差が1500未満なら、上の図ではなく同じ段の図
+      var side = function (u) { return u !== v && (u.xr < v.x || u.x > v.xr) && Math.abs(u.labelY - v.labelY) < 1500; };
+      var above = views.filter(function (u) { return u !== v && !side(u) && u.labelY > v.labelTop + 600 && u.x < v.xr + 5000 && u.xr > v.x - 5000; });
       v.yMin = v.labelTop; v.yMax = above.length ? Math.min.apply(null, above.map(function (u) { return u.labelY; })) : Infinity;
       // 同じ段 = 行の高さの差600以内。または表の上下の範囲が600以内に近いもの(2026-11-20、EA1-3B-02: 2行の表と1行の表が下端で720ずれていた)
-      var row = views.filter(function (u) { return Math.abs(u.labelY - v.labelY) < 600 || (u.labelY <= v.labelTop + 600 && v.labelY <= u.labelTop + 600 && (u.labelTop > u.labelY || v.labelTop > v.labelY)); }).sort(function (a, b) { return a.x - b.x; });
+      var row = views.filter(function (u) { return side(u) || Math.abs(u.labelY - v.labelY) < 600 || (u.labelY <= v.labelTop + 600 && v.labelY <= u.labelTop + 600 && (u.labelTop > u.labelY || v.labelTop > v.labelY)); }).sort(function (a, b) { return a.x - b.x; });
       var i = row.indexOf(v);
       v.x0 = i > 0 ? (row[i - 1].xr + v.x) / 2 : -Infinity;
       v.x1 = i < row.length - 1 ? (v.xr + row[i + 1].x) / 2 : Infinity;
       // 図の右端は英字1文字の断面(A SEC など)で決める(DK・カタカナの断面は2026-11-19に追加したもので、図の範囲は今までどおり)
-      titles.forEach(function (s) { if (/^[A-Za-z]$/.test(s.letter) && s.y > v.yMin && s.y < v.yMax && s.x > v.xr) v.x1 = Math.min(v.x1, s.x - 1200); });
+      // 見出しが図の下でも、断面図(見出しの上2000まで)が図の高さに重なれば(2026-11-27、26-14 N2G-22: 右の製品 2CG5K の右の c・d断面)
+      titles.forEach(function (s) { if (/^[A-Za-z]$/.test(s.letter) && s.y + 2000 > v.yMin && s.y < v.yMax && s.x > v.xr) v.x1 = Math.min(v.x1, s.x - 1200); });
       // すべての断面(DK・カタカナも)で決めた右端。名前だけの断面図(外装ALC下地)を探すときだけ使う
       v.x1s = v.x1;
       titles.forEach(function (s) { if (s.y > v.yMin && s.y < v.yMax && s.x > v.xr) v.x1s = Math.min(v.x1s, s.x - 1200); });
@@ -497,6 +515,85 @@
     var hlines = L.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[0] - l[2]) > 20; })
       .map(function (l) { return { y: l[1], x0: Math.min(l[0], l[2]), x1: Math.max(l[0], l[2]) }; });
     var labels = plateLabels(T, hlines, titles);
+    // BT・BH の組立の板(2026-11-27 ユーザー指示、26-14 の梁 N2G-14 b・c断面の「BT-150x100x9x9」と <AGABT1W>・<AGABT1FK>):
+    //  - 符号の末尾 W = ウェブの板、FK = フランジの板。板厚は BT・BH のサイズの3つ目(ウェブ)・4つ目(フランジ)
+    //  - 枚数は BT の W・FK と BH の W が1枚、BH の FK が2枚
+    //  - サイズは符号のすぐ上(上250以内・左右1200以内)の BT・BH の表記。無ければ同じ断面の BT・BH の表記
+    //    (N2G-14 の <AGBH1W>・<AGBH1FK> は「2PL-9」の引出線の下に書かれているが BH の板。2PL-9 は符号が無い = マーク漏れ、ユーザー確認)
+    //  - 「PL-9x100」の表記の下の FK(N2G-15 の <AGABT5FK>)は、その表記のサイズのまま
+    (function () {
+      var buT = T.filter(function (t) { return /^(BT|BH)-[0-9.]+x[0-9.]+x[0-9.]+x[0-9.]+/.test(t.text); });
+      var bm = T.filter(function (t) { return /^<[A-Z]*(BT|BH)[0-9]+[A-Z]*(W|FK)>$/.test(t.text); });
+      var noMark = [];
+      bm.forEach(function (m) {
+        var name = m.text.slice(1, -1), kind = /BH[0-9]/.test(name) ? 'BH' : 'BT', web = /W$/.test(name);
+        var cur = labels.find(function (lb) { return lb.mark === name && Math.abs(lb.x - m.x) < 1 && Math.abs(lb.y - m.y) < 1; });
+        var near = buT.filter(function (t) { return t.text.indexOf(kind) === 0 && t.y - m.y > 0 && t.y - m.y < 250 && Math.abs(t.x - m.x) < 1200; }).sort(function (a, b) { return dist(a, m) - dist(b, m); })[0];
+        if (!near && cur && !/^2/.test(T.find(function (u) { return Math.abs(u.x - cur.sx) < 1 && Math.abs(u.y - cur.sy) < 1; }).text || '')) return;   // PL-9x100 などの表記の板
+        // 符号のすぐ上(上150以内・左100〜右700)に板の表記(PL-9x100)があれば、その表記の板(N2G-15 の <AGABT5FK>、N2G-19 の <AGABT10FK>)
+        if (!near && !cur) {
+          var pt = T.filter(function (u) { return /^G?PL-[0-9]/.test(u.text) && u.y - m.y > 0 && u.y - m.y < 150 && u.x - m.x > -100 && u.x - m.x < 700; }).sort(function (a, b) { return dist(a, m) - dist(b, m); })[0];
+          if (pt) { labels.push({ size: plateSize(pt.text), cnt: plateCount(pt.text), mark: name, x: m.x, y: m.y, sx: pt.x, sy: pt.y, mekki: false }); return; }
+        }
+        if (!near) {
+          var s0 = sectionOf(m, titles);
+          near = buT.filter(function (t) { return t.text.indexOf(kind) === 0 && (s0 ? sectionOf(t, titles) === s0 : dist(t, m) < 1500); }).sort(function (a, b) { return dist(a, m) - dist(b, m); })[0];
+        }
+        if (!near) return;
+        var d = /^(?:BT|BH)-[0-9.]+x[0-9.]+x([0-9.]+)x([0-9.]+)/.exec(near.text);
+        if (cur) {
+          var st = T.find(function (u) { return Math.abs(u.x - cur.sx) < 1 && Math.abs(u.y - cur.sy) < 1; });
+          if (st && /^[0-9]+G?PL-/.test(st.text) && noMark.indexOf(st) < 0) noMark.push(st);
+          labels.splice(labels.indexOf(cur), 1);
+        }
+        labels.push({ size: 'PL-' + (web ? d[1] : d[2]), cnt: !web && kind === 'BH' ? 2 : 1, mark: name, x: m.x, y: m.y, sx: near.x, sy: near.y, mekki: false });
+      });
+      // 小梁の取り合いの部品(2026-11-27 ユーザー指示「ESP2・ESPJ200・SP200W 拾います」、26-14 の梁): 断面図の中に
+      // 「継手名(ESPJ200・PJ200W・PD300W)/部品名(ESP2・SP200W)/サイズ(□-200x200x12・H-200x200x8x12)」の3段で書かれる。
+      // 部品 = サイズ欄にそのサイズ・切板名に部品名、継手 = サイズ欄に継手名・備考 継手。表記1組 = 1つ(断面の旗の数を掛ける)。
+      // サイズが下に無い部品名(立面図・平面図の名前だけのもの)は数えない
+      T.forEach(function (t) {
+        if (!/^(E?SP|EP)[0-9]+[A-Z]*$/.test(t.text)) return;   // EP100(N2G-18 d断面 三方枠の「EPJ100 / EP100 / L-100x100x10」)も
+        var sz = T.find(function (u) { return /^(□|H|BH|C|L|\[)-[0-9]/.test(u.text) && Math.abs(u.x - t.x) < 30 && t.y - u.y > 60 && t.y - u.y < 160; });
+        if (!sz) return;
+        labels.push({ size: sz.text, cnt: 1, mark: t.text, x: t.x, y: t.y, sx: sz.x, sy: sz.y, mekki: false });
+        var j = T.find(function (u) { return /^(E?S?PJ|PD)[0-9]+[A-Z]*$/.test(u.text) && u.y - t.y > 40 && u.y - t.y < 120 && t.x - u.x > -50 && t.x - u.x < 400; });   // 真上(N2G-18 の EPJ100)も
+        if (j) labels.push({ size: j.text, cnt: 1, mark: '', x: t.x, y: t.y, sx: j.x, sy: j.y, mekki: false, note: '継手', key: j.text });
+      });
+      // どの表記とも組にならなかった山括弧の符号は、400以内(同じ高さなら横900以内)で一番近い板の表記(PL・FB)と組にする
+      // (2026-11-27、26-14 N2G-18 b断面の「FB-6x100 <AGAR20>」、N2G-22 b断面の「GPL-12 … <AGA20M>」は横に約670)
+      T.forEach(function (m) {
+        var a = /^<([A-Z][A-Z0-9]*)>$/.exec(m.text); if (!a || /^TS[0-9]/.test(a[1])) return;
+        if (labels.some(function (lb) { return lb.mark === a[1] && Math.abs(lb.x - m.x) < 1 && Math.abs(lb.y - m.y) < 1; })) return;
+        var pt = T.filter(function (u) { return /^(?:[0-9]+)?(G?PL|FB)-[0-9.]+(x[0-9.]+)*$/.test(u.text) && (dist(u, m) < 400 || (Math.abs(u.y - m.y) < 80 && Math.abs(u.x - m.x) < 900)) && !labels.some(function (lb) { return Math.abs(lb.sx - u.x) < 1 && Math.abs(lb.sy - u.y) < 1; }); })
+          .sort(function (x, y) { return dist(x, m) - dist(y, m); })[0];
+        if (pt) labels.push({ size: plateSize(pt.text), cnt: plateCount(pt.text), mark: a[1], x: m.x, y: m.y, sx: pt.x, sy: pt.y, mekki: false });
+      });
+      // 袖壁取合の板(2026-11-27、26-14 N2G-22 の <AGASD1>・<AGASD2>): 近くに表記の無い符号で、「PL-12x200x190 袖壁取合」の最後の数字(190)と
+      // 同じ寸法が符号の高さの横(上下150以内・左右2500以内)にあれば、その表記の板。符号1つ = 1枚、備考 袖壁取合
+      var sdT = T.filter(function (u) { return /^G?PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) && T.some(function (w) { return w.text === '袖壁取合' && Math.abs(w.y - u.y) < 30 && w.x > u.x && w.x - u.x < 1200; }); });
+      if (sdT.length) {
+        var rest = {};
+        T.forEach(function (m) {
+          var a = /^<([A-Z][A-Z0-9]*)>$/.exec(m.text); if (!a || /^TS[0-9]/.test(a[1])) return;
+          if (labels.some(function (lb) { return lb.mark === a[1]; })) return;
+          (rest[a[1]] = rest[a[1]] || []).push(m);
+        });
+        Object.keys(rest).forEach(function (name) {
+          var best = null, bs = 150;
+          sdT.forEach(function (u) {
+            var len = /x([0-9.]+)$/.exec(u.text)[1];
+            T.forEach(function (d) {
+              if (d.text !== len) return;
+              rest[name].forEach(function (m) { var dy = Math.abs(d.y - m.y); if (Math.abs(d.x - m.x) < 2500 && dy < bs) { bs = dy; best = u; } });
+            });
+          });
+          if (best) rest[name].forEach(function (m) { labels.push({ size: best.text, cnt: 1, mark: name, x: m.x, y: m.y, sx: m.x, sy: m.y, mekki: false, note: '袖壁取合' }); });
+        });
+      }
+      // 符号の無い「2PL-9」(BH の符号の上に書かれていた表記)は、符号の欄を空けて マーク漏れ
+      noMark.forEach(function (st) { labels.push({ size: plateSize(st.text), cnt: plateCount(st.text), mark: '', x: st.x, y: st.y, sx: st.x, sy: st.y, mekki: false, note: 'マーク漏れ' }); });
+    })();
     // 形鋼の表記の引出線の先: 表記のすぐ下の横線の端から出る斜めの線の、もう一方の端(無ければ表記の位置)
     function shapeAnchor(t) {
       // 表記と引出線の間は40までが多いが、69 離れた図面もある(2026-11-21、WB3-3G-08 の「[-100x50x5x7.5」)
@@ -560,6 +657,17 @@
         return holeMarks.some(function (m) { return Math.hypot(m.x - p[0], m.y - p[1]) <= 700 && (c === null || Math.abs(p[0] - c) < 100 || (m.x - c) * (p[0] - c) > 0); });
       });
     }
+    // 見出しから上へ2800より離れた大きな詳細図の中の板(2026-11-27、26-14 N2G-19 の C断面: 見出しから約4500上の <AGAR61>・<AGAR60K> など)。
+    // 近くに断面が無いときだけ、上へ5000・横1900まで
+    function sectionOfFar(lb) {
+      var best = null, bs = Infinity, cx = lb.x + 18 * lb.mark.length;
+      titles.forEach(function (s) {
+        var dy = lb.y - s.y, dx = Math.abs(cx - (s.x + s.sx) / 2);
+        if (dy <= 0 || dy > 5000 || dx > 1900) return;
+        var sc = dy + 2 * dx; if (sc < bs) { bs = sc; best = s; }
+      });
+      return best;
+    }
     labels.forEach(function (lb) {
       // 図の範囲は、ひらがな・カタカナの断面図(か SEC など)の手前まで(x1s)で見る(2026-11-21 ユーザー指摘「2もコン止め」、EA2-3G-08: か断面の NNGNR2 を立面図の書き込みにしていた)
       //  ただし、見出しのすぐ上(1500以内・横1000以内)の表記だけ(2G-01 の外装ALC下地(名前だけの断面図)の板は今までどおり)
@@ -578,13 +686,15 @@
         });
         if (same.length) { same.forEach(function (u) { elevLabels.push({ size: lb.size, mark: lb.mark, cnt: plateCount(u.text), x: u.x, y: u.y, sx: u.x, sy: u.y }); }); return; }
       }
-      var s = sectionOf({ x: lb.x, y: lb.y, text: lb.mark }, titles); if (!s) return;
+      // 符号が断面の範囲(見出しから横1900)の外でも、板の表記が範囲の中ならその断面(2026-11-27、26-14 N2G-13 F断面の <AGR11>)
+      var s = sectionOf({ x: lb.x, y: lb.y, text: lb.mark }, titles) || sectionOf({ x: lb.sx, y: lb.sy, text: '' }, titles) || sectionOfFar(lb); if (!s) return;
       var si = secInfo[s.letter];
       si.plates[lb.mark] = si.plates[lb.mark] || { size: lb.size, n: 0, mekki: false };
       si.plates[lb.mark].n += lb.cnt;
       si.cntMin = Math.min(si.cntMin || Infinity, lb.cnt);
       si.plateT.add(thickOf(lb.size));
       if (lb.mekki) si.plates[lb.mark].mekki = true;
+      if (lb.note) si.plates[lb.mark].note = lb.note;   // マーク漏れ(BT・BH の上の符号の無い 2PL-9)
       if (gplNoHole(lb)) si.plates[lb.mark].noHole = true;
       // 符号のすぐ上下に別の文字で「切断流用」(既存の板を切って使う)があれば、備考は断面の副題と「切断流用」(2026-11-24 ユーザー指示、WA1-3G-06 の PL-6x85 GGAR1 →「ALC下地・切断流用」)
       if (T.some(function (u) { return u.text === '切断流用' && Math.abs(u.x - lb.x) < 150 && Math.abs(u.y - lb.y) < 200; }))
@@ -715,12 +825,18 @@
       if (isLeft(t) || !RE_SECKEY.test(t.text) || !secInfo[t.text] || titles.some(function (x) { return x.letter === t.text && Math.abs(x.y - t.y) < 10; })) return;
       // 鋼材の印「N B」「N C」「T C」(SN490B など)の B・C は断面記号ではない(2026-11-21、EA2-RG-07: C断面の「N B GPL-25」の B を入れ子の B断面と読み、NG21・NG22 を5枚にしていた)
       if (T.some(function (u) { return /^[NT]$/.test(u.text) && Math.abs(u.y - t.y) < 15 && t.x - u.x > 0 && t.x - u.x < 160; })) return;   // 120 → 160(2026-11-24、EB3-RG-01 の「N B」は 144 離れていた)
+      // 製品の行の材質の印「N B」の B(2026-11-27、26-14 N2G-05: 製品 R の行の B を D断面の中の B の旗と読み、b の板を多く数えていた)は断面記号ではない
+      if (pr.rows.some(function (r) { return Math.abs(r.y - t.y) < 200 && t.x > r.x - 500 && t.x < r.xr + 500; })) return;
       var best = null, bs = Infinity, cx = t.x + 18 * t.text.length, rf = rightFlag(t);
-      titles.forEach(function (s) {
-        var c = (s.x + s.sx) / 2, dy = t.y - s.y, dx = Math.abs(cx - c);
-        if (dy <= 0 || dy > 3500 || dx > 1900 || s.letter === t.text || (rf && c < t.x)) return;
-        var sc = dy + 2 * dx;
-        if (sc < bs) { bs = sc; best = s; }
+      // 上へ3500までに無ければ5000まで(2026-11-27、26-14 N2G-19: C断面の大きな詳細図の中の b・E・c・d の旗は見出しから約4500上)
+      [3500, 5000].forEach(function (lim) {
+        if (best) return;
+        titles.forEach(function (s) {
+          var c = (s.x + s.sx) / 2, dy = t.y - s.y, dx = Math.abs(cx - c);
+          if (dy <= 0 || dy > lim || dx > 1900 || s.letter === t.text || (rf && c < t.x)) return;
+          var sc = dy + 2 * dx;
+          if (sc < bs) { bs = sc; best = s; }
+        });
       });
       if (best) secInfo[best.letter].nested.push(t.text);
     });
@@ -863,7 +979,7 @@
     // 旗(断面記号): 文字の右に縦線(長さ250〜450)がある
     // 旗の縦線(梁が傾いた図面では少し傾いている)
     // 傾き2割まで(WR-2G-9 は勾配12.9%。tdf-master-web もこの図面を斜め梁として読めている。2026-11-20)
-    var flagLines = L.filter(function (l) { var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]); return dy > 200 && dy < 500 && dx <= dy * 0.2; })
+    var flagLines = L.filter(function (l) { var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]); return dy > 200 && dy < 500 && dx <= dy * 0.25; })   // 0.2 → 0.25(2026-11-27、26-14 N2G-22: 平面で折れた梁の斜めの部分の旗 A・c・B は約23%)
       .map(function (l) { return { x: (l[0] + l[2]) / 2, y0: Math.min(l[1], l[3]), y1: Math.max(l[1], l[3]) }; });
     // ×で消した旗(旗を囲む四角の対角線2本。2026-11-24、WA2-3G-07: 中止の A・D の旗)は数えない
     var crossLines = L.filter(function (l) { var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]); return dx > 100 && dy > 100 && dx < 800 && dy < 1000; })
@@ -1368,7 +1484,7 @@
           add(sh.size, sh.len, n || amb, named.title);
         });
       }
-      elevLabels.forEach(function (lb) { if (inView(v, lb) && !(named && amb && named.used.has(lb))) add(lb.size, lb.mark, lb.cnt, ''); });
+      elevLabels.forEach(function (lb) { if (inView(v, lb) && !(named && amb && named.used.has(lb))) add(lb.size, lb.mark, lb.cnt, lb.note || ''); });   // lb.note = 継手・マーク漏れ(2026-11-27)
 
       // FB: 表記の寸法の□(長さ×幅)を数える。梁が傾いていると□も傾くので、向きを問わず「長さLの平行な2本の線が幅Wだけ離れている」組を数える
       fbDims.forEach(function (fb) {
@@ -1411,6 +1527,97 @@
 
       // 形鋼の受材(継手の表記がある断面=別の部材は除く)
       var doneShape = {};
+      // 開口の枠(三方枠)のある平面図(2026-11-27 ユーザー指示、26-14 N2G-18「75x6 = 411.8・448.1・489.1・530.1 の4本、敷居受け L100 = 2090 が1本」):
+      //  - デッキ受けの山形鋼 = 同じ高さ(梁のフランジ)から下がる縦の材が3本以上あり、すぐ横(60以内)に同じ長さの数字(小数第1位)があるもの。1本ずつ
+      //  - 敷居受けの山形鋼 = 「敷居受け」の文字(平面図)のそば(端が700以内)の、同じ長さの数字が書かれた材で一番長いもの1本
+      if (Object.keys(secInfo).some(function (k) { return secInfo[k].title.sub === '三方枠'; })) {
+        // 敷居受けの形鋼 = 断面図で「敷居受け」の文字の横に書かれた山形鋼。デッキ受けの形鋼 = 副題「デッキ受け」の断面のそれ以外の山形鋼
+        var sillT = T.filter(function (t) { return /^L-[0-9]/.test(t.text) && sectionOf(t, titles) && T.some(function (u) { return u.text === '敷居受け' && Math.abs(u.y - t.y) < 30 && Math.abs(u.x - t.x) < 800; }); });   // 同じ高さの左右800以内(N2G-18 は567)
+        var sillL = sillT.length ? sillT[0].text : null;
+        var dk = Object.keys(secInfo).find(function (k) { return secInfo[k].title.sub === 'デッキ受け' && secInfo[k].shapes.length; });
+        var deckL = dk ? secInfo[dk].shapes.filter(function (x) { return /^L-/.test(x) && x !== sillL; }) : [];
+        var nums = T.filter(function (t) { return inView(v, t) && !sectionOf(t, titles) && /^[0-9]+(\.[0-9])?$/.test(t.text) && parseFloat(t.text) >= 100; });
+        var mem = [];
+        nums.forEach(function (t) {
+          var val = parseFloat(t.text);
+          var l = L.find(function (l) { return Math.abs(l[0] - l[2]) < 0.5 && Math.abs(Math.abs(l[1] - l[3]) - val) < 0.2 && Math.abs(l[0] - t.x) < 60 && t.y < Math.max(l[1], l[3]) && t.y > Math.min(l[1], l[3]); });
+          if (l && /\./.test(t.text)) mem.push({ val: val, top: Math.round(Math.max(l[1], l[3])), x: l[0] });   // 長さは小数第1位まで書かれたもの(立面図の寸法 400 などは除く)
+        });
+        var byTop = {}; mem.forEach(function (m) { (byTop[m.top] = byTop[m.top] || []).push(m); });
+        // 5本以上並ぶときは、両端の2本は開口の枠の縦の材(N2G-18 の 404.8・547.4)なので除く
+        var deckMem = Object.keys(byTop).filter(function (k) { return byTop[k].length >= 3; }).reduce(function (a, k) {
+          var g = byTop[k].slice().sort(function (p, q) { return p.x - q.x; }); if (g.length >= 5) g = g.slice(1, -1); return a.concat(g); }, []);
+        if (deckL.length && deckMem.length) {
+          deckMem.forEach(function (m) { add(deckL[0], m.val, 1, 'デッキ受け'); });
+          deckL.forEach(function (x) { doneShape[x] = 1; });
+          var sill = T.find(function (t) { return t.text === '敷居受け' && inView(v, t) && !sectionOf(t, titles); });
+          if (sill && sillL) {
+            var best = null;
+            nums.forEach(function (t) {
+              var val = parseFloat(t.text);
+              L.forEach(function (l) {
+                if (Math.abs(Math.hypot(l[2] - l[0], l[3] - l[1]) - val) > 0.2 || Math.hypot((l[0] + l[2]) / 2 - t.x, (l[1] + l[3]) / 2 - t.y) > 150) return;
+                if (Math.min(Math.hypot(l[0] - sill.x, l[1] - sill.y), Math.hypot(l[2] - sill.x, l[3] - sill.y)) > 700) return;
+                if (!best || val > best) best = val;
+              });
+            });
+            if (best) { add(sillL, best, 1, '敷居受け'); doneShape[sillL] = 1; }
+          }
+        }
+      }
+      // 袖壁取合のひらがなの断面(2026-11-27 ユーザー指示、26-14 N2G-22 の あ・い・う断面。旗は立面図の横向きの あ・い・う):
+      //  - 「L-150x150x12 袖壁取合」の行の寸法で2回以上出る数字(300 が2か所)= 山形鋼の長さ、その数だけ(い断面: L-150x150x12 300 を2本。E断面の L-150 は同じ山形鋼なので足さない)
+      //  - 「2L-150x150x12 300」= 山形鋼 300 を2本(う断面。本当は1本だが図面どおり、ユーザー指示)
+      //  - 断面の中の符号の無い G.PL-9・PL-9 = 1枚ずつ(う断面)
+      //  数は、立面図(図の中)にあるその断面の記号の数
+      Object.keys(secInfo).forEach(function (k) {
+        if (!/^[ぁ-ゖ]$/.test(k)) return;
+        var keys = T.filter(function (u) { return u.text === k && inView(v, u) && !sectionOf(u, titles) && !titles.some(function (x) { return x.letter === k && Math.abs(x.y - u.y) < 10; }); }).length;   // 見出しの文字は数えない
+        if (!keys) return;
+        // 見出しが図の右上にある断面(い断面: 表記は見出しの下・左4500以内)も
+        var st = secInfo[k].title;
+        var inS = function (u) { var s0 = sectionOf(u, titles); if (s0) return s0.letter === k; var dy = st.y - u.y, dx = st.x - u.x; return dy > 0 && dy < 1500 && dx > -200 && dx < 4500; };
+        if (!T.some(function (w) { return w.text === '袖壁取合' && (inS(w) || (sectionOf(w, titles) || {}).letter === k); }) && secInfo[k].title.sub !== '袖壁取合') return;   // 袖壁取合の断面だけ
+        T.forEach(function (t) {
+          if (!inS(t)) return;
+          var m2 = /^2(L-[0-9.]+x[0-9.]+x[0-9.]+)$/.exec(t.text);
+          if (m2) {
+            var ln = T.find(function (u) { return /^[0-9.]+$/.test(u.text) && Math.abs(u.y - t.y) < 30 && u.x > t.x && u.x - t.x < 600; });
+            if (ln) add(m2[1], parseFloat(ln.text), 2 * keys, '袖壁取合');
+            return;
+          }
+          if (/^L-[0-9.]+x[0-9.]+x[0-9.]+$/.test(t.text) && T.some(function (w) { return w.text === '袖壁取合' && Math.abs(w.y - t.y) < 30 && w.x > t.x && w.x - t.x < 600; })) {
+            var cnt = {};
+            T.forEach(function (u) { if (/^[0-9]+(\.[0-9]+)?$/.test(u.text) && Math.abs(u.y - t.y) < 30 && u.x > t.x && u.x - t.x < 3000) cnt[u.text] = (cnt[u.text] || 0) + 1; });
+            Object.keys(cnt).forEach(function (val) { if (cnt[val] >= 2) add(t.text, parseFloat(val), cnt[val] * keys, '袖壁取合'); });
+            return;
+          }
+          if (/^(G\.PL|G?PL)-[0-9.]+$/.test(t.text) && !labels.some(function (lb) { return Math.abs(lb.sx - t.x) < 1 && Math.abs(lb.sy - t.y) < 1; }) &&
+              !T.some(function (m) { return /^<[A-Z]/.test(m.text) && dist(m, t) < 400; })) {
+            add(t.text.replace(/^G\.PL/, 'GPL'), '', keys, secInfo[k].title.sub || '');
+          }
+        });
+      });
+      // 袖壁取合の断面の符号のサイズに幅・長さが無いとき(E断面の「PL-12 <AGASD3>」)、同じ板厚の「PL-12x300x293 袖壁取合」(あ断面)が1つだけ残っていればそのサイズ(2026-11-27 ユーザー指示)
+      (function () {
+        var sdAll = T.filter(function (u) { return /^G?PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) && T.some(function (w) { return w.text === '袖壁取合' && Math.abs(w.y - u.y) < 30 && w.x > u.x && w.x - u.x < 1200; }); });
+        Object.keys(items).forEach(function (key) {
+          var it = items[key];
+          if (!/^PL-[0-9.]+$/.test(it.size) || typeof it.name !== 'string' || !it.name || it.notes.join('').indexOf('袖壁取合') < 0) return;
+          if (/R/.test((/^[A-Z]+/.exec(it.name) || [''])[0])) return;   // スチフナ(符号の英字に R。AGR85)は除く
+          var used = Object.keys(items).map(function (k2) { return items[k2].size; });
+          var c = sdAll.filter(function (u) { return inView(v, u) && u.text.indexOf(it.size + 'x') === 0 && used.indexOf(u.text) < 0; });
+          if (c.length === 1) { delete items[key]; var nk = c[0].text + '|' + it.name; items[nk] = Object.assign({}, it, { size: c[0].text }); }
+        });
+      })();
+      // 間仕切用捨てPL の断面の符号の無い板の表記(PL-12x100x100)が平面図にもあれば、平面図の表記1つ = 1枚(2026-11-27 ユーザー指示、26-14 N2G-18 a断面 = 6枚)
+      Object.keys(secInfo).forEach(function (k) {
+        if (secInfo[k].title.sub !== '間仕切用捨てPL') return;
+        var st = T.find(function (u) { return /^PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) && (sectionOf(u, titles) || {}).letter === k; });
+        if (!st) return;
+        var n = T.filter(function (u) { return u.text === st.text && inView(v, u) && !sectionOf(u, titles); }).length;
+        if (n && !items[st.text + '|']) add(st.text, '', n, '間仕切用捨てPL');
+      });
       Object.keys(secInfo).forEach(function (L1) {
         var si = secInfo[L1];
         if (!si.shapes.length || si.joint) return;
@@ -1445,7 +1652,12 @@
               doneShape[shape + '@' + len] = 1;
               var vs = vlines.filter(function (l) { return inView(v, { x: l.x, y: (l.y0 + l.y1) / 2 }) && Math.abs(l.y1 - l.y0 - len) < 0.6; }).sort(function (a, b) { return a.x - b.x; });
               var used = new Set(), cnt = 0;
-              vs.forEach(function (a) { if (used.has(a)) return; var b = vs.find(function (l) { return l !== a && !used.has(l) && l.x - a.x > 0 && l.x - a.x <= 40 && Math.abs(l.y0 - a.y0) < 0.6; }); if (b) { used.add(a); used.add(b); cnt++; } });
+              var prs = [];
+              vs.forEach(function (a) { if (used.has(a)) return; var b = vs.find(function (l) { return l !== a && !used.has(l) && l.x - a.x > 0 && l.x - a.x <= 40 && Math.abs(l.y0 - a.y0) < 0.6; }); if (b) { used.add(a); used.add(b); prs.push(a); } });
+              // 同じ高さに3組以上並ぶ列があれば、その列の組だけ(2026-11-27、26-14 N2G-05: 長さ250のリブPL-9 の線を C-100 250 と数えていた)
+              var byY = {}; prs.forEach(function (a) { var k = Math.round(a.y0); byY[k] = (byY[k] || 0) + 1; });
+              var rowK = Object.keys(byY).filter(function (k) { return byY[k] >= 3; });
+              cnt = rowK.length ? prs.filter(function (a) { return rowK.indexOf(String(Math.round(a.y0))) >= 0; }).length : prs.length;
               // 「C-」の LGS下地で、立面図に旗があり断面図の寸法の合計が100以上(梁を横切る部材)のときは、下面図の線では数えず下の①で数える
               // (2026-11-21 ユーザー指示「650 1本」、WB3-3G-07: 下面図は1本の C を4本の線で描き2組に見える。本数は立面図の旗・端面の数)
               if (cnt && shape.charAt(0) === 'C' && crossC()) { doneShape[shape + '@' + len] = 0; return; }
@@ -1655,7 +1867,8 @@
         var subs = new Set(), mekki = false;
         it.notes.forEach(function (nt) { var p = nt.split('|'); subs.add(p[0]); if (p[1]) mekki = true; });
         // 符号の末尾の M(番号のすぐあと。MK の M も)= めっき(2026-11-21 ユーザー指示、EA1-RG-01: NG121M・NHG143MK はめっき)
-        if (typeof it.name === 'string' && /[0-9]M[A-Z]?$/.test(it.name)) mekki = true;
+        // 2026-11-27 ユーザー指示「メッキの切板は末尾に M」: 番号のあとに英字が1つ入るもの(26-14 N2G-22 の AGAR50AM)も
+        if (typeof it.name === 'string' && /[0-9][A-Z]?M[A-Z]?$/.test(it.name)) mekki = true;
         var parts = [];
         if (subs.size === 1 && Array.from(subs)[0]) parts.push(Array.from(subs)[0]);
         if (mekki) parts.push('めっき');
@@ -2090,7 +2303,7 @@
         // 備考(2026-11-24、EA2-1C-09): 断面の副題(「(水切り板)」「(ササラ受)」。<空気抜き…> は除く)と、符号の番号のすぐあとの M = めっき(梁と同じ決まり)
         var notes = [];
         if (sec && sec.sub && !/空気抜き/.test(sec.sub)) notes.push(sec.sub);
-        if (/[0-9]M[A-Z]?$/.test(mk)) notes.push('めっき');
+        if (/[0-9][A-Z]?M[A-Z]?$/.test(mk)) notes.push('めっき');   // 末尾の M = めっき(番号のあとに英字が1つ入るものも。2026-11-27)
         out.push({ size: size, name: mk, n: n, note: notes.join('・') });
       });
       // 形鋼の表記のそばに長さ「L=250」があるもの(2026-11-27、N1C-11 F断面「L=250 L-75x75x6」「L=210 L-150x90x9」、N1C-12・13「C-100x50x20x3.2 L=500 間仕切り下地」):
