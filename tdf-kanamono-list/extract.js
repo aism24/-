@@ -1771,6 +1771,12 @@
             if (!line || Math.abs(dy) < Math.abs(line[1] - m.y)) { line = l; sz = on[0]; }
           });
           if (!sz) sz = szT.filter(function (t) { return dist(t, m) <= 600; }).sort(function (a, b) { return dist(a, m) - dist(b, m); })[0];
+          // 位置が図面の原点のそば(±1000)に記録された表記(2026-11-27 ユーザー指示、N1C-11 の <ACA3M> = PL-9x60x250。図面では <ACA3M> のすぐ上に見える):
+          // マークのそばに表記が無く、そういう表記が図面に1つだけなら、それをサイズにする
+          if (!sz && (Math.abs(m.x) > 5000 || Math.abs(m.y) > 5000)) {
+            var orph = szT.filter(function (t) { return Math.abs(t.x) < 1000 && Math.abs(t.y) < 1000; });
+            if (orph.length === 1) sz = orph[0];
+          }
           if (!sz) return;
           var note = T.find(function (u) {
             if (!RE_NOTE.test(u.text)) return false;
@@ -1895,6 +1901,29 @@
         if (!kDone) Array.from(new Set(kTexts.map(function (u) { return u.text; }))).forEach(function (s) {
           out.push({ size: s, name: '', n: kTexts.filter(function (u) { return u.text === s; }).length, note: '間仕切用捨てPL' });
         });
+        // マークの無い板(2026-11-27 ユーザー指示、N1C-11):
+        //  - めっき抜き孔のある断面(Z断面の柱脚の八角形の板)の「PL-9」= 1枚、切板名・備考は空欄
+        //  - 「PL-厚x幅x長さ」(F断面の PL-6x50x100)= 1枚。そば(600以内)に山形鋼の表記があれば備考 デッキ受け
+        //    (間仕切用捨てPL・避雷針ピースなど、ほかで拾った表記は除く)
+        var kSz = (T.find(function (u) { return /^PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) && (subOf(u) || {}).sub === '間仕切用捨てPL'; }) || {}).text;
+        var kLay = P.layers.findIndex(function (n) { return /間仕切用捨てPL/.test(n); }) + 1;
+        szT.forEach(function (u) {
+          if (usedSizes.indexOf(u) >= 0 || Math.abs(u.x) < 1000 && Math.abs(u.y) < 1000) return;
+          if (/^PL-[0-9.]+$/.test(u.text)) {
+            var s0 = (subOf(u) || {}).sec; if (!s0) return;
+            if (!T.some(function (w) { return /めっき抜き孔|メッキ抜き孔/.test(w.text) && w.y - s0.y > 0 && w.y - s0.y <= 2800 && Math.abs(w.x - s0.x) <= 1900 && dist(w, u) <= 1200; })) return;   // N1C-11 Z断面は 827
+            if (angleMarks.some(function (m) { return dist(m, u) <= 600; })) return;
+            usedSizes.push(u);
+            out.push({ size: u.text, name: '', n: 1, note: '' });
+            return;
+          }
+          if (!/^PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) || u.text === kSz || u.lay === kLay || u.lay === 34) return;
+          if (out.some(function (it) { return it.note === '間仕切用捨てPL' && it.size === u.text; })) return;   // 間仕切用捨てPL の表記(N1C-5・N1C-8 の3断面の上)
+          if (/避雷針|支給/.test(T.filter(function (w) { return dist(w, u) <= 300; }).map(function (w) { return w.text; }).join(''))) return;
+          if (angleMarks.some(function (m) { return dist(m, u) <= 600; })) return;
+          usedSizes.push(u);
+          out.push({ size: u.text, name: '', n: 1, note: T.some(function (w) { return /^L-[0-9]/.test(w.text) && dist(w, u) <= 600; }) ? 'デッキ受け' : '' });
+        });
         // 「下がり止め(4面)」のそば(800以内。N1C-15 は約670)の長さの無い「FB-12x75」= 4枚・備考 下がり止め(2026-11-27、N1C-15 A断面)
         T.filter(function (u) { return /^FB-[0-9.]+x[0-9.]+$/.test(u.text) && usedSizes.indexOf(u) < 0; }).forEach(function (u) {
           var k = T.find(function (w) { return /^下がり止め\(([0-9]+)面\)$/.test(w.text) && dist(w, u) <= 800; });
@@ -2017,6 +2046,28 @@
             Object.keys(secInfo).some(function (k) { return secInfo[k].title.sub === 'デッキ受け' && secInfo[k].shapes.indexOf(t.text) >= 0; }))) note = 'デッキ受け';
         lEqDone[t.text] = 1;
         out.push({ size: t.text, name: parseFloat(lq.text.slice(2)), n: 1, note: note });
+      });
+      // 「デッキ受け」と重なって書かれた山形鋼の表記で、断面図の中でも L= も無いもの(2026-11-27 ユーザー指示、N1C-13 X-X の L-75x75x6 = 219.7):
+      // 引出線の先の、山形鋼を横から見た絵(同じ長さの平行な2本の線で、間が板厚)の長さで1本
+      T.filter(function (t) { return /^L-[0-9.]+x[0-9.]+x[0-9.]+$/.test(t.text) && !sectionOf(t, titles) && T.some(function (u) { return u.text === 'デッキ受け' && dist(u, t) < 60; }); }).forEach(function (t) {
+        if (T.some(function (u) { return /^L=[0-9.]+$/.test(u.text) && dist(u, t) <= 800; })) return;
+        var thk2 = parseFloat(/x([0-9.]+)$/.exec(t.text)[1]), leg2 = parseFloat(/^L-([0-9.]+)/.exec(t.text)[1]), len2 = 0;
+        L.forEach(function (l) {
+          if (len2 || Math.abs(l[1] - l[3]) < 100) return;
+          var a = [l[0], l[1]], b = [l[2], l[3]];
+          if (Math.hypot(b[0] - t.x, b[1] - t.y) < Math.hypot(a[0] - t.x, a[1] - t.y)) { var c = a; a = b; b = c; }
+          if (Math.hypot(a[0] - t.x, a[1] - t.y) > 30) return;
+          L.some(function (m) {
+            if (Math.abs(m[1] - m[3]) >= 0.5 || Math.abs(m[0] - m[2]) < 100 || Math.abs(m[1] - b[1]) > leg2 + 5 || b[0] < Math.min(m[0], m[2]) - 40 || b[0] > Math.max(m[0], m[2]) + 40) return false;
+            var w = Math.abs(m[0] - m[2]);
+            return L.some(function (k) {
+              if (k === m || Math.abs(k[1] - k[3]) >= 0.5 || Math.abs(Math.abs(k[0] - k[2]) - w) > 0.5 || Math.abs(Math.min(k[0], k[2]) - Math.min(m[0], m[2])) > 0.5) return false;
+              if (Math.abs(Math.abs(k[1] - m[1]) - thk2) > 0.6) return false;
+              len2 = Math.round(w * 10) / 10; return true;
+            });
+          });
+        });
+        if (len2) out.push({ size: t.text, name: len2, n: 1, note: 'デッキ受け' });
       });
       // 柱の図面の形鋼の断面(ア・イ の L-75x75x6。2026-11-20 ユーザー指示「アイ断面があるのでそちらのL-75も拾って欲しい」):
       // 本数 = 図の中のその断面の旗の数 × 断面図の表記の数。長さ = 断面図に長さの寸法が無いので、旗のそば(1000以内)に描かれた線(300〜3000)で一番多い長さ(C断面の八角形の斜めの辺 707.1)
