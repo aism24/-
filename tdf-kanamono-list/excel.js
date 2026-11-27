@@ -172,6 +172,7 @@
   // 重量・注文書の列(2026-11-25): 製品の表は G・H、総まとめは E・G・H・K・L。枠は細線
   var EXTRA_COLS = { lhead: [6, 7], item: [6, 7], item_gpl: [6, 7], sub: [6, 7], shead: [4, 6, 7, 10, 11], sitem: [4, 6, 7, 10, 11], sitem_gpl: [4, 6, 7, 10, 11] };
   var RED = 'FFFF0000';
+  var SHORT_FILL = 'FFFF00';   // 不足のセルの塗り(黄色。2026-11-27 ユーザー指示「赤テキストに加えてセルに黄色着色」)
   function styleExtra(cell, kind, red) {
     var box = { left: THIN, right: THIN, top: THIN, bottom: THIN };
     cell.border = kind === 'sub' ? { left: THIN, right: THIN, top: THIN, bottom: DBL } : box;
@@ -179,7 +180,7 @@
     if (kind === 'lhead') { cell.fill = fill('DDEBF7'); cell.font = font({ bold: true }); }
     else if (kind === 'shead') { cell.fill = fill('DDEBF7'); cell.font = font({ bold: true }); }
     else if (kind === 'sub') { cell.fill = fill('F2F2F2'); cell.font = font({ bold: true }); }
-    else { if (kind === 'sitem' || kind === 'sitem_gpl') cell.fill = fill('FFF2CC'); cell.font = font({ color: red ? RED : undefined }); }
+    else { if (kind === 'sitem' || kind === 'sitem_gpl') cell.fill = fill(red ? SHORT_FILL : 'FFF2CC'); cell.font = font({ color: red ? RED : undefined }); }
   }
 
   function buildStandard(ExcelJS, head, products, multi, orders) {
@@ -213,7 +214,7 @@
         else if (ex.indexOf(c) >= 0) styleExtra(cell, r.kind, r.short && c === 11);
         else cell.font = font();
         // 注文書より使う枚数が多い符号は、製品の表の枚数を赤に(2026-11-25 ユーザー指示)
-        if (r.short && c === 2 && (r.kind === 'item' || r.kind === 'item_gpl')) cell.font = Object.assign({}, cell.font, { color: { argb: RED } });
+        if (r.short && c === 2 && (r.kind === 'item' || r.kind === 'item_gpl')) { cell.font = Object.assign({}, cell.font, { color: { argb: RED } }); cell.fill = fill(SHORT_FILL); }
       }
     });
     ws.mergeCells('B2:D2'); ws.mergeCells('B3:D3');
