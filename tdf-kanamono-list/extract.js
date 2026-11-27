@@ -511,7 +511,7 @@
 
     // 断面ごとの板の表記・形鋼の表記・継手の表記・寸法の数字
     var vlines = L.filter(function (l) { return Math.abs(l[0] - l[2]) < 0.5 && Math.abs(l[1] - l[3]) > 20; })
-      .map(function (l) { return { x: l[0], y0: Math.min(l[1], l[3]), y1: Math.max(l[1], l[3]) }; });
+      .map(function (l) { return { x: l[0], y0: Math.min(l[1], l[3]), y1: Math.max(l[1], l[3]), lay: l[4] }; });
     var hlines = L.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[0] - l[2]) > 20; })
       .map(function (l) { return { y: l[1], x0: Math.min(l[0], l[2]), x1: Math.max(l[0], l[2]) }; });
     var labels = plateLabels(T, hlines, titles);
@@ -1658,6 +1658,15 @@
               var byY = {}; prs.forEach(function (a) { var k = Math.round(a.y0); byY[k] = (byY[k] || 0) + 1; });
               var rowK = Object.keys(byY).filter(function (k) { return byY[k] >= 3; });
               cnt = rowK.length ? prs.filter(function (a) { return rowK.indexOf(String(Math.round(a.y0))) >= 0; }).length : prs.length;
+              // その列では、組の線と同じレイヤの長さの同じ線のまとまり(横60以内)を1本と数える(2026-11-27 ユーザー指摘「L側の C-100 250 が1本不足。仕口下が拾えていない？」、
+              // 26-14 N2G-05: 仕口の下の C は縦線が1本しか描かれず組にならなかった。別のレイヤの小梁の線の組は数えない)
+              if (rowK.length && shape.charAt(0) === 'C') {   // C- だけ、本数を増やす方向だけ([- の ITM の図面は組が複数のレイヤにまたがる)
+                var lc = {}; prs.forEach(function (a) { if (rowK.indexOf(String(Math.round(a.y0))) >= 0) lc[a.lay] = (lc[a.lay] || 0) + 1; });
+                var top = Object.keys(lc).sort(function (a, b) { return lc[b] - lc[a]; })[0], rowLay = {}; rowLay[top] = 1;   // 列の組で一番多いレイヤだけ
+                var xs = vs.filter(function (l) { return rowK.indexOf(String(Math.round(l.y0))) >= 0 && rowLay[l.lay]; }).map(function (l) { return l.x; }).sort(function (a, b) { return a - b; });
+                var cl = 0, last = -Infinity; xs.forEach(function (x) { if (x - last > 60) cl++; last = x; });
+                if (cl > cnt) cnt = cl;
+              }
               // 「C-」の LGS下地で、立面図に旗があり断面図の寸法の合計が100以上(梁を横切る部材)のときは、下面図の線では数えず下の①で数える
               // (2026-11-21 ユーザー指示「650 1本」、WB3-3G-07: 下面図は1本の C を4本の線で描き2組に見える。本数は立面図の旗・端面の数)
               if (cnt && shape.charAt(0) === 'C' && crossC()) { doneShape[shape + '@' + len] = 0; return; }
