@@ -1388,6 +1388,29 @@
           if (c >= 2) addSecPlatesOnce([L], 1);
         });
       });
+      // ALC下地 の断面の旗が1つだけでも、平面図に同じ形の下地の金物が補剛材ごとに描かれていれば、その数を場所の数にする
+      // (2026-11-27 ユーザー指摘「b断面は合計11か所」、26-14 N2G-15: 旗 b は1つ、平面図の T の形の下地は補剛材11か所)
+      // 形 = 旗の当たった板の位置から左右80以内の、立面図より上(平面図)の線を、板の位置からの相対の座標で並べたもの
+      if (elev) Object.keys(secInfo).forEach(function (L1) {
+        if (secInfo[L1].title.sub !== 'ALC下地') return;
+        var hs = flagHits.filter(function (h) { return h.L1 === L1; });
+        if (hs.length !== 1) return;
+        // ほかの ALC下地 の断面にも旗があれば(N2G-11: b・c・d… が補剛材ごとに旗で示されている)数え直さない
+        if (Object.keys(flagsBySec).some(function (L2) { return L2 !== L1 && secInfo[L2] && secInfo[L2].title.sub === 'ALC下地'; })) return;
+        var f0 = flagsBySec[L1]; if (!f0 || f0.unmatched || f0.explicit) return;
+        // 短い横線(長さ120以下)だけで比べる(寸法線などの長い線は場所ごとに違う)
+        var planSig = function (x) {
+          var a = {};
+          L.forEach(function (l) { if (Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[0] - l[2]) <= 120 && Math.min(l[0], l[2]) >= x - 80 && Math.max(l[0], l[2]) <= x + 80 && l[1] > elev.top + 300 && l[1] < elev.top + 6000 && inView(v, { x: x, y: l[1] }))
+            a[[Math.round((Math.min(l[0], l[2]) - x) * 2) / 2, Math.round((Math.max(l[0], l[2]) - x) * 2) / 2, Math.round(l[1])].join(',')] = 1; });
+          return a;
+        };
+        var s0 = planSig(hs[0].hit.x), k0 = Object.keys(s0); if (k0.length < 4) return;
+        var has = function (x) { var a = planSig(x); return k0.every(function (k) { return a[k]; }); };
+        var n = positions.filter(function (q) { return has(q.x) || (q.x1 && q.x1 !== q.x && has(q.x1)); }).length;
+        var have = positions.filter(function (q) { return q.secs.indexOf(L1) >= 0; }).length;   // 旗の無い板が引き継いだ分も含めた、今の場所の数
+        if (n >= 3 && n > have) addSecPlatesOnce([L1], n - have);
+      });
       var secCount = {};   // 断面ごとの場所の数(入れ子の断面の数に使う)
       Object.keys(flagsBySec).forEach(function (L1) {
         var f = flagsBySec[L1];
