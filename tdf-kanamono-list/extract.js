@@ -466,13 +466,33 @@
     // (2026-11-27 ユーザー指摘「AGAR34 は8枚。2か所から引っ張ってる」、26-14 N2G-09 の A・B・D・E断面「PL-9x200x140.5」)。表記に枚数(2PL-9)があるものは数えない
     if (allLines) out.forEach(function (o) {
       if (/^[0-9]+/.test(o.size) || o.cnt !== 1) return;
-      var h = hlines.filter(function (l) { return Math.abs(l.y - o.sy) < 2 && Math.abs(l.x0 - o.sx) < 2 && l.x1 - l.x0 > 300; })[0];
+      var h = hlines.filter(function (l) { return Math.abs(l.y - o.sy) < 2 && Math.abs(l.x0 - o.sx) < 2 && l.x1 - l.x0 > 200; })[0];
       if (!h) return;
-      var n = allLines.filter(function (l) {
-        if (Math.abs(l[1] - l[3]) < 0.5) return false;
-        return Math.hypot(l[0] - h.x1, l[1] - h.y) < 1 || Math.hypot(l[2] - h.x1, l[3] - h.y) < 1;
-      }).length;
+      // 左端(文字の書き始め)から分かれるものも(2026-11-27 ユーザー指摘、26-14 N2G-11 の拡大図「PL-9 <AGAR5K>」は左端から2本)
+      var tips = [];
+      var n = Math.max.apply(null, [h.x1, h.x0].map(function (ex) {
+        var ds = allLines.filter(function (l) {
+          if (Math.abs(l[1] - l[3]) < 0.5) return false;
+          return Math.hypot(l[0] - ex, l[1] - h.y) < 1 || Math.hypot(l[2] - ex, l[3] - h.y) < 1;
+        });
+        if (ds.length >= 2) ds.forEach(function (l) { tips.push(Math.hypot(l[0] - ex, l[1] - h.y) < 1 ? { x: l[2], y: l[3] } : { x: l[0], y: l[1] }); });
+        return ds.length;
+      }));
       if (n >= 2) o.cnt = n;
+      // 引出線の先が✕の入った箱(対角線の引いてある板)なら、その箱の幅・高さを覚える(立面図に同じ形が縮尺違いで何か所あるかを数えるため)
+      if (n >= 2) {
+        var bx = null;
+        tips.some(function (tp) {
+          return allLines.some(function (l) {
+            var x0 = Math.min(l[0], l[2]), x1 = Math.max(l[0], l[2]), y0 = Math.min(l[1], l[3]), y1 = Math.max(l[1], l[3]);
+            if (x1 - x0 < 5 || y1 - y0 < 5 || tp.x < x0 - 3 || tp.x > x1 + 3 || tp.y < y0 - 3 || tp.y > y1 + 3) return false;
+            var side = allLines.some(function (q) { return Math.abs(q[0] - q[2]) < 0.5 && (Math.abs(q[0] - x0) < 1 || Math.abs(q[0] - x1) < 1) && Math.abs(Math.abs(q[1] - q[3]) - (y1 - y0)) < 1; });
+            if (side) { bx = { w: x1 - x0, h: y1 - y0 }; return true; }
+            return false;
+          });
+        });
+        if (bx) o.xbox = bx;
+      }
     });
     return out;
   }
@@ -759,6 +779,17 @@
       si4.plates[''] = { size: plateSize(t.text), n: plateCount(t.text), mekki: false };
       if (T.some(function (u) { return /^<[A-Z][A-Z0-9]*>$/.test(u.text) && !/^<TS[0-9]/.test(u.text); })) si4.plates[''].note = s4.sub + '・マーク漏れ';
       si4.plateT.add(thickOf(plateSize(t.text)));
+    });
+    // 山括弧の符号の図面の ALC下地 の断面で、符号と組にならなかった「2PL-9」(2026-11-27 ユーザー指示、26-14 N2G-11 の b・c・e・f断面 = マーク漏れ):
+    // 切板名は空欄・枚数は表記の数(2)・備考 ALC下地・マーク漏れ。符号の無い PL-9x100 と同じ断面にあるので、キーは「#サイズ」にして出すときに空欄にする
+    if (T.some(function (u) { return /^<[A-Z][A-Z0-9]*>$/.test(u.text) && !/^<TS[0-9]/.test(u.text); })) T.forEach(function (t) {
+      if (!/^[0-9]+G?PL-[0-9.]+$/.test(t.text) || isLeft(t)) return;
+      if (labels.some(function (lb) { return Math.abs(lb.sx - t.x) < 1 && Math.abs(lb.sy - t.y) < 1; })) return;
+      var s6 = sectionOf(t, titles); if (!s6 || s6.sub !== 'ALC下地') return;
+      var si6 = secInfo[s6.letter], key = '#' + plateSize(t.text);
+      if (si6.plates[key]) return;
+      si6.plates[key] = { size: plateSize(t.text), n: plateCount(t.text), mekki: false, note: 'ALC下地・マーク漏れ' };
+      si6.plateT.add(thickOf(plateSize(t.text)));
     });
     // 副題が「捨てPL」の断面の符号の無い板の表記(2026-11-27 ユーザー指示、26-14 N2G-10 の a断面「PL-12」左右2つ): 表記1つ = 1枚、切板名は空欄・備考 捨てPL
     T.forEach(function (t) {
@@ -1332,15 +1363,19 @@
         });
         Object.keys(marks).forEach(function (m) {
           var x = marks[m];
-          add(x.size, m, x.n * mult);
-          var it = items[x.size + '|' + m]; x.notes.forEach(function (nt) { it.notes.push(nt); });
+          var nm = m.charAt(0) === '#' ? '' : m;   // 「#サイズ」= 符号の無い板(マーク漏れ)
+          add(x.size, nm, x.n * mult);
+          var it = items[x.size + '|' + nm]; x.notes.forEach(function (nt) { it.notes.push(nt); });
         });
       }
       // 同じ断面の旗が2つ以上(50以上離れて)同じ場所の板に当たれば、その断面は2か所(N2G-16 の e の旗2つ = 2か所、ユーザー確認 AGAM1 5)
       // (2026-11-27、26-14 N2G-07: 126 離れた階段受け2か所に d の旗が2つ。N2G-16: 2枚の板の場所に C の旗2つと d の旗1つ → C 2か所(ユーザー確認 AGAR26M 5・AG10M 2))
       positions.forEach(function (p) {
         if (!p.secs.length) return;
-        addSecPlatesOnce(p.secs, 1);
+        // 2枚の板をまとめた場所(幅50以上)に別々の断面の旗が当たるときは、それぞれ別の板として足す
+        // (2026-11-27 ユーザー指摘「2G4-NAN3 の AGR60 は9枚」、26-14 N2G-11: g の補剛材と C(小梁の取り付き)の補剛材が並ぶ)
+        if ((p.x1 || p.x) - p.x >= 50 && p.secs.length >= 2) p.secs.forEach(function (L) { addSecPlatesOnce([L], 1); });
+        else addSecPlatesOnce(p.secs, 1);
         p.secs.forEach(function (L) {
           var xs = flagHits.filter(function (h) { return h.hit === p && h.L1 === L; }).map(function (h) { return h.fx; }).sort(function (a, b) { return a - b; });
           var c = xs.length ? 1 : 0; for (var i = 1; i < xs.length; i++) if (xs[i] - xs[i - 1] >= 50) c++;
@@ -1543,7 +1578,26 @@
           add(sh.size, sh.len, n || amb, named.title);
         });
       }
-      elevLabels.forEach(function (lb) { if (inView(v, lb) && !(named && amb && named.used.has(lb))) add(lb.size, lb.mark, lb.cnt, lb.note || ''); });   // lb.note = 継手・マーク漏れ(2026-11-27)
+      // 拡大図の板(引出線の先が✕の入った箱)は、立面図・平面図にある同じ形で小さい箱(縮尺違い。対角線と同じ高さの縦の辺つき)の数を枚数にする
+      // (2026-11-27 ユーザー指摘「AGAR5K は1製品6枚。2つを引っ張っている。拡大は1か所だが合計3か所ある」、26-14 N2G-11)
+      function detailCount(lb) {
+        var w = lb.xbox.w, hh = lb.xbox.h, n = 0;
+        L.forEach(function (l) {
+          var x0 = Math.min(l[0], l[2]), x1 = Math.max(l[0], l[2]), y0 = Math.min(l[1], l[3]), y1 = Math.max(l[1], l[3]);
+          var bw = x1 - x0, bh = y1 - y0; if (bw < 5 || bh < 5) return;
+          var k = w / bw; if (k < 1.5 || k > 6 || Math.abs(hh / bh - k) > k * 0.03) return;
+          if (!inView(v, { x: (x0 + x1) / 2, y: (y0 + y1) / 2 })) return;
+          if (!L.some(function (q) { return Math.abs(q[0] - q[2]) < 0.5 && (Math.abs(q[0] - x0) < 1 || Math.abs(q[0] - x1) < 1) && Math.abs(Math.abs(q[1] - q[3]) - bh) < 1 && Math.min(q[1], q[3]) > y0 - 1 && Math.max(q[1], q[3]) < y1 + 1; })) return;
+          n++;
+        });
+        return n;
+      }
+      elevLabels.forEach(function (lb) {
+        if (!inView(v, lb) || (named && amb && named.used.has(lb))) return;
+        var c = lb.cnt;
+        if (lb.xbox) { var dn = detailCount(lb); if (dn >= 2) c = dn; }
+        add(lb.size, lb.mark, c, lb.note || '');
+      });   // lb.note = 継手・マーク漏れ(2026-11-27)
 
       // FB: 表記の寸法の□(長さ×幅)を数える。梁が傾いていると□も傾くので、向きを問わず「長さLの平行な2本の線が幅Wだけ離れている」組を数える
       fbDims.forEach(function (fb) {
