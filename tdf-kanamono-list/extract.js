@@ -1027,7 +1027,26 @@
       if (!title) { title = T.filter(function (t) { return /^(さや管|サヤ管|サヤ菅)$/.test(t.text) && !isLeft(t) && !sectionOf(t, titles); })[0]; below = true; }
       // 図の右に断面図が無く、図の範囲が右端まで広がって詳細図も図の中になる図面(2026-11-21、EA1-RG-05): 名前のすぐ下(400以内)に管の表記がある「サヤ管」
       if (!title) title = T.filter(function (t) { return /^(さや管|サヤ管|サヤ菅)$/.test(t.text) && !sectionOf(t, titles) && T.some(function (u) { return /^P-([0-9.]+)φ?x([0-9.]+)$/.test(u.text) && t.y - u.y > 0 && t.y - u.y < 400 && Math.abs(u.x - t.x) < 1900; }); })[0];
-      if (!title) return;
+      // 管の表記が無く、立面図の「サヤ管 L=140」の書き込みだけの図面(2026-11-27 ユーザー指摘「N2G-17 さや管の漏れ」、26-14):
+      // 長さ L の縦線の組で、外の2本の間(外径)と内側の線までの幅(肉厚)から P-外径φx肉厚 を読む(N2G-17: 60.5・3.2)
+      if (!title) {
+        var lab = T.filter(function (t) { return /^(サヤ管|さや管|サヤ菅)\s*L=([0-9.]+)$/.test(t.text); })[0];
+        if (!lab) return;
+        var ln = parseFloat(/L=([0-9.]+)$/.exec(lab.text)[1]);
+        var vv = L.filter(function (l) { return Math.abs(l[0] - l[2]) < 0.5 && Math.abs(Math.abs(l[1] - l[3]) - ln) < 0.6; }).map(function (l) { return { x: l[0], y0: Math.min(l[1], l[3]) }; });
+        var found = null;
+        vv.some(function (a) {
+          return vv.some(function (b) {
+            var od = b.x - a.x; if (od < 20 || od > 300 || Math.abs(b.y0 - a.y0) > 0.6) return false;
+            var inA = vv.filter(function (c) { return c !== a && c !== b && Math.abs(c.y0 - a.y0) < 0.6 && c.x - a.x > 1 && c.x - a.x < 15; })[0];
+            if (!inA || !vv.some(function (c) { return Math.abs(c.y0 - a.y0) < 0.6 && Math.abs(b.x - c.x - (inA.x - a.x)) < 0.2; })) return false;
+            found = { od: Math.round(od * 10) / 10, t: Math.round((inA.x - a.x) * 10) / 10 }; return true;
+          });
+        });
+        if (!found) return;
+        saya = { size: 'P-' + found.od + 'φx' + found.t, od: found.od, len: ln, layers: [] };
+        return;
+      }
       var pipe = T.filter(function (u) { return /^P-([0-9.]+)φ?x([0-9.]+)$/.test(u.text) && (below ? title.y - u.y > 0 && title.y - u.y < 400 : u.y - title.y > 100 && u.y - title.y < 2600) && Math.abs(u.x - title.x) < 1900; })
         .sort(function (a, b) { return dist(a, title) - dist(b, title); })[0];
       // 「サヤ管」(カタカナ)でも管の表記が名前のすぐ下の図面がある(2026-11-20 ユーザー指摘「さや管漏れ」、EA1-3G-05)
@@ -1389,26 +1408,30 @@
         });
       });
       // ALC下地 の断面の旗が1つだけでも、平面図に同じ形の下地の金物が補剛材ごとに描かれていれば、その数を場所の数にする
-      // (2026-11-27 ユーザー指摘「b断面は合計11か所」、26-14 N2G-15: 旗 b は1つ、平面図の T の形の下地は補剛材11か所)
-      // 形 = 旗の当たった板の位置から左右80以内の、立面図より上(平面図)の線を、板の位置からの相対の座標で並べたもの
-      if (elev) Object.keys(secInfo).forEach(function (L1) {
+      // (2026-11-27 ユーザー指摘「b断面は合計11か所」、26-14 N2G-15: 旗 b は1つ、平面図の T の形の下地は補剛材11か所。N2G-17 は4か所)
+      // 形 = 基準の縦線の位置から左右80以内の、平面図(旗より上)の短い横線(長さ120以下)を、基準からの相対の座標で並べたもの
+      Object.keys(secInfo).forEach(function (L1) {
         if (secInfo[L1].title.sub !== 'ALC下地') return;
-        var hs = flagHits.filter(function (h) { return h.L1 === L1; });
-        if (hs.length !== 1) return;
+        var f0 = flagsBySec[L1]; if (!f0 || f0.explicit || f0.matched.length + f0.unmatched !== 1) return;
         // ほかの ALC下地 の断面にも旗があれば(N2G-11: b・c・d… が補剛材ごとに旗で示されている)数え直さない
         if (Object.keys(flagsBySec).some(function (L2) { return L2 !== L1 && secInfo[L2] && secInfo[L2].title.sub === 'ALC下地'; })) return;
-        var f0 = flagsBySec[L1]; if (!f0 || f0.unmatched || f0.explicit) return;
-        // 短い横線(長さ120以下)だけで比べる(寸法線などの長い線は場所ごとに違う)
+        var lf = looseFlags.filter(function (q) { return q.L1 === L1; })[0]; if (!lf) return;
+        var ft = T.filter(function (t) { return t.text === L1 && inView(v, t); }).sort(function (a, b) { return Math.abs(flagLineX(a) - lf.fx) - Math.abs(flagLineX(b) - lf.fx); })[0]; if (!ft) return;
+        var hit = (flagHits.filter(function (h) { return h.L1 === L1; })[0] || {}).hit;
         var planSig = function (x) {
-          var a = {};
-          L.forEach(function (l) { if (Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[0] - l[2]) <= 120 && Math.min(l[0], l[2]) >= x - 80 && Math.max(l[0], l[2]) <= x + 80 && l[1] > elev.top + 300 && l[1] < elev.top + 6000 && inView(v, { x: x, y: l[1] }))
-            a[[Math.round((Math.min(l[0], l[2]) - x) * 2) / 2, Math.round((Math.max(l[0], l[2]) - x) * 2) / 2, Math.round(l[1])].join(',')] = 1; });
-          return a;
+          var o = {};
+          L.forEach(function (l) { if (Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[0] - l[2]) <= 120 && Math.min(l[0], l[2]) >= x - 80 && Math.max(l[0], l[2]) <= x + 80 && l[1] > ft.y + 200 && l[1] < ft.y + 6000 && inView(v, { x: x, y: l[1] }))
+            o[[Math.round((Math.min(l[0], l[2]) - x) * 2) / 2, Math.round((Math.max(l[0], l[2]) - x) * 2) / 2, Math.round(l[1])].join(',')] = 1; });
+          return o;
         };
-        var s0 = planSig(hs[0].hit.x), k0 = Object.keys(s0); if (k0.length < 4) return;
-        var has = function (x) { var a = planSig(x); return k0.every(function (k) { return a[k]; }); };
-        var n = positions.filter(function (q) { return has(q.x) || (q.x1 && q.x1 !== q.x && has(q.x1)); }).length;
-        var have = positions.filter(function (q) { return q.secs.indexOf(L1) >= 0; }).length;   // 旗の無い板が引き継いだ分も含めた、今の場所の数
+        // 平面図の縦線の位置(旗より上)
+        var pxs = []; vlines.forEach(function (l) { if (l.y0 > ft.y + 200 && l.y0 < ft.y + 6000 && inView(v, { x: l.x, y: l.y0 })) { var r = Math.round(l.x * 2) / 2; if (pxs.indexOf(r) < 0) pxs.push(r); } });
+        var sigs = {}; pxs.forEach(function (x) { sigs[x] = planSig(x); });
+        var countOf = function (b0) { var k0 = Object.keys(sigs[b0]); if (k0.length < 4) return 0; return pxs.filter(function (x) { return k0.every(function (k) { return sigs[x][k]; }); }).length; };
+        // 基準: 旗の当たった板。当たっていなければ(N2G-17)旗の縦線から200以内の縦線のうち、同じ形が一番多く並ぶもの
+        var cand = hit ? [Math.round(hit.x * 2) / 2] : pxs.filter(function (x) { return Math.abs(x - lf.fx) <= 200; });
+        var n = 0; cand.forEach(function (x) { if (sigs[x]) n = Math.max(n, countOf(x)); });
+        var have = hit ? positions.filter(function (q) { return q.secs.indexOf(L1) >= 0; }).length : 1;   // 旗の無い板が引き継いだ分も含めた、今の場所の数
         if (n >= 3 && n > have) addSecPlatesOnce([L1], n - have);
       });
       var secCount = {};   // 断面ごとの場所の数(入れ子の断面の数に使う)
