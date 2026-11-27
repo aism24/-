@@ -1769,7 +1769,13 @@
               var vs = vlines.filter(function (l) { return inView(v, { x: l.x, y: (l.y0 + l.y1) / 2 }) && Math.abs(l.y1 - l.y0 - len) < 0.6; }).sort(function (a, b) { return a.x - b.x; });
               var used = new Set(), cnt = 0;
               var prs = [];
-              vs.forEach(function (a) { if (used.has(a)) return; var b = vs.find(function (l) { return l !== a && !used.has(l) && l.x - a.x > 0 && l.x - a.x <= 40 && Math.abs(l.y0 - a.y0) < 0.6; }); if (b) { used.add(a); used.add(b); prs.push(a); } });
+              // 組の幅は形鋼のウェブの厚さ(C-100x50x20x3.2 → 3.2、[-100x50x5x7.5 → 5)。その幅の組が1つも無い図面は今までどおり40以内
+              // (2026-11-27 ユーザー指摘「N2G-14 の C-100 長さ250 は4本」: C の脚の線(+50)とそばの別の線(23離れ)を1組と数えていた)
+              var webT = (function () { var d = /^[C\[]-([0-9.x]+)$/.exec(shape); if (!d) return 0; var a = d[1].split('x').map(parseFloat); return shape.charAt(0) === 'C' ? a[a.length - 1] : a[2]; })();
+              var pairOf = function (a, tight) { return vs.find(function (l) { return l !== a && !used.has(l) && l.x - a.x > 0 && (tight ? Math.abs(l.x - a.x - webT) < 0.6 : l.x - a.x <= 40) && Math.abs(l.y0 - a.y0) < 0.6; }); };
+              var tight = webT > 0 && vs.some(function (a) { used.clear(); return !!pairOf(a, true); });
+              used.clear();
+              vs.forEach(function (a) { if (used.has(a)) return; var b = pairOf(a, tight); if (b) { used.add(a); used.add(b); prs.push(a); } });
               // 同じ高さに3組以上並ぶ列があれば、その列の組だけ(2026-11-27、26-14 N2G-05: 長さ250のリブPL-9 の線を C-100 250 と数えていた)
               var byY = {}; prs.forEach(function (a) { var k = Math.round(a.y0); byY[k] = (byY[k] || 0) + 1; });
               var rowK = Object.keys(byY).filter(function (k) { return byY[k] >= 3; });
