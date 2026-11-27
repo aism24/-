@@ -1565,6 +1565,51 @@
           }
         }
       }
+      // 袖壁取合のひらがなの断面(2026-11-27 ユーザー指示、26-14 N2G-22 の あ・い・う断面。旗は立面図の横向きの あ・い・う):
+      //  - 「L-150x150x12 袖壁取合」の行の寸法で2回以上出る数字(300 が2か所)= 山形鋼の長さ、その数だけ(い断面: L-150x150x12 300 を2本。E断面の L-150 は同じ山形鋼なので足さない)
+      //  - 「2L-150x150x12 300」= 山形鋼 300 を2本(う断面。本当は1本だが図面どおり、ユーザー指示)
+      //  - 断面の中の符号の無い G.PL-9・PL-9 = 1枚ずつ(う断面)
+      //  数は、立面図(図の中)にあるその断面の記号の数
+      Object.keys(secInfo).forEach(function (k) {
+        if (!/^[ぁ-ゖ]$/.test(k)) return;
+        var keys = T.filter(function (u) { return u.text === k && inView(v, u) && !sectionOf(u, titles) && !titles.some(function (x) { return x.letter === k && Math.abs(x.y - u.y) < 10; }); }).length;   // 見出しの文字は数えない
+        if (!keys) return;
+        // 見出しが図の右上にある断面(い断面: 表記は見出しの下・左4500以内)も
+        var st = secInfo[k].title;
+        var inS = function (u) { var s0 = sectionOf(u, titles); if (s0) return s0.letter === k; var dy = st.y - u.y, dx = st.x - u.x; return dy > 0 && dy < 1500 && dx > -200 && dx < 4500; };
+        if (!T.some(function (w) { return w.text === '袖壁取合' && (inS(w) || (sectionOf(w, titles) || {}).letter === k); }) && secInfo[k].title.sub !== '袖壁取合') return;   // 袖壁取合の断面だけ
+        T.forEach(function (t) {
+          if (!inS(t)) return;
+          var m2 = /^2(L-[0-9.]+x[0-9.]+x[0-9.]+)$/.exec(t.text);
+          if (m2) {
+            var ln = T.find(function (u) { return /^[0-9.]+$/.test(u.text) && Math.abs(u.y - t.y) < 30 && u.x > t.x && u.x - t.x < 600; });
+            if (ln) add(m2[1], parseFloat(ln.text), 2 * keys, '袖壁取合');
+            return;
+          }
+          if (/^L-[0-9.]+x[0-9.]+x[0-9.]+$/.test(t.text) && T.some(function (w) { return w.text === '袖壁取合' && Math.abs(w.y - t.y) < 30 && w.x > t.x && w.x - t.x < 600; })) {
+            var cnt = {};
+            T.forEach(function (u) { if (/^[0-9]+(\.[0-9]+)?$/.test(u.text) && Math.abs(u.y - t.y) < 30 && u.x > t.x && u.x - t.x < 3000) cnt[u.text] = (cnt[u.text] || 0) + 1; });
+            Object.keys(cnt).forEach(function (val) { if (cnt[val] >= 2) add(t.text, parseFloat(val), cnt[val] * keys, '袖壁取合'); });
+            return;
+          }
+          if (/^(G\.PL|G?PL)-[0-9.]+$/.test(t.text) && !labels.some(function (lb) { return Math.abs(lb.sx - t.x) < 1 && Math.abs(lb.sy - t.y) < 1; }) &&
+              !T.some(function (m) { return /^<[A-Z]/.test(m.text) && dist(m, t) < 400; })) {
+            add(t.text.replace(/^G\.PL/, 'GPL'), '', keys, secInfo[k].title.sub || '');
+          }
+        });
+      });
+      // 袖壁取合の断面の符号のサイズに幅・長さが無いとき(E断面の「PL-12 <AGASD3>」)、同じ板厚の「PL-12x300x293 袖壁取合」(あ断面)が1つだけ残っていればそのサイズ(2026-11-27 ユーザー指示)
+      (function () {
+        var sdAll = T.filter(function (u) { return /^G?PL-[0-9.]+x[0-9.]+x[0-9.]+$/.test(u.text) && T.some(function (w) { return w.text === '袖壁取合' && Math.abs(w.y - u.y) < 30 && w.x > u.x && w.x - u.x < 1200; }); });
+        Object.keys(items).forEach(function (key) {
+          var it = items[key];
+          if (!/^PL-[0-9.]+$/.test(it.size) || typeof it.name !== 'string' || !it.name || it.notes.join('').indexOf('袖壁取合') < 0) return;
+          if (/R/.test((/^[A-Z]+/.exec(it.name) || [''])[0])) return;   // スチフナ(符号の英字に R。AGR85)は除く
+          var used = Object.keys(items).map(function (k2) { return items[k2].size; });
+          var c = sdAll.filter(function (u) { return inView(v, u) && u.text.indexOf(it.size + 'x') === 0 && used.indexOf(u.text) < 0; });
+          if (c.length === 1) { delete items[key]; var nk = c[0].text + '|' + it.name; items[nk] = Object.assign({}, it, { size: c[0].text }); }
+        });
+      })();
       // 間仕切用捨てPL の断面の符号の無い板の表記(PL-12x100x100)が平面図にもあれば、平面図の表記1つ = 1枚(2026-11-27 ユーザー指示、26-14 N2G-18 a断面 = 6枚)
       Object.keys(secInfo).forEach(function (k) {
         if (secInfo[k].title.sub !== '間仕切用捨てPL') return;
@@ -1822,7 +1867,8 @@
         var subs = new Set(), mekki = false;
         it.notes.forEach(function (nt) { var p = nt.split('|'); subs.add(p[0]); if (p[1]) mekki = true; });
         // 符号の末尾の M(番号のすぐあと。MK の M も)= めっき(2026-11-21 ユーザー指示、EA1-RG-01: NG121M・NHG143MK はめっき)
-        if (typeof it.name === 'string' && /[0-9]M[A-Z]?$/.test(it.name)) mekki = true;
+        // 2026-11-27 ユーザー指示「メッキの切板は末尾に M」: 番号のあとに英字が1つ入るもの(26-14 N2G-22 の AGAR50AM)も
+        if (typeof it.name === 'string' && /[0-9][A-Z]?M[A-Z]?$/.test(it.name)) mekki = true;
         var parts = [];
         if (subs.size === 1 && Array.from(subs)[0]) parts.push(Array.from(subs)[0]);
         if (mekki) parts.push('めっき');
@@ -2257,7 +2303,7 @@
         // 備考(2026-11-24、EA2-1C-09): 断面の副題(「(水切り板)」「(ササラ受)」。<空気抜き…> は除く)と、符号の番号のすぐあとの M = めっき(梁と同じ決まり)
         var notes = [];
         if (sec && sec.sub && !/空気抜き/.test(sec.sub)) notes.push(sec.sub);
-        if (/[0-9]M[A-Z]?$/.test(mk)) notes.push('めっき');
+        if (/[0-9][A-Z]?M[A-Z]?$/.test(mk)) notes.push('めっき');   // 末尾の M = めっき(番号のあとに英字が1つ入るものも。2026-11-27)
         out.push({ size: size, name: mk, n: n, note: notes.join('・') });
       });
       // 形鋼の表記のそばに長さ「L=250」があるもの(2026-11-27、N1C-11 F断面「L=250 L-75x75x6」「L=210 L-150x90x9」、N1C-12・13「C-100x50x20x3.2 L=500 間仕切り下地」):
