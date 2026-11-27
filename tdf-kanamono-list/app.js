@@ -652,16 +652,41 @@ function saveXlsx(buf, name) {
   const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
+// Excel に表示する工事名の選択(アプリ・図面・テキスト入力。短管リストの chooseKojiName と同じ。2026-11-27 ユーザー指示)。
+// 戻り値は選んだ工事名、やめたら null。図面の工事名が読めないときは「図面」を選べない
+function chooseKojiName(app, dwg) {
+  return new Promise(resolve => {
+    const radios = [...document.querySelectorAll('input[name="koji-choice"]')], pick = v => radios.forEach(r => { r.checked = r.value === v; });
+    const text = $('koji-text'), dwgRadio = radios.find(r => r.value === 'dwg');
+    $('koji-app').textContent = app || '(なし)';
+    $('koji-dwg').textContent = dwg || '(図面から読めませんでした)';
+    dwgRadio.disabled = !dwg; dwgRadio.closest('.koji-opt').classList.toggle('disabled', !dwg);
+    text.value = ''; pick(app ? 'app' : dwg ? 'dwg' : 'text');
+    const sel = () => (radios.find(r => r.checked) || {}).value;
+    const sync = () => { $('koji-ok').disabled = sel() === 'text' && !text.value.trim(); };
+    radios.forEach(r => { r.onchange = () => { sync(); if (r.value === 'text') text.focus(); }; });
+    text.oninput = () => { pick('text'); sync(); };
+    text.onfocus = () => { pick('text'); sync(); };
+    text.onkeydown = e => { if (e.key === 'Enter' && !$('koji-ok').disabled) $('koji-ok').click(); };
+    sync();
+    $('koji-modal').classList.add('open');
+    const done = v => { $('koji-modal').classList.remove('open'); resolve(v); };
+    $('koji-ok').onclick = () => { const s = sel(); done(s === 'app' ? app : s === 'dwg' ? dwg : text.value.trim()); };
+    $('koji-cancel').onclick = () => done(null);
+  });
+}
 $('btn-excel').addEventListener('click', async () => {
   if (!state.tdfs.length) return;
   // 次の加工予定から作った画面なら、最初に届いたExcelと同じ形(シート１の一覧+工事ごとのシート)で、画面で直した数を入れて作り直す(2026-11-21)
   if (state.planCtx && allProducts().every(x => typeof x.p.ord === 'number')) { await downloadPlanExcel(state.planCtx, planGroupsFromScreen(state.planCtx)); return; }
+  // Excel に表示する工事名を、アプリ(最初に選んだ工事)・図面の表題欄・テキスト入力の三択で選ぶ(2026-11-27 ユーザー指示)。やめるとダウンロードしない
+  const koji = await chooseKojiName(state.kojiName, state.tdfs[0].res.koji);
+  if (koji === null) return;
   busy('Excelを作っています…');
   let saved = false;
   try {
     await loadExcelJS();
     const multi = state.tdfs.length > 1;
-    const koji = state.tdfs[0].res.koji;
     const head = { kojiNo: state.kojiNo, koji };
     const orders = await ordersFor(state.kojiNo);
     const { wb, layout } = KanamonoExcel.build(window.ExcelJS, state.factory, head, buildExportProducts(), multi, orders && orders.marks ? orders : null);

@@ -227,3 +227,13 @@ table.kl input.note-in { width: 160px; font-size: 13px; padding: 2px 4px; }
   header { grid-template-columns: minmax(0, 1fr) auto; padding-bottom: 8px; }
   #header-right { grid-column: 1 / -1; flex-wrap: nowrap; }
 }
+
+/* Excel に表示する工事名の選択(短管リストと同じ。2026-11-27) */
+#koji-body { font-size: 14px; line-height: 1.8; }
+.koji-lead { margin-bottom: 10px; }
+.koji-opt { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.koji-opt:hover { background: #f4f6f8; }
+.koji-opt input[type=radio] { flex: 0 0 auto; margin: 0; }
+.koji-opt.disabled { color: #999; cursor: not-allowed; }
+.koji-opt-text span { flex: 0 0 auto; }
+#koji-text { flex: 1 1 auto; min-width: 0; font-size: 14px; padding: 6px 8px; border: 1px solid #bbb; border-radius: 6px; }
