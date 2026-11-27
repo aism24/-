@@ -1560,18 +1560,11 @@
         if (!lq) return;
         add(t.text, parseFloat(lq.text.slice(2)), 1, T.some(function (u) { return /デッキ受け/.test(u.text); }) ? 'デッキ受け' : undefined);
       });
-      // 孔の径だけで書かれたスリーブ(2026-11-27 ユーザー指示「拾います」、26-14 N2G-01: 立面図の「500φ」3か所と「EGリングZタイプ-500ZN」(580φ)1か所。
-      // 図面に「スリーブ」の文字があるときだけ): 「500φ」の表記1つ = 1個、サイズ = 500φ。EGリングの表記1つ = 1個、サイズ = 表記のまま
-      // (そばの「580φ」は EGリングの孔の径なので数えない)。備考はスリーブ
-      if (T.some(function (u) { return u.text === 'スリーブ'; })) {
-        var egs = T.filter(function (t) { return inView(v, t) && /^EGリング/.test(t.text); });
-        egs.forEach(function (t) { add(t.text, '', 1, 'スリーブ'); });
-        T.forEach(function (t) {
-          if (!inView(v, t) || !/^[0-9]+φ$/.test(t.text)) return;
-          if (egs.some(function (g) { return Math.abs(g.x - t.x) < 100 && Math.abs(g.y - t.y) < 100; })) return;
-          add(t.text, '', 1, 'スリーブ');
-        });
-      }
+      // スリーブの補強リング(2026-11-27 ユーザー指示「500φ の孔だけは拾わない。EGリングやハイリングは拾う」、26-14 N2G-01 の「EGリングZタイプ-500ZN」):
+      // リングの表記1つ = 1個、サイズ = 表記のまま、備考 スリーブ。孔の径だけの「500φ」・リングの孔の径「580φ」は数えない
+      T.forEach(function (t) {
+        if (inView(v, t) && /^(EGリング|ハイリング)/.test(t.text)) add(t.text, '', 1, 'スリーブ');
+      });
       // スリーブの金物(2026-11-20 ユーザー指示)。そばに孔の書き込み(φ)があるものだけ。「(150φ)」「(下孔205φ)」は孔の大きさで金物ではない。サイズ欄は表記のまま、備考は「スリーブ」
       //  - 「150S」(EA1-3B-01): ウェブの片側の孔の上下に1つずつ付く → 1か所につき2個
       //  - 「150B」(EA1-3G-01): 1か所につき1個
