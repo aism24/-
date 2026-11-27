@@ -634,10 +634,9 @@ async function applyMasterLengths(buf, name, res, step) {
   step(0.3, pyPromise ? '長さを読んでいます…' : PREP);
   const ml = await masterLengths(buf, name, r => step(0.3 + 0.6 * r, PREP), res.columnDrawing);
   res.products.forEach(p => { const m = ml.find(x => x[0] === p.name); if (m && m[1]) p.length = Math.round(m[1] * 10000) / 10; });
-  // 梁の図面は、製品名・サイズ・台数・設計符号も tdf-master-web の結果に合わせる(2026-11-27 ユーザー指示「製品名、サイズ、長さ、台数も同じように取り込める方が良い。
+  // 製品名・サイズ・台数・設計符号も tdf-master-web の結果に合わせる(2026-11-27 ユーザー指示「製品名、サイズ、長さ、台数も同じように取り込める方が良い。
   // 片方が取り込めて、もう片方がNGは困る」。26-14 N2G-01 の HY-1000x250x19x28 が金物リストだけ空欄だった)。
-  // 柱の図面は tdf-master-web の柱モードのサイズに板厚が無い(□-700x700)ので、サイズは金物リストの読み方(□-700x700x28)のまま
-  if (res.columnDrawing) return;
+  // 柱も tdf-master-web の柱モードのサイズ(□-700x700・□-1000x1000＿900x900。板厚は場所で変わるので付けない)にする(2026-11-27 ユーザー指示)
   const dai = v => { const n = parseInt(String(v || '').replace(/[^0-9]/g, ''), 10); return n > 0 ? n : null; };
   ml.forEach(m => {
     if (!m[0]) return;
