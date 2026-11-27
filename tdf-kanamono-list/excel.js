@@ -116,6 +116,22 @@
       if (i < all.length - 1) withSep.push({ kind: bl.type === 'prod' ? 'blank' : 'sblank', vals: [] });
       var firstSum = bl.type === 'sum' && i > 0 && all[i - 1].type === 'prod';
       if (used > 0 && (firstSum || used + h(body) > PAGE)) { breaks.push(rows.length); used = 0; }
+      // 1ページに入らない総まとめの表(2026-11-27 ユーザー指示、26-14 の「他」が3ページ): ページの終わりで切り、
+      // 次のページの先頭に「他(続き)」と見出しの行を入れ直す
+      if (bl.type === 'sum' && h(withSep) > PAGE) {
+        var cat = body.find(function (r) { return r.kind === 'cat'; }), head = body.find(function (r) { return r.kind === 'shead'; });
+        withSep.forEach(function (r) {
+          var rh = HT[r.kind] || DEF_H;
+          // Excel の自動の改ページより先に切れるよう、2行分の余裕を残す(26-14 の Excel の PDF では、計算より1行あとで切れていた)
+          if (used > 0 && used + rh > PAGE - 2 * DEF_H && r.kind !== 'sblank') {
+            breaks.push(rows.length); used = 0;
+            var cont = [{ kind: 'cat', vals: [cat.vals[0] + '(続き)'] }, { kind: 'shead', vals: head.vals.slice() }];
+            Array.prototype.push.apply(rows, cont); used += h(cont);
+          }
+          rows.push(r); used += rh;
+        });
+        return;
+      }
       Array.prototype.push.apply(rows, withSep); used += h(withSep);
     });
     return { rows: rows, breaks: breaks };
