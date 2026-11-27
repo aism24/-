@@ -466,10 +466,13 @@
       else views.push({ products: [p], labelY: p.y, labelTop: p.y, x: p.x, xr: p.xr });
     });
     views.forEach(function (v) {
-      var above = views.filter(function (u) { return u !== v && u.labelY > v.labelTop + 600 && u.x < v.xr + 5000 && u.xr > v.x - 5000; });
+      // 左右に並ぶ図(2026-11-27、26-14 N2G-03: 左の N2NA と右の N2NC の製品の行が約900ずれ、右の図を左の図の上の図とみなしていた):
+      // 製品の行が横に重ならず、高さの差が1500未満なら、上の図ではなく同じ段の図
+      var side = function (u) { return u !== v && (u.xr < v.x || u.x > v.xr) && Math.abs(u.labelY - v.labelY) < 1500; };
+      var above = views.filter(function (u) { return u !== v && !side(u) && u.labelY > v.labelTop + 600 && u.x < v.xr + 5000 && u.xr > v.x - 5000; });
       v.yMin = v.labelTop; v.yMax = above.length ? Math.min.apply(null, above.map(function (u) { return u.labelY; })) : Infinity;
       // 同じ段 = 行の高さの差600以内。または表の上下の範囲が600以内に近いもの(2026-11-20、EA1-3B-02: 2行の表と1行の表が下端で720ずれていた)
-      var row = views.filter(function (u) { return Math.abs(u.labelY - v.labelY) < 600 || (u.labelY <= v.labelTop + 600 && v.labelY <= u.labelTop + 600 && (u.labelTop > u.labelY || v.labelTop > v.labelY)); }).sort(function (a, b) { return a.x - b.x; });
+      var row = views.filter(function (u) { return side(u) || Math.abs(u.labelY - v.labelY) < 600 || (u.labelY <= v.labelTop + 600 && v.labelY <= u.labelTop + 600 && (u.labelTop > u.labelY || v.labelTop > v.labelY)); }).sort(function (a, b) { return a.x - b.x; });
       var i = row.indexOf(v);
       v.x0 = i > 0 ? (row[i - 1].xr + v.x) / 2 : -Infinity;
       v.x1 = i < row.length - 1 ? (v.xr + row[i + 1].x) / 2 : Infinity;
