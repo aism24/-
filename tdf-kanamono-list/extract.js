@@ -1271,7 +1271,7 @@
 
       // 板の数
       // 同じ場所を描いた断面(letters)の板を足す。各符号は、それを描いた断面の中で一番少ない枚数
-      function addSecPlatesOnce(letters, mult) {
+      function addSecPlatesOnce(letters, mult, qmark) {
         var marks = {};
         letters.forEach(function (L1) {
           var si = secInfo[L1]; if (!si) return;
@@ -1281,7 +1281,7 @@
             else if (p.n < marks[m].n) marks[m].n = p.n;
             var nt0 = p.note || si.title.sub || '';
             if (p.noHole) nt0 = (nt0 ? nt0 + '・' : '') + '孔確認';
-            marks[m].notes.push(nt0 + (p.mekki ? '|めっき' : ''));
+            marks[m].notes.push(nt0 + (p.mekki ? '|めっき' : '') + (qmark ? '#Q' : ''));
           });
         });
         Object.keys(marks).forEach(function (m) {
@@ -1301,7 +1301,10 @@
       // 入れ子の中の入れ子も数える(C断面の中のア、アの中のエ)。数 = 親の断面の数 × 中の記号の数(2026-11-19 ユーザー決定)
       function addNested(L1, cnt, depth) {
         if (depth > 5) return;
-        secInfo[L1].nested.forEach(function (N) { addSecPlatesOnce([N], cnt); addNested(N, cnt, depth + 1); });
+        // 自分の符号付きの板が1つも無い断面(継手の断面)の中の入れ子の旗で、入れ子の断面に符号付きの板があるもの(2026-11-27 ユーザー指摘、26-14 N2G-05:
+        // B断面(小梁の継手。間仕切用捨てPL の C-100 だけ)の中の b の旗が塞ぎPL の b断面を指していて食い違う。本当は d の旗と思われる)は、備考に「図面の断面？？」
+        var parentNoPl = !Object.keys(secInfo[L1].plates).some(function (m) { return m; });
+        secInfo[L1].nested.forEach(function (N) { addSecPlatesOnce([N], cnt, parentNoPl && Object.keys(secInfo[N].plates).some(function (m) { return m; })); addNested(N, cnt, depth + 1); });
       }
       Object.keys(secInfo).forEach(function (L1) { if (secCount[L1]) addNested(L1, secCount[L1], 0); });
       // 旗がどこにも無い断面(2026-11-24 ユーザー指示、EB3-RG-10: D断面の NG53・NGR28 は立面図に D の旗が無い=図面間違い)。
@@ -1886,13 +1889,15 @@
       var list = Object.keys(items).map(function (k) {
         var it = items[k];
         var subs = new Set(), mekki = false;
-        it.notes.forEach(function (nt) { var p = nt.split('|'); subs.add(p[0]); if (p[1]) mekki = true; });
+        var qmark = false;
+        it.notes.forEach(function (nt) { if (/#Q$/.test(nt)) { qmark = true; nt = nt.slice(0, -2); } var p = nt.split('|'); subs.add(p[0]); if (p[1]) mekki = true; });
         // 符号の末尾の M(番号のすぐあと。MK の M も)= めっき(2026-11-21 ユーザー指示、EA1-RG-01: NG121M・NHG143MK はめっき)
         // 2026-11-27 ユーザー指示「メッキの切板は末尾に M」: 番号のあとに英字が1つ入るもの(26-14 N2G-22 の AGAR50AM)も
         if (typeof it.name === 'string' && /[0-9][A-Z]?M[A-Z]?$/.test(it.name)) mekki = true;
         var parts = [];
         if (subs.size === 1 && Array.from(subs)[0]) parts.push(Array.from(subs)[0]);
         if (mekki) parts.push('めっき');
+        if (qmark) parts.push('図面の断面？？');
         return { size: it.size, name: it.name, n: it.n, note: parts.join('・') };
       });
       // 「(EA12-3TB888-2梁取付)」の書き込みのすぐ下の見出し(LGS下地)の金物は、その製品だけに付ける(2026-11-20 ユーザー指示、EA1-3B-03: -2 だけ LGS下地あり)
