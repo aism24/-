@@ -721,6 +721,8 @@
         var s0 = sectionOf({ x: lb.x, y: lb.y, text: lb.mark }, titles);
         return s0 && !/^[A-Za-z]$/.test(s0.letter) && lb.y - s0.y < 1500 && Math.abs(lb.x + 18 * lb.mark.length - (s0.x + s0.sx) / 2) < 1000 && !inLeftS(lb);
       };
+      // 拡大図の板(引出線の先が✕の入った箱)は断面図のそばに描かれていても立面図の板(2026-11-27、26-14 N2G-15 の AGAR5K が a断面の板になっていた)
+      if (lb.xbox && views.length === 1) { elevLabels.push(lb); return; }
       if (isLeft(lb) && isLeft({ x: lb.sx, y: lb.sy }) && !kanaSec()) { elevLabels.push(lb); return; }
       // 「"a"詳細」の詳細図の中の板(2026-11-24 ユーザー指摘「MGC1は何枚？」、WA2-3G-06: 詳細図に「PL-9x200 / MGC1」、立面図(平面図)には符号の無い「PL-9x200」が4か所):
       // 詳細図の見出しが下(2500以内・横1500以内)にあり、図の中に同じサイズの組にならない表記があれば、その表記1つにつき1枚(備考なし)。き断面(コン止め)の板にしない
@@ -1328,7 +1330,7 @@
           // (2026-11-21 ユーザー指摘、EA2-RG-05: 柱の両フランジの下の補強板2か所に旗 B が1つ、B断面は左右に「2PL-16 NGR8K」→ 4枚。8枚にしていた)
           var inPair = same[0].secs.every(function (L) { return (secInfo[L].cntMin || 1) >= 2; }) &&
             same.some(function (q) { return Math.min(Math.abs(q.x - p.x1), Math.abs(p.x - q.x1)) <= 1000; });
-          if (!inPair) p.secs = same[0].secs.slice();
+          if (!inPair) { p.secs = same[0].secs.slice(); p.inherited = true; }
         }
         else if (same.length) {
           // 決められないときは、描かれている線の形(縦線の位置と上下の範囲)がまったく同じ旗のある板の断面にする
@@ -1341,19 +1343,20 @@
           var sp = sig(p);
           var eq = function (a, b) { return a.length === b.length && a.every(function (x, i) { return Math.abs(x[0] - b[i][0]) <= 1 && Math.abs(x[1] - b[i][1]) <= 1 && Math.abs(x[2] - b[i][2]) <= 1; }); };
           var twins = same.filter(function (q) { return eq(sp, sig(q)); });
-          if (twins.length && twins.every(function (q) { return q.secs.join(',') === twins[0].secs.join(','); })) p.secs = twins[0].secs.slice();
+          if (twins.length && twins.every(function (q) { return q.secs.join(',') === twins[0].secs.join(','); })) { p.secs = twins[0].secs.slice(); p.inherited = true; }
           else p.ambiguous = true;
         }
       });
 
       // 板の数
       // 同じ場所を描いた断面(letters)の板を足す。各符号は、それを描いた断面の中で一番少ない枚数
-      function addSecPlatesOnce(letters, mult, qmark) {
+      function addSecPlatesOnce(letters, mult, qmark, only) {
         var marks = {};
         letters.forEach(function (L1) {
           var si = secInfo[L1]; if (!si) return;
           Object.keys(si.plates).forEach(function (m) {
             var p = si.plates[m];
+            if (only && !only(p)) return;
             if (!(m in marks)) marks[m] = { size: p.size, n: p.n, notes: [] };
             else if (p.n < marks[m].n) marks[m].n = p.n;
             var nt0 = p.note || si.title.sub || '';
@@ -1374,8 +1377,11 @@
         if (!p.secs.length) return;
         // 2枚の板をまとめた場所(幅50以上)に別々の断面の旗が当たるときは、それぞれ別の板として足す
         // (2026-11-27 ユーザー指摘「2G4-NAN3 の AGR60 は9枚」、26-14 N2G-11: g の補剛材と C(小梁の取り付き)の補剛材が並ぶ)
-        if ((p.x1 || p.x) - p.x >= 50 && p.secs.length >= 2) p.secs.forEach(function (L) { addSecPlatesOnce([L], 1); });
-        else addSecPlatesOnce(p.secs, 1);
+        // 旗の無い板が断面を引き継いだ場所は、その板そのもの(GPL でない同じ板厚の PL)だけを足す
+        // (2026-11-27 ユーザー確認、26-14 N2G-15: 旗の無い補剛材5か所が C断面(間柱 ESP3・小梁の取り付き)を引き継ぎ、ガセット AG13・AG31 まで6倍になっていた。AGAR8 は数える)
+        var onlyP = p.inherited ? function (pl) { return /^PL-/.test(pl.size) && p.ts.some(function (t) { return Math.abs(thickOf(pl.size) - t) <= 1.6; }); } : null;
+        if ((p.x1 || p.x) - p.x >= 50 && p.secs.length >= 2) p.secs.forEach(function (L) { addSecPlatesOnce([L], 1, false, onlyP); });
+        else addSecPlatesOnce(p.secs, 1, false, onlyP);
         p.secs.forEach(function (L) {
           var xs = flagHits.filter(function (h) { return h.hit === p && h.L1 === L; }).map(function (h) { return h.fx; }).sort(function (a, b) { return a - b; });
           var c = xs.length ? 1 : 0; for (var i = 1; i < xs.length; i++) if (xs[i] - xs[i - 1] >= 50) c++;
@@ -1596,7 +1602,7 @@
         return n;
       }
       elevLabels.forEach(function (lb) {
-        if (!inView(v, lb) || (named && amb && named.used.has(lb))) return;
+        if ((!inView(v, lb) && !(lb.xbox && views.length === 1)) || (named && amb && named.used.has(lb))) return;
         var c = lb.cnt;
         if (lb.xbox) { var dn = detailCount(lb); if (dn >= 2) c = dn; }
         add(lb.size, lb.mark, c, lb.note || '');
