@@ -1717,6 +1717,17 @@
         }
         function isSubtitle(u) { return secT.some(function (s) { return s.y - u.y > 50 && s.y - u.y < 200 && u.x > s.x - 500 && u.x < s.x + 200; }); }
         var RE_NOTE = /^(ALC下地|下がり止め)$/;
+        // 断面図の中の表記は、立面図の左に縦に並ぶ断面の記号(同じ x に英字1文字が3つ以上)のうち、その断面の記号の数だけある
+        // (2026-11-27 ユーザー指示「AC113は2枚」、N1C-8: B断面の <AC113> GPL-9。記号 B が2か所 = 小梁 2EHB200W の2段)。記号が1つ以下なら1
+        var secLay = (secT[0] || {}).lay;   // 断面の記号は見出し「SEC」と同じレイヤ(材質の「N B」の B などは数えない。N1C-1・N1C-6)
+        var lvT = T.filter(function (u) { return u.lay === secLay && /^[A-Z]$/.test(u.text) && T.filter(function (w) { return w.lay === secLay && /^[A-Z]$/.test(w.text) && Math.abs(w.x - u.x) < 5; }).length >= 3; });
+        function secTimes(t) {
+          var s = (subOf(t) || {}).sec; if (!s) return 1;
+          var key = T.find(function (u) { return /^[A-Z]$/.test(u.text) && Math.abs(u.y - s.y) < 10 && s.x - u.x > 100 && s.x - u.x < 400; });
+          if (!key) return 1;
+          var n = lvT.filter(function (u) { return u.text === key.text; }).length;
+          return n >= 2 ? n : 1;
+        }
         var byM = {};
         // ✕が重なったマーク(<AC1> に斜めの線2本)は中止 → 拾わない。代わりの右隣のマーク(<AC1S>)が同じ引出線のサイズで拾われる
         // (2026-11-27 ユーザー指示「✕印がある切板名は中止となったもの。その代わりにAC1Sが代用される」、26-14 N1C-4)。
@@ -1763,7 +1774,7 @@
           var noteText = note ? note.text : ((subOf(sz) || {}).sub || '');   // 断面は表記の位置で決める(<ACA4> は4断面寄りに書かれているが、表記 GPL-9 は5断面の中)
           var mm = RE_SZ.exec(sz.text);
           usedSizes.push(sz);
-          (byM[name] = byM[name] || []).push({ size: mm[2], mult: mm[1] ? parseInt(mm[1], 10) : 1, note: noteText, t: sz });
+          (byM[name] = byM[name] || []).push({ size: mm[2], mult: (mm[1] ? parseInt(mm[1], 10) : 1) * secTimes(sz), note: noteText, t: sz });
         });
         // 表記の斜めの引出線の先の✕の箱(板の絵。N1C-2 D断面 100x130・B断面 100x120)の 幅x長さ。無ければ空
         function boxDims(t) {
@@ -1778,6 +1789,9 @@
             return dg.some(function (a, i) {
               var b0 = [Math.min(a[0], a[2]), Math.min(a[1], a[3]), Math.max(a[0], a[2]), Math.max(a[1], a[3])];
               var corner = [[b0[0], b0[1]], [b0[0], b0[3]], [b0[2], b0[1]], [b0[2], b0[3]]].some(function (c) { return Math.hypot(c[0] - e[0], c[1] - e[1]) < 10; });   // 5 → 10(N1C-5 の <ACAR14K> は引出線の端が箱の角の 9 上)
+              // 引出線の端が箱の辺の上(2以内)でもよい(2026-11-27、N1C-8 の <ACAR14K>: 下の辺の上、角から16)
+              if (!corner) corner = e[0] >= b0[0] - 2 && e[0] <= b0[2] + 2 && e[1] >= b0[1] - 2 && e[1] <= b0[3] + 2 &&
+                (Math.abs(e[0] - b0[0]) < 2 || Math.abs(e[0] - b0[2]) < 2 || Math.abs(e[1] - b0[1]) < 2 || Math.abs(e[1] - b0[3]) < 2);
               if (!corner) return false;
               var pair = dg.some(function (c, j) { return j !== i && Math.abs(Math.min(c[0], c[2]) - b0[0]) < 1 && Math.abs(Math.min(c[1], c[3]) - b0[1]) < 1 && Math.abs(Math.max(c[0], c[2]) - b0[2]) < 1 && Math.abs(Math.max(c[1], c[3]) - b0[3]) < 1; });
               if (!pair) return false;
