@@ -511,7 +511,7 @@
 
     // 断面ごとの板の表記・形鋼の表記・継手の表記・寸法の数字
     var vlines = L.filter(function (l) { return Math.abs(l[0] - l[2]) < 0.5 && Math.abs(l[1] - l[3]) > 20; })
-      .map(function (l) { return { x: l[0], y0: Math.min(l[1], l[3]), y1: Math.max(l[1], l[3]) }; });
+      .map(function (l) { return { x: l[0], y0: Math.min(l[1], l[3]), y1: Math.max(l[1], l[3]), lay: l[4] }; });
     var hlines = L.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[0] - l[2]) > 20; })
       .map(function (l) { return { y: l[1], x0: Math.min(l[0], l[2]), x1: Math.max(l[0], l[2]) }; });
     var labels = plateLabels(T, hlines, titles);
@@ -1271,7 +1271,7 @@
 
       // 板の数
       // 同じ場所を描いた断面(letters)の板を足す。各符号は、それを描いた断面の中で一番少ない枚数
-      function addSecPlatesOnce(letters, mult) {
+      function addSecPlatesOnce(letters, mult, qmark) {
         var marks = {};
         letters.forEach(function (L1) {
           var si = secInfo[L1]; if (!si) return;
@@ -1281,7 +1281,7 @@
             else if (p.n < marks[m].n) marks[m].n = p.n;
             var nt0 = p.note || si.title.sub || '';
             if (p.noHole) nt0 = (nt0 ? nt0 + '・' : '') + '孔確認';
-            marks[m].notes.push(nt0 + (p.mekki ? '|めっき' : ''));
+            marks[m].notes.push(nt0 + (p.mekki ? '|めっき' : '') + (qmark ? '#Q' : ''));
           });
         });
         Object.keys(marks).forEach(function (m) {
@@ -1301,7 +1301,10 @@
       // 入れ子の中の入れ子も数える(C断面の中のア、アの中のエ)。数 = 親の断面の数 × 中の記号の数(2026-11-19 ユーザー決定)
       function addNested(L1, cnt, depth) {
         if (depth > 5) return;
-        secInfo[L1].nested.forEach(function (N) { addSecPlatesOnce([N], cnt); addNested(N, cnt, depth + 1); });
+        // 自分の符号付きの板が1つも無い断面(継手の断面)の中の入れ子の旗で、入れ子の断面に符号付きの板があるもの(2026-11-27 ユーザー指摘、26-14 N2G-05:
+        // B断面(小梁の継手。間仕切用捨てPL の C-100 だけ)の中の b の旗が塞ぎPL の b断面を指していて食い違う。本当は d の旗と思われる)は、備考に「図面の断面？？」
+        var parentNoPl = !Object.keys(secInfo[L1].plates).some(function (m) { return m; });
+        secInfo[L1].nested.forEach(function (N) { addSecPlatesOnce([N], cnt, parentNoPl && Object.keys(secInfo[N].plates).some(function (m) { return m; })); addNested(N, cnt, depth + 1); });
       }
       Object.keys(secInfo).forEach(function (L1) { if (secCount[L1]) addNested(L1, secCount[L1], 0); });
       // 旗がどこにも無い断面(2026-11-24 ユーザー指示、EB3-RG-10: D断面の NG53・NGR28 は立面図に D の旗が無い=図面間違い)。
@@ -1658,6 +1661,18 @@
               var byY = {}; prs.forEach(function (a) { var k = Math.round(a.y0); byY[k] = (byY[k] || 0) + 1; });
               var rowK = Object.keys(byY).filter(function (k) { return byY[k] >= 3; });
               cnt = rowK.length ? prs.filter(function (a) { return rowK.indexOf(String(Math.round(a.y0))) >= 0; }).length : prs.length;
+              // C- の列(2026-11-27 ユーザー指摘「N2G-05 の L側の C-100 250 が1本不足。仕口下が拾えていない？」): 仕口の下の C は向きを90度変えて横向きに描かれる
+              // (長さの同じ横線の組)。列の組で一番多いレイヤの組だけを数え(小梁の線の組は除く)、同じレイヤの横向きの組で列の上下600以内のものを足す
+              if (rowK.length && shape.charAt(0) === 'C') {
+                var lc = {}; prs.forEach(function (a) { if (rowK.indexOf(String(Math.round(a.y0))) >= 0) lc[a.lay] = (lc[a.lay] || 0) + 1; });
+                var topL = Object.keys(lc).sort(function (a, b) { return lc[b] - lc[a]; })[0];
+                var rowY = rowK.map(Number);
+                var hs = L.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && String(l[4]) === topL && Math.abs(Math.abs(l[0] - l[2]) - len) < 0.6 && inView(v, { x: (l[0] + l[2]) / 2, y: l[1] }) &&
+                  rowY.some(function (y) { return Math.abs(l[1] - y) < 600 + len; }); }).map(function (l) { return { x: Math.min(l[0], l[2]), y: l[1] }; }).sort(function (a, b) { return a.y - b.y; });
+                var hu = new Set(), hc = 0;
+                hs.forEach(function (a) { if (hu.has(a)) return; var b = hs.find(function (c) { return c !== a && !hu.has(c) && Math.abs(c.x - a.x) < 0.6 && c.y - a.y > 0 && c.y - a.y <= 60; }); if (b) { hs.forEach(function (c) { if (Math.abs(c.x - a.x) < 0.6 && c.y - a.y >= 0 && c.y - a.y <= 60) hu.add(c); }); hc++; } });
+                cnt = lc[topL] + hc;
+              }
               // 「C-」の LGS下地で、立面図に旗があり断面図の寸法の合計が100以上(梁を横切る部材)のときは、下面図の線では数えず下の①で数える
               // (2026-11-21 ユーザー指示「650 1本」、WB3-3G-07: 下面図は1本の C を4本の線で描き2組に見える。本数は立面図の旗・端面の数)
               if (cnt && shape.charAt(0) === 'C' && crossC()) { doneShape[shape + '@' + len] = 0; return; }
@@ -1770,7 +1785,16 @@
         if (!inView(v, t) || !/^FB-[0-9.]+x[0-9.]+$/.test(t.text)) return;
         var lq = T.find(function (u) { return /^L=[0-9.]+$/.test(u.text) && Math.abs(u.y - t.y) < 30 && u.x > t.x && u.x - t.x < 300; });
         if (!lq) return;
-        add(t.text, parseFloat(lq.text.slice(2)), 1, T.some(function (u) { return /デッキ受け/.test(u.text); }) ? 'デッキ受け' : undefined);
+        // 引出線の端から斜めの線が2本以上出て FB 2枚を指すものは、その本数(2026-11-27 ユーザー指摘「どちらも1枚不足。2つのFBから引っ張ってるパターンが1か所」、26-14 N2G-05)
+        var nb = 1;
+        L.forEach(function (h) {
+          if (Math.abs(h[1] - h[3]) > 0.5 || t.y - h[1] < -2 || t.y - h[1] > 40 || Math.min(h[0], h[2]) > t.x + 25 || Math.max(h[0], h[2]) < t.x - 5) return;
+          [[h[0], h[1]], [h[2], h[3]]].forEach(function (e) {
+            var c = L.filter(function (m) { return Math.abs(m[1] - m[3]) >= 10 && (Math.hypot(m[0] - e[0], m[1] - e[1]) < 5 || Math.hypot(m[2] - e[0], m[3] - e[1]) < 5); }).length;
+            if (c > nb) nb = c;
+          });
+        });
+        add(t.text, parseFloat(lq.text.slice(2)), nb, T.some(function (u) { return /デッキ受け/.test(u.text); }) ? 'デッキ受け' : undefined);
       });
       // スリーブの補強リング(2026-11-27 ユーザー指示「500φ の孔だけは拾わない。EGリングやハイリングは拾う」、26-14 N2G-01 の「EGリングZタイプ-500ZN」):
       // リングの表記1つ = 1個、サイズ = 表記のまま、備考 スリーブ。孔の径だけの「500φ」・リングの孔の径「580φ」は数えない
@@ -1865,13 +1889,15 @@
       var list = Object.keys(items).map(function (k) {
         var it = items[k];
         var subs = new Set(), mekki = false;
-        it.notes.forEach(function (nt) { var p = nt.split('|'); subs.add(p[0]); if (p[1]) mekki = true; });
+        var qmark = false;
+        it.notes.forEach(function (nt) { if (/#Q$/.test(nt)) { qmark = true; nt = nt.slice(0, -2); } var p = nt.split('|'); subs.add(p[0]); if (p[1]) mekki = true; });
         // 符号の末尾の M(番号のすぐあと。MK の M も)= めっき(2026-11-21 ユーザー指示、EA1-RG-01: NG121M・NHG143MK はめっき)
         // 2026-11-27 ユーザー指示「メッキの切板は末尾に M」: 番号のあとに英字が1つ入るもの(26-14 N2G-22 の AGAR50AM)も
         if (typeof it.name === 'string' && /[0-9][A-Z]?M[A-Z]?$/.test(it.name)) mekki = true;
         var parts = [];
         if (subs.size === 1 && Array.from(subs)[0]) parts.push(Array.from(subs)[0]);
         if (mekki) parts.push('めっき');
+        if (qmark) parts.push('図面の断面？？');
         return { size: it.size, name: it.name, n: it.n, note: parts.join('・') };
       });
       // 「(EA12-3TB888-2梁取付)」の書き込みのすぐ下の見出し(LGS下地)の金物は、その製品だけに付ける(2026-11-20 ユーザー指示、EA1-3B-03: -2 だけ LGS下地あり)
