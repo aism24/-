@@ -148,6 +148,15 @@
   function titleInfo(texts) {
     var koji = '';
     texts.forEach(function (t) { if (/工事$/.test(t.text) && t.text.length > koji.length && !/^工事/.test(t.text)) koji = t.text; });
+    // 2行に分けて書いた工事名(2026-11-27 ユーザー指示「2行で書かれていた場合は、2つを合わせて1行のテキストに」、26-14 心斎橋:
+    // 「(仮称)心斎橋スクエア建替えプロジェクト」の下の行に「新築工事」)は、上の行とつなぐ。短管リストの koji_of と同じ考え方。
+    // 上の行 = 下の行の上300以内・左3000〜右200・4文字以上・「工事」「番号」などを含まない文字のうち一番近いもの
+    if (koji && koji.length < 6) {
+      var low = texts.find(function (t) { return t.text === koji; });
+      var up = texts.filter(function (u) { var dy = u.y - low.y; return dy > 0 && dy < 300 && u.x > low.x - 3000 && u.x < low.x + 200 && u.text.length >= 4 && !/工事|番号|図面|^[0-9\/.\-]+$/.test(u.text); })
+        .sort(function (a, b) { return (a.y - low.y) - (b.y - low.y); })[0];
+      if (up) koji = up.text + koji;
+    }
     // 「〜工事」が無い図面(2026-11-20、EA1-3G-01 等の阪和の表題欄): 見出し「工事名称」(1文字ずつ・または続けて)の下に書かれた値を工事名にする。
     // 値 = 見出しの左端-200より右・見出しの下600以内の文字のうち、見出しに一番近いもの(見出しの文字・「図面番号」などの見出しは除く)
     if (!koji) {

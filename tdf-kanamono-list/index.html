@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>製品別金物リスト(tdf)</title>
-<link rel="stylesheet" href="style.css?v=20261126a">
+<link rel="stylesheet" href="style.css?v=20261127a">
 </head>
 <body>
 
@@ -79,6 +79,20 @@
 </div>
 
 <!-- Excelダウンロード後の案内(リンクの注意。2026-11-25 ユーザー指示) -->
+<!-- Excel に表示する工事名の選択(2026-11-27 ユーザー指示。短管リストと同じ3択) -->
+<div id="koji-modal" class="overlay" role="dialog" aria-labelledby="koji-modal-title">
+  <div class="dialog">
+    <div class="dialog-title" id="koji-modal-title">工事名の選択</div>
+    <div id="koji-body">
+      <div class="koji-lead">Excelに表示する工事名を選択してください。</div>
+      <label class="koji-opt"><input type="radio" name="koji-choice" value="app"><span>アプリ：<span id="koji-app"></span></span></label>
+      <label class="koji-opt"><input type="radio" name="koji-choice" value="dwg"><span>図面：<span id="koji-dwg"></span></span></label>
+      <label class="koji-opt koji-opt-text"><input type="radio" name="koji-choice" value="text"><span>テキスト入力：</span><input type="text" id="koji-text" placeholder="工事名を入力"></label>
+    </div>
+    <div class="dialog-actions"><button type="button" class="header-btn" id="koji-cancel">やめる</button><button type="button" class="header-action-btn orange" id="koji-ok">OK</button></div>
+  </div>
+</div>
+
 <div id="link-notice" class="overlay" role="dialog" aria-labelledby="link-notice-title">
   <div class="dialog link-notice">
     <div class="dialog-title" id="link-notice-title">Excelをダウンロードしました</div>
@@ -107,9 +121,9 @@
   </div>
 </div>
 
-<script src="extract.js?v=20261127h"></script>
+<script src="extract.js?v=20261127i"></script>
 <script src="excel.js?v=20261127a"></script>
-<script src="app.js?v=20261126d"></script>
+<script src="app.js?v=20261127a"></script>
 <script src="to-launcher.js?v=20261120i" data-target="header h1" data-mode="beforePrev"></script>
 </body>
 </html>
