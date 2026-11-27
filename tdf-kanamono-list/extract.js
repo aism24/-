@@ -1406,6 +1406,9 @@
           if (flagsBySec[L1] || !Object.keys(si.plates).length) return;
           if (Object.keys(secInfo).some(function (L2) { return secInfo[L2].nested.indexOf(L1) >= 0; })) return;
           if (T.some(function (u) { return u.text === L1 && isLeft(u) && RE_SECKEY.test(u.text); })) return;   // 図の中に記号はある(旗の形でないだけ)
+          // 立面図の外の別の小さな図の上に旗があれば、旗の数だけ(図面NG にしない)(2026-11-27 ユーザー指示、26-14 N2G-13: 小梁の取り付きの図の上の旗 L・M・a)
+          var nOut = T.filter(function (u) { return u.text === L1 && !titles.some(function (x) { return x.letter === L1 && Math.abs(x.y - u.y) < 10 && Math.abs(x.x - u.x) < 10; }) && flagLineX(u) !== null; }).length;
+          if (nOut) { addSecPlatesOnce([L1], nOut); return; }
           Object.keys(si.plates).forEach(function (m) { var pl = si.plates[m]; add(pl.size, m, pl.n, '図面NG'); });
         });
       }
