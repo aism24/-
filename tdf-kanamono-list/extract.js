@@ -1658,14 +1658,17 @@
               var byY = {}; prs.forEach(function (a) { var k = Math.round(a.y0); byY[k] = (byY[k] || 0) + 1; });
               var rowK = Object.keys(byY).filter(function (k) { return byY[k] >= 3; });
               cnt = rowK.length ? prs.filter(function (a) { return rowK.indexOf(String(Math.round(a.y0))) >= 0; }).length : prs.length;
-              // その列では、組の線と同じレイヤの長さの同じ線のまとまり(横60以内)を1本と数える(2026-11-27 ユーザー指摘「L側の C-100 250 が1本不足。仕口下が拾えていない？」、
-              // 26-14 N2G-05: 仕口の下の C は縦線が1本しか描かれず組にならなかった。別のレイヤの小梁の線の組は数えない)
-              if (rowK.length && shape.charAt(0) === 'C') {   // C- だけ、本数を増やす方向だけ([- の ITM の図面は組が複数のレイヤにまたがる)
+              // C- の列(2026-11-27 ユーザー指摘「N2G-05 の L側の C-100 250 が1本不足。仕口下が拾えていない？」): 仕口の下の C は向きを90度変えて横向きに描かれる
+              // (長さの同じ横線の組)。列の組で一番多いレイヤの組だけを数え(小梁の線の組は除く)、同じレイヤの横向きの組で列の上下600以内のものを足す
+              if (rowK.length && shape.charAt(0) === 'C') {
                 var lc = {}; prs.forEach(function (a) { if (rowK.indexOf(String(Math.round(a.y0))) >= 0) lc[a.lay] = (lc[a.lay] || 0) + 1; });
-                var top = Object.keys(lc).sort(function (a, b) { return lc[b] - lc[a]; })[0], rowLay = {}; rowLay[top] = 1;   // 列の組で一番多いレイヤだけ
-                var xs = vs.filter(function (l) { return rowK.indexOf(String(Math.round(l.y0))) >= 0 && rowLay[l.lay]; }).map(function (l) { return l.x; }).sort(function (a, b) { return a - b; });
-                var cl = 0, last = -Infinity; xs.forEach(function (x) { if (x - last > 60) cl++; last = x; });
-                if (cl > cnt) cnt = cl;
+                var topL = Object.keys(lc).sort(function (a, b) { return lc[b] - lc[a]; })[0];
+                var rowY = rowK.map(Number);
+                var hs = L.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && String(l[4]) === topL && Math.abs(Math.abs(l[0] - l[2]) - len) < 0.6 && inView(v, { x: (l[0] + l[2]) / 2, y: l[1] }) &&
+                  rowY.some(function (y) { return Math.abs(l[1] - y) < 600 + len; }); }).map(function (l) { return { x: Math.min(l[0], l[2]), y: l[1] }; }).sort(function (a, b) { return a.y - b.y; });
+                var hu = new Set(), hc = 0;
+                hs.forEach(function (a) { if (hu.has(a)) return; var b = hs.find(function (c) { return c !== a && !hu.has(c) && Math.abs(c.x - a.x) < 0.6 && c.y - a.y > 0 && c.y - a.y <= 60; }); if (b) { hs.forEach(function (c) { if (Math.abs(c.x - a.x) < 0.6 && c.y - a.y >= 0 && c.y - a.y <= 60) hu.add(c); }); hc++; } });
+                cnt = lc[topL] + hc;
               }
               // 「C-」の LGS下地で、立面図に旗があり断面図の寸法の合計が100以上(梁を横切る部材)のときは、下面図の線では数えず下の①で数える
               // (2026-11-21 ユーザー指示「650 1本」、WB3-3G-07: 下面図は1本の C を4本の線で描き2組に見える。本数は立面図の旗・端面の数)
