@@ -1770,7 +1770,16 @@
         if (!inView(v, t) || !/^FB-[0-9.]+x[0-9.]+$/.test(t.text)) return;
         var lq = T.find(function (u) { return /^L=[0-9.]+$/.test(u.text) && Math.abs(u.y - t.y) < 30 && u.x > t.x && u.x - t.x < 300; });
         if (!lq) return;
-        add(t.text, parseFloat(lq.text.slice(2)), 1, T.some(function (u) { return /デッキ受け/.test(u.text); }) ? 'デッキ受け' : undefined);
+        // 引出線の端から斜めの線が2本以上出て FB 2枚を指すものは、その本数(2026-11-27 ユーザー指摘「どちらも1枚不足。2つのFBから引っ張ってるパターンが1か所」、26-14 N2G-05)
+        var nb = 1;
+        L.forEach(function (h) {
+          if (Math.abs(h[1] - h[3]) > 0.5 || t.y - h[1] < -2 || t.y - h[1] > 40 || Math.min(h[0], h[2]) > t.x + 25 || Math.max(h[0], h[2]) < t.x - 5) return;
+          [[h[0], h[1]], [h[2], h[3]]].forEach(function (e) {
+            var c = L.filter(function (m) { return Math.abs(m[1] - m[3]) >= 10 && (Math.hypot(m[0] - e[0], m[1] - e[1]) < 5 || Math.hypot(m[2] - e[0], m[3] - e[1]) < 5); }).length;
+            if (c > nb) nb = c;
+          });
+        });
+        add(t.text, parseFloat(lq.text.slice(2)), nb, T.some(function (u) { return /デッキ受け/.test(u.text); }) ? 'デッキ受け' : undefined);
       });
       // スリーブの補強リング(2026-11-27 ユーザー指示「500φ の孔だけは拾わない。EGリングやハイリングは拾う」、26-14 N2G-01 の「EGリングZタイプ-500ZN」):
       // リングの表記1つ = 1個、サイズ = 表記のまま、備考 スリーブ。孔の径だけの「500φ」・リングの孔の径「580φ」は数えない
