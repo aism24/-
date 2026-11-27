@@ -2079,7 +2079,30 @@
         if (!note && (T.some(function (o) { return o.text === t.text && T.some(function (u) { return /^デッキ受け/.test(u.text) && dist(u, o) <= 700; }); }) ||
             Object.keys(secInfo).some(function (k) { return secInfo[k].title.sub === 'デッキ受け' && secInfo[k].shapes.indexOf(t.text) >= 0; }))) note = 'デッキ受け';
         lEqDone[t.text] = 1;
-        out.push({ size: t.text, name: parseFloat(lq.text.slice(2)), n: 1, note: note });
+        // 本数(2026-11-27 ユーザー指示「間仕切り下地C-100は2つ」、N1C-13 B断面): 表記の引出線(表記の下の横線)からつながる横の線に
+        // 600 間隔で縦の線が下がり、そのうち斜めの短い線(2本以上)の印が付いた縦の線が形鋼1本。印が無ければ1本(N1C-12 は1か所)
+        var nShape = 1, h0 = L.find(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && t.y - l[1] > -20 && t.y - l[1] < 80 && Math.min(l[0], l[2]) - 60 <= t.x && Math.max(l[0], l[2]) >= t.x - 60; });
+        if (h0) {
+          var hy = h0[1], cx0 = Math.min(h0[0], h0[2]), cx1 = Math.max(h0[0], h0[2]), grown = true;
+          while (grown) {
+            grown = false;
+            L.forEach(function (l) {
+              if (Math.abs(l[1] - hy) > 1 || Math.abs(l[3] - hy) > 1) return;
+              var a = Math.min(l[0], l[2]), b = Math.max(l[0], l[2]);
+              if (b < cx0 - 2 || a > cx1 + 2 || (a >= cx0 && b <= cx1)) return;
+              cx0 = Math.min(cx0, a); cx1 = Math.max(cx1, b); grown = true;
+            });
+          }
+          var marks = L.filter(function (v) {
+            if (Math.abs(v[0] - v[2]) > 0.5 || v[0] < cx0 - 2 || v[0] > cx1 + 2 || (Math.abs(v[1] - hy) > 5 && Math.abs(v[3] - hy) > 5)) return false;
+            return L.filter(function (l) {
+              var dx = Math.abs(l[0] - l[2]), dy = Math.abs(l[1] - l[3]);
+              return dx > 10 && dy > 10 && Math.hypot(dx, dy) < 150 && [[l[0], l[1]], [l[2], l[3]]].some(function (e) { return Math.abs(e[0] - v[0]) < 3 && e[1] >= Math.min(v[1], v[3]) - 3 && e[1] <= Math.max(v[1], v[3]) + 3; });
+            }).length >= 2;
+          }).length;
+          if (marks >= 1) nShape = marks;
+        }
+        out.push({ size: t.text, name: parseFloat(lq.text.slice(2)), n: nShape, note: note });
       });
       // 「デッキ受け」と重なって書かれた山形鋼の表記で、断面図の中でも L= も無いもの(2026-11-27 ユーザー指示、N1C-13 X-X の L-75x75x6 = 219.7):
       // 引出線の先の、山形鋼を横から見た絵(同じ長さの平行な2本の線で、間が板厚)の長さで1本
