@@ -404,13 +404,14 @@ async function importItems(items) {
         if (state.tdfs.some(t => t.fileName === f.name && t.path === path)) { errors.push(`${f.name}: すでに取り込んでいます`); continue; }
         const buf = await f.arrayBuffer();
         const res = KanamonoExtract.extract(buf, f.name);
-        if (!res.products.length) { errors.push(`${f.name}: 製品(「製品名 符号 N台」の行)が見つかりませんでした`); continue; }
         // 工事名が違うTDFは取り込まないので、長さ(Python)を読む前に止める(2026-11-21。以前は長さを読んでから止めていた)
         const base = state.tdfs[0];
         if (base && base.res.koji !== res.koji) { errors.push(`${f.name}: 工事名が違うため取り込みません(「${res.koji || '不明'}」。取り込み済みは「${base.res.koji}」)`); continue; }
         // 長さは tdf-master-web と同じ方法で求める(2026-11-20 ユーザー指示)。読めなければ図面の寸法から読んだ長さのまま
         try { await applyMasterLengths(buf, f.name, res, (r, msg) => step(i, r, msg)); }
         catch (e) { warns.push(`${f.name}: 長さを tdf-master-web と同じ方法で読めませんでした(${e.message})。図面の寸法から読んだ長さを使います`); }
+        // 製品は tdf-master-web の読み方でも探したうえで、どちらでも見つからなければ取り込まない(2026-11-27)
+        if (!res.products.length) { errors.push(`${f.name}: 製品(「製品名 符号 N台」の行)が見つかりませんでした`); continue; }
         step(i, 1, 'TDFを読み込んでいます…');
         res.products.forEach(p => p.items.forEach(it => { it.n0 = it.n; }));
         state.tdfs.push({ id: nextId++, fileName: f.name, path: path || '', res });
@@ -618,13 +619,13 @@ function loadPy(onProgress) {
   }
   return pyPromise;
 }
-// [[製品マーク, 長さ(m)], …]。柱の図面(column)は tdf-master-web の柱モード(tdf_column)で求める(2026-11-20 ユーザー指摘「長さは？」。EB1-0C-04: 梁モードだと 368.1、柱モードは 3248.1)
+// [[製品マーク, 長さ(m), サイズ, 本数, 設計符号], …]。柱の図面(column)は tdf-master-web の柱モード(tdf_column)で求める(2026-11-20 ユーザー指摘「長さは？」。EB1-0C-04: 梁モードだと 368.1、柱モードは 3248.1)
 async function masterLengths(buf, name, onProgress, column) {
   const py = await loadPy(onProgress);
   py.FS.writeFile('/input.tdf', new Uint8Array(buf));
   py.globals.set('tdf_filename', name);
   const mod = column ? 'tdf_column' : 'tdf_app';
-  const out = await py.runPythonAsync("json.dumps([[r.get('製品マーク'), r.get('長さ')] for r in " + mod + ".extract_file('/input.tdf', tdf_filename)], ensure_ascii=False)");
+  const out = await py.runPythonAsync("json.dumps([[r.get('製品マーク'), r.get('長さ'), r.get('サイズ'), r.get('本数'), r.get('設計符号')] for r in " + mod + ".extract_file('/input.tdf', tdf_filename)], ensure_ascii=False)");
   return JSON.parse(out);
 }
 // 長さを tdf-master-web と同じ方法で読んで、製品の長さを置き換える(TDFの取り込み・次の加工予定で共通)。step(0〜1, 文) = 進み具合
@@ -633,6 +634,23 @@ async function applyMasterLengths(buf, name, res, step) {
   step(0.3, pyPromise ? '長さを読んでいます…' : PREP);
   const ml = await masterLengths(buf, name, r => step(0.3 + 0.6 * r, PREP), res.columnDrawing);
   res.products.forEach(p => { const m = ml.find(x => x[0] === p.name); if (m && m[1]) p.length = Math.round(m[1] * 10000) / 10; });
+  // 梁の図面は、製品名・サイズ・台数・設計符号も tdf-master-web の結果に合わせる(2026-11-27 ユーザー指示「製品名、サイズ、長さ、台数も同じように取り込める方が良い。
+  // 片方が取り込めて、もう片方がNGは困る」。26-14 N2G-01 の HY-1000x250x19x28 が金物リストだけ空欄だった)。
+  // 柱の図面は tdf-master-web の柱モードのサイズに板厚が無い(□-700x700)ので、サイズは金物リストの読み方(□-700x700x28)のまま
+  if (res.columnDrawing) return;
+  const dai = v => { const n = parseInt(String(v || '').replace(/[^0-9]/g, ''), 10); return n > 0 ? n : null; };
+  ml.forEach(m => {
+    if (!m[0]) return;
+    let p = res.products.find(q => q.name === m[0]);
+    if (!p) {   // tdf-master-web だけが読めた製品も出す(金物は拾えていないのでお知らせを出す)
+      p = { zuban: res.zuban, name: m[0], fugo: '', dai: 1, size: '', length: m[1] ? Math.round(m[1] * 10000) / 10 : 0, items: [] };
+      res.products.push(p);
+      res.warnings.push(`${m[0]}: 製品は読めましたが、金物を拾えませんでした`);
+    }
+    if (m[2]) p.size = m[2];
+    if (dai(m[3])) p.dai = dai(m[3]);
+    if (m[4]) p.fugo = m[4];
+  });
 }
 const PY_VER = '20261120d';
 // 長さを読む Python の部品(約5MB。初回の準備に数秒)を、工場・工事を選んで開始したときに裏で読み始める(2026-11-21)。

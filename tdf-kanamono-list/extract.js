@@ -210,7 +210,9 @@
       // 同じ高さに符号が無い行は、現場付けとする前に、tdf-master-web と同じ読み方(下の pending)で読み直す(2026-11-20)
       // 本体: H形鋼の表記。無ければ組立H(BH-)・SH(tdf-master-web のサイズの形)も本体とする(2026-11-20、EA1-3G-01 の BH-1300x450x25x40)
       var main = same.find(function (u) { return RE_MAIN.test(u.text) && u.x > name.x; }) ||
-        same.find(function (u) { return /^(BH|SH|H)-[0-9]+x[0-9]+x[0-9.]+x[0-9.]+$/.test(u.text) && u.x > name.x; });
+        same.find(function (u) { return /^(BH|SH|H)-[0-9]+x[0-9]+x[0-9.]+x[0-9.]+$/.test(u.text) && u.x > name.x; }) ||
+        // それも無ければ tdf-master-web のサイズの形(HY-・HF-・MHY- など。2026-11-27 ユーザー指示「tdf-master-web ではサイズまで抽出できている」、26-14 N2G-01 の HY-1000x250x19x28)
+        same.find(function (u) { return RE_MW_SIZE.test(u.text) && u.x > name.x; });
       var rec = { name: name.text, fugo: fugo ? fugo.text : '', dai: parseInt(m[1], 10), x: name.x, xr: t.x, y: t.y, main: main ? main.text : '' };
       if (fugo) rows.push(rec); else pending.push({ dai: t, n: rec.dai, same: same, onSite: rec });
     });
@@ -385,7 +387,7 @@
 
   // 板の表記(GPL-9 と KG1 の組)。表記は引出線の上にあり、符号は線の下か線の端の近くにある。
   // 線(なければ表記の位置)と符号の中心の距離が近いもの同士を1対1で組にする。(めっき)は線の下にあればその板
-  function plateLabels(texts, hlines) {
+  function plateLabels(texts, hlines, titles) {
     function leader(s) {
       var c = hlines.filter(function (h) { return s.y - h.y >= 3 && s.y - h.y <= 40 && h.x0 <= s.x + 25 && h.x1 >= s.x + 25; })
         .sort(function (a, b) { return (s.y - a.y) - (s.y - b.y); });
@@ -398,7 +400,10 @@
       return Math.hypot(p.x - cx, p.y - h.y);
     }
     var sizes = texts.filter(function (t) { return RE_PLATE.test(t.text); }).map(function (s) { return { t: s, h: leader(s) }; });
-    var marks = texts.filter(function (t) { return RE_MARK.test(t.text) && !RE_NOT_MARK.test(t.text) && !RE_PLATE.test(t.text); });
+    // 山括弧の符号(2026-11-27、26-14 N2G-01 の A断面の「GPL-9 <AG28>」): 断面図の中にあるものだけ、括弧を外して符号として読む
+    // (2G-01 の <TS190> は図面の凡例「サヤ管」「吊ピース PL-12」のそばの文字で金物ではない)
+    var marks = texts.map(function (t) { var a = /^<([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*)>$/.exec(t.text); return a && titles && sectionOf(t, titles) ? Object.assign({}, t, { text: a[1] }) : t; })
+      .filter(function (t) { return RE_MARK.test(t.text) && !RE_NOT_MARK.test(t.text) && !RE_PLATE.test(t.text); });
     var mekkis = texts.filter(function (t) { return /めっき/.test(t.text); });
     var pairs = [];
     sizes.forEach(function (s) { marks.forEach(function (m) { var d = dSeg(center(m), s.h, s.t); if (d < 420) pairs.push({ s: s, m: m, d: d }); }); });
@@ -491,7 +496,7 @@
       .map(function (l) { return { x: l[0], y0: Math.min(l[1], l[3]), y1: Math.max(l[1], l[3]) }; });
     var hlines = L.filter(function (l) { return Math.abs(l[1] - l[3]) < 0.5 && Math.abs(l[0] - l[2]) > 20; })
       .map(function (l) { return { y: l[1], x0: Math.min(l[0], l[2]), x1: Math.max(l[0], l[2]) }; });
-    var labels = plateLabels(T, hlines);
+    var labels = plateLabels(T, hlines, titles);
     // 形鋼の表記の引出線の先: 表記のすぐ下の横線の端から出る斜めの線の、もう一方の端(無ければ表記の位置)
     function shapeAnchor(t) {
       // 表記と引出線の間は40までが多いが、69 離れた図面もある(2026-11-21、WB3-3G-08 の「[-100x50x5x7.5」)
@@ -953,7 +958,7 @@
       // 本体の鋼材(左に「B」の文字があるもの=柱側のブラケットは除く)
       var mains = T.filter(function (t) { return inView(v, t) && RE_MAIN.test(t.text) && !T.some(function (u) { return u.text === 'B' && Math.abs(u.y - t.y) < 15 && t.x - u.x > 0 && t.x - u.x < 300; }); });
       var main = (v.products[0] && v.products[0].main) || (mains[0] ? mains[0].text : '');
-      var dm = /H-([0-9]+)/.exec(main), depth = dm ? parseFloat(dm[1]) : 0;   // H形鋼以外(BT・□など)は梁成なし
+      var dm = /H[A-Z]*-([0-9]+)/.exec(main), depth = dm ? parseFloat(dm[1]) : 0;   // H形鋼以外(BT・□など)は梁成なし
       // 長さ: 寸法の行で「10」(柱との隙間)2つの間にある一番大きい数。梁が傾いていると寸法の行も傾くので、2つの「10」を結ぶ線のそばで探す
       var length = 0;
       var tens = T.filter(function (t) { return inView(v, t) && t.text === '10'; });
@@ -1547,6 +1552,14 @@
         add(o.shape, Math.round(o.len * 10) / 10, 1, o.note);
       });
 
+      // 平鋼の表記のすぐ右(同じ高さ・300以内)に長さ「L=480」があるもの(2026-11-27、26-14 N2G-01 の平面図の「FB-6x65 L=480」4か所):
+      // 表記1つ = 1本、切板名 = 長さ。図面に「デッキ受け」の文字(「梁剛接継ぎ手部 デッキ受け取付要領」)があれば備考 デッキ受け
+      T.forEach(function (t) {
+        if (!inView(v, t) || !/^FB-[0-9.]+x[0-9.]+$/.test(t.text)) return;
+        var lq = T.find(function (u) { return /^L=[0-9.]+$/.test(u.text) && Math.abs(u.y - t.y) < 30 && u.x > t.x && u.x - t.x < 300; });
+        if (!lq) return;
+        add(t.text, parseFloat(lq.text.slice(2)), 1, T.some(function (u) { return /デッキ受け/.test(u.text); }) ? 'デッキ受け' : undefined);
+      });
       // スリーブの金物(2026-11-20 ユーザー指示)。そばに孔の書き込み(φ)があるものだけ。「(150φ)」「(下孔205φ)」は孔の大きさで金物ではない。サイズ欄は表記のまま、備考は「スリーブ」
       //  - 「150S」(EA1-3B-01): ウェブの片側の孔の上下に1つずつ付く → 1か所につき2個
       //  - 「150B」(EA1-3G-01): 1か所につき1個
