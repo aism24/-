@@ -1755,6 +1755,15 @@
           if (c.length === 1) { delete items[key]; var nk = c[0].text + '|' + it.name; items[nk] = Object.assign({}, it, { size: c[0].text }); }
         });
       })();
+      // 「下がり止め(工場取付)」のすぐ下の符号の無い板の表記(2026-11-27 ユーザー指摘、26-14 N2G-16 の拡大図「PL-6x50x100」)= 表記1つ = 1枚・切板名空欄・備考 下がり止め。
+      // 現場付けのものは拾わない
+      T.forEach(function (k) {
+        if (!/^下がり止め.*工場/.test(k.text)) return;
+        var u = T.find(function (w) { return RE_PLATE.test(w.text) && Math.abs(w.x - k.x) < 60 && k.y - w.y > 100 && k.y - w.y < 350; });
+        if (!u || !(inView(v, u) || views.length === 1)) return;
+        if (labels.some(function (lb) { return Math.abs(lb.sx - u.x) < 1 && Math.abs(lb.sy - u.y) < 1; })) return;
+        add(plateSize(u.text), '', plateCount(u.text), '下がり止め');
+      });
       // 間仕切用捨てPL の断面の符号の無い板の表記(PL-12x100x100)が平面図にもあれば、平面図の表記1つ = 1枚(2026-11-27 ユーザー指示、26-14 N2G-18 a断面 = 6枚)
       Object.keys(secInfo).forEach(function (k) {
         if (secInfo[k].title.sub !== '間仕切用捨てPL') return;
